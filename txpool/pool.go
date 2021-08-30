@@ -1581,16 +1581,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 	sc.lock.Lock()
 	defer sc.lock.Unlock()
 	sc.commitID++
-	if ASSERT {
-		c1, _ := tx.RwCursor(kv.PoolSenderID)
-		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
-		count1, _ := c1.Count()
-		count2, _ := c2.Count()
-		if count1 != count2 {
-			fmt.Printf("counts: %d, %d\n", count1, count2)
-			panic(1)
-		}
-	}
 
 	var justDeleted, justInserted []uint64
 	encID := make([]byte, 8)
@@ -1603,8 +1593,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		if currentV != nil && bytes.Equal(currentV, encID) {
 			continue
 		}
-		//fmt.Printf(
-		//"Put: %d\n", id)
+		fmt.Printf("Put: %d\n", id)
 		if err := tx.Put(kv.PoolSenderID, []byte(addr), encID); err != nil {
 			return evicted, err
 		}
@@ -1704,41 +1693,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			panic(1)
 		}
 	}
-	if ASSERT {
-		unique := map[uint64]struct{}{}
-		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
-			_, ok := unique[binary.BigEndian.Uint64(v)]
-			if ok {
-				panic(8)
-			}
-			return nil
-		})
-		unique2 := map[string]struct{}{}
-		tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
-			_, ok := unique2[string(v)]
-			if ok {
-				panic(8)
-			}
-			return nil
-		})
-
-		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
-			found := false
-			tx.ForEach(kv.PoolSenderIDToAdress, nil, func(kk, vv []byte) error {
-				if bytes.Equal(k, vv) {
-					found = true
-					return fmt.Errorf("stop")
-				}
-				return nil
-			})
-			if !found {
-				fmt.Printf("not found: %x,%x\n", k, binary.BigEndian.Uint64(v))
-				panic(2)
-			}
-			return nil
-		})
-
-	}
 	c, err := tx.RwCursor(kv.PoolStateEviction)
 	if err != nil {
 		return evicted, err
@@ -1755,20 +1709,44 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		if err := ids.UnmarshalBinary(v); err != nil {
 			return 0, err
 		}
+		fmt.Printf("to evict: %d\n", ids.ToArray())
 		for _, senderID := range ids.ToArray() {
-			if _, ok := sc.senderInfo[senderID]; ok {
-				continue
-			}
+			fmt.Printf("--go:%d\n", senderID)
+			tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
+				fmt.Printf("-a: %x,%x\n", k, v)
+				return nil
+			})
+			tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
+				fmt.Printf("-b: %x,%x\n", k, v)
+				return nil
+			})
+			//if _, ok := sc.senderInfo[senderID]; ok {
+			//	continue
+			//}
 			if byNonce.count(senderID) > 0 {
 				continue
 			}
+			binary.BigEndian.PutUint64(encID, senderID)
 			addr, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
 			if err != nil {
 				return evicted, err
 			}
-			if _, ok := sc.senderIDs[string(addr)]; ok {
+			if addr == nil {
+				fmt.Printf("skip: %x,%x\n", encID, addr)
 				continue
 			}
+			if len(addr) != 20 {
+				fmt.Printf("%x,%x\n", encID, addr)
+				tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
+					fmt.Printf("a: %x,%x\n", k, v)
+					return nil
+				})
+				panic(22)
+			}
+			//if _, ok := sc.senderIDs[string(addr)]; ok {
+			//	continue
+			//}
+			fmt.Printf("del: %d,%x,%x\n", senderID, encID, addr)
 			if err := tx.Delete(kv.PoolSenderID, addr, nil); err != nil {
 				return evicted, err
 			}
@@ -1787,6 +1765,15 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			return evicted, err
 		}
 	}
+	tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
+		fmt.Printf("aa: %x,%x\n", k, v)
+		return nil
+	})
+	tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
+		fmt.Printf("bb: %x,%x\n", k, v)
+		return nil
+	})
+
 	fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
 	if ASSERT {
 		unique := map[uint64]struct{}{}
