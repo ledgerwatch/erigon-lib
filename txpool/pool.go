@@ -1356,6 +1356,16 @@ func (p *TxPool) flush(db kv.RwDB) (evicted, written uint64, err error) {
 	return evicted, written, nil
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
+	}
 	sendersWithoutTransactions := roaring64.New()
 	for i := 0; i < len(p.deletedTxs); i++ {
 		if p.txNonce2Tx.count(p.deletedTxs[i].Tx.senderID) == 0 {
@@ -1398,6 +1408,16 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 			return nil
 		})
 	}
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
+	}
 
 	v := make([]byte, 0, 1024)
 	for txHash, metaTx := range p.byHash {
@@ -1429,6 +1449,16 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 			return evicted, err
 		}
 		metaTx.Tx.rlp = nil
+	}
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
 	}
 
 	if ASSERT {
