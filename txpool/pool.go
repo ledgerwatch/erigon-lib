@@ -56,7 +56,7 @@ type Config struct {
 
 var DefaultConfig = Config{
 	syncToNewPeersEvery:     2 * time.Minute,
-	commitEvery:             200 * time.Millisecond,
+	commitEvery:             100 * time.Millisecond,
 	logEvery:                30 * time.Second,
 	evictSendersAfterRounds: 3,
 }
@@ -1722,6 +1722,22 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			return nil
 		})
 
+		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
+			found := false
+			tx.ForEach(kv.PoolSenderIDToAdress, nil, func(kk, vv []byte) error {
+				if bytes.Equal(k, vv) {
+					found = true
+					return fmt.Errorf("stop")
+				}
+				return nil
+			})
+			if !found {
+				fmt.Printf("not found: %x,%x\n", k, binary.BigEndian.Uint64(v))
+				panic(2)
+			}
+			return nil
+		})
+
 	}
 	c, err := tx.RwCursor(kv.PoolStateEviction)
 	if err != nil {
@@ -1799,7 +1815,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 				return nil
 			})
 			if !found {
-				fmt.Printf("not found: %x,%x\n", k, v)
+				fmt.Printf("not found: %x,%x\n", k, binary.BigEndian.Uint64(v))
 				panic(2)
 			}
 			return nil
