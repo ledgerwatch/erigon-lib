@@ -1538,6 +1538,17 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 	sc.lock.Lock()
 	defer sc.lock.Unlock()
 	sc.commitID++
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
+	}
+
 	//var justDeleted, justInserted []uint64
 	encID := make([]byte, 8)
 	for addr, id := range sc.senderIDs {
@@ -1629,6 +1640,16 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		}
 	}
 
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
+	}
 	c, err := tx.RwCursor(kv.PoolStateEviction)
 	if err != nil {
 		return evicted, err
