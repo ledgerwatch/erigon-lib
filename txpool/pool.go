@@ -1286,6 +1286,7 @@ func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, s
 	}
 }
 
+//nolint
 func coreProgress(coreTx kv.Tx) (uint64, error) {
 	stageProgress, err := coreTx.GetOne(kv.SyncStageProgress, []byte("Finish"))
 	if err != nil {
@@ -1675,7 +1676,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			}
 			evicted++
 			if ASSERT {
-				justDeleted = append(justDeleted, senderID)
+				justDeleted = append(justDeleted, senderID) //nolint
 			}
 		}
 		if err := c.DeleteCurrent(); err != nil {
