@@ -1562,6 +1562,16 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
 	// failed write transaction must not create side-effects
 	p.deletedTxs = p.deletedTxs[:0]
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
+	}
 
 	return evicted, nil
 }
@@ -1592,7 +1602,8 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		if currentV != nil && bytes.Equal(currentV, encID) {
 			continue
 		}
-		//fmt.Printf("Put: %d\n", id)
+		//fmt.Printf(
+		//"Put: %d\n", id)
 		if err := tx.Put(kv.PoolSenderID, []byte(addr), encID); err != nil {
 			return evicted, err
 		}
