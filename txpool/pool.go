@@ -45,7 +45,7 @@ var (
 	cacheTotalCounter = metrics.NewCounter("pool_cache_total")
 )
 
-const ASSERT = true
+const ASSERT = false
 
 type Config struct {
 	syncToNewPeersEvery     time.Duration
@@ -1294,6 +1294,7 @@ func coreProgress(coreTx kv.Tx) (uint64, error) {
 	return binary.BigEndian.Uint64(stageProgress), err
 }
 
+//nolint
 func (p *TxPool) forceCheckState(ctx context.Context, db, coreDB kv.RoDB) error {
 	for {
 		if err := db.View(ctx, func(tx kv.Tx) error {
