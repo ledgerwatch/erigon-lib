@@ -478,6 +478,13 @@ func FuzzOnNewBlocks11(f *testing.F) {
 			}
 			prevTotal = pending.Len() + baseFee.Len() + queued.Len()
 		}
+		checkDB := func(tx kv.Tx) {
+			c1, _ := tx.Cursor(kv.PoolSenderID)
+			c2, _ := tx.Cursor(kv.PoolSenderIDToAdress)
+			count1, _ := c1.Count()
+			count2, _ := c2.Count()
+			assert.Equal(count1, count2)
+		}
 		//fmt.Printf("-------\n")
 
 		// go to first fork
@@ -520,6 +527,7 @@ func FuzzOnNewBlocks11(f *testing.F) {
 		_, err = pool.flushLocked(tx) // we don't test eviction here, because dedicated test exists
 		require.NoError(err)
 		check(p2pReceived, TxSlots{}, "after_flush")
+		checkDB(tx)
 		//checkNotify(p2pReceived, TxSlots{}, "after_flush")
 
 		s2 := NewSendersCache()
@@ -527,6 +535,7 @@ func FuzzOnNewBlocks11(f *testing.F) {
 		assert.NoError(err)
 		err = p2.fromDB(context.Background(), tx, nil)
 		require.NoError(err)
+		checkDB(tx)
 		for _, txn := range p2.byHash {
 			assert.Nil(txn.Tx.rlp)
 		}

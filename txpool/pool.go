@@ -1222,13 +1222,13 @@ func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, s
 	if err := db.View(ctx, func(tx kv.Tx) error { return p.logStats(tx) }); err != nil {
 		log.Error("log stats", "err", err)
 	}
-	if ASSERT {
-		go func() {
-			if err := p.forceCheckState(ctx, db, coreDB); err != nil {
-				log.Error("forceCheckState", "err", err)
-			}
-		}()
-	}
+	//if ASSERT {
+	//	go func() {
+	//		if err := p.forceCheckState(ctx, db, coreDB); err != nil {
+	//			log.Error("forceCheckState", "err", err)
+	//		}
+	//	}()
+	//}
 
 	logEvery := time.NewTicker(p.cfg.logEvery)
 	defer logEvery.Stop()
@@ -1357,8 +1357,8 @@ func (p *TxPool) flush(db kv.RwDB) (evicted, written uint64, err error) {
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	if ASSERT {
-		c1, _ := tx.RwCursor(kv.PoolSenderID)
-		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		c1, _ := tx.Cursor(kv.PoolSenderID)
+		c2, _ := tx.Cursor(kv.PoolSenderIDToAdress)
 		count1, _ := c1.Count()
 		count2, _ := c2.Count()
 		if count1 != count2 {
