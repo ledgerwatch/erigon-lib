@@ -1753,6 +1753,16 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		}
 	}
 	fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
+	}
 
 	/*
 		if ASSERT {
@@ -1792,6 +1802,17 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			})
 		}
 	*/
+
+	if ASSERT {
+		c1, _ := tx.RwCursor(kv.PoolSenderID)
+		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
+		count1, _ := c1.Count()
+		count2, _ := c2.Count()
+		if count1 != count2 {
+			fmt.Printf("counts: %d, %d\n", count1, count2)
+			panic(1)
+		}
+	}
 
 	binary.BigEndian.PutUint64(encID, sc.blockHeight.Load())
 	if err := tx.Put(kv.PoolInfo, SenderCacheHeightKey, encID); err != nil {
