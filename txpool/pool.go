@@ -70,7 +70,7 @@ type Pool interface {
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error
-	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, protocolBaseFee, pendingBaseFee, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error
+	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error
 
 	AddNewGoodPeer(peerID PeerID)
 }
@@ -448,13 +448,17 @@ func (sc *SendersCache) syncMissedStateDiff(ctx context.Context, tx kv.RwTx, cor
 	return nil
 }
 
+func calcProtocolBaseFee(baseFee uint64) uint64 {
+	return 7
+}
+
 // TxPool - holds all pool-related data structures and lock-based tiny methods
 // most of logic implemented by pure tests-friendly functions
 type TxPool struct {
 	lock *sync.RWMutex
 
 	protocolBaseFee atomic.Uint64
-	pendingBaseFee  atomic.Uint64
+	currentBaseFee  atomic.Uint64
 
 	senderID                 uint64
 	byHash                   map[string]*metaTx // tx_hash => tx
@@ -551,7 +555,7 @@ func (p *TxPool) printDebug(prefix string) {
 	}
 }
 func (p *TxPool) logStats(tx kv.Tx) error {
-	protocolBaseFee, pendingBaseFee := p.protocolBaseFee.Load(), p.pendingBaseFee.Load()
+	protocolBaseFee, pendingBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -658,11 +662,11 @@ func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) e
 		return err
 	}
 
-	protocolBaseFee, pendingBaseFee := p.protocolBaseFee.Load(), p.pendingBaseFee.Load()
-	if protocolBaseFee == 0 || pendingBaseFee == 0 {
-		return fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, pendingBaseFee)
+	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
+	if protocolBaseFee == 0 || currentBaseFee == 0 {
+		return fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, currentBaseFee)
 	}
-	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, pendingBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
+	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
 	notifyNewTxs := make(Hashes, 0, 32*len(newTxs.txs))
@@ -683,7 +687,7 @@ func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) e
 	//log.Info("on new txs", "in", time.Since(t))
 	return nil
 }
-func onNewTxs(tx kv.Tx, senders *SendersCache, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64, pending, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
+func onNewTxs(tx kv.Tx, senders *SendersCache, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
 	for i := range newTxs.txs {
 		if newTxs.txs[i].senderID == 0 {
 			return fmt.Errorf("senderID can't be zero")
@@ -696,7 +700,7 @@ func onNewTxs(tx kv.Tx, senders *SendersCache, newTxs TxSlots, protocolBaseFee, 
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee, discard)
+		onSenderChange(id, sender, byNonce, protocolBaseFee, currentBaseFee)
 	}
 
 	pending.EnforceInvariants()
@@ -708,20 +712,15 @@ func onNewTxs(tx kv.Tx, senders *SendersCache, newTxs TxSlots, protocolBaseFee, 
 	return nil
 }
 
-func (p *TxPool) setBaseFee(protocolBaseFee, pendingBaseFee uint64) (uint64, uint64) {
-	p.protocolBaseFee.Store(protocolBaseFee)
-	hasNewVal := pendingBaseFee > 0
-	if pendingBaseFee < protocolBaseFee {
-		pendingBaseFee = protocolBaseFee
-		hasNewVal = true
+func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
+	if baseFee > 0 {
+		p.protocolBaseFee.Store(calcProtocolBaseFee(baseFee))
+		p.currentBaseFee.Store(baseFee)
 	}
-	if hasNewVal {
-		p.pendingBaseFee.Store(pendingBaseFee)
-	}
-	return protocolBaseFee, p.pendingBaseFee.Load()
+	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
-func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, protocolBaseFee, pendingBaseFee, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error {
+func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error {
 	defer onNewBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -732,11 +731,11 @@ func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, mined
 		return err
 	}
 	defer tx.Rollback()
-	protocolBaseFee, pendingBaseFee = p.setBaseFee(protocolBaseFee, pendingBaseFee)
+	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	if err := senders.onNewBlock(tx, stateChanges, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
 		return err
 	}
-	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "protocolBaseFee", protocolBaseFee, "blockHeight", blockHeight)
+	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 	if err := unwindTxs.Valid(); err != nil {
 		return err
 	}
@@ -744,7 +743,7 @@ func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, mined
 		return err
 	}
 
-	if err := onNewBlock(tx, senders, unwindTxs, minedTxs.txs, protocolBaseFee, pendingBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
+	if err := onNewBlock(tx, senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -805,7 +804,7 @@ func onNewBlock(tx kv.Tx, senders *SendersCache, unwindTxs TxSlots, minedTxs []*
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee, discard)
+		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee)
 	}
 
 	pending.EnforceInvariants()
@@ -910,7 +909,7 @@ func unsafeAddToPendingPool(byNonce *ByNonce, newTxs TxSlots, pending, baseFee, 
 	return changedSenders
 }
 
-func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, discard func(*metaTx)) {
+func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64) {
 	noGapsNonce := sender.nonce + 1
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -922,10 +921,10 @@ func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, proto
 		needBalance.Add(needBalance, &mt.Tx.value)
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		minTip = min(minTip, mt.Tx.tip)
-		if pendingBaseFee >= minFeeCap {
+		if currentBaseFee >= minFeeCap {
 			mt.effectiveTip = minTip
 		} else {
-			mt.effectiveTip = minFeeCap - pendingBaseFee
+			mt.effectiveTip = minFeeCap - currentBaseFee
 		}
 		// 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol
 		// parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means
@@ -966,7 +965,7 @@ func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, proto
 		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 		// baseFee of the currently pending block. Set to 0 otherwise.
 		mt.subPool &^= EnoughFeeCapBlock
-		if mt.Tx.feeCap >= pendingBaseFee {
+		if mt.Tx.feeCap >= currentBaseFee {
 			mt.subPool |= EnoughFeeCapBlock
 		}
 
@@ -1478,7 +1477,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	if err := tx.Put(kv.PoolInfo, PoolProtocolBaseFeeKey, encID); err != nil {
 		return evicted, err
 	}
-	binary.BigEndian.PutUint64(encID, p.pendingBaseFee.Load())
+	binary.BigEndian.PutUint64(encID, p.currentBaseFee.Load())
 	if err := tx.Put(kv.PoolInfo, PoolPendingBaseFeeKey, encID); err != nil {
 		return evicted, err
 	}
@@ -1808,7 +1807,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 		return err
 	}
 
-	var protocolBaseFee, pendingBaseFee uint64
+	var protocolBaseFee, currentBaseFee uint64
 	{
 		v, err := tx.GetOne(kv.PoolInfo, PoolProtocolBaseFeeKey)
 		if err != nil {
@@ -1824,7 +1823,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 			return err
 		}
 		if len(v) > 0 {
-			pendingBaseFee = binary.BigEndian.Uint64(v)
+			currentBaseFee = binary.BigEndian.Uint64(v)
 		}
 	}
 	cacheMisses, err := p.senders.onNewTxs(tx, txs)
@@ -1836,10 +1835,10 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 			return err
 		}
 	}
-	if err := onNewTxs(tx, p.senders, txs, protocolBaseFee, pendingBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
+	if err := onNewTxs(tx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
-	p.pendingBaseFee.Store(pendingBaseFee)
+	p.currentBaseFee.Store(currentBaseFee)
 	p.protocolBaseFee.Store(protocolBaseFee)
 
 	return nil
