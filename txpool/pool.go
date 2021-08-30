@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -555,7 +556,7 @@ func (p *TxPool) printDebug(prefix string) {
 	}
 }
 func (p *TxPool) logStats(tx kv.Tx) error {
-	protocolBaseFee, pendingBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
+	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -567,10 +568,14 @@ func (p *TxPool) logStats(tx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	log.Info(fmt.Sprintf("baseFee: %dm->%dm; queuesSize: pending=%d/%d, baseFee=%d/%d, queued=%d/%d; sendersCache: id=%d+%d,info=%d+%d",
-		protocolBaseFee/1_000_000, pendingBaseFee/1_000_000,
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	log.Info(fmt.Sprintf("baseFee: %d,%dm; queuesSize: pending=%d/%d, baseFee=%d/%d, queued=%d/%d; sendersCache: id=%d+%d,info=%d+%d, alloc=%dMb, sys=%dMb\n",
+		protocolBaseFee, currentBaseFee/1_000_000,
 		p.pending.Len(), PendingSubPoolLimit, p.baseFee.Len(), BaseFeeSubPoolLimit, p.queued.Len(), QueuedSubPoolLimit,
 		idsInMem, idsInDb, infoInMem, infoInDb,
+		m.Alloc/1024/1024, m.Sys/1024/1024,
 	))
 	return nil
 }
