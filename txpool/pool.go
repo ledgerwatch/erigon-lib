@@ -56,7 +56,7 @@ type Config struct {
 
 var DefaultConfig = Config{
 	syncToNewPeersEvery:     2 * time.Minute,
-	commitEvery:             1 * time.Second,
+	commitEvery:             200 * time.Millisecond,
 	logEvery:                30 * time.Second,
 	evictSendersAfterRounds: 10,
 }
