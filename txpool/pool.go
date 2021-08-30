@@ -1789,6 +1789,21 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			}
 			return nil
 		})
+		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
+			found := false
+			tx.ForEach(kv.PoolSenderIDToAdress, nil, func(kk, vv []byte) error {
+				if bytes.Equal(k, vv) {
+					found = true
+					return fmt.Errorf("stop")
+				}
+				return nil
+			})
+			if !found {
+				fmt.Printf("not found: %x,%x\n", k, v)
+				panic(2)
+			}
+			return nil
+		})
 
 		c1, _ := tx.RwCursor(kv.PoolSenderID)
 		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
