@@ -1748,16 +1748,8 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			return evicted, err
 		}
 	}
-	tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
-		fmt.Printf("aa: %x,%x\n", k, v)
-		return nil
-	})
-	tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
-		fmt.Printf("bb: %x,%x\n", k, v)
-		return nil
-	})
 
-	fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
+	//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
 	if ASSERT {
 		unique := map[uint64]struct{}{}
 		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
