@@ -1409,16 +1409,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 			return nil
 		})
 	}
-	if ASSERT {
-		c1, _ := tx.RwCursor(kv.PoolSenderID)
-		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
-		count1, _ := c1.Count()
-		count2, _ := c2.Count()
-		if count1 != count2 {
-			fmt.Printf("counts: %d, %d\n", count1, count2)
-			panic(1)
-		}
-	}
 
 	v := make([]byte, 0, 1024)
 	for txHash, metaTx := range p.byHash {
@@ -1451,17 +1441,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 		}
 		metaTx.Tx.rlp = nil
 	}
-	if ASSERT {
-		c1, _ := tx.RwCursor(kv.PoolSenderID)
-		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
-		count1, _ := c1.Count()
-		count2, _ := c2.Count()
-		if count1 != count2 {
-			fmt.Printf("counts: %d, %d\n", count1, count2)
-			panic(1)
-		}
-	}
-
 	if ASSERT {
 		txs := TxSlots{}
 		parseCtx := NewTxParseContext()
@@ -1506,59 +1485,58 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	if err != nil {
 		return evicted, err
 	}
-	/*
-		if ASSERT {
-			_ = tx.ForEach(kv.PoolSenderIDToAdress, nil, func(idBytes, addr []byte) error {
-				found := false
-				_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-					if bytes.Equal(v[:8], idBytes) {
-						found = true
-						return fmt.Errorf("stop")
-					}
-					return nil
-				})
-				if !found {
-					found = false
-					_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
-						ids := roaring64.New()
-						if err := ids.UnmarshalBinary(v); err != nil {
-							return err
-						}
-						for _, id := range ids.ToArray() {
-							if binary.BigEndian.Uint64(idBytes) == id {
-								found = true
-								return fmt.Errorf("stop")
-							}
-						}
-						return nil
-					})
-				}
-				if !found {
-					if p.txNonce2Tx.count(binary.BigEndian.Uint64(idBytes)) > 0 {
-						panic("?")
-					}
-					_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
-						fmt.Printf("ev: %x\n", v)
-						return nil
-					})
-					_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-						fmt.Printf("tr: %x\n", v)
-						return nil
-					})
-					_ = tx.ForEach(kv.PoolSenderIDToAdress, nil, func(idBytes, addr []byte) error {
-						fmt.Printf("id2addr: %x\n", idBytes)
-						return nil
-					})
-					p.senders.printDebug("gb")
-					fmt.Printf("sz:%d,%d\n", p.txNonce2Tx.tree.Len(), sendersWithoutTransactions.ToArray())
-					fmt.Printf("garbage found: %x\n", idBytes)
-					panic(1)
+
+	if ASSERT {
+		_ = tx.ForEach(kv.PoolSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+			found := false
+			_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
+				if bytes.Equal(v[:8], idBytes) {
+					found = true
+					return fmt.Errorf("stop")
 				}
 				return nil
 			})
-		}
+			if !found {
+				found = false
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					ids := roaring64.New()
+					if err := ids.UnmarshalBinary(v); err != nil {
+						return err
+					}
+					for _, id := range ids.ToArray() {
+						if binary.BigEndian.Uint64(idBytes) == id {
+							found = true
+							return fmt.Errorf("stop")
+						}
+					}
+					return nil
+				})
+			}
+			if !found {
+				if p.txNonce2Tx.count(binary.BigEndian.Uint64(idBytes)) > 0 {
+					panic("?")
+				}
+				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
+					fmt.Printf("ev: %x\n", v)
+					return nil
+				})
+				_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
+					fmt.Printf("tr: %x\n", v)
+					return nil
+				})
+				_ = tx.ForEach(kv.PoolSenderIDToAdress, nil, func(idBytes, addr []byte) error {
+					fmt.Printf("id2addr: %x\n", idBytes)
+					return nil
+				})
+				p.senders.printDebug("gb")
+				fmt.Printf("sz:%d,%d\n", p.txNonce2Tx.tree.Len(), sendersWithoutTransactions.ToArray())
+				fmt.Printf("garbage found: %x\n", idBytes)
+				panic(1)
+			}
+			return nil
+		})
+	}
 
-	*/
 	// clean - in-memory data structure as later as possible - because if during this Tx will happen error,
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
 	// failed write transaction must not create side-effects
@@ -1607,16 +1585,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			sendersWithoutTransactions.Add(id)
 		}
 	}
-	if ASSERT {
-		c1, _ := tx.RwCursor(kv.PoolSenderID)
-		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
-		count1, _ := c1.Count()
-		count2, _ := c2.Count()
-		if count1 != count2 {
-			fmt.Printf("counts: %d, %d\n", count1, count2)
-			panic(1)
-		}
-	}
 
 	if ASSERT {
 		sort.Slice(justInserted, func(i, j int) bool { return justInserted[i] < justInserted[j] })
@@ -1641,31 +1609,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			return evicted, err
 		}
 	}
-	if ASSERT {
-		{
-			duplicates := map[string]uint64{}
-			_ = tx.ForPrefix(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
-				id, ok := duplicates[string(v)]
-				if ok {
-					fmt.Printf("duplicate: %d,%d,%x\n", id, binary.BigEndian.Uint64(k), string(v))
-					panic(1)
-				}
-				return nil
-			})
-		}
-		{
-			duplicates := map[uint64]string{}
-			_ = tx.ForPrefix(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
-				id := binary.BigEndian.Uint64(v)
-				addr, ok := duplicates[id]
-				if ok {
-					fmt.Printf("duplicate: %x,%x,%d\n", addr, k, binary.BigEndian.Uint64(v))
-					panic(1)
-				}
-				return nil
-			})
-		}
-	}
 
 	binary.BigEndian.PutUint64(encID, sc.commitID)
 	// Eviction logic. Store into db list of senders:
@@ -1683,16 +1626,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		}
 	}
 
-	if ASSERT {
-		c1, _ := tx.RwCursor(kv.PoolSenderID)
-		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
-		count1, _ := c1.Count()
-		count2, _ := c2.Count()
-		if count1 != count2 {
-			fmt.Printf("counts: %d, %d\n", count1, count2)
-			panic(1)
-		}
-	}
 	c, err := tx.RwCursor(kv.PoolStateEviction)
 	if err != nil {
 		return evicted, err
@@ -1750,48 +1683,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 	}
 
 	//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
-	if ASSERT {
-		unique := map[uint64]struct{}{}
-		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
-			_, ok := unique[binary.BigEndian.Uint64(v)]
-			if ok {
-				panic(8)
-			}
-			return nil
-		})
-		unique2 := map[string]struct{}{}
-		tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
-			_, ok := unique2[string(v)]
-			if ok {
-				panic(8)
-			}
-			return nil
-		})
-		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
-			found := false
-			tx.ForEach(kv.PoolSenderIDToAdress, nil, func(kk, vv []byte) error {
-				if bytes.Equal(k, vv) {
-					found = true
-					return fmt.Errorf("stop")
-				}
-				return nil
-			})
-			if !found {
-				fmt.Printf("not found: %x,%x\n", k, binary.BigEndian.Uint64(v))
-				panic(2)
-			}
-			return nil
-		})
-
-		c1, _ := tx.RwCursor(kv.PoolSenderID)
-		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
-		count1, _ := c1.Count()
-		count2, _ := c2.Count()
-		if count1 != count2 {
-			fmt.Printf("counts: %d, %d\n", count1, count2)
-			panic(1)
-		}
-	}
 
 	/*
 		if ASSERT {
