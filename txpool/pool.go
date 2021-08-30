@@ -58,7 +58,7 @@ var DefaultConfig = Config{
 	syncToNewPeersEvery:     2 * time.Minute,
 	commitEvery:             200 * time.Millisecond,
 	logEvery:                30 * time.Second,
-	evictSendersAfterRounds: 10,
+	evictSendersAfterRounds: 3,
 }
 
 // Pool is interface for the transaction pool
