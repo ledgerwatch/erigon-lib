@@ -1593,7 +1593,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		if currentV != nil && bytes.Equal(currentV, encID) {
 			continue
 		}
-		fmt.Printf("Put: %d\n", id)
+		//fmt.Printf("Put: %d\n", id)
 		if err := tx.Put(kv.PoolSenderID, []byte(addr), encID); err != nil {
 			return evicted, err
 		}
