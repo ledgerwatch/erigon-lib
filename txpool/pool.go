@@ -1709,17 +1709,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		if err := ids.UnmarshalBinary(v); err != nil {
 			return 0, err
 		}
-		fmt.Printf("to evict: %d\n", ids.ToArray())
 		for _, senderID := range ids.ToArray() {
-			fmt.Printf("--go:%d\n", senderID)
-			tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
-				fmt.Printf("-a: %x,%x\n", k, v)
-				return nil
-			})
-			tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
-				fmt.Printf("-b: %x,%x\n", k, v)
-				return nil
-			})
 			//if _, ok := sc.senderInfo[senderID]; ok {
 			//	continue
 			//}
@@ -1732,21 +1722,14 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 				return evicted, err
 			}
 			if addr == nil {
-				fmt.Printf("skip: %x,%x\n", encID, addr)
 				continue
 			}
 			if len(addr) != 20 {
-				fmt.Printf("%x,%x\n", encID, addr)
-				tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
-					fmt.Printf("a: %x,%x\n", k, v)
-					return nil
-				})
 				panic(22)
 			}
 			//if _, ok := sc.senderIDs[string(addr)]; ok {
 			//	continue
 			//}
-			fmt.Printf("del: %d,%x,%x\n", senderID, encID, addr)
 			if err := tx.Delete(kv.PoolSenderID, addr, nil); err != nil {
 				return evicted, err
 			}
