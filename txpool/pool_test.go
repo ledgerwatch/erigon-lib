@@ -66,7 +66,6 @@ func TestSenders(t *testing.T) {
 		require.NoError(err)
 		require.Zero(evicted)
 
-		fmt.Printf("----\n")
 		senders.senderInfo[1] = newSenderInfo(1, *uint256.NewInt(1)) // means used in current round, but still has 0 transactions
 		senders.senderIDs[fmt.Sprintf("%020x", 1)] = 1
 		changed.Clear()
