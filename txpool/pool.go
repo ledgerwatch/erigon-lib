@@ -1762,7 +1762,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			if byNonce.count(senderID) > 0 {
 				continue
 			}
-			addr, err := tx.GetOne(kv.PoolSenderID, encID)
+			addr, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
 			if err != nil {
 				return evicted, err
 			}
