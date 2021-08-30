@@ -1575,7 +1575,13 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		binary.BigEndian.PutUint64(encID, id)
 		binary.BigEndian.PutUint64(v, info.nonce)
 		v = append(v[:8], info.balance.Bytes()...)
-		//TODO: check that nothing changed
+		enc, err := tx.GetOne(kv.PoolSender, encID)
+		if err != nil {
+			return evicted, err
+		}
+		if bytes.Equal(enc, v) {
+			continue
+		}
 		if err := tx.Put(kv.PoolSender, encID, v); err != nil {
 			return evicted, err
 		}
