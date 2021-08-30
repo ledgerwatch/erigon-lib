@@ -1704,6 +1704,25 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			panic(1)
 		}
 	}
+	if ASSERT {
+		unique := map[uint64]struct{}{}
+		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
+			_, ok := unique[binary.BigEndian.Uint64(v)]
+			if ok {
+				panic(8)
+			}
+			return nil
+		})
+		unique2 := map[string]struct{}{}
+		tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
+			_, ok := unique2[string(v)]
+			if ok {
+				panic(8)
+			}
+			return nil
+		})
+
+	}
 	c, err := tx.RwCursor(kv.PoolStateEviction)
 	if err != nil {
 		return evicted, err
@@ -1754,6 +1773,23 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 	}
 	fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
 	if ASSERT {
+		unique := map[uint64]struct{}{}
+		tx.ForEach(kv.PoolSenderID, nil, func(k, v []byte) error {
+			_, ok := unique[binary.BigEndian.Uint64(v)]
+			if ok {
+				panic(8)
+			}
+			return nil
+		})
+		unique2 := map[string]struct{}{}
+		tx.ForEach(kv.PoolSenderIDToAdress, nil, func(k, v []byte) error {
+			_, ok := unique2[string(v)]
+			if ok {
+				panic(8)
+			}
+			return nil
+		})
+
 		c1, _ := tx.RwCursor(kv.PoolSenderID)
 		c2, _ := tx.RwCursor(kv.PoolSenderIDToAdress)
 		count1, _ := c1.Count()
