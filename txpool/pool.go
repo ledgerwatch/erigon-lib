@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -1591,7 +1592,7 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		}
 	}
 
-	//var justDeleted, justInserted []uint64
+	var justDeleted, justInserted []uint64
 	encID := make([]byte, 8)
 	for addr, id := range sc.senderIDs {
 		binary.BigEndian.PutUint64(encID, id)
@@ -1610,9 +1611,9 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		if err := tx.Put(kv.PoolSenderIDToAdress, encID, []byte(addr)); err != nil {
 			return evicted, err
 		}
-		//if ASSERT {
-		//	justInserted = append(justInserted, id)
-		//}
+		if ASSERT {
+			justInserted = append(justInserted, id)
+		}
 		if byNonce.count(id) == 0 {
 			sendersWithoutTransactions.Add(id)
 		}
@@ -1628,9 +1629,9 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		}
 	}
 
-	//if ASSERT {
-	//	sort.Slice(justInserted, func(i, j int) bool { return justInserted[i] < justInserted[j] })
-	//}
+	if ASSERT {
+		sort.Slice(justInserted, func(i, j int) bool { return justInserted[i] < justInserted[j] })
+	}
 
 	v := make([]byte, 8, 8+32)
 	for id, info := range sc.senderInfo {
@@ -1651,7 +1652,6 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 			return evicted, err
 		}
 	}
-	//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
 	if ASSERT {
 		{
 			duplicates := map[string]uint64{}
@@ -1744,14 +1744,16 @@ func (sc *SendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 				return evicted, err
 			}
 			evicted++
-			//if ASSERT {
-			//	justDeleted = append(justDeleted, senderID)
-			//}
+			if ASSERT {
+				justDeleted = append(justDeleted, senderID)
+			}
 		}
 		if err := c.DeleteCurrent(); err != nil {
 			return evicted, err
 		}
 	}
+	fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
+
 	/*
 		if ASSERT {
 			_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
