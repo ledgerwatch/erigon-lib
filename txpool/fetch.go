@@ -55,12 +55,11 @@ type Fetch struct {
 // NewFetch creates a new fetch object that will work with given sentry clients. Since the
 // SentryClient here is an interface, it is suitable for mocking in tests (mock will need
 // to implement all the functions of the SentryClient interface).
-func NewFetch(ctx context.Context, sentryClients []sentry.SentryClient, pool Pool, senders *sendersCache, stateChangesClient remote.KVClient, coreDB kv.RoDB, db kv.RwDB) *Fetch {
+func NewFetch(ctx context.Context, sentryClients []sentry.SentryClient, pool Pool, stateChangesClient remote.KVClient, coreDB kv.RoDB, db kv.RwDB) *Fetch {
 	return &Fetch{
 		ctx:                  ctx,
 		sentryClients:        sentryClients,
 		pool:                 pool,
-		senders:              senders,
 		coreDB:               coreDB,
 		db:                   db,
 		stateChangesClient:   stateChangesClient,
