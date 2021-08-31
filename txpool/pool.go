@@ -155,13 +155,6 @@ type sendersCache struct {
 	senderInfo  map[uint64]*senderInfo
 }
 
-func newSendersCache() *sendersCache {
-	return &sendersCache{
-		senderIDs:  map[string]uint64{},
-		senderInfo: map[uint64]*senderInfo{},
-	}
-}
-
 //nolint
 func (sc *sendersCache) idsCount(tx kv.Tx) (inMem int, inDb int, err error) {
 	c, err := tx.Cursor(kv.PoolSenderID)
@@ -499,7 +492,7 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 	return nil
 }
 
-func New(newTxs chan Hashes, senders *sendersCache, db kv.RwDB, cfg Config) (*TxPool, error) {
+func New(newTxs chan Hashes, db kv.RwDB, cfg Config) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
@@ -514,10 +507,13 @@ func New(newTxs chan Hashes, senders *sendersCache, db kv.RwDB, cfg Config) (*Tx
 		baseFee:                NewSubPool(BaseFeeSubPool),
 		queued:                 NewSubPool(QueuedSubPool),
 		newTxs:                 newTxs,
-		senders:                senders,
-		db:                     db,
-		cfg:                    cfg,
-		senderID:               1,
+		senders: &sendersCache{
+			senderIDs:  map[string]uint64{},
+			senderInfo: map[uint64]*senderInfo{},
+		},
+		db:       db,
+		cfg:      cfg,
+		senderID: 1,
 	}, nil
 }
 
