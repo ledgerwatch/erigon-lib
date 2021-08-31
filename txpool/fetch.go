@@ -43,7 +43,6 @@ type Fetch struct {
 	ctx                  context.Context       // Context used for cancellation and closing of the fetcher
 	sentryClients        []sentry.SentryClient // sentry clients that will be used for accessing the network
 	pool                 Pool                  // Transaction pool implementation
-	senders              *sendersCache
 	coreDB               kv.RoDB
 	db                   kv.RwDB
 	wg                   *sync.WaitGroup // used for synchronisation in the tests (nil when not in tests)
