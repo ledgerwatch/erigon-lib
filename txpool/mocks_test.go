@@ -28,7 +28,7 @@ var _ Pool = &PoolMock{}
 // 			IdHashKnownFunc: func(tx kv.Tx, hash []byte) (bool, error) {
 // 				panic("mock out the IdHashKnown method")
 // 			},
-// 			OnNewBlockFunc: func(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error {
+// 			OnNewBlockFunc: func(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte, senders *sendersCache) error {
 // 				panic("mock out the OnNewBlock method")
 // 			},
 // 			OnNewTxsFunc: func(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error {
@@ -54,7 +54,7 @@ type PoolMock struct {
 	IdHashKnownFunc func(tx kv.Tx, hash []byte) (bool, error)
 
 	// OnNewBlockFunc mocks the OnNewBlock method.
-	OnNewBlockFunc func(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error
+	OnNewBlockFunc func(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte, senders *sendersCache) error
 
 	// OnNewTxsFunc mocks the OnNewTxs method.
 	OnNewTxsFunc func(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error
@@ -98,7 +98,7 @@ type PoolMock struct {
 			// BlockHash is the blockHash argument value.
 			BlockHash [32]byte
 			// Senders is the senders argument value.
-			Senders *SendersCache
+			Senders *sendersCache
 		}
 		// OnNewTxs holds details about calls to the OnNewTxs method.
 		OnNewTxs []struct {
@@ -231,7 +231,7 @@ func (mock *PoolMock) IdHashKnownCalls() []struct {
 }
 
 // OnNewBlock calls OnNewBlockFunc.
-func (mock *PoolMock) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte, senders *SendersCache) error {
+func (mock *PoolMock) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte, senders *sendersCache) error {
 	callInfo := struct {
 		StateChanges map[string]senderInfo
 		UnwindTxs    TxSlots
@@ -239,7 +239,7 @@ func (mock *PoolMock) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs T
 		BaseFee      uint64
 		BlockHeight  uint64
 		BlockHash    [32]byte
-		Senders      *SendersCache
+		Senders      *sendersCache
 	}{
 		StateChanges: stateChanges,
 		UnwindTxs:    unwindTxs,
@@ -271,7 +271,7 @@ func (mock *PoolMock) OnNewBlockCalls() []struct {
 	BaseFee      uint64
 	BlockHeight  uint64
 	BlockHash    [32]byte
-	Senders      *SendersCache
+	Senders      *sendersCache
 } {
 	var calls []struct {
 		StateChanges map[string]senderInfo
@@ -280,7 +280,7 @@ func (mock *PoolMock) OnNewBlockCalls() []struct {
 		BaseFee      uint64
 		BlockHeight  uint64
 		BlockHash    [32]byte
-		Senders      *SendersCache
+		Senders      *sendersCache
 	}
 	mock.lockOnNewBlock.RLock()
 	calls = mock.calls.OnNewBlock

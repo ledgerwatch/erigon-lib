@@ -43,7 +43,7 @@ type Fetch struct {
 	ctx                  context.Context       // Context used for cancellation and closing of the fetcher
 	sentryClients        []sentry.SentryClient // sentry clients that will be used for accessing the network
 	pool                 Pool                  // Transaction pool implementation
-	senders              *SendersCache
+	senders              *sendersCache
 	coreDB               kv.RoDB
 	db                   kv.RwDB
 	wg                   *sync.WaitGroup // used for synchronisation in the tests (nil when not in tests)
@@ -55,7 +55,7 @@ type Fetch struct {
 // NewFetch creates a new fetch object that will work with given sentry clients. Since the
 // SentryClient here is an interface, it is suitable for mocking in tests (mock will need
 // to implement all the functions of the SentryClient interface).
-func NewFetch(ctx context.Context, sentryClients []sentry.SentryClient, pool Pool, senders *SendersCache, stateChangesClient remote.KVClient, coreDB kv.RoDB, db kv.RwDB) *Fetch {
+func NewFetch(ctx context.Context, sentryClients []sentry.SentryClient, pool Pool, senders *sendersCache, stateChangesClient remote.KVClient, coreDB kv.RoDB, db kv.RwDB) *Fetch {
 	return &Fetch{
 		ctx:                  ctx,
 		sentryClients:        sentryClients,
