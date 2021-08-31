@@ -71,7 +71,7 @@ type Pool interface {
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error
-	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte, senders *sendersCache) error
+	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
 
 	AddNewGoodPeer(peerID PeerID)
 }
@@ -705,7 +705,7 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
-func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte, senders *sendersCache) error {
+func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error {
 	defer onNewBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -717,7 +717,7 @@ func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, mined
 	}
 	defer tx.Rollback()
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
-	if err := senders.onNewBlock(tx, stateChanges, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
+	if err := p.senders.onNewBlock(tx, stateChanges, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
 		return err
 	}
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
@@ -728,7 +728,7 @@ func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, mined
 		return err
 	}
 
-	if err := onNewBlock(tx, senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
+	if err := onNewBlock(tx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
 
