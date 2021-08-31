@@ -565,6 +565,9 @@ func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if v == nil {
+			return nil, nil
+		}
 		return v[8:], nil
 	}
 	return txn.Tx.rlp, nil
