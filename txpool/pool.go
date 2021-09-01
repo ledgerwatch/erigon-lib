@@ -625,32 +625,29 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                { return p.protocolBaseFee.Load() > 0 }
 
+// Best - returns top `n` elements of pending queue
+// id doesn't perform full copy of txs, hovewer underlying elements are immutable
 func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	txs.Growth(int(n))
+	txs.Resize(uint(min(uint64(n), uint64(len(p.pending.best)))))
 
-	sorted := make([]*metaTx, n)
 	best := p.pending.best
-	for i := range best {
-		sorted[i] = best[i]
-	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Less(sorted[j]) })
 	encID := make([]byte, 8)
-	for i := range sorted {
-		txs.txs[i] = sorted[i].Tx
+	for i := 0; i < int(n) && i < len(best); i++ {
+		txs.txs[i] = best[i].Tx
 		_, isLocal := p.localsHistory.Get(txs.txs[i].idHash)
 		txs.isLocal[i] = isLocal
 
-		for addr, senderID := range p.senders.senderIDs {
-			if sorted[i].Tx.senderID == senderID {
+		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
+			if best[i].Tx.senderID == senderID {
 				copy(txs.senders.At(i), addr)
 				break
 			}
 		}
 
-		binary.BigEndian.PutUint64(encID, sorted[i].Tx.senderID)
+		binary.BigEndian.PutUint64(encID, best[i].Tx.senderID)
 		v, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
 		if err != nil {
 			return err
@@ -1010,7 +1007,10 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(tx *me
 	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
 	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
 	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
+	pending.DebugPrint("alex")
+	fmt.Printf("a:%d,%d\n", len(pending.best), pending.worst.Len())
 	for worst := pending.Worst(); pending.Len() > 0; worst = pending.Worst() {
+		fmt.Printf("aa:%d,%d\n", len(pending.best), pending.worst.Len())
 		if worst.subPool >= 0b11110 {
 			break
 		}
@@ -1109,7 +1109,7 @@ func (s bestSlice) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 	s[i].bestIndex, s[j].bestIndex = i, j
 }
-func (s bestSlice) Less(i, j int) bool { return s[i].Less(s[j]) }
+func (s bestSlice) Less(i, j int) bool { return !s[i].Less(s[j]) }
 func (s bestSlice) UnsafeRemove(i *metaTx) bestSlice {
 	s.Swap(i.bestIndex, len(s)-1)
 	s[len(s)-1].bestIndex = -1
@@ -1118,7 +1118,7 @@ func (s bestSlice) UnsafeRemove(i *metaTx) bestSlice {
 }
 func (s bestSlice) UnsafeAdd(i *metaTx) bestSlice {
 	a := append(s, i)
-	i.bestIndex = len(a)
+	i.bestIndex = len(s)
 	return a
 }
 
@@ -1127,6 +1127,12 @@ func (p *PendingPool) EnforceInvariants() {
 	sort.Sort(p.best)
 }
 
+func (p *PendingPool) Best() *metaTx {
+	if len(p.best) == 0 {
+		return nil
+	}
+	return p.best[0]
+}
 func (p *PendingPool) Worst() *metaTx {
 	if len(*p.worst) == 0 {
 		return nil
@@ -1135,7 +1141,7 @@ func (p *PendingPool) Worst() *metaTx {
 }
 func (p *PendingPool) PopWorst() *metaTx {
 	i := heap.Pop(p.worst).(*metaTx)
-	//heap.Remove(p.best, i.bestIndex)
+	p.best = p.best.UnsafeRemove(i)
 	return i
 }
 func (p *PendingPool) Len() int { return len(p.best) }
@@ -1165,10 +1171,10 @@ func (p *PendingPool) UnsafeAdd(i *metaTx) {
 }
 func (p *PendingPool) DebugPrint(prefix string) {
 	for i, it := range p.best {
-		fmt.Printf("%s.best: %d, %d, %d\n", prefix, i, it.subPool, it.bestIndex)
+		fmt.Printf("%s.best: %d, %d, %d,%d\n", prefix, i, it.subPool, it.bestIndex, it.Tx.nonce)
 	}
 	for i, it := range *p.worst {
-		fmt.Printf("%s.worst: %d, %d, %d\n", prefix, i, it.subPool, it.worstIndex)
+		fmt.Printf("%s.worst: %d, %d, %d,%d\n", prefix, i, it.subPool, it.worstIndex, it.Tx.nonce)
 	}
 }
 
@@ -1695,7 +1701,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	i := 0
 	hashID := [32]byte{}
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-		txs.Growth(i + 1)
+		txs.Resize(uint(i + 1))
 		txs.txs[i] = &TxSlot{}
 
 		_, err := parseCtx.ParseTransaction(v[8:], 0, txs.txs[i], nil)

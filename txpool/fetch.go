@@ -404,7 +404,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client remote.KVClient) 
 
 		var unwindTxs, minedTxs TxSlots
 		if req.Direction == remote.Direction_FORWARD {
-			minedTxs.Growth(len(req.Txs))
+			minedTxs.Resize(uint(len(req.Txs)))
 			for i := range req.Txs {
 				minedTxs.txs[i] = &TxSlot{}
 				if _, err := f.stateChangesParseCtx.ParseTransaction(req.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i)); err != nil {
@@ -414,7 +414,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client remote.KVClient) 
 			}
 		}
 		if req.Direction == remote.Direction_UNWIND {
-			unwindTxs.Growth(len(req.Txs))
+			unwindTxs.Resize(uint(len(req.Txs)))
 			for i := range req.Txs {
 				unwindTxs.txs[i] = &TxSlot{}
 				if _, err := f.stateChangesParseCtx.ParseTransaction(req.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i)); err != nil {
