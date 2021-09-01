@@ -1549,9 +1549,9 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 			txs.Resize(uint(i + 1))
 			txs.txs[i] = &TxSlot{}
 
-			_, err := parseCtx.ParseTransaction(v[8+8:], 0, txs.txs[i], nil)
+			_, err := parseCtx.ParseTransaction(v[8:], 0, txs.txs[i], nil)
 			if err != nil {
-				return fmt.Errorf("err: %w, rlp: %x\n", err, v[8+8:])
+				return fmt.Errorf("err: %w, rlp: %x\n", err, v[8:])
 			}
 			txs.txs[i].rlp = nil // means that we don't need store it in db anymore
 			txs.txs[i].senderID = binary.BigEndian.Uint64(v)
@@ -1781,7 +1781,7 @@ func (sc *sendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 				slots.Resize(1)
 				slots.txs[0] = &TxSlot{}
 				parseCtx := NewTxParseContext()
-				_, err := parseCtx.ParseTransaction(v[8+8:], 0, slots.txs[0], slots.senders.At(0))
+				_, err := parseCtx.ParseTransaction(v[8:], 0, slots.txs[0], slots.senders.At(0))
 				if err != nil {
 					log.Error("er", "er", err)
 				}
