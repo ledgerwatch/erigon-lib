@@ -630,7 +630,11 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	_, ok := p.localsHistory.Get(string(idHash))
+	txn, ok := p.byHash[string(idHash)]
+	if ok && txn.subPool&IsLocal != 0 {
+		return true
+	}
+	_, ok = p.localsHistory.Get(string(idHash))
 	return ok
 }
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
@@ -648,8 +652,7 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	encID := make([]byte, 8)
 	for i := 0; i < int(n) && i < len(best); i++ {
 		txs.txs[i] = best[i].Tx
-		_, isLocal := p.localsHistory.Get(string(txs.txs[i].idHash[:]))
-		txs.isLocal[i] = isLocal
+		txs.isLocal[i] = best[i].subPool&IsLocal > 0
 
 		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
 			if best[i].Tx.senderID == senderID {
