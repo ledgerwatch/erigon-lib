@@ -436,7 +436,7 @@ type ByNonce struct {
 	tree *btree.BTree
 }
 
-func (b *ByNonce) ascend(senderID uint64, f func(tx *metaTx) bool) {
+func (b *ByNonce) ascend(senderID uint64, f func(*metaTx) bool) {
 	b.tree.AscendGreaterOrEqual(&sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID}}}, func(i btree.Item) bool {
 		mt := i.(*sortByNonce).metaTx
 		if mt.Tx.senderID != senderID {
@@ -446,7 +446,7 @@ func (b *ByNonce) ascend(senderID uint64, f func(tx *metaTx) bool) {
 	})
 }
 func (b *ByNonce) count(senderID uint64) (count uint64) {
-	b.ascend(senderID, func(tx *metaTx) bool {
+	b.ascend(senderID, func(*metaTx) bool {
 		count++
 		return true
 	})
@@ -1032,7 +1032,7 @@ func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, proto
 	})
 }
 
-func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(tx *metaTx)) {
+func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx)) {
 	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
 	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
 	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
