@@ -58,7 +58,7 @@ type Config struct {
 
 var DefaultConfig = Config{
 	syncToNewPeersEvery:     2 * time.Minute,
-	processRemoteTxsEvery:   1 * time.Millisecond,
+	processRemoteTxsEvery:   100 * time.Millisecond,
 	commitEvery:             15 * time.Second,
 	logEvery:                30 * time.Second,
 	evictSendersAfterRounds: 10,
@@ -674,7 +674,6 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 func (p *TxPool) OnNewTxs(_ context.Context, newTxs TxSlots) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-
 	for i := range newTxs.txs {
 		p.unprocessedRemoteByHash[newTxs.txs[i].idHash] = struct{}{}
 	}
