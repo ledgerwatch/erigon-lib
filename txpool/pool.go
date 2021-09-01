@@ -145,8 +145,8 @@ func (i *sortByNonce) Less(than btree.Item) bool {
 	return i.metaTx.Tx.nonce < than.(*sortByNonce).metaTx.Tx.nonce
 }
 
-// sendersBatch stores in-memory senders-related objects
-// flushed to db periodicaly
+// sendersBatch stores in-memory senders-related objects - which are different from DB (updated/dirty)
+// flushing to db periodicaly. it doesn't play as read-cache (because db is small and memory-mapped - doesn't need cache)
 // non thread-safe
 type sendersBatch struct {
 	blockHeight atomic.Uint64
