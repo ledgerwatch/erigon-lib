@@ -690,7 +690,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
 	}
 
 	defer onNewTxsTimer.UpdateDuration(time.Now())
-	t := time.Now()
+	//t := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	newTxs := *p.unprocessedRemoteTxs
@@ -738,7 +738,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
 	p.unprocessedRemoteTxs.Resize(0)
 	p.unprocessedRemoteByHash = map[string]struct{}{}
 
-	log.Info("on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
+	//log.Info("on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
 	return nil
 }
 func onNewTxs(tx kv.Tx, senders *sendersCache, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
