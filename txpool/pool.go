@@ -438,9 +438,10 @@ type TxPool struct {
 	protocolBaseFee atomic.Uint64
 	currentBaseFee  atomic.Uint64
 
-	senderID                 uint64
-	byHash                   map[string]*metaTx // tx_hash => tx
-	pending, baseFee, queued *SubPool
+	senderID        uint64
+	byHash          map[string]*metaTx // tx_hash => tx
+	pending         *PendingPool
+	baseFee, queued *SubPool
 
 	// track isLocal flag of already mined transactions. used at unwind.
 	localsHistory *simplelru.LRU
@@ -507,7 +508,7 @@ func New(newTxs chan Hashes, db kv.RwDB, cfg Config) (*TxPool, error) {
 		txNonce2Tx:             &ByNonce{btree.New(32)},
 		localsHistory:          localsHistory,
 		recentlyConnectedPeers: &recentlyConnectedPeers{},
-		pending:                NewSubPool(PendingSubPool),
+		pending:                NewPendingSubPool(PendingSubPool),
 		baseFee:                NewSubPool(BaseFeeSubPool),
 		queued:                 NewSubPool(QueuedSubPool),
 		newTxs:                 newTxs,
@@ -525,8 +526,8 @@ func (p *TxPool) printDebug(prefix string) {
 		fmt.Printf("\tsenderID=%d, nonce=%d, tip=%d\n", j.Tx.senderID, j.Tx.nonce, j.Tx.tip)
 	}
 	fmt.Printf("%s.pool.queues.len: %d,%d,%d\n", prefix, p.pending.Len(), p.baseFee.Len(), p.queued.Len())
-	for i := range *p.pending.best {
-		(*p.pending.best)[i].Tx.printDebug(fmt.Sprintf("%s.pending: %b", prefix, (*p.pending.best)[i].subPool))
+	for i := range p.pending.best {
+		p.pending.best[i].Tx.printDebug(fmt.Sprintf("%s.pending: %b", prefix, p.pending.best[i].subPool))
 	}
 	for i := range *p.queued.best {
 		(*p.queued.best)[i].Tx.printDebug(fmt.Sprintf("%s.queued : %b", prefix, (*p.queued.best)[i].subPool))
@@ -624,6 +625,44 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                { return p.protocolBaseFee.Load() > 0 }
 
+func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	txs.Growth(int(n))
+
+	sorted := make([]*metaTx, n)
+	best := p.pending.best
+	for i := range best {
+		sorted[i] = best[i]
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Less(sorted[j]) })
+	encID := make([]byte, 8)
+	for i := range sorted {
+		txs.txs[i] = sorted[i].Tx
+		_, isLocal := p.localsHistory.Get(txs.txs[i].idHash)
+		txs.isLocal[i] = isLocal
+
+		for addr, senderID := range p.senders.senderIDs {
+			if sorted[i].Tx.senderID == senderID {
+				copy(txs.senders.At(i), addr)
+				break
+			}
+		}
+
+		binary.BigEndian.PutUint64(encID, sorted[i].Tx.senderID)
+		v, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
+		if err != nil {
+			return err
+		}
+		if v == nil {
+			return fmt.Errorf("tx sender not found")
+		}
+		copy(txs.senders.At(i), v)
+	}
+	return nil
+}
+
 func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error {
 	if len(newTxs.txs) == 0 {
 		return nil
@@ -676,7 +715,7 @@ func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) e
 	//log.Info("on new txs", "in", time.Since(t))
 	return nil
 }
-func onNewTxs(tx kv.Tx, senders *sendersCache, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
+func onNewTxs(tx kv.Tx, senders *sendersCache, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
 	for i := range newTxs.txs {
 		if newTxs.txs[i].senderID == 0 {
 			return fmt.Errorf("senderID can't be zero")
@@ -697,6 +736,7 @@ func onNewTxs(tx kv.Tx, senders *sendersCache, newTxs TxSlots, protocolBaseFee, 
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, discard)
+	pending.EnforceInvariants()
 
 	return nil
 }
@@ -762,7 +802,7 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 		p.localsHistory.Add(mt.Tx.idHash, struct{}{})
 	}
 }
-func onNewBlock(tx kv.Tx, senders *sendersCache, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
+func onNewBlock(tx kv.Tx, senders *sendersCache, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
 	for i := range unwindTxs.txs {
 		if unwindTxs.txs[i].senderID == 0 {
 			return fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero")
@@ -801,6 +841,7 @@ func onNewBlock(tx kv.Tx, senders *sendersCache, unwindTxs TxSlots, minedTxs []*
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, discard)
+	pending.EnforceInvariants()
 
 	return nil
 }
@@ -812,7 +853,7 @@ func onNewBlock(tx kv.Tx, senders *sendersCache, unwindTxs TxSlots, minedTxs []*
 // modify state_balance and state_nonce, potentially remove some elements (if transaction with some nonce is
 // included into a block), and finally, walk over the transaction records and update SubPool fields depending on
 // the actual presence of nonce gaps and what the balance is.
-func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending, baseFee, queued *SubPool, discard func(tx *metaTx)) error {
+func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, baseFee, queued *SubPool, discard func(tx *metaTx)) error {
 	noncesToRemove := map[uint64]uint64{}
 	for _, txn := range minedTxs {
 		nonce, ok := noncesToRemove[txn.senderID]
@@ -856,7 +897,7 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending, baseFee, queued 
 }
 
 // unwind
-func unsafeAddToPendingPool(byNonce *ByNonce, newTxs TxSlots, pending, baseFee, queued *SubPool, byHash map[string]*metaTx, discard func(tx *metaTx)) (changedSenders map[uint64]struct{}) {
+func unsafeAddToPendingPool(byNonce *ByNonce, newTxs TxSlots, pending *PendingPool, baseFee, queued *SubPool, byHash map[string]*metaTx, discard func(tx *metaTx)) (changedSenders map[uint64]struct{}) {
 	changedSenders = map[uint64]struct{}{}
 	for i, txn := range newTxs.txs {
 		if _, ok := byHash[string(txn.idHash[:])]; ok {
@@ -965,7 +1006,7 @@ func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, proto
 	})
 }
 
-func promote(pending, baseFee, queued *SubPool, discard func(tx *metaTx)) {
+func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(tx *metaTx)) {
 	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
 	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
 	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
@@ -997,7 +1038,7 @@ func promote(pending, baseFee, queued *SubPool, discard func(tx *metaTx)) {
 		if best.subPool < 0b11110 {
 			break
 		}
-		pending.Add(baseFee.PopBest())
+		pending.UnsafeAdd(baseFee.PopBest())
 	}
 
 	//4. If the top element in the worst yellow queue has subPool != 0x1110, it needs to be removed from the yellow pool.
@@ -1031,7 +1072,7 @@ func promote(pending, baseFee, queued *SubPool, discard func(tx *metaTx)) {
 			continue
 		}
 
-		pending.Add(queued.PopBest())
+		pending.UnsafeAdd(queued.PopBest())
 	}
 
 	//7. If the top element in the worst red queue has subPool < 0b1000 (not satisfying minimum fee), discard.
@@ -1046,6 +1087,88 @@ func promote(pending, baseFee, queued *SubPool, discard func(tx *metaTx)) {
 	//8. If the top element in the worst red queue has subPool >= 0b100, but there is not enough room in the pool, discard.
 	for _ = queued.Worst(); queued.Len() > QueuedSubPoolLimit; _ = queued.Worst() {
 		discard(queued.PopWorst())
+	}
+}
+
+type PendingPool struct {
+	t     SubPoolType
+	best  bestSlice
+	worst *WorstQueue
+}
+
+func NewPendingSubPool(t SubPoolType) *PendingPool {
+	return &PendingPool{t: t, best: []*metaTx{}, worst: &WorstQueue{}}
+}
+
+// bestSlice - is similar to best queue, but with O(n log n) complexity and
+// it maintains element.bestIndex field
+type bestSlice []*metaTx
+
+func (s bestSlice) Len() int { return len(s) }
+func (s bestSlice) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+	s[i].bestIndex, s[j].bestIndex = i, j
+}
+func (s bestSlice) Less(i, j int) bool { return s[i].Less(s[j]) }
+func (s bestSlice) UnsafeRemove(i *metaTx) bestSlice {
+	s.Swap(i.bestIndex, len(s)-1)
+	s[len(s)-1].bestIndex = -1
+	s[len(s)-1] = nil
+	return s[:len(s)-1]
+}
+func (s bestSlice) UnsafeAdd(i *metaTx) bestSlice {
+	a := append(s, i)
+	i.bestIndex = len(a)
+	return a
+}
+
+func (p *PendingPool) EnforceInvariants() {
+	heap.Init(p.worst)
+	sort.Sort(p.best)
+}
+
+func (p *PendingPool) Worst() *metaTx {
+	if len(*p.worst) == 0 {
+		return nil
+	}
+	return (*p.worst)[0]
+}
+func (p *PendingPool) PopWorst() *metaTx {
+	i := heap.Pop(p.worst).(*metaTx)
+	//heap.Remove(p.best, i.bestIndex)
+	return i
+}
+func (p *PendingPool) Len() int { return len(p.best) }
+
+// UnsafeRemove - does break Heap invariants, but it has O(1) instead of O(log(n)) complexity.
+// Must manually call heap.Init after such changes.
+// Make sense to batch unsafe changes
+func (p *PendingPool) UnsafeRemove(i *metaTx) {
+	if p.Len() == 0 {
+		return
+	}
+	if p.Len() == 1 && i.bestIndex == 0 {
+		p.worst.Pop()
+		p.best = p.best.UnsafeRemove(i)
+		return
+	}
+	// manually call funcs instead of heap.Pop
+	p.worst.Swap(i.worstIndex, p.worst.Len()-1)
+	p.worst.Pop()
+	p.best.Swap(i.bestIndex, p.best.Len()-1)
+	p.best = p.best.UnsafeRemove(i)
+}
+func (p *PendingPool) UnsafeAdd(i *metaTx) {
+	i.currentSubPool = p.t
+	p.worst.Push(i)
+	p.best = p.best.UnsafeAdd(i)
+}
+func (p *PendingPool) DebugPrint(prefix string) {
+	for i, it := range p.best {
+		fmt.Printf("%s.best: %d, %d, %d\n", prefix, i, it.subPool, it.bestIndex)
+	}
+	for i, it := range *p.worst {
+		fmt.Printf("%s.worst: %d, %d, %d\n", prefix, i, it.subPool, it.worstIndex)
 	}
 }
 
