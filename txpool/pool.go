@@ -72,7 +72,7 @@ type Pool interface {
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
-	OnNewTxs(ctx context.Context, newTxs TxSlots)
+	OnNewRemoteTxs(ctx context.Context, newTxs TxSlots)
 	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
 
 	AddNewGoodPeer(peerID PeerID)
@@ -672,7 +672,7 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	}
 	return nil
 }
-func (p *TxPool) OnNewTxs(_ context.Context, newTxs TxSlots) {
+func (p *TxPool) OnNewRemoteTxs(_ context.Context, newTxs TxSlots) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for i := range newTxs.txs {

@@ -32,7 +32,7 @@ var _ Pool = &PoolMock{}
 // 				panic("mock out the OnNewBlock method")
 // 			},
 // 			OnNewTxsFunc: func(ctx context.Context, newTxs TxSlots)  {
-// 				panic("mock out the OnNewTxs method")
+// 				panic("mock out the OnNewRemoteTxs method")
 // 			},
 // 			StartedFunc: func() bool {
 // 				panic("mock out the Started method")
@@ -56,7 +56,7 @@ type PoolMock struct {
 	// OnNewBlockFunc mocks the OnNewBlock method.
 	OnNewBlockFunc func(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte) error
 
-	// OnNewTxsFunc mocks the OnNewTxs method.
+	// OnNewTxsFunc mocks the OnNewRemoteTxs method.
 	OnNewTxsFunc func(ctx context.Context, newTxs TxSlots)
 
 	// StartedFunc mocks the Started method.
@@ -98,7 +98,7 @@ type PoolMock struct {
 			// BlockHash is the blockHash argument value.
 			BlockHash [32]byte
 		}
-		// OnNewTxs holds details about calls to the OnNewTxs method.
+		// OnNewRemoteTxs holds details about calls to the OnNewRemoteTxs method.
 		OnNewTxs []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
@@ -280,8 +280,8 @@ func (mock *PoolMock) OnNewBlockCalls() []struct {
 	return calls
 }
 
-// OnNewTxs calls OnNewTxsFunc.
-func (mock *PoolMock) OnNewTxs(ctx context.Context, newTxs TxSlots) {
+// OnNewRemoteTxs calls OnNewTxsFunc.
+func (mock *PoolMock) OnNewRemoteTxs(ctx context.Context, newTxs TxSlots) {
 	callInfo := struct {
 		Ctx    context.Context
 		NewTxs TxSlots
@@ -298,7 +298,7 @@ func (mock *PoolMock) OnNewTxs(ctx context.Context, newTxs TxSlots) {
 	mock.OnNewTxsFunc(ctx, newTxs)
 }
 
-// OnNewTxsCalls gets all the calls that were made to OnNewTxs.
+// OnNewTxsCalls gets all the calls that were made to OnNewRemoteTxs.
 // Check the length with:
 //     len(mockedPool.OnNewTxsCalls())
 func (mock *PoolMock) OnNewTxsCalls() []struct {
