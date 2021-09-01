@@ -1007,10 +1007,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(tx *me
 	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
 	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
 	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
-	pending.DebugPrint("alex")
-	fmt.Printf("a:%d,%d\n", len(pending.best), pending.worst.Len())
 	for worst := pending.Worst(); pending.Len() > 0; worst = pending.Worst() {
-		fmt.Printf("aa:%d,%d\n", len(pending.best), pending.worst.Len())
 		if worst.subPool >= 0b11110 {
 			break
 		}
