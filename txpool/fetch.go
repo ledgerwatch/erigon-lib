@@ -91,9 +91,7 @@ func (f *Fetch) ConnectCore() {
 			default:
 			}
 			if err := f.handleStateChanges(f.ctx, f.stateChangesClient); err != nil {
-				s, ok := status.FromError(err)
-				retryLater := (ok && s.Code() == codes.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
-				if retryLater {
+				if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
 					time.Sleep(time.Second)
 					continue
 				}
@@ -111,9 +109,7 @@ func (f *Fetch) receiveMessageLoop(sentryClient sentry.SentryClient) {
 		default:
 		}
 		if _, err := sentryClient.HandShake(f.ctx, &emptypb.Empty{}, grpc.WaitForReady(true)); err != nil {
-			s, ok := status.FromError(err)
-			retryLater := (ok && s.Code() == codes.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
-			if retryLater {
+			if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
 				time.Sleep(time.Second)
 				continue
 			}
@@ -123,9 +119,7 @@ func (f *Fetch) receiveMessageLoop(sentryClient sentry.SentryClient) {
 		}
 
 		if err := f.receiveMessage(f.ctx, sentryClient); err != nil {
-			s, ok := status.FromError(err)
-			retryLater := (ok && s.Code() == codes.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
-			if retryLater {
+			if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
 				time.Sleep(time.Second)
 				continue
 			}
@@ -176,6 +170,9 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 			doLog := !((ok && s.Code() == codes.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled))
 			if doLog {
 				log.Warn("Handling incoming message", "err", err)
+			}
+			if retryLater(s.Code()) {
+				time.Sleep(time.Second)
 			}
 		}
 		if f.wg != nil {
@@ -311,6 +308,10 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 	return nil
 }
 
+func retryLater(code codes.Code) bool {
+	return code == codes.Unavailable || code == codes.Canceled || code == codes.ResourceExhausted
+}
+
 func (f *Fetch) receivePeerLoop(sentryClient sentry.SentryClient) {
 	for {
 		select {
@@ -319,9 +320,7 @@ func (f *Fetch) receivePeerLoop(sentryClient sentry.SentryClient) {
 		default:
 		}
 		if _, err := sentryClient.HandShake(f.ctx, &emptypb.Empty{}, grpc.WaitForReady(true)); err != nil {
-			s, ok := status.FromError(err)
-			retryLater := (ok && s.Code() == codes.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
-			if retryLater {
+			if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
 				time.Sleep(time.Second)
 				continue
 			}
@@ -331,9 +330,7 @@ func (f *Fetch) receivePeerLoop(sentryClient sentry.SentryClient) {
 			continue
 		}
 		if err := f.receivePeer(sentryClient); err != nil {
-			s, ok := status.FromError(err)
-			retryLater := (ok && s.Code() == codes.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)
-			if retryLater {
+			if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
 				time.Sleep(time.Second)
 				continue
 			}
