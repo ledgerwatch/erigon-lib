@@ -46,7 +46,7 @@ var (
 	cacheTotalCounter = metrics.NewCounter("pool_cache_total")
 )
 
-const ASSERT = true
+const ASSERT = false
 
 type Config struct {
 	syncToNewPeersEvery     time.Duration
@@ -1513,16 +1513,6 @@ func (p *TxPool) flush(db kv.RwDB) (evicted, written uint64, err error) {
 	return evicted, written, nil
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
-	if ASSERT {
-		c1, _ := tx.Cursor(kv.PoolSenderID)
-		c2, _ := tx.Cursor(kv.PoolSenderIDToAdress)
-		count1, _ := c1.Count()
-		count2, _ := c2.Count()
-		if count1 != count2 {
-			fmt.Printf("counts: %d, %d\n", count1, count2)
-			panic(1)
-		}
-	}
 	sendersWithoutTransactions := roaring64.New()
 	for i := 0; i < len(p.deletedTxs); i++ {
 		if p.txNonce2Tx.count(p.deletedTxs[i].Tx.senderID) == 0 {
@@ -1546,26 +1536,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 		}
 	}
 
-	if ASSERT {
-		_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-			vv, err := tx.GetOne(kv.PoolSenderIDToAdress, v[:8])
-			if err != nil {
-				return err
-			}
-			if len(vv) == 0 {
-				cc, _ := tx.Cursor(kv.PoolSenderIDToAdress)
-				last, lastAddr, _ := cc.Last()
-				if len(last) > 0 {
-					fmt.Printf("last: %d,%x\n", binary.BigEndian.Uint64(last), lastAddr)
-				}
-				fmt.Printf("not foundd: %d,%x,%x,%x\n", binary.BigEndian.Uint64(v[:8]), k, v, vv)
-				fmt.Printf("aa: %x,%x,%x\n", k, v, vv)
-				panic("no-no")
-			}
-			return nil
-		})
-	}
-
 	v := make([]byte, 0, 1024)
 	for txHash, metaTx := range p.byHash {
 		if metaTx.Tx.rlp == nil {
@@ -1578,34 +1548,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 			return evicted, err
 		}
 		metaTx.Tx.rlp = nil
-	}
-	if ASSERT {
-		txs := TxSlots{}
-		parseCtx := NewTxParseContext()
-		parseCtx.WithSender(false)
-		i := 0
-		if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-			txs.Resize(uint(i + 1))
-			txs.txs[i] = &TxSlot{}
-
-			_, err := parseCtx.ParseTransaction(v[8:], 0, txs.txs[i], nil)
-			if err != nil {
-				return fmt.Errorf("err: %w, rlp: %x\n", err, v[8:])
-			}
-			txs.txs[i].rlp = nil // means that we don't need store it in db anymore
-			txs.txs[i].senderID = binary.BigEndian.Uint64(v)
-			//bkock num = binary.BigEndian.Uint64(v[8:])
-			_, isLocalTx := p.localsHistory.Get(string(k))
-			txs.isLocal[i] = isLocalTx
-
-			if !p.txNonce2Tx.has(newMetaTx(txs.txs[i], txs.isLocal[i])) {
-				panic("aaaaaa")
-			}
-			i++
-			return nil
-		}); err != nil {
-			panic(err)
-		}
 	}
 
 	binary.BigEndian.PutUint64(encID, p.protocolBaseFee.Load())
@@ -1620,57 +1562,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	evicted, err = p.senders.flush(tx, p.txNonce2Tx, sendersWithoutTransactions, p.cfg.evictSendersAfterRounds)
 	if err != nil {
 		return evicted, err
-	}
-
-	if ASSERT {
-		_ = tx.ForEach(kv.PoolSenderIDToAdress, nil, func(idBytes, addr []byte) error {
-			found := false
-			_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-				if bytes.Equal(v[:8], idBytes) {
-					found = true
-					return fmt.Errorf("stop")
-				}
-				return nil
-			})
-			if !found {
-				found = false
-				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
-					ids := roaring64.New()
-					if err := ids.UnmarshalBinary(v); err != nil {
-						return err
-					}
-					for _, id := range ids.ToArray() {
-						if binary.BigEndian.Uint64(idBytes) == id {
-							found = true
-							return fmt.Errorf("stop")
-						}
-					}
-					return nil
-				})
-			}
-			if !found {
-				if p.txNonce2Tx.count(binary.BigEndian.Uint64(idBytes)) > 0 {
-					panic("?")
-				}
-				_ = tx.ForEach(kv.PoolStateEviction, nil, func(k, v []byte) error {
-					fmt.Printf("ev: %x\n", v)
-					return nil
-				})
-				_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-					fmt.Printf("tr: %x\n", v)
-					return nil
-				})
-				_ = tx.ForEach(kv.PoolSenderIDToAdress, nil, func(idBytes, addr []byte) error {
-					fmt.Printf("id2addr: %x\n", idBytes)
-					return nil
-				})
-				p.senders.printDebug("gb")
-				fmt.Printf("sz:%d,%d\n", p.txNonce2Tx.tree.Len(), sendersWithoutTransactions.ToArray())
-				fmt.Printf("garbage found: %x\n", idBytes)
-				panic(1)
-			}
-			return nil
-		})
 	}
 
 	// clean - in-memory data structure as later as possible - because if during this Tx will happen error,
@@ -1799,43 +1690,6 @@ func (sc *sendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 
 	//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
 
-	if ASSERT {
-		_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-			//id := binary.BigEndian.Uint64(v[:8])
-			//for _, senderID := range justDeleted {
-			//	if senderID == id {
-			//		fmt.Printf("delted id still has tx in db: %d,%x\n", id, k)
-			//		panic(1)
-			//	}
-			//}
-			vv, err := tx.GetOne(kv.PoolSenderIDToAdress, v[:8])
-			if err != nil {
-				return err
-			}
-			if len(vv) == 0 {
-				cc, _ := tx.Cursor(kv.PoolSenderIDToAdress)
-				last, lastAddr, _ := cc.Last()
-				slots := TxSlots{}
-				slots.Resize(1)
-				slots.txs[0] = &TxSlot{}
-				parseCtx := NewTxParseContext()
-				_, err := parseCtx.ParseTransaction(v[8:], 0, slots.txs[0], slots.senders.At(0))
-				if err != nil {
-					log.Error("er", "er", err)
-				}
-				fmt.Printf("sender:%x, txHash: %x\n", slots.senders.At(0), slots.txs[0].idHash)
-
-				fmt.Printf("last: %d,%x\n", binary.BigEndian.Uint64(last), lastAddr)
-				fmt.Printf("now: %d\n", sc.senderID)
-				fmt.Printf("not foundd: %d,%x,%x,%x\n", binary.BigEndian.Uint64(v[:8]), k, v, vv)
-				fmt.Printf("aa: %x,%x,%x\n", k, v, vv)
-				//fmt.Printf("justDeleted:%d, justInserted:%d\n", justDeleted, justInserted)
-				panic("no-no")
-			}
-			return nil
-		})
-	}
-
 	binary.BigEndian.PutUint64(encID, sc.blockHeight.Load())
 	if err := tx.Put(kv.PoolInfo, SenderCacheHeightKey, encID); err != nil {
 		return evicted, err
@@ -1867,23 +1721,6 @@ func (sc *sendersCache) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if ASSERT {
-		_ = tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
-			vv, err := tx.GetOne(kv.PoolSenderIDToAdress, v[:8])
-			if err != nil {
-				return err
-			}
-			if len(vv) == 0 {
-				cc, _ := tx.Cursor(kv.PoolSenderIDToAdress)
-				last, lastAddr, _ := cc.Last()
-				fmt.Printf("last: %d,%x\n", binary.BigEndian.Uint64(last), lastAddr)
-				fmt.Printf("now: %d\n", p.senders.senderID)
-				fmt.Printf("not foundd: %d,%x,%x,%x\n", binary.BigEndian.Uint64(v[:8]), k, v, vv)
-				panic("no-no")
-			}
-			return nil
-		})
-	}
 
 	if err := p.senders.fromDB(ctx, tx, coreTx); err != nil {
 		return err
