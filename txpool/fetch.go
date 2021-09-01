@@ -95,6 +95,9 @@ func (f *Fetch) ConnectCore() {
 					time.Sleep(time.Second)
 					continue
 				}
+				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+					continue
+				}
 				log.Warn("[txpool.handleStateChanges]", "err", err)
 			}
 		}
@@ -113,6 +116,9 @@ func (f *Fetch) receiveMessageLoop(sentryClient sentry.SentryClient) {
 				time.Sleep(time.Second)
 				continue
 			}
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				continue
+			}
 			// Report error and wait more
 			log.Warn("[txpool.recvMessage] sentry not ready yet", "err", err)
 			continue
@@ -123,9 +129,10 @@ func (f *Fetch) receiveMessageLoop(sentryClient sentry.SentryClient) {
 				time.Sleep(time.Second)
 				continue
 			}
-
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				continue
+			}
 			log.Warn("[txpool.recvMessage]", "err", err)
-			continue
 		}
 	}
 }
@@ -170,9 +177,13 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 				time.Sleep(time.Second)
 				continue
 			}
-			if !(errors.Is(err, io.EOF) || errors.Is(err, context.Canceled)) {
-				log.Warn("Handling incoming message", "err", err)
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				continue
 			}
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				continue
+			}
+			log.Warn("Handling incoming message", "err", err)
 		}
 		if f.wg != nil {
 			f.wg.Done()
@@ -323,6 +334,9 @@ func (f *Fetch) receivePeerLoop(sentryClient sentry.SentryClient) {
 				time.Sleep(time.Second)
 				continue
 			}
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				continue
+			}
 			// Report error and wait more
 			log.Warn("[txpool.recvPeers] sentry not ready yet", "err", err)
 			time.Sleep(time.Second)
@@ -333,9 +347,11 @@ func (f *Fetch) receivePeerLoop(sentryClient sentry.SentryClient) {
 				time.Sleep(time.Second)
 				continue
 			}
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				continue
+			}
 
 			log.Warn("[txpool.recvPeers]", "err", err)
-			return
 		}
 	}
 }
