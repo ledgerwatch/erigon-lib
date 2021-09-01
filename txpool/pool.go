@@ -724,6 +724,8 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
 	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
+
+	// notify about all non-dropped txs
 	notifyNewTxs := make(Hashes, 0, 32*len(newTxs.txs))
 	for i := range newTxs.txs {
 		_, ok := p.byHash[string(newTxs.txs[i].idHash[:])]
