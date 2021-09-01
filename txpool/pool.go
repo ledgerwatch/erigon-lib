@@ -50,6 +50,7 @@ const ASSERT = false
 
 type Config struct {
 	syncToNewPeersEvery     time.Duration
+	processRemoteTxsEvery   time.Duration
 	commitEvery             time.Duration
 	logEvery                time.Duration
 	evictSendersAfterRounds uint64
@@ -57,6 +58,7 @@ type Config struct {
 
 var DefaultConfig = Config{
 	syncToNewPeersEvery:     2 * time.Minute,
+	processRemoteTxsEvery:   1 * time.Millisecond,
 	commitEvery:             15 * time.Second,
 	logEvery:                30 * time.Second,
 	evictSendersAfterRounds: 10,
@@ -70,7 +72,7 @@ type Pool interface {
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
-	OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error
+	OnNewTxs(ctx context.Context, newTxs TxSlots)
 	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
 
 	AddNewGoodPeer(peerID PeerID)
@@ -430,32 +432,6 @@ func calcProtocolBaseFee(baseFee uint64) uint64 {
 	return 7
 }
 
-// TxPool - holds all pool-related data structures and lock-based tiny methods
-// most of logic implemented by pure tests-friendly functions
-type TxPool struct {
-	lock *sync.RWMutex
-
-	protocolBaseFee atomic.Uint64
-	currentBaseFee  atomic.Uint64
-
-	senderID        uint64
-	byHash          map[string]*metaTx // tx_hash => tx
-	pending         *PendingPool
-	baseFee, queued *SubPool
-
-	// track isLocal flag of already mined transactions. used at unwind.
-	localsHistory *simplelru.LRU
-	db            kv.RwDB
-
-	// fields for transaction propagation
-	recentlyConnectedPeers *recentlyConnectedPeers
-	newTxs                 chan Hashes
-	deletedTxs             []*metaTx
-	senders                *sendersCache
-	txNonce2Tx             *ByNonce // senderID => (sorted map of tx nonce => *metaTx)
-	cfg                    Config
-}
-
 type ByNonce struct {
 	tree *btree.BTree
 }
@@ -497,25 +473,61 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 	return nil
 }
 
+// TxPool - holds all pool-related data structures and lock-based tiny methods
+// most of logic implemented by pure tests-friendly functions
+type TxPool struct {
+	lock *sync.RWMutex
+
+	protocolBaseFee atomic.Uint64
+	currentBaseFee  atomic.Uint64
+
+	senderID        uint64
+	byHash          map[string]*metaTx // tx_hash => tx
+	pending         *PendingPool
+	baseFee, queued *SubPool
+
+	// track isLocal flag of already mined transactions. used at unwind.
+	localsHistory *simplelru.LRU
+	db            kv.RwDB
+
+	// fields for transaction propagation
+	recentlyConnectedPeers *recentlyConnectedPeers
+	newTxs                 chan Hashes
+	deletedTxs             []*metaTx
+	senders                *sendersCache
+	txNonce2Tx             *ByNonce // senderID => (sorted map of tx nonce => *metaTx)
+
+	// batch processing of remote transactions
+	// handling works fast without batching, but batching allow:
+	//   - reduce amount of coreDB transactions
+	//   - batch notifications about new txs (reduce P2P spam to other nodes about txs propagation)
+	unprocessedRemoteTxs    *TxSlots
+	unprocessedRemoteByHash map[[32]byte]struct{} // to reject duplicates
+
+	cfg Config
+}
+
 func New(newTxs chan Hashes, db kv.RwDB, cfg Config) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &TxPool{
-		lock:                   &sync.RWMutex{},
-		byHash:                 map[string]*metaTx{},
-		txNonce2Tx:             &ByNonce{btree.New(32)},
-		localsHistory:          localsHistory,
-		recentlyConnectedPeers: &recentlyConnectedPeers{},
-		pending:                NewPendingSubPool(PendingSubPool),
-		baseFee:                NewSubPool(BaseFeeSubPool),
-		queued:                 NewSubPool(QueuedSubPool),
-		newTxs:                 newTxs,
-		senders:                newSendersCache(),
-		db:                     db,
-		cfg:                    cfg,
-		senderID:               1,
+		lock:                    &sync.RWMutex{},
+		byHash:                  map[string]*metaTx{},
+		txNonce2Tx:              &ByNonce{btree.New(32)},
+		localsHistory:           localsHistory,
+		recentlyConnectedPeers:  &recentlyConnectedPeers{},
+		pending:                 NewPendingSubPool(PendingSubPool),
+		baseFee:                 NewSubPool(BaseFeeSubPool),
+		queued:                  NewSubPool(QueuedSubPool),
+		newTxs:                  newTxs,
+		senders:                 newSendersCache(),
+		db:                      db,
+		cfg:                     cfg,
+		senderID:                1,
+		unprocessedRemoteTxs:    &TxSlots{},
+		unprocessedRemoteByHash: map[[32]byte]struct{}{},
 	}, nil
 }
 
@@ -659,15 +671,22 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	}
 	return nil
 }
-
-func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error {
-	if len(newTxs.txs) == 0 {
-		return nil
-	}
-	defer onNewTxsTimer.UpdateDuration(time.Now())
-	//t := time.Now()
+func (p *TxPool) OnNewTxs(_ context.Context, newTxs TxSlots) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+
+	for i := range newTxs.txs {
+		p.unprocessedRemoteByHash[newTxs.txs[i].idHash] = struct{}{}
+	}
+	p.unprocessedRemoteTxs.Append(newTxs)
+}
+
+func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
+	defer onNewTxsTimer.UpdateDuration(time.Now())
+	t := time.Now()
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	newTxs := *p.unprocessedRemoteTxs
 
 	tx, err := p.db.BeginRo(context.Background())
 	if err != nil {
@@ -709,7 +728,10 @@ func (p *TxPool) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) e
 		}
 	}
 
-	//log.Info("on new txs", "in", time.Since(t))
+	p.unprocessedRemoteTxs.Resize(0)
+	p.unprocessedRemoteByHash = map[[32]byte]struct{}{}
+
+	log.Info("on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
 	return nil
 }
 func onNewTxs(tx kv.Tx, senders *sendersCache, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
@@ -1345,13 +1367,14 @@ func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, n
 	//	}()
 	//}
 
-	logEvery := time.NewTicker(p.cfg.logEvery)
-	defer logEvery.Stop()
-	commitEvery := time.NewTicker(p.cfg.commitEvery)
-	defer commitEvery.Stop()
-
 	syncToNewPeersEvery := time.NewTicker(p.cfg.syncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
+	processRemoteTxsEvery := time.NewTicker(p.cfg.processRemoteTxsEvery)
+	defer processRemoteTxsEvery.Stop()
+	commitEvery := time.NewTicker(p.cfg.commitEvery)
+	defer commitEvery.Stop()
+	logEvery := time.NewTicker(p.cfg.logEvery)
+	defer logEvery.Stop()
 
 	localTxHashes := make([]byte, 0, 128)
 	remoteTxHashes := make([]byte, 0, 128)
@@ -1363,6 +1386,10 @@ func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, n
 		case <-logEvery.C:
 			if err := db.View(ctx, func(tx kv.Tx) error { return p.logStats(tx) }); err != nil {
 				log.Error("log stats", "err", err)
+			}
+		case <-processRemoteTxsEvery.C:
+			if err := p.processRemoteTxs(ctx, coreDB); err != nil {
+				log.Error("process batch remote txs", "err", err)
 			}
 		case <-commitEvery.C:
 			if db != nil {

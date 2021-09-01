@@ -532,7 +532,8 @@ func FuzzOnNewBlocks12(f *testing.F) {
 		checkNotify(TxSlots{}, txs3, "fork2 mined")
 
 		// add some remote txs from p2p
-		err = pool.OnNewTxs(context.Background(), nil, p2pReceived)
+		pool.OnNewTxs(context.Background(), p2pReceived)
+		err = pool.processRemoteTxs(context.Background(), nil)
 		assert.NoError(err)
 		check(p2pReceived, TxSlots{}, "p2pmsg1")
 		checkNotify(p2pReceived, TxSlots{}, "p2pmsg1")

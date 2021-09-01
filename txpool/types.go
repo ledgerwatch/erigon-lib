@@ -440,9 +440,19 @@ func (s *TxSlots) Resize(targetSize uint) {
 	for uint(len(s.isLocal)) < targetSize {
 		s.isLocal = append(s.isLocal, false)
 	}
+	//todo: set nil to overflow txs
 	s.txs = s.txs[:targetSize]
 	s.senders = s.senders[:20*targetSize]
 	s.isLocal = s.isLocal[:targetSize]
+}
+func (s *TxSlots) Append(from TxSlots) {
+	baseLen := len(s.txs)
+	s.Resize(uint(baseLen + len(from.txs)))
+	for i := range from.txs {
+		s.txs[baseLen+i] = from.txs[i]
+		s.isLocal[baseLen+i] = from.isLocal[i]
+		copy(s.senders.At(baseLen+i), from.senders.At(i))
+	}
 }
 
 var addressesGrowth = make([]byte, 20)

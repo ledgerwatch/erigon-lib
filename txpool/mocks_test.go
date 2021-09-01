@@ -31,7 +31,7 @@ var _ Pool = &PoolMock{}
 // 			OnNewBlockFunc: func(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte) error {
 // 				panic("mock out the OnNewBlock method")
 // 			},
-// 			OnNewTxsFunc: func(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error {
+// 			OnNewTxsFunc: func(ctx context.Context, newTxs TxSlots)  {
 // 				panic("mock out the OnNewTxs method")
 // 			},
 // 			StartedFunc: func() bool {
@@ -57,7 +57,7 @@ type PoolMock struct {
 	OnNewBlockFunc func(stateChanges map[string]senderInfo, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64, blockHeight uint64, blockHash [32]byte) error
 
 	// OnNewTxsFunc mocks the OnNewTxs method.
-	OnNewTxsFunc func(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error
+	OnNewTxsFunc func(ctx context.Context, newTxs TxSlots)
 
 	// StartedFunc mocks the Started method.
 	StartedFunc func() bool
@@ -102,8 +102,6 @@ type PoolMock struct {
 		OnNewTxs []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// CoreDB is the coreDB argument value.
-			CoreDB kv.RoDB
 			// NewTxs is the newTxs argument value.
 			NewTxs TxSlots
 		}
@@ -283,26 +281,21 @@ func (mock *PoolMock) OnNewBlockCalls() []struct {
 }
 
 // OnNewTxs calls OnNewTxsFunc.
-func (mock *PoolMock) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlots) error {
+func (mock *PoolMock) OnNewTxs(ctx context.Context, newTxs TxSlots) {
 	callInfo := struct {
 		Ctx    context.Context
-		CoreDB kv.RoDB
 		NewTxs TxSlots
 	}{
 		Ctx:    ctx,
-		CoreDB: coreDB,
 		NewTxs: newTxs,
 	}
 	mock.lockOnNewTxs.Lock()
 	mock.calls.OnNewTxs = append(mock.calls.OnNewTxs, callInfo)
 	mock.lockOnNewTxs.Unlock()
 	if mock.OnNewTxsFunc == nil {
-		var (
-			errOut error
-		)
-		return errOut
+		return
 	}
-	return mock.OnNewTxsFunc(ctx, coreDB, newTxs)
+	mock.OnNewTxsFunc(ctx, newTxs)
 }
 
 // OnNewTxsCalls gets all the calls that were made to OnNewTxs.
@@ -310,12 +303,10 @@ func (mock *PoolMock) OnNewTxs(ctx context.Context, coreDB kv.RoDB, newTxs TxSlo
 //     len(mockedPool.OnNewTxsCalls())
 func (mock *PoolMock) OnNewTxsCalls() []struct {
 	Ctx    context.Context
-	CoreDB kv.RoDB
 	NewTxs TxSlots
 } {
 	var calls []struct {
 		Ctx    context.Context
-		CoreDB kv.RoDB
 		NewTxs TxSlots
 	}
 	mock.lockOnNewTxs.RLock()
