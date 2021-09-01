@@ -445,14 +445,12 @@ func (s *TxSlots) Resize(targetSize uint) {
 	s.senders = s.senders[:20*targetSize]
 	s.isLocal = s.isLocal[:targetSize]
 }
-func (s *TxSlots) Append(from TxSlots) {
-	baseLen := len(s.txs)
-	s.Resize(uint(baseLen + len(from.txs)))
-	for i := range from.txs {
-		s.txs[baseLen+i] = from.txs[i]
-		s.isLocal[baseLen+i] = from.isLocal[i]
-		copy(s.senders.At(baseLen+i), from.senders.At(i))
-	}
+func (s *TxSlots) Append(slot *TxSlot, sender []byte, isLocal bool) {
+	n := len(s.txs)
+	s.Resize(uint(len(s.txs) + 1))
+	s.txs[n] = slot
+	s.isLocal[n] = isLocal
+	copy(s.senders.At(n), sender)
 }
 
 var addressesGrowth = make([]byte, 20)

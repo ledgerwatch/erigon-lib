@@ -501,8 +501,9 @@ type TxPool struct {
 	// handling works fast without batching, but batching allow:
 	//   - reduce amount of coreDB transactions
 	//   - batch notifications about new txs (reduce P2P spam to other nodes about txs propagation)
+	//   - and as a result reducing pool.RWLock contention
 	unprocessedRemoteTxs    *TxSlots
-	unprocessedRemoteByHash map[string]struct{} // to reject duplicates
+	unprocessedRemoteByHash map[string]int // to reject duplicates
 
 	cfg Config
 }
@@ -527,7 +528,7 @@ func New(newTxs chan Hashes, db kv.RwDB, cfg Config) (*TxPool, error) {
 		cfg:                     cfg,
 		senderID:                1,
 		unprocessedRemoteTxs:    &TxSlots{},
-		unprocessedRemoteByHash: map[string]struct{}{},
+		unprocessedRemoteByHash: map[string]int{},
 	}, nil
 }
 
@@ -629,11 +630,8 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	txn, ok := p.byHash[string(idHash)]
-	if !ok {
-		return false
-	}
-	return txn.subPool&IsLocal != 0
+	_, ok := p.localsHistory.Get(string(idHash))
+	return ok
 }
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                { return p.protocolBaseFee.Load() > 0 }
@@ -650,7 +648,7 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	encID := make([]byte, 8)
 	for i := 0; i < int(n) && i < len(best); i++ {
 		txs.txs[i] = best[i].Tx
-		_, isLocal := p.localsHistory.Get(txs.txs[i].idHash)
+		_, isLocal := p.localsHistory.Get(string(txs.txs[i].idHash[:]))
 		txs.isLocal[i] = isLocal
 
 		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
@@ -676,9 +674,12 @@ func (p *TxPool) OnNewRemoteTxs(_ context.Context, newTxs TxSlots) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for i := range newTxs.txs {
-		p.unprocessedRemoteByHash[string(newTxs.txs[i].idHash[:])] = struct{}{}
+		_, ok := p.unprocessedRemoteByHash[string(newTxs.txs[i].idHash[:])]
+		if ok {
+			continue
+		}
+		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), newTxs.isLocal[i])
 	}
-	p.unprocessedRemoteTxs.Append(newTxs)
 }
 
 func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
@@ -736,7 +737,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
 	}
 
 	p.unprocessedRemoteTxs.Resize(0)
-	p.unprocessedRemoteByHash = map[string]struct{}{}
+	p.unprocessedRemoteByHash = map[string]int{}
 
 	//log.Info("on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
 	return nil
@@ -825,7 +826,7 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 	p.deletedTxs = append(p.deletedTxs, mt)
 	p.txNonce2Tx.delete(mt)
 	if mt.subPool&IsLocal != 0 {
-		p.localsHistory.Add(mt.Tx.idHash, struct{}{})
+		p.localsHistory.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 }
 func onNewBlock(tx kv.Tx, senders *sendersCache, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
@@ -1408,7 +1409,7 @@ func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, n
 				}
 				log.Info("flush", "written_kb", written/1024, "evicted", evicted, "in", time.Since(t))
 			}
-		case h := <-newTxs:
+		case h := <-newTxs: //TODO: maybe send TxSlots object instead of Hashes?
 			// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
 			localTxHashes = localTxHashes[:0]
 			remoteTxHashes = remoteTxHashes[:0]
@@ -1578,7 +1579,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 		parseCtx := NewTxParseContext()
 		parseCtx.WithSender(false)
 		i := 0
-		hashID := [32]byte{}
 		if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
 			txs.Resize(uint(i + 1))
 			txs.txs[i] = &TxSlot{}
@@ -1590,8 +1590,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 			txs.txs[i].rlp = nil // means that we don't need store it in db anymore
 			txs.txs[i].senderID = binary.BigEndian.Uint64(v)
 			//bkock num = binary.BigEndian.Uint64(v[8:])
-			copy(hashID[:], k)
-			_, isLocalTx := p.localsHistory.Get(hashID)
+			_, isLocalTx := p.localsHistory.Get(string(k))
 			txs.isLocal[i] = isLocalTx
 
 			if !p.txNonce2Tx.has(newMetaTx(txs.txs[i], txs.isLocal[i])) {
@@ -1886,9 +1885,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	}
 
 	if err := tx.ForEach(kv.RecentLocalTransaction, nil, func(k, v []byte) error {
-		hashID := [32]byte{}
-		copy(hashID[:], v)
-		p.localsHistory.Add(hashID, struct{}{})
+		p.localsHistory.Add(string(v), struct{}{})
 		return nil
 	}); err != nil {
 		return err
@@ -1898,7 +1895,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	parseCtx := NewTxParseContext()
 	parseCtx.WithSender(false)
 	i := 0
-	hashID := [32]byte{}
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
 		txs.Resize(uint(i + 1))
 		txs.txs[i] = &TxSlot{}
@@ -1919,8 +1915,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 		}
 		copy(txs.senders.At(i), senderAddr)
 		//bkock num = binary.BigEndian.Uint64(v[8:])
-		copy(hashID[:], k)
-		_, isLocalTx := p.localsHistory.Get(hashID)
+		_, isLocalTx := p.localsHistory.Get(string(k))
 		txs.isLocal[i] = isLocalTx
 		i++
 		return nil
