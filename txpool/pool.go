@@ -682,6 +682,13 @@ func (p *TxPool) OnNewTxs(_ context.Context, newTxs TxSlots) {
 }
 
 func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
+	p.lock.RLock()
+	l := len(p.unprocessedRemoteTxs.txs)
+	p.lock.RUnlock()
+	if l == 0 {
+		return nil
+	}
+
 	defer onNewTxsTimer.UpdateDuration(time.Now())
 	t := time.Now()
 	p.lock.Lock()
