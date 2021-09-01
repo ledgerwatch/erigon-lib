@@ -46,7 +46,7 @@ var (
 	cacheTotalCounter = metrics.NewCounter("pool_cache_total")
 )
 
-const ASSERT = false
+const ASSERT = true
 
 type Config struct {
 	syncToNewPeersEvery     time.Duration
