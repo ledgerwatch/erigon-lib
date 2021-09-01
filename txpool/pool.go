@@ -502,7 +502,7 @@ type TxPool struct {
 	//   - reduce amount of coreDB transactions
 	//   - batch notifications about new txs (reduce P2P spam to other nodes about txs propagation)
 	unprocessedRemoteTxs    *TxSlots
-	unprocessedRemoteByHash map[[32]byte]struct{} // to reject duplicates
+	unprocessedRemoteByHash map[string]struct{} // to reject duplicates
 
 	cfg Config
 }
@@ -527,7 +527,7 @@ func New(newTxs chan Hashes, db kv.RwDB, cfg Config) (*TxPool, error) {
 		cfg:                     cfg,
 		senderID:                1,
 		unprocessedRemoteTxs:    &TxSlots{},
-		unprocessedRemoteByHash: map[[32]byte]struct{}{},
+		unprocessedRemoteByHash: map[string]struct{}{},
 	}, nil
 }
 
@@ -617,12 +617,13 @@ func (p *TxPool) AppendAllHashes(buf []byte) []byte {
 func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-
-	_, ok := p.byHash[string(hash)]
-	if !ok {
-		return tx.Has(kv.PoolTransaction, hash)
+	if _, ok := p.unprocessedRemoteByHash[string(hash)]; ok {
+		return true, nil
 	}
-	return true, nil
+	if _, ok := p.byHash[string(hash)]; ok {
+		return true, nil
+	}
+	return tx.Has(kv.PoolTransaction, hash)
 }
 func (p *TxPool) IsLocal(idHash []byte) bool {
 	p.lock.RLock()
@@ -675,7 +676,7 @@ func (p *TxPool) OnNewTxs(_ context.Context, newTxs TxSlots) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for i := range newTxs.txs {
-		p.unprocessedRemoteByHash[newTxs.txs[i].idHash] = struct{}{}
+		p.unprocessedRemoteByHash[string(newTxs.txs[i].idHash[:])] = struct{}{}
 	}
 	p.unprocessedRemoteTxs.Append(newTxs)
 }
@@ -735,7 +736,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
 	}
 
 	p.unprocessedRemoteTxs.Resize(0)
-	p.unprocessedRemoteByHash = map[[32]byte]struct{}{}
+	p.unprocessedRemoteByHash = map[string]struct{}{}
 
 	log.Info("on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
 	return nil
