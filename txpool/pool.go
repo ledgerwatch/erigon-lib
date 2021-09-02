@@ -1538,7 +1538,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 		case <-processRemoteTxsEvery.C:
 			if err := p.processRemoteTxs(ctx); err != nil {
 				if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
-					processRemoteTxsEvery.Reset(time.Second)
 					continue
 				}
 				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
@@ -1546,7 +1545,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				}
 				log.Error("process batch remote txs", "err", err)
 			}
-			processRemoteTxsEvery.Reset(p.cfg.processRemoteTxsEvery)
 		case <-commitEvery.C:
 			if db != nil {
 				t := time.Now()
