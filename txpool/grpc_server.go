@@ -152,11 +152,14 @@ func (s *GrpcServer) Transactions(ctx context.Context, in *proto_txpool.Transact
 }
 
 func (s *GrpcServer) Status(_ context.Context, _ *proto_txpool.StatusRequest) (*proto_txpool.StatusReply, error) {
-	pending, queued := s.txPool.CountContent()
-	return &proto_txpool.StatusReply{
-		PendingCount: uint32(pending),
-		QueuedCount:  uint32(queued),
-	}, nil
+	/*
+		pending, queued := s.txPool.CountContent()
+		return &proto_txpool.StatusReply{
+			PendingCount: uint32(pending),
+			QueuedCount:  uint32(queued),
+		}, nil
+	*/
+	return nil, nil
 }
 
 // NewTxSlotsStreams - it's safe to use this class as non-pointer

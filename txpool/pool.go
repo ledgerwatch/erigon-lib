@@ -33,6 +33,7 @@ import (
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/holiman/uint256"
+	proto_txpool "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
@@ -72,7 +73,7 @@ type Pool interface {
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
-	OnNewRemoteTxs(ctx context.Context, newTxs TxSlots)
+	AddRemoteTxs(ctx context.Context, newTxs TxSlots)
 	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
 
 	AddNewGoodPeer(peerID PeerID)
@@ -608,6 +609,9 @@ func (p *TxPool) AppendRemoteHashes(buf []byte) []byte {
 		}
 		buf = append(buf, hash...)
 	}
+	for hash := range p.unprocessedRemoteByHash {
+		buf = append(buf, hash...)
+	}
 	return buf
 }
 func (p *TxPool) AppendAllHashes(buf []byte) []byte {
@@ -654,11 +658,16 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 		txs.txs[i] = best[i].Tx
 		txs.isLocal[i] = best[i].subPool&IsLocal > 0
 
+		found := false
 		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
 			if best[i].Tx.senderID == senderID {
 				copy(txs.senders.At(i), addr)
+				found = true
 				break
 			}
+		}
+		if found {
+			continue
 		}
 
 		binary.BigEndian.PutUint64(encID, best[i].Tx.senderID)
@@ -673,7 +682,57 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	}
 	return nil
 }
-func (p *TxPool) OnNewRemoteTxs(_ context.Context, newTxs TxSlots) {
+
+//Deprecated need switch to streaming-like
+func (p *TxPool) DeprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	encID := make([]byte, 8)
+	p.txNonce2Tx.tree.Ascend(func(i btree.Item) bool {
+		mt := i.(*sortByNonce).metaTx
+		slot := mt.Tx
+		slotRlp := slot.rlp
+		if slot.rlp == nil {
+			v, err := tx.GetOne(kv.PoolTransaction, slot.idHash[:])
+			if err != nil {
+				log.Error("get tx from db", "err", err)
+				return false
+			}
+			if v == nil {
+				log.Error("tx not found in db")
+				return false
+			}
+			slotRlp = v[8:]
+		}
+
+		var sender []byte
+		found := false
+		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
+			if slot.senderID == senderID {
+				sender = []byte(addr)
+				found = true
+				break
+			}
+		}
+		if !found {
+			binary.BigEndian.PutUint64(encID, slot.senderID)
+			v, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
+			if err != nil {
+				log.Error("get sender from db", "err", err)
+				return false
+			}
+			if v == nil {
+				log.Error("sender not found in db")
+				return false
+			}
+		}
+		f(slotRlp, sender, mt.currentSubPool)
+		return true
+	})
+	return nil
+}
+func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for i := range newTxs.txs {
@@ -683,6 +742,56 @@ func (p *TxPool) OnNewRemoteTxs(_ context.Context, newTxs TxSlots) {
 		}
 		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), newTxs.isLocal[i])
 	}
+}
+func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots, coreDB kv.RoDB) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	for i := range newTxs.isLocal {
+		newTxs.isLocal[i] = true
+	}
+
+	tx, err := p.db.BeginRo(context.Background())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	cacheMisses, err := p.senders.onNewTxs(tx, newTxs)
+	if err != nil {
+		return err
+	}
+	if len(cacheMisses) > 0 {
+		if err := coreDB.View(ctx, func(tx kv.Tx) error { return p.senders.loadFromCore(tx, cacheMisses) }); err != nil {
+			return err
+		}
+	}
+	if err := newTxs.Valid(); err != nil {
+		return err
+	}
+
+	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
+	if protocolBaseFee == 0 || currentBaseFee == 0 {
+		return fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, currentBaseFee)
+	}
+	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
+		return err
+	}
+
+	// notify about all non-dropped txs
+	notifyNewTxs := make(Hashes, 0, 32*len(newTxs.txs))
+	for i := range newTxs.txs {
+		_, ok := p.byHash[string(newTxs.txs[i].idHash[:])]
+		if !ok {
+			continue
+		}
+		notifyNewTxs = append(notifyNewTxs, newTxs.txs[i].idHash[:]...)
+	}
+	if len(notifyNewTxs) > 0 {
+		select {
+		case p.newTxs <- notifyNewTxs:
+		default:
+		}
+	}
+	return nil
 }
 
 func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
@@ -1360,7 +1469,7 @@ func (p *WorstQueue) Pop() interface{} {
 //      - all local pooled byHash to random peers periodically
 // promote/demote transactions
 // reorgs
-func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send) {
+func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send, newTxSlotsStreams *NewTxSlotsStreams) {
 	//db.Update(ctx, func(tx kv.RwTx) error { return tx.ClearBucket(kv.PooledSender) })
 	if err := db.Update(ctx, func(tx kv.RwTx) error {
 		return coreDB.View(ctx, func(coreTx kv.Tx) error {
@@ -1429,6 +1538,21 @@ func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, n
 
 			send.BroadcastLocalPooledTxs(localTxHashes)
 			send.BroadcastRemotePooledTxs(remoteTxHashes)
+
+			if err := db.View(ctx, func(tx kv.Tx) error {
+				slotsRlp := make([][]byte, 0, h.Len())
+				for i := 0; i < h.Len(); i++ {
+					slotRlp, err := p.GetRlp(tx, h.At(i))
+					if err != nil {
+						return err
+					}
+					slotsRlp = append(slotsRlp, slotRlp)
+				}
+				newTxSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp})
+				return nil
+			}); err != nil {
+				log.Error("send new slots by grpc", "err", err)
+			}
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()
 			if len(newPeers) == 0 {

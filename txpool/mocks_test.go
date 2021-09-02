@@ -281,7 +281,7 @@ func (mock *PoolMock) OnNewBlockCalls() []struct {
 }
 
 // OnNewRemoteTxs calls OnNewTxsFunc.
-func (mock *PoolMock) OnNewRemoteTxs(ctx context.Context, newTxs TxSlots) {
+func (mock *PoolMock) AddRemoteTxs(ctx context.Context, newTxs TxSlots) {
 	callInfo := struct {
 		Ctx    context.Context
 		NewTxs TxSlots
