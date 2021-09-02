@@ -31,7 +31,7 @@ type GrpcServer struct {
 	newTxSlotsStreams *NewTxSlotsStreams
 }
 
-func NewTxPoolServer(ctx context.Context, txPool txPool, db kv.RoDB) *GrpcServer {
+func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB) *GrpcServer {
 	return &GrpcServer{ctx: ctx, txPool: txPool, db: db, newTxSlotsStreams: &NewTxSlotsStreams{}}
 }
 
@@ -122,8 +122,12 @@ func (s *GrpcServer) OnAdd(req *proto_txpool.OnAddRequest, stream proto_txpool.T
 	//txpool.Loop does send messages to this streams
 	remove := s.newTxSlotsStreams.Add(stream)
 	defer remove()
-	<-stream.Context().Done()
-	return stream.Context().Err()
+	select {
+	case <-stream.Context().Done():
+		return stream.Context().Err()
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
 }
 
 func (s *GrpcServer) Transactions(ctx context.Context, in *proto_txpool.TransactionsRequest) (*proto_txpool.TransactionsReply, error) {
