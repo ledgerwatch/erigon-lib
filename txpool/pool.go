@@ -97,6 +97,18 @@ const (
 	IsLocal              = 0b00001
 )
 
+type DiscardReason uint8
+
+const (
+	//TODO: all below codes are not fixed yet. Need add them to discardLocked func. Need save discard reasons to LRU or DB.
+	AlreadyKnown  DiscardReason = 1
+	UnderPriced   DiscardReason = 2
+	FeeTooLow     DiscardReason = 3
+	OversizedData DiscardReason = 4
+	InvalidSender DiscardReason = 5
+	NegativeValue DiscardReason = 6
+)
+
 // metaTx holds transaction and some metadata
 type metaTx struct {
 	subPool        SubPoolMarker
@@ -495,6 +507,7 @@ type TxPool struct {
 	recentlyConnectedPeers *recentlyConnectedPeers
 	newTxs                 chan Hashes
 	deletedTxs             []*metaTx
+	discardReasons         []DiscardReason
 	senders                *sendersBatch
 	txNonce2Tx             *ByNonce // senderID => (sorted map of tx nonce => *metaTx)
 
@@ -749,37 +762,39 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), newTxs.isLocal[i])
 	}
 }
-func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots, coreDB kv.RoDB) error {
+func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots, coreDB kv.RoDB) ([]DiscardReason, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	discardReasonsIndex := len(p.discardReasons)
+
 	for i := range newTxs.isLocal {
 		newTxs.isLocal[i] = true
 	}
 
 	tx, err := p.db.BeginRo(context.Background())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 	cacheMisses, err := p.senders.onNewTxs(tx, newTxs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(cacheMisses) > 0 {
 		if err := coreDB.View(ctx, func(tx kv.Tx) error { return p.senders.loadFromCore(tx, cacheMisses) }); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if err := newTxs.Valid(); err != nil {
-		return err
+		return nil, err
 	}
 
 	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 	if protocolBaseFee == 0 || currentBaseFee == 0 {
-		return fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, currentBaseFee)
+		return nil, fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, currentBaseFee)
 	}
 	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.txNonce2Tx, p.byHash, p.discardLocked); err != nil {
-		return err
+		return nil, err
 	}
 
 	// notify about all non-dropped txs
@@ -797,9 +812,13 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots, coreDB kv.RoDB
 		default:
 		}
 	}
-	return nil
+	return p.copyDiscardReasons(discardReasonsIndex), nil
 }
-
+func (p *TxPool) copyDiscardReasons(from int) []DiscardReason {
+	cpy := make([]DiscardReason, len(p.discardReasons)-from)
+	copy(cpy, p.discardReasons[from:])
+	return cpy
+}
 func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
 	p.lock.RLock()
 	l := len(p.unprocessedRemoteTxs.txs)
@@ -1698,6 +1717,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
 	// failed write transaction must not create side-effects
 	p.deletedTxs = p.deletedTxs[:0]
+	p.discardReasons = p.discardReasons[:0]
 	return evicted, nil
 }
 
