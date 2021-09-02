@@ -242,7 +242,6 @@ func (s *NewSlotsStreams) remove(id uint) {
 }
 
 func StartGrpc(txPoolServer txpool_proto.TxpoolServer, miningServer txpool_proto.MiningServer, addr string, creds *credentials.TransportCredentials) (*grpc.Server, error) {
-	log.Info("Starting private RPC server", "on", addr)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("could not create listener: %w, addr=%s", err, addr)
@@ -298,6 +297,6 @@ func StartGrpc(txPoolServer txpool_proto.TxpoolServer, miningServer txpool_proto
 			log.Error("private RPC server fail", "err", err)
 		}
 	}()
-
+	log.Info("Started gRPC server", "on", addr)
 	return grpcServer, nil
 }
