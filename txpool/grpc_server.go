@@ -20,12 +20,7 @@ type txPool interface {
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddLocals(txRlp [][]byte) []error
 	DeprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error
-
-	//Get(hash common.Hash) types.Transaction
-	//AddLocals(txs []types.Transaction) []error
-	//Content() (map[common.Address]types.Transactions, map[common.Address]types.Transactions)
-	//CountContent() (uint, uint)
-	//SubscribeNewTxsEvent(ch chan<- core.NewTxsEvent) event.Subscription
+	CountContent() (int, int, int)
 }
 
 type GrpcServer struct {
@@ -152,13 +147,12 @@ func (s *GrpcServer) Transactions(ctx context.Context, in *proto_txpool.Transact
 }
 
 func (s *GrpcServer) Status(_ context.Context, _ *proto_txpool.StatusRequest) (*proto_txpool.StatusReply, error) {
-	/*	pending, baseFee, queued := s.txPool.CountContent()
-		return &proto_txpool.StatusReply{
-			PendingCount: uint32(pending),
-			QueuedCount:  uint32(queued),
-			BaseFeeCount:  uint32(baseFee),
-		}, nil
-	*/return nil, nil
+	pending, baseFee, queued := s.txPool.CountContent()
+	return &proto_txpool.StatusReply{
+		PendingCount: uint32(pending),
+		QueuedCount:  uint32(queued),
+		BaseFeeCount: uint32(baseFee),
+	}, nil
 }
 
 // NewTxSlotsStreams - it's safe to use this class as non-pointer

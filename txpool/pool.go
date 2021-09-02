@@ -683,6 +683,12 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	return nil
 }
 
+func (p *TxPool) CountContent() (int, int, int) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.pending.Len(), p.baseFee.Len(), p.queued.Len()
+}
+
 //Deprecated need switch to streaming-like
 func (p *TxPool) DeprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error {
 	p.lock.RLock()
