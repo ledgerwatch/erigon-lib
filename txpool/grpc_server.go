@@ -3,13 +3,20 @@ package txpool
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
+	"time"
 
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
-	proto_txpool "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
+	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -25,7 +32,7 @@ type txPool interface {
 }
 
 type GrpcServer struct {
-	proto_txpool.UnimplementedTxpoolServer
+	txpool_proto.UnimplementedTxpoolServer
 	ctx             context.Context
 	txPool          txPool
 	db              kv.RoDB
@@ -39,28 +46,28 @@ func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB) *GrpcServer {
 func (s *GrpcServer) Version(context.Context, *emptypb.Empty) (*types2.VersionReply, error) {
 	return TxPoolAPIVersion, nil
 }
-func convertSubPoolType(t SubPoolType) proto_txpool.AllReply_Type {
+func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_Type {
 	switch t {
 	case PendingSubPool:
-		return proto_txpool.AllReply_PENDING
+		return txpool_proto.AllReply_PENDING
 	case BaseFeeSubPool:
-		return proto_txpool.AllReply_PENDING
+		return txpool_proto.AllReply_PENDING
 	case QueuedSubPool:
-		return proto_txpool.AllReply_QUEUED
+		return txpool_proto.AllReply_QUEUED
 	default:
 		panic("unknown")
 	}
 }
-func (s *GrpcServer) All(ctx context.Context, _ *proto_txpool.AllRequest) (*proto_txpool.AllReply, error) {
+func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpool_proto.AllReply, error) {
 	tx, err := s.db.BeginRo(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	reply := &proto_txpool.AllReply{}
-	reply.Txs = make([]*proto_txpool.AllReply_Tx, 0, 32)
+	reply := &txpool_proto.AllReply{}
+	reply.Txs = make([]*txpool_proto.AllReply_Tx, 0, 32)
 	if err := s.txPool.DeprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
-		reply.Txs = append(reply.Txs, &proto_txpool.AllReply_Tx{
+		reply.Txs = append(reply.Txs, &txpool_proto.AllReply_Tx{
 			Sender: sender,
 			Type:   convertSubPoolType(t),
 			RlpTx:  rlp,
@@ -71,7 +78,7 @@ func (s *GrpcServer) All(ctx context.Context, _ *proto_txpool.AllRequest) (*prot
 	return reply, nil
 }
 
-func (s *GrpcServer) FindUnknown(ctx context.Context, in *proto_txpool.TxHashes) (*proto_txpool.TxHashes, error) {
+func (s *GrpcServer) FindUnknown(ctx context.Context, in *txpool_proto.TxHashes) (*txpool_proto.TxHashes, error) {
 	return nil, fmt.Errorf("unimplemented")
 	/*
 		var underpriced int
@@ -92,7 +99,7 @@ func (s *GrpcServer) FindUnknown(ctx context.Context, in *proto_txpool.TxHashes)
 	*/
 }
 
-func (s *GrpcServer) Add(ctx context.Context, in *proto_txpool.AddRequest) (*proto_txpool.AddReply, error) {
+func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txpool_proto.AddReply, error) {
 	tx, err := s.db.BeginRo(context.Background())
 	if err != nil {
 		return nil, err
@@ -115,7 +122,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *proto_txpool.AddRequest) (*pro
 		}
 	}
 
-	reply := &proto_txpool.AddReply{Imported: make([]proto_txpool.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
+	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
 	discardReasons, err := s.txPool.AddLocals(ctx, slots, tx)
 	if err != nil {
 		return nil, err
@@ -135,20 +142,20 @@ func (s *GrpcServer) Add(ctx context.Context, in *proto_txpool.AddRequest) (*pro
 			case Success: // Noop, but need to handle to not count these
 
 			//case core.ErrAlreadyKnown:
-			//	reply.Imported[i] = proto_txpool.ImportResult_ALREADY_EXISTS
+			//	reply.Imported[i] = txpool_proto.ImportResult_ALREADY_EXISTS
 			//case core.ErrUnderpriced, core.ErrReplaceUnderpriced:
-			//	reply.Imported[i] = proto_txpool.ImportResult_FEE_TOO_LOW
+			//	reply.Imported[i] = txpool_proto.ImportResult_FEE_TOO_LOW
 			//case core.ErrInvalidSender, core.ErrGasLimit, core.ErrNegativeValue, core.ErrOversizedData:
-			//	reply.Imported[i] = proto_txpool.ImportResult_INVALID
+			//	reply.Imported[i] = txpool_proto.ImportResult_INVALID
 			default:
-				reply.Imported[i] = proto_txpool.ImportResult_INTERNAL_ERROR
+				reply.Imported[i] = txpool_proto.ImportResult_INTERNAL_ERROR
 			}
 		}
 	*/
 	return reply, nil
 }
 
-func (s *GrpcServer) OnAdd(req *proto_txpool.OnAddRequest, stream proto_txpool.Txpool_OnAddServer) error {
+func (s *GrpcServer) OnAdd(req *txpool_proto.OnAddRequest, stream txpool_proto.Txpool_OnAddServer) error {
 	//txpool.Loop does send messages to this streams
 	remove := s.NewSlotsStreams.Add(stream)
 	defer remove()
@@ -160,14 +167,14 @@ func (s *GrpcServer) OnAdd(req *proto_txpool.OnAddRequest, stream proto_txpool.T
 	}
 }
 
-func (s *GrpcServer) Transactions(ctx context.Context, in *proto_txpool.TransactionsRequest) (*proto_txpool.TransactionsReply, error) {
+func (s *GrpcServer) Transactions(ctx context.Context, in *txpool_proto.TransactionsRequest) (*txpool_proto.TransactionsReply, error) {
 	tx, err := s.db.BeginRo(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
-	reply := &proto_txpool.TransactionsReply{RlpTxs: make([][]byte, len(in.Hashes))}
+	reply := &txpool_proto.TransactionsReply{RlpTxs: make([][]byte, len(in.Hashes))}
 	for i := range in.Hashes {
 		h := gointerfaces.ConvertH256ToHash(in.Hashes[i])
 		txnRlp, err := s.txPool.GetRlp(tx, h[:])
@@ -180,9 +187,9 @@ func (s *GrpcServer) Transactions(ctx context.Context, in *proto_txpool.Transact
 	return reply, nil
 }
 
-func (s *GrpcServer) Status(_ context.Context, _ *proto_txpool.StatusRequest) (*proto_txpool.StatusReply, error) {
+func (s *GrpcServer) Status(_ context.Context, _ *txpool_proto.StatusRequest) (*txpool_proto.StatusReply, error) {
 	pending, baseFee, queued := s.txPool.CountContent()
-	return &proto_txpool.StatusReply{
+	return &txpool_proto.StatusReply{
 		PendingCount: uint32(pending),
 		QueuedCount:  uint32(queued),
 		BaseFeeCount: uint32(baseFee),
@@ -191,16 +198,16 @@ func (s *GrpcServer) Status(_ context.Context, _ *proto_txpool.StatusRequest) (*
 
 // NewSlotsStreams - it's safe to use this class as non-pointer
 type NewSlotsStreams struct {
-	chans map[uint]proto_txpool.Txpool_OnAddServer
+	chans map[uint]txpool_proto.Txpool_OnAddServer
 	mu    sync.Mutex
 	id    uint
 }
 
-func (s *NewSlotsStreams) Add(stream proto_txpool.Txpool_OnAddServer) (remove func()) {
+func (s *NewSlotsStreams) Add(stream txpool_proto.Txpool_OnAddServer) (remove func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.chans == nil {
-		s.chans = make(map[uint]proto_txpool.Txpool_OnAddServer)
+		s.chans = make(map[uint]txpool_proto.Txpool_OnAddServer)
 	}
 	s.id++
 	id := s.id
@@ -208,7 +215,7 @@ func (s *NewSlotsStreams) Add(stream proto_txpool.Txpool_OnAddServer) (remove fu
 	return func() { s.remove(id) }
 }
 
-func (s *NewSlotsStreams) Broadcast(reply *proto_txpool.OnAddReply) {
+func (s *NewSlotsStreams) Broadcast(reply *txpool_proto.OnAddReply) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, stream := range s.chans {
@@ -232,4 +239,65 @@ func (s *NewSlotsStreams) remove(id uint) {
 		return
 	}
 	delete(s.chans, id)
+}
+
+func StartGrpc(txPoolServer txpool_proto.TxpoolServer, miningServer txpool_proto.MiningServer, addr string, creds *credentials.TransportCredentials) (*grpc.Server, error) {
+	log.Info("Starting private RPC server", "on", addr)
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("could not create listener: %w, addr=%s", err, addr)
+	}
+
+	var (
+		streamInterceptors []grpc.StreamServerInterceptor
+		unaryInterceptors  []grpc.UnaryServerInterceptor
+	)
+	streamInterceptors = append(streamInterceptors, grpc_recovery.StreamServerInterceptor())
+	unaryInterceptors = append(unaryInterceptors, grpc_recovery.UnaryServerInterceptor())
+
+	//if metrics.Enabled {
+	//	streamInterceptors = append(streamInterceptors, grpc_prometheus.StreamServerInterceptor)
+	//	unaryInterceptors = append(unaryInterceptors, grpc_prometheus.UnaryServerInterceptor)
+	//}
+
+	var grpcServer *grpc.Server
+	//cpus := uint32(runtime.GOMAXPROCS(-1))
+	opts := []grpc.ServerOption{
+		//grpc.NumStreamWorkers(cpus), // reduce amount of goroutines
+		grpc.WriteBufferSize(1024), // reduce buffers to save mem
+		grpc.ReadBufferSize(1024),
+		grpc.MaxConcurrentStreams(kv.ReadersLimit - 128), // to force clients reduce concurrency level
+		// Don't drop the connection, settings accordign to this comment on GitHub
+		// https://github.com/grpc/grpc-go/issues/3171#issuecomment-552796779
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(streamInterceptors...)),
+		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(unaryInterceptors...)),
+	}
+	if creds == nil {
+		// no specific opts
+	} else {
+		opts = append(opts, grpc.Creds(*creds))
+	}
+	grpcServer = grpc.NewServer(opts...)
+	if txPoolServer != nil {
+		txpool_proto.RegisterTxpoolServer(grpcServer, txPoolServer)
+	}
+	if miningServer != nil {
+		txpool_proto.RegisterMiningServer(grpcServer, miningServer)
+	}
+
+	//if metrics.Enabled {
+	//	grpc_prometheus.Register(grpcServer)
+	//}
+
+	go func() {
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Error("private RPC server fail", "err", err)
+		}
+	}()
+
+	return grpcServer, nil
 }
