@@ -18,21 +18,22 @@ var TxPoolAPIVersion = &types2.VersionReply{Major: 1, Minor: 0, Patch: 0}
 
 type txPool interface {
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
-	AddLocals(txRlp [][]byte) []error
+	AddLocals(ctx context.Context, newTxs TxSlots, tx kv.Tx) ([]DiscardReason, error)
 	DeprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error
 	CountContent() (int, int, int)
+	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 }
 
 type GrpcServer struct {
 	proto_txpool.UnimplementedTxpoolServer
-	ctx               context.Context
-	txPool            txPool
-	db                kv.RoDB
-	newTxSlotsStreams *NewTxSlotsStreams
+	ctx             context.Context
+	txPool          txPool
+	db              kv.RoDB
+	NewSlotsStreams *NewSlotsStreams
 }
 
 func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB) *GrpcServer {
-	return &GrpcServer{ctx: ctx, txPool: txPool, db: db, newTxSlotsStreams: &NewTxSlotsStreams{}}
+	return &GrpcServer{ctx: ctx, txPool: txPool, db: db, NewSlotsStreams: &NewSlotsStreams{}}
 }
 
 func (s *GrpcServer) Version(context.Context, *emptypb.Empty) (*types2.VersionReply, error) {
@@ -92,35 +93,64 @@ func (s *GrpcServer) FindUnknown(ctx context.Context, in *proto_txpool.TxHashes)
 }
 
 func (s *GrpcServer) Add(ctx context.Context, in *proto_txpool.AddRequest) (*proto_txpool.AddReply, error) {
-	reply := &proto_txpool.AddReply{Imported: make([]proto_txpool.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
-	errs := s.txPool.AddLocals(in.RlpTxs)
-	for i, err := range errs {
-		if err == nil {
+	tx, err := s.db.BeginRo(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var slots TxSlots
+	slots.Resize(uint(len(in.RlpTxs)))
+	parseCtx := NewTxParseContext()
+	parseCtx.Reject(func(hash []byte) bool {
+		known, _ := s.txPool.IdHashKnown(tx, hash)
+		return known
+	})
+	for i := range in.RlpTxs {
+		slots.txs[i] = &TxSlot{}
+		slots.isLocal[i] = true
+		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[i], slots.senders.At(i)); err != nil {
+			log.Warn("stream.Recv", "err", err)
 			continue
 		}
-
-		reply.Errors[i] = err.Error()
-
-		// Track a few interesting failure types
-		switch err {
-		case nil: // Noop, but need to handle to not count these
-
-		//case core.ErrAlreadyKnown:
-		//	reply.Imported[i] = proto_txpool.ImportResult_ALREADY_EXISTS
-		//case core.ErrUnderpriced, core.ErrReplaceUnderpriced:
-		//	reply.Imported[i] = proto_txpool.ImportResult_FEE_TOO_LOW
-		//case core.ErrInvalidSender, core.ErrGasLimit, core.ErrNegativeValue, core.ErrOversizedData:
-		//	reply.Imported[i] = proto_txpool.ImportResult_INVALID
-		default:
-			reply.Imported[i] = proto_txpool.ImportResult_INTERNAL_ERROR
-		}
 	}
+
+	reply := &proto_txpool.AddReply{Imported: make([]proto_txpool.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
+	discardReasons, err := s.txPool.AddLocals(ctx, slots, tx)
+	if err != nil {
+		return nil, err
+	}
+	//TODO: concept of discardReasons not really implemented yet
+	_ = discardReasons
+	/*
+		for i, err := range discardReasons {
+			if err == nil {
+				continue
+			}
+
+			reply.Errors[i] = err.Error()
+
+			// Track a few interesting failure types
+			switch err {
+			case Success: // Noop, but need to handle to not count these
+
+			//case core.ErrAlreadyKnown:
+			//	reply.Imported[i] = proto_txpool.ImportResult_ALREADY_EXISTS
+			//case core.ErrUnderpriced, core.ErrReplaceUnderpriced:
+			//	reply.Imported[i] = proto_txpool.ImportResult_FEE_TOO_LOW
+			//case core.ErrInvalidSender, core.ErrGasLimit, core.ErrNegativeValue, core.ErrOversizedData:
+			//	reply.Imported[i] = proto_txpool.ImportResult_INVALID
+			default:
+				reply.Imported[i] = proto_txpool.ImportResult_INTERNAL_ERROR
+			}
+		}
+	*/
 	return reply, nil
 }
 
 func (s *GrpcServer) OnAdd(req *proto_txpool.OnAddRequest, stream proto_txpool.Txpool_OnAddServer) error {
 	//txpool.Loop does send messages to this streams
-	remove := s.newTxSlotsStreams.Add(stream)
+	remove := s.NewSlotsStreams.Add(stream)
 	defer remove()
 	select {
 	case <-stream.Context().Done():
@@ -159,14 +189,14 @@ func (s *GrpcServer) Status(_ context.Context, _ *proto_txpool.StatusRequest) (*
 	}, nil
 }
 
-// NewTxSlotsStreams - it's safe to use this class as non-pointer
-type NewTxSlotsStreams struct {
+// NewSlotsStreams - it's safe to use this class as non-pointer
+type NewSlotsStreams struct {
 	chans map[uint]proto_txpool.Txpool_OnAddServer
 	mu    sync.Mutex
 	id    uint
 }
 
-func (s *NewTxSlotsStreams) Add(stream proto_txpool.Txpool_OnAddServer) (remove func()) {
+func (s *NewSlotsStreams) Add(stream proto_txpool.Txpool_OnAddServer) (remove func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.chans == nil {
@@ -178,7 +208,7 @@ func (s *NewTxSlotsStreams) Add(stream proto_txpool.Txpool_OnAddServer) (remove 
 	return func() { s.remove(id) }
 }
 
-func (s *NewTxSlotsStreams) Broadcast(reply *proto_txpool.OnAddReply) {
+func (s *NewSlotsStreams) Broadcast(reply *proto_txpool.OnAddReply) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, stream := range s.chans {
@@ -194,7 +224,7 @@ func (s *NewTxSlotsStreams) Broadcast(reply *proto_txpool.OnAddReply) {
 	}
 }
 
-func (s *NewTxSlotsStreams) remove(id uint) {
+func (s *NewSlotsStreams) remove(id uint) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.chans[id]

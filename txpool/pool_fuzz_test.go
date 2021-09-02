@@ -533,7 +533,7 @@ func FuzzOnNewBlocks12(f *testing.F) {
 
 		// add some remote txs from p2p
 		pool.AddRemoteTxs(context.Background(), p2pReceived)
-		err = pool.processRemoteTxs(context.Background(), nil)
+		err = pool.processRemoteTxs(context.Background())
 		assert.NoError(err)
 		check(p2pReceived, TxSlots{}, "p2pmsg1")
 		checkNotify(p2pReceived, TxSlots{}, "p2pmsg1")

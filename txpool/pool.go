@@ -101,12 +101,13 @@ type DiscardReason uint8
 
 const (
 	//TODO: all below codes are not fixed yet. Need add them to discardLocked func. Need save discard reasons to LRU or DB.
-	AlreadyKnown  DiscardReason = 1
-	UnderPriced   DiscardReason = 2
-	FeeTooLow     DiscardReason = 3
-	OversizedData DiscardReason = 4
-	InvalidSender DiscardReason = 5
-	NegativeValue DiscardReason = 6
+	Success       DiscardReason = 1
+	AlreadyKnown  DiscardReason = 2
+	UnderPriced   DiscardReason = 3
+	FeeTooLow     DiscardReason = 4
+	OversizedData DiscardReason = 5
+	InvalidSender DiscardReason = 6
+	NegativeValue DiscardReason = 7
 )
 
 // metaTx holds transaction and some metadata
@@ -502,6 +503,7 @@ type TxPool struct {
 	// track isLocal flag of already mined transactions. used at unwind.
 	localsHistory *simplelru.LRU
 	db            kv.RwDB
+	coreDB        kv.RoDB
 
 	// fields for transaction propagation
 	recentlyConnectedPeers *recentlyConnectedPeers
@@ -522,7 +524,7 @@ type TxPool struct {
 	cfg Config
 }
 
-func New(newTxs chan Hashes, db kv.RwDB, cfg Config) (*TxPool, error) {
+func New(newTxs chan Hashes, db kv.RwDB, coreDB kv.RoDB, cfg Config) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
@@ -539,6 +541,7 @@ func New(newTxs chan Hashes, db kv.RwDB, cfg Config) (*TxPool, error) {
 		newTxs:                  newTxs,
 		senders:                 newSendersCache(),
 		db:                      db,
+		coreDB:                  coreDB,
 		cfg:                     cfg,
 		senderID:                1,
 		unprocessedRemoteTxs:    &TxSlots{},
@@ -762,7 +765,7 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), newTxs.isLocal[i])
 	}
 }
-func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots, coreDB kv.RoDB) ([]DiscardReason, error) {
+func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots, tx kv.Tx) ([]DiscardReason, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	discardReasonsIndex := len(p.discardReasons)
@@ -771,17 +774,12 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots, coreDB kv.RoDB
 		newTxs.isLocal[i] = true
 	}
 
-	tx, err := p.db.BeginRo(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
 	cacheMisses, err := p.senders.onNewTxs(tx, newTxs)
 	if err != nil {
 		return nil, err
 	}
 	if len(cacheMisses) > 0 {
-		if err := coreDB.View(ctx, func(tx kv.Tx) error { return p.senders.loadFromCore(tx, cacheMisses) }); err != nil {
+		if err := p.coreDB.View(ctx, func(tx kv.Tx) error { return p.senders.loadFromCore(tx, cacheMisses) }); err != nil {
 			return nil, err
 		}
 	}
@@ -819,7 +817,7 @@ func (p *TxPool) copyDiscardReasons(from int) []DiscardReason {
 	copy(cpy, p.discardReasons[from:])
 	return cpy
 }
-func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
+func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	p.lock.RLock()
 	l := len(p.unprocessedRemoteTxs.txs)
 	p.lock.RUnlock()
@@ -843,7 +841,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, coreDB kv.RoDB) error {
 		return err
 	}
 	if len(cacheMisses) > 0 {
-		if err := coreDB.View(ctx, func(tx kv.Tx) error { return p.senders.loadFromCore(tx, cacheMisses) }); err != nil {
+		if err := p.coreDB.View(ctx, func(tx kv.Tx) error { return p.senders.loadFromCore(tx, cacheMisses) }); err != nil {
 			return err
 		}
 	}
@@ -902,7 +900,7 @@ func onNewTxs(tx kv.Tx, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, 
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, discard)
-	pending.EnforceInvariants()
+	pending.EnforceInvariants() //TODO: find way to enforce invariants once. promote - now expect invariants - but can it work without them?
 
 	return nil
 }
@@ -1494,7 +1492,7 @@ func (p *WorstQueue) Pop() interface{} {
 //      - all local pooled byHash to random peers periodically
 // promote/demote transactions
 // reorgs
-func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send, newTxSlotsStreams *NewTxSlotsStreams) {
+func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send, newTxSlotsStreams *NewSlotsStreams) {
 	//db.Update(ctx, func(tx kv.RwTx) error { return tx.ClearBucket(kv.PooledSender) })
 	if err := db.Update(ctx, func(tx kv.RwTx) error {
 		return coreDB.View(ctx, func(coreTx kv.Tx) error {
@@ -1535,7 +1533,7 @@ func BroadcastLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, n
 				log.Error("log stats", "err", err)
 			}
 		case <-processRemoteTxsEvery.C:
-			if err := p.processRemoteTxs(ctx, coreDB); err != nil {
+			if err := p.processRemoteTxs(ctx); err != nil {
 				log.Error("process batch remote txs", "err", err)
 			}
 		case <-commitEvery.C:
