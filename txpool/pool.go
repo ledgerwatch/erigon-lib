@@ -44,10 +44,10 @@ import (
 )
 
 var (
-	onNewTxsTimer     = metrics.NewSummary("pool_new_txs")
-	onNewBlockTimer   = metrics.NewSummary("pool_new_block")
-	cacheHitCounter   = metrics.NewCounter("pool_cache_hit")
-	cacheTotalCounter = metrics.NewCounter("pool_cache_total")
+	onNewTxsTimer     = metrics.NewSummary(`pool_new_txs`)
+	onNewBlockTimer   = metrics.NewSummary(`pool_new_block`)
+	cacheTotalCounter = metrics.GetOrCreateCounter(`pool_cache_total`)
+	cacheHitCounter   = metrics.GetOrCreateCounter(`pool_cache_total{result="hit"}`)
 )
 
 const ASSERT = false
@@ -218,12 +218,12 @@ func (sc *sendersBatch) id(addr string, tx kv.Tx) (uint64, bool, error) {
 	return id, true, nil
 }
 func (sc *sendersBatch) info(id uint64, tx kv.Tx, expectMiss bool) (*senderInfo, error) {
-	cacheTotalCounter.Inc()
 	info, ok := sc.senderInfo[id]
 	if ok {
 		cacheHitCounter.Inc()
 		return info, nil
 	}
+	cacheTotalCounter.Inc()
 	encID := make([]byte, 8)
 	binary.BigEndian.PutUint64(encID, id)
 	v, err := tx.GetOne(kv.PoolSender, encID)
