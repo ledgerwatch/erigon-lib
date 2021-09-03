@@ -1,15 +1,18 @@
 package grpcutil
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"time"
 
+	"github.com/c2h5oh/datasize"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 )
@@ -35,6 +38,8 @@ func TLS(tlsCACert, tlsCertFile, tlsKeyFile string) (credentials.TransportCreden
 		ClientCAs:    caCertPool,
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		MinVersion:   tls.VersionTLS12,
+		//nolint:gosec
+		InsecureSkipVerify: true, // This is to make it work when Common Name does not match - remove when procedure is updated for common name
 	}), nil
 }
 
@@ -79,4 +84,33 @@ func NewServer(rateLimit uint32, creds *credentials.TransportCredentials) *grpc.
 	//}
 
 	return grpcServer
+}
+
+func Connect(creds *credentials.TransportCredentials, dialAddress string) (*grpc.ClientConn, error) {
+	var dialOpts []grpc.DialOption
+
+	backoffCfg := backoff.DefaultConfig
+	backoffCfg.BaseDelay = 500 * time.Millisecond
+	backoffCfg.MaxDelay = 10 * time.Second
+	dialOpts = []grpc.DialOption{
+		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoffCfg, MinConnectTimeout: 10 * time.Minute}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(int(15 * datasize.MB))),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{}),
+	}
+	if creds == nil {
+		dialOpts = append(dialOpts, grpc.WithInsecure())
+	} else {
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(*creds))
+	}
+
+	//if opts.inMemConn != nil {
+	//	dialOpts = append(dialOpts, grpc.WithContextDialer(func(ctx context.Context, url string) (net.Conn, error) {
+	//		return opts.inMemConn.Dial()
+	//	}))
+	//}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return grpc.DialContext(ctx, dialAddress, dialOpts...)
 }
