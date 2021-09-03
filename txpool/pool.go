@@ -47,6 +47,7 @@ var (
 	processBatchTxsTimer = metrics.NewSummary(`pool_process_remote_txs`)
 	addRemoteTxsTimer    = metrics.NewSummary(`pool_add_remote_txs`)
 	newBlockTimer        = metrics.NewSummary(`pool_new_block`)
+	writeToDbTimer       = metrics.NewSummary(`pool_write_to_db`)
 	cacheTotalCounter    = metrics.GetOrCreateCounter(`pool_cache_total`)
 	cacheHitCounter      = metrics.GetOrCreateCounter(`pool_cache_total{result="hit"}`)
 )
@@ -1652,6 +1653,7 @@ func copyBytes(b []byte) (copiedBytes []byte) {
 }
 
 func (p *TxPool) flush(db kv.RwDB) (evicted, written uint64, err error) {
+	defer writeToDbTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	//it's important that write db tx is done inside lock, to make last writes visible for all read operations
