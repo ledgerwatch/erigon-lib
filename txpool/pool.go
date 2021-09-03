@@ -69,7 +69,7 @@ var DefaultConfig = Config{
 	processRemoteTxsEvery:   100 * time.Millisecond,
 	commitEvery:             15 * time.Second,
 	logEvery:                30 * time.Second,
-	evictSendersAfterRounds: 10,
+	evictSendersAfterRounds: 20,
 }
 
 // Pool is interface for the transaction pool
