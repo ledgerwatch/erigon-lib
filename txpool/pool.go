@@ -81,7 +81,7 @@ type Pool interface {
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddRemoteTxs(ctx context.Context, newTxs TxSlots)
-	OnNewBlock(tx kv.Tx, stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
+	OnNewBlock(tx kv.Tx, stateChanges map[string]sender, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
 
 	AddNewGoodPeer(peerID PeerID)
 }
@@ -147,15 +147,17 @@ const QueuedSubPoolLimit = 10 * 1024
 
 const MaxSendersInfoCache = 2 * (PendingSubPoolLimit + BaseFeeSubPoolLimit + QueuedSubPoolLimit)
 
-type senderInfo struct {
+// sender - immutable structure which stores only nonce and balance of account
+type sender struct {
 	balance uint256.Int
 	nonce   uint64
 }
 
-//nolint
-func newSenderInfo(nonce uint64, balance uint256.Int) *senderInfo {
-	return &senderInfo{nonce: nonce, balance: balance}
+func newSender(nonce uint64, balance uint256.Int) *sender {
+	return &sender{nonce: nonce, balance: balance}
 }
+
+var emptySender = newSender(0, *uint256.NewInt(0))
 
 type sortByNonce struct{ *metaTx }
 
@@ -175,11 +177,11 @@ type sendersBatch struct {
 	senderID    uint64
 	commitID    uint64
 	senderIDs   map[string]uint64
-	senderInfo  map[uint64]*senderInfo
+	senderInfo  map[uint64]*sender
 }
 
 func newSendersCache() *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderInfo: map[uint64]*senderInfo{}}
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderInfo: map[uint64]*sender{}}
 }
 
 //nolint
@@ -221,7 +223,7 @@ func (sc *sendersBatch) id(addr string, tx kv.Tx) (uint64, bool, error) {
 	}
 	return id, true, nil
 }
-func (sc *sendersBatch) info(id uint64, tx kv.Tx, expectMiss bool) (*senderInfo, error) {
+func (sc *sendersBatch) info(id uint64, tx kv.Tx, expectMiss bool) (*sender, error) {
 	info, ok := sc.senderInfo[id]
 	if ok {
 		cacheHitCounter.Inc()
@@ -243,12 +245,12 @@ func (sc *sendersBatch) info(id uint64, tx kv.Tx, expectMiss bool) (*senderInfo,
 	cacheHitCounter.Inc()
 	balance := uint256.NewInt(0)
 	balance.SetBytes(v[8:])
-	return newSenderInfo(binary.BigEndian.Uint64(v), *balance), nil
+	return newSender(binary.BigEndian.Uint64(v), *balance), nil
 }
 
 //nolint
 func (sc *sendersBatch) printDebug(prefix string) {
-	fmt.Printf("%s.sendersBatch.senderInfo\n", prefix)
+	fmt.Printf("%s.sendersBatch.sender\n", prefix)
 	for i, j := range sc.senderInfo {
 		fmt.Printf("\tid=%d,nonce=%d,balance=%d\n", i, j.nonce, j.balance.Uint64())
 	}
@@ -265,7 +267,7 @@ func (sc *sendersBatch) onNewTxs(tx kv.Tx, newTxs TxSlots) (cacheMisses map[uint
 	return cacheMisses, nil
 }
 func (sc *sendersBatch) loadFromCore(coreTx kv.Tx, toLoad map[uint64]string) error {
-	diff := make(map[uint64]*senderInfo, len(toLoad))
+	diff := make(map[uint64]*sender, len(toLoad))
 	for id := range toLoad {
 		info, err := loadSender(coreTx, []byte(toLoad[id]))
 		if err != nil {
@@ -280,7 +282,7 @@ func (sc *sendersBatch) loadFromCore(coreTx kv.Tx, toLoad map[uint64]string) err
 	return nil
 }
 
-func (sc *sendersBatch) onNewBlock(tx kv.Tx, stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, blockHeight uint64, blockHash [32]byte) error {
+func (sc *sendersBatch) onNewBlock(tx kv.Tx, stateChanges map[string]sender, unwindTxs, minedTxs TxSlots, blockHeight uint64, blockHash [32]byte) error {
 	//TODO: if see non-continuous block heigh - load gap from changesets
 	sc.blockHeight.Store(blockHeight)
 	sc.blockHash.Store(string(blockHash[:]))
@@ -297,7 +299,7 @@ func (sc *sendersBatch) onNewBlock(tx kv.Tx, stateChanges map[string]senderInfo,
 	}
 	return nil
 }
-func (sc *sendersBatch) mergeStateChanges(tx kv.Tx, stateChanges map[string]senderInfo, unwindedTxs, minedTxs TxSlots) error {
+func (sc *sendersBatch) mergeStateChanges(tx kv.Tx, stateChanges map[string]sender, unwindedTxs, minedTxs TxSlots) error {
 	for addr, v := range stateChanges { // merge state changes
 		id, ok, err := sc.id(addr, tx)
 		if err != nil {
@@ -308,7 +310,7 @@ func (sc *sendersBatch) mergeStateChanges(tx kv.Tx, stateChanges map[string]send
 			id = sc.senderID
 			sc.senderIDs[addr] = id
 		}
-		sc.senderInfo[id] = newSenderInfo(v.nonce, v.balance)
+		sc.senderInfo[id] = newSender(v.nonce, v.balance)
 	}
 
 	for i := 0; i < unwindedTxs.senders.Len(); i++ {
@@ -323,7 +325,7 @@ func (sc *sendersBatch) mergeStateChanges(tx kv.Tx, stateChanges map[string]send
 		}
 		if _, ok := sc.senderInfo[id]; !ok {
 			if _, ok := stateChanges[string(unwindedTxs.senders.At(i))]; !ok {
-				sc.senderInfo[id] = newSenderInfo(0, *uint256.NewInt(0))
+				sc.senderInfo[id] = emptySender
 			}
 		}
 	}
@@ -340,7 +342,7 @@ func (sc *sendersBatch) mergeStateChanges(tx kv.Tx, stateChanges map[string]send
 		}
 		if _, ok := sc.senderInfo[id]; !ok {
 			if _, ok := stateChanges[string(minedTxs.senders.At(i))]; !ok {
-				sc.senderInfo[id] = newSenderInfo(0, *uint256.NewInt(0))
+				sc.senderInfo[id] = emptySender
 			}
 		}
 	}
@@ -425,7 +427,7 @@ func (sc *sendersBatch) syncMissedStateDiff(ctx context.Context, tx kv.RwTx, cor
 		if err := tx.ClearBucket(kv.PoolSender); err != nil {
 			return err
 		}
-		sc.senderInfo = map[uint64]*senderInfo{}
+		sc.senderInfo = map[uint64]*sender{}
 	}
 
 	if missedTo == 0 {
@@ -913,7 +915,7 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
-func (p *TxPool) OnNewBlock(tx kv.Tx, stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error {
+func (p *TxPool) OnNewBlock(tx kv.Tx, stateChanges map[string]sender, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -1098,7 +1100,7 @@ func unsafeAddToPendingPool(byNonce *ByNonce, newTxs TxSlots, pending *PendingPo
 	return changedSenders
 }
 
-func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64) {
+func onSenderChange(senderID uint64, sender *sender, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64) {
 	noGapsNonce := sender.nonce + 1
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -1864,7 +1866,7 @@ func (sc *sendersBatch) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 	}
 
 	sc.senderIDs = map[string]uint64{}
-	sc.senderInfo = map[uint64]*senderInfo{}
+	sc.senderInfo = map[uint64]*sender{}
 	return evicted, nil
 }
 
@@ -2007,9 +2009,9 @@ func isCanonical(coreTx kv.Tx, num uint64, hash []byte) (bool, error) {
 	return bytes.Equal(hash, canonical), nil
 }
 
-func changesets(ctx context.Context, from uint64, coreTx kv.Tx) (map[string]senderInfo, error) {
+func changesets(ctx context.Context, from uint64, coreTx kv.Tx) (map[string]sender, error) {
 	encNum := make([]byte, 8)
-	diff := map[string]senderInfo{}
+	diff := map[string]sender{}
 	binary.BigEndian.PutUint64(encNum, from)
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -2042,20 +2044,20 @@ var SenderCacheHashKey = []byte("sender_cache_block_hash")
 var PoolPendingBaseFeeKey = []byte("pending_base_fee")
 var PoolProtocolBaseFeeKey = []byte("protocol_base_fee")
 
-func loadSender(coreTx kv.Tx, addr []byte) (*senderInfo, error) {
+func loadSender(coreTx kv.Tx, addr []byte) (*sender, error) {
 	encoded, err := coreTx.GetOne(kv.PlainState, addr)
 	if err != nil {
 		return nil, err
 	}
 	if len(encoded) == 0 {
 		//return nil, nil
-		return newSenderInfo(0, *uint256.NewInt(0)), nil
+		return emptySender, nil
 	}
 	nonce, balance, err := DecodeSender(encoded)
 	if err != nil {
 		return nil, err
 	}
-	return newSenderInfo(nonce, balance), nil
+	return newSender(nonce, balance), nil
 }
 
 // recentlyConnectedPeers does buffer IDs of recently connected good peers

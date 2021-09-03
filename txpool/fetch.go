@@ -432,7 +432,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client remote.KVClient) 
 				}
 			}
 		}
-		diff := map[string]senderInfo{}
+		diff := map[string]sender{}
 		for _, change := range req.Changes {
 			nonce, balance, err := DecodeSender(change.Data)
 			if err != nil {
@@ -440,7 +440,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client remote.KVClient) 
 				continue
 			}
 			addr := gointerfaces.ConvertH160toAddress(change.Address)
-			diff[string(addr[:])] = senderInfo{nonce: nonce, balance: balance}
+			diff[string(addr[:])] = sender{nonce: nonce, balance: balance}
 		}
 		if err := f.db.View(ctx, func(tx kv.Tx) error {
 			return f.pool.OnNewBlock(tx, diff, unwindTxs, minedTxs, req.ProtocolBaseFee, req.BlockHeight, gointerfaces.ConvertH256ToHash(req.BlockHash))

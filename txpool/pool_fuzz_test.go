@@ -184,7 +184,7 @@ func parseTxs(in []byte) (nonces, tips []uint64, values []uint256.Int) {
 	return
 }
 
-func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []byte) (sendersInfo map[uint64]*senderInfo, senderIDs map[string]uint64, txs TxSlots, ok bool) {
+func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []byte) (sendersInfo map[uint64]*sender, senderIDs map[string]uint64, txs TxSlots, ok bool) {
 	if len(rawTxNonce) < 1 || len(rawValues) < 1 || len(rawTips) < 1 || len(rawFeeCap) < 1 || len(rawSender) < 1+1+1 {
 		return nil, nil, txs, false
 	}
@@ -206,11 +206,11 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 		return nil, nil, txs, false
 	}
 
-	sendersInfo = map[uint64]*senderInfo{}
+	sendersInfo = map[uint64]*sender{}
 	senderIDs = map[string]uint64{}
 	for i := 0; i < len(senderNonce); i++ {
 		senderID := uint64(i + 1) //non-zero expected
-		sendersInfo[senderID] = newSenderInfo(senderNonce[i], senderBalance[i%len(senderBalance)])
+		sendersInfo[senderID] = newSender(senderNonce[i], senderBalance[i%len(senderBalance)])
 		senderIDs[string(senders.At(i%senders.Len()))] = senderID
 	}
 	txs.txs = make([]*TxSlot, len(txNonce))
@@ -298,22 +298,22 @@ func splitDataset(in TxSlots) (TxSlots, TxSlots, TxSlots, TxSlots) {
 
 func FuzzOnNewBlocks12(f *testing.F) {
 	var u64 = [1 * 4]byte{1}
-	var sender = [1 + 1 + 1]byte{1}
-	f.Add(u64[:], u64[:], u64[:], u64[:], sender[:], 12)
-	f.Add(u64[:], u64[:], u64[:], u64[:], sender[:], 14)
-	f.Add(u64[:], u64[:], u64[:], u64[:], sender[:], 123)
-	f.Fuzz(func(t *testing.T, txNonce, values, tips, feeCap, sender []byte, currentBaseFee1 uint8) {
+	var senderAddr = [1 + 1 + 1]byte{1}
+	f.Add(u64[:], u64[:], u64[:], u64[:], senderAddr[:], 12)
+	f.Add(u64[:], u64[:], u64[:], u64[:], senderAddr[:], 14)
+	f.Add(u64[:], u64[:], u64[:], u64[:], senderAddr[:], 123)
+	f.Fuzz(func(t *testing.T, txNonce, values, tips, feeCap, senderAddr []byte, currentBaseFee1 uint8) {
 		//t.Parallel()
 
 		currentBaseFee := uint64(currentBaseFee1%16 + 1)
 		if currentBaseFee == 0 {
 			t.Skip()
 		}
-		if len(sender) < 1+1+1 {
+		if len(senderAddr) < 1+1+1 {
 			t.Skip()
 		}
 
-		senders, senderIDs, txs, ok := poolsFromFuzzBytes(txNonce, values, tips, feeCap, sender)
+		senders, senderIDs, txs, ok := poolsFromFuzzBytes(txNonce, values, tips, feeCap, senderAddr)
 		if !ok {
 			t.Skip()
 		}
@@ -514,23 +514,23 @@ func FuzzOnNewBlocks12(f *testing.F) {
 		// go to first fork
 		//fmt.Printf("ll1: %d,%d,%d\n", pool.pending.Len(), pool.baseFee.Len(), pool.queued.Len())
 		txs1, txs2, p2pReceived, txs3 := splitDataset(txs)
-		err = pool.OnNewBlock(tx, map[string]senderInfo{}, txs1, TxSlots{}, currentBaseFee, 1, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]sender{}, txs1, TxSlots{}, currentBaseFee, 1, [32]byte{})
 		assert.NoError(err)
 		check(txs1, TxSlots{}, "fork1")
 		checkNotify(txs1, TxSlots{}, "fork1")
 
 		_, _, _ = p2pReceived, txs2, txs3
-		err = pool.OnNewBlock(tx, map[string]senderInfo{}, TxSlots{}, txs2, currentBaseFee, 1, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]sender{}, TxSlots{}, txs2, currentBaseFee, 1, [32]byte{})
 		check(TxSlots{}, txs2, "fork1 mined")
 		checkNotify(TxSlots{}, txs2, "fork1 mined")
 
 		// unwind everything and switch to new fork (need unwind mined now)
-		err = pool.OnNewBlock(tx, map[string]senderInfo{}, txs2, TxSlots{}, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]sender{}, txs2, TxSlots{}, currentBaseFee, 2, [32]byte{})
 		assert.NoError(err)
 		check(txs2, TxSlots{}, "fork2")
 		checkNotify(txs2, TxSlots{}, "fork2")
 
-		err = pool.OnNewBlock(tx, map[string]senderInfo{}, TxSlots{}, txs3, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]sender{}, TxSlots{}, txs3, currentBaseFee, 2, [32]byte{})
 		assert.NoError(err)
 		check(TxSlots{}, txs3, "fork2 mined")
 		checkNotify(TxSlots{}, txs3, "fork2 mined")
@@ -559,7 +559,7 @@ func FuzzOnNewBlocks12(f *testing.F) {
 		for _, txn := range p2.byHash {
 			assert.Nil(txn.Tx.rlp)
 		}
-		//todo: check that after load from db tx linked to same sender
+		//todo: check that after load from db tx linked to same senderAddr
 
 		check(txs2, TxSlots{}, "fromDB")
 		//checkNotify(txs2, TxSlots{}, "fromDB")
