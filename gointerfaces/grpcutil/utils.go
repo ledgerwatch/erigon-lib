@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
-	"reflect"
 	"time"
 
 	"github.com/c2h5oh/datasize"
@@ -75,11 +74,7 @@ func NewServer(rateLimit uint32, creds credentials.TransportCredentials) *grpc.S
 		}),
 		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(streamInterceptors...)),
 		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(unaryInterceptors...)),
-	}
-	if creds == nil {
-		// no specific opts
-	} else {
-		opts = append(opts, grpc.Creds(creds))
+		grpc.Creds(creds),
 	}
 	grpcServer = grpc.NewServer(opts...)
 
@@ -101,7 +96,8 @@ func Connect(creds credentials.TransportCredentials, dialAddress string) (*grpc.
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(int(15 * datasize.MB))),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{}),
 	}
-	if reflect.ValueOf(creds).IsNil() { //https://groups.google.com/g/golang-nuts/c/wnH302gBa4I
+	fmt.Printf("cred: %#v,%t\n", creds, creds == nil)
+	if creds == nil { //https://groups.google.com/g/golang-nuts/c/wnH302gBa4I
 		dialOpts = append(dialOpts, grpc.WithInsecure())
 	} else {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
