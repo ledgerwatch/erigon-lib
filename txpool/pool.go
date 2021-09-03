@@ -44,12 +44,14 @@ import (
 )
 
 var (
-	processBatchTxsTimer = metrics.NewSummary(`pool_process_remote_txs`)
-	addRemoteTxsTimer    = metrics.NewSummary(`pool_add_remote_txs`)
-	newBlockTimer        = metrics.NewSummary(`pool_new_block`)
-	writeToDbTimer       = metrics.NewSummary(`pool_write_to_db`)
-	cacheTotalCounter    = metrics.GetOrCreateCounter(`pool_cache_total`)
-	cacheHitCounter      = metrics.GetOrCreateCounter(`pool_cache_total{result="hit"}`)
+	processBatchTxsTimer  = metrics.NewSummary(`pool_process_remote_txs`)
+	addRemoteTxsTimer     = metrics.NewSummary(`pool_add_remote_txs`)
+	newBlockTimer         = metrics.NewSummary(`pool_new_block`)
+	writeToDbTimer        = metrics.NewSummary(`pool_write_to_db`)
+	cacheTotalCounter     = metrics.GetOrCreateCounter(`pool_cache_total`)
+	cacheHitCounter       = metrics.GetOrCreateCounter(`pool_cache_total{result="hit"}`)
+	writeToDbBytesCounter = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
+	sendersEvictedCounter = metrics.GetOrCreateCounter(`pool_senders_evicted`)
 )
 
 const ASSERT = false
@@ -1556,6 +1558,8 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 					log.Error("flush is local history", "err", err)
 					continue
 				}
+				writeToDbBytesCounter.Set(written)
+				sendersEvictedCounter.Set(evicted)
 				log.Info("flush", "written_kb", written/1024, "evicted", evicted, "in", time.Since(t))
 			}
 		case h := <-newTxs: //TODO: maybe send TxSlots object instead of Hashes?
