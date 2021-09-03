@@ -20,6 +20,9 @@ import (
 func TLS(tlsCACert, tlsCertFile, tlsKeyFile string) (credentials.TransportCredentials, error) {
 	// load peer cert/key, ca cert
 	if tlsCACert == "" {
+		if tlsCertFile == "" && tlsKeyFile == "" {
+			return nil, nil
+		}
 		return credentials.NewServerTLSFromFile(tlsCertFile, tlsKeyFile)
 	}
 	var caCert []byte
