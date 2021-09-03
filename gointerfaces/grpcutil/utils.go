@@ -96,8 +96,7 @@ func Connect(creds credentials.TransportCredentials, dialAddress string) (*grpc.
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(int(15 * datasize.MB))),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{}),
 	}
-	fmt.Printf("cred: %#v,%t\n", creds, creds == nil)
-	if creds == nil { //https://groups.google.com/g/golang-nuts/c/wnH302gBa4I
+	if creds == nil {
 		dialOpts = append(dialOpts, grpc.WithInsecure())
 	} else {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
