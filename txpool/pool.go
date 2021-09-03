@@ -44,10 +44,11 @@ import (
 )
 
 var (
-	onNewTxsTimer     = metrics.NewSummary(`pool_new_txs`)
-	onNewBlockTimer   = metrics.NewSummary(`pool_new_block`)
-	cacheTotalCounter = metrics.GetOrCreateCounter(`pool_cache_total`)
-	cacheHitCounter   = metrics.GetOrCreateCounter(`pool_cache_total{result="hit"}`)
+	processBatchTxsTimer = metrics.NewSummary(`pool_process_remote_txs`)
+	addRemoteTxsTimer    = metrics.NewSummary(`pool_add_remote_txs`)
+	newBlockTimer        = metrics.NewSummary(`pool_new_block`)
+	cacheTotalCounter    = metrics.GetOrCreateCounter(`pool_cache_total`)
+	cacheHitCounter      = metrics.GetOrCreateCounter(`pool_cache_total{result="hit"}`)
 )
 
 const ASSERT = false
@@ -758,6 +759,7 @@ func (p *TxPool) DeprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 	return nil
 }
 func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
+	defer addRemoteTxsTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for i := range newTxs.txs {
@@ -828,7 +830,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return nil
 	}
 
-	defer onNewTxsTimer.UpdateDuration(time.Now())
+	defer processBatchTxsTimer.UpdateDuration(time.Now())
 	//t := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -917,7 +919,7 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 }
 
 func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error {
-	defer onNewBlockTimer.UpdateDuration(time.Now())
+	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
