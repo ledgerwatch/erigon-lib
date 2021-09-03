@@ -43,7 +43,7 @@ func TLS(tlsCACert, tlsCertFile, tlsKeyFile string) (credentials.TransportCreden
 	}), nil
 }
 
-func NewServer(rateLimit uint32, creds *credentials.TransportCredentials) *grpc.Server {
+func NewServer(rateLimit uint32, creds credentials.TransportCredentials) *grpc.Server {
 	var (
 		streamInterceptors []grpc.StreamServerInterceptor
 		unaryInterceptors  []grpc.UnaryServerInterceptor
@@ -75,7 +75,7 @@ func NewServer(rateLimit uint32, creds *credentials.TransportCredentials) *grpc.
 	if creds == nil {
 		// no specific opts
 	} else {
-		opts = append(opts, grpc.Creds(*creds))
+		opts = append(opts, grpc.Creds(creds))
 	}
 	grpcServer = grpc.NewServer(opts...)
 
@@ -86,7 +86,7 @@ func NewServer(rateLimit uint32, creds *credentials.TransportCredentials) *grpc.
 	return grpcServer
 }
 
-func Connect(creds *credentials.TransportCredentials, dialAddress string) (*grpc.ClientConn, error) {
+func Connect(creds credentials.TransportCredentials, dialAddress string) (*grpc.ClientConn, error) {
 	var dialOpts []grpc.DialOption
 
 	backoffCfg := backoff.DefaultConfig
@@ -100,7 +100,7 @@ func Connect(creds *credentials.TransportCredentials, dialAddress string) (*grpc
 	if creds == nil {
 		dialOpts = append(dialOpts, grpc.WithInsecure())
 	} else {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(*creds))
+		dialOpts = append(dialOpts, grpc.WithTransportCredentials(creds))
 	}
 
 	//if opts.inMemConn != nil {
