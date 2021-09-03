@@ -81,7 +81,7 @@ type Pool interface {
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddRemoteTxs(ctx context.Context, newTxs TxSlots)
-	OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
+	OnNewBlock(tx kv.Tx, stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
 
 	AddNewGoodPeer(peerID PeerID)
 }
@@ -236,7 +236,6 @@ func (sc *sendersBatch) info(id uint64, tx kv.Tx, expectMiss bool) (*senderInfo,
 	}
 	if len(v) == 0 {
 		if !expectMiss {
-			fmt.Printf("sender not loaded in advance: %d\n", id)
 			panic("all senders must be loaded in advance")
 		}
 		return nil, nil // don't fallback to core db, it will be manually done in right place
@@ -509,7 +508,6 @@ type TxPool struct {
 
 	// track isLocal flag of already mined transactions. used at unwind.
 	localsHistory *simplelru.LRU
-	db            kv.RwDB
 	coreDB        kv.RoDB
 
 	// fields for transaction propagation
@@ -531,7 +529,7 @@ type TxPool struct {
 	cfg Config
 }
 
-func New(newTxs chan Hashes, db kv.RwDB, coreDB kv.RoDB, cfg Config) (*TxPool, error) {
+func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
@@ -547,7 +545,6 @@ func New(newTxs chan Hashes, db kv.RwDB, coreDB kv.RoDB, cfg Config) (*TxPool, e
 		queued:                  NewSubPool(QueuedSubPool),
 		newTxs:                  newTxs,
 		senders:                 newSendersCache(),
-		db:                      db,
 		coreDB:                  coreDB,
 		cfg:                     cfg,
 		senderID:                1,
@@ -825,7 +822,7 @@ func (p *TxPool) copyDiscardReasons(from int) []DiscardReason {
 	copy(cpy, p.discardReasons[from:])
 	return cpy
 }
-func (p *TxPool) processRemoteTxs(ctx context.Context) error {
+func (p *TxPool) processRemoteTxs(ctx context.Context, tx kv.Tx) error {
 	p.lock.RLock()
 	l := len(p.unprocessedRemoteTxs.txs)
 	p.lock.RUnlock()
@@ -839,11 +836,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	defer p.lock.Unlock()
 	newTxs := *p.unprocessedRemoteTxs
 
-	tx, err := p.db.BeginRo(context.Background())
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	cacheMisses, err := p.senders.onNewTxs(tx, newTxs)
 	if err != nil {
 		return err
@@ -921,17 +913,12 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
-func (p *TxPool) OnNewBlock(stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error {
+func (p *TxPool) OnNewBlock(tx kv.Tx, stateChanges map[string]senderInfo, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
 	t := time.Now()
-	tx, err := p.db.BeginRo(context.Background())
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	if err := p.senders.onNewBlock(tx, stateChanges, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
 		return err
@@ -1133,8 +1120,6 @@ func onSenderChange(senderID uint64, sender *senderInfo, byNonce *ByNonce, proto
 		// this transaction will never be included into this particular chain.
 		mt.subPool &^= EnoughFeeCapProtocol
 		if mt.Tx.feeCap >= protocolBaseFee {
-			//fmt.Printf("alex1: %d,%d,%d,%d\n", mt.NeedBalance.Uint64(), mt.Tx.gas, mt.Tx.feeCap, mt.Tx.value.Uint64())
-			//fmt.Printf("alex2: %d,%t\n", sender.balance.Uint64(), mt.SenderHasEnoughBalance)
 			mt.subPool |= EnoughFeeCapProtocol
 		} else {
 			mt.subPool = 0 // TODO: we immediately drop all transactions if they have no first bit - then maybe we don't need this bit at all? And don't add such transactions to queue?
@@ -1541,7 +1526,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				log.Error("log stats", "err", err)
 			}
 		case <-processRemoteTxsEvery.C:
-			if err := p.processRemoteTxs(ctx); err != nil {
+			if err := db.View(ctx, func(tx kv.Tx) error { return p.processRemoteTxs(ctx, tx) }); err != nil {
 				if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
 					continue
 				}
@@ -1771,9 +1756,9 @@ func (sc *sendersBatch) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 
 	v := make([]byte, 8, 8+32)
 	for id, info := range sc.senderInfo {
-		if info.nonce == 0 && info.balance.IsZero() {
-			continue
-		}
+		//if info.nonce == 0 && info.balance.IsZero() {
+		//	continue
+		//}
 		binary.BigEndian.PutUint64(encID, id)
 		binary.BigEndian.PutUint64(v, info.nonce)
 		v = append(v[:8], info.balance.Bytes()...)

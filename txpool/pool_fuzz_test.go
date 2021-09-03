@@ -331,7 +331,7 @@ func FuzzOnNewBlocks12(f *testing.F) {
 
 		cfg := DefaultConfig
 		cfg.evictSendersAfterRounds = 1
-		pool, err := New(ch, db, cfg)
+		pool, err := New(ch, nil, cfg)
 		assert.NoError(err)
 		pool.senders.senderInfo = senders
 		pool.senders.senderIDs = senderIDs
@@ -507,43 +507,43 @@ func FuzzOnNewBlocks12(f *testing.F) {
 		}
 		//fmt.Printf("-------\n")
 
+		tx, err := db.BeginRw(context.Background())
+		require.NoError(err)
+		defer tx.Rollback()
+
 		// go to first fork
 		//fmt.Printf("ll1: %d,%d,%d\n", pool.pending.Len(), pool.baseFee.Len(), pool.queued.Len())
 		txs1, txs2, p2pReceived, txs3 := splitDataset(txs)
-		err = pool.OnNewBlock(map[string]senderInfo{}, txs1, TxSlots{}, currentBaseFee, 1, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]senderInfo{}, txs1, TxSlots{}, currentBaseFee, 1, [32]byte{})
 		assert.NoError(err)
 		check(txs1, TxSlots{}, "fork1")
 		checkNotify(txs1, TxSlots{}, "fork1")
 
 		_, _, _ = p2pReceived, txs2, txs3
-		err = pool.OnNewBlock(map[string]senderInfo{}, TxSlots{}, txs2, currentBaseFee, 1, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]senderInfo{}, TxSlots{}, txs2, currentBaseFee, 1, [32]byte{})
 		check(TxSlots{}, txs2, "fork1 mined")
 		checkNotify(TxSlots{}, txs2, "fork1 mined")
 
 		// unwind everything and switch to new fork (need unwind mined now)
-		err = pool.OnNewBlock(map[string]senderInfo{}, txs2, TxSlots{}, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]senderInfo{}, txs2, TxSlots{}, currentBaseFee, 2, [32]byte{})
 		assert.NoError(err)
 		check(txs2, TxSlots{}, "fork2")
 		checkNotify(txs2, TxSlots{}, "fork2")
 
-		err = pool.OnNewBlock(map[string]senderInfo{}, TxSlots{}, txs3, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(tx, map[string]senderInfo{}, TxSlots{}, txs3, currentBaseFee, 2, [32]byte{})
 		assert.NoError(err)
 		check(TxSlots{}, txs3, "fork2 mined")
 		checkNotify(TxSlots{}, txs3, "fork2 mined")
 
 		// add some remote txs from p2p
 		pool.AddRemoteTxs(context.Background(), p2pReceived)
-		err = pool.processRemoteTxs(context.Background())
+		err = pool.processRemoteTxs(context.Background(), tx)
 		assert.NoError(err)
 		check(p2pReceived, TxSlots{}, "p2pmsg1")
 		checkNotify(p2pReceived, TxSlots{}, "p2pmsg1")
 
 		senderIdsBeforeFlush := len(pool.senders.senderIDs)
 		senderInfoBeforeFlush := len(pool.senders.senderInfo)
-
-		tx, err := db.BeginRw(context.Background())
-		require.NoError(err)
-		defer tx.Rollback()
 
 		_, err = pool.flushLocked(tx) // we don't test eviction here, because dedicated test exists
 		require.NoError(err)
