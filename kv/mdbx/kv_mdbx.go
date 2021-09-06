@@ -311,7 +311,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 				}
 			}
 		}()
-		panic(1)
 	}
 	return db, nil
 }
