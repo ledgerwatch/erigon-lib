@@ -295,27 +295,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 
 	}
-	if opts.label == kv.ChainDB {
-		go func() {
-			for {
-				<-time.After(time.Second)
-				if db.env == nil {
-					continue
-				}
-
-				if err := db.View(context.Background(), func(tx kv.Tx) error {
-					info, err := tx.(*MdbxTx).tx.Info(false)
-					if err != nil {
-						return err
-					}
-					fmt.Printf("id: %d\n", info.Id)
-					return err
-				}); err != nil {
-					panic(err)
-				}
-			}
-		}()
-	}
 	return db, nil
 }
 
