@@ -205,8 +205,6 @@ func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txS
 	}
 	p, requestID, err = rlp.U64(payload, p)
 	if err != nil {
-		fmt.Printf("a: %d,%d,%d\n", p, pos, len(payload))
-		panic(fmt.Errorf("uint64 must not be more than 8 bytes long, got %x", payload))
 		return requestID, 0, err
 	}
 	p, _, err = rlp.List(payload, p)

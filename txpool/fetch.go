@@ -301,11 +301,11 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		})
 
 		if req.Id == sentry.MessageId_GET_POOLED_TRANSACTIONS_66 {
-			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
+			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
 		} else {
-			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
+			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
 		}
