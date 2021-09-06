@@ -590,7 +590,7 @@ func (p *TxPool) logStats(tx kv.Tx) error {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Info(fmt.Sprintf("baseFee: %d, %dm; queuesSize: pending=%d/%d, baseFee=%d/%d, queued=%d/%d; sendersBatch: id=%d+%d,info=%d+%d, alloc=%dMb, sys=%dMb\n",
+	log.Info(fmt.Sprintf("[txpool] baseFee: %d, %dm; queuesSize: pending=%d/%d, baseFee=%d/%d, queued=%d/%d; sendersBatch: id=%d+%d,info=%d+%d, alloc=%dMb, sys=%dMb\n",
 		protocolBaseFee, currentBaseFee/1_000_000,
 		p.pending.Len(), PendingSubPoolLimit, p.baseFee.Len(), BaseFeeSubPoolLimit, p.queued.Len(), QueuedSubPoolLimit,
 		idsInMem, idsInDb, infoInMem, infoInDb,
@@ -729,11 +729,11 @@ func (p *TxPool) DeprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 		if slot.rlp == nil {
 			v, err := tx.GetOne(kv.PoolTransaction, slot.idHash[:])
 			if err != nil {
-				log.Error("get tx from db", "err", err)
+				log.Error("[txpool] get tx from db", "err", err)
 				return false
 			}
 			if v == nil {
-				log.Error("tx not found in db")
+				log.Error("[txpool] tx not found in db")
 				return false
 			}
 			slotRlp = v[8:]
@@ -752,11 +752,11 @@ func (p *TxPool) DeprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 			binary.BigEndian.PutUint64(encID, slot.senderID)
 			v, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
 			if err != nil {
-				log.Error("get sender from db", "err", err)
+				log.Error("[txpool] get sender from db", "err", err)
 				return false
 			}
 			if v == nil {
-				log.Error("sender not found in db")
+				log.Error("[txpool] sender not found in db")
 				return false
 			}
 		}
@@ -883,7 +883,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, tx kv.Tx) error {
 	p.unprocessedRemoteTxs.Resize(0)
 	p.unprocessedRemoteByHash = map[string]int{}
 
-	//log.Info("on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
+	//log.Info("[txpool] on new txs", "amount", len(newTxs.txs), "in", time.Since(t))
 	return nil
 }
 func onNewTxs(tx kv.Tx, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
@@ -957,7 +957,7 @@ func (p *TxPool) OnNewBlock(tx kv.Tx, stateChanges map[string]sender, unwindTxs,
 		}
 	}
 
-	log.Info("new block", "number", blockHeight, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", blockHeight, "in", time.Since(t))
 	return nil
 }
 func (p *TxPool) discardLocked(mt *metaTx) {
@@ -1499,10 +1499,10 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			return p.fromDB(ctx, tx, coreTx)
 		})
 	}); err != nil {
-		log.Error("restore from db", "err", err)
+		log.Error("[txpool] restore from db", "err", err)
 	}
 	if err := db.View(ctx, func(tx kv.Tx) error { return p.logStats(tx) }); err != nil {
-		log.Error("log stats", "err", err)
+		log.Error("[txpool] log stats", "err", err)
 	}
 	//if ASSERT {
 	//	go func() {
@@ -1530,7 +1530,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			return
 		case <-logEvery.C:
 			if err := db.View(ctx, func(tx kv.Tx) error { return p.logStats(tx) }); err != nil {
-				log.Error("log stats", "err", err)
+				log.Error("[txpool] log stats", "err", err)
 			}
 		case <-processRemoteTxsEvery.C:
 			if err := db.View(ctx, func(tx kv.Tx) error { return p.processRemoteTxs(ctx, tx) }); err != nil {
@@ -1540,19 +1540,19 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 					continue
 				}
-				log.Error("process batch remote txs", "err", err)
+				log.Error("[txpool] process batch remote txs", "err", err)
 			}
 		case <-commitEvery.C:
 			if db != nil {
 				t := time.Now()
 				evicted, written, err := p.flush(db)
 				if err != nil {
-					log.Error("flush is local history", "err", err)
+					log.Error("[txpool] flush is local history", "err", err)
 					continue
 				}
 				writeToDbBytesCounter.Set(written)
 				sendersEvictedCounter.Set(evicted)
-				log.Info("flush", "written_kb", written/1024, "evicted", evicted, "in", time.Since(t))
+				log.Info("[txpool] flush", "written_kb", written/1024, "evicted", evicted, "in", time.Since(t))
 			}
 		case h := <-newTxs: //TODO: maybe send TxSlots object instead of Hashes?
 			// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
@@ -1582,7 +1582,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				newTxSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp})
 				return nil
 			}); err != nil {
-				log.Error("send new slots by grpc", "err", err)
+				log.Error("[txpool] send new slots by grpc", "err", err)
 			}
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()
@@ -2029,7 +2029,7 @@ func changesets(ctx context.Context, from uint64, coreTx kv.Tx) (map[string]send
 		diff[string(v[:20])] = *info
 		select {
 		case <-logEvery.C:
-			log.Info("loading changesets", "block", binary.BigEndian.Uint64(k))
+			log.Info("[txpool] loading changesets", "block", binary.BigEndian.Uint64(k))
 		case <-ctx.Done():
 			return nil
 		default:
