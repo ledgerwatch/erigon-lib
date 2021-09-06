@@ -27,9 +27,10 @@ type NewPooledTransactionHashesPacket [][32]byte
 
 // ParseHashesCount looks at the RLP length Prefix for list of 32-byte hashes
 // and returns number of hashes in the list to expect
-func ParseHashesCount(payload Hashes, pos int) (count int, dataPos int, err error) {
+func ParseHashesCount(payload []byte, pos int) (count int, dataPos int, err error) {
 	dataPos, dataLen, err := rlp.List(payload, pos)
 	if err != nil {
+		fmt.Printf("%x, %d\n", payload, pos)
 		return 0, 0, fmt.Errorf("%s: hashes len: %w", rlp.ParseHashErrorPrefix, err)
 	}
 	if dataLen%33 != 0 {
@@ -114,11 +115,6 @@ func ParseGetPooledTransactions66(payload []byte, pos int, hashbuf []byte) (requ
 }
 
 func ParseGetPooledTransactions65(payload []byte, pos int, hashbuf []byte) (hashes []byte, newPos int, err error) {
-	pos, _, err = rlp.List(payload, pos)
-	if err != nil {
-		return hashes, 0, err
-	}
-
 	var hashesCount int
 	hashesCount, pos, err = ParseHashesCount(payload, pos)
 	if err != nil {
