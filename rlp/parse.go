@@ -118,7 +118,7 @@ func U64(payload []byte, pos int) (int, uint64, error) {
 		return 0, 0, fmt.Errorf("uint64 must be a string, not isList")
 	}
 	if dataLen > 8 {
-		return 0, 0, fmt.Errorf("uint64 must not be more than 8 bytes long, got %d", dataLen)
+		return 0, 0, fmt.Errorf("uint64 must not be more than 8 bytes long, got %d,%x", dataLen, payload)
 	}
 	if dataLen > 0 && payload[dataPos] == 0 {
 		return 0, 0, fmt.Errorf("integer encoding for RLP must not have leading zeros: %x", payload[dataPos:dataPos+dataLen])
