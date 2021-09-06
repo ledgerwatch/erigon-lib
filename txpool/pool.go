@@ -883,6 +883,8 @@ func (p *TxPool) processRemoteTxs(ctx context.Context, tx kv.Tx) error {
 	}
 	if len(notifyNewTxs) > 0 {
 		select {
+		case <-ctx.Done():
+			return nil
 		case p.newTxs <- notifyNewTxs:
 		default:
 		}
