@@ -1492,7 +1492,7 @@ func (p *WorstQueue) Pop() interface{} {
 //      - all local pooled byHash to random peers periodically
 // promote/demote transactions
 // reorgs
-func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send, newTxSlotsStreams *NewSlotsStreams) {
+func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send, newSlotsStreams *NewSlotsStreams, notifyMiningAboutNewSlots func()) {
 	//db.Update(ctx, func(tx kv.RwTx) error { return tx.ClearBucket(kv.PooledSender) })
 	if err := db.Update(ctx, func(tx kv.RwTx) error {
 		return coreDB.View(ctx, func(coreTx kv.Tx) error {
@@ -1555,6 +1555,22 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				log.Info("[txpool] flush", "written_kb", written/1024, "evicted", evicted, "in", time.Since(t))
 			}
 		case h := <-newTxs: //TODO: maybe send TxSlots object instead of Hashes?
+			notifyMiningAboutNewSlots()
+			if err := db.View(ctx, func(tx kv.Tx) error {
+				slotsRlp := make([][]byte, 0, h.Len())
+				for i := 0; i < h.Len(); i++ {
+					slotRlp, err := p.GetRlp(tx, h.At(i))
+					if err != nil {
+						return err
+					}
+					slotsRlp = append(slotsRlp, slotRlp)
+				}
+				newSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp})
+				return nil
+			}); err != nil {
+				log.Error("[txpool] send new slots by grpc", "err", err)
+			}
+
 			// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
 			localTxHashes = localTxHashes[:0]
 			remoteTxHashes = remoteTxHashes[:0]
@@ -1569,21 +1585,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 
 			send.BroadcastLocalPooledTxs(localTxHashes)
 			send.BroadcastRemotePooledTxs(remoteTxHashes)
-
-			if err := db.View(ctx, func(tx kv.Tx) error {
-				slotsRlp := make([][]byte, 0, h.Len())
-				for i := 0; i < h.Len(); i++ {
-					slotRlp, err := p.GetRlp(tx, h.At(i))
-					if err != nil {
-						return err
-					}
-					slotsRlp = append(slotsRlp, slotRlp)
-				}
-				newTxSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp})
-				return nil
-			}); err != nil {
-				log.Error("[txpool] send new slots by grpc", "err", err)
-			}
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()
 			if len(newPeers) == 0 {
