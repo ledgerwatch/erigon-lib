@@ -298,8 +298,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		go func() {
 			for {
 				<-time.After(time.Second)
-				if err := env.View(func(tx *mdbx.Txn) error {
-					info, err := tx.Info(false)
+				if err := db.View(context.Background(), func(tx kv.Tx) error {
+					info, err := tx.(*MdbxTx).tx.Info(false)
 					if err != nil {
 						return err
 					}
