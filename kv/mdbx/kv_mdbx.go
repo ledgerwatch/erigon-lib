@@ -299,7 +299,10 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			for {
 				<-time.After(time.Second)
 				if err := env.View(func(tx *mdbx.Txn) error {
-					info, _ := tx.Info(false)
+					info, err := tx.Info(false)
+					if err != nil {
+						return err
+					}
 					fmt.Printf("id: %d\n", info.Id)
 					return err
 				}); err != nil {
