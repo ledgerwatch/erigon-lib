@@ -199,23 +199,25 @@ func ParsePooledTransactions65(payload []byte, pos int, ctx *TxParseContext, txS
 }
 
 func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots) (requestID uint64, newPos int, err error) {
-	pos, _, err = rlp.List(payload, pos)
+	p, _, err := rlp.List(payload, pos)
 	if err != nil {
 		return requestID, 0, err
 	}
-	pos, requestID, err = rlp.U64(payload, pos)
+	p, requestID, err = rlp.U64(payload, p)
 	if err != nil {
+		fmt.Printf("a: %d,%d,%d\n", p, pos, len(payload))
+		panic(fmt.Errorf("uint64 must not be more than 8 bytes long, got %x", payload))
 		return requestID, 0, err
 	}
-	pos, _, err = rlp.List(payload, pos)
+	p, _, err = rlp.List(payload, p)
 	if err != nil {
 		return requestID, 0, err
 	}
 
-	for i := 0; pos < len(payload); i++ {
+	for i := 0; p < len(payload); i++ {
 		txSlots.Resize(uint(i + 1))
 		txSlots.txs[i] = &TxSlot{}
-		pos, err = ctx.ParseTransaction(payload, pos, txSlots.txs[i], txSlots.senders.At(i))
+		p, err = ctx.ParseTransaction(payload, p, txSlots.txs[i], txSlots.senders.At(i))
 		if err != nil {
 			if errors.Is(err, ErrRejected) {
 				txSlots.Resize(uint(i))
@@ -225,5 +227,5 @@ func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txS
 			return requestID, 0, err
 		}
 	}
-	return requestID, pos, nil
+	return requestID, p, nil
 }
