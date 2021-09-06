@@ -673,7 +673,7 @@ func (p *TxPool) Started() bool                { return p.protocolBaseFee.Load()
 
 // Best - returns top `n` elements of pending queue
 // id doesn't perform full copy of txs, hovewer underlying elements are immutable
-func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
+func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -682,13 +682,21 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 	best := p.pending.best
 	encID := make([]byte, 8)
 	for i := 0; i < int(n) && i < len(best); i++ {
-		txs.txs[i] = best[i].Tx
-		txs.isLocal[i] = best[i].subPool&IsLocal > 0
+		rlpTx, err := tx.GetOne(kv.PoolTransaction, best[i].Tx.idHash[:])
+		if err != nil {
+			return err
+		}
+		if len(rlpTx) == 0 {
+			log.Warn("tx rlp not found")
+			continue
+		}
+		txs.Txs[i] = rlpTx
+		txs.IsLocal[i] = best[i].subPool&IsLocal > 0
 
 		found := false
 		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
 			if best[i].Tx.senderID == senderID {
-				copy(txs.senders.At(i), addr)
+				copy(txs.Senders.At(i), addr)
 				found = true
 				break
 			}
@@ -705,7 +713,7 @@ func (p *TxPool) Best(n uint16, txs *TxSlots, tx kv.Tx) error {
 		if v == nil {
 			return fmt.Errorf("tx sender not found")
 		}
-		copy(txs.senders.At(i), v)
+		copy(txs.Senders.At(i), v)
 	}
 	return nil
 }
