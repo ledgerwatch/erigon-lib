@@ -57,6 +57,7 @@ var (
 const ASSERT = false
 
 type Config struct {
+	DBDir                   string
 	syncToNewPeersEvery     time.Duration
 	processRemoteTxsEvery   time.Duration
 	commitEvery             time.Duration
@@ -497,6 +498,10 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 
 // TxPool - holds all pool-related data structures and lock-based tiny methods
 // most of logic implemented by pure tests-friendly functions
+//
+// txpool doesn't start any goroutines - "leave concurrency to user" design
+// txpool has no DB or TX fields - "leave db transactions management to user" design
+// txpool has coreDB field - but it must maximize local state cache hit-rate - and perform minimum coreDB transactions
 type TxPool struct {
 	lock *sync.RWMutex
 

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ledgerwatch/erigon-lib/direct"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
@@ -41,20 +42,24 @@ import (
 // Sentry should have a logic not to overwrite statusData with messages from tx pool
 type Fetch struct {
 	ctx                  context.Context       // Context used for cancellation and closing of the fetcher
-	sentryClients        []sentry.SentryClient // sentry clients that will be used for accessing the network
+	sentryClients        []direct.SentryClient // sentry clients that will be used for accessing the network
 	pool                 Pool                  // Transaction pool implementation
 	coreDB               kv.RoDB
 	db                   kv.RwDB
 	wg                   *sync.WaitGroup // used for synchronisation in the tests (nil when not in tests)
-	stateChangesClient   remote.KVClient
+	stateChangesClient   StateChangesClient
 	stateChangesParseCtx *TxParseContext
 	pooledTxsParseCtx    *TxParseContext
+}
+
+type StateChangesClient interface {
+	StateChanges(ctx context.Context, in *remote.StateChangeRequest, opts ...grpc.CallOption) (remote.KV_StateChangesClient, error)
 }
 
 // NewFetch creates a new fetch object that will work with given sentry clients. Since the
 // SentryClient here is an interface, it is suitable for mocking in tests (mock will need
 // to implement all the functions of the SentryClient interface).
-func NewFetch(ctx context.Context, sentryClients []sentry.SentryClient, pool Pool, stateChangesClient remote.KVClient, coreDB kv.RoDB, db kv.RwDB) *Fetch {
+func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Pool, stateChangesClient StateChangesClient, coreDB kv.RoDB, db kv.RwDB) *Fetch {
 	return &Fetch{
 		ctx:                  ctx,
 		sentryClients:        sentryClients,
@@ -396,7 +401,7 @@ func (f *Fetch) handleNewPeer(req *sentry.PeersReply) error {
 	return nil
 }
 
-func (f *Fetch) handleStateChanges(ctx context.Context, client remote.KVClient) error {
+func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClient) error {
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := client.StateChanges(streamCtx, &remote.StateChangeRequest{WithStorage: false, WithTransactions: true}, grpc.WaitForReady(true))
