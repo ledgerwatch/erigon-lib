@@ -680,8 +680,9 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 	txs.Resize(uint(min(uint64(n), uint64(len(p.pending.best)))))
 
 	best := p.pending.best
-	encID := make([]byte, 8)
+	//encID := make([]byte, 8)
 	for i := 0; i < int(n) && i < len(best); i++ {
+		//TODO: check in-mem also?
 		rlpTx, err := tx.GetOne(kv.PoolTransaction, best[i].Tx.idHash[:])
 		if err != nil {
 			return err
@@ -690,30 +691,32 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 			log.Warn("tx rlp not found")
 			continue
 		}
-		txs.Txs[i] = rlpTx
+		txs.Txs[i] = rlpTx[8:]
+		copy(txs.Senders.At(i), rlpTx[:8])
 		txs.IsLocal[i] = best[i].subPool&IsLocal > 0
+		/*
+				found := false
+				for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
+					if best[i].Tx.senderID == senderID {
+						copy(txs.Senders.At(i), addr)
+						found = true
+						break
+					}
+				}
+				if found {
+					continue
+				}
 
-		found := false
-		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
-			if best[i].Tx.senderID == senderID {
-				copy(txs.Senders.At(i), addr)
-				found = true
-				break
+			binary.BigEndian.PutUint64(encID, best[i].Tx.senderID)
+			v, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
+			if err != nil {
+				return err
 			}
-		}
-		if found {
-			continue
-		}
-
-		binary.BigEndian.PutUint64(encID, best[i].Tx.senderID)
-		v, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
-		if err != nil {
-			return err
-		}
-		if v == nil {
-			return fmt.Errorf("tx sender not found")
-		}
-		copy(txs.Senders.At(i), v)
+			if v == nil {
+				return fmt.Errorf("tx sender not found")
+			}
+			copy(txs.Senders.At(i), v)
+		*/
 	}
 	return nil
 }
