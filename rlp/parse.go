@@ -118,6 +118,7 @@ func U64(payload []byte, pos int) (int, uint64, error) {
 		return 0, 0, fmt.Errorf("uint64 must be a string, not isList")
 	}
 	if dataLen > 8 {
+		fmt.Printf("a: %d,%d,%d,%d\n", dataPos, dataLen, len(payload), pos)
 		panic(fmt.Errorf("uint64 must not be more than 8 bytes long, got %d,%x", dataLen, payload))
 		return 0, 0, fmt.Errorf("uint64 must not be more than 8 bytes long, got %d", dataLen)
 	}

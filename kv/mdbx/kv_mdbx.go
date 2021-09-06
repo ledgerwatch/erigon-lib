@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -293,6 +294,18 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			db.log.Info("[db] cleared reader slots from dead processes", "amount", staleReaders)
 		}
 	}
+	go func() {
+		for {
+			<-time.After(time.Second)
+			if err := env.View(func(tx *mdbx.Txn) error {
+				info, _ := tx.Info(false)
+				fmt.Printf("id: %d\n", info.Id)
+				return err
+			}); err != nil {
+				panic(err)
+			}
+		}
+	}()
 	return db, nil
 }
 

@@ -57,6 +57,13 @@ var txParseTests = []struct {
 		signHashStr: "35fbc0cd33a181e62b7432338f172106886a1396e1e3647ddf1e756740d81ae1", nonce: 3},
 }
 
+func TestParseTransactionRLP2(t *testing.T) {
+	ctx := NewTxParseContext()
+	payload := decodeHex("f8b5b8b302f8b001038459682f0085198b4f3e1882b6c79445db714f24f5a313569c41683047f1d49e78ba0780b844a22cb4650000000000000000000000005d8c9c8c769ffdb7cbb14f308acf3a036be6adf80000000000000000000000000000000000000000000000000000000000000001c001a0bbedc30a9cb5958bb0ded679ad1eb040cc093d101e8c92c4eb5d287bc9f45076a011a98d3fb6dbf9d4c7e5e1dee4685f707dfca72f1e4c7788b2c9aa031bf4cc88")
+	tx, txSender := &TxSlot{}, [20]byte{}
+	_, err := ctx.ParseTransaction(payload, 0, tx, txSender[:])
+	require.NoError(t, err)
+}
 func TestParseTransactionRLP(t *testing.T) {
 	ctx := NewTxParseContext()
 	for i, tt := range txParseTests {
