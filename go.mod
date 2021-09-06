@@ -4,7 +4,6 @@ go 1.16
 
 require (
 	github.com/RoaringBitmap/roaring v0.9.4
-	github.com/VictoriaMetrics/fastcache v1.6.0
 	github.com/VictoriaMetrics/metrics v1.17.3
 	github.com/c2h5oh/datasize v0.0.0-20200825124411-48ed595a09d2
 	github.com/golang/protobuf v1.5.2
@@ -19,7 +18,6 @@ require (
 	github.com/torquem-ch/mdbx-go v0.16.0
 	go.uber.org/atomic v1.9.0
 	golang.org/x/crypto v0.0.0-20210616213533-5ff15b29337e
-	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	google.golang.org/grpc v1.39.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0
 	google.golang.org/protobuf v1.27.1

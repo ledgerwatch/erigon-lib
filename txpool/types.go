@@ -174,6 +174,8 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// Next follows the nonce, which we need to parse
 	p, slot.nonce, err = rlp.U64(payload, p)
 	if err != nil {
+		fmt.Printf("a: %d,%d,%d,%d\n", dataPos, dataLen, len(payload), pos)
+		panic(fmt.Errorf("uint64 must not be more than 8 bytes long, got %d,%x", dataLen, payload))
 		return 0, fmt.Errorf("%s: nonce: %w", ParseTransactionErrorPrefix, err)
 	}
 	// Next follows gas price or tip
