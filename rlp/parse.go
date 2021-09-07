@@ -77,6 +77,8 @@ func Prefix(payload []byte, pos int) (dataPos int, dataLen int, isList bool, err
 	if err == nil {
 		if dataPos+dataLen > len(payload) {
 			err = fmt.Errorf("unexpected end of payload")
+		} else if dataPos+dataLen < 0 {
+			err = fmt.Errorf("found too big len")
 		}
 	}
 	return
