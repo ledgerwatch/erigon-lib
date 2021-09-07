@@ -28,6 +28,9 @@ func BeInt(payload []byte, pos, length int) (int, error) {
 	if length > 0 && payload[pos] == 0 {
 		return 0, fmt.Errorf("integer encoding for RLP must not have leading zeros: %x", payload[pos:pos+length])
 	}
+	if pos >= len(payload) {
+		return 0, fmt.Errorf("unexpected end of payload")
+	}
 	for _, b := range payload[pos : pos+length] {
 		r = (r << 8) | int(b)
 	}
