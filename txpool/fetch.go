@@ -186,7 +186,6 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 				continue
 			}
 			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
-			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err, "data", fmt.Sprintf("%x", req.Data))
 		}
 		if f.wg != nil {
 			f.wg.Done()
@@ -312,7 +311,6 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				return err
 			}
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
-			fmt.Printf("msg65: %s,%x\n", req.Id.String(), req.Data)
 			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
