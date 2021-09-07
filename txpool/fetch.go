@@ -300,17 +300,18 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			known, _ := f.pool.IdHashKnown(tx, hash)
 			return known
 		})
-
-		if req.Id == sentry.MessageId_GET_POOLED_TRANSACTIONS_66 {
-			fmt.Printf("msg66: %s,%x\n", req.Id.String(), req.Data)
+		switch req.Id {
+		case sentry.MessageId_POOLED_TRANSACTIONS_65:
 			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
-		} else {
+		case sentry.MessageId_POOLED_TRANSACTIONS_66:
 			fmt.Printf("msg65: %s,%x\n", req.Id.String(), req.Data)
 			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
+		default:
+			return fmt.Errorf("unexpected message: %s", req.Id.String())
 		}
 		if len(txs.txs) == 0 {
 			return nil
