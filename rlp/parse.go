@@ -25,11 +25,11 @@ import (
 // BeInt parses Big Endian representation of an integer from given payload at given position
 func BeInt(payload []byte, pos, length int) (int, error) {
 	var r int
-	if length > 0 && payload[pos] == 0 {
-		return 0, fmt.Errorf("integer encoding for RLP must not have leading zeros: %x", payload[pos:pos+length])
-	}
 	if pos >= len(payload) {
 		return 0, fmt.Errorf("unexpected end of payload")
+	}
+	if length > 0 && payload[pos] == 0 {
+		return 0, fmt.Errorf("integer encoding for RLP must not have leading zeros: %x", payload[pos:pos+length])
 	}
 	for _, b := range payload[pos : pos+length] {
 		r = (r << 8) | int(b)
