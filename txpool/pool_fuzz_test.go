@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -443,9 +442,6 @@ func FuzzOnNewBlocks12(f *testing.F) {
 			for id := range senders {
 				//assert.True(senders[i].byNonce.Len() > 0)
 				pool.byNonce.ascend(id, func(mt *metaTx) bool {
-					if mt.worstIndex < 0 {
-						fmt.Printf("here: %d,%d\n", pool.byNonce.tree.Len(), len(pool.byHash))
-					}
 					require.True(mt.worstIndex >= 0, msg)
 					assert.True(mt.bestIndex >= 0, msg)
 					return true
