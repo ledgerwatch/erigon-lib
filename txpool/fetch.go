@@ -186,6 +186,7 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 				continue
 			}
 			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
+			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err, "data", fmt.Sprintf("%x", req.Data))
 		}
 		if f.wg != nil {
 			f.wg.Done()
