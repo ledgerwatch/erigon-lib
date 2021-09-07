@@ -37,6 +37,9 @@ func BeInt(payload []byte, pos, length int) (int, error) {
 // Prefix parses RLP Prefix from given payload at given position. It returns the offset and length of the RLP element
 // as well as the indication of whether it is a list of string
 func Prefix(payload []byte, pos int) (dataPos int, dataLen int, isList bool, err error) {
+	if pos < 0 {
+		return 0, 0, false, fmt.Errorf("negative position not allowed")
+	}
 	if pos >= len(payload) {
 		return 0, 0, false, fmt.Errorf("unexpected end of payload")
 	}
