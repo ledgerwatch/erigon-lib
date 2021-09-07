@@ -456,7 +456,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 			diff[string(addr[:])] = sender{nonce: nonce, balance: balance}
 		}
 		if err := f.db.View(ctx, func(tx kv.Tx) error {
-			return f.pool.OnNewBlock(tx, diff, unwindTxs, minedTxs, req.ProtocolBaseFee, req.BlockHeight, gointerfaces.ConvertH256ToHash(req.BlockHash))
+			return f.pool.OnNewBlock(diff, unwindTxs, minedTxs, req.ProtocolBaseFee, req.BlockHeight, gointerfaces.ConvertH256ToHash(req.BlockHash))
 		}); err != nil {
 			log.Warn("onNewBlock", "err", err)
 		}
