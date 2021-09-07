@@ -329,7 +329,7 @@ func FuzzOnNewBlocks12(f *testing.F) {
 		t.Cleanup(db.Close)
 
 		cfg := DefaultConfig
-		cfg.evictSendersAfterRounds = 1
+		cfg.EvictSendersAfterRounds = 1
 		pool, err := New(ch, nil, cfg)
 		assert.NoError(err)
 		pool.senders.senderInfo = senders
