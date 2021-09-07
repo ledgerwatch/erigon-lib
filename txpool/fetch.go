@@ -302,10 +302,12 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		})
 
 		if req.Id == sentry.MessageId_GET_POOLED_TRANSACTIONS_66 {
+			fmt.Printf("msg: %s\n", req.Id.String())
 			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
 		} else {
+			fmt.Printf("msg2: %s\n", req.Id.String())
 			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
