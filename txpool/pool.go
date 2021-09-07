@@ -58,19 +58,19 @@ const ASSERT = false
 
 type Config struct {
 	DBDir                   string
-	syncToNewPeersEvery     time.Duration
-	processRemoteTxsEvery   time.Duration
-	commitEvery             time.Duration
-	logEvery                time.Duration
-	evictSendersAfterRounds uint64
+	SyncToNewPeersEvery     time.Duration
+	ProcessRemoteTxsEvery   time.Duration
+	CommitEvery             time.Duration
+	LogEvery                time.Duration
+	EvictSendersAfterRounds uint64
 }
 
 var DefaultConfig = Config{
-	syncToNewPeersEvery:     2 * time.Minute,
-	processRemoteTxsEvery:   100 * time.Millisecond,
-	commitEvery:             15 * time.Second,
-	logEvery:                30 * time.Second,
-	evictSendersAfterRounds: 20,
+	SyncToNewPeersEvery:     2 * time.Minute,
+	ProcessRemoteTxsEvery:   100 * time.Millisecond,
+	CommitEvery:             15 * time.Second,
+	LogEvery:                30 * time.Second,
+	EvictSendersAfterRounds: 20,
 }
 
 // Pool is interface for the transaction pool
@@ -1525,13 +1525,13 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	//	}()
 	//}
 
-	syncToNewPeersEvery := time.NewTicker(p.cfg.syncToNewPeersEvery)
+	syncToNewPeersEvery := time.NewTicker(p.cfg.SyncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
-	processRemoteTxsEvery := time.NewTicker(p.cfg.processRemoteTxsEvery)
+	processRemoteTxsEvery := time.NewTicker(p.cfg.ProcessRemoteTxsEvery)
 	defer processRemoteTxsEvery.Stop()
-	commitEvery := time.NewTicker(p.cfg.commitEvery)
+	commitEvery := time.NewTicker(p.cfg.CommitEvery)
 	defer commitEvery.Stop()
-	logEvery := time.NewTicker(p.cfg.logEvery)
+	logEvery := time.NewTicker(p.cfg.LogEvery)
 	defer logEvery.Stop()
 
 	localTxHashes := make([]byte, 0, 128)
@@ -1729,7 +1729,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (evicted uint64, err error) {
 		return evicted, err
 	}
 
-	evicted, err = p.senders.flush(tx, p.byNonce, sendersWithoutTransactions, p.cfg.evictSendersAfterRounds)
+	evicted, err = p.senders.flush(tx, p.byNonce, sendersWithoutTransactions, p.cfg.EvictSendersAfterRounds)
 	if err != nil {
 		return evicted, err
 	}
