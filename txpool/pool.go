@@ -812,7 +812,7 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots, tx kv.Tx) ([]Dis
 
 	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 	if protocolBaseFee == 0 || currentBaseFee == 0 {
-		return nil, fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, currentBaseFee)
+		return nil, fmt.Errorf("pool not started yet")
 	}
 	if err := onNewTxs(tx, p.senders, newTxs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return nil, err
