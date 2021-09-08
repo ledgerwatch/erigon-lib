@@ -427,6 +427,7 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 type TxPool struct {
 	lock *sync.RWMutex
 
+	stared          atomic.Bool
 	protocolBaseFee atomic.Uint64
 	currentBaseFee  atomic.Uint64
 
@@ -585,7 +586,7 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 	return ok
 }
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
-func (p *TxPool) Started() bool                { return p.protocolBaseFee.Load() > 0 }
+func (p *TxPool) Started() bool                { return p.stared.Load() }
 
 // Best - returns top `n` elements of pending queue
 // id doesn't perform full copy of txs, hovewer underlying elements are immutable
@@ -716,11 +717,10 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 		return nil, err
 	}
 
-	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
-	if protocolBaseFee == 0 || currentBaseFee == 0 {
-		return nil, fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, currentBaseFee)
+	if !p.Started() {
+		return nil, fmt.Errorf("pool not started yet")
 	}
-	if err := onNewTxs(p.senders, newTxs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
+	if err := onNewTxs(p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return nil, err
 	}
 
@@ -773,11 +773,11 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
-	if protocolBaseFee == 0 || currentBaseFee == 0 {
-		return fmt.Errorf("non-zero base fee: %d,%d", protocolBaseFee, currentBaseFee)
+	if !p.stared.Load() {
+		return fmt.Errorf("txpool not started yet")
 	}
-	if err := onNewTxs(p.senders, newTxs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
+
+	if err := onNewTxs(p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -833,6 +833,7 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 		p.protocolBaseFee.Store(calcProtocolBaseFee(baseFee))
 		p.currentBaseFee.Store(baseFee)
 	}
+	p.stared.Store(true)
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
