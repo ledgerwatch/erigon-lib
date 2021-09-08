@@ -2,9 +2,6 @@ module github.com/ledgerwatch/erigon-lib
 
 go 1.16
 
-replace (
-	github.com/ledgerwatch/erigon-lib => ./../erigon-lib/
-)
 require (
 	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/VictoriaMetrics/metrics v1.17.3
