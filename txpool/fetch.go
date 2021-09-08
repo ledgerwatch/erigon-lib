@@ -255,7 +255,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			messageId = sentry.MessageId_POOLED_TRANSACTIONS_66
 			requestID, hashes, _, err := ParseGetPooledTransactions66(req.Data, 0, nil)
 			if err != nil {
-				return fmt.Errorf("ParseGetPooledTransactions66: %w", err)
+				return err
 			}
 			_ = requestID
 			var txs [][]byte
@@ -275,7 +275,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			messageId = sentry.MessageId_POOLED_TRANSACTIONS_65
 			hashes, _, err := ParseGetPooledTransactions65(req.Data, 0, nil)
 			if err != nil {
-				return fmt.Errorf("ParseGetPooledTransactions65: %w", err)
+				return err
 			}
 			var txs [][]byte
 			for i := 0; i < len(hashes); i += 32 {
@@ -307,12 +307,12 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		})
 		switch req.Id {
 		case sentry.MessageId_POOLED_TRANSACTIONS_65:
-			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
-				return fmt.Errorf("ParsePooledTransactions66: %w", err)
+			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
+				return err
 			}
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
-			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
-				return fmt.Errorf("ParsePooledTransactions65: %w", err)
+			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
+				return err
 			}
 		default:
 			return fmt.Errorf("unexpected message: %s", req.Id.String())
