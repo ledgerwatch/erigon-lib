@@ -255,7 +255,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			messageId = sentry.MessageId_POOLED_TRANSACTIONS_66
 			requestID, hashes, _, err := ParseGetPooledTransactions66(req.Data, 0, nil)
 			if err != nil {
-				return err
+				return fmt.Errorf("ParseGetPooledTransactions66: %w", err)
 			}
 			_ = requestID
 			var txs [][]byte
@@ -275,7 +275,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			messageId = sentry.MessageId_POOLED_TRANSACTIONS_65
 			hashes, _, err := ParseGetPooledTransactions65(req.Data, 0, nil)
 			if err != nil {
-				return err
+				return fmt.Errorf("ParseGetPooledTransactions65: %w", err)
 			}
 			var txs [][]byte
 			for i := 0; i < len(hashes); i += 32 {
