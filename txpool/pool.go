@@ -53,7 +53,7 @@ var (
 	writeToDbBytesCounter = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
 )
 
-const ASSERT = false
+const ASSERT = true
 
 type Config struct {
 	DBDir                   string
@@ -1614,7 +1614,18 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 				break
 			}
 		}
-		copy(v[20:], metaTx.Tx.rlp)
+
+		if ASSERT {
+			txs := &TxSlot{}
+			parseCtx := NewTxParseContext()
+			parseCtx.WithSender(false)
+			sen := make([]byte, 20)
+			copy(v[20:], metaTx.Tx.rlp)
+			if _, err := parseCtx.ParseTransaction(v[20:], 0, txs, sen); err != nil {
+				panic(err)
+			}
+		}
+
 		if err := tx.Put(kv.PoolTransaction, []byte(txHash), v); err != nil {
 			return err
 		}
