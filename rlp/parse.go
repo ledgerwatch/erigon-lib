@@ -26,7 +26,7 @@ import (
 func BeInt(payload []byte, pos, length int) (int, error) {
 	var r int
 	if pos+length >= len(payload) {
-		return 0, fmt.Errorf("unexpected end of payload")
+		return 0, fmt.Errorf("unexpected end of payload 1")
 	}
 	if length > 0 && payload[pos] == 0 {
 		return 0, fmt.Errorf("integer encoding for RLP must not have leading zeros: %x", payload[pos:pos+length])
@@ -44,7 +44,7 @@ func Prefix(payload []byte, pos int) (dataPos int, dataLen int, isList bool, err
 		return 0, 0, false, fmt.Errorf("negative position not allowed")
 	}
 	if pos >= len(payload) {
-		return 0, 0, false, fmt.Errorf("unexpected end of payload")
+		return 0, 0, false, fmt.Errorf("unexpected end of payload 2")
 	}
 	switch first := payload[pos]; {
 	case first < 128:
@@ -76,7 +76,7 @@ func Prefix(payload []byte, pos int) (dataPos int, dataLen int, isList bool, err
 	}
 	if err == nil {
 		if dataPos+dataLen > len(payload) {
-			err = fmt.Errorf("unexpected end of payload")
+			err = fmt.Errorf("unexpected end of payload 3")
 		} else if dataPos+dataLen < 0 {
 			err = fmt.Errorf("found too big len")
 		}

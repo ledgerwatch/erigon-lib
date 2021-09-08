@@ -703,7 +703,6 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 	for i := range newTxs.isLocal {
 		newTxs.isLocal[i] = true
 	}
-
 	cacheMisses, err := p.senders.onNewTxs(newTxs)
 	if err != nil {
 		return nil, err
@@ -1684,7 +1683,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 
 		_, err := parseCtx.ParseTransaction(txRlp, 0, txs.txs[i], nil)
 		if err != nil {
-			return fmt.Errorf("err: %w, rlp: %x\n", err, v[20:])
+			return fmt.Errorf("err: %w, rlp: %x\n", err, txRlp)
 		}
 		txs.txs[i].rlp = nil // means that we don't need store it in db anymore
 		copy(txs.senders.At(i), addr)
