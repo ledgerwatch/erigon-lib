@@ -308,7 +308,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		switch req.Id {
 		case sentry.MessageId_POOLED_TRANSACTIONS_65:
 			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
-				return err
+				return fmt.Errorf("%w, rlp: %s\n", err, req.Data)
 			}
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
 			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
