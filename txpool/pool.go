@@ -1609,7 +1609,12 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 			continue
 		}
 		v = ensureEnoughSize(v, 20+len(metaTx.Tx.rlp))
-		binary.BigEndian.PutUint64(v, metaTx.Tx.senderID)
+		for addr, id := range p.senders.senderIDs { // no inverted index - tradeoff flush speed for memory usage
+			if id == metaTx.Tx.senderID {
+				copy(v[:20], addr)
+				break
+			}
+		}
 		copy(v[20:], metaTx.Tx.rlp)
 		if err := tx.Put(kv.PoolTransaction, []byte(txHash), v); err != nil {
 			return err
@@ -1626,7 +1631,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		return err
 	}
 
-	err = p.senders.flush(tx, p.byNonce, sendersWithoutTransactions, p.cfg.EvictSendersAfterRounds)
+	err = p.senders.flush(tx)
 	if err != nil {
 		return err
 	}
@@ -1639,7 +1644,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	return nil
 }
 
-func (sc *sendersBatch) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransactions *roaring64.Bitmap, evictAfterRounds uint64) (err error) {
+func (sc *sendersBatch) flush(tx kv.RwTx) (err error) {
 	encID := make([]byte, 8)
 	binary.BigEndian.PutUint64(encID, sc.blockHeight.Load())
 	if err := tx.Put(kv.PoolInfo, SenderCacheHeightKey, encID); err != nil {
@@ -1649,8 +1654,6 @@ func (sc *sendersBatch) flush(tx kv.RwTx, byNonce *ByNonce, sendersWithoutTransa
 		return err
 	}
 
-	sc.senderIDs = map[string]uint64{}
-	sc.senderInfo = map[uint64]*sender{}
 	return nil
 }
 
@@ -1672,23 +1675,25 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	txs := TxSlots{}
 	parseCtx := NewTxParseContext()
 	parseCtx.WithSender(false)
+
 	i := 0
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
+		addr, txRlp := v[:20], v[20:]
 		txs.Resize(uint(i + 1))
 		txs.txs[i] = &TxSlot{}
 
-		_, err := parseCtx.ParseTransaction(v[20:], 0, txs.txs[i], nil)
+		_, err := parseCtx.ParseTransaction(txRlp, 0, txs.txs[i], nil)
 		if err != nil {
 			return fmt.Errorf("err: %w, rlp: %x\n", err, v[20:])
 		}
 		txs.txs[i].rlp = nil // means that we don't need store it in db anymore
-		copy(txs.senders.At(i), v[:20])
+		copy(txs.senders.At(i), addr)
 
-		id, ok := p.senders.senderIDs[string(v[:20])]
+		id, ok := p.senders.senderIDs[string(addr)]
 		if !ok {
 			p.senders.senderID++
 			id = p.senders.senderID
-			p.senders.senderIDs[string(v[:20])] = id
+			p.senders.senderIDs[string(addr)] = id
 		}
 		txs.txs[i].senderID = id
 		binary.BigEndian.Uint64(v)

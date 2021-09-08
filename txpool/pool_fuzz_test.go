@@ -295,7 +295,7 @@ func splitDataset(in TxSlots) (TxSlots, TxSlots, TxSlots, TxSlots) {
 	return p1, p2, p3, p4
 }
 
-func FuzzOnNewBlocks12(f *testing.F) {
+func FuzzOnNewBlocks(f *testing.F) {
 	var u64 = [1 * 4]byte{1}
 	var senderAddr = [1 + 1 + 1]byte{1}
 	f.Add(u64[:], u64[:], u64[:], u64[:], senderAddr[:], 12)
@@ -542,6 +542,7 @@ func FuzzOnNewBlocks12(f *testing.F) {
 
 		p2, err := New(ch, nil, DefaultConfig)
 		assert.NoError(err)
+		p2.senders = pool.senders // senders are not persisted
 		err = p2.fromDB(context.Background(), tx, nil)
 		require.NoError(err)
 		for _, txn := range p2.byHash {
