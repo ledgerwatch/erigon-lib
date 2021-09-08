@@ -185,7 +185,7 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				continue
 			}
-			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
+			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err, "rlp", req.Data)
 		}
 		if f.wg != nil {
 			f.wg.Done()
@@ -255,7 +255,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			messageId = sentry.MessageId_POOLED_TRANSACTIONS_66
 			requestID, hashes, _, err := ParseGetPooledTransactions66(req.Data, 0, nil)
 			if err != nil {
-				return fmt.Errorf("%w, rlp: %s", err, req.Data)
+				return err
 			}
 			_ = requestID
 			var txs [][]byte
@@ -308,7 +308,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		switch req.Id {
 		case sentry.MessageId_POOLED_TRANSACTIONS_65:
 			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
-				return fmt.Errorf("%w, rlp: %s\n", err, req.Data)
+				return err
 			}
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
 			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
