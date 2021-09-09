@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -135,5 +136,21 @@ func TestAPI(t *testing.T) {
 	for i := range res8 {
 		require.Equal([]byte{42}, <-res8[i])
 	}
+	_ = db.View(context.Background(), func(tx kv.Tx) error {
+		checkValues(t, tx, c)
+		return nil
+	})
+}
 
+func checkValues(t *testing.T, tx kv.Tx, cache *Cache) {
+	require := require.New(t)
+	c, err := cache.View(tx)
+	require.NoError(err)
+	c.cache.Ascend(func(i btree.Item) bool {
+		k, v := i.(*Pair).K, i.(*Pair).V
+		dbV, err := tx.GetOne(kv.PlainState, k)
+		require.NoError(err)
+		require.Equal(dbV, v)
+		return true
+	})
 }
