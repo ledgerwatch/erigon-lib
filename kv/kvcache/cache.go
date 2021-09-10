@@ -17,6 +17,7 @@ import (
 type Cache interface {
 	// View - returns CacheView consistent with givent kv.Tx
 	View(tx kv.Tx) (CacheView, error)
+	OnNewBlock(sc *remote.StateChange)
 	Evict()
 }
 type CacheView interface {
