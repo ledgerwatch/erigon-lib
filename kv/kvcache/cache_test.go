@@ -37,7 +37,6 @@ func TestAPI(t *testing.T) {
 					if err != nil {
 						panic(err)
 					}
-					fmt.Printf("a2: %x,%#v,%#v\n", key, v, copyBytes(v))
 					out <- copyBytes(v)
 					return nil
 				}))

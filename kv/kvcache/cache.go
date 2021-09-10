@@ -5,19 +5,16 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"time"
 
-	_ "github.com/VictoriaMetrics/fastcache"
 	"github.com/google/btree"
-	_ "github.com/google/btree"
-	_ "github.com/iwanbk/bcache"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"go.uber.org/atomic"
-	_ "golang.org/x/sync/singleflight"
 )
 
-// StateCache works on top of Database Transaction and pair Cache+ReadTransaction must
+// StateCache works on top of Database Transaction and pair Coherent+ReadTransaction must
 // provide "Serializable Isolation Level" semantic: all data form consistent db view at moment
 // when read transaction started, read data are immutable until end of read transaction, reader can't see newer updates
 //
@@ -33,16 +30,23 @@ import (
 //
 // Pair.Value == nil - is a marker of absense key in db
 
-type Cache struct {
+type Cache interface {
+	View(tx kv.Tx) (*CoherentView, error)
+}
+type CacheView interface {
+	Get(k []byte, tx kv.Tx) ([]byte, error)
+}
+
+type Coherent struct {
 	latest    string //latest root
-	roots     map[string]*CacheRoot
+	roots     map[string]*CoherentView
 	rootsLock sync.RWMutex
 }
-type CacheRoot struct {
-	cache   *btree.BTree
-	lock    sync.RWMutex
-	ready   chan struct{} // close when ready
-	isReady atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
+type CoherentView struct {
+	cache           *btree.BTree
+	lock            sync.RWMutex
+	ready           chan struct{} // close when ready
+	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
 }
 
 type Pair struct {
@@ -51,12 +55,12 @@ type Pair struct {
 
 func (p *Pair) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Pair).K) < 0 }
 
-func New() *Cache {
-	return &Cache{roots: map[string]*CacheRoot{}}
+func New() *Coherent {
+	return &Coherent{roots: map[string]*CoherentView{}}
 }
 
 // selectOrCreateRoot - used for usual getting root
-func (c *Cache) selectOrCreateRoot(root string) *CacheRoot {
+func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
 	c.rootsLock.RLock()
 	r, ok := c.roots[root]
 	c.rootsLock.RUnlock()
@@ -65,13 +69,11 @@ func (c *Cache) selectOrCreateRoot(root string) *CacheRoot {
 	}
 
 	c.rootsLock.Lock()
-	r = &CacheRoot{ready: make(chan struct{})}
+	r = &CoherentView{ready: make(chan struct{})}
 	latestRoot, ok := c.roots[c.latest]
 	if ok {
-		fmt.Printf("clone: %x\n", c.latest)
 		r.cache = latestRoot.cache.Clone()
 	} else {
-		fmt.Printf("create empty root: %x\n", root)
 		r.cache = btree.New(32)
 	}
 	c.roots[root] = r
@@ -80,28 +82,25 @@ func (c *Cache) selectOrCreateRoot(root string) *CacheRoot {
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Cache) advanceRoot(root string, direction remote.Direction) (r *CacheRoot, fastUnwind bool) {
+func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *CoherentView, fastUnwind bool) {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
 	r, ok := c.roots[root]
 	if !ok {
-		r = &CacheRoot{ready: make(chan struct{})}
+		r = &CoherentView{ready: make(chan struct{})}
 	}
 	if c.latest == "" {
-		fmt.Printf("advance: empty latest: %x\n", root)
 		c.roots[root] = r
 		r.cache = btree.New(32)
 		c.latest = root
 		return r, false
 	}
 
-	//TODO: need check if c.latest hash is still canonical
+	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
 	switch direction {
 	case remote.Direction_FORWARD:
-		fmt.Printf("advance: clone: %x\n", c.latest)
 		r.cache = c.roots[c.latest].cache.Clone()
 	case remote.Direction_UNWIND:
-		fmt.Printf("unwind: %x\n", c.latest)
 		oldRoot, ok := c.roots[root]
 		if ok {
 			r = oldRoot
@@ -119,8 +118,7 @@ func (c *Cache) advanceRoot(root string, direction remote.Direction) (r *CacheRo
 	return r, fastUnwind
 }
 
-func (c *Cache) OnNewBlock(sc *remote.StateChange) {
-	//TODO: clone right root
+func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	h := gointerfaces.ConvertH256ToHash(sc.BlockHash)
 	root := make([]byte, 40)
 	binary.BigEndian.PutUint64(root, sc.BlockHeight)
@@ -137,7 +135,7 @@ func (c *Cache) OnNewBlock(sc *remote.StateChange) {
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil})
 		case remote.Action_CODE, remote.Action_UPSERT_CODE:
-		//skip
+			//skip
 		case remote.Action_STORAGE:
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			for _, change := range sc.Changes[i].StorageChanges {
@@ -153,13 +151,13 @@ func (c *Cache) OnNewBlock(sc *remote.StateChange) {
 		}
 	}
 	r.lock.Unlock()
-	switched := r.isReady.CAS(false, true)
+	switched := r.readyChanClosed.CAS(false, true)
 	if switched {
 		close(r.ready) //broadcast
 	}
 }
 
-func (c *Cache) View(tx kv.Tx) (*CacheRoot, error) {
+func (c *Coherent) View(tx kv.Tx) (*CoherentView, error) {
 	//TODO: handle case when db has no records
 	encBlockNum, err := tx.GetOne(kv.SyncStageProgress, []byte("Finish"))
 	if err != nil {
@@ -176,37 +174,38 @@ func (c *Cache) View(tx kv.Tx) (*CacheRoot, error) {
 	doBlock := c.latest != ""
 	c.rootsLock.RUnlock()
 
-	fmt.Printf("choose root: %x\n", root)
 	r := c.selectOrCreateRoot(string(root))
 	if doBlock {
-		<-r.ready
+		select {
+		case <-r.ready:
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	return r, nil
 }
 
-func (c *CacheRoot) Get(k []byte, tx kv.Tx) ([]byte, error) {
+func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	c.lock.RLock()
 	it := c.cache.Get(&Pair{K: k})
 	c.lock.RUnlock()
 
-	if it == nil {
-		v, err := tx.GetOne(kv.PlainState, k)
-		if err != nil {
-			return nil, err
-		}
-
-		c.lock.RLock()
-		it = &Pair{K: k, V: v}
-		c.cache.ReplaceOrInsert(it)
-		c.lock.RUnlock()
-		fmt.Printf("from db: %#x,%#v\n", k, v)
-	} else {
-		fmt.Printf("from cache: %#x,%#v\n", k, it.(*Pair).V)
+	if it != nil {
+		return it.(*Pair).V, nil
 	}
+
+	v, err := tx.GetOne(kv.PlainState, k)
+	if err != nil {
+		return nil, err
+	}
+
+	c.lock.RLock()
+	it = &Pair{K: k, V: v}
+	c.cache.ReplaceOrInsert(it)
+	c.lock.RUnlock()
 	return it.(*Pair).V, nil
 }
 
-func AssertCheckValues(tx kv.Tx, cache *Cache) error {
+func AssertCheckValues(tx kv.Tx, cache *Coherent) error {
 	c, err := cache.View(tx)
 	if err != nil {
 		return err
@@ -235,10 +234,3 @@ func copyBytes(b []byte) (copiedBytes []byte) {
 	copy(copiedBytes, b)
 	return
 }
-
-//var g singleflight.Group
-//
-//func A(key, kv kv.RoDB) {
-//	g.Do("", key)
-//	singleflight.Group{}
-//}
