@@ -24,7 +24,7 @@ func TestAPI(t *testing.T) {
 	c := New()
 	k1, k2 := [20]byte{1}, [20]byte{2}
 	db := memdb.NewTestDB(t)
-	get := func(key [20]byte) (res [1]chan []byte) {
+	get := func(key [20]byte) (res [10]chan []byte) {
 		for i := 0; i < len(res); i++ {
 			res[i] = make(chan []byte)
 			go func(out chan []byte) {
