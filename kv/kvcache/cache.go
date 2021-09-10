@@ -31,6 +31,7 @@ import (
 // Pair.Value == nil - is a marker of absense key in db
 
 type Cache interface {
+	// View - returns CacheView consistent with givent kv.Tx
 	View(tx kv.Tx) (CacheView, error)
 	Evict()
 }
