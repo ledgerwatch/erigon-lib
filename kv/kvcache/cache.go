@@ -14,22 +14,6 @@ import (
 	"go.uber.org/atomic"
 )
 
-// StateCache works on top of Database Transaction and pair Coherent+ReadTransaction must
-// provide "Serializable Isolation Level" semantic: all data form consistent db view at moment
-// when read transaction started, read data are immutable until end of read transaction, reader can't see newer updates
-//
-// - StateDiff event does clone cache and set new head.
-//
-// - Readers do firstly check kv.Tx:
-//      - get latest block number and hash, and by this key get cache instance
-//      - if cache instance found - just use it
-//      - if not found and blockNumber>cache.top.number - wait for StateDiff on conditional variable
-//      - otherwise - ???
-// - If found in cache - return value without copy (reader can rely on fact that data are immutable until end of db transaction)
-// - Otherwise just read from db (no requests deduplication for now - preliminary optimization).
-//
-// Pair.Value == nil - is a marker of absense key in db
-
 type Cache interface {
 	// View - returns CacheView consistent with givent kv.Tx
 	View(tx kv.Tx) (CacheView, error)
@@ -39,8 +23,33 @@ type CacheView interface {
 	Get(k []byte, tx kv.Tx) ([]byte, error)
 }
 
-var _ Cache = (*Coherent)(nil)         // compile-time interface check
-var _ CacheView = (*CoherentView)(nil) // compile-time interface check
+// Coherent works on top of Database Transaction and pair Coherent+ReadTransaction must
+// provide "Serializable Isolation Level" semantic: all data form consistent db view at moment
+// when read transaction started, read data are immutable until end of read transaction, reader can't see newer updates
+//
+// Every time a new state change comes, we do the following:
+// - Check that prevBlockHeight and prevBlockHash match what is the top values we have, and if they don't we
+// invalidate the cache, because we missed some messages and cannot consider the cache coherent anymore.
+// - Clone the cache pointer (such that the previous pointer is still accessible, but new one shared the content with it),
+// apply state updates to the cloned cache pointer and save under the new identified made from blockHeight and blockHash.
+// - If there is a conditional variable corresponding to the identifier, remove it from the map and notify conditional
+// variable, waking up the read-only transaction waiting on it.
+//
+// On the other hand, whenever we have a cache miss (by looking at the top cache), we do the following:
+// - Once read the current block height and block hash (canonical) from underlying db transaction
+// - Construct the identifier from the current block height and block hash
+// - Look for the constructed identifier in the cache. If the identifier is found, use the corresponding
+// cache in conjunction with this read-only transaction (it will be consistent with it). If the identifier is
+// not found, it means that the transaction has been committed in Erigon, but the state update has not
+// arrived yet (as shown in the picture on the right). Insert conditional variable for this identifier and wait on
+// it until either cache with the given identifier appears, or timeout (indicating that the cache update
+// mechanism is broken and cache is likely invalidated).
+//
+// Tech details:
+// - If found in cache - return value without copy (reader can rely on fact that data are immutable until end of db transaction)
+// - Otherwise just read from db (no requests deduplication for now - preliminary optimization).
+//
+// Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
 	latest    string //latest root
@@ -54,6 +63,8 @@ type CoherentView struct {
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
 }
 
+var _ Cache = (*Coherent)(nil)         // compile-time interface check
+var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 type Pair struct {
 	K, V []byte
 }
