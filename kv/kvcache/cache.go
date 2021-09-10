@@ -152,7 +152,6 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	binary.BigEndian.PutUint64(root, sc.BlockHeight)
 	copy(root[8:], h[:])
 	r, _ := c.advanceRoot(string(root), sc.Direction)
-	fmt.Printf("=a\n")
 	r.lock.Lock()
 	for i := range sc.Changes {
 		switch sc.Changes[i].Action {
@@ -182,7 +181,6 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	r.lock.Unlock()
 	switched := r.readyChanClosed.CAS(false, true)
 	if switched {
-		fmt.Printf("=broadcast: %x\n", root)
 		close(r.ready) //broadcast
 	}
 }
