@@ -203,10 +203,10 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 		return nil, err
 	}
 
-	c.lock.RLock()
 	it = &Pair{K: k, V: v}
+	c.lock.Lock()
 	c.cache.ReplaceOrInsert(it)
-	c.lock.RUnlock()
+	c.lock.Unlock()
 	return it.(*Pair).V, nil
 }
 
