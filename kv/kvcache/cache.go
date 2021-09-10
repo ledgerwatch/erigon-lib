@@ -13,6 +13,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"go.uber.org/atomic"
 	_ "golang.org/x/sync/singleflight"
 )
 
@@ -38,9 +39,10 @@ type Cache struct {
 	rootsLock sync.RWMutex
 }
 type CacheRoot struct {
-	cache *btree.BTree
-	lock  sync.RWMutex
-	ready chan struct{} // close when ready
+	cache   *btree.BTree
+	lock    sync.RWMutex
+	ready   chan struct{} // close when ready
+	isReady atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
 }
 
 type Pair struct {
@@ -107,10 +109,12 @@ func (c *Cache) advanceRoot(root string, direction remote.Direction) (r *CacheRo
 		} else {
 			r.cache = btree.New(32)
 		}
+
 	default:
 		panic("not implemented yet")
 	}
 	c.roots[root] = r
+
 	c.latest = root
 	return r, fastUnwind
 }
@@ -149,7 +153,10 @@ func (c *Cache) OnNewBlock(sc *remote.StateChange) {
 		}
 	}
 	r.lock.Unlock()
-	close(r.ready) //broadcast
+	switched := r.isReady.CAS(false, true)
+	if switched {
+		close(r.ready) //broadcast
+	}
 }
 
 func (c *Cache) View(tx kv.Tx) (*CacheRoot, error) {
@@ -197,6 +204,36 @@ func (c *CacheRoot) Get(k []byte, tx kv.Tx) ([]byte, error) {
 		fmt.Printf("from cache: %#x,%#v\n", k, it.(*Pair).V)
 	}
 	return it.(*Pair).V, nil
+}
+
+func AssertCheckValues(tx kv.Tx, cache *Cache) error {
+	c, err := cache.View(tx)
+	if err != nil {
+		return err
+	}
+	c.cache.Ascend(func(i btree.Item) bool {
+		k, v := i.(*Pair).K, i.(*Pair).V
+		var dbV []byte
+		dbV, err = tx.GetOne(kv.PlainState, k)
+		if err != nil {
+			return false
+		}
+		if !bytes.Equal(dbV, v) {
+			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, copyBytes(dbV))
+			return false
+		}
+		return true
+	})
+	return err
+}
+
+func copyBytes(b []byte) (copiedBytes []byte) {
+	if b == nil {
+		return nil
+	}
+	copiedBytes = make([]byte, len(b))
+	copy(copiedBytes, b)
+	return
 }
 
 //var g singleflight.Group
