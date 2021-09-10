@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
@@ -25,7 +26,9 @@ func TestAPI(t *testing.T) {
 	k1, k2 := [20]byte{1}, [20]byte{2}
 	db := memdb.NewTestDB(t)
 	get := func(key [20]byte) (res [10]chan []byte) {
+		wg := sync.WaitGroup{}
 		for i := 0; i < len(res); i++ {
+			wg.Add(1)
 			res[i] = make(chan []byte)
 			go func(out chan []byte) {
 				require.NoError(db.View(context.Background(), func(tx kv.Tx) error {
@@ -33,6 +36,7 @@ func TestAPI(t *testing.T) {
 					if err != nil {
 						panic(err)
 					}
+					wg.Done()
 					v, err := cache.Get(key[:], tx)
 					if err != nil {
 						panic(err)
@@ -42,6 +46,7 @@ func TestAPI(t *testing.T) {
 				}))
 			}(res[i])
 		}
+		wg.Wait() // ensure that all goroutines started their transactions
 		return res
 	}
 	put := func(blockNum uint64, blockHash [32]byte, k, v []byte) {

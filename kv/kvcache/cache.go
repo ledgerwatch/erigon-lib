@@ -122,7 +122,7 @@ func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *Cohe
 	}
 	c.rootsLock.RUnlock()
 
-	c.rootsLock.RLock()
+	c.rootsLock.Lock()
 	c.roots[root] = r
 	c.latest = root
 	c.rootsLock.Unlock()
