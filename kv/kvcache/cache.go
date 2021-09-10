@@ -31,11 +31,15 @@ import (
 // Pair.Value == nil - is a marker of absense key in db
 
 type Cache interface {
-	View(tx kv.Tx) (*CoherentView, error)
+	View(tx kv.Tx) (CacheView, error)
+	Evict()
 }
 type CacheView interface {
 	Get(k []byte, tx kv.Tx) ([]byte, error)
 }
+
+var _ Cache = (*Coherent)(nil)         // compile-time interface check
+var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 
 type Coherent struct {
 	latest    string //latest root
@@ -157,7 +161,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	}
 }
 
-func (c *Coherent) View(tx kv.Tx) (*CoherentView, error) {
+func (c *Coherent) View(tx kv.Tx) (CacheView, error) {
 	//TODO: handle case when db has no records
 	encBlockNum, err := tx.GetOne(kv.SyncStageProgress, []byte("Finish"))
 	if err != nil {
@@ -210,7 +214,7 @@ func AssertCheckValues(tx kv.Tx, cache *Coherent) error {
 	if err != nil {
 		return err
 	}
-	c.cache.Ascend(func(i btree.Item) bool {
+	c.(*CoherentView).cache.Ascend(func(i btree.Item) bool {
 		k, v := i.(*Pair).K, i.(*Pair).V
 		var dbV []byte
 		dbV, err = tx.GetOne(kv.PlainState, k)
@@ -233,4 +237,24 @@ func copyBytes(b []byte) (copiedBytes []byte) {
 	copiedBytes = make([]byte, len(b))
 	copy(copiedBytes, b)
 	return
+}
+
+func (c *Coherent) Evict() {
+	c.rootsLock.Lock()
+	defer c.rootsLock.Unlock()
+	if c.latest == "" {
+		return
+	}
+	latestBlockNum := binary.BigEndian.Uint64([]byte(c.latest))
+	var toDel []string
+	for root := range c.roots {
+		blockNum := binary.BigEndian.Uint64([]byte(root))
+		if blockNum > latestBlockNum-100 {
+			continue
+		}
+		toDel = append(toDel, root)
+	}
+	for _, root := range toDel {
+		delete(c.roots, root)
+	}
 }
