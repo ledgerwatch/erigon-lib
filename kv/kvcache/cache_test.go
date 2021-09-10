@@ -32,11 +32,11 @@ func TestAPI(t *testing.T) {
 			res[i] = make(chan []byte)
 			go func(out chan []byte) {
 				require.NoError(db.View(context.Background(), func(tx kv.Tx) error {
+					wg.Done()
 					cache, err := c.View(tx)
 					if err != nil {
 						panic(err)
 					}
-					wg.Done()
 					v, err := cache.Get(key[:], tx)
 					if err != nil {
 						panic(err)
@@ -68,7 +68,7 @@ func TestAPI(t *testing.T) {
 		require.Equal([]byte{42}, <-res2[i])
 	}
 	put(2, [32]byte{}, k1[:], []byte{2})
-	fmt.Printf("-----\n")
+	fmt.Printf("-----1\n")
 	res3, res4 := get(k1), get(k2)       // will see View of transaction 2
 	put(3, [32]byte{}, k1[:], []byte{3}) // even if core already on block 3
 
@@ -89,7 +89,7 @@ func TestAPI(t *testing.T) {
 	for i := range res4 {
 		require.Equal([]byte{42}, <-res4[i])
 	}
-	fmt.Printf("-----\n")
+	fmt.Printf("-----2\n")
 
 	res5, res6 := get(k1), get(k2) // will see View of transaction 3, even if notification has not enough changes
 	c.OnNewBlock(&remote.StateChange{
@@ -103,13 +103,15 @@ func TestAPI(t *testing.T) {
 		}},
 	})
 
+	fmt.Printf("-----20\n")
 	for i := range res5 {
 		require.Equal([]byte{3}, <-res5[i])
 	}
+	fmt.Printf("-----21\n")
 	for i := range res6 {
 		require.Equal([]byte{42}, <-res6[i])
 	}
-	fmt.Printf("-----\n")
+	fmt.Printf("-----3\n")
 	put(2, [32]byte{}, k1[:], []byte{2})
 	c.OnNewBlock(&remote.StateChange{
 		Direction:   remote.Direction_UNWIND,
@@ -121,6 +123,7 @@ func TestAPI(t *testing.T) {
 			Data:    []byte{2},
 		}},
 	})
+	fmt.Printf("-----4\n")
 	put(3, [32]byte{2}, k1[:], []byte{4}) // reorg to new chain
 	c.OnNewBlock(&remote.StateChange{
 		Direction:   remote.Direction_FORWARD,
@@ -132,6 +135,7 @@ func TestAPI(t *testing.T) {
 			Data:    []byte{4},
 		}},
 	})
+	fmt.Printf("-----5\n")
 
 	res7, res8 := get(k1), get(k2) // will see View of transaction 3, even if notification has not enough changes
 

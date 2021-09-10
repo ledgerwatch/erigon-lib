@@ -95,13 +95,15 @@ func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *Cohe
 	c.rootsLock.RUnlock()
 	if !ok {
 		r = &CoherentView{ready: make(chan struct{})}
+		c.rootsLock.Lock()
+		if c.latest == "" {
+			r.cache = btree.New(32)
+			c.latest = root
+		}
+		c.roots[root] = r
+		c.rootsLock.Unlock()
 	}
 	if c.latest == "" {
-		c.rootsLock.Lock()
-		c.roots[root] = r
-		r.cache = btree.New(32)
-		c.latest = root
-		c.rootsLock.Unlock()
 		return r, false
 	}
 
@@ -125,7 +127,6 @@ func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *Cohe
 		panic("not implemented yet")
 	}
 	c.rootsLock.RUnlock()
-
 	c.rootsLock.Lock()
 	c.roots[root] = r
 	c.latest = root
@@ -139,6 +140,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	binary.BigEndian.PutUint64(root, sc.BlockHeight)
 	copy(root[8:], h[:])
 	r, _ := c.advanceRoot(string(root), sc.Direction)
+	fmt.Printf("=a\n")
 	r.lock.Lock()
 	for i := range sc.Changes {
 		switch sc.Changes[i].Action {
@@ -168,6 +170,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	r.lock.Unlock()
 	switched := r.readyChanClosed.CAS(false, true)
 	if switched {
+		fmt.Printf("=broadcast: %x\n", root)
 		close(r.ready) //broadcast
 	}
 }
@@ -220,6 +223,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	c.lock.Lock()
 	c.cache.ReplaceOrInsert(it)
 	c.lock.Unlock()
+	fmt.Printf("from db done: %#x,%#v\n", k, v)
 	return it.(*Pair).V, nil
 }
 
