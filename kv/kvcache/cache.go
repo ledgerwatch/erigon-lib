@@ -89,10 +89,10 @@ func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
 	r = &CoherentView{ready: make(chan struct{})}
 	latestRoot, ok := c.roots[c.latest]
 	if ok {
-		fmt.Printf("clone: %x\n", c.latest)
+		//fmt.Printf("clone: %x\n", c.latest)
 		r.cache = latestRoot.cache.Clone()
 	} else {
-		fmt.Printf("create empty root: %x\n", root)
+		//fmt.Printf("create empty root: %x\n", root)
 		r.cache = btree.New(32)
 	}
 	c.roots[root] = r
@@ -123,10 +123,10 @@ func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *Cohe
 	c.rootsLock.RLock()
 	switch direction {
 	case remote.Direction_FORWARD:
-		fmt.Printf("advance: clone: %x\n", c.latest)
+		//fmt.Printf("advance: clone: %x\n", c.latest)
 		r.cache = c.roots[c.latest].cache.Clone()
 	case remote.Direction_UNWIND:
-		fmt.Printf("unwind: %x\n", c.latest)
+		//fmt.Printf("unwind: %x\n", c.latest)
 		oldRoot, ok := c.roots[root]
 		if ok {
 			r = oldRoot
@@ -219,7 +219,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	c.lock.RUnlock()
 
 	if it != nil {
-		fmt.Printf("from cache: %#x,%#v\n", k, it.(*Pair).V)
+		//fmt.Printf("from cache: %#x,%#v\n", k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
 
@@ -227,13 +227,12 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("from db: %#x,%#v\n", k, v)
+	//fmt.Printf("from db: %#x,%#v\n", k, v)
 
 	it = &Pair{K: k, V: v}
 	c.lock.Lock()
 	c.cache.ReplaceOrInsert(it)
 	c.lock.Unlock()
-	fmt.Printf("from db done: %#x,%#v\n", k, v)
 	return it.(*Pair).V, nil
 }
 
