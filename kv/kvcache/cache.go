@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/google/btree"
@@ -234,8 +235,14 @@ func (c *CoherentView) Len() int {
 	return c.cache.Len()
 }
 
-func DebugStats(cache Cache) map[string]int {
-	res := map[string]int{}
+type Stat struct {
+	BlockNum  uint64
+	BlockHash [32]byte
+	Lenght    int
+}
+
+func DebugStats(cache Cache) []Stat {
+	res := []Stat{}
 	casted, ok := cache.(*Coherent)
 	if !ok {
 		return res
@@ -243,8 +250,15 @@ func DebugStats(cache Cache) map[string]int {
 	casted.rootsLock.RLock()
 	defer casted.rootsLock.RUnlock()
 	for root, r := range casted.roots {
-		res[root] = r.Len()
+		h := [32]byte{}
+		copy(h[:], root[8:])
+		res = append(res, Stat{
+			BlockNum:  binary.BigEndian.Uint64([]byte(root[:8])),
+			BlockHash: h,
+			Lenght:    r.Len(),
+		})
 	}
+	sort.Slice(res, func(i, j int) bool { return res[i].BlockNum < res[i].BlockNum })
 	return res
 }
 func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) {
