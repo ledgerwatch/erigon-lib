@@ -401,6 +401,9 @@ type TxPool struct {
 }
 
 func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache) (*TxPool, error) {
+	if cache == nil {
+		panic(1)
+	}
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
