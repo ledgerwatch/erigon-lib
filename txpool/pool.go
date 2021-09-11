@@ -460,7 +460,7 @@ func (p *TxPool) logStats() {
 		stats := kvcache.DebugStats(p.senders.cache)
 		log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d\n", p.senders.cache, len(stats)))
 		for root, length := range stats {
-			log.Info("[txpool] cache", "root", root, "len", length)
+			log.Info("[txpool] cache", "root", fmt.Sprintf("%x", root), "len", length)
 		}
 	}
 }
