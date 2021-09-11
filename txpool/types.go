@@ -511,7 +511,7 @@ func EncodeSender(nonce uint64, balance uint256.Int, buffer []byte) {
 		buffer[pos] = byte(balanceBytes)
 		pos++
 		balance.WriteToSlice(buffer[pos : pos+balanceBytes])
-		pos += balanceBytes
+		pos += balanceBytes //nolint
 	}
 
 	buffer[0] = byte(fieldSet)

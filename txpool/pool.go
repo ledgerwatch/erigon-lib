@@ -50,8 +50,6 @@ var (
 	addRemoteTxsTimer     = metrics.NewSummary(`pool_add_remote_txs`)
 	newBlockTimer         = metrics.NewSummary(`pool_new_block`)
 	writeToDbTimer        = metrics.NewSummary(`pool_write_to_db`)
-	cacheTotalCounter     = metrics.GetOrCreateCounter(`pool_cache_total`)
-	cacheHitCounter       = metrics.GetOrCreateCounter(`pool_cache_total{result="hit"}`)
 	writeToDbBytesCounter = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
 )
 
@@ -248,23 +246,21 @@ func (sc *sendersBatch) onNewBlock(stateChanges map[string]sender, unwindTxs, mi
 }
 func (sc *sendersBatch) mergeStateChanges(stateChanges map[string]sender, unwindedTxs, minedTxs TxSlots) error {
 	for addr := range stateChanges { // merge state changes
-		id, ok := sc.id(addr)
+		_, ok := sc.id(addr)
 		if !ok {
 			sc.senderID++
-			id = sc.senderID
-			sc.senderIDs[addr] = id
-			sc.senderID2Addr[id] = addr
+			sc.senderIDs[addr] = sc.senderID
+			sc.senderID2Addr[sc.senderID] = addr
 		}
 		//sc.senderInfo[id] = newSender(v.nonce, v.balance)
 	}
 
 	for i := 0; i < unwindedTxs.senders.Len(); i++ {
-		id, ok := sc.id(string(unwindedTxs.senders.At(i)))
+		_, ok := sc.id(string(unwindedTxs.senders.At(i)))
 		if !ok {
 			sc.senderID++
-			id = sc.senderID
-			sc.senderIDs[string(unwindedTxs.senders.At(i))] = id
-			sc.senderID2Addr[id] = string(unwindedTxs.senders.At(i))
+			sc.senderIDs[string(unwindedTxs.senders.At(i))] = sc.senderID
+			sc.senderID2Addr[sc.senderID] = string(unwindedTxs.senders.At(i))
 		}
 		//if _, ok := sc.senderInfo[id]; !ok {
 		//	if _, ok := stateChanges[string(unwindedTxs.senders.At(i))]; !ok {
@@ -274,12 +270,11 @@ func (sc *sendersBatch) mergeStateChanges(stateChanges map[string]sender, unwind
 	}
 
 	for i := 0; i < len(minedTxs.txs); i++ {
-		id, ok := sc.id(string(minedTxs.senders.At(i)))
+		_, ok := sc.id(string(minedTxs.senders.At(i)))
 		if !ok {
 			sc.senderID++
-			id = sc.senderID
-			sc.senderIDs[string(minedTxs.senders.At(i))] = id
-			sc.senderID2Addr[id] = string(minedTxs.senders.At(i))
+			sc.senderIDs[string(minedTxs.senders.At(i))] = sc.senderID
+			sc.senderID2Addr[sc.senderID] = string(minedTxs.senders.At(i))
 		}
 		//if _, ok := sc.senderInfo[id]; !ok {
 		//	if _, ok := stateChanges[string(minedTxs.senders.At(i))]; !ok {

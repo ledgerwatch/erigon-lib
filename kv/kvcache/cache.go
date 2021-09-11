@@ -115,14 +115,14 @@ func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction
 	case remote.Direction_FORWARD:
 		prevCacheRoot, prevRootExists := c.roots[prevRoot]
 		if prevRootExists {
-			fmt.Printf("advance: clone %x to %x \n", prevRoot, root)
+			//fmt.Printf("advance: clone %x to %x \n", prevRoot, root)
 			r.cache = prevCacheRoot.Clone()
 		} else {
-			fmt.Printf("advance: new %x \n", root)
+			//fmt.Printf("advance: new %x \n", root)
 			r.cache = btree.New(32)
 		}
 	case remote.Direction_UNWIND:
-		fmt.Printf("unwind: %x\n", root)
+		//fmt.Printf("unwind: %x\n", root)
 		if rootExists {
 			fastUnwind = true
 		} else {
@@ -215,7 +215,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	c.lock.RUnlock()
 
 	if it != nil {
-		fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
+		//fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
 
@@ -223,7 +223,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
+	//fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
 
 	it = &Pair{K: k, V: v}
 	c.lock.Lock()
@@ -269,7 +269,7 @@ func DebugStats(cache Cache) []Stat {
 			Lenght:    r.Len(),
 		})
 	}
-	sort.Slice(res, func(i, j int) bool { return res[i].BlockNum < res[i].BlockNum })
+	sort.Slice(res, func(i, j int) bool { return res[i].BlockNum < res[j].BlockNum })
 	return res
 }
 func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) {
