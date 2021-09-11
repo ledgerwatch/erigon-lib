@@ -228,7 +228,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	return it.(*Pair).V, nil
 }
 
-func AssertCheckValues(tx kv.Tx, cache *Coherent) error {
+func AssertCheckValues(tx kv.Tx, cache Cache) error {
 	c, err := cache.View(tx)
 	if err != nil {
 		return err

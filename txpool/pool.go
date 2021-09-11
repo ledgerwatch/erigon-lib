@@ -55,7 +55,7 @@ var (
 	writeToDbBytesCounter = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
 )
 
-const ASSERT = false
+const ASSERT = true
 
 type Config struct {
 	DBDir                   string
@@ -1395,13 +1395,15 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 		log.Error("[txpool] restore from db", "err", err)
 	}
 	p.logStats()
-	//if ASSERT {
-	//	go func() {
-	//		if err := p.forceCheckState(ctx, db, coreDB); err != nil {
-	//			log.Error("forceCheckState", "err", err)
-	//		}
-	//	}()
-	//}
+	if ASSERT {
+		go func() {
+			if err := db.View(ctx, func(tx kv.Tx) error {
+				return kvcache.AssertCheckValues(tx, p.senders.cache)
+			}); err != nil {
+				log.Error("AssertCheckValues", "err", err)
+			}
+		}()
+	}
 
 	syncToNewPeersEvery := time.NewTicker(p.cfg.SyncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
