@@ -1402,8 +1402,9 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 					return kvcache.AssertCheckValues(ctx, tx, p.senders.cache)
 				}); err != nil {
 					log.Error("AssertCheckValues", "err", err)
+				} else {
+					log.Info("AssertCheckValues done")
 				}
-				log.Error("AssertCheckValues done")
 			}
 		}()
 	}
