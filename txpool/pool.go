@@ -458,7 +458,7 @@ func (p *TxPool) logStats() {
 	))
 	if ASSERT {
 		stats := kvcache.DebugStats(p.senders.cache)
-		log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d\n", p.senders.cache, len(stats)))
+		log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
 		for root, length := range stats {
 			log.Info("[txpool] cache", "root", binary.BigEndian.Uint64([]byte(root[:8])), "len", length)
 		}
