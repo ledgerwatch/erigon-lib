@@ -274,6 +274,8 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 		return 0, nil
 	}
 	checked := 0
+	casted.lock.RLock()
+	defer casted.lock.RUnlock()
 	casted.cache.Ascend(func(i btree.Item) bool {
 		k, v := i.(*Pair).K, i.(*Pair).V
 		var dbV []byte
