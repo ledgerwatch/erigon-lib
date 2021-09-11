@@ -1600,6 +1600,15 @@ func (sc *sendersBatch) flush(tx kv.RwTx) (err error) {
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	if p == nil {
+		panic(1)
+	}
+	if p.senders == nil {
+		panic(1)
+	}
+	if p.senders.cache == nil {
+		panic(1)
+	}
 	cache, err := p.senders.cache.View(coreTx)
 	if err != nil {
 		return err
