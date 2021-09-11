@@ -78,14 +78,13 @@ func New() *Coherent {
 
 // selectOrCreateRoot - used for usual getting root
 func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
-	c.rootsLock.RLock()
+	c.rootsLock.Lock()
+	defer c.rootsLock.Unlock()
 	r, ok := c.roots[root]
-	c.rootsLock.RUnlock()
 	if ok {
 		return r
 	}
 
-	c.rootsLock.Lock()
 	r = &CoherentView{ready: make(chan struct{})}
 	latestRoot, ok := c.roots[c.latest]
 	if ok {
@@ -96,31 +95,27 @@ func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
 		r.cache = btree.New(32)
 	}
 	c.roots[root] = r
-	c.rootsLock.Unlock()
 	return r
 }
 
 // advanceRoot - used for advancing root onNewBlock
 func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *CoherentView, fastUnwind bool) {
-	c.rootsLock.RLock()
+	c.rootsLock.Lock()
+	defer c.rootsLock.Unlock()
 	r, ok := c.roots[root]
-	c.rootsLock.RUnlock()
 	if !ok {
 		r = &CoherentView{ready: make(chan struct{})}
-		c.rootsLock.Lock()
 		if c.latest == "" {
 			r.cache = btree.New(32)
 			c.latest = root
 		}
 		c.roots[root] = r
-		c.rootsLock.Unlock()
 	}
 	if c.latest == "" {
 		return r, false
 	}
 
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
-	c.rootsLock.RLock()
 	switch direction {
 	case remote.Direction_FORWARD:
 		//fmt.Printf("advance: clone: %x\n", c.latest)
@@ -138,11 +133,8 @@ func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *Cohe
 	default:
 		panic("not implemented yet")
 	}
-	c.rootsLock.RUnlock()
-	c.rootsLock.Lock()
 	c.roots[root] = r
 	c.latest = root
-	c.rootsLock.Unlock()
 	return r, fastUnwind
 }
 
@@ -202,7 +194,7 @@ func (c *Coherent) View(tx kv.Tx) (CacheView, error) {
 	doBlock := c.latest != ""
 	c.rootsLock.RUnlock()
 
-	fmt.Printf("choose root: %x\n", root)
+	//fmt.Printf("choose root: %x\n", root)
 	r := c.selectOrCreateRoot(string(root))
 	if doBlock {
 		select {
