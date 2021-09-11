@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
@@ -202,6 +203,8 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 		case <-r.ready:
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-time.After(30 * time.Second):
+			return nil, context.DeadlineExceeded
 		}
 	}
 	return r, nil
