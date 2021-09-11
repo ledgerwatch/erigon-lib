@@ -90,7 +90,7 @@ func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
 	r = &CoherentView{ready: make(chan struct{})}
 	latestRoot, ok := c.roots[c.latest]
 	if ok {
-		//fmt.Printf("clone: %x\n", c.latest)
+		fmt.Printf("clone: %d from %d\n", binary.BigEndian.Uint64([]byte(root)), binary.BigEndian.Uint64([]byte(c.latest)))
 		r.cache = latestRoot.cache.Clone()
 	} else {
 		//fmt.Printf("create empty root: %x\n", root)
