@@ -228,16 +228,35 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	c.lock.Unlock()
 	return it.(*Pair).V, nil
 }
+func (c *CoherentView) Len() int {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	return c.cache.Len()
+}
 
-func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) error {
+func DebugStats(cache Cache) map[string]int {
+	res := map[string]int{}
+	casted, ok := cache.(*Coherent)
+	if !ok {
+		return res
+	}
+	casted.rootsLock.RLock()
+	defer casted.rootsLock.RUnlock()
+	for root, r := range casted.roots {
+		res[root] = r.Len()
+	}
+	return res
+}
+func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) {
 	c, err := cache.View(ctx, tx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	casted, ok := c.(*CoherentView)
 	if !ok {
-		return nil
+		return 0, nil
 	}
+	checked := 0
 	casted.cache.Ascend(func(i btree.Item) bool {
 		k, v := i.(*Pair).K, i.(*Pair).V
 		var dbV []byte
@@ -249,9 +268,10 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) error {
 			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, copyBytes(dbV))
 			return false
 		}
+		checked++
 		return true
 	})
-	return err
+	return checked, err
 }
 
 func copyBytes(b []byte) (copiedBytes []byte) {

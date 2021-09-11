@@ -454,6 +454,10 @@ func (p *TxPool) logStats() {
 		idsInMem, infoInMem,
 		m.Alloc/1024/1024, m.Sys/1024/1024,
 	))
+	if ASSERT {
+		log.Info(fmt.Sprintf("[txpool] cache %T\n", p.senders.cache))
+
+	}
 }
 func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	p.lock.RLock()
