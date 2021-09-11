@@ -26,7 +26,6 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/ethdb"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/ugorji/go/codec"
@@ -78,7 +77,6 @@ type AdditionalLogArguments func(k, v []byte) (additionalLogArguments []interfac
 type TransformArgs struct {
 	ExtractStartKey []byte
 	ExtractEndKey   []byte
-	FixedBits       int
 	BufferType      int
 	BufferSize      int
 	Quit            <-chan struct{}
@@ -101,14 +99,14 @@ func Transform(
 ) error {
 	bufferSize := BufferOptimalSize
 	if args.BufferSize > 0 {
-		bufferSize = datasize.ByteCount(args.BufferSize)
+		bufferSize = datasize.ByteSize(args.BufferSize)
 	}
 	buffer := getBufferByType(args.BufferType, bufferSize)
 	collector := NewCollector(tmpdir, buffer)
 	defer collector.Close(logPrefix)
 
 	t := time.Now()
-	if err := extractBucketIntoFiles(logPrefix, db, fromBucket, args.ExtractStartKey, args.ExtractEndKey, args.FixedBits, collector, extractFunc, args.Quit, args.LogDetailsExtract); err != nil {
+	if err := extractBucketIntoFiles(logPrefix, db, fromBucket, args.ExtractStartKey, args.ExtractEndKey, collector, extractFunc, args.Quit, args.LogDetailsExtract); err != nil {
 		return err
 	}
 	log.Debug(fmt.Sprintf("[%s] Extraction finished", logPrefix), "it took", time.Since(t))
@@ -125,7 +123,6 @@ func extractBucketIntoFiles(
 	bucket string,
 	startkey []byte,
 	endkey []byte,
-	fixedBits int,
 	collector *Collector,
 	extractFunc ExtractFunc,
 	quit <-chan struct{},
@@ -140,11 +137,13 @@ func extractBucketIntoFiles(
 		return err
 	}
 	defer c.Close()
-	if err := ethdb.Walk(c, startkey, fixedBits, func(k, v []byte) (bool, error) {
-		if err := common.Stopped(quit); err != nil {
-			return false, err
+	for k, v, e := c.Seek(startkey); k != nil; k, v, e = c.Next() {
+		if e != nil {
+			return e
 		}
-
+		if err := common.Stopped(quit); err != nil {
+			return err
+		}
 		select {
 		default:
 		case <-logEvery.C:
@@ -160,14 +159,11 @@ func extractBucketIntoFiles(
 			log.Info(fmt.Sprintf("[%s] ETL [1/2] Extracting", logPrefix), logArs...)
 		}
 		if endkey != nil && bytes.Compare(k, endkey) > 0 {
-			return false, nil
+			return nil
 		}
 		if err := extractFunc(k, v, collector.extractNextFunc); err != nil {
-			return false, err
+			return err
 		}
-		return true, nil
-	}); err != nil {
-		return err
 	}
 	return collector.flushBuffer(nil, true)
 }
