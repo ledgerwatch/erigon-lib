@@ -2,10 +2,10 @@ package kvcache
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
@@ -16,7 +16,7 @@ import (
 
 type Cache interface {
 	// View - returns CacheView consistent with givent kv.Tx
-	View(tx kv.Tx) (CacheView, error)
+	View(ctx context.Context, tx kv.Tx) (CacheView, error)
 	OnNewBlock(sc *remote.StateChange)
 	Evict()
 }
@@ -177,7 +177,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	}
 }
 
-func (c *Coherent) View(tx kv.Tx) (CacheView, error) {
+func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	//TODO: handle case when db has no records
 	encBlockNum, err := tx.GetOne(kv.SyncStageProgress, []byte("Finish"))
 	if err != nil {
@@ -199,7 +199,8 @@ func (c *Coherent) View(tx kv.Tx) (CacheView, error) {
 	if doBlock {
 		select {
 		case <-r.ready:
-		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 	return r, nil
@@ -228,8 +229,8 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	return it.(*Pair).V, nil
 }
 
-func AssertCheckValues(tx kv.Tx, cache Cache) error {
-	c, err := cache.View(tx)
+func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) error {
+	c, err := cache.View(ctx, tx)
 	if err != nil {
 		return err
 	}

@@ -33,7 +33,7 @@ func TestAPI(t *testing.T) {
 			go func(out chan []byte) {
 				require.NoError(db.View(context.Background(), func(tx kv.Tx) error {
 					wg.Done()
-					cache, err := c.View(tx)
+					cache, err := c.View(context.Background(), tx)
 					if err != nil {
 						panic(err)
 					}
@@ -146,7 +146,7 @@ func TestAPI(t *testing.T) {
 		require.Equal([]byte{42}, <-res8[i])
 	}
 	_ = db.View(context.Background(), func(tx kv.Tx) error {
-		require.NoError(AssertCheckValues(tx, c))
+		require.NoError(AssertCheckValues(context.Background(), tx, c))
 		return nil
 	})
 }

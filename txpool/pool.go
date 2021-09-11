@@ -644,7 +644,7 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 	}
 	defer coreTx.Rollback()
 
-	cache, err := p.senders.cache.View(coreTx)
+	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return nil, err
 	}
@@ -705,7 +705,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 	defer coreTx.Rollback()
 
-	cache, err := p.senders.cache.View(coreTx)
+	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -827,7 +827,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 	defer coreTx.Rollback()
 
-	cache, err := p.senders.cache.View(coreTx)
+	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -1399,7 +1399,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 		go func() {
 			for range time.NewTicker(5 * time.Second).C {
 				if err := coreDB.View(ctx, func(tx kv.Tx) error {
-					return kvcache.AssertCheckValues(tx, p.senders.cache)
+					return kvcache.AssertCheckValues(ctx, tx, p.senders.cache)
 				}); err != nil {
 					log.Error("AssertCheckValues", "err", err)
 				}
@@ -1597,7 +1597,7 @@ func (sc *sendersBatch) flush(tx kv.RwTx) (err error) {
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	cache, err := p.senders.cache.View(coreTx)
+	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
