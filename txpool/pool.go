@@ -457,8 +457,9 @@ func (p *TxPool) logStats() {
 		m.Alloc/1024/1024, m.Sys/1024/1024,
 	))
 	if ASSERT {
-		log.Info(fmt.Sprintf("[txpool] cache %T\n", p.senders.cache))
-		for root, length := range kvcache.DebugStats(p.senders.cache) {
+		stats := kvcache.DebugStats(p.senders.cache)
+		log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d\n", p.senders.cache, len(stats)))
+		for root, length := range stats {
 			log.Info("[txpool] cache", "root", root, "len", length)
 		}
 	}
