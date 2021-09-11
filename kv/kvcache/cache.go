@@ -55,11 +55,12 @@ type CacheView interface {
 // Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
-	latest    string //latest root
+	cfg       CoherentCacheConfig
 	roots     map[string]*CoherentView
 	rootsLock sync.RWMutex
 }
 type CoherentView struct {
+	id              string
 	cache           *btree.BTree
 	lock            sync.RWMutex
 	ready           chan struct{} // close when ready
@@ -74,8 +75,16 @@ type Pair struct {
 
 func (p *Pair) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Pair).K) < 0 }
 
-func New() *Coherent {
-	return &Coherent{roots: map[string]*CoherentView{}}
+type CoherentCacheConfig struct {
+	KeepViews uint64 // keep in memory up to this amount of views, evict older
+}
+
+var DefaultCoherentCacheConfig = CoherentCacheConfig{
+	KeepViews: 100,
+}
+
+func New(cfg CoherentCacheConfig) *Coherent {
+	return &Coherent{roots: map[string]*CoherentView{}, cfg: cfg}
 }
 
 // selectOrCreateRoot - used for usual getting root
@@ -86,66 +95,56 @@ func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
 	if ok {
 		return r
 	}
-
-	r = &CoherentView{ready: make(chan struct{})}
-	latestRoot, ok := c.roots[c.latest]
-	if ok {
-		fmt.Printf("clone: %d from %d\n", binary.BigEndian.Uint64([]byte(root)), binary.BigEndian.Uint64([]byte(c.latest)))
-		r.cache = latestRoot.cache.Clone()
-	} else {
-		//fmt.Printf("create empty root: %x\n", root)
-		r.cache = btree.New(32)
-	}
+	r = &CoherentView{id: root, ready: make(chan struct{})}
 	c.roots[root] = r
 	return r
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(root string, direction remote.Direction) (r *CoherentView, fastUnwind bool) {
+func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction) (r *CoherentView, fastUnwind bool) {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
-	r, ok := c.roots[root]
-	if !ok {
-		r = &CoherentView{ready: make(chan struct{})}
-		if c.latest == "" {
-			r.cache = btree.New(32)
-			c.latest = root
-		}
+	r, rootExists := c.roots[root]
+	if !rootExists {
+		r = &CoherentView{id: root, ready: make(chan struct{})}
 		c.roots[root] = r
-	}
-	if c.latest == "" {
-		return r, false
 	}
 
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
 	switch direction {
 	case remote.Direction_FORWARD:
-		//fmt.Printf("advance: clone: %x\n", c.latest)
-		r.cache = c.roots[c.latest].cache.Clone()
+		prevCacheRoot, prevRootExists := c.roots[prevRoot]
+		if prevRootExists {
+			fmt.Printf("advance: clone %x to %x \n", prevRoot, root)
+			r.cache = prevCacheRoot.Clone()
+		} else {
+			fmt.Printf("advance: new %x \n", root)
+			r.cache = btree.New(32)
+		}
 	case remote.Direction_UNWIND:
-		//fmt.Printf("unwind: %x\n", c.latest)
-		oldRoot, ok := c.roots[root]
-		if ok {
-			r = oldRoot
+		fmt.Printf("unwind: %x\n", root)
+		if rootExists {
 			fastUnwind = true
 		} else {
 			r.cache = btree.New(32)
 		}
-
 	default:
 		panic("not implemented yet")
 	}
-	c.roots[root] = r
-	c.latest = root
 	return r, fastUnwind
 }
 
 func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
-	h := gointerfaces.ConvertH256ToHash(sc.BlockHash)
+	prevRoot := make([]byte, 40)
+	binary.BigEndian.PutUint64(prevRoot, sc.PrevBlockHeight)
+	prevH := gointerfaces.ConvertH256ToHash(sc.PrevBlockHash)
+	copy(prevRoot[8:], prevH[:])
+
 	root := make([]byte, 40)
 	binary.BigEndian.PutUint64(root, sc.BlockHeight)
+	h := gointerfaces.ConvertH256ToHash(sc.BlockHash)
 	copy(root[8:], h[:])
-	r, _ := c.advanceRoot(string(root), sc.Direction)
+	r, _ := c.advanceRoot(string(root), string(prevRoot), sc.Direction)
 	r.lock.Lock()
 	for i := range sc.Changes {
 		switch sc.Changes[i].Action {
@@ -192,20 +191,20 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	root := make([]byte, 8+32)
 	copy(root, encBlockNum)
 	copy(root[8:], blockHash)
-	c.rootsLock.RLock()
-	doBlock := c.latest != ""
-	c.rootsLock.RUnlock()
 
-	//fmt.Printf("choose root: %x\n", root)
 	r := c.selectOrCreateRoot(string(root))
-	if doBlock {
-		select {
-		case <-r.ready:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(30 * time.Second):
-			return nil, context.DeadlineExceeded
+	select {
+	case <-r.ready:
+		//fmt.Printf("recv broadcast: %x\n", root)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("kvcache rootNum=%x, %w", root, ctx.Err())
+	case <-time.After(50 * time.Millisecond): //TODO: switch to timer to save resources
+		//fmt.Printf("timeout! %x\n", root)
+		r.lock.Lock()
+		if r.cache == nil {
+			r.cache = btree.New(32)
 		}
+		r.lock.Unlock()
 	}
 	return r, nil
 }
@@ -216,7 +215,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	c.lock.RUnlock()
 
 	if it != nil {
-		//fmt.Printf("from cache: %#x,%#v\n", k, it.(*Pair).V)
+		fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
 
@@ -224,7 +223,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	//fmt.Printf("from db: %#x,%#v\n", k, v)
+	fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
 
 	it = &Pair{K: k, V: v}
 	c.lock.Lock()
@@ -236,6 +235,15 @@ func (c *CoherentView) Len() int {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	return c.cache.Len()
+}
+func (c *CoherentView) Clone() *btree.BTree {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.cache == nil {
+		c.cache = btree.New(32)
+		return btree.New(32) // return independent tree because nothing to share
+	}
+	return c.cache.Clone()
 }
 
 type Stat struct {
@@ -305,10 +313,14 @@ func copyBytes(b []byte) (copiedBytes []byte) {
 func (c *Coherent) Evict() {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
-	if c.latest == "" {
-		return
+	var latestBlockNum uint64
+	for root := range c.roots { // max
+		blockNum := binary.BigEndian.Uint64([]byte(root))
+		if blockNum > latestBlockNum {
+			latestBlockNum = blockNum
+		}
 	}
-	latestBlockNum := binary.BigEndian.Uint64([]byte(c.latest))
+
 	var toDel []string
 	for root := range c.roots {
 		blockNum := binary.BigEndian.Uint64([]byte(root))
