@@ -63,6 +63,7 @@ type Config struct {
 	ProcessRemoteTxsEvery   time.Duration
 	CommitEvery             time.Duration
 	LogEvery                time.Duration
+	CacheEvictEvery         time.Duration
 	EvictSendersAfterRounds uint64
 }
 
@@ -71,6 +72,7 @@ var DefaultConfig = Config{
 	ProcessRemoteTxsEvery:   100 * time.Millisecond,
 	CommitEvery:             15 * time.Second,
 	LogEvery:                30 * time.Second,
+	CacheEvictEvery:         1 * time.Minute,
 	EvictSendersAfterRounds: 20,
 }
 
@@ -456,7 +458,9 @@ func (p *TxPool) logStats() {
 	))
 	if ASSERT {
 		log.Info(fmt.Sprintf("[txpool] cache %T\n", p.senders.cache))
-
+		for root, length := range kvcache.DebugStats(p.senders.cache) {
+			log.Info("[txpool] cache", "root", root, "len", length)
+		}
 	}
 }
 func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
@@ -1403,11 +1407,14 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 		go func() {
 			for range time.NewTicker(5 * time.Second).C {
 				if err := coreDB.View(ctx, func(tx kv.Tx) error {
-					return kvcache.AssertCheckValues(ctx, tx, p.senders.cache)
+					checked, err := kvcache.AssertCheckValues(ctx, tx, p.senders.cache)
+					if err != nil {
+						return err
+					}
+					log.Info("AssertCheckValues done", "checked", checked)
+					return nil
 				}); err != nil {
 					log.Error("AssertCheckValues", "err", err)
-				} else {
-					log.Info("AssertCheckValues done")
 				}
 			}
 		}()
@@ -1421,6 +1428,8 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	defer commitEvery.Stop()
 	logEvery := time.NewTicker(p.cfg.LogEvery)
 	defer logEvery.Stop()
+	cacheEvictEvery := time.NewTicker(p.cfg.CacheEvictEvery)
+	defer cacheEvictEvery.Stop()
 
 	localTxHashes := make([]byte, 0, 128)
 	remoteTxHashes := make([]byte, 0, 128)
@@ -1490,6 +1499,8 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			}
 			remoteTxHashes = p.AppendAllHashes(remoteTxHashes[:0])
 			send.PropagatePooledTxsToPeersList(newPeers, remoteTxHashes)
+		case <-cacheEvictEvery.C:
+			p.senders.cache.Evict()
 		}
 	}
 }
