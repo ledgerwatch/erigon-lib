@@ -1396,12 +1396,17 @@ func (p *WorstQueue) Pop() interface{} {
 // promote/demote transactions
 // reorgs
 func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send, newSlotsStreams *NewSlotsStreams, notifyMiningAboutNewSlots func()) {
-	if err := db.Update(ctx, func(tx kv.RwTx) error {
-		return coreDB.View(ctx, func(coreTx kv.Tx) error {
-			return p.fromDB(ctx, tx, coreTx)
-		})
-	}); err != nil {
-		log.Error("[txpool] restore from db", "err", err)
+	for {
+		if err := db.Update(ctx, func(tx kv.RwTx) error {
+			return coreDB.View(ctx, func(coreTx kv.Tx) error {
+				return p.fromDB(ctx, tx, coreTx)
+			})
+		}); err != nil {
+			log.Error("[txpool] restore from db", "err", err)
+		} else {
+			break
+		}
+		time.Sleep(time.Second)
 	}
 	p.logStats()
 	if ASSERT {
