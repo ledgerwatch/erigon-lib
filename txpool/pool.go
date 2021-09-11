@@ -1397,7 +1397,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	p.logStats()
 	if ASSERT {
 		go func() {
-			if err := db.View(ctx, func(tx kv.Tx) error {
+			if err := coreDB.View(ctx, func(tx kv.Tx) error {
 				return kvcache.AssertCheckValues(tx, p.senders.cache)
 			}); err != nil {
 				log.Error("AssertCheckValues", "err", err)
