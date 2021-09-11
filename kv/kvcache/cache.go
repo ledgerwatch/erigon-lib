@@ -234,7 +234,11 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) error {
 	if err != nil {
 		return err
 	}
-	c.(*CoherentView).cache.Ascend(func(i btree.Item) bool {
+	casted, ok := c.(*CoherentView)
+	if !ok {
+		return nil
+	}
+	casted.cache.Ascend(func(i btree.Item) bool {
 		k, v := i.(*Pair).K, i.(*Pair).V
 		var dbV []byte
 		dbV, err = tx.GetOne(kv.PlainState, k)
