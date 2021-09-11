@@ -182,8 +182,8 @@ type sendersBatch struct {
 	cache         kvcache.Cache
 }
 
-func newSendersCache() *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}, cache: kvcache.New()}
+func newSendersCache(cache kvcache.Cache) *sendersBatch {
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}}
 }
 
 //nolint
@@ -400,7 +400,7 @@ type TxPool struct {
 	cfg Config
 }
 
-func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config) (*TxPool, error) {
+func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
@@ -415,7 +415,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config) (*TxPool, error) {
 		baseFee:                 NewSubPool(BaseFeeSubPool),
 		queued:                  NewSubPool(QueuedSubPool),
 		newTxs:                  newTxs,
-		senders:                 newSendersCache(),
+		senders:                 newSendersCache(cache),
 		coreDB:                  coreDB,
 		cfg:                     cfg,
 		senderID:                1,

@@ -13,6 +13,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/ledgerwatch/erigon-lib/rlp"
@@ -335,7 +336,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		cfg := DefaultConfig
 		cfg.EvictSendersAfterRounds = 1
-		pool, err := New(ch, coreDB, cfg)
+		pool, err := New(ch, coreDB, cfg, kvcache.NewDummy())
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs
 		for addr, id := range senderIDs {
@@ -561,7 +562,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		check(p2pReceived, TxSlots{}, "after_flush")
 		//checkNotify(p2pReceived, TxSlots{}, "after_flush")
 
-		p2, err := New(ch, coreDB, DefaultConfig)
+		p2, err := New(ch, coreDB, DefaultConfig, kvcache.NewDummy())
 		assert.NoError(err)
 		p2.senders = pool.senders // senders are not persisted
 		err = coreDB.View(ctx, func(coreTx kv.Tx) error { return p2.fromDB(ctx, tx, coreTx) })
