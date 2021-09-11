@@ -183,7 +183,7 @@ type sendersBatch struct {
 }
 
 func newSendersCache(cache kvcache.Cache) *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}}
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}, cache: cache}
 }
 
 //nolint
@@ -401,9 +401,6 @@ type TxPool struct {
 }
 
 func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache) (*TxPool, error) {
-	if cache == nil {
-		panic(1)
-	}
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
@@ -1600,15 +1597,6 @@ func (sc *sendersBatch) flush(tx kv.RwTx) (err error) {
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if p == nil {
-		panic(1)
-	}
-	if p.senders == nil {
-		panic(1)
-	}
-	if p.senders.cache == nil {
-		panic(1)
-	}
 	cache, err := p.senders.cache.View(coreTx)
 	if err != nil {
 		return err
