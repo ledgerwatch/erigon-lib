@@ -76,11 +76,13 @@ type Pair struct {
 func (p *Pair) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Pair).K) < 0 }
 
 type CoherentCacheConfig struct {
-	KeepViews uint64 // keep in memory up to this amount of views, evict older
+	KeepViews    uint64        // keep in memory up to this amount of views, evict older
+	NewBlockWait time.Duration // how long wait
 }
 
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
-	KeepViews: 100,
+	KeepViews:    100,
+	NewBlockWait: 50 * time.Millisecond,
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
@@ -193,12 +195,18 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	copy(root[8:], blockHash)
 
 	r := c.selectOrCreateRoot(string(root))
-	select {
+	select { // fast non-blocking path
 	case <-r.ready:
 		//fmt.Printf("recv broadcast: %x\n", root)
+		return r, nil
+	default:
+	}
+
+	select { // slow blocking path
+	case <-r.ready:
 	case <-ctx.Done():
 		return nil, fmt.Errorf("kvcache rootNum=%x, %w", root, ctx.Err())
-	case <-time.After(50 * time.Millisecond): //TODO: switch to timer to save resources
+	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
 		//fmt.Printf("timeout! %x\n", root)
 		r.lock.Lock()
 		if r.cache == nil {
