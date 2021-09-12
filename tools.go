@@ -1,3 +1,5 @@
+// +build tools
+
 /*
    Copyright 2021 Erigon contributors
 
@@ -13,8 +15,6 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-// +build tools
 
 package tools
 
