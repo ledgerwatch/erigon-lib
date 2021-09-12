@@ -14,6 +14,7 @@ require (
 	github.com/ledgerwatch/log/v3 v3.3.0
 	github.com/ledgerwatch/secp256k1 v0.0.0-20210626115225-cd5cd00ed72d
 	github.com/matryer/moq v0.2.3
+	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/torquem-ch/mdbx-go v0.16.0
 	github.com/ugorji/go/codec v1.1.13

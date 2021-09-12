@@ -14,33 +14,21 @@
    limitations under the License.
 */
 
-package common
+package recsplit
 
-import "errors"
+import (
+	"testing"
+)
 
-var ErrStopped = errors.New("stopped")
-var ErrUnwind = errors.New("unwound")
-
-func Stopped(ch <-chan struct{}) error {
-	if ch == nil {
-		return nil
+func TestRecSplit(t *testing.T) {
+	rs := NewRecSplit(10, t.TempDir())
+	if err := rs.AddKey([]byte("first_key")); err != nil {
+		t.Error(err)
 	}
-	select {
-	case <-ch:
-		return ErrStopped
-	default:
+	if err := rs.Build(); err != nil {
+		t.Error(err)
 	}
-	return nil
-}
-
-func SafeClose(ch chan struct{}) {
-	if ch == nil {
-		return
-	}
-	select {
-	case <-ch:
-		// Channel was already closed
-	default:
-		close(ch)
+	if err := rs.AddKey([]byte("key_to_fail")); err == nil {
+		t.Errorf("test if expected to fail, hash function was built")
 	}
 }
