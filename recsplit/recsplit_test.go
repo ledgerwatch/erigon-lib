@@ -21,14 +21,23 @@ import (
 )
 
 func TestRecSplit(t *testing.T) {
-	rs := NewRecSplit(10, t.TempDir())
+	rs := NewRecSplit(2, 10, t.TempDir())
 	if err := rs.AddKey([]byte("first_key")); err != nil {
+		t.Error(err)
+	}
+	if err := rs.Build(); err == nil {
+		t.Errorf("test is expected to fail, too few keys added")
+	}
+	if err := rs.AddKey([]byte("second_key")); err != nil {
 		t.Error(err)
 	}
 	if err := rs.Build(); err != nil {
 		t.Error(err)
 	}
+	if err := rs.Build(); err == nil {
+		t.Errorf("test is expected to fail, hash gunction was built already")
+	}
 	if err := rs.AddKey([]byte("key_to_fail")); err == nil {
-		t.Errorf("test if expected to fail, hash function was built")
+		t.Errorf("test is expected to fail, hash function was built")
 	}
 }
