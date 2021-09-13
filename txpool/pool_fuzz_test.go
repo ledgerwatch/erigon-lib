@@ -46,7 +46,8 @@ func FuzzTwoQueue(f *testing.F) {
 			for _, i := range in {
 				sub.UnsafeAdd(&metaTx{subPool: SubPoolMarker(i & 0b11111), Tx: &TxSlot{nonce: 1, value: *uint256.NewInt(1)}})
 			}
-			sub.EnforceInvariants()
+			sub.EnforceWorstInvariants()
+			sub.EnforceBestInvariants()
 			assert.Equal(len(in), sub.best.Len())
 			assert.Equal(len(in), sub.worst.Len())
 			assert.Equal(len(in), sub.Len())
@@ -511,7 +512,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		h1, h22 := gointerfaces.ConvertHashToH256([32]byte{1}), gointerfaces.ConvertHashToH256([32]byte{22})
 
-		change := &remote.StateChange{BlockHeight: 1, BlockHash: h1}
+		change := &remote.StateChange{BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}
 		for id, sender := range senders {
 			var addr [20]byte
 			copy(addr[:], pool.senders.senderID2Addr[id])
@@ -532,17 +533,17 @@ func FuzzOnNewBlocks(f *testing.F) {
 		checkNotify(txs1, TxSlots{}, "fork1")
 
 		_, _, _ = p2pReceived, txs2, txs3
-		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 2, BlockHash: h1}, TxSlots{}, txs2, currentBaseFee, 1, [32]byte{})
+		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 2, BlockHash: h1, PrevBlockHeight: 1, PrevBlockHash: h1}, TxSlots{}, txs2, currentBaseFee, 1, [32]byte{})
 		check(TxSlots{}, txs2, "fork1 mined")
 		checkNotify(TxSlots{}, txs2, "fork1 mined")
 
 		// unwind everything and switch to new fork (need unwind mined now)
-		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 1, BlockHash: h1, Direction: remote.Direction_UNWIND}, txs2, TxSlots{}, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 1, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 2, PrevBlockHash: h1}, txs2, TxSlots{}, currentBaseFee, 2, [32]byte{})
 		assert.NoError(err)
 		check(txs2, TxSlots{}, "fork2")
 		checkNotify(txs2, TxSlots{}, "fork2")
 
-		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 2, BlockHash: h22}, TxSlots{}, txs3, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 2, BlockHash: h22, PrevBlockHeight: 1, PrevBlockHash: h1}, TxSlots{}, txs3, currentBaseFee, 2, [32]byte{})
 		assert.NoError(err)
 		check(TxSlots{}, txs3, "fork2 mined")
 		checkNotify(TxSlots{}, txs3, "fork2 mined")
