@@ -32,8 +32,28 @@ const RecSplitLogPrefix = "recsplit"
 
 const MaxLeafSize = 24
 
-// Maps the leaf size to the midpoint where we should check that bijection extraction failed (around the square root of the leaf size).
-var bijMidpoints []int = []int{0, 1, 2, 3, 4, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 12}
+type Bucket struct {
+	keys   []string
+	hasher hash.Hash64
+}
+
+func (b Bucket) Len() int {
+	return len(b.keys)
+}
+
+func (b *Bucket) Less(i, j int) bool {
+	b.hasher.Reset()
+	b.hasher.Write([]byte(b.keys[i]))
+	iPos := remap16(b.hasher.Sum64(), len(b.keys))
+	b.hasher.Reset()
+	b.hasher.Write([]byte(b.keys[j]))
+	jPos := remap16(b.hasher.Sum64(), len(b.keys))
+	return iPos < jPos
+}
+
+func (b *Bucket) Swap(i, j int) {
+	b.keys[i], b.keys[j] = b.keys[j], b.keys[i]
+}
 
 // RecSplit is the implementation of Recursive Split algorithm for constructing perfect hash mapping, described in
 // https://arxiv.org/pdf/1910.06416.pdf Emmanuel Esposito, Thomas Mueller Graf, and Sebastiano Vigna.
@@ -166,6 +186,7 @@ func (rs RecSplit) recsplitCurrentBucket() error {
 
 // recsplit applies recSplit algorithm to the given bucket
 func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint32 {
+	//fmt.Printf("recsplit(%d, %v)\n", level, bucket)
 	// Pick initial salt for this level of recursive split
 	salt := rs.startSeed[level]
 	hasher := murmur3.New64WithSeed(salt)
@@ -173,61 +194,75 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 	if m <= rs.leafSize {
 		// No need to build aggregation levels - just find find bijection
 		var mask uint32
-		var found uint32 = (1 << m) - 1
-		if rs.leafSize <= 8 {
-			for {
-				mask = 0
-				for i := 0; i < m; i++ {
-					hasher.Reset()
-					hasher.Write([]byte(bucket[i]))
-					mask |= 1 << (remap16(hasher.Sum64(), m))
+		for {
+			mask = 0
+			var fail bool
+			for i := 0; !fail && i < m; i++ {
+				hasher.Reset()
+				hasher.Write([]byte(bucket[i]))
+				bit := uint32(1) << (remap16(hasher.Sum64(), m))
+				if mask&bit != 0 {
+					fail = true
+				} else {
+					mask |= bit
 				}
-				if mask == found {
-					break
-				}
-				salt++
-				hasher = murmur3.New64WithSeed(salt)
 			}
-		} else {
-			midstop := bijMidpoints[m]
-			for {
-				mask = 0
-				var i int
-				for i = 0; i < midstop; i++ {
-					hasher.Reset()
-					hasher.Write([]byte(bucket[i]))
-					mask |= 1 << (remap16(hasher.Sum64(), m))
-				}
-				if bits.OnesCount32(mask) == midstop {
-					for ; i < m; i++ {
-						hasher.Reset()
-						hasher.Write([]byte(bucket[i]))
-						mask |= 1 << (remap16(hasher.Sum64(), m))
-					}
-					if mask == found {
-						break
-					}
-				}
-				salt++
-				hasher = murmur3.New64WithSeed(salt)
+			if !fail {
+				break
 			}
+			salt++
+			hasher = murmur3.New64WithSeed(salt)
 		}
 		salt -= rs.startSeed[level]
-
+		// TODO: Add salt to unary and to rs.builder
 	} else {
+		var fanout, split int
 		if m > rs.secondaryAggrBound {
-			// fanount = 2
+			fanout = 2
+			split = ((m/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
 		} else if m > rs.primaryAggrBound {
 			// 2nd aggregation level
+			fanout = (m + rs.primaryAggrBound - 1) / rs.primaryAggrBound
+			split = rs.primaryAggrBound
 		} else {
-			// First aggregation level
+			// 1st aggregation level
+			fanout = (m + rs.leafSize - 1) / rs.leafSize
+			split = rs.leafSize
+		}
+		count := make([]int, fanout)
+		for {
+			var fail bool
+			for i := 0; !fail && i < m; i++ {
+				hasher.Reset()
+				hasher.Write([]byte(bucket[i]))
+				j := remap16(hasher.Sum64(), m) / split
+				if count[j] == split {
+					fail = true
+				} else {
+					count[j]++
+				}
+			}
+			if !fail && count[fanout-1] == m-(fanout-1)*split {
+				break
+			}
+			salt++
+			hasher = murmur3.New64WithSeed(salt)
+			for i := 0; i < fanout; i++ {
+				count[i] = 0
+			}
+		}
+		b := Bucket{keys: bucket, hasher: hasher}
+		sort.Sort(&b)
+		salt -= rs.startSeed[level]
+		// TODO: Add salt to unary and to rs.builder
+		var i int
+		for i = 0; i < m-split; i += split {
+			unary = rs.recsplit(level+1, b.keys[i:i+split], unary)
+		}
+		if m-i > 1 {
+			unary = rs.recsplit(level+1, b.keys[i:], unary)
 		}
 	}
-	fmt.Printf("recsplit for bucket %d\n", rs.currentBucketIdx)
-	for _, key := range rs.currentBucket {
-		fmt.Printf("%s\n", key)
-	}
-	fmt.Printf("----------------\n")
 	return unary
 }
 
