@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -337,7 +338,9 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		cfg := DefaultConfig
 		cfg.EvictSendersAfterRounds = 1
-		pool, err := New(ch, coreDB, cfg, kvcache.NewDummy())
+		sendersCache := kvcache.New(kvcache.DefaultCoherentCacheConfig)
+
+		pool, err := New(ch, coreDB, cfg, sendersCache)
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs
 		for addr, id := range senderIDs {
@@ -426,7 +429,12 @@ func FuzzOnNewBlocks(f *testing.F) {
 			iterateSubPoolUnordered(queued, func(tx *metaTx) {
 				i := tx.Tx
 				if tx.subPool&NoNonceGaps > 0 {
-					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg)
+					for id := range senders {
+						fmt.Printf("now: %d, %d\n", id, senders[id].nonce)
+					}
+					fmt.Printf("?? %d,%d\n", i.senderID, senders[i.senderID].nonce)
+					fmt.Printf("?? %##+v\n", senders)
+					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg, i.senderID, senders[i.senderID].nonce)
 				}
 				if tx.subPool&EnoughBalance > 0 {
 					//assert.True(tx.SenderHasEnoughBalance, msg)
@@ -563,7 +571,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		check(p2pReceived, TxSlots{}, "after_flush")
 		//checkNotify(p2pReceived, TxSlots{}, "after_flush")
 
-		p2, err := New(ch, coreDB, DefaultConfig, kvcache.NewDummy())
+		p2, err := New(ch, coreDB, DefaultConfig, sendersCache)
 		assert.NoError(err)
 		p2.senders = pool.senders // senders are not persisted
 		err = coreDB.View(ctx, func(coreTx kv.Tx) error { return p2.fromDB(ctx, tx, coreTx) })

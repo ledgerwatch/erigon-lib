@@ -175,8 +175,6 @@ func (i *sortByNonce) Less(than btree.Item) bool {
 // flushing to db periodicaly. it doesn't play as read-cache (because db is small and memory-mapped - doesn't need cache)
 // non thread-safe
 type sendersBatch struct {
-	blockHeight   atomic.Uint64
-	blockHash     atomic.String
 	senderID      uint64
 	senderIDs     map[string]uint64
 	senderID2Addr map[uint64]string
@@ -228,11 +226,7 @@ func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
 	return nil
 }
 
-func (sc *sendersBatch) onNewBlock(stateChanges map[string]sender, unwindTxs, minedTxs TxSlots, blockHeight uint64, blockHash [32]byte) error {
-	//TODO: if see non-continuous block heigh - load gap from changesets
-	sc.blockHeight.Store(blockHeight)
-	sc.blockHash.Store(string(blockHash[:]))
-
+func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, blockHeight uint64, blockHash [32]byte) error {
 	//`loadSenders` goes by network to core - and it must be outside of sendersBatch lock. But other methods must be locked
 	if err := sc.mergeStateChanges(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
@@ -241,43 +235,36 @@ func (sc *sendersBatch) onNewBlock(stateChanges map[string]sender, unwindTxs, mi
 	sc.setTxSenderID(minedTxs)
 	return nil
 }
-func (sc *sendersBatch) mergeStateChanges(stateChanges map[string]sender, unwindedTxs, minedTxs TxSlots) error {
-	for addr := range stateChanges { // merge state changes
+func (sc *sendersBatch) mergeStateChanges(stateChanges *remote.StateChange, unwindedTxs, minedTxs TxSlots) error {
+	for _, change := range stateChanges.Changes { // merge state changes
+		addrB := gointerfaces.ConvertH160toAddress(change.Address)
+		addr := string(addrB[:])
 		_, ok := sc.id(addr)
 		if !ok {
 			sc.senderID++
 			sc.senderIDs[addr] = sc.senderID
 			sc.senderID2Addr[sc.senderID] = addr
 		}
-		//sc.senderInfo[id] = newSender(v.nonce, v.balance)
 	}
 
 	for i := 0; i < unwindedTxs.senders.Len(); i++ {
-		_, ok := sc.id(string(unwindedTxs.senders.At(i)))
+		addr := string(unwindedTxs.senders.At(i))
+		_, ok := sc.id(addr)
 		if !ok {
 			sc.senderID++
-			sc.senderIDs[string(unwindedTxs.senders.At(i))] = sc.senderID
-			sc.senderID2Addr[sc.senderID] = string(unwindedTxs.senders.At(i))
+			sc.senderIDs[addr] = sc.senderID
+			sc.senderID2Addr[sc.senderID] = addr
 		}
-		//if _, ok := sc.senderInfo[id]; !ok {
-		//	if _, ok := stateChanges[string(unwindedTxs.senders.At(i))]; !ok {
-		//		sc.senderInfo[id] = emptySender
-		//	}
-		//}
 	}
 
 	for i := 0; i < len(minedTxs.txs); i++ {
-		_, ok := sc.id(string(minedTxs.senders.At(i)))
+		addr := string(minedTxs.senders.At(i))
+		_, ok := sc.id(addr)
 		if !ok {
 			sc.senderID++
-			sc.senderIDs[string(minedTxs.senders.At(i))] = sc.senderID
-			sc.senderID2Addr[sc.senderID] = string(minedTxs.senders.At(i))
+			sc.senderIDs[addr] = sc.senderID
+			sc.senderID2Addr[sc.senderID] = addr
 		}
-		//if _, ok := sc.senderInfo[id]; !ok {
-		//	if _, ok := stateChanges[string(minedTxs.senders.At(i))]; !ok {
-		//		sc.senderInfo[id] = emptySender
-		//	}
-		//}
 	}
 	return nil
 }
@@ -807,20 +794,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	diff := map[string]sender{}
-	for _, change := range stateChanges.Changes {
-		nonce, balance, err := DecodeSender(change.Data)
-		if err != nil {
-			log.Warn("stateChanges.decodeSender", "err", err)
-			continue
-		}
-		addr := gointerfaces.ConvertH160toAddress(change.Address)
-		diff[string(addr[:])] = sender{nonce: nonce, balance: balance}
-	}
 
 	t := time.Now()
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
-	if err := p.senders.onNewBlock(diff, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
+	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
 		return err
 	}
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
@@ -908,6 +885,7 @@ func onNewBlock(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, un
 		if err != nil {
 			return err
 		}
+		fmt.Printf("a: %d,%d\n", id, nonce)
 		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee)
 	}
 
@@ -1592,11 +1570,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		return err
 	}
 
-	err = p.senders.flush(tx)
-	if err != nil {
-		return err
-	}
-
 	// clean - in-memory data structure as later as possible - because if during this Tx will happen error,
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
 	// failed write transaction must not create side-effects
@@ -1605,27 +1578,11 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	return nil
 }
 
-func (sc *sendersBatch) flush(tx kv.RwTx) (err error) {
-	encID := make([]byte, 8)
-	binary.BigEndian.PutUint64(encID, sc.blockHeight.Load())
-	if err := tx.Put(kv.PoolInfo, SenderCacheHeightKey, encID); err != nil {
-		return err
-	}
-	if err := tx.Put(kv.PoolInfo, SenderCacheHashKey, []byte(sc.blockHash.Load())); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
-		return err
-	}
-
-	if err := p.senders.fromDB(ctx, tx, coreTx); err != nil {
 		return err
 	}
 
@@ -1709,31 +1666,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	return nil
 }
 
-func (sc *sendersBatch) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
-	{
-		v, err := tx.GetOne(kv.PoolInfo, SenderCacheHeightKey)
-		if err != nil {
-			return err
-		}
-		if len(v) > 0 {
-			sc.blockHeight.Store(binary.BigEndian.Uint64(v))
-		}
-	}
-	{
-		v, err := tx.GetOne(kv.PoolInfo, SenderCacheHashKey)
-		if err != nil {
-			return err
-		}
-		if len(v) > 0 {
-			sc.blockHash.Store(string(v))
-		}
-	}
-
-	return nil
-}
-
-var SenderCacheHeightKey = []byte("sender_cache_block_height")
-var SenderCacheHashKey = []byte("sender_cache_block_hash")
 var PoolPendingBaseFeeKey = []byte("pending_base_fee")
 var PoolProtocolBaseFeeKey = []byte("protocol_base_fee")
 
