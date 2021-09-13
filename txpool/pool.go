@@ -865,6 +865,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 		notifyNewTxs = append(notifyNewTxs, unwindTxs.txs[i].idHash[:]...)
 	}
+	fmt.Printf("notifyNewTxs: %d\n", notifyNewTxs.Len())
+	defer func(t time.Time) { fmt.Printf("pool.go:869: %s\n", time.Since(t)) }(time.Now())
 	if len(notifyNewTxs) > 0 {
 		select {
 		case p.newTxs <- notifyNewTxs:
