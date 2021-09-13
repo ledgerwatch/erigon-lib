@@ -84,7 +84,7 @@ type Pool interface {
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddRemoteTxs(ctx context.Context, newTxs TxSlots)
-	OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error
+	OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, baseFee uint64) error
 
 	AddNewGoodPeer(peerID PeerID)
 }
@@ -219,23 +219,21 @@ func (sc *sendersBatch) printDebug(prefix string) {
 }
 
 func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
-	if err := sc.ensureSenderIDOnNewTxs(newTxs); err != nil {
-		return err
-	}
-	sc.setTxSenderID(newTxs)
-	return nil
-}
+	for i := 0; i < len(newTxs.txs); i++ {
+		id, ok := sc.id(string(newTxs.senders.At(i)))
+		if ok {
+			newTxs.txs[i].senderID = id
+			continue
+		}
+		sc.senderID++
+		sc.senderIDs[string(newTxs.senders.At(i))] = sc.senderID
+		sc.senderID2Addr[sc.senderID] = string(newTxs.senders.At(i))
 
-func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error {
-	//`loadSenders` goes by network to core - and it must be outside of sendersBatch lock. But other methods must be locked
-	if err := sc.mergeStateChanges(stateChanges, unwindTxs, minedTxs); err != nil {
-		return err
+		newTxs.txs[i].senderID = sc.senderID
 	}
-	sc.setTxSenderID(unwindTxs)
-	sc.setTxSenderID(minedTxs)
 	return nil
 }
-func (sc *sendersBatch) mergeStateChanges(stateChanges *remote.StateChange, unwindedTxs, minedTxs TxSlots) error {
+func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error {
 	for _, change := range stateChanges.Changes { // merge state changes
 		addrB := gointerfaces.ConvertH160toAddress(change.Address)
 		addr := string(addrB[:])
@@ -247,37 +245,28 @@ func (sc *sendersBatch) mergeStateChanges(stateChanges *remote.StateChange, unwi
 		}
 	}
 
-	for i := 0; i < unwindedTxs.senders.Len(); i++ {
-		addr := string(unwindedTxs.senders.At(i))
-		_, ok := sc.id(addr)
+	for i := 0; i < unwindTxs.senders.Len(); i++ {
+		addr := string(unwindTxs.senders.At(i))
+		id, ok := sc.id(addr)
 		if !ok {
 			sc.senderID++
+			id = sc.senderID
 			sc.senderIDs[addr] = sc.senderID
 			sc.senderID2Addr[sc.senderID] = addr
 		}
+		unwindTxs.txs[i].senderID = id
 	}
 
 	for i := 0; i < len(minedTxs.txs); i++ {
 		addr := string(minedTxs.senders.At(i))
-		_, ok := sc.id(addr)
+		id, ok := sc.id(addr)
 		if !ok {
 			sc.senderID++
+			id = sc.senderID
 			sc.senderIDs[addr] = sc.senderID
 			sc.senderID2Addr[sc.senderID] = addr
 		}
-	}
-	return nil
-}
-
-func (sc *sendersBatch) ensureSenderIDOnNewTxs(newTxs TxSlots) error {
-	for i := 0; i < len(newTxs.txs); i++ {
-		_, ok := sc.id(string(newTxs.senders.At(i)))
-		if ok {
-			continue
-		}
-		sc.senderID++
-		sc.senderIDs[string(newTxs.senders.At(i))] = sc.senderID
-		sc.senderID2Addr[sc.senderID] = string(newTxs.senders.At(i))
+		minedTxs.txs[i].senderID = id
 	}
 	return nil
 }
@@ -790,7 +779,7 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
-func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, baseFee, blockHeight uint64, blockHash [32]byte) error {
+func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, baseFee uint64) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -843,7 +832,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	log.Info("[txpool] new block", "number", blockHeight, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", stateChanges.BlockHeight, "in", time.Since(t))
 	return nil
 }
 func (p *TxPool) discardLocked(mt *metaTx) {

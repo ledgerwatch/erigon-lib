@@ -517,10 +517,10 @@ func FuzzOnNewBlocks(f *testing.F) {
 		tx, err := db.BeginRw(ctx)
 		require.NoError(err)
 		defer tx.Rollback()
+		// start blocks from 0, set empty hash - then kvcache will also work on this
+		h1, h22 := gointerfaces.ConvertHashToH256([32]byte{}), gointerfaces.ConvertHashToH256([32]byte{22})
 
-		h1, h22 := gointerfaces.ConvertHashToH256([32]byte{1}), gointerfaces.ConvertHashToH256([32]byte{22})
-
-		change := &remote.StateChange{BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}
+		change := &remote.StateChange{BlockHeight: 0, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}
 		for id, sender := range senders {
 			var addr [20]byte
 			copy(addr[:], pool.senders.senderID2Addr[id])
@@ -535,23 +535,23 @@ func FuzzOnNewBlocks(f *testing.F) {
 		// go to first fork
 		//fmt.Printf("ll1: %d,%d,%d\n", pool.pending.Len(), pool.baseFee.Len(), pool.queued.Len())
 		txs1, txs2, p2pReceived, txs3 := splitDataset(txs)
-		err = pool.OnNewBlock(ctx, change, txs1, TxSlots{}, currentBaseFee, 1, [32]byte{})
+		err = pool.OnNewBlock(ctx, change, txs1, TxSlots{}, currentBaseFee)
 		assert.NoError(err)
 		check(txs1, TxSlots{}, "fork1")
 		checkNotify(txs1, TxSlots{}, "fork1")
 
 		_, _, _ = p2pReceived, txs2, txs3
-		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 2, BlockHash: h1, PrevBlockHeight: 1, PrevBlockHash: h1}, TxSlots{}, txs2, currentBaseFee, 1, [32]byte{})
+		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs2, currentBaseFee)
 		check(TxSlots{}, txs2, "fork1 mined")
 		checkNotify(TxSlots{}, txs2, "fork1 mined")
 
 		// unwind everything and switch to new fork (need unwind mined now)
-		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 1, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 2, PrevBlockHash: h1}, txs2, TxSlots{}, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 0, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 1, PrevBlockHash: h1}, txs2, TxSlots{}, currentBaseFee)
 		assert.NoError(err)
 		check(txs2, TxSlots{}, "fork2")
 		checkNotify(txs2, TxSlots{}, "fork2")
 
-		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 2, BlockHash: h22, PrevBlockHeight: 1, PrevBlockHash: h1}, TxSlots{}, txs3, currentBaseFee, 2, [32]byte{})
+		err = pool.OnNewBlock(ctx, &remote.StateChange{BlockHeight: 1, BlockHash: h22, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs3, currentBaseFee)
 		assert.NoError(err)
 		check(TxSlots{}, txs3, "fork2 mined")
 		checkNotify(TxSlots{}, txs3, "fork2 mined")
@@ -598,4 +598,10 @@ func FuzzOnNewBlocks(f *testing.F) {
 		assert.Equal(pool.protocolBaseFee.Load(), p2.protocolBaseFee.Load())
 	})
 
+}
+
+func bigEndian(n uint64) []byte {
+	num := [8]byte{}
+	binary.BigEndian.PutUint64(num[:], n)
+	return num[:]
 }
