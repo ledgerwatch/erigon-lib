@@ -41,3 +41,16 @@ func TestRecSplit(t *testing.T) {
 		t.Errorf("test is expected to fail, hash function was built")
 	}
 }
+
+func TestRecSplitDuplicate(t *testing.T) {
+	rs := NewRecSplit(2, 10, t.TempDir())
+	if err := rs.AddKey([]byte("first_key")); err != nil {
+		t.Error(err)
+	}
+	if err := rs.AddKey([]byte("first_key")); err != nil {
+		t.Error(err)
+	}
+	if err := rs.Build(); err == nil {
+		t.Errorf("test is expected to fail, duplicate key")
+	}
+}
