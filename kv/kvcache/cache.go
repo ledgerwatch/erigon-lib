@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VictoriaMetrics/metrics"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -55,9 +57,10 @@ type CacheView interface {
 // Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
-	cfg       CoherentCacheConfig
-	roots     map[string]*CoherentView
-	rootsLock sync.RWMutex
+	cfg         CoherentCacheConfig
+	roots       map[string]*CoherentView
+	rootsLock   sync.RWMutex
+	hits, total *metrics.Counter
 }
 type CoherentView struct {
 	id              string
@@ -78,15 +81,20 @@ func (p *Pair) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Pai
 type CoherentCacheConfig struct {
 	KeepViews    uint64        // keep in memory up to this amount of views, evict older
 	NewBlockWait time.Duration // how long wait
+	MetricsLabel string
 }
 
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
 	KeepViews:    100,
 	NewBlockWait: 50 * time.Millisecond,
+	MetricsLabel: "default",
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
-	return &Coherent{roots: map[string]*CoherentView{}, cfg: cfg}
+	return &Coherent{roots: map[string]*CoherentView{}, cfg: cfg,
+		total: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{instance=%s}`, cfg.MetricsLabel)),
+		hits:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_hit_total{instance=%s}`, cfg.MetricsLabel)),
+	}
 }
 
 // selectOrCreateRoot - used for usual getting root
@@ -233,7 +241,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	}
 	//fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
 
-	it = &Pair{K: k, V: v}
+	it = &Pair{K: k, V: common.Copy(v)}
 	c.lock.Lock()
 	c.cache.ReplaceOrInsert(it)
 	c.lock.Unlock()
