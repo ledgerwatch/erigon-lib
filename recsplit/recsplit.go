@@ -32,6 +32,9 @@ const RecSplitLogPrefix = "recsplit"
 
 const MaxLeafSize = 24
 
+// Optimal Golomb-Rice parameters for leaves
+var bijMemo []uint32 = []uint32{0, 0, 0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 21, 22, 23, 25, 26, 28, 29, 30}
+
 type Bucket struct {
 	keys   []string
 	hasher hash.Hash64
@@ -75,6 +78,7 @@ type RecSplit struct {
 	primaryAggrBound   int   // The lower bound for primary key aggregation (computed from leafSize)
 	secondaryAggrBound int   // The lower bound for secondary key aggregation (computed from leadSize)
 	startSeed          []uint32
+	golombRice         []uint32
 }
 
 type RecSplitArgs struct {
@@ -109,6 +113,7 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 		rs.secondaryAggrBound = rs.primaryAggrBound * int(math.Ceil(0.21*float64(rs.leafSize)+9./10.))
 	}
 	rs.startSeed = args.StartSeed
+	rs.fillGolombRiceAll(args.BucketSize)
 	return rs, nil
 }
 
@@ -143,6 +148,66 @@ const mask48 uint64 = (1 << 48) - 1
 // distributed over the range [0..n), under assumption that n is less than 2^16
 func remap16(x uint64, n int) int {
 	return int(((x & mask48) * uint64(n)) >> 48)
+}
+
+func (rs *RecSplit) splitParams(m int) (fanout, unit int) {
+	if m > rs.secondaryAggrBound { // High-level aggregation (fanout 2)
+		unit = rs.secondaryAggrBound * ((m/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound)
+		fanout = 2
+	} else if m > rs.primaryAggrBound { // Second-level aggregation
+		unit = rs.primaryAggrBound
+		fanout = (m + rs.primaryAggrBound - 1) / rs.primaryAggrBound
+	} else { // First-level aggregation
+		unit = rs.leafSize
+		fanout = (m + rs.leafSize - 1) / rs.leafSize
+	}
+	return
+}
+
+func (rs *RecSplit) fillGolombRiceTable(m int, table []uint32) {
+	fanout, unit := rs.splitParams(m)
+	k := make([]int, fanout)
+	k[fanout-1] = m
+	for i := 0; i < fanout-1; i++ {
+		k[i] = unit
+		k[fanout-1] -= k[i]
+	}
+	sqrt_prod := float64(1)
+	for i := 0; i < fanout; i++ {
+		sqrt_prod *= math.Sqrt(float64(k[i]))
+	}
+	p := math.Sqrt(float64(m)) / (math.Pow(2*math.Pi, (float64(fanout)-1.)/2.0) * sqrt_prod)
+	golomb_rice_length := uint32(math.Ceil(math.Log2(-math.Log((math.Sqrt(5)+1.0)/2.0) / math.Log1p(-p)))) // log2 Golomb modulus
+	if golomb_rice_length > 0x1F {
+		panic("")
+	}
+	table[m] = golomb_rice_length << 27
+	for i := 0; i < fanout; i++ {
+		golomb_rice_length += table[k[i]] & 0xFFFF
+	}
+	if golomb_rice_length > 0xFFFF {
+		panic("")
+	}
+	nodes := uint32(1)
+	for i := 0; i < fanout; i++ {
+		nodes += (table[k[i]] >> 16) & 0x7FF
+	}
+	if rs.leafSize >= 3 && nodes > 0x7FF {
+		panic("")
+	}
+	table[m] |= nodes << 16
+}
+
+func (rs *RecSplit) fillGolombRiceAll(maxBucketSize int) {
+	rs.golombRice = make([]uint32, maxBucketSize)
+	rs.golombRice[0] = bijMemo[0]<<27 | bijMemo[0]
+	var s int
+	for s = 1; s <= rs.leafSize; s++ {
+		rs.golombRice[s] = bijMemo[s]<<27 | uint32(1)<<16 | bijMemo[s]
+	}
+	for ; s < maxBucketSize; s++ {
+		rs.fillGolombRiceTable(s, rs.golombRice)
+	}
 }
 
 // Add key to the RecSplit. There can be many more keys than what fits in RAM, and RecSplit
@@ -221,33 +286,21 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		// TODO: Add salt to unary and to rs.builder
 		rs.builder.appendFixed(salt)
 	} else {
-		var fanout, split int
-		if m > rs.secondaryAggrBound {
-			fanout = 2
-			split = ((m/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
-		} else if m > rs.primaryAggrBound {
-			// 2nd aggregation level
-			fanout = (m + rs.primaryAggrBound - 1) / rs.primaryAggrBound
-			split = rs.primaryAggrBound
-		} else {
-			// 1st aggregation level
-			fanout = (m + rs.leafSize - 1) / rs.leafSize
-			split = rs.leafSize
-		}
+		fanout, unit := rs.splitParams(m)
 		count := make([]int, fanout)
 		for {
 			var fail bool
 			for i := 0; !fail && i < m; i++ {
 				hasher.Reset()
 				hasher.Write([]byte(bucket[i]))
-				j := remap16(hasher.Sum64(), m) / split
-				if count[j] == split {
+				j := remap16(hasher.Sum64(), m) / unit
+				if count[j] == unit {
 					fail = true
 				} else {
 					count[j]++
 				}
 			}
-			if !fail && count[fanout-1] == m-(fanout-1)*split {
+			if !fail && count[fanout-1] == m-(fanout-1)*unit {
 				break
 			}
 			salt++
@@ -262,8 +315,8 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		// TODO: Add salt to unary and to rs.builder
 		rs.builder.appendFixed(salt)
 		var i int
-		for i = 0; i < m-split; i += split {
-			unary = rs.recsplit(level+1, b.keys[i:i+split], unary)
+		for i = 0; i < m-unit; i += unit {
+			unary = rs.recsplit(level+1, b.keys[i:i+unit], unary)
 		}
 		if m-i > 1 {
 			unary = rs.recsplit(level+1, b.keys[i:], unary)
