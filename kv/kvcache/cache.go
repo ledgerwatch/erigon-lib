@@ -73,15 +73,16 @@ type CacheView interface {
 // Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
-	cfg         CoherentCacheConfig
+	hits, total *metrics.Counter
 	roots       map[string]*CoherentView
 	rootsLock   sync.RWMutex
-	hits, total *metrics.Counter
+	cfg         CoherentCacheConfig
 }
 type CoherentView struct {
-	id              string
+	hits, total     *metrics.Counter
 	cache           *btree.BTree
 	lock            sync.RWMutex
+	id              string
 	ready           chan struct{} // close when ready
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
 }
@@ -108,8 +109,8 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 
 func New(cfg CoherentCacheConfig) *Coherent {
 	return &Coherent{roots: map[string]*CoherentView{}, cfg: cfg,
-		total: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{instance="%s"}`, cfg.MetricsLabel)),
-		hits:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_hit_total{instance="%s"}`, cfg.MetricsLabel)),
+		total: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{name="%s"}`, cfg.MetricsLabel)),
+		hits:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 	}
 }
 
@@ -121,7 +122,7 @@ func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
 	if ok {
 		return r
 	}
-	r = &CoherentView{id: root, ready: make(chan struct{})}
+	r = &CoherentView{id: root, ready: make(chan struct{}), hits: c.hits, total: c.total}
 	c.roots[root] = r
 	return r
 }
@@ -132,7 +133,7 @@ func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction
 	defer c.rootsLock.Unlock()
 	r, rootExists := c.roots[root]
 	if !rootExists {
-		r = &CoherentView{id: root, ready: make(chan struct{})}
+		r = &CoherentView{id: root, ready: make(chan struct{}), hits: c.hits, total: c.total}
 		c.roots[root] = r
 	}
 
@@ -248,7 +249,9 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	it := c.cache.Get(&Pair{K: k})
 	c.lock.RUnlock()
 
+	c.total.Inc()
 	if it != nil {
+		c.hits.Inc()
 		//fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
