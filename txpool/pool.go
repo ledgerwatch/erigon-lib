@@ -1705,6 +1705,12 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.currentBaseFee.Store(currentBaseFee)
 	p.protocolBaseFee.Store(protocolBaseFee)
 
+	if ASSERT {
+		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
+			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
+		}
+	}
+
 	return nil
 }
 
