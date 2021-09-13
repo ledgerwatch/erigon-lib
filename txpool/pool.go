@@ -226,7 +226,7 @@ func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
 	return nil
 }
 
-func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, blockHeight uint64, blockHash [32]byte) error {
+func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error {
 	//`loadSenders` goes by network to core - and it must be outside of sendersBatch lock. But other methods must be locked
 	if err := sc.mergeStateChanges(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
@@ -797,7 +797,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	t := time.Now()
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
-	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
+	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
 	}
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
