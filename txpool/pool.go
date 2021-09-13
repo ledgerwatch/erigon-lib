@@ -850,11 +850,12 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
+	defer func(t time.Time) { fmt.Printf("pool.go:853: %s\n", time.Since(t)) }(time.Now())
 	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
-	defer func(t time.Time) { fmt.Printf("pool.go:850: %s\n", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { fmt.Printf("pool.go:858: %s\n", time.Since(t)) }(time.Now())
 	if err := onNewBlock(cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
