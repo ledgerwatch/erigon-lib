@@ -784,12 +784,12 @@ func onNewTxs(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, newT
 		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee)
 	}
 
-	pending.EnforceInvariants()
+	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, discard)
-	pending.EnforceInvariants() //TODO: find way to enforce invariants once. promote - now expect invariants - but can it work without them?
+	pending.EnforceBestInvariants() //TODO: find way to enforce invariants once. promote - now expect invariants - but can it work without them?
 
 	return nil
 }
@@ -918,12 +918,12 @@ func onNewBlock(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, un
 	}
 
 	defer func(t time.Time) { fmt.Printf("invariants %s\n", time.Since(t)) }(time.Now())
-	pending.EnforceInvariants()
+	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, discard)
-	pending.EnforceInvariants()
+	pending.EnforceBestInvariants()
 
 	return nil
 }
@@ -1202,8 +1202,10 @@ func (s bestSlice) UnsafeAdd(i *metaTx) bestSlice {
 	return a
 }
 
-func (p *PendingPool) EnforceInvariants() {
+func (p *PendingPool) EnforceWorstInvariants() {
 	heap.Init(p.worst)
+}
+func (p *PendingPool) EnforceBestInvariants() {
 	sort.Sort(p.best)
 }
 
