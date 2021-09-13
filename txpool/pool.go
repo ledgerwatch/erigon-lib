@@ -713,6 +713,11 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if ASSERT {
+		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
+			panic(err)
+		}
+	}
 
 	defer processBatchTxsTimer.UpdateDuration(time.Now())
 	//t := time.Now()
@@ -734,6 +739,12 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 
 	if err := onNewTxs(cache, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
+	}
+
+	if ASSERT {
+		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
+			panic(err)
+		}
 	}
 
 	// notify about all non-dropped txs
