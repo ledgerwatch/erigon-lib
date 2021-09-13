@@ -182,9 +182,13 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 		case remote.Action_DELETE:
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil})
-		case remote.Action_CODE:
+		case remote.Action_CODE, remote.Action_STORAGE:
 			//skip
-		case remote.Action_STORAGE:
+		default:
+			panic("not implemented yet")
+		}
+
+		if len(sc.Changes[i].StorageChanges) > 0 {
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			for _, change := range sc.Changes[i].StorageChanges {
 				loc := gointerfaces.ConvertH256ToHash(change.Location)
@@ -194,8 +198,6 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 				copy(k[20+8:], loc[:])
 				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: change.Data})
 			}
-		default:
-			panic("not implemented yet")
 		}
 	}
 	r.lock.Unlock()
