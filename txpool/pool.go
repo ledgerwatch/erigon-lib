@@ -196,7 +196,7 @@ func (sc *sendersBatch) id(addr string) (uint64, bool) {
 	id, ok := sc.senderIDs[addr]
 	return id, ok
 }
-func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (*sender, error) {
+func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (nonce uint64, balance uint256.Int, err error) {
 	//cacheTotalCounter.Inc()
 	addr, ok := sc.senderID2Addr[id]
 	if !ok {
@@ -204,16 +204,12 @@ func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (
 	}
 	encoded, err := cache.Get([]byte(addr), coreTx)
 	if err != nil {
-		return nil, err
+		return 0, emptySender.balance, err
 	}
 	if len(encoded) == 0 {
-		return emptySender, nil
+		return emptySender.nonce, emptySender.balance, nil
 	}
-	nonce, balance, err := DecodeSender(encoded)
-	if err != nil {
-		return nil, err
-	}
-	return newSender(nonce, balance), nil
+	return DecodeSender(encoded)
 }
 
 //nolint
@@ -781,11 +777,11 @@ func onNewTxs(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, newT
 
 	changedSenders := unsafeAddToPendingPool(byNonce, newTxs, pending, baseFee, queued, byHash, discard)
 	for id := range changedSenders {
-		sender, err := senders.info(cache, coreTx, id)
+		nonce, balance, err := senders.info(cache, coreTx, id)
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, sender, byNonce, protocolBaseFee, currentBaseFee)
+		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee)
 	}
 
 	pending.EnforceInvariants()
@@ -914,11 +910,11 @@ func onNewBlock(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, un
 	// time (up to some "immutability threshold").
 	changedSenders := unsafeAddToPendingPool(byNonce, unwindTxs, pending, baseFee, queued, byHash, discard)
 	for id := range changedSenders {
-		sender, err := senders.info(cache, coreTx, id)
+		nonce, balance, err := senders.info(cache, coreTx, id)
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, sender, byNonce, protocolBaseFee, pendingBaseFee)
+		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee)
 	}
 
 	defer func(t time.Time) { fmt.Printf("invariants %s\n", time.Since(t)) }(time.Now())
@@ -1025,8 +1021,8 @@ func unsafeAddToPendingPool(byNonce *ByNonce, newTxs TxSlots, pending *PendingPo
 	return changedSenders
 }
 
-func onSenderChange(senderID uint64, sender *sender, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64) {
-	noGapsNonce := sender.nonce + 1
+func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64) {
+	noGapsNonce := senderNonce + 1
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
 	minTip := uint64(math.MaxUint64)
@@ -1069,9 +1065,9 @@ func onSenderChange(senderID uint64, sender *sender, byNonce *ByNonce, protocolB
 		// set if there is currently a guarantee that the transaction and all its required prior
 		// transactions will be able to pay for gas.
 		mt.subPool &^= EnoughBalance
-		if mt.Tx.nonce > sender.nonce {
+		if mt.Tx.nonce > senderNonce {
 			cumulativeRequiredBalance = cumulativeRequiredBalance.Add(cumulativeRequiredBalance, needBalance) // already deleted all transactions with nonce <= sender.nonce
-			if sender.balance.Gt(cumulativeRequiredBalance) || sender.balance.Eq(cumulativeRequiredBalance) {
+			if senderBalance.Gt(cumulativeRequiredBalance) || senderBalance.Eq(cumulativeRequiredBalance) {
 				mt.subPool |= EnoughBalance
 			}
 		}
