@@ -187,7 +187,6 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 		default:
 			panic("not implemented yet")
 		}
-
 		if len(sc.Changes[i].StorageChanges) > 0 {
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			for _, change := range sc.Changes[i].StorageChanges {
@@ -196,7 +195,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 				copy(k, addr[:])
 				binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
 				copy(k[20+8:], loc[:])
-				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: change.Data})
+				r.cache.ReplaceOrInsert(&Pair{K: k, V: change.Data})
 			}
 		}
 	}
