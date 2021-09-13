@@ -31,6 +31,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/VictoriaMetrics/metrics"
+	"github.com/go-stack/stack"
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/holiman/uint256"
@@ -715,7 +716,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 	if ASSERT {
 		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
-			panic(err)
+			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 		}
 	}
 
@@ -743,7 +744,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 
 	if ASSERT {
 		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
-			log.Error("AssertCheckValues", "err", err)
+			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 		}
 	}
 
@@ -849,7 +850,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	p.senders.cache.OnNewBlock(stateChanges)
 	if ASSERT {
 		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
-			log.Error("AssertCheckValues", "err", err)
+			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 		}
 	}
 
@@ -1432,7 +1433,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 					log.Info("AssertCheckValues done", "checked", checked)
 					return nil
 				}); err != nil {
-					log.Error("AssertCheckValues", "err", err)
+					log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 				}
 			}
 		}()
