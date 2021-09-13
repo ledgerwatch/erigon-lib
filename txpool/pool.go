@@ -807,7 +807,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	defer func(t time.Time) { fmt.Printf("pool.go:814: %s\n", time.Since(t)) }(time.Now())
 	diff := map[string]sender{}
 	for _, change := range stateChanges.Changes {
 		nonce, balance, err := DecodeSender(change.Data)
@@ -824,7 +823,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := p.senders.onNewBlock(diff, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
 		return err
 	}
-	defer func(t time.Time) { fmt.Printf("pool.go:831: %s\n", time.Since(t)) }(time.Now())
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 	if err := unwindTxs.Valid(); err != nil {
 		return err
@@ -838,7 +836,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	defer coreTx.Rollback()
-	defer func(t time.Time) { fmt.Printf("pool.go:845: %s\n", time.Since(t)) }(time.Now())
 	p.senders.cache.OnNewBlock(stateChanges)
 	if ASSERT {
 		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
@@ -846,16 +843,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:853: %s\n", time.Since(t)) }(time.Now())
 	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
-	defer func(t time.Time) { fmt.Printf("pool.go:858: %s\n", time.Since(t)) }(time.Now())
 	if err := onNewBlock(cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
-	defer func(t time.Time) { fmt.Printf("pool.go:862: %s\n", time.Since(t)) }(time.Now())
 
 	notifyNewTxs := make(Hashes, 0, 32*len(unwindTxs.txs))
 	for i := range unwindTxs.txs {
@@ -865,8 +859,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 		notifyNewTxs = append(notifyNewTxs, unwindTxs.txs[i].idHash[:]...)
 	}
-	fmt.Printf("notifyNewTxs: %d\n", notifyNewTxs.Len())
-	defer func(t time.Time) { fmt.Printf("pool.go:869: %s\n", time.Since(t)) }(time.Now())
 	if len(notifyNewTxs) > 0 {
 		select {
 		case p.newTxs <- notifyNewTxs:
@@ -919,16 +911,11 @@ func onNewBlock(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, un
 		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee)
 	}
 
-	defer func(t time.Time) { fmt.Printf("invariants %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
-	defer func(t time.Time) { fmt.Printf("invariants0 %s\n", time.Since(t)) }(time.Now())
 	baseFee.EnforceInvariants()
-	defer func(t time.Time) { fmt.Printf("invariants01 %s\n", time.Since(t)) }(time.Now())
 	queued.EnforceInvariants()
 
-	defer func(t time.Time) { fmt.Printf("invariants2: %s\n", time.Since(t)) }(time.Now())
 	promote(pending, baseFee, queued, discard)
-	defer func(t time.Time) { fmt.Printf("invariants3: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceBestInvariants()
 
 	return nil
