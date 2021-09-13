@@ -19,6 +19,7 @@ package recsplit
 import (
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"math"
 	"math/bits"
 	"sort"
@@ -29,33 +30,66 @@ import (
 
 const RecSplitLogPrefix = "recsplit"
 
+const MaxLeafSize = 24
+
+// Maps the leaf size to the midpoint where we should check that bijection extraction failed (around the square root of the leaf size).
+var bijMidpoints []int = []int{0, 1, 2, 3, 4, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 12}
+
 // RecSplit is the implementation of Recursive Split algorithm for constructing perfect hash mapping, described in
 // https://arxiv.org/pdf/1910.06416.pdf Emmanuel Esposito, Thomas Mueller Graf, and Sebastiano Vigna.
 // Recsplit: Minimal perfect hashing via recursive splitting. In 2020 Proceedings of the Symposium on Algorithm Engineering and Experiments (ALENEX),
 // pages 175−185. SIAM, 2020.
 type RecSplit struct {
-	keyExpectedCount uint64 // Number of keys in the hash table
-	keysAdded        uint64 // Number of keys actually added to the recSplit (to check the match with keyExpectedCount)
-	bucketCount      uint64 // Number of buckets
-	collector        *etl.Collector
-	built            bool     // Flag indicating that the hash function has been built and no more keys can be added
-	currentBucketIdx uint64   // Current bucket being accumulated
-	currentBucket    []string // Keys in the current bucket accumulated before the recsplit is performed for that bucket
-	builder          Builder
-	bucketSizeAcc    []int // Bucket size accumulator
-	bucketPosAcc     []int // Accumulator for position of every bucket in the encoding of the hash function
+	keyExpectedCount   uint64      // Number of keys in the hash table
+	keysAdded          uint64      // Number of keys actually added to the recSplit (to check the match with keyExpectedCount)
+	bucketCount        uint64      // Number of buckets
+	hasher             hash.Hash64 // Salted hash function to use for splitting into initial buckets
+	collector          *etl.Collector
+	built              bool     // Flag indicating that the hash function has been built and no more keys can be added
+	currentBucketIdx   uint64   // Current bucket being accumulated
+	currentBucket      []string // Keys in the current bucket accumulated before the recsplit is performed for that bucket
+	builder            Builder
+	bucketSizeAcc      []int // Bucket size accumulator
+	bucketPosAcc       []int // Accumulator for position of every bucket in the encoding of the hash function
+	leafSize           int   // Leaf size for recursive split algorithm
+	primaryAggrBound   int   // The lower bound for primary key aggregation (computed from leafSize)
+	secondaryAggrBound int   // The lower bound for secondary key aggregation (computed from leadSize)
+	startSeed          []uint32
+}
+
+type RecSplitArgs struct {
+	KeyCount   int
+	BucketSize int
+	Salt       uint32 // Hash seed (salt) for the hash function used for allocating the initial buckets - need to be generated randomly
+	LeafSize   int
+	TmpDir     string
+	StartSeed  []uint32 // For each level of recursive split, the hash seed (salt) used for that level - need to be generated randomly and be large enough to accomodate all the levels
 }
 
 // NewRecSplit creates a new RecSplit instance with given number of keys and given bucket size
 // Typical bucket size is 100 - 2000, larger bucket sizes result in smaller representations of hash functions, at a cost of slower access
-func NewRecSplit(keyCount, bucketSize int, tmpDir string) *RecSplit {
-	bucketCount := (keyCount + bucketSize - 1) / bucketSize
-	rs := &RecSplit{keyExpectedCount: uint64(keyCount), bucketCount: uint64(bucketCount)}
-	rs.collector = etl.NewCollector(tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
-	rs.currentBucket = make([]string, 0, bucketSize)
+// salt parameters is used to randomise the hash function construction, to ensure that different Erigon instances (nodes)
+// are likely to use different hash function, to collision attacks are unlikely to slow down any meaningful number of nodes at the same time
+func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
+	bucketCount := (args.KeyCount + args.BucketSize - 1) / args.BucketSize
+	rs := &RecSplit{keyExpectedCount: uint64(args.KeyCount), bucketCount: uint64(bucketCount)}
+	rs.hasher = murmur3.New64WithSeed(args.Salt)
+	rs.collector = etl.NewCollector(args.TmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+	rs.currentBucket = make([]string, 0, args.BucketSize)
 	rs.bucketSizeAcc = make([]int, 1, bucketCount+1)
 	rs.bucketPosAcc = make([]int, 1, bucketCount+1)
-	return rs
+	if args.LeafSize > MaxLeafSize {
+		return nil, fmt.Errorf("exceeded max leaf size %d: %d", MaxLeafSize, args.LeafSize)
+	}
+	rs.leafSize = args.LeafSize
+	rs.primaryAggrBound = rs.leafSize * int(math.Max(2, math.Ceil(0.35*float64(rs.leafSize)+1./2.)))
+	if rs.leafSize < 7 {
+		rs.secondaryAggrBound = rs.primaryAggrBound * 2
+	} else {
+		rs.secondaryAggrBound = rs.primaryAggrBound * int(math.Ceil(0.21*float64(rs.leafSize)+9./10.))
+	}
+	rs.startSeed = args.StartSeed
+	return rs, nil
 }
 
 // Builder builds up the representation of the hash function and is capable of then outputting
@@ -79,6 +113,14 @@ func remap(x uint64, n uint64) uint64 {
 	return hi
 }
 
+const mask48 uint64 = (1 << 48) - 1
+
+// remap converts the number x which is assumed to be uniformly distributed over the range [0..2^64) to the number that is uniformly
+// distributed over the range [0..n), under assumption that n is less than 2^16
+func remap16(x uint64, n int) int {
+	return int(((x & mask48) * uint64(n)) >> 48)
+}
+
 // Add key to the RecSplit. There can be many more keys than what fits in RAM, and RecSplit
 // spills data onto disk to accomodate that. The key gets copied by the collector, therefore
 // the slice underlying key is not getting accessed by RecSplit after this invocation.
@@ -86,7 +128,9 @@ func (rs *RecSplit) AddKey(key []byte) error {
 	if rs.built {
 		return fmt.Errorf("cannot add keys after perfect hash function had been built")
 	}
-	hash := murmur3.Sum64(key)
+	rs.hasher.Reset()
+	rs.hasher.Write(key) //nolint:errcheck
+	hash := rs.hasher.Sum64()
 	var bucket [8]byte
 	binary.BigEndian.PutUint64(bucket[:], remap(hash, rs.bucketCount))
 	rs.keysAdded++
@@ -107,7 +151,7 @@ func (rs RecSplit) recsplitCurrentBucket() error {
 				return fmt.Errorf("duplicate key %x", key)
 			}
 		}
-		unary := rs.recsplit(rs.currentBucket, nil /* unary */)
+		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
 		rs.builder.appendUnaryAll(unary)
 	}
 	// Extend rs.bucketPosAcc to accomodate current bucket index + 1
@@ -121,7 +165,64 @@ func (rs RecSplit) recsplitCurrentBucket() error {
 }
 
 // recsplit applies recSplit algorithm to the given bucket
-func (rs *RecSplit) recsplit(bucket []string, unary []uint32) []uint32 {
+func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint32 {
+	// Pick initial salt for this level of recursive split
+	salt := rs.startSeed[level]
+	hasher := murmur3.New64WithSeed(salt)
+	m := len(bucket)
+	if m <= rs.leafSize {
+		// No need to build aggregation levels - just find find bijection
+		var mask uint32
+		var found uint32 = (1 << m) - 1
+		if rs.leafSize <= 8 {
+			for {
+				mask = 0
+				for i := 0; i < m; i++ {
+					hasher.Reset()
+					hasher.Write([]byte(bucket[i]))
+					mask |= 1 << (remap16(hasher.Sum64(), m))
+				}
+				if mask == found {
+					break
+				}
+				salt++
+				hasher = murmur3.New64WithSeed(salt)
+			}
+		} else {
+			midstop := bijMidpoints[m]
+			for {
+				mask = 0
+				var i int
+				for i = 0; i < midstop; i++ {
+					hasher.Reset()
+					hasher.Write([]byte(bucket[i]))
+					mask |= 1 << (remap16(hasher.Sum64(), m))
+				}
+				if bits.OnesCount32(mask) == midstop {
+					for ; i < m; i++ {
+						hasher.Reset()
+						hasher.Write([]byte(bucket[i]))
+						mask |= 1 << (remap16(hasher.Sum64(), m))
+					}
+					if mask == found {
+						break
+					}
+				}
+				salt++
+				hasher = murmur3.New64WithSeed(salt)
+			}
+		}
+		salt -= rs.startSeed[level]
+
+	} else {
+		if m > rs.secondaryAggrBound {
+			// fanount = 2
+		} else if m > rs.primaryAggrBound {
+			// 2nd aggregation level
+		} else {
+			// First aggregation level
+		}
+	}
 	fmt.Printf("recsplit for bucket %d\n", rs.currentBucketIdx)
 	for _, key := range rs.currentBucket {
 		fmt.Printf("%s\n", key)

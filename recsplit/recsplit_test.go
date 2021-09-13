@@ -21,29 +21,49 @@ import (
 )
 
 func TestRecSplit(t *testing.T) {
-	rs := NewRecSplit(2, 10, t.TempDir())
-	if err := rs.AddKey([]byte("first_key")); err != nil {
+	rs, err := NewRecSplit(RecSplitArgs{
+		KeyCount:   2,
+		BucketSize: 10,
+		Salt:       0,
+		TmpDir:     t.TempDir(),
+		LeafSize:   8,
+		StartSeed:  []uint32{5, 100034, 405060, 60606},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = rs.AddKey([]byte("first_key")); err != nil {
 		t.Error(err)
 	}
-	if err := rs.Build(); err == nil {
+	if err = rs.Build(); err == nil {
 		t.Errorf("test is expected to fail, too few keys added")
 	}
-	if err := rs.AddKey([]byte("second_key")); err != nil {
+	if err = rs.AddKey([]byte("second_key")); err != nil {
 		t.Error(err)
 	}
-	if err := rs.Build(); err != nil {
+	if err = rs.Build(); err != nil {
 		t.Error(err)
 	}
-	if err := rs.Build(); err == nil {
+	if err = rs.Build(); err == nil {
 		t.Errorf("test is expected to fail, hash gunction was built already")
 	}
-	if err := rs.AddKey([]byte("key_to_fail")); err == nil {
+	if err = rs.AddKey([]byte("key_to_fail")); err == nil {
 		t.Errorf("test is expected to fail, hash function was built")
 	}
 }
 
 func TestRecSplitDuplicate(t *testing.T) {
-	rs := NewRecSplit(2, 10, t.TempDir())
+	rs, err := NewRecSplit(RecSplitArgs{
+		KeyCount:   2,
+		BucketSize: 10,
+		Salt:       0,
+		TmpDir:     t.TempDir(),
+		LeafSize:   8,
+		StartSeed:  []uint32{5, 100034, 405060, 60606},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := rs.AddKey([]byte("first_key")); err != nil {
 		t.Error(err)
 	}
@@ -52,5 +72,19 @@ func TestRecSplitDuplicate(t *testing.T) {
 	}
 	if err := rs.Build(); err == nil {
 		t.Errorf("test is expected to fail, duplicate key")
+	}
+}
+
+func TestRecSplitLeafSizeTooLarge(t *testing.T) {
+	_, err := NewRecSplit(RecSplitArgs{
+		KeyCount:   2,
+		BucketSize: 10,
+		Salt:       0,
+		TmpDir:     t.TempDir(),
+		LeafSize:   64,
+		StartSeed:  []uint32{5, 100034, 405060, 60606},
+	})
+	if err == nil {
+		t.Errorf("test is expected to fail, leaf size too large")
 	}
 }
