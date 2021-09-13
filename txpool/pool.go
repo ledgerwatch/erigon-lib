@@ -800,7 +800,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.senders.cache.OnNewBlock(stateChanges)
 	diff := map[string]sender{}
 	for _, change := range stateChanges.Changes {
 		nonce, balance, err := DecodeSender(change.Data)
@@ -834,6 +833,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return err
+	}
+
+	p.senders.cache.OnNewBlock(stateChanges)
+	if ASSERT {
+		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, cache); err != nil {
+			panic(err)
+		}
 	}
 
 	if err := onNewBlock(cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
@@ -1504,13 +1510,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			p.senders.cache.Evict()
 		}
 	}
-}
-
-//nolint
-func copyBytes(b []byte) (copiedBytes []byte) {
-	copiedBytes = make([]byte, len(b))
-	copy(copiedBytes, b)
-	return
 }
 
 func (p *TxPool) flush(db kv.RwDB) (written uint64, err error) {

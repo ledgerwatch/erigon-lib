@@ -22,6 +22,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -64,7 +65,7 @@ func TestAPI(t *testing.T) {
 					if err != nil {
 						panic(err)
 					}
-					out <- copyBytes(v)
+					out <- common.Copy(v)
 					return nil
 				}))
 			}(res[i])
@@ -199,12 +200,12 @@ func TestAPI(t *testing.T) {
 		}
 		fmt.Printf("done4: \n")
 	}()
-	//err := db.View(context.Background(), func(tx kv.Tx) error {
-	//	_, err := AssertCheckValues(context.Background(), tx, c)
-	//	require.NoError(err)
-	//	return nil
-	//})
-	//require.NoError(err)
+	err := db.View(context.Background(), func(tx kv.Tx) error {
+		_, err := AssertCheckValues(context.Background(), tx, c)
+		require.NoError(err)
+		return nil
+	})
+	require.NoError(err)
 
 	wg.Wait()
 }

@@ -325,22 +325,13 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 			return false
 		}
 		if !bytes.Equal(dbV, v) {
-			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, copyBytes(dbV))
+			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, common.Copy(dbV))
 			return false
 		}
 		checked++
 		return true
 	})
 	return checked, err
-}
-
-func copyBytes(b []byte) (copiedBytes []byte) {
-	if b == nil {
-		return nil
-	}
-	copiedBytes = make([]byte, len(b))
-	copy(copiedBytes, b)
-	return
 }
 
 func (c *Coherent) Evict() {
