@@ -173,33 +173,31 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	copy(root[8:], h[:])
 	r, _ := c.advanceRoot(string(root), string(prevRoot), sc.Direction)
 	r.lock.Lock()
-	/*
-		for i := range sc.Changes {
-			switch sc.Changes[i].Action {
-			case remote.Action_UPSERT:
-				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-				v := sc.Changes[i].Data
-				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v})
-			case remote.Action_DELETE:
-				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil})
-			case remote.Action_CODE, remote.Action_UPSERT_CODE:
-				//skip
-			case remote.Action_STORAGE:
-				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-				for _, change := range sc.Changes[i].StorageChanges {
-					loc := gointerfaces.ConvertH256ToHash(change.Location)
-					k := make([]byte, 20+8+32)
-					copy(k, addr[:])
-					binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
-					copy(k[20+8:], loc[:])
-					r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: change.Data})
-				}
-			default:
-				panic("not implemented yet")
+	for i := range sc.Changes {
+		switch sc.Changes[i].Action {
+		case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
+			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
+			v := sc.Changes[i].Data
+			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v})
+		case remote.Action_DELETE:
+			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
+			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil})
+		case remote.Action_CODE:
+			//skip
+		case remote.Action_STORAGE:
+			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
+			for _, change := range sc.Changes[i].StorageChanges {
+				loc := gointerfaces.ConvertH256ToHash(change.Location)
+				k := make([]byte, 20+8+32)
+				copy(k, addr[:])
+				binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
+				copy(k[20+8:], loc[:])
+				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: change.Data})
 			}
+		default:
+			panic("not implemented yet")
 		}
-	*/
+	}
 	r.lock.Unlock()
 	switched := r.readyChanClosed.CAS(false, true)
 	if switched {
@@ -327,7 +325,7 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 			return false
 		}
 		if !bytes.Equal(dbV, v) {
-			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, common.Copy(dbV))
+			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, dbV)
 			return false
 		}
 		checked++
