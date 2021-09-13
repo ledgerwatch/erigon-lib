@@ -921,7 +921,9 @@ func onNewBlock(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, un
 
 	defer func(t time.Time) { fmt.Printf("invariants %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
+	defer func(t time.Time) { fmt.Printf("invariants0 %s\n", time.Since(t)) }(time.Now())
 	baseFee.EnforceInvariants()
+	defer func(t time.Time) { fmt.Printf("invariants01 %s\n", time.Since(t)) }(time.Now())
 	queued.EnforceInvariants()
 
 	defer func(t time.Time) { fmt.Printf("invariants2: %s\n", time.Since(t)) }(time.Now())
