@@ -121,6 +121,10 @@ func (b *Builder) appendUnaryAll(unary []uint32) {
 
 }
 
+func (b Builder) appendFixed(x uint32) {
+
+}
+
 // bits returns currrent number of bits in the compact encoding of the hash function representation
 func (b Builder) bits() int {
 	return 0
@@ -215,6 +219,7 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		}
 		salt -= rs.startSeed[level]
 		// TODO: Add salt to unary and to rs.builder
+		rs.builder.appendFixed(salt)
 	} else {
 		var fanout, split int
 		if m > rs.secondaryAggrBound {
@@ -255,6 +260,7 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		sort.Sort(&b)
 		salt -= rs.startSeed[level]
 		// TODO: Add salt to unary and to rs.builder
+		rs.builder.appendFixed(salt)
 		var i int
 		for i = 0; i < m-split; i += split {
 			unary = rs.recsplit(level+1, b.keys[i:i+split], unary)
