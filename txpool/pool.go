@@ -811,7 +811,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-
+	defer func(t time.Time) { fmt.Printf("pool.go:814: %s\n", time.Since(t)) }(time.Now())
 	diff := map[string]sender{}
 	for _, change := range stateChanges.Changes {
 		nonce, balance, err := DecodeSender(change.Data)
@@ -828,6 +828,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := p.senders.onNewBlock(diff, unwindTxs, minedTxs, blockHeight, blockHash); err != nil {
 		return err
 	}
+	defer func(t time.Time) { fmt.Printf("pool.go:831: %s\n", time.Since(t)) }(time.Now())
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 	if err := unwindTxs.Valid(); err != nil {
 		return err
@@ -841,12 +842,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	defer coreTx.Rollback()
-
-	cache, err := p.senders.cache.View(ctx, coreTx)
-	if err != nil {
-		return err
-	}
-
+	defer func(t time.Time) { fmt.Printf("pool.go:845: %s\n", time.Since(t)) }(time.Now())
 	p.senders.cache.OnNewBlock(stateChanges)
 	if ASSERT {
 		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
@@ -854,6 +850,11 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
+	cache, err := p.senders.cache.View(ctx, coreTx)
+	if err != nil {
+		return err
+	}
+	defer func(t time.Time) { fmt.Printf("pool.go:850: %s\n", time.Since(t)) }(time.Now())
 	if err := onNewBlock(cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
