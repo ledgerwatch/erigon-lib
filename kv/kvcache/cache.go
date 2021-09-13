@@ -179,7 +179,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 		case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			v := sc.Changes[i].Data
-			fmt.Printf("set: %x,%x\n", addr, v)
+			//fmt.Printf("set: %x,%x\n", addr, v)
 			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v})
 		case remote.Action_DELETE:
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
@@ -252,7 +252,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 
 	if it != nil {
 		c.hits.Inc()
-		fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
+		//fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
 	c.miss.Inc()
@@ -261,7 +261,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
+	//fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
 
 	it = &Pair{K: k, V: common.Copy(v)}
 	c.lock.Lock()
