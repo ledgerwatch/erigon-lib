@@ -30,7 +30,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 )
 
@@ -141,7 +140,7 @@ func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction
 	switch direction {
 	case remote.Direction_FORWARD:
 		prevCacheRoot, prevRootExists := c.roots[prevRoot]
-		log.Warn("[kvcache] forward", "to", fmt.Sprintf("%x", root), "prevRootExists", prevRootExists)
+		//log.Warn("[kvcache] forward", "to", fmt.Sprintf("%x", root), "prevRootExists", prevRootExists)
 		if prevRootExists {
 			//fmt.Printf("advance: clone %x to %x \n", prevRoot, root)
 			r.cache = prevCacheRoot.Clone()
@@ -150,7 +149,7 @@ func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction
 			r.cache = btree.New(32)
 		}
 	case remote.Direction_UNWIND:
-		log.Warn("[kvcache] unwind", "to", fmt.Sprintf("%x", root), "rootExists", rootExists)
+		//log.Warn("[kvcache] unwind", "to", fmt.Sprintf("%x", root), "rootExists", rootExists)
 		if rootExists {
 			fastUnwind = true
 		} else {
