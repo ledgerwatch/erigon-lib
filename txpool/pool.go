@@ -269,19 +269,6 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, 
 	return nil
 }
 
-func (sc *sendersBatch) setTxSenderID(txs TxSlots) {
-	for i := range txs.txs {
-		addr := string(txs.senders.At(i))
-
-		// assign ID to each new sender
-		id, ok := sc.id(addr)
-		if !ok {
-			panic("not supported yet")
-		}
-		txs.txs[i].senderID = id
-	}
-}
-
 func calcProtocolBaseFee(baseFee uint64) uint64 {
 	return 7
 }
@@ -427,12 +414,12 @@ func (p *TxPool) logStats() {
 	for i := range stats {
 		log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
 	}
-	if ASSERT {
-		//ages := kvcache.DebugAges(p.senders.cache)
-		//for i := range ages {
-		//	log.Info("[txpool] age", "age", ages[i].BlockNum, "amount", ages[i].Lenght)
-		//}
-	}
+	//if ASSERT {
+	//ages := kvcache.DebugAges(p.senders.cache)
+	//for i := range ages {
+	//	log.Info("[txpool] age", "age", ages[i].BlockNum, "amount", ages[i].Lenght)
+	//}
+	//}
 }
 func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {
 	txn, ok := p.byHash[string(hash)]
