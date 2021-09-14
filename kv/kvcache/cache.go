@@ -381,7 +381,7 @@ func (c *Coherent) Evict() {
 	}
 }
 
-func (c *CoherentView) evict(forceOld uint64) {
+func (c *CoherentView) evict(dropOlder uint64) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -396,6 +396,10 @@ func (c *CoherentView) evict(forceOld uint64) {
 	counters := map[uint64]int{}
 	c.cache.Ascend(func(it btree.Item) bool {
 		age := goatomic.LoadUint64(&it.(*Pair).t)
+		if age < dropOlder {
+			toDel = append(toDel, fst)
+			return true
+		}
 		_, ok := counters[age]
 		if !ok {
 			counters[age] = 0
