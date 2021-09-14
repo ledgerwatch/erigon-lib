@@ -427,6 +427,10 @@ func (p *TxPool) logStats() {
 	for i := range stats {
 		log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
 	}
+	ages := kvcache.DebugAges(p.senders.cache)
+	for i := range ages {
+		log.Info("[txpool] age", "age", ages[i].BlockNum, "amount", ages[i].Lenght)
+	}
 	if ASSERT {
 
 	}

@@ -314,6 +314,33 @@ func DebugStats(cache Cache) []Stat {
 	sort.Slice(res, func(i, j int) bool { return res[i].BlockNum < res[j].BlockNum })
 	return res
 }
+func DebugAges(cache Cache) []Stat {
+	res := []Stat{}
+	casted, ok := cache.(*Coherent)
+	if !ok {
+		return res
+	}
+	casted.rootsLock.RLock()
+	defer casted.rootsLock.RUnlock()
+	_, latestView := cache.(*Coherent).evictionInfo()
+	latestView.lock.RLock()
+	defer latestView.lock.RUnlock()
+	counters := map[uint64]int{}
+	latestView.cache.Ascend(func(it btree.Item) bool {
+		age := goatomic.LoadUint64(&it.(*Pair).t)
+		_, ok := counters[age]
+		if !ok {
+			counters[age] = 0
+		}
+		counters[age]++
+		return true
+	})
+	for i, j := range counters {
+		res = append(res, Stat{BlockNum: i, Lenght: j})
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].BlockNum < res[j].BlockNum })
+	return res
+}
 func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) {
 	c, err := cache.View(ctx, tx)
 	if err != nil {
@@ -377,7 +404,7 @@ func (c *Coherent) Evict() {
 	latestBlockNum, preLatestRoot := c.evictionInfo()
 	c.evictRoots(latestBlockNum - 10)
 	if preLatestRoot != nil {
-		preLatestRoot.evict(20, 100_000)
+		preLatestRoot.evict(20, 120_000)
 	}
 }
 
@@ -441,16 +468,4 @@ func (c *CoherentView) evict(dropOlder uint64, keysLimit int) {
 		c.cache.Delete(it)
 	}
 	fmt.Printf("drop 2-random: %d\n", len(toDel))
-	fmt.Printf("counters: %#v\n", counters)
-	counters2 := map[uint64]int{}
-	c.cache.Ascend(func(it btree.Item) bool {
-		age := goatomic.LoadUint64(&it.(*Pair).t)
-		_, ok := counters2[age]
-		if !ok {
-			counters2[age] = 0
-		}
-		counters2[age]++
-		return true
-	})
-	fmt.Printf("counters2: %#v\n", counters)
 }
