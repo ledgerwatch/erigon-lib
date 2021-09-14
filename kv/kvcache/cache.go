@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	goatomic "sync/atomic"
 	"time"
 
 	"github.com/VictoriaMetrics/metrics"
@@ -90,6 +91,7 @@ var _ Cache = (*Coherent)(nil)         // compile-time interface check
 var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 type Pair struct {
 	K, V []byte
+	t    uint64
 }
 
 func (p *Pair) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Pair).K) < 0 }
@@ -179,10 +181,10 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			v := sc.Changes[i].Data
 			//fmt.Printf("set: %x,%x\n", addr, v)
-			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v})
+			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v, t: sc.BlockHeight})
 		case remote.Action_DELETE:
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil})
+			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil, t: sc.BlockHeight})
 		case remote.Action_CODE, remote.Action_STORAGE:
 			//skip
 		default:
@@ -251,6 +253,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 
 	if it != nil {
 		c.hits.Inc()
+		goatomic.StoreUint64(&it.(*Pair).t, binary.BigEndian.Uint64([]byte(c.id)))
 		//fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
@@ -262,7 +265,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	}
 	//fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
 
-	it = &Pair{K: k, V: common.Copy(v)}
+	it = &Pair{K: k, V: common.Copy(v), t: binary.BigEndian.Uint64([]byte(c.id))}
 	c.lock.Lock()
 	c.cache.ReplaceOrInsert(it)
 	c.lock.Unlock()
@@ -380,7 +383,11 @@ func (c *Coherent) Evict() {
 				snd = it
 			}
 			if fst != nil && snd != nil {
-				latestView.Delete(it)
+				if fst.(*Pair).t < snd.(*Pair).t {
+					latestView.Delete(fst)
+				} else {
+					latestView.Delete(snd)
+				}
 				fst = nil
 				snd = nil
 			}
