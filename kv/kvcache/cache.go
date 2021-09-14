@@ -394,6 +394,19 @@ func (c *CoherentView) evict(dropOlder uint64) {
 	}
 
 	counters := map[uint64]int{}
+
+	c.cache.Ascend(func(it btree.Item) bool {
+		age := goatomic.LoadUint64(&it.(*Pair).t)
+		if age < dropOlder {
+			toDel = append(toDel, fst)
+		}
+		return true
+	})
+	for _, it := range toDel {
+		c.cache.Delete(it)
+	}
+	fmt.Printf("drop too old: %d\n", len(toDel))
+
 	c.cache.Ascend(func(it btree.Item) bool {
 		age := goatomic.LoadUint64(&it.(*Pair).t)
 		if age < dropOlder {
@@ -427,6 +440,7 @@ func (c *CoherentView) evict(dropOlder uint64) {
 	for _, it := range toDel {
 		c.cache.Delete(it)
 	}
+	fmt.Printf("drop 2-random: %d\n", len(toDel))
 	fmt.Printf("counters: %#v\n", counters)
 	counters2 := map[uint64]int{}
 	c.cache.Ascend(func(it btree.Item) bool {
