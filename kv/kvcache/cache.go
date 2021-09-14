@@ -100,12 +100,14 @@ type CoherentCacheConfig struct {
 	KeepViews    uint64        // keep in memory up to this amount of views, evict older
 	NewBlockWait time.Duration // how long wait
 	MetricsLabel string
+	WithStorage  bool
 }
 
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
 	KeepViews:    100,
 	NewBlockWait: 50 * time.Millisecond,
 	MetricsLabel: "default",
+	WithStorage:  false,
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
@@ -190,7 +192,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 		default:
 			panic("not implemented yet")
 		}
-		if len(sc.Changes[i].StorageChanges) > 0 {
+		if c.cfg.WithStorage && len(sc.Changes[i].StorageChanges) > 0 {
 			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 			for _, change := range sc.Changes[i].StorageChanges {
 				loc := gointerfaces.ConvertH256ToHash(change.Location)
@@ -198,7 +200,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 				copy(k, addr[:])
 				binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
 				copy(k[20+8:], loc[:])
-				r.cache.ReplaceOrInsert(&Pair{K: k, V: change.Data})
+				r.cache.ReplaceOrInsert(&Pair{K: k, V: change.Data, t: sc.BlockHeight})
 			}
 		}
 	}
@@ -375,11 +377,11 @@ func (c *Coherent) Evict() {
 	latestBlockNum, preLatestRoot := c.evictionInfo()
 	c.evictRoots(latestBlockNum - 10)
 	if preLatestRoot != nil {
-		preLatestRoot.evict()
+		preLatestRoot.evict(100)
 	}
 }
 
-func (c *CoherentView) evict() {
+func (c *CoherentView) evict(forceOld uint64) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -387,12 +389,13 @@ func (c *CoherentView) evict() {
 	firstPrime, secondPrime := 7, 11 // to choose 2-pseudo-random elements and evict worse one
 	var fst, snd btree.Item
 	i := 0
-	if c.cache.Len() < 100_000 {
+	if c.cache.Len() < 150_000 {
 		return
 	}
 
 	counters := map[uint64]uint64{}
 	c.cache.Ascend(func(it btree.Item) bool {
+		goatomic.LoadUint64(&it.(*Pair).t)
 		_, ok := counters[goatomic.LoadUint64(&it.(*Pair).t)]
 		if !ok {
 			counters[goatomic.LoadUint64(&it.(*Pair).t)] = 0
