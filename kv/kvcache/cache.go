@@ -365,8 +365,12 @@ func (c *Coherent) Evict() {
 	if len(toDel) > 0 {
 		root := c.roots[toDel[0]]
 		target := c.roots[latestRoot].cache
-		root.cache.Ascend(func(i btree.Item) bool {
-			target.Delete(i)
+		i := 0
+		root.cache.Ascend(func(it btree.Item) bool {
+			i++
+			if i%4 == 0 {
+				target.Delete(it)
+			}
 			return true
 		})
 	}
