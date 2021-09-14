@@ -375,7 +375,9 @@ func (c *Coherent) Evict() {
 	defer func(t time.Time) { fmt.Printf("cache.go:344: %s\n", time.Since(t)) }(time.Now())
 	latestBlockNum, preLatestRoot := c.evictionInfo()
 	c.evictRoots(latestBlockNum - 10)
-	preLatestRoot.evict()
+	if preLatestRoot != nil {
+		preLatestRoot.evict()
+	}
 }
 
 func (c *CoherentView) evict() {
