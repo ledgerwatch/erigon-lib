@@ -852,7 +852,6 @@ func onNewBlock(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, un
 		if err != nil {
 			return err
 		}
-		fmt.Printf("a: %d,%d\n", id, nonce)
 		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee)
 	}
 
