@@ -32,9 +32,6 @@ const RecSplitLogPrefix = "recsplit"
 
 const MaxLeafSize = 24
 
-// Optimal Golomb-Rice parameters for leaves
-var bijMemo []uint32 = []uint32{0, 0, 0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 21, 22, 23, 25, 26, 28, 29, 30}
-
 type Bucket struct {
 	keys   []string
 	hasher hash.Hash64
@@ -63,6 +60,7 @@ func (b *Bucket) Swap(i, j int) {
 // Recsplit: Minimal perfect hashing via recursive splitting. In 2020 Proceedings of the Symposium on Algorithm Engineering and Experiments (ALENEX),
 // pages 175−185. SIAM, 2020.
 type RecSplit struct {
+	bucketSize         int
 	keyExpectedCount   uint64      // Number of keys in the hash table
 	keysAdded          uint64      // Number of keys actually added to the recSplit (to check the match with keyExpectedCount)
 	bucketCount        uint64      // Number of buckets
@@ -72,8 +70,8 @@ type RecSplit struct {
 	currentBucketIdx   uint64     // Current bucket being accumulated
 	currentBucket      []string   // Keys in the current bucket accumulated before the recsplit is performed for that bucket
 	builder            GolombRice // Builds encoding of the perfect hash function
-	bucketSizeAcc      []int      // Bucket size accumulator
-	bucketPosAcc       []int      // Accumulator for position of every bucket in the encoding of the hash function
+	bucketSizeAcc      []uint64   // Bucket size accumulator
+	bucketPosAcc       []uint64   // Accumulator for position of every bucket in the encoding of the hash function
 	leafSize           int        // Leaf size for recursive split algorithm
 	primaryAggrBound   int        // The lower bound for primary key aggregation (computed from leafSize)
 	secondaryAggrBound int        // The lower bound for secondary key aggregation (computed from leadSize)
@@ -96,12 +94,12 @@ type RecSplitArgs struct {
 // are likely to use different hash function, to collision attacks are unlikely to slow down any meaningful number of nodes at the same time
 func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	bucketCount := (args.KeyCount + args.BucketSize - 1) / args.BucketSize
-	rs := &RecSplit{keyExpectedCount: uint64(args.KeyCount), bucketCount: uint64(bucketCount)}
+	rs := &RecSplit{bucketSize: args.BucketSize, keyExpectedCount: uint64(args.KeyCount), bucketCount: uint64(bucketCount)}
 	rs.hasher = murmur3.New64WithSeed(args.Salt)
 	rs.collector = etl.NewCollector(args.TmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	rs.currentBucket = make([]string, 0, args.BucketSize)
-	rs.bucketSizeAcc = make([]int, 1, bucketCount+1)
-	rs.bucketPosAcc = make([]int, 1, bucketCount+1)
+	rs.bucketSizeAcc = make([]uint64, 1, bucketCount+1)
+	rs.bucketPosAcc = make([]uint64, 1, bucketCount+1)
 	if args.LeafSize > MaxLeafSize {
 		return nil, fmt.Errorf("exceeded max leaf size %d: %d", MaxLeafSize, args.LeafSize)
 	}
@@ -114,61 +112,6 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	}
 	rs.startSeed = args.StartSeed
 	return rs, nil
-}
-
-// GolombRice can build up the golomb-rice encoding of the sequeuce of numbers, as well as read the numbers back from it.
-type GolombRice struct {
-	bitCount int
-	data     []uint64
-}
-
-// appendUnaryAll adds the unary encoding of specified sequence of numbers to the end of the
-// current encoding
-func (b *GolombRice) appendUnaryAll(unary []uint32) {
-	bitInc := 0
-	for _, u := range unary {
-		// Each number u uses u+1 bits for its unary representation
-		bitInc += int(u) + 1
-	}
-	targetSize := (((b.bitCount + bitInc + 7) / 8) + 7 + 7) / 8
-	for len(b.data) < targetSize {
-		b.data = append(b.data, 0)
-	}
-
-	for _, u := range unary {
-		b.bitCount += int(u)
-		appendPtr := b.bitCount / 64
-		b.data[appendPtr] |= uint64(1) << (b.bitCount & 63)
-		b.bitCount++
-	}
-}
-
-// appendFixed encodes the next value using specified Golomb parameter. Since we are using Golomb-Rice encoding,
-// all Golomb parameters are powers of two. Therefore we input log2 of golomb parameter, rather than golomn paramter itself,
-// for convinience
-func (b *GolombRice) appendFixed(v uint32, log2golomb int) {
-	lowerBits := v & ((uint32(1) << log2golomb) - 1) // Extract the part of the number that will be encoded using truncated binary encoding
-	usedBits := b.bitCount & 63                      // How many bits of the last element of b.data is used by previous value
-	targetSize := (((b.bitCount + log2golomb + 7) / 8) + 7 + 7) / 8
-	for len(b.data) < targetSize {
-		b.data = append(b.data, 0)
-	}
-	appendPtr := b.bitCount / 64 // The index in b.data corresponding to the last element used by previous value, or if previous values fits perfectly, the index of the next free element
-	curWord := b.data[appendPtr]
-	curWord |= uint64(lowerBits) << usedBits // curWord now contains the new value potentially combined with the part of the previous value
-	if usedBits+log2golomb > 64 {
-		// New value overflows to the next element
-		b.data[appendPtr] = curWord
-		appendPtr++
-		curWord = uint64(lowerBits) >> (64 - usedBits) // curWord now contains the part of the new value that overflows
-	}
-	b.data[appendPtr] = curWord
-	b.bitCount += log2golomb
-}
-
-// bits returns currrent number of bits in the compact encoding of the hash function representation
-func (b GolombRice) bits() int {
-	return b.bitCount
 }
 
 // remap converts the number x which is assumed to be uniformly distributed over the range [0..2^64) to the number that is uniformly
@@ -275,7 +218,7 @@ func (rs RecSplit) recsplitCurrentBucket() error {
 	for len(rs.bucketSizeAcc) <= int(rs.currentBucketIdx)+1 {
 		rs.bucketSizeAcc = append(rs.bucketSizeAcc, rs.bucketSizeAcc[len(rs.bucketSizeAcc)-1])
 	}
-	rs.bucketSizeAcc[int(rs.currentBucketIdx)+1] += len(rs.currentBucket)
+	rs.bucketSizeAcc[int(rs.currentBucketIdx)+1] += uint64(len(rs.currentBucket))
 	if len(rs.currentBucket) > 1 {
 		// First we check that the keys are distinct by sorting them
 		sort.Strings(rs.currentBucket)
@@ -291,7 +234,7 @@ func (rs RecSplit) recsplitCurrentBucket() error {
 	for len(rs.bucketPosAcc) <= int(rs.currentBucketIdx)+1 {
 		rs.bucketPosAcc = append(rs.bucketPosAcc, rs.bucketPosAcc[len(rs.bucketPosAcc)-1])
 	}
-	rs.bucketPosAcc[int(rs.currentBucketIdx)+1] = rs.builder.bits()
+	rs.bucketPosAcc[int(rs.currentBucketIdx)+1] = uint64(rs.builder.bits())
 	// clear for the next buckey
 	rs.currentBucket = rs.currentBucket[:0]
 	return nil
@@ -406,6 +349,7 @@ func (rs *RecSplit) Build() error {
 			return err
 		}
 	}
+	rs.builder.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
 	rs.built = true
 	return nil
 }
