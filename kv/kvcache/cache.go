@@ -366,15 +366,11 @@ func (c *Coherent) Evict() {
 	}
 
 	if len(toDel) > 0 {
-		oldestView := c.roots[toDel[0]]
 		latestView := c.roots[latestRoot].cache
-		if latestView.Len() > 0 {
-
-		}
 		firstPrime, secondPrime := 7, 11
 		var fst, snd btree.Item
 		i := 0
-		oldestView.cache.Ascend(func(it btree.Item) bool {
+		latestView.Ascend(func(it btree.Item) bool {
 			i++
 			if i%firstPrime == 0 {
 				fst = it
