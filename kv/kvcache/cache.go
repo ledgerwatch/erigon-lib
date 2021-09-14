@@ -378,7 +378,13 @@ func (c *Coherent) Evict() {
 		return
 	}
 
+	counters := map[uint64]uint64{}
 	latestView.Ascend(func(it btree.Item) bool {
+		_, ok := counters[goatomic.LoadUint64(&fst.(*Pair).t)]
+		if !ok {
+			counters[goatomic.LoadUint64(&fst.(*Pair).t)] = 0
+		}
+		counters[goatomic.LoadUint64(&fst.(*Pair).t)]++
 		i++
 		if i%firstPrime == 0 {
 			fst = it
@@ -401,4 +407,5 @@ func (c *Coherent) Evict() {
 	for _, it := range toDel {
 		latestView.Delete(it)
 	}
+	fmt.Printf("counters: %#v\n", counters)
 }
