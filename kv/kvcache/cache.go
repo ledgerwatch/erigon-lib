@@ -386,7 +386,6 @@ func (c *CoherentView) evict(dropOlder uint64) {
 	defer c.lock.Unlock()
 
 	var toDel []btree.Item
-	firstPrime, secondPrime := 7, 11 // to choose 2-pseudo-random elements and evict worse one
 	var fst, snd btree.Item
 	i := 0
 	if c.cache.Len() < 80_000 {
@@ -407,6 +406,7 @@ func (c *CoherentView) evict(dropOlder uint64) {
 	}
 	fmt.Printf("drop too old: %d\n", len(toDel))
 
+	firstPrime, secondPrime := 11, 13 // to choose 2-pseudo-random elements and evict worse one
 	c.cache.Ascend(func(it btree.Item) bool {
 		age := goatomic.LoadUint64(&it.(*Pair).t)
 		if age < dropOlder {
