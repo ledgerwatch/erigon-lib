@@ -408,4 +408,13 @@ func (c *Coherent) Evict() {
 		latestView.Delete(it)
 	}
 	fmt.Printf("counters: %#v\n", counters)
+	counters2 := map[uint64]uint64{}
+	latestView.Ascend(func(it btree.Item) bool {
+		_, ok := counters2[goatomic.LoadUint64(&fst.(*Pair).t)]
+		if !ok {
+			counters2[goatomic.LoadUint64(&fst.(*Pair).t)] = 0
+		}
+		counters2[goatomic.LoadUint64(&fst.(*Pair).t)]++
+		return true
+	})
 }
