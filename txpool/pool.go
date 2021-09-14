@@ -1487,6 +1487,13 @@ func (p *TxPool) flush(db kv.RwDB) (written uint64, err error) {
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	for i := 0; i < len(p.deletedTxs); i++ {
+		if p.byNonce.count(p.deletedTxs[i].Tx.senderID) == 0 {
+			addr, ok := p.senders.senderID2Addr[p.deletedTxs[i].Tx.senderID]
+			if ok {
+				delete(p.senders.senderID2Addr, p.deletedTxs[i].Tx.senderID)
+				delete(p.senders.senderIDs, addr)
+			}
+		}
 		if err := tx.Delete(kv.PoolTransaction, p.deletedTxs[i].Tx.idHash[:], nil); err != nil {
 			return err
 		}
