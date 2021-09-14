@@ -68,15 +68,15 @@ type RecSplit struct {
 	bucketCount        uint64      // Number of buckets
 	hasher             hash.Hash64 // Salted hash function to use for splitting into initial buckets
 	collector          *etl.Collector
-	built              bool     // Flag indicating that the hash function has been built and no more keys can be added
-	currentBucketIdx   uint64   // Current bucket being accumulated
-	currentBucket      []string // Keys in the current bucket accumulated before the recsplit is performed for that bucket
-	builder            Builder
-	bucketSizeAcc      []int // Bucket size accumulator
-	bucketPosAcc       []int // Accumulator for position of every bucket in the encoding of the hash function
-	leafSize           int   // Leaf size for recursive split algorithm
-	primaryAggrBound   int   // The lower bound for primary key aggregation (computed from leafSize)
-	secondaryAggrBound int   // The lower bound for secondary key aggregation (computed from leadSize)
+	built              bool       // Flag indicating that the hash function has been built and no more keys can be added
+	currentBucketIdx   uint64     // Current bucket being accumulated
+	currentBucket      []string   // Keys in the current bucket accumulated before the recsplit is performed for that bucket
+	builder            GolombRice // Builds encoding of the perfect hash function
+	bucketSizeAcc      []int      // Bucket size accumulator
+	bucketPosAcc       []int      // Accumulator for position of every bucket in the encoding of the hash function
+	leafSize           int        // Leaf size for recursive split algorithm
+	primaryAggrBound   int        // The lower bound for primary key aggregation (computed from leafSize)
+	secondaryAggrBound int        // The lower bound for secondary key aggregation (computed from leadSize)
 	startSeed          []uint32
 	golombRice         []uint32
 }
@@ -113,26 +113,62 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 		rs.secondaryAggrBound = rs.primaryAggrBound * int(math.Ceil(0.21*float64(rs.leafSize)+9./10.))
 	}
 	rs.startSeed = args.StartSeed
-	rs.fillGolombRiceAll(args.BucketSize)
 	return rs, nil
 }
 
-// Builder builds up the representation of the hash function and is capable of then outputting
-// the compact encoding of this representation.
-type Builder struct {
+// GolombRice can build up the golomb-rice encoding of the sequeuce of numbers, as well as read the numbers back from it.
+type GolombRice struct {
+	bitCount int
+	data     []uint64
 }
 
-func (b *Builder) appendUnaryAll(unary []uint32) {
+// appendUnaryAll adds the unary encoding of specified sequence of numbers to the end of the
+// current encoding
+func (b *GolombRice) appendUnaryAll(unary []uint32) {
+	bitInc := 0
+	for _, u := range unary {
+		// Each number u uses u+1 bits for its unary representation
+		bitInc += int(u) + 1
+	}
+	targetSize := (((b.bitCount + bitInc + 7) / 8) + 7 + 7) / 8
+	for len(b.data) < targetSize {
+		b.data = append(b.data, 0)
+	}
 
+	for _, u := range unary {
+		b.bitCount += int(u)
+		appendPtr := b.bitCount / 64
+		b.data[appendPtr] |= uint64(1) << (b.bitCount & 63)
+		b.bitCount++
+	}
 }
 
-func (b Builder) appendFixed(x uint32) {
-
+// appendFixed encodes the next value using specified Golomb parameter. Since we are using Golomb-Rice encoding,
+// all Golomb parameters are powers of two. Therefore we input log2 of golomb parameter, rather than golomn paramter itself,
+// for convinience
+func (b *GolombRice) appendFixed(v uint32, log2golomb int) {
+	lowerBits := v & ((uint32(1) << log2golomb) - 1) // Extract the part of the number that will be encoded using truncated binary encoding
+	usedBits := b.bitCount & 63                      // How many bits of the last element of b.data is used by previous value
+	targetSize := (((b.bitCount + log2golomb + 7) / 8) + 7 + 7) / 8
+	for len(b.data) < targetSize {
+		b.data = append(b.data, 0)
+	}
+	appendPtr := b.bitCount / 64 // The index in b.data corresponding to the last element used by previous value, or if previous values fits perfectly, the index of the next free element
+	curWord := b.data[appendPtr]
+	curWord |= uint64(lowerBits) << usedBits // curWord now contains the new value potentially combined with the part of the previous value
+	if usedBits+log2golomb > 64 {
+		// New value overflows to the next element
+		b.data[appendPtr] = curWord
+		appendPtr++
+		curWord = uint64(lowerBits) >> (64 - usedBits) // curWord now contains the part of the new value that overflows
+	}
+	b.data[appendPtr] = curWord
+	b.bitCount += log2golomb
 }
 
 // bits returns currrent number of bits in the compact encoding of the hash function representation
-func (b Builder) bits() int {
-	return 0
+func (b GolombRice) bits() int {
+	return b.bitCount
 }
 
 // remap converts the number x which is assumed to be uniformly distributed over the range [0..2^64) to the number that is uniformly
@@ -164,7 +200,7 @@ func (rs *RecSplit) splitParams(m int) (fanout, unit int) {
 	return
 }
 
-func (rs *RecSplit) fillGolombRiceTable(m int, table []uint32) {
+func (rs *RecSplit) computeGolombRice(m int, table []uint32) {
 	fanout, unit := rs.splitParams(m)
 	k := make([]int, fanout)
 	k[fanout-1] = m
@@ -179,35 +215,43 @@ func (rs *RecSplit) fillGolombRiceTable(m int, table []uint32) {
 	p := math.Sqrt(float64(m)) / (math.Pow(2*math.Pi, (float64(fanout)-1.)/2.0) * sqrt_prod)
 	golomb_rice_length := uint32(math.Ceil(math.Log2(-math.Log((math.Sqrt(5)+1.0)/2.0) / math.Log1p(-p)))) // log2 Golomb modulus
 	if golomb_rice_length > 0x1F {
-		panic("")
+		panic("golomb_rice_length > 0x1F")
 	}
 	table[m] = golomb_rice_length << 27
 	for i := 0; i < fanout; i++ {
 		golomb_rice_length += table[k[i]] & 0xFFFF
 	}
 	if golomb_rice_length > 0xFFFF {
-		panic("")
+		panic("golomb_rice_length > 0xFFFF")
 	}
 	nodes := uint32(1)
 	for i := 0; i < fanout; i++ {
 		nodes += (table[k[i]] >> 16) & 0x7FF
 	}
 	if rs.leafSize >= 3 && nodes > 0x7FF {
-		panic("")
+		panic("rs.leafSize >= 3 && nodes > 0x7FF")
 	}
 	table[m] |= nodes << 16
 }
 
-func (rs *RecSplit) fillGolombRiceAll(maxBucketSize int) {
-	rs.golombRice = make([]uint32, maxBucketSize)
-	rs.golombRice[0] = bijMemo[0]<<27 | bijMemo[0]
-	var s int
-	for s = 1; s <= rs.leafSize; s++ {
-		rs.golombRice[s] = bijMemo[s]<<27 | uint32(1)<<16 | bijMemo[s]
+// golombParam returns the optimal Golomb parameter to use for encoding
+// salt for the part of the hash function separating m elements. It is based on
+// calculations with assumptions that we draw hash functions at random
+func (rs *RecSplit) golombParam(m int) int {
+	s := len(rs.golombRice)
+	for m >= s {
+		rs.golombRice = append(rs.golombRice, 0)
+		// For the case where bucket is larger than planned
+		if s == 0 {
+			rs.golombRice[0] = bijMemo[0]<<27 | bijMemo[0]
+		} else if s <= rs.leafSize {
+			rs.golombRice[s] = bijMemo[s]<<27 | uint32(1)<<16 | bijMemo[s]
+		} else {
+			rs.computeGolombRice(s, rs.golombRice)
+		}
+		s++
 	}
-	for ; s < maxBucketSize; s++ {
-		rs.fillGolombRiceTable(s, rs.golombRice)
-	}
+	return int(rs.golombRice[m] >> 27)
 }
 
 // Add key to the RecSplit. There can be many more keys than what fits in RAM, and RecSplit
@@ -255,7 +299,7 @@ func (rs RecSplit) recsplitCurrentBucket() error {
 
 // recsplit applies recSplit algorithm to the given bucket
 func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint32 {
-	//fmt.Printf("recsplit(%d, %v)\n", level, bucket)
+	//fmt.Printf("recsplit(%d, %d, %x)\n", level, len(bucket), bucket)
 	// Pick initial salt for this level of recursive split
 	salt := rs.startSeed[level]
 	hasher := murmur3.New64WithSeed(salt)
@@ -283,8 +327,9 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 			hasher = murmur3.New64WithSeed(salt)
 		}
 		salt -= rs.startSeed[level]
-		// TODO: Add salt to unary and to rs.builder
-		rs.builder.appendFixed(salt)
+		log2golomb := rs.golombParam(m)
+		rs.builder.appendFixed(salt, log2golomb)
+		unary = append(unary, salt>>log2golomb)
 	} else {
 		fanout, unit := rs.splitParams(m)
 		count := make([]int, fanout)
@@ -312,8 +357,9 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		b := Bucket{keys: bucket, hasher: hasher}
 		sort.Sort(&b)
 		salt -= rs.startSeed[level]
-		// TODO: Add salt to unary and to rs.builder
-		rs.builder.appendFixed(salt)
+		log2golomb := rs.golombParam(m)
+		rs.builder.appendFixed(salt, log2golomb)
+		unary = append(unary, salt>>log2golomb)
 		var i int
 		for i = 0; i < m-unit; i += unit {
 			unary = rs.recsplit(level+1, b.keys[i:i+unit], unary)

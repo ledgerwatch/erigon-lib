@@ -52,7 +52,7 @@ func FuzzRecSplit(f *testing.F) {
 			Salt:       0,
 			TmpDir:     t.TempDir(),
 			LeafSize:   8,
-			StartSeed:  []uint32{5, 100034, 405060, 60606},
+			StartSeed:  []uint32{5, 100034, 405060, 60606, 70000, 80000, 90000, 10000, 11000, 12000},
 		})
 		if err != nil {
 			t.Error(err)
