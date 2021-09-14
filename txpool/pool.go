@@ -1422,7 +1422,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			}
 		case h := <-newTxs: //TODO: maybe send TxSlots object instead of Hashes?
 			notifyMiningAboutNewSlots()
-			fmt.Printf("new txs: %d\n", h.Len())
 			if err := db.View(ctx, func(tx kv.Tx) error {
 				slotsRlp := make([][]byte, 0, h.Len())
 				for i := 0; i < h.Len(); i++ {
