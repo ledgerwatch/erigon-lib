@@ -57,22 +57,20 @@ var (
 const ASSERT = false
 
 type Config struct {
-	DBDir                   string
-	SyncToNewPeersEvery     time.Duration
-	ProcessRemoteTxsEvery   time.Duration
-	CommitEvery             time.Duration
-	LogEvery                time.Duration
-	CacheEvictEvery         time.Duration
-	EvictSendersAfterRounds uint64
+	DBDir                 string
+	SyncToNewPeersEvery   time.Duration
+	ProcessRemoteTxsEvery time.Duration
+	CommitEvery           time.Duration
+	LogEvery              time.Duration
+	CacheEvictEvery       time.Duration
 }
 
 var DefaultConfig = Config{
-	SyncToNewPeersEvery:     2 * time.Minute,
-	ProcessRemoteTxsEvery:   100 * time.Millisecond,
-	CommitEvery:             15 * time.Second,
-	LogEvery:                30 * time.Second,
-	CacheEvictEvery:         1 * time.Minute,
-	EvictSendersAfterRounds: 20,
+	SyncToNewPeersEvery:   2 * time.Minute,
+	ProcessRemoteTxsEvery: 100 * time.Millisecond,
+	CommitEvery:           15 * time.Second,
+	LogEvery:              30 * time.Second,
+	CacheEvictEvery:       1 * time.Minute,
 }
 
 // Pool is interface for the transaction pool
@@ -424,12 +422,13 @@ func (p *TxPool) logStats() {
 		idsInMem, infoInMem,
 		m.Alloc/1024/1024, m.Sys/1024/1024,
 	))
+	stats := kvcache.DebugStats(p.senders.cache)
+	log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
+	for i := range stats {
+		log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
+	}
 	if ASSERT {
-		stats := kvcache.DebugStats(p.senders.cache)
-		log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
-		for i := range stats {
-			log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
-		}
+
 	}
 }
 func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {

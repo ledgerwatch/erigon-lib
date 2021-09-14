@@ -356,7 +356,7 @@ func (c *Coherent) Evict() {
 	var toDel []string
 	for root := range c.roots {
 		blockNum := binary.BigEndian.Uint64([]byte(root))
-		if blockNum > latestBlockNum-100 {
+		if blockNum > latestBlockNum-10 {
 			continue
 		}
 		toDel = append(toDel, root)
