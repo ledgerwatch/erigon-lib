@@ -47,11 +47,12 @@ import (
 )
 
 var (
-	processBatchTxsTimer  = metrics.NewSummary(`pool_process_remote_txs`)
-	addRemoteTxsTimer     = metrics.NewSummary(`pool_add_remote_txs`)
-	newBlockTimer         = metrics.NewSummary(`pool_new_block`)
-	writeToDbTimer        = metrics.NewSummary(`pool_write_to_db`)
-	writeToDbBytesCounter = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
+	processBatchTxsTimer    = metrics.NewSummary(`pool_process_remote_txs`)
+	addRemoteTxsTimer       = metrics.NewSummary(`pool_add_remote_txs`)
+	newBlockTimer           = metrics.NewSummary(`pool_new_block`)
+	writeToDbTimer          = metrics.NewSummary(`pool_write_to_db`)
+	propagateToNewPeerTimer = metrics.NewSummary(`pool_propagate_new_peer`)
+	writeToDbBytesCounter   = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
 )
 
 const ASSERT = false
@@ -1455,8 +1456,10 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			if len(newPeers) == 0 {
 				continue
 			}
+			t := time.Now()
 			remoteTxHashes = p.AppendAllHashes(remoteTxHashes[:0])
 			send.PropagatePooledTxsToPeersList(newPeers, remoteTxHashes)
+			propagateToNewPeerTimer.UpdateDuration(t)
 		case <-cacheEvictEvery.C:
 			p.senders.cache.Evict()
 		}
