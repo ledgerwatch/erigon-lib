@@ -73,10 +73,10 @@ type CacheView interface {
 // Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
-	hits, miss *metrics.Counter
-	roots      map[string]*CoherentView
-	rootsLock  sync.RWMutex
-	cfg        CoherentCacheConfig
+	hits, miss, evict *metrics.Counter
+	roots             map[string]*CoherentView
+	rootsLock         sync.RWMutex
+	cfg               CoherentCacheConfig
 }
 type CoherentView struct {
 	hits, miss      *metrics.Counter
@@ -112,8 +112,9 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 
 func New(cfg CoherentCacheConfig) *Coherent {
 	return &Coherent{roots: map[string]*CoherentView{}, cfg: cfg,
-		miss: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
-		hits: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
+		miss:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
+		hits:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
+		evict: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
 	}
 }
 
