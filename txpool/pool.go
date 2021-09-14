@@ -432,6 +432,23 @@ func (p *TxPool) logStats() {
 		}
 	}
 }
+func (p *TxPool) getRlp(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	txn, ok := p.byHash[string(hash)]
+	if ok && txn.Tx.rlp != nil {
+		return txn.Tx.rlp, []byte(p.senders.senderID2Addr[txn.Tx.senderID]), txn.subPool&IsLocal > 0, nil
+	}
+	v, err := tx.GetOne(kv.PoolTransaction, hash)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if v == nil {
+		return nil, nil, false, nil
+	}
+	return v[20:], v[:20], txn.subPool&IsLocal > 0, nil
+}
 func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -514,43 +531,28 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 	txs.Resize(uint(min(uint64(n), uint64(len(p.pending.best)))))
 
 	best := p.pending.best
-	//encID := make([]byte, 8)
 	for i := 0; i < int(n) && i < len(best); i++ {
-		//TODO: check in-mem also?
 		rlpTx, err := tx.GetOne(kv.PoolTransaction, best[i].Tx.idHash[:])
 		if err != nil {
 			return err
 		}
-		if len(rlpTx) == 0 {
-			log.Warn("tx rlp not found")
+		if len(rlpTx) != 0 {
+			txs.Txs[i] = rlpTx[20:]
+			copy(txs.Senders.At(i), rlpTx[:20])
+			txs.IsLocal[i] = best[i].subPool&IsLocal > 0
 			continue
 		}
-		txs.Txs[i] = rlpTx[20:]
-		copy(txs.Senders.At(i), rlpTx[:20])
-		txs.IsLocal[i] = best[i].subPool&IsLocal > 0
-		/*
-				found := false
-				for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
-					if best[i].Tx.senderID == senderID {
-						copy(txs.Senders.At(i), addr)
-						found = true
-						break
-					}
-				}
-				if found {
-					continue
-				}
 
-			binary.BigEndian.PutUint64(encID, best[i].Tx.senderID)
-			v, err := tx.GetOne(kv.PoolSenderIDToAdress, encID)
-			if err != nil {
-				return err
-			}
-			if v == nil {
-				return fmt.Errorf("tx sender not found")
-			}
-			copy(txs.Senders.At(i), v)
-		*/
+		txn, ok := p.byHash[string(best[i].Tx.idHash[:])]
+		if !ok {
+			continue
+		}
+		if len(txn.Tx.rlp) == 0 {
+			continue
+		}
+		txs.Txs[i] = txn.Tx.rlp
+		copy(txs.Senders.At(i), p.senders.senderID2Addr[txn.Tx.senderID])
+		txs.IsLocal[i] = best[i].subPool&IsLocal > 0
 	}
 	return nil
 }
@@ -628,9 +630,6 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 
 	discardReasonsIndex := len(p.discardReasons)
 
-	for i := range newTxs.isLocal {
-		newTxs.isLocal[i] = true
-	}
 	err = p.senders.onNewTxs(newTxs)
 	if err != nil {
 		return nil, err
@@ -675,6 +674,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if l == 0 {
 		return nil
 	}
+	defer processBatchTxsTimer.UpdateDuration(time.Now())
 
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
@@ -692,7 +692,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		}
 	}
 
-	defer processBatchTxsTimer.UpdateDuration(time.Now())
 	//t := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
