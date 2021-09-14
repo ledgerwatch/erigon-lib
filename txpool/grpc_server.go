@@ -156,6 +156,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 }
 
 func (s *GrpcServer) OnAdd(req *txpool_proto.OnAddRequest, stream txpool_proto.Txpool_OnAddServer) error {
+	log.Info("New txs subscriber joined")
 	//txpool.Loop does send messages to this streams
 	remove := s.NewSlotsStreams.Add(stream)
 	defer remove()
@@ -218,7 +219,6 @@ func (s *NewSlotsStreams) Add(stream txpool_proto.Txpool_OnAddServer) (remove fu
 func (s *NewSlotsStreams) Broadcast(reply *txpool_proto.OnAddReply) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fmt.Printf("send: %d, %d\n", len(reply.RplTxs), len(s.chans))
 	for id, stream := range s.chans {
 		err := stream.Send(reply)
 		if err != nil {
