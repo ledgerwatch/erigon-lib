@@ -1526,6 +1526,10 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		}
 		copy(v[20:], metaTx.Tx.rlp)
 
+		has, _ := tx.Has(kv.PoolTransaction, []byte(txHash))
+		if has {
+			panic("must not happen")
+		}
 		if err := tx.Put(kv.PoolTransaction, []byte(txHash), v); err != nil {
 			return err
 		}
