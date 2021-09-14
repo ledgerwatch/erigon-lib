@@ -29,7 +29,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/go-stack/stack"
 	"github.com/google/btree"
@@ -744,7 +743,7 @@ func onNewTxs(cache kvcache.CacheView, coreTx kv.Tx, senders *sendersBatch, newT
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, discard)
-	pending.EnforceBestInvariants() //TODO: find way to enforce invariants once. promote - now expect invariants - but can it work without them?
+	pending.EnforceBestInvariants()
 
 	return nil
 }
@@ -1487,11 +1486,7 @@ func (p *TxPool) flush(db kv.RwDB) (written uint64, err error) {
 	return written, nil
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
-	sendersWithoutTransactions := roaring64.New()
 	for i := 0; i < len(p.deletedTxs); i++ {
-		if p.byNonce.count(p.deletedTxs[i].Tx.senderID) == 0 {
-			sendersWithoutTransactions.Add(p.deletedTxs[i].Tx.senderID)
-		}
 		if err := tx.Delete(kv.PoolTransaction, p.deletedTxs[i].Tx.idHash[:], nil); err != nil {
 			return err
 		}
