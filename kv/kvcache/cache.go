@@ -417,4 +417,5 @@ func (c *Coherent) Evict() {
 		counters2[goatomic.LoadUint64(&fst.(*Pair).t)]++
 		return true
 	})
+	fmt.Printf("counters2: %#v\n", counters)
 }
