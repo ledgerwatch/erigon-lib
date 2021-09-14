@@ -377,18 +377,18 @@ func (c *Coherent) Evict() {
 	latestBlockNum, preLatestRoot := c.evictionInfo()
 	c.evictRoots(latestBlockNum - 10)
 	if preLatestRoot != nil {
-		preLatestRoot.evict(20)
+		preLatestRoot.evict(20, 100_000)
 	}
 }
 
-func (c *CoherentView) evict(dropOlder uint64) {
+func (c *CoherentView) evict(dropOlder uint64, keysLimit int) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	var toDel []btree.Item
 	var fst, snd btree.Item
 	i := 0
-	if c.cache.Len() < 100_000 {
+	if c.cache.Len() < keysLimit {
 		return
 	}
 
