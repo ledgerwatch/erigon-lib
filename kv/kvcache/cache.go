@@ -363,13 +363,26 @@ func (c *Coherent) Evict() {
 	}
 
 	if len(toDel) > 0 {
-		root := c.roots[toDel[0]]
-		target := c.roots[latestRoot].cache
+		oldestView := c.roots[toDel[0]]
+		latestView := c.roots[latestRoot].cache
+		if latestView.Len() > 0 {
+
+		}
+		firstPrime, secondPrime := 7, 11
+		var fst, snd btree.Item
 		i := 0
-		root.cache.Ascend(func(it btree.Item) bool {
+		oldestView.cache.Ascend(func(it btree.Item) bool {
 			i++
-			if i%4 == 0 {
-				target.Delete(it)
+			if i%firstPrime == 0 {
+				fst = it
+			}
+			if i%secondPrime == 0 {
+				snd = it
+			}
+			if fst != nil && snd != nil {
+				latestView.Delete(it)
+				fst = nil
+				snd = nil
 			}
 			return true
 		})
