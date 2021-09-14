@@ -1461,7 +1461,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			send.PropagatePooledTxsToPeersList(newPeers, remoteTxHashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
 		case <-cacheEvictEvery.C:
-			p.senders.cache.Evict()
+			//p.senders.cache.Evict()
 		}
 	}
 }
