@@ -385,10 +385,9 @@ func (c *Coherent) Evict() {
 		}
 		if fst != nil && snd != nil {
 			if goatomic.LoadUint64(&fst.(*Pair).t) < goatomic.LoadUint64(&snd.(*Pair).t) {
-				toDel = append(toDel)
-				latestView.Delete(fst)
+				toDel = append(toDel, fst)
 			} else {
-				latestView.Delete(snd)
+				toDel = append(toDel, snd)
 			}
 			fst = nil
 			snd = nil
