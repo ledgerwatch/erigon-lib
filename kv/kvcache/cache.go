@@ -388,7 +388,7 @@ func (c *CoherentView) evict(dropOlder uint64) {
 	var toDel []btree.Item
 	var fst, snd btree.Item
 	i := 0
-	if c.cache.Len() < 80_000 {
+	if c.cache.Len() < 100_000 {
 		return
 	}
 
