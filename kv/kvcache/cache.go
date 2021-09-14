@@ -398,5 +398,4 @@ func (c *Coherent) Evict() {
 	for _, it := range toDel {
 		latestView.Delete(it)
 	}
-
 }
