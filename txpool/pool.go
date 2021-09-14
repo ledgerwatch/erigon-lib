@@ -432,10 +432,7 @@ func (p *TxPool) logStats() {
 		}
 	}
 }
-func (p *TxPool) getRlp(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
+func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {
 	txn, ok := p.byHash[string(hash)]
 	if ok && txn.Tx.rlp != nil {
 		return txn.Tx.rlp, []byte(p.senders.senderID2Addr[txn.Tx.senderID]), txn.subPool&IsLocal > 0, nil
@@ -452,19 +449,8 @@ func (p *TxPool) getRlp(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, is
 func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-
-	txn, ok := p.byHash[string(hash)]
-	if !ok || txn.Tx.rlp == nil {
-		v, err := tx.GetOne(kv.PoolTransaction, hash)
-		if err != nil {
-			return nil, err
-		}
-		if v == nil {
-			return nil, nil
-		}
-		return v[8:], nil
-	}
-	return txn.Tx.rlp, nil
+	rlpTx, _, _, err := p.getRlpLocked(tx, hash)
+	return rlpTx, err
 }
 func (p *TxPool) AppendLocalHashes(buf []byte) []byte {
 	p.lock.RLock()
@@ -532,27 +518,16 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 
 	best := p.pending.best
 	for i := 0; i < int(n) && i < len(best); i++ {
-		rlpTx, err := tx.GetOne(kv.PoolTransaction, best[i].Tx.idHash[:])
+		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best[i].Tx.idHash[:])
 		if err != nil {
 			return err
 		}
-		if len(rlpTx) != 0 {
-			txs.Txs[i] = rlpTx[20:]
-			copy(txs.Senders.At(i), rlpTx[:20])
-			txs.IsLocal[i] = best[i].subPool&IsLocal > 0
+		if len(rlpTx) == 0 {
 			continue
 		}
-
-		txn, ok := p.byHash[string(best[i].Tx.idHash[:])]
-		if !ok {
-			continue
-		}
-		if len(txn.Tx.rlp) == 0 {
-			continue
-		}
-		txs.Txs[i] = txn.Tx.rlp
-		copy(txs.Senders.At(i), p.senders.senderID2Addr[txn.Tx.senderID])
-		txs.IsLocal[i] = best[i].subPool&IsLocal > 0
+		txs.Txs[i] = rlpTx
+		copy(txs.Senders.At(i), sender)
+		txs.IsLocal[i] = isLocal
 	}
 	return nil
 }
@@ -615,8 +590,10 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	}
 }
 func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	if err := newTxs.Valid(); err != nil {
+		return nil, err
+	}
+
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
 		return nil, err
@@ -628,18 +605,16 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 		return nil, err
 	}
 
-	discardReasonsIndex := len(p.discardReasons)
-
-	err = p.senders.onNewTxs(newTxs)
-	if err != nil {
-		return nil, err
-	}
-	if err := newTxs.Valid(); err != nil {
-		return nil, err
-	}
-
 	if !p.Started() {
 		return nil, fmt.Errorf("pool not started yet")
+	}
+
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	discardReasonsIndex := len(p.discardReasons)
+
+	if err = p.senders.onNewTxs(newTxs); err != nil {
+		return nil, err
 	}
 	if err := onNewTxs(cache, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return nil, err
@@ -674,6 +649,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if l == 0 {
 		return nil
 	}
+
 	defer processBatchTxsTimer.UpdateDuration(time.Now())
 
 	coreTx, err := p.coreDB.BeginRo(ctx)
@@ -692,21 +668,21 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		}
 	}
 
+	if !p.stared.Load() {
+		return fmt.Errorf("txpool not started yet")
+	}
+
 	//t := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	newTxs := *p.unprocessedRemoteTxs
 
-	err = p.senders.onNewTxs(newTxs)
-	if err != nil {
-		return err
-	}
 	if err := newTxs.Valid(); err != nil {
 		return err
 	}
-
-	if !p.stared.Load() {
-		return fmt.Errorf("txpool not started yet")
+	err = p.senders.onNewTxs(newTxs)
+	if err != nil {
+		return err
 	}
 
 	if err := onNewTxs(cache, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
