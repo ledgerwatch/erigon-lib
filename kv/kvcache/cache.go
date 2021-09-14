@@ -355,42 +355,49 @@ func (c *Coherent) Evict() {
 			latestRoot = root
 		}
 	}
-
-	var toDel []string
-	for root := range c.roots {
-		blockNum := binary.BigEndian.Uint64([]byte(root))
-		if blockNum > latestBlockNum-10 {
-			continue
+	{
+		var toDel []string
+		for root := range c.roots {
+			blockNum := binary.BigEndian.Uint64([]byte(root))
+			if blockNum > latestBlockNum-10 {
+				continue
+			}
+			toDel = append(toDel, root)
 		}
-		toDel = append(toDel, root)
+
+		for _, root := range toDel {
+			delete(c.roots, root)
+		}
+	}
+	var toDel []btree.Item
+	latestView := c.roots[latestRoot].cache
+	firstPrime, secondPrime := 7, 11 // to choose 2-pseudo-random elements and evict worse one
+	var fst, snd btree.Item
+	i := 0
+
+	latestView.Ascend(func(it btree.Item) bool {
+		i++
+		if i%firstPrime == 0 {
+			fst = it
+		}
+		if i%secondPrime == 0 {
+			snd = it
+		}
+		if fst != nil && snd != nil {
+			if goatomic.LoadUint64(&fst.(*Pair).t) < goatomic.LoadUint64(&snd.(*Pair).t) {
+				toDel = append(toDel)
+				latestView.Delete(fst)
+			} else {
+				latestView.Delete(snd)
+			}
+			fst = nil
+			snd = nil
+		}
+		return true
+	})
+
+	for _, it := range toDel {
+		latestView.Delete(it)
 	}
 
-	if len(toDel) > 0 {
-		latestView := c.roots[latestRoot].cache
-		firstPrime, secondPrime := 7, 11
-		var fst, snd btree.Item
-		i := 0
-		latestView.Ascend(func(it btree.Item) bool {
-			i++
-			if i%firstPrime == 0 {
-				fst = it
-			}
-			if i%secondPrime == 0 {
-				snd = it
-			}
-			if fst != nil && snd != nil {
-				if fst.(*Pair).t < snd.(*Pair).t {
-					latestView.Delete(fst)
-				} else {
-					latestView.Delete(snd)
-				}
-				fst = nil
-				snd = nil
-			}
-			return true
-		})
-	}
-	for _, root := range toDel {
-		delete(c.roots, root)
-	}
 }
