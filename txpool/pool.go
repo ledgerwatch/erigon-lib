@@ -443,7 +443,7 @@ func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []by
 	if v == nil {
 		return nil, nil, false, nil
 	}
-	return v[20:], v[:20], txn.subPool&IsLocal > 0, nil
+	return v[20:], v[:20], txn != nil && txn.subPool&IsLocal > 0, nil
 }
 func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	p.lock.RLock()
