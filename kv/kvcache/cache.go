@@ -404,9 +404,9 @@ func (c *Coherent) evictRoots(to uint64) {
 func (c *Coherent) Evict() {
 	defer c.evict.UpdateDuration(time.Now())
 	latestBlockNum, preLatestRoot := c.evictionInfo()
-	c.evictRoots(latestBlockNum - 10)
+	c.evictRoots(latestBlockNum - 100)
 	if preLatestRoot != nil {
-		preLatestRoot.evict(20, 120_000)
+		preLatestRoot.evict(1_000, 200_000)
 	}
 }
 

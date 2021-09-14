@@ -337,7 +337,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 		coreDB := memdb.NewTestDB(t)
 
 		cfg := DefaultConfig
-		cfg.EvictSendersAfterRounds = 1
 		sendersCache := kvcache.New(kvcache.DefaultCoherentCacheConfig)
 
 		pool, err := New(ch, coreDB, cfg, sendersCache)
