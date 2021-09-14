@@ -341,45 +341,57 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 	return checked, err
 }
 
-func (c *Coherent) Evict() {
-	c.rootsLock.Lock()
-	defer c.rootsLock.Unlock()
-	defer func(t time.Time) { fmt.Printf("cache.go:344: %s\n", time.Since(t)) }(time.Now())
-
-	var latestBlockNum uint64
-	var latestRoot string
+func (c *Coherent) evictionInfo() (latestBlockNum uint64, view *CoherentView) {
+	c.rootsLock.RLock()
+	defer c.rootsLock.RUnlock()
+	var latestRoot, preLatestRoot string
 	for root := range c.roots { // max
 		blockNum := binary.BigEndian.Uint64([]byte(root))
 		if blockNum > latestBlockNum {
+			preLatestRoot = latestRoot
 			latestBlockNum = blockNum
 			latestRoot = root
 		}
 	}
-	{
-		var toDel []string
-		for root := range c.roots {
-			blockNum := binary.BigEndian.Uint64([]byte(root))
-			if blockNum > latestBlockNum-10 {
-				continue
-			}
-			toDel = append(toDel, root)
+	return latestBlockNum, c.roots[preLatestRoot]
+}
+func (c *Coherent) evictRoots(to uint64) {
+	c.rootsLock.Lock()
+	defer c.rootsLock.Unlock()
+	var toDel []string
+	for root := range c.roots {
+		blockNum := binary.BigEndian.Uint64([]byte(root))
+		if blockNum > to {
+			continue
 		}
-
-		for _, root := range toDel {
-			delete(c.roots, root)
-		}
+		toDel = append(toDel, root)
 	}
+
+	for _, root := range toDel {
+		delete(c.roots, root)
+	}
+}
+func (c *Coherent) Evict() {
+	defer func(t time.Time) { fmt.Printf("cache.go:344: %s\n", time.Since(t)) }(time.Now())
+	latestBlockNum, preLatestRoot := c.evictionInfo()
+	c.evictRoots(latestBlockNum - 10)
+	preLatestRoot.evict()
+}
+
+func (c *CoherentView) evict() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	var toDel []btree.Item
-	latestView := c.roots[latestRoot].cache
 	firstPrime, secondPrime := 7, 11 // to choose 2-pseudo-random elements and evict worse one
 	var fst, snd btree.Item
 	i := 0
-	if latestView.Len() < 100_000 {
+	if c.cache.Len() < 100_000 {
 		return
 	}
 
 	counters := map[uint64]uint64{}
-	latestView.Ascend(func(it btree.Item) bool {
+	c.cache.Ascend(func(it btree.Item) bool {
 		_, ok := counters[goatomic.LoadUint64(&fst.(*Pair).t)]
 		if !ok {
 			counters[goatomic.LoadUint64(&fst.(*Pair).t)] = 0
@@ -405,11 +417,11 @@ func (c *Coherent) Evict() {
 	})
 
 	for _, it := range toDel {
-		latestView.Delete(it)
+		c.cache.Delete(it)
 	}
 	fmt.Printf("counters: %#v\n", counters)
 	counters2 := map[uint64]uint64{}
-	latestView.Ascend(func(it btree.Item) bool {
+	c.cache.Ascend(func(it btree.Item) bool {
 		_, ok := counters2[goatomic.LoadUint64(&fst.(*Pair).t)]
 		if !ok {
 			counters2[goatomic.LoadUint64(&fst.(*Pair).t)] = 0
