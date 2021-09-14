@@ -389,7 +389,7 @@ func (c *CoherentView) evict(forceOld uint64) {
 	firstPrime, secondPrime := 7, 11 // to choose 2-pseudo-random elements and evict worse one
 	var fst, snd btree.Item
 	i := 0
-	if c.cache.Len() < 150_000 {
+	if c.cache.Len() < 80_000 {
 		return
 	}
 
