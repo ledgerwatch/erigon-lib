@@ -344,16 +344,15 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 func (c *Coherent) evictionInfo() (latestBlockNum uint64, view *CoherentView) {
 	c.rootsLock.RLock()
 	defer c.rootsLock.RUnlock()
-	var latestRoot, preLatestRoot string
+	var latestRoot string
 	for root := range c.roots { // max
 		blockNum := binary.BigEndian.Uint64([]byte(root))
 		if blockNum > latestBlockNum {
-			preLatestRoot = latestRoot
 			latestBlockNum = blockNum
 			latestRoot = root
 		}
 	}
-	return latestBlockNum, c.roots[preLatestRoot]
+	return latestBlockNum, c.roots[latestRoot]
 }
 func (c *Coherent) evictRoots(to uint64) {
 	c.rootsLock.Lock()
