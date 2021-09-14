@@ -393,14 +393,14 @@ func (c *CoherentView) evict(forceOld uint64) {
 		return
 	}
 
-	counters := map[uint64]uint64{}
+	counters := map[uint64]int{}
 	c.cache.Ascend(func(it btree.Item) bool {
-		goatomic.LoadUint64(&it.(*Pair).t)
-		_, ok := counters[goatomic.LoadUint64(&it.(*Pair).t)]
+		age := goatomic.LoadUint64(&it.(*Pair).t)
+		_, ok := counters[age]
 		if !ok {
-			counters[goatomic.LoadUint64(&it.(*Pair).t)] = 0
+			counters[age] = 0
 		}
-		counters[goatomic.LoadUint64(&it.(*Pair).t)]++
+		counters[age]++
 		i++
 		if i%firstPrime == 0 {
 			fst = it
@@ -424,13 +424,14 @@ func (c *CoherentView) evict(forceOld uint64) {
 		c.cache.Delete(it)
 	}
 	fmt.Printf("counters: %#v\n", counters)
-	counters2 := map[uint64]uint64{}
+	counters2 := map[uint64]int{}
 	c.cache.Ascend(func(it btree.Item) bool {
-		_, ok := counters2[goatomic.LoadUint64(&it.(*Pair).t)]
+		age := goatomic.LoadUint64(&it.(*Pair).t)
+		_, ok := counters2[age]
 		if !ok {
-			counters2[goatomic.LoadUint64(&it.(*Pair).t)] = 0
+			counters2[age] = 0
 		}
-		counters2[goatomic.LoadUint64(&it.(*Pair).t)]++
+		counters2[age]++
 		return true
 	})
 	fmt.Printf("counters2: %#v\n", counters)
