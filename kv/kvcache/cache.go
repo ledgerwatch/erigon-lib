@@ -341,11 +341,15 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 func (c *Coherent) Evict() {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
+	defer func(t time.Time) { fmt.Printf("cache.go:344: %s\n", time.Since(t)) }(time.Now())
+
 	var latestBlockNum uint64
+	var latestRoot string
 	for root := range c.roots { // max
 		blockNum := binary.BigEndian.Uint64([]byte(root))
 		if blockNum > latestBlockNum {
 			latestBlockNum = blockNum
+			latestRoot = root
 		}
 	}
 
@@ -356,6 +360,15 @@ func (c *Coherent) Evict() {
 			continue
 		}
 		toDel = append(toDel, root)
+	}
+
+	if len(toDel) > 0 {
+		root := c.roots[toDel[0]]
+		target := c.roots[latestRoot].cache
+		root.cache.Ascend(func(i btree.Item) bool {
+			target.Delete(i)
+			return true
+		})
 	}
 	for _, root := range toDel {
 		delete(c.roots, root)
