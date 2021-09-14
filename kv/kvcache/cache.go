@@ -374,6 +374,9 @@ func (c *Coherent) Evict() {
 	firstPrime, secondPrime := 7, 11 // to choose 2-pseudo-random elements and evict worse one
 	var fst, snd btree.Item
 	i := 0
+	if latestView.Len() < 100_000 {
+		return
+	}
 
 	latestView.Ascend(func(it btree.Item) bool {
 		i++
