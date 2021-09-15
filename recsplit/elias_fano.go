@@ -95,15 +95,72 @@ func NewDoubleEliasFano(cumKeys []uint64, position []uint64) *DoubleEliasFano {
 	ef.upperBitsPosition = make([]uint64, wordsPosition)
 	for i, cumDelta, bitDelta := uint64(0), uint64(0), uint64(0); i <= ef.numBuckets; i, cumDelta, bitDelta = i+1, cumDelta+uint64(ef.cumKeysMinDelta), bitDelta+uint64(ef.minDiff) {
 		if ef.lCumKeys != 0 {
-			set_bits(ef.lowerBits, i*(l_cum_keys+l_position), l_cum_keys, (cum_keys[i]-cum_delta)&lower_bits_mask_cum_keys)
+			set_bits(ef.lowerBits, i*(ef.lCumKeys+ef.lPosition), int(ef.lCumKeys), (cumKeys[i]-cumDelta)&ef.lowerBitsMaskCumKeys)
 		}
-		set(upper_bits_cum_keys, ((cum_keys[i]-cum_delta)>>l_cum_keys)+i)
+		set(ef.upperBitsCumKeys, ((cumKeys[i]-cumDelta)>>ef.lCumKeys)+i)
 
 		pval := int64(position[i]) - int64(ef.bitsPerKeyFixedPoint*cumKeys[i]>>20)
 		if ef.lPosition != 0 {
-			set_bits(lower_bits, i*(l_cum_keys+l_position)+l_cum_keys, l_position, (pval-bit_delta)&lower_bits_mask_position)
+			set_bits(ef.lowerBits, i*(ef.lCumKeys+ef.lPosition)+ef.lCumKeys, int(ef.lPosition), uint64((pval-int64(bitDelta)))&ef.lowerBitsMaskPosition)
 		}
-		set(upper_bits_position, ((uint64(pval)-bitDelta)>>ef.lPosition)+i)
+		set(ef.upperBitsPosition, ((uint64(pval)-bitDelta)>>ef.lPosition)+i)
+	}
+	jumpWords := ef.jumpSizeWords()
+	ef.jump = make([]uint64, jumpWords)
+	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < wordsCumKeys; i++ {
+		for b := 0; b < 64; b++ {
+			if ef.upperBitsCumKeys[i] & (uint64(1) << b) != 0 {
+				if (c & superQMask) == 0 {
+					lastSuperQ = i * 64 + b
+					jump[(c / superQ) * (superQSize * 2)] = lastSuperQ
+				}
+				if (c & qMask) == 0 {
+					var offset = i * 64 + b - lastSuperQ;
+					if offset >= (1 << 16) {
+						panic("")
+					}
+					((uint16_t *)(&jump + (c / superQ) * (superQSize * 2) + 2))[2 * ((c % superQ) / q)] = offset;
+				}
+				c++;
+			}
+		}
+	}
+
+	for (uint64_t i = 0, c = 0, last_super_q = 0; i < words_position; i++) {
+		for (int b = 0; b < 64; b++) {
+			if (upper_bits_position[i] & UINT64_C(1) << b) {
+				if ((c & super_q_mask) == 0) jump[(c / super_q) * (super_q_size * 2) + 1] = last_super_q = i * 64 + b;
+				if ((c & q_mask) == 0) {
+					const uint64_t offset = i * 64 + b - last_super_q;
+					if (offset >= (1 << 16)) abort();
+					((uint16_t *)(&jump + (c / super_q) * (super_q_size * 2) + 2))[2 * ((c % super_q) / q) + 1] = offset;
+				}
+				c++;
+			}
+		}
 	}
 	return &ef
+}
+
+// set_bits assumes that bits are set in monotonic order, so that
+// we can skip the masking for the second word
+func set_bits(bits []uint64, start uint64, width int, value uint64) {
+	mask := (uint64(1)<<width - 1) << start
+	bits[start>>6] = (bits[start>>6] &^ mask) | (value << start)
+	if int(start)+width > 64 {
+		// changes two 64-bit words
+		bits[start>>6+1] = value >> (64 - start)
+	}
+}
+
+func set(bits []uint64, pos uint64) {
+	bits[pos>>6] |= uint64(1) << (pos & 63)
+}
+
+func (ef DoubleEliasFano) jumpSizeWords() int {
+	size := (ef.numBuckets / superQ) * superQSize * 2 // Whole blocks
+	if ef.numBuckets%superQ != 0 {
+		size += (1 + ((ef.numBuckets%superQ+q-1)/q+3)/4) * 2 // Partial block
+	}
+	return int(size)
 }
