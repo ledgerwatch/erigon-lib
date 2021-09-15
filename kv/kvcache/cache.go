@@ -152,9 +152,14 @@ func (c *Coherent) advanceRoot(txID uint64, root, prevRoot string) (r *CoherentV
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
 	prevTxId, prevRootExists := c.roots2id[prevRoot]
 	if prevRootExists {
+		log.Info("advance: clone", "from", prevTxId, "to", txID)
 		//fmt.Printf("advance: clone %d to %d \n", prevTxId, txID)
 		r.cache = c.roots[prevTxId].Clone()
 	} else {
+		log.Info("advance: new", "to", txID)
+		for i, j := range c.roots2id {
+			fmt.Printf("roots: %x, %d\n", i, j)
+		}
 		//fmt.Printf("advance: new %d \n", txID)
 		r.cache = btree.New(32)
 	}
