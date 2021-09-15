@@ -217,17 +217,18 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	r := c.selectOrCreateRoot(tx.ID())
 	select { // fast non-blocking path
 	case <-r.ready:
-		//fmt.Printf("recv broadcast: %d,%d\n", r.id.Load(), tx.ID())
+		fmt.Printf("recv broadcast: %d,%d\n", r.id.Load(), tx.ID())
 		return r, nil
 	default:
 	}
 
 	select { // slow blocking path
 	case <-r.ready:
-		//fmt.Printf("recv broadcast 2: %d,%d\n", r.id.Load(), tx.ID())
+		fmt.Printf("recv broadcast 2: %d,%d\n", r.id.Load(), tx.ID())
 	case <-ctx.Done():
 		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
+		fmt.Printf("timeout: %d,%d\n", r.id.Load(), tx.ID())
 		c.timeout.Inc()
 		r.lock.Lock()
 		if r.cache == nil {
