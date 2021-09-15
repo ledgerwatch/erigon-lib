@@ -17,6 +17,7 @@
 package recsplit
 
 import (
+	"fmt"
 	"math"
 	"math/bits"
 )
@@ -33,6 +34,7 @@ const (
 
 // DoubleEliasFano can be used to encde a monotone sequence
 type DoubleEliasFano struct {
+	data                  []uint64
 	lowerBits             []uint64
 	upperBitsPosition     []uint64
 	upperBitsCumKeys      []uint64
@@ -49,8 +51,8 @@ type DoubleEliasFano struct {
 	bitsPerKeyFixedPoint  uint64
 }
 
-func NewDoubleEliasFano(cumKeys []uint64, position []uint64) *DoubleEliasFano {
-	var ef DoubleEliasFano
+// Build construct double Elias Fano index for two given sequences
+func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 	if len(cumKeys) != len(position) {
 		panic("len(cumKeys) != len(position)")
 	}
@@ -64,13 +66,13 @@ func NewDoubleEliasFano(cumKeys []uint64, position []uint64) *DoubleEliasFano {
 		if nkeysDelta < ef.cumKeysMinDelta {
 			ef.cumKeysMinDelta = nkeysDelta
 		}
-		var bucketBits int64 = int64(position[i]) - int64(ef.bitsPerKeyFixedPoint*(cumKeys[i]>>20))
+		var bucketBits int64 = int64(position[i]) - int64((ef.bitsPerKeyFixedPoint*cumKeys[i])>>20)
 		if bucketBits-prevBucketBits < ef.minDiff {
 			ef.minDiff = bucketBits - prevBucketBits
 		}
 		prevBucketBits = bucketBits
 	}
-	ef.uPosition = uint64(int64(position[ef.numBuckets]) - int64(ef.bitsPerKeyFixedPoint*cumKeys[ef.numBuckets]>>20) - int64(ef.numBuckets)*ef.minDiff + 1)
+	ef.uPosition = uint64(int64(position[ef.numBuckets]) - int64((ef.bitsPerKeyFixedPoint*cumKeys[ef.numBuckets])>>20) - int64(ef.numBuckets)*ef.minDiff + 1)
 	if ef.uPosition/(ef.numBuckets+1) == 0 {
 		ef.lPosition = 0
 	} else {
@@ -83,36 +85,40 @@ func NewDoubleEliasFano(cumKeys []uint64, position []uint64) *DoubleEliasFano {
 		ef.lCumKeys = 63 ^ uint64(bits.LeadingZeros64(ef.uCumKeys/(ef.numBuckets+1)))
 	}
 	if ef.lCumKeys*2+ef.lPosition > 56 {
-		panic("ef.lCumKeys * 2 + ef.lPosition > 56")
+		panic(fmt.Sprintf("ef.lCumKeys (%d) * 2 + ef.lPosition (%d) > 56", ef.lCumKeys, ef.lPosition))
 	}
 	ef.lowerBitsMaskCumKeys = (uint64(1) << ef.lCumKeys) - 1
 	ef.lowerBitsMaskPosition = (uint64(1) << ef.lPosition) - 1
-	wordsLowerBits := ((ef.numBuckets+1)*(ef.lCumKeys+ef.lPosition)+63)/64 + 1
-	ef.lowerBits = make([]uint64, wordsLowerBits)
-	wordsCumKeys := (ef.numBuckets + 1 + (ef.uCumKeys >> ef.lCumKeys) + 63) / 64
-	ef.upperBitsCumKeys = make([]uint64, wordsCumKeys)
-	wordsPosition := (ef.numBuckets + 1 + (ef.uPosition >> ef.lPosition) + 63) / 64
+	wordsLowerBits := int(((ef.numBuckets+1)*(ef.lCumKeys+ef.lPosition)+63)/64 + 1)
+	wordsCumKeys := int((ef.numBuckets + 1 + (ef.uCumKeys >> ef.lCumKeys) + 63) / 64)
+	wordsPosition := int((ef.numBuckets + 1 + (ef.uPosition >> ef.lPosition) + 63) / 64)
 	ef.upperBitsPosition = make([]uint64, wordsPosition)
+	jumpWords := ef.jumpSizeWords()
+	totalWords := wordsLowerBits + wordsCumKeys + wordsPosition + jumpWords
+	ef.data = make([]uint64, totalWords)
+	ef.lowerBits = ef.data[:wordsLowerBits]
+	ef.upperBitsCumKeys = ef.data[wordsLowerBits : wordsLowerBits+wordsCumKeys]
+	ef.upperBitsPosition = ef.data[wordsLowerBits+wordsCumKeys : wordsLowerBits+wordsCumKeys+wordsPosition]
+	ef.jump = ef.data[wordsLowerBits+wordsCumKeys+wordsPosition:]
+
 	for i, cumDelta, bitDelta := uint64(0), uint64(0), uint64(0); i <= ef.numBuckets; i, cumDelta, bitDelta = i+1, cumDelta+uint64(ef.cumKeysMinDelta), bitDelta+uint64(ef.minDiff) {
 		if ef.lCumKeys != 0 {
 			set_bits(ef.lowerBits, i*(ef.lCumKeys+ef.lPosition), int(ef.lCumKeys), (cumKeys[i]-cumDelta)&ef.lowerBitsMaskCumKeys)
 		}
 		set(ef.upperBitsCumKeys, ((cumKeys[i]-cumDelta)>>ef.lCumKeys)+i)
 
-		pval := int64(position[i]) - int64(ef.bitsPerKeyFixedPoint*cumKeys[i]>>20)
+		pval := int64(position[i]) - int64((ef.bitsPerKeyFixedPoint*cumKeys[i])>>20)
 		if ef.lPosition != 0 {
 			set_bits(ef.lowerBits, i*(ef.lCumKeys+ef.lPosition)+ef.lCumKeys, int(ef.lPosition), uint64((pval-int64(bitDelta)))&ef.lowerBitsMaskPosition)
 		}
 		set(ef.upperBitsPosition, ((uint64(pval)-bitDelta)>>ef.lPosition)+i)
 	}
-	jumpWords := ef.jumpSizeWords()
-	ef.jump = make([]uint64, jumpWords)
 	// i iterates over the 64-bit words in the wordCumKeys vector
 	// c iterates over bits in the wordCumKeys
 	// lastSuperQ is the largest multiple of 2^14 (4096) which is no larger than c
 	// c/superQ is the index of the current 4096 block of bits
 	// superQSize is how many words is required to encode one block of 4096 bits. It is 17 words which is 1088 bits
-	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < wordsCumKeys; i++ {
+	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < uint64(wordsCumKeys); i++ {
 		for b := uint64(0); b < 64; b++ {
 			if ef.upperBitsCumKeys[i]&(uint64(1)<<b) != 0 {
 				if (c & superQMask) == 0 {
@@ -139,7 +145,7 @@ func NewDoubleEliasFano(cumKeys []uint64, position []uint64) *DoubleEliasFano {
 		}
 	}
 
-	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < wordsPosition; i++ {
+	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < uint64(wordsPosition); i++ {
 		for b := uint64(0); b < 64; b++ {
 			if ef.upperBitsPosition[i]&(uint64(1)<<b) != 0 {
 				if (c & superQMask) == 0 {
@@ -161,7 +167,6 @@ func NewDoubleEliasFano(cumKeys []uint64, position []uint64) *DoubleEliasFano {
 			}
 		}
 	}
-	return &ef
 }
 
 // set_bits assumes that bits are set in monotonic order, so that
@@ -185,4 +190,9 @@ func (ef DoubleEliasFano) jumpSizeWords() int {
 		size += (1 + ((ef.numBuckets%superQ+q-1)/q+3)/4) * 2 // Partial block
 	}
 	return int(size)
+}
+
+// Data returns binary representation of double Ellias-Fano index that has been built
+func (ef DoubleEliasFano) Data() []uint64 {
+	return ef.data
 }

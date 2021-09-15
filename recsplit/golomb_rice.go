@@ -77,3 +77,13 @@ func (g *GolombRice) appendFixed(v uint32, log2golomb int) {
 func (b GolombRice) bits() int {
 	return b.bitCount
 }
+
+// Build returns the binary representation of the Golomb-Rice code that is built
+func (b GolombRice) Build() []uint64 {
+	return b.data
+}
+
+// GolombRiceReader allows reading numbers from the binary representation
+type GolombRiceReader struct {
+	data []uint64
+}

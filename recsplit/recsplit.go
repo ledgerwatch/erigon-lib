@@ -66,15 +66,16 @@ type RecSplit struct {
 	bucketCount        uint64      // Number of buckets
 	hasher             hash.Hash64 // Salted hash function to use for splitting into initial buckets
 	collector          *etl.Collector
-	built              bool       // Flag indicating that the hash function has been built and no more keys can be added
-	currentBucketIdx   uint64     // Current bucket being accumulated
-	currentBucket      []string   // Keys in the current bucket accumulated before the recsplit is performed for that bucket
-	builder            GolombRice // Builds encoding of the perfect hash function
-	bucketSizeAcc      []uint64   // Bucket size accumulator
-	bucketPosAcc       []uint64   // Accumulator for position of every bucket in the encoding of the hash function
-	leafSize           int        // Leaf size for recursive split algorithm
-	primaryAggrBound   int        // The lower bound for primary key aggregation (computed from leafSize)
-	secondaryAggrBound int        // The lower bound for secondary key aggregation (computed from leadSize)
+	built              bool            // Flag indicating that the hash function has been built and no more keys can be added
+	currentBucketIdx   uint64          // Current bucket being accumulated
+	currentBucket      []string        // Keys in the current bucket accumulated before the recsplit is performed for that bucket
+	gr                 GolombRice      // Helper object to encode sequence numbers using Golomb-Rice code
+	ef                 DoubleEliasFano // Helper object to
+	bucketSizeAcc      []uint64        // Bucket size accumulator
+	bucketPosAcc       []uint64        // Accumulator for position of every bucket in the encoding of the hash function
+	leafSize           int             // Leaf size for recursive split algorithm
+	primaryAggrBound   int             // The lower bound for primary key aggregation (computed from leafSize)
+	secondaryAggrBound int             // The lower bound for secondary key aggregation (computed from leadSize)
 	startSeed          []uint32
 	golombRice         []uint32
 }
@@ -213,7 +214,7 @@ func (rs *RecSplit) AddKey(key []byte) error {
 	return rs.collector.Collect(bucket[:], key)
 }
 
-func (rs RecSplit) recsplitCurrentBucket() error {
+func (rs *RecSplit) recsplitCurrentBucket() error {
 	// Extend rs.bucketSizeAcc to accomodate current bucket index + 1
 	for len(rs.bucketSizeAcc) <= int(rs.currentBucketIdx)+1 {
 		rs.bucketSizeAcc = append(rs.bucketSizeAcc, rs.bucketSizeAcc[len(rs.bucketSizeAcc)-1])
@@ -228,13 +229,13 @@ func (rs RecSplit) recsplitCurrentBucket() error {
 			}
 		}
 		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
-		rs.builder.appendUnaryAll(unary)
+		rs.gr.appendUnaryAll(unary)
 	}
 	// Extend rs.bucketPosAcc to accomodate current bucket index + 1
 	for len(rs.bucketPosAcc) <= int(rs.currentBucketIdx)+1 {
 		rs.bucketPosAcc = append(rs.bucketPosAcc, rs.bucketPosAcc[len(rs.bucketPosAcc)-1])
 	}
-	rs.bucketPosAcc[int(rs.currentBucketIdx)+1] = uint64(rs.builder.bits())
+	rs.bucketPosAcc[int(rs.currentBucketIdx)+1] = uint64(rs.gr.bits())
 	// clear for the next buckey
 	rs.currentBucket = rs.currentBucket[:0]
 	return nil
@@ -271,7 +272,7 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		}
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
-		rs.builder.appendFixed(salt, log2golomb)
+		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
 	} else {
 		fanout, unit := rs.splitParams(m)
@@ -305,7 +306,7 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		sort.Sort(&b)
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
-		rs.builder.appendFixed(salt, log2golomb)
+		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
 		var i int
 		for i = 0; i < m-unit; i += unit {
@@ -353,7 +354,9 @@ func (rs *RecSplit) Build() error {
 			return err
 		}
 	}
-	rs.builder.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
+	rs.gr.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
+	// Construct Elias Fano index
+	rs.ef.Build(rs.bucketSizeAcc, rs.bucketPosAcc)
 	rs.built = true
 	return nil
 }
