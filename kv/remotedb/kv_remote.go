@@ -42,6 +42,7 @@ type remoteTx struct {
 	cursors            []*remoteCursor
 	statelessCursors   map[string]kv.Cursor
 	streamingRequested bool
+	id                 uint64
 }
 
 type remoteCursor struct {
@@ -132,6 +133,11 @@ func (db *RemoteKV) BeginRo(ctx context.Context) (kv.Tx, error) {
 		streamCancelFn()
 		return nil, err
 	}
+	//msg, err := stream.Recv()
+	//if err != nil {
+	//	streamCancelFn()
+	//	return nil, err
+	//}
 	return &remoteTx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn}, nil
 }
 

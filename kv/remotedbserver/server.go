@@ -148,7 +148,6 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 			}
 			c = cInfo.c
 		}
-
 		switch in.Op {
 		case remote.Op_OPEN:
 			CursorID++
