@@ -96,11 +96,12 @@ func TestAPI(t *testing.T) {
 	}()
 
 	txID2 := put(k1[:], []byte{2})
-	fmt.Printf("-----1\n")
+	fmt.Printf("-----1 %d, %d\n", txID1, txID2)
 	res3, res4 := get(k1, txID2), get(k2, txID2) // will see View of transaction 2
 	txID3 := put(k1[:], []byte{3})               // even if core already on block 3
 
 	c.OnNewBlock(&remote.StateChange{
+		DatabaseViewID:  txID2,
 		Direction:       remote.Direction_FORWARD,
 		PrevBlockHeight: 1,
 		PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
@@ -128,6 +129,7 @@ func TestAPI(t *testing.T) {
 
 	res5, res6 := get(k1, txID3), get(k2, txID3) // will see View of transaction 3, even if notification has not enough changes
 	c.OnNewBlock(&remote.StateChange{
+		DatabaseViewID:  txID3,
 		Direction:       remote.Direction_FORWARD,
 		PrevBlockHeight: 2,
 		PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
@@ -140,7 +142,6 @@ func TestAPI(t *testing.T) {
 		}},
 	})
 
-	fmt.Printf("-----20\n")
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -157,6 +158,7 @@ func TestAPI(t *testing.T) {
 	txID4 := put(k1[:], []byte{2})
 	_ = txID4
 	c.OnNewBlock(&remote.StateChange{
+		DatabaseViewID:  txID4,
 		Direction:       remote.Direction_UNWIND,
 		PrevBlockHeight: 3,
 		PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
@@ -171,6 +173,7 @@ func TestAPI(t *testing.T) {
 	fmt.Printf("-----4\n")
 	txID5 := put(k1[:], []byte{4}) // reorg to new chain
 	c.OnNewBlock(&remote.StateChange{
+		DatabaseViewID:  txID5,
 		Direction:       remote.Direction_FORWARD,
 		PrevBlockHeight: 2,
 		PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),

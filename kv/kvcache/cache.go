@@ -115,7 +115,7 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
-	return &Coherent{roots: map[uint64]*CoherentView{}, cfg: cfg,
+	return &Coherent{roots: map[uint64]*CoherentView{}, roots2id: map[string]uint64{}, cfg: cfg,
 		miss:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
 		hits:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 		evict: metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
@@ -150,10 +150,10 @@ func (c *Coherent) advanceRoot(txID uint64, root, prevRoot string) (r *CoherentV
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
 	prevTxId, prevRootExists := c.roots2id[prevRoot]
 	if prevRootExists {
-		//fmt.Printf("advance: clone %x to %x \n", prevRoot, root)
+		//fmt.Printf("advance: clone %d to %d \n", prevTxId, txID)
 		r.cache = c.roots[prevTxId].Clone()
 	} else {
-		//fmt.Printf("advance: new %x \n", root)
+		//fmt.Printf("advance: new %d \n", txID)
 		r.cache = btree.New(32)
 	}
 	c.roots2id[root] = txID
@@ -170,7 +170,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	binary.BigEndian.PutUint64(root, sc.BlockHeight)
 	h := gointerfaces.ConvertH256ToHash(sc.BlockHash)
 	copy(root[8:], h[:])
-	r := c.advanceRoot(1, string(root), string(prevRoot))
+	r := c.advanceRoot(sc.DatabaseViewID, string(root), string(prevRoot))
 	r.lock.Lock()
 	for i := range sc.Changes {
 		switch sc.Changes[i].Action {
@@ -210,17 +210,18 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	r := c.selectOrCreateRoot(tx.ID())
 	select { // fast non-blocking path
 	case <-r.ready:
-		//fmt.Printf("recv broadcast: %x\n", root)
+		//fmt.Printf("recv broadcast: %d,%d\n", r.id.Load(), tx.ID())
 		return r, nil
 	default:
 	}
 
 	select { // slow blocking path
 	case <-r.ready:
+		//fmt.Printf("recv broadcast 2: %d,%d\n", r.id.Load(), tx.ID())
 	case <-ctx.Done():
 		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
-		log.Error("timeout", "txID", tx.ID())
+		log.Error("timeout", "viewID", r.id.Load(), "txID", tx.ID())
 		r.lock.Lock()
 		if r.cache == nil {
 			r.cache = btree.New(32)
