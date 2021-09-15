@@ -280,8 +280,8 @@ var (
 	//StorageModeTEVM - does not translate EVM to TEVM
 	StorageModeTEVM = []byte("smTEVM")
 
-	PruneHistoryTypeOlder = []byte("older")
-	PruneHistoryTypeBefore   = []byte("before")
+	PruneHistoryTypeOlder  = []byte("older")
+	PruneHistoryTypeBefore = []byte("before")
 
 	PruneHistory        = []byte("pruneHistory")
 	PruneHistoryType    = []byte("pruneHistoryType")
