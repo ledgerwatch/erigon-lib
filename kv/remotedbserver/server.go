@@ -74,6 +74,10 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 	}
 	defer rollback()
 
+	if err := stream.Send(&remote.Pair{TxID: tx.ID()}); err != nil {
+		return fmt.Errorf("server-side error: %w", err)
+	}
+
 	var CursorID uint32
 	type CursorInfo struct {
 		bucket string
