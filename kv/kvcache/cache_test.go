@@ -17,7 +17,6 @@ package kvcache
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"sync"
 	"testing"
@@ -29,12 +28,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/stretchr/testify/require"
 )
-
-func bigEndian(n uint64) []byte {
-	num := [8]byte{}
-	binary.BigEndian.PutUint64(num[:], n)
-	return num[:]
-}
 
 func TestAPI(t *testing.T) {
 	require := require.New(t)

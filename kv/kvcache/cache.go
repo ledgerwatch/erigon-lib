@@ -397,6 +397,7 @@ func (c *Coherent) Evict() {
 	}
 }
 
+//nolint
 func (c *CoherentView) evictOld(dropOlder uint64, keysLimit int) {
 	if c.Len() < keysLimit {
 		return
@@ -417,6 +418,8 @@ func (c *CoherentView) evictOld(dropOlder uint64, keysLimit int) {
 	}
 	log.Info("evicted", "too_old_amount", len(toDel))
 }
+
+//nolint
 func (c *CoherentView) evictNew2Random(keysLimit int) {
 	if c.Len() < keysLimit {
 		return
