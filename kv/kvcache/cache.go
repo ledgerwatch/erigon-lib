@@ -403,8 +403,8 @@ func (c *Coherent) evictRoots(to uint64) {
 }
 func (c *Coherent) Evict() {
 	defer c.evict.UpdateDuration(time.Now())
-	latestBlockNum, preLatestRoot := c.evictionInfo()
-	c.evictRoots(latestBlockNum - 10)
+	latestTxId, preLatestRoot := c.evictionInfo()
+	c.evictRoots(latestTxId - 10)
 	if preLatestRoot != nil {
 		preLatestRoot.evict(100, 200_000)
 	}

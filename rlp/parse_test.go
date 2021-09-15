@@ -38,6 +38,7 @@ var parseU32Tests = []struct {
 
 func TestPrimitives(t *testing.T) {
 	for i, tt := range parseU64Tests {
+		_ = tt
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			assert := assert.New(t)
 			pos, res, err := U64(tt.payload, 0)
@@ -47,6 +48,7 @@ func TestPrimitives(t *testing.T) {
 		})
 	}
 	for i, tt := range parseU32Tests {
+		_ = tt
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			assert := assert.New(t)
 			pos, res, err := U32(tt.payload, 0)
