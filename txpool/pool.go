@@ -791,7 +791,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	log.Info("[txpool] new block", "number", stateChanges.BlockHeight, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", stateChanges.BlockHeight, "unwind", stateChanges.Direction == remote.Direction_UNWIND, "in", time.Since(t))
 	return nil
 }
 func (p *TxPool) discardLocked(mt *metaTx) {
