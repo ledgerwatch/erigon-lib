@@ -399,22 +399,22 @@ func (p *TxPool) logStats() {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	idsInMem := p.senders.idsCount()
-	infoInMem := p.senders.infoCount()
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Info(fmt.Sprintf("[txpool] baseFee: %d, %dm; queuesSize: pending=%d/%d, baseFee=%d/%d, queued=%d/%d; sendersBatch: id=%d,info=%d, alloc=%dMb, sys=%dMb\n",
-		protocolBaseFee, currentBaseFee/1_000_000,
-		p.pending.Len(), PendingSubPoolLimit, p.baseFee.Len(), BaseFeeSubPoolLimit, p.queued.Len(), QueuedSubPoolLimit,
-		idsInMem, infoInMem,
-		m.Alloc/1024/1024, m.Sys/1024/1024,
-	))
-	stats := kvcache.DebugStats(p.senders.cache)
-	log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
-	for i := range stats {
-		log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
-	}
+	log.Info("[txpool] stat", "baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, currentBaseFee/1_000_000),
+		"pending", p.pending.Len(),
+		"baseFee", p.baseFee.Len(),
+		"queued", p.queued.Len(),
+		"alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024,
+		"ids_in_mem", idsInMem,
+	)
 	//if ASSERT {
+	//stats := kvcache.DebugStats(p.senders.cache)
+	//log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
+	//for i := range stats {
+	//	log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
+	//}
 	//ages := kvcache.DebugAges(p.senders.cache)
 	//for i := range ages {
 	//	log.Info("[txpool] age", "age", ages[i].BlockNum, "amount", ages[i].Lenght)
