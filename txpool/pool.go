@@ -658,11 +658,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if ASSERT {
-		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
-			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
-		}
-	}
 
 	if !p.stared.Load() {
 		return fmt.Errorf("txpool not started yet")
@@ -683,12 +678,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 
 	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
-	}
-
-	if ASSERT {
-		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
-			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
-		}
 	}
 
 	// notify about all non-dropped txs
