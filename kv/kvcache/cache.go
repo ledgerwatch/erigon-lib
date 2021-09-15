@@ -31,6 +31,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 )
 
@@ -390,49 +391,43 @@ func (c *Coherent) Evict() {
 	latestBlockNum, lastView := c.lastRoot()
 	c.evictRoots(latestBlockNum - 10)
 	c.keys.Set(uint64(lastView.Len()))
-	//if preLatestRoot != nil {
-	//	preLatestRoot.evict(100, 200_000)
-	//}
+	if lastView != nil {
+		lastView.evictOld(100, 200_000)
+		//lastView.evictNew2Random(200_000)
+	}
 }
 
-func (c *CoherentView) evict(dropOlder uint64, keysLimit int) {
+func (c *CoherentView) evictOld(dropOlder uint64, keysLimit int) {
+	if c.Len() < keysLimit {
+		return
+	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	var toDel []btree.Item
-	var fst, snd btree.Item
-	i := 0
-	if c.cache.Len() < keysLimit {
-		return
-	}
-
-	counters := map[uint64]int{}
-
 	c.cache.Ascend(func(it btree.Item) bool {
 		age := goatomic.LoadUint64(&it.(*Pair).t)
 		if age < dropOlder {
-			toDel = append(toDel, fst)
+			toDel = append(toDel, it)
 		}
 		return true
 	})
 	for _, it := range toDel {
 		c.cache.Delete(it)
 	}
-	fmt.Printf("drop too old: %d\n", len(toDel))
-
+	log.Info("evicted", "too_old_amount", len(toDel))
+}
+func (c *CoherentView) evictNew2Random(keysLimit int) {
+	if c.Len() < keysLimit {
+		return
+	}
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	i := 0
+	var toDel []btree.Item
+	var fst, snd btree.Item
 	firstPrime, secondPrime := 11, 13 // to choose 2-pseudo-random elements and evict worse one
 	c.cache.Ascend(func(it btree.Item) bool {
-		age := goatomic.LoadUint64(&it.(*Pair).t)
-		if age < dropOlder {
-			toDel = append(toDel, fst)
-			return true
-		}
-		_, ok := counters[age]
-		if !ok {
-			counters[age] = 0
-		}
-		counters[age]++
-		i++
 		if i%firstPrime == 0 {
 			fst = it
 		}
@@ -454,5 +449,5 @@ func (c *CoherentView) evict(dropOlder uint64, keysLimit int) {
 	for _, it := range toDel {
 		c.cache.Delete(it)
 	}
-	fmt.Printf("drop 2-random: %d\n", len(toDel))
+	log.Info("evicted", "2_random__amount", len(toDel))
 }
