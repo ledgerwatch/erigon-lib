@@ -391,10 +391,10 @@ func (c *Coherent) Evict() {
 	latestBlockNum, lastView := c.lastRoot()
 	c.evictRoots(latestBlockNum - 10)
 	c.keys.Set(uint64(lastView.Len()))
-	if lastView != nil {
-		lastView.evictOld(100, 200_000)
-		//lastView.evictNew2Random(200_000)
-	}
+	//if lastView != nil {
+	//lastView.evictOld(100, 200_000)
+	//lastView.evictNew2Random(200_000)
+	//}
 }
 
 //nolint
