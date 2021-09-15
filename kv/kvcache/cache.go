@@ -324,6 +324,7 @@ func DebugAges(cache Cache) []Stat {
 	return res
 }
 func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) {
+	defer func(t time.Time) { fmt.Printf("AssertCheckValues:327: %s\n", time.Since(t)) }(time.Now())
 	c, err := cache.View(ctx, tx)
 	if err != nil {
 		return 0, err
@@ -378,7 +379,7 @@ func (c *Coherent) evictRoots(to uint64) {
 			}
 		}
 	}
-
+	log.Info("forget old roots", "list", fmt.Sprintf("%d", toDel))
 	for _, txId := range toDel {
 		delete(c.roots, txId)
 	}
