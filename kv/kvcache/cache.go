@@ -95,7 +95,7 @@ var _ Cache = (*Coherent)(nil)         // compile-time interface check
 var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 type Pair struct {
 	K, V []byte
-	t    uint64
+	t    uint64 //TODO: can be uint32 if remember first txID and use it as base zero. because it's monotonic.
 }
 
 func (p *Pair) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Pair).K) < 0 }
