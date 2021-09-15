@@ -1358,22 +1358,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 		time.Sleep(time.Second)
 	}
 	p.logStats()
-	//if ASSERT {
-	//	go func() {
-	//		for range time.NewTicker(1 * time.Minute).C {
-	//			if err := coreDB.View(ctx, func(tx kv.Tx) error {
-	//				checked, err := kvcache.AssertCheckValues(ctx, tx, p.senders.cache)
-	//				if err != nil {
-	//					return err
-	//				}
-	//				log.Info("AssertCheckValues done", "checked", checked)
-	//				return nil
-	//			}); err != nil {
-	//				log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
-	//			}
-	//		}
-	//	}()
-	//}
 
 	syncToNewPeersEvery := time.NewTicker(p.cfg.SyncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
