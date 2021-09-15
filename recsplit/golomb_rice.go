@@ -82,8 +82,3 @@ func (b GolombRice) bits() int {
 func (b GolombRice) Build() []uint64 {
 	return b.data
 }
-
-// GolombRiceReader allows reading numbers from the binary representation
-type GolombRiceReader struct {
-	data []uint64
-}
