@@ -133,7 +133,7 @@ func (c *Coherent) selectOrCreateRoot(root string) *CoherentView {
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction) (r *CoherentView, fastUnwind bool) {
+func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction) (r *CoherentView) {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
 	r, rootExists := c.roots[root]
@@ -143,28 +143,16 @@ func (c *Coherent) advanceRoot(root, prevRoot string, direction remote.Direction
 	}
 
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
-	switch direction {
-	case remote.Direction_FORWARD:
-		prevCacheRoot, prevRootExists := c.roots[prevRoot]
-		//log.Warn("[kvcache] forward", "to", fmt.Sprintf("%x", root), "prevRootExists", prevRootExists)
-		if prevRootExists {
-			//fmt.Printf("advance: clone %x to %x \n", prevRoot, root)
-			r.cache = prevCacheRoot.Clone()
-		} else {
-			//fmt.Printf("advance: new %x \n", root)
-			r.cache = btree.New(32)
-		}
-	case remote.Direction_UNWIND:
-		//log.Warn("[kvcache] unwind", "to", fmt.Sprintf("%x", root), "rootExists", rootExists)
-		if rootExists {
-			fastUnwind = true
-		} else {
-			r.cache = btree.New(32)
-		}
-	default:
-		panic("not implemented yet")
+	prevCacheRoot, prevRootExists := c.roots[prevRoot]
+	//log.Warn("[kvcache] forward", "to", fmt.Sprintf("%x", root), "prevRootExists", prevRootExists)
+	if prevRootExists {
+		//fmt.Printf("advance: clone %x to %x \n", prevRoot, root)
+		r.cache = prevCacheRoot.Clone()
+	} else {
+		//fmt.Printf("advance: new %x \n", root)
+		r.cache = btree.New(32)
 	}
-	return r, fastUnwind
+	return r
 }
 
 func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
@@ -177,7 +165,7 @@ func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
 	binary.BigEndian.PutUint64(root, sc.BlockHeight)
 	h := gointerfaces.ConvertH256ToHash(sc.BlockHash)
 	copy(root[8:], h[:])
-	r, _ := c.advanceRoot(string(root), string(prevRoot), sc.Direction)
+	r := c.advanceRoot(string(root), string(prevRoot), sc.Direction)
 	r.lock.Lock()
 	for i := range sc.Changes {
 		switch sc.Changes[i].Action {
