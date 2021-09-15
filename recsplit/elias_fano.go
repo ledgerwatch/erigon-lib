@@ -26,9 +26,9 @@ const (
 	q          uint64 = 1 << log2q
 	qMask      uint64 = q - 1
 	superQ     uint64 = 1 << 14
-	superQMast uint64 = superQ - 1
-	qPerSuperQ uint64 = superQ / q
-	superQSize uint64 = 1 + qPerSuperQ/4
+	superQMask uint64 = superQ - 1
+	qPerSuperQ uint64 = superQ / q       // 64
+	superQSize uint64 = 1 + qPerSuperQ/4 // 1 + 64/4 = 17
 )
 
 // DoubleEliasFano can be used to encde a monotone sequence
@@ -107,35 +107,57 @@ func NewDoubleEliasFano(cumKeys []uint64, position []uint64) *DoubleEliasFano {
 	}
 	jumpWords := ef.jumpSizeWords()
 	ef.jump = make([]uint64, jumpWords)
+	// i iterates over the 64-bit words in the wordCumKeys vector
+	// c iterates over bits in the wordCumKeys
+	// lastSuperQ is the largest multiple of 2^14 (4096) which is no larger than c
+	// c/superQ is the index of the current 4096 block of bits
+	// superQSize is how many words is required to encode one block of 4096 bits. It is 17 words which is 1088 bits
 	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < wordsCumKeys; i++ {
-		for b := 0; b < 64; b++ {
-			if ef.upperBitsCumKeys[i] & (uint64(1) << b) != 0 {
+		for b := uint64(0); b < 64; b++ {
+			if ef.upperBitsCumKeys[i]&(uint64(1)<<b) != 0 {
 				if (c & superQMask) == 0 {
-					lastSuperQ = i * 64 + b
-					jump[(c / superQ) * (superQSize * 2)] = lastSuperQ
+					// When c is multiple of 2^14 (4096)
+					lastSuperQ = i*64 + b
+					ef.jump[(c/superQ)*(superQSize*2)] = lastSuperQ
 				}
 				if (c & qMask) == 0 {
-					var offset = i * 64 + b - lastSuperQ;
+					// When c is multiple of 2^8 (256)
+					var offset = i*64 + b - lastSuperQ // offset can be either 0, 256, 512, 768, ..., up to 4096-256
+					// offset needs to be encoded as 16-bit integer, therefore the following check
 					if offset >= (1 << 16) {
 						panic("")
 					}
-					((uint16_t *)(&jump + (c / superQ) * (superQSize * 2) + 2))[2 * ((c % superQ) / q)] = offset;
+					// c % superQ is the bit index inside the group of 4096 bits
+					idx16 := 4*((c/superQ)*(superQSize*2)+2) + 2*((c%superQ)/q)
+					idx64 := idx16 >> 2
+					shift := 16 * (idx16 & 4)
+					mask := uint64(0xffff) << shift
+					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
 				}
-				c++;
+				c++
 			}
 		}
 	}
 
-	for (uint64_t i = 0, c = 0, last_super_q = 0; i < words_position; i++) {
-		for (int b = 0; b < 64; b++) {
-			if (upper_bits_position[i] & UINT64_C(1) << b) {
-				if ((c & super_q_mask) == 0) jump[(c / super_q) * (super_q_size * 2) + 1] = last_super_q = i * 64 + b;
-				if ((c & q_mask) == 0) {
-					const uint64_t offset = i * 64 + b - last_super_q;
-					if (offset >= (1 << 16)) abort();
-					((uint16_t *)(&jump + (c / super_q) * (super_q_size * 2) + 2))[2 * ((c % super_q) / q) + 1] = offset;
+	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < wordsPosition; i++ {
+		for b := uint64(0); b < 64; b++ {
+			if ef.upperBitsPosition[i]&(uint64(1)<<b) != 0 {
+				if (c & superQMask) == 0 {
+					lastSuperQ = i*64 + b
+					ef.jump[(c/superQ)*(superQSize*2)+1] = lastSuperQ
 				}
-				c++;
+				if (c & qMask) == 0 {
+					var offset = i*64 + b - lastSuperQ
+					if offset >= (1 << 16) {
+						panic("")
+					}
+					idx16 := 4*((c/superQ)*(superQSize*2)+2) + 2*((c%superQ)/q) + 1
+					idx64 := idx16 >> 2
+					shift := 16 * (idx16 & 4)
+					mask := uint64(0xffff) << shift
+					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
+				}
+				c++
 			}
 		}
 	}
