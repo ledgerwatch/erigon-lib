@@ -411,6 +411,11 @@ func (p *TxPool) logStats() {
 		"alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024,
 		"ids_in_mem", idsInMem,
 	)
+	stats := kvcache.DebugStats(p.senders.cache)
+	log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
+	for i := range stats {
+		log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
+	}
 	//if ASSERT {
 	//stats := kvcache.DebugStats(p.senders.cache)
 	//log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
@@ -1353,22 +1358,22 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 		time.Sleep(time.Second)
 	}
 	p.logStats()
-	if ASSERT {
-		go func() {
-			for range time.NewTicker(1 * time.Minute).C {
-				if err := coreDB.View(ctx, func(tx kv.Tx) error {
-					checked, err := kvcache.AssertCheckValues(ctx, tx, p.senders.cache)
-					if err != nil {
-						return err
-					}
-					log.Info("AssertCheckValues done", "checked", checked)
-					return nil
-				}); err != nil {
-					log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
-				}
-			}
-		}()
-	}
+	//if ASSERT {
+	//	go func() {
+	//		for range time.NewTicker(1 * time.Minute).C {
+	//			if err := coreDB.View(ctx, func(tx kv.Tx) error {
+	//				checked, err := kvcache.AssertCheckValues(ctx, tx, p.senders.cache)
+	//				if err != nil {
+	//					return err
+	//				}
+	//				log.Info("AssertCheckValues done", "checked", checked)
+	//				return nil
+	//			}); err != nil {
+	//				log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
+	//			}
+	//		}
+	//	}()
+	//}
 
 	syncToNewPeersEvery := time.NewTicker(p.cfg.SyncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
