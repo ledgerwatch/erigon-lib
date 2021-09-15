@@ -31,7 +31,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 )
 
@@ -74,12 +73,12 @@ type CacheView interface {
 // Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
-	hits, miss *metrics.Counter
-	evict      *metrics.Summary
-	roots      map[uint64]*CoherentView
-	roots2id   map[string]uint64
-	rootsLock  sync.RWMutex
-	cfg        CoherentCacheConfig
+	hits, miss, timeout *metrics.Counter
+	evict               *metrics.Summary
+	roots               map[uint64]*CoherentView
+	roots2id            map[string]uint64
+	rootsLock           sync.RWMutex
+	cfg                 CoherentCacheConfig
 }
 type CoherentView struct {
 	hits, miss      *metrics.Counter
@@ -116,9 +115,10 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 
 func New(cfg CoherentCacheConfig) *Coherent {
 	return &Coherent{roots: map[uint64]*CoherentView{}, roots2id: map[string]uint64{}, cfg: cfg,
-		miss:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
-		hits:  metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
-		evict: metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
+		miss:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
+		hits:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
+		timeout: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
+		evict:   metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
 	}
 }
 
@@ -221,7 +221,7 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
-		log.Error("timeout", "viewID", r.id.Load(), "txID", tx.ID())
+		c.timeout.Inc()
 		r.lock.Lock()
 		if r.cache == nil {
 			r.cache = btree.New(32)
