@@ -145,7 +145,7 @@ const QueuedSubPool SubPoolType = 3
 
 const PendingSubPoolLimit = 10 * 1024
 const BaseFeeSubPoolLimit = 10 * 1024
-const QueuedSubPoolLimit = 80 * 1024
+const QueuedSubPoolLimit = 100 * 1024
 
 const MaxSendersInfoCache = 2 * (PendingSubPoolLimit + BaseFeeSubPoolLimit + QueuedSubPoolLimit)
 
