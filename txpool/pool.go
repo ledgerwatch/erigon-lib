@@ -583,16 +583,16 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 		return nil, err
 	}
 
-	var lazyRollback = func() {}
-	defer lazyRollback()
-	func() {
-		coreTx, err := p.coreDB.BeginRo(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defer coreTx.Rollback()
-
-	}
+	//var lazyRollback = func() {}
+	//defer lazyRollback()
+	//func() {
+	//	coreTx, err := p.coreDB.BeginRo(ctx)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	defer coreTx.Rollback()
+	//
+	//}
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
 		return nil, err
