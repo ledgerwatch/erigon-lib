@@ -54,7 +54,7 @@ var (
 	writeToDbBytesCounter   = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
 )
 
-const ASSERT = true
+const ASSERT = false
 
 type Config struct {
 	DBDir                 string
