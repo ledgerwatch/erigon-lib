@@ -131,7 +131,7 @@ func remap16(x uint64, n int) int {
 
 func (rs *RecSplit) splitParams(m int) (fanout, unit int) {
 	if m > rs.secondaryAggrBound { // High-level aggregation (fanout 2)
-		unit = rs.secondaryAggrBound * ((m/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound)
+		unit = rs.secondaryAggrBound * (((m+1)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound)
 		fanout = 2
 	} else if m > rs.primaryAggrBound { // Second-level aggregation
 		unit = rs.primaryAggrBound
@@ -282,6 +282,10 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 				hasher.Reset()
 				hasher.Write([]byte(bucket[i]))
 				j := remap16(hasher.Sum64(), m) / unit
+				if j >= len(count) {
+					fmt.Printf("rs.primaryAggrBound = %d, s.secondaryAggrBound = %d\n", rs.primaryAggrBound, rs.secondaryAggrBound)
+					fmt.Printf("m = %d, len(count) = %d, unit = %d, remap16(hasher.Sum64(), m) = %d\n", m, len(count), unit, remap16(hasher.Sum64(), m))
+				}
 				if count[j] == unit {
 					fail = true
 				} else {
