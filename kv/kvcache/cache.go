@@ -31,6 +31,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 )
 
@@ -228,7 +229,7 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("kvcache rootNum=%x, %w", root, ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
-		//fmt.Printf("timeout! %x\n", root)
+		log.Error("timeout", "root", binary.BigEndian.Uint64(root))
 		r.lock.Lock()
 		if r.cache == nil {
 			r.cache = btree.New(32)
