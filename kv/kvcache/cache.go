@@ -73,12 +73,12 @@ type CacheView interface {
 // Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
-	hits, miss, timeout *metrics.Counter
-	evict               *metrics.Summary
-	roots               map[uint64]*CoherentView
-	roots2id            map[string]uint64
-	rootsLock           sync.RWMutex
-	cfg                 CoherentCacheConfig
+	hits, miss, timeout, keys *metrics.Counter
+	evict                     *metrics.Summary
+	roots                     map[uint64]*CoherentView
+	roots2id                  map[string]uint64
+	rootsLock                 sync.RWMutex
+	cfg                       CoherentCacheConfig
 }
 type CoherentView struct {
 	hits, miss      *metrics.Counter
@@ -118,6 +118,7 @@ func New(cfg CoherentCacheConfig) *Coherent {
 		miss:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
 		hits:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 		timeout: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
+		keys:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_keys_total{name="%s"}`, cfg.MetricsLabel)),
 		evict:   metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
 	}
 }
@@ -386,8 +387,9 @@ func (c *Coherent) evictRoots(to uint64) {
 }
 func (c *Coherent) Evict() {
 	defer c.evict.UpdateDuration(time.Now())
-	latestBlockNum, _ := c.lastRoot()
+	latestBlockNum, lastView := c.lastRoot()
 	c.evictRoots(latestBlockNum - 10)
+	c.keys.Set(uint64(lastView.Len()))
 	//if preLatestRoot != nil {
 	//	preLatestRoot.evict(100, 200_000)
 	//}
