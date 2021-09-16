@@ -54,7 +54,7 @@ var (
 	writeToDbBytesCounter   = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
 )
 
-const ASSERT = true
+const ASSERT = false
 
 type Config struct {
 	DBDir                 string
@@ -414,12 +414,12 @@ func (p *TxPool) logStats() {
 		"alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024,
 		"ids_in_mem", idsInMem,
 	)
-	stats := kvcache.DebugStats(p.senders.cache)
-	log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
-	for i := range stats {
-		log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
-	}
 	//if ASSERT {
+	//stats := kvcache.DebugStats(p.senders.cache)
+	//log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
+	//for i := range stats {
+	//	log.Info("[txpool] cache", "root", stats[i].BlockNum, "len", stats[i].Lenght)
+	//}
 	//stats := kvcache.DebugStats(p.senders.cache)
 	//log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
 	//for i := range stats {

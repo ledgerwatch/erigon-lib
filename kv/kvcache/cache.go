@@ -365,7 +365,7 @@ func (c *Coherent) evictRoots(to uint64) {
 		}
 		toDel = append(toDel, txId)
 	}
-	log.Info("forget old roots", "list", fmt.Sprintf("%d", toDel))
+	//log.Info("forget old roots", "list", fmt.Sprintf("%d", toDel))
 	for _, txId := range toDel {
 		delete(c.roots, txId)
 	}
