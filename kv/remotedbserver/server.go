@@ -299,6 +299,7 @@ func (s *StateChangeStreams) Add(stream remote.KV_StateChangesServer) (remove fu
 func (s *StateChangeStreams) doBroadcast(ctx context.Context, reply *remote.StateChangeBatch) (ids []uint, errs []error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	defer func(t time.Time) { fmt.Printf("server.go:302: %s\n", time.Since(t)) }(time.Now())
 Loop:
 	for id, stream := range s.streams {
 		select {
@@ -323,10 +324,11 @@ Loop:
 func (s *StateChangeStreams) Broadcast(ctx context.Context, reply *remote.StateChangeBatch) (errs []error) {
 	var ids []uint
 	ids, errs = s.doBroadcast(ctx, reply)
-	if len(ids) > 0 {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+	if len(ids) == 0 {
+		return errs
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, id := range ids {
 		delete(s.streams, id)
 	}
