@@ -86,7 +86,6 @@ type CoherentView struct {
 	cache           *btree.BTree
 	lock            sync.RWMutex
 	id              atomic.Uint64
-	blockNumAndHash string
 	ready           chan struct{} // close when ready
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
 }
@@ -139,52 +138,29 @@ func (c *Coherent) selectOrCreateRoot(txID uint64) *CoherentView {
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(txID uint64, root, prevRoot string) (r *CoherentView) {
+func (c *Coherent) advanceRoot(txID uint64) (r *CoherentView) {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
 	r, rootExists := c.roots[txID]
 	if !rootExists {
-		r = &CoherentView{blockNumAndHash: root, ready: make(chan struct{}), hits: c.hits, miss: c.miss}
+		r = &CoherentView{ready: make(chan struct{}), hits: c.hits, miss: c.miss}
 		r.id.Store(txID)
 		c.roots[txID] = r
 	}
 
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
-	if prevTxId, ok := c.roots2id[prevRoot]; ok {
-		if prevTxId != txID {
-			log.Info("advance: clone", "from", prevTxId, "to", txID)
-			r.cache = c.roots[prevTxId].Clone()
-		}
+	if prevView, ok := c.roots[txID-1]; ok {
+		log.Info("advance: clone", "from", txID-1, "to", txID)
+		r.cache = prevView.Clone()
 	} else {
-		if prevView, ok := c.roots[txID-1]; ok {
-			log.Info("advance: clone", "from", txID-1, "to", txID)
-			r.cache = prevView.Clone()
-		} else {
-			log.Info("advance: new", "to", txID)
-			r.cache = btree.New(32)
-		}
+		log.Info("advance: new", "to", txID)
+		r.cache = btree.New(32)
 	}
-	c.roots2id[root] = txID
 	return r
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
-	var r *CoherentView
-	for _, change := range stateChanges.ChangeBatch {
-		prevRoot := make([]byte, 40)
-		binary.BigEndian.PutUint64(prevRoot, change.PrevBlockHeight)
-		prevH := gointerfaces.ConvertH256ToHash(change.PrevBlockHash)
-		copy(prevRoot[8:], prevH[:])
-
-		root := make([]byte, 40)
-		binary.BigEndian.PutUint64(root, change.BlockHeight)
-		h := gointerfaces.ConvertH256ToHash(change.BlockHash)
-		copy(root[8:], h[:])
-		r = c.advanceRoot(stateChanges.DatabaseViewID, string(root), string(prevRoot))
-	}
-	if r == nil {
-		return
-	}
+	r := c.advanceRoot(stateChanges.DatabaseViewID)
 	r.lock.Lock()
 	for _, sc := range stateChanges.ChangeBatch {
 		for i := range sc.Changes {
