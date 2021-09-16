@@ -380,7 +380,7 @@ func (c *Coherent) Evict() int {
 		lastView.evictOld(100, 150_000)
 		//lastView.evictNew2Random(200_000)
 	}
-	return keysAmount
+	return lastView.Len()
 }
 
 //nolint
