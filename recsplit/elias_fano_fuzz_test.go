@@ -35,14 +35,25 @@ func FuzzEliasFano(f *testing.F) {
 		}
 		var ef DoubleEliasFano
 		// Treat each byte of the sequence as difference between previous value and the next
-		cumKeys := make([]uint64, len(in)/2+1)
-		position := make([]uint64, len(in)/2+1)
-		for i, b := range in[:len(in)/2] {
+		numBuckets := len(in) / 2
+		cumKeys := make([]uint64, numBuckets+1)
+		position := make([]uint64, numBuckets+1)
+		for i, b := range in[:numBuckets] {
 			cumKeys[i+1] = cumKeys[i] + uint64(b)
 		}
-		for i, b := range in[len(in)/2:] {
+		for i, b := range in[numBuckets:] {
 			position[i+1] = position[i] + uint64(b)
 		}
 		ef.Build(cumKeys, position)
+		// Try to read from ef
+		for bucket := 0; bucket < numBuckets; bucket++ {
+			cumKey, bitPos := ef.Get2(uint64(bucket))
+			if cumKey != cumKeys[bucket] {
+				t.Errorf("cumKey from EF = %d, expected %d", cumKey, cumKeys[bucket])
+			}
+			if bitPos != position[bucket] {
+				t.Errorf("position from EF = %d, expected %d", bitPos, position[bucket])
+			}
+		}
 	})
 }
