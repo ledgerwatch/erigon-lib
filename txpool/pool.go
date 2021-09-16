@@ -648,12 +648,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 
 	defer processBatchTxsTimer.UpdateDuration(time.Now())
-	p.lock.RLock()
-	l := len(p.unprocessedRemoteTxs.txs)
-	p.lock.RUnlock()
-	if l == 0 {
-		return nil
-	}
 
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
@@ -661,7 +655,13 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 	defer coreTx.Rollback()
 
+	p.lock.RLock()
+	l := len(p.unprocessedRemoteTxs.txs)
 	cache, err := p.senders.cache.View(ctx, coreTx)
+	defer p.lock.RUnlock()
+	if l == 0 {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
