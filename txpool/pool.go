@@ -738,6 +738,7 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 		p.protocolBaseFee.Store(calcProtocolBaseFee(baseFee))
 		p.currentBaseFee.Store(baseFee)
 	}
+	p.started.Store(true)
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
