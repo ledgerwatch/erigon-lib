@@ -643,14 +643,17 @@ func (p *TxPool) copyDiscardReasons(from int) []DiscardReason {
 	return cpy
 }
 func (p *TxPool) processRemoteTxs(ctx context.Context) error {
+	if !p.started.Load() {
+		return fmt.Errorf("txpool not started yet")
+	}
+
+	defer processBatchTxsTimer.UpdateDuration(time.Now())
 	p.lock.RLock()
 	l := len(p.unprocessedRemoteTxs.txs)
 	p.lock.RUnlock()
 	if l == 0 {
 		return nil
 	}
-
-	defer processBatchTxsTimer.UpdateDuration(time.Now())
 
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
@@ -661,10 +664,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	cache, err := p.senders.cache.View(ctx, coreTx)
 	if err != nil {
 		return err
-	}
-
-	if !p.started.Load() {
-		return fmt.Errorf("txpool not started yet")
 	}
 
 	//t := time.Now()
