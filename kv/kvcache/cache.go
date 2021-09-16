@@ -39,7 +39,7 @@ type Cache interface {
 	// View - returns CacheView consistent with givent kv.Tx
 	View(ctx context.Context, tx kv.Tx) (CacheView, error)
 	OnNewBlock(sc *remote.StateChangeBatch)
-	Evict()
+	Evict() int
 }
 type CacheView interface {
 	Get(k []byte, tx kv.Tx) ([]byte, error)
@@ -370,15 +370,17 @@ func (c *Coherent) evictRoots(to uint64) {
 		delete(c.roots, txId)
 	}
 }
-func (c *Coherent) Evict() {
+func (c *Coherent) Evict() int {
 	defer c.evict.UpdateDuration(time.Now())
 	latestBlockNum, lastView := c.lastRoot()
 	c.evictRoots(latestBlockNum - 10)
-	c.keys.Set(uint64(lastView.Len()))
+	keysAmount := lastView.Len()
+	c.keys.Set(uint64(keysAmount))
 	//if lastView != nil {
 	//lastView.evictOld(100, 200_000)
 	//lastView.evictNew2Random(200_000)
 	//}
+	return keysAmount
 }
 
 //nolint
