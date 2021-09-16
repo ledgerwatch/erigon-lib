@@ -268,7 +268,7 @@ func (s *KvServer) StateChanges(req *remote.StateChangeRequest, server remote.KV
 	}
 }
 
-func (s *KvServer) SendStateChanges(sc *remote.StateChange) {
+func (s *KvServer) SendStateChanges(sc *remote.StateChangeBatch) {
 	if err := s.stateChangeStreams.Broadcast(sc); err != nil {
 		log.Warn("Sending new peer notice to core P2P failed", "error", err)
 	}
@@ -296,7 +296,7 @@ func (s *StateChangeStreams) Add(stream remote.KV_StateChangesServer) (remove fu
 	return func() { s.remove(id) }
 }
 
-func (s *StateChangeStreams) doBroadcast(reply *remote.StateChange) (ids []uint, errs []error) {
+func (s *StateChangeStreams) doBroadcast(reply *remote.StateChangeBatch) (ids []uint, errs []error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for id, stream := range s.streams {
@@ -313,7 +313,7 @@ func (s *StateChangeStreams) doBroadcast(reply *remote.StateChange) (ids []uint,
 	return
 }
 
-func (s *StateChangeStreams) Broadcast(reply *remote.StateChange) (errs []error) {
+func (s *StateChangeStreams) Broadcast(reply *remote.StateChangeBatch) (errs []error) {
 	var ids []uint
 	ids, errs = s.doBroadcast(reply)
 	if len(ids) > 0 {
