@@ -763,6 +763,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
+	p.senders.cache.OnNewBlock(stateChanges)
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
 		return err
@@ -777,8 +778,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err != nil {
 		return err
 	}
-
-	p.senders.cache.OnNewBlock(stateChanges)
 	if ASSERT {
 		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
 			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
