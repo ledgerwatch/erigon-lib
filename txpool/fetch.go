@@ -424,7 +424,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 		}
 
 		var unwindTxs, minedTxs TxSlots
-		for _, diff := range req.StateDiff {
+		for _, diff := range req.DiffBatch {
 			if diff.Direction == remote.Direction_FORWARD {
 				minedTxs.Resize(uint(len(diff.Txs)))
 				for i := range diff.Txs {

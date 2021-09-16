@@ -82,7 +82,7 @@ type Pool interface {
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddRemoteTxs(ctx context.Context, newTxs TxSlots)
-	OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error
+	OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error
 
 	AddNewGoodPeer(peerID PeerID)
 }
@@ -232,8 +232,8 @@ func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
 	}
 	return nil
 }
-func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error {
-	for _, diff := range stateChanges.StateDiff {
+func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error {
+	for _, diff := range stateChanges.DiffBatch {
 		for _, change := range diff.Changes { // merge state changes
 			addrB := gointerfaces.ConvertH160toAddress(change.Address)
 			addr := string(addrB[:])
