@@ -77,7 +77,6 @@ type Coherent struct {
 	hits, miss, timeout, keys *metrics.Counter
 	evict                     *metrics.Summary
 	roots                     map[uint64]*CoherentView
-	roots2id                  map[string]uint64
 	rootsLock                 sync.RWMutex
 	cfg                       CoherentCacheConfig
 }
@@ -114,7 +113,7 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
-	return &Coherent{roots: map[uint64]*CoherentView{}, roots2id: map[string]uint64{}, cfg: cfg,
+	return &Coherent{roots: map[uint64]*CoherentView{}, cfg: cfg,
 		miss:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
 		hits:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 		timeout: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
@@ -358,24 +357,15 @@ func (c *Coherent) evictRoots(to uint64) {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
 	var toDel []uint64
-	var toDelRoots []string
 	for txId := range c.roots {
 		if txId > to {
 			continue
 		}
 		toDel = append(toDel, txId)
-		for root, id := range c.roots2id {
-			if txId == id {
-				toDelRoots = append(toDelRoots, root)
-			}
-		}
 	}
 	log.Info("forget old roots", "list", fmt.Sprintf("%d", toDel))
 	for _, txId := range toDel {
 		delete(c.roots, txId)
-	}
-	for _, root := range toDelRoots {
-		delete(c.roots2id, root)
 	}
 }
 func (c *Coherent) Evict() {
