@@ -411,8 +411,8 @@ func (p *TxPool) logStats() {
 		"pending", p.pending.Len(),
 		"baseFee", p.baseFee.Len(),
 		"queued", p.queued.Len(),
-		"alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024,
 		"ids_in_mem", idsInMem,
+		"alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024,
 	)
 	//if ASSERT {
 	//stats := kvcache.DebugStats(p.senders.cache)
