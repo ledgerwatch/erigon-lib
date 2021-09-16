@@ -327,7 +327,7 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 	checked := 0
 	casted.lock.RLock()
 	defer casted.lock.RUnlock()
-	log.Info("AssertCheckValues start", "db_id", tx.ID(), "mem_id", casted.id, "len", casted.cache.Len())
+	log.Info("AssertCheckValues start", "db_id", tx.ID(), "mem_id", casted.id.Load(), "len", casted.cache.Len())
 	casted.cache.Ascend(func(i btree.Item) bool {
 		k, v := i.(*Pair).K, i.(*Pair).V
 		var dbV []byte
