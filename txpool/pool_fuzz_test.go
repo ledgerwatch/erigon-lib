@@ -524,13 +524,18 @@ func FuzzOnNewBlocks(f *testing.F) {
 			txID = tx.ID()
 			return nil
 		})
-		change := &remote.StateChange{DatabaseViewID: txID, BlockHeight: 0, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}
+		change := &remote.StateChangeBatch{
+			DatabaseViewID: txID,
+			ChangeBatch: []*remote.StateChange{
+				{BlockHeight: 0, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1},
+			},
+		}
 		for id, sender := range senders {
 			var addr [20]byte
 			copy(addr[:], pool.senders.senderID2Addr[id])
 			v := make([]byte, EncodeSenderLengthForStorage(sender.nonce, sender.balance))
 			EncodeSender(sender.nonce, sender.balance, v)
-			change.Changes = append(change.Changes, &remote.AccountChange{
+			change.ChangeBatch[0].Changes = append(change.ChangeBatch[0].Changes, &remote.AccountChange{
 				Action:  remote.Action_UPSERT,
 				Address: gointerfaces.ConvertAddressToH160(addr),
 				Data:    v,
@@ -545,17 +550,35 @@ func FuzzOnNewBlocks(f *testing.F) {
 		checkNotify(txs1, TxSlots{}, "fork1")
 
 		_, _, _ = p2pReceived, txs2, txs3
-		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs2)
+		change = &remote.StateChangeBatch{
+			DatabaseViewID: txID,
+			ChangeBatch: []*remote.StateChange{
+				{BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1},
+			},
+		}
+		err = pool.OnNewBlock(ctx, change, TxSlots{}, txs2)
 		check(TxSlots{}, txs2, "fork1 mined")
 		checkNotify(TxSlots{}, txs2, "fork1 mined")
 
 		// unwind everything and switch to new fork (need unwind mined now)
-		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 0, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 1, PrevBlockHash: h1}, txs2, TxSlots{})
+		change = &remote.StateChangeBatch{
+			DatabaseViewID: txID,
+			ChangeBatch: []*remote.StateChange{
+				{BlockHeight: 0, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 1, PrevBlockHash: h1},
+			},
+		}
+		err = pool.OnNewBlock(ctx, change, txs2, TxSlots{})
 		assert.NoError(err)
 		check(txs2, TxSlots{}, "fork2")
 		checkNotify(txs2, TxSlots{}, "fork2")
 
-		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 1, BlockHash: h22, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs3)
+		change = &remote.StateChangeBatch{
+			DatabaseViewID: txID,
+			ChangeBatch: []*remote.StateChange{
+				{BlockHeight: 1, BlockHash: h22, PrevBlockHeight: 0, PrevBlockHash: h1},
+			},
+		}
+		err = pool.OnNewBlock(ctx, change, TxSlots{}, txs3)
 		assert.NoError(err)
 		check(TxSlots{}, txs3, "fork2 mined")
 		checkNotify(TxSlots{}, txs3, "fork2 mined")

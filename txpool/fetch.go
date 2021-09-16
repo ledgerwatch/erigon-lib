@@ -424,22 +424,22 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 		}
 
 		var unwindTxs, minedTxs TxSlots
-		for _, diff := range req.DiffBatch {
-			if diff.Direction == remote.Direction_FORWARD {
-				minedTxs.Resize(uint(len(diff.Txs)))
-				for i := range diff.Txs {
+		for _, change := range req.ChangeBatch {
+			if change.Direction == remote.Direction_FORWARD {
+				minedTxs.Resize(uint(len(change.Txs)))
+				for i := range change.Txs {
 					minedTxs.txs[i] = &TxSlot{}
-					if _, err := f.stateChangesParseCtx.ParseTransaction(diff.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i)); err != nil {
+					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i)); err != nil {
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}
 				}
 			}
-			if diff.Direction == remote.Direction_UNWIND {
-				unwindTxs.Resize(uint(len(diff.Txs)))
-				for i := range diff.Txs {
+			if change.Direction == remote.Direction_UNWIND {
+				unwindTxs.Resize(uint(len(change.Txs)))
+				for i := range change.Txs {
 					unwindTxs.txs[i] = &TxSlot{}
-					if _, err := f.stateChangesParseCtx.ParseTransaction(diff.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i)); err != nil {
+					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i)); err != nil {
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}

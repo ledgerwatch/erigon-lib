@@ -38,7 +38,7 @@ import (
 type Cache interface {
 	// View - returns CacheView consistent with givent kv.Tx
 	View(ctx context.Context, tx kv.Tx) (CacheView, error)
-	OnNewBlock(sc *remote.StateChange)
+	OnNewBlock(sc *remote.StateChangeBatch)
 	Evict()
 }
 type CacheView interface {
@@ -152,9 +152,11 @@ func (c *Coherent) advanceRoot(txID uint64, root, prevRoot string) (r *CoherentV
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
 	prevTxId, prevRootExists := c.roots2id[prevRoot]
 	if prevRootExists {
-		log.Info("advance: clone", "from", prevTxId, "to", txID)
-		//fmt.Printf("advance: clone %d to %d \n", prevTxId, txID)
-		r.cache = c.roots[prevTxId].Clone()
+		if prevTxId != txID {
+			log.Info("advance: clone", "from", prevTxId, "to", txID)
+			//fmt.Printf("advance: clone %d to %d \n", prevTxId, txID)
+			r.cache = c.roots[prevTxId].Clone()
+		}
 	} else {
 		log.Info("advance: new", "to", txID)
 		for i, j := range c.roots2id {
@@ -167,42 +169,50 @@ func (c *Coherent) advanceRoot(txID uint64, root, prevRoot string) (r *CoherentV
 	return r
 }
 
-func (c *Coherent) OnNewBlock(sc *remote.StateChange) {
-	prevRoot := make([]byte, 40)
-	binary.BigEndian.PutUint64(prevRoot, sc.PrevBlockHeight)
-	prevH := gointerfaces.ConvertH256ToHash(sc.PrevBlockHash)
-	copy(prevRoot[8:], prevH[:])
+func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
+	var r *CoherentView
+	for _, change := range stateChanges.ChangeBatch {
+		prevRoot := make([]byte, 40)
+		binary.BigEndian.PutUint64(prevRoot, change.PrevBlockHeight)
+		prevH := gointerfaces.ConvertH256ToHash(change.PrevBlockHash)
+		copy(prevRoot[8:], prevH[:])
 
-	root := make([]byte, 40)
-	binary.BigEndian.PutUint64(root, sc.BlockHeight)
-	h := gointerfaces.ConvertH256ToHash(sc.BlockHash)
-	copy(root[8:], h[:])
-	r := c.advanceRoot(sc.DatabaseViewID, string(root), string(prevRoot))
+		root := make([]byte, 40)
+		binary.BigEndian.PutUint64(root, change.BlockHeight)
+		h := gointerfaces.ConvertH256ToHash(change.BlockHash)
+		copy(root[8:], h[:])
+		r = c.advanceRoot(stateChanges.DatabaseViewID, string(root), string(prevRoot))
+	}
+	if r == nil {
+		return
+	}
 	r.lock.Lock()
-	for i := range sc.Changes {
-		switch sc.Changes[i].Action {
-		case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
-			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-			v := sc.Changes[i].Data
-			//fmt.Printf("set: %x,%x\n", addr, v)
-			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v, t: sc.BlockHeight})
-		case remote.Action_DELETE:
-			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-			r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil, t: sc.BlockHeight})
-		case remote.Action_CODE, remote.Action_STORAGE:
-			//skip
-		default:
-			panic("not implemented yet")
-		}
-		if c.cfg.WithStorage && len(sc.Changes[i].StorageChanges) > 0 {
-			addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-			for _, change := range sc.Changes[i].StorageChanges {
-				loc := gointerfaces.ConvertH256ToHash(change.Location)
-				k := make([]byte, 20+8+32)
-				copy(k, addr[:])
-				binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
-				copy(k[20+8:], loc[:])
-				r.cache.ReplaceOrInsert(&Pair{K: k, V: change.Data, t: sc.BlockHeight})
+	for _, sc := range stateChanges.ChangeBatch {
+		for i := range sc.Changes {
+			switch sc.Changes[i].Action {
+			case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
+				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
+				v := sc.Changes[i].Data
+				//fmt.Printf("set: %x,%x\n", addr, v)
+				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v, t: sc.BlockHeight})
+			case remote.Action_DELETE:
+				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
+				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil, t: sc.BlockHeight})
+			case remote.Action_CODE, remote.Action_STORAGE:
+				//skip
+			default:
+				panic("not implemented yet")
+			}
+			if c.cfg.WithStorage && len(sc.Changes[i].StorageChanges) > 0 {
+				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
+				for _, change := range sc.Changes[i].StorageChanges {
+					loc := gointerfaces.ConvertH256ToHash(change.Location)
+					k := make([]byte, 20+8+32)
+					copy(k, addr[:])
+					binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
+					copy(k[20+8:], loc[:])
+					r.cache.ReplaceOrInsert(&Pair{K: k, V: change.Data, t: sc.BlockHeight})
+				}
 			}
 		}
 	}
