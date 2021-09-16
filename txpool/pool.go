@@ -289,12 +289,13 @@ func (b *ByNonce) ascend(senderID uint64, f func(*metaTx) bool) {
 		return f(mt)
 	})
 }
-func (b *ByNonce) count(senderID uint64) (count uint64) {
+func (b *ByNonce) hasTxs(senderID uint64) bool {
+	has := false
 	b.ascend(senderID, func(*metaTx) bool {
-		count++
-		return true
+		has = true
+		return false
 	})
-	return count
+	return has
 }
 func (b *ByNonce) get(senderID, txNonce uint64) *metaTx {
 	if found := b.tree.Get(&sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID, nonce: txNonce}}}); found != nil {
@@ -1461,7 +1462,7 @@ func (p *TxPool) flush(db kv.RwDB) (written uint64, err error) {
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	for i := 0; i < len(p.deletedTxs); i++ {
-		if p.byNonce.count(p.deletedTxs[i].Tx.senderID) == 0 {
+		if !p.byNonce.hasTxs(p.deletedTxs[i].Tx.senderID) {
 			addr, ok := p.senders.senderID2Addr[p.deletedTxs[i].Tx.senderID]
 			if ok {
 				delete(p.senders.senderID2Addr, p.deletedTxs[i].Tx.senderID)
