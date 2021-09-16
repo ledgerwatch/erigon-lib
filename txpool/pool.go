@@ -323,7 +323,7 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 //
 // txpool doesn't start any goroutines - "leave concurrency to user" design
 // txpool has no DB or TX fields - "leave db transactions management to user" design
-// txpool has coreDB field - but it must maximize local state cache hit-rate - and perform minimum coreDB transactions
+// txpool has _coreDB field - but it must maximize local state cache hit-rate - and perform minimum _coreDB transactions
 type TxPool struct {
 	lock *sync.RWMutex
 
@@ -339,7 +339,7 @@ type TxPool struct {
 
 	// track isLocal flag of already mined transactions. used at unwind.
 	isLocalHashLRU *simplelru.LRU
-	coreDB         kv.RoDB
+	_coreDB        kv.RoDB
 
 	// fields for transaction propagation
 	recentlyConnectedPeers *recentlyConnectedPeers
@@ -351,7 +351,7 @@ type TxPool struct {
 
 	// batch processing of remote transactions
 	// handling works fast without batching, but batching allow:
-	//   - reduce amount of coreDB transactions
+	//   - reduce amount of _coreDB transactions
 	//   - batch notifications about new txs (reduce P2P spam to other nodes about txs propagation)
 	//   - and as a result reducing pool.RWLock contention
 	unprocessedRemoteTxs    *TxSlots
@@ -376,7 +376,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache) (*
 		queued:                  NewSubPool(QueuedSubPool),
 		newTxs:                  newTxs,
 		senders:                 newSendersCache(cache),
-		coreDB:                  coreDB,
+		_coreDB:                 coreDB,
 		cfg:                     cfg,
 		senderID:                1,
 		unprocessedRemoteTxs:    &TxSlots{},
@@ -594,7 +594,7 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 		return nil, err
 	}
 
-	coreTx, err := p.coreDB.BeginRo(ctx)
+	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -642,6 +642,17 @@ func (p *TxPool) copyDiscardReasons(from int) []DiscardReason {
 	copy(cpy, p.discardReasons[from:])
 	return cpy
 }
+func (p *TxPool) coreDB() kv.RoDB {
+	p.lock.RLock()
+	defer p.lock.RLock()
+	return p._coreDB
+}
+
+func (p *TxPool) cache() kvcache.Cache {
+	p.lock.RLock()
+	defer p.lock.RLock()
+	return p.senders.cache
+}
 func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if !p.started.Load() {
 		return fmt.Errorf("txpool not started yet")
@@ -649,19 +660,12 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 
 	defer processBatchTxsTimer.UpdateDuration(time.Now())
 
-	coreTx, err := p.coreDB.BeginRo(ctx)
+	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
 	}
 	defer coreTx.Rollback()
-
-	p.lock.RLock()
-	l := len(p.unprocessedRemoteTxs.txs)
-	cache, err := p.senders.cache.View(ctx, coreTx)
-	defer p.lock.RUnlock()
-	if l == 0 {
-		return nil
-	}
+	cache, err := p.cache().View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -669,6 +673,10 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	//t := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	l := len(p.unprocessedRemoteTxs.txs)
+	if l == 0 {
+		return nil
+	}
 	newTxs := *p.unprocessedRemoteTxs
 
 	if err := newTxs.Valid(); err != nil {
@@ -746,17 +754,12 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	t := time.Now()
 	p.senders.cache.OnNewBlock(stateChanges)
 
-	coreTx, err := p.coreDB.BeginRo(ctx)
+	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
 	}
 	defer coreTx.Rollback()
-
-	//if p.started.CAS(false, true) {
-	//	p.fromDB(ctx, tx, coreTx)
-	//}
-
-	cache, err := p.senders.cache.View(ctx, coreTx)
+	cache, err := p.cache().View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -771,13 +774,12 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := minedTxs.Valid(); err != nil {
 		return err
 	}
+	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
+	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	defer func(t time.Time) { fmt.Printf("pool.go:778: %s\n", time.Since(t)) }(time.Now())
-
-	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
-	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
 
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
