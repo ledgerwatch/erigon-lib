@@ -363,10 +363,17 @@ func (rs *RecSplit) Build() error {
 	return nil
 }
 
+func (rs *RecSplit) skipBits(m uint64) int {
+	return int(rs.golombRice[m] & 0xffff)
+}
+
 func (rs *RecSplit) Lookup(key []byte) int {
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
 	hash := rs.hasher.Sum64()
 	bucket := remap(hash, rs.bucketCount)
+	cumKeys, cumKeysNext, bitPos := rs.ef.Get3(bucket)
+	m := cumKeysNext - cumKeys // Number of keys in this bucket
+	rs.gr.ReadReset(int(bitPos), rs.skipBits(m))
 	return 0
 }
