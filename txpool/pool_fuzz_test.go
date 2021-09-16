@@ -527,7 +527,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		change := &remote.StateChangeBatch{
 			DatabaseViewID: txID,
 			ChangeBatch: []*remote.StateChange{
-				{BlockHeight: 0, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1},
+				{BlockHeight: 0, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1, ProtocolBaseFee: currentBaseFee},
 			},
 		}
 		for id, sender := range senders {
@@ -553,7 +553,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		change = &remote.StateChangeBatch{
 			DatabaseViewID: txID,
 			ChangeBatch: []*remote.StateChange{
-				{BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1},
+				{BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1, ProtocolBaseFee: currentBaseFee},
 			},
 		}
 		err = pool.OnNewBlock(ctx, change, TxSlots{}, txs2)
@@ -564,7 +564,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		change = &remote.StateChangeBatch{
 			DatabaseViewID: txID,
 			ChangeBatch: []*remote.StateChange{
-				{BlockHeight: 0, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 1, PrevBlockHash: h1},
+				{BlockHeight: 0, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 1, PrevBlockHash: h1, ProtocolBaseFee: currentBaseFee},
 			},
 		}
 		err = pool.OnNewBlock(ctx, change, txs2, TxSlots{})
@@ -575,7 +575,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		change = &remote.StateChangeBatch{
 			DatabaseViewID: txID,
 			ChangeBatch: []*remote.StateChange{
-				{BlockHeight: 1, BlockHash: h22, PrevBlockHeight: 0, PrevBlockHash: h1},
+				{BlockHeight: 1, BlockHash: h22, PrevBlockHeight: 0, PrevBlockHash: h1, ProtocolBaseFee: currentBaseFee},
 			},
 		}
 		err = pool.OnNewBlock(ctx, change, TxSlots{}, txs3)
