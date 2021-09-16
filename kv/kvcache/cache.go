@@ -138,8 +138,6 @@ func (c *Coherent) selectOrCreateRoot(txID uint64) *CoherentView {
 
 // advanceRoot - used for advancing root onNewBlock
 func (c *Coherent) advanceRoot(txID uint64) (r *CoherentView) {
-	c.rootsLock.Lock()
-	defer c.rootsLock.Unlock()
 	r, rootExists := c.roots[txID]
 	if !rootExists {
 		r = &CoherentView{ready: make(chan struct{}), hits: c.hits, miss: c.miss}
@@ -159,8 +157,11 @@ func (c *Coherent) advanceRoot(txID uint64) (r *CoherentView) {
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
+	c.rootsLock.Lock()
+	defer c.rootsLock.Unlock()
 	r := c.advanceRoot(stateChanges.DatabaseViewID)
 	r.lock.Lock()
+	defer r.lock.Unlock()
 	for _, sc := range stateChanges.ChangeBatch {
 		for i := range sc.Changes {
 			switch sc.Changes[i].Action {
@@ -190,7 +191,6 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 			}
 		}
 	}
-	r.lock.Unlock()
 	switched := r.readyChanClosed.CAS(false, true)
 	if switched {
 		close(r.ready) //broadcast
