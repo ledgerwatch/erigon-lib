@@ -327,7 +327,7 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 type TxPool struct {
 	lock *sync.RWMutex
 
-	stared          atomic.Bool
+	started         atomic.Bool
 	lastSeenBlock   atomic.Uint64
 	protocolBaseFee atomic.Uint64
 	currentBaseFee  atomic.Uint64
@@ -505,7 +505,7 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 	return ok
 }
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
-func (p *TxPool) Started() bool                { return p.stared.Load() }
+func (p *TxPool) Started() bool                { return p.started.Load() }
 
 // Best - returns top `n` elements of pending queue
 // id doesn't perform full copy of txs, hovewer underlying elements are immutable
@@ -662,7 +662,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	if !p.stared.Load() {
+	if !p.started.Load() {
 		return fmt.Errorf("txpool not started yet")
 	}
 
@@ -738,7 +738,6 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 		p.protocolBaseFee.Store(calcProtocolBaseFee(baseFee))
 		p.currentBaseFee.Store(baseFee)
 	}
-	p.stared.Store(true)
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
@@ -768,6 +767,16 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	defer coreTx.Rollback()
+
+	//if p.started.CAS(false, true) {
+	//	p.fromDB(ctx, tx, coreTx)
+	//}
+
+	cache, err := p.senders.cache.View(ctx, coreTx)
+	if err != nil {
+		return err
+	}
+
 	p.senders.cache.OnNewBlock(stateChanges)
 	if ASSERT {
 		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
@@ -775,10 +784,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	cache, err := p.senders.cache.View(ctx, coreTx)
-	if err != nil {
-		return err
-	}
 	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
@@ -1606,12 +1611,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	}
 	p.currentBaseFee.Store(currentBaseFee)
 	p.protocolBaseFee.Store(protocolBaseFee)
-
-	if ASSERT {
-		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
-			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
-		}
-	}
 
 	return nil
 }
