@@ -212,7 +212,7 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
-		//fmt.Printf("timeout: %d,%d\n", r.id.Load(), tx.ID())
+		fmt.Printf("timeout: %d,%d, has btree: %t\n", r.id.Load(), tx.ID(), r.cache != nil)
 		c.timeout.Inc()
 		r.lock.Lock()
 		if r.cache == nil {
@@ -334,7 +334,7 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 			return false
 		}
 		if !bytes.Equal(dbV, v) {
-			err = fmt.Errorf("key: %x, has different values: %x != %x, viewID: %d", k, v, dbV, casted.id)
+			err = fmt.Errorf("key: %x, has different values: %x != %x, viewID: %d", k, v, dbV, casted.id.Load())
 			return false
 		}
 		checked++
