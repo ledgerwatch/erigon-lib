@@ -521,7 +521,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		var txID uint64
 		_ = coreDB.View(ctx, func(tx kv.Tx) error {
-			txID = tx.ID()
+			txID = tx.ViewID()
 			return nil
 		})
 		change := &remote.StateChangeBatch{

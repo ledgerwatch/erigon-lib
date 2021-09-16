@@ -41,8 +41,8 @@ func TestAPI(t *testing.T) {
 			res[i] = make(chan []byte)
 			go func(out chan []byte) {
 				require.NoError(db.View(context.Background(), func(tx kv.Tx) error {
-					if expectTxnID != tx.ID() {
-						panic(fmt.Sprintf("epxected: %d, got: %d", expectTxnID, tx.ID()))
+					if expectTxnID != tx.ViewID() {
+						panic(fmt.Sprintf("epxected: %d, got: %d", expectTxnID, tx.ViewID()))
 					}
 					wg.Done()
 					cache, err := c.View(context.Background(), tx)
@@ -65,7 +65,7 @@ func TestAPI(t *testing.T) {
 		var txID uint64
 		require.NoError(db.Update(context.Background(), func(tx kv.RwTx) error {
 			_ = tx.Put(kv.PlainState, k, v)
-			txID = tx.ID()
+			txID = tx.ViewID()
 			return nil
 		}))
 		return txID

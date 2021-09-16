@@ -513,7 +513,7 @@ type StateChangeBatch struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	DatabaseViewID uint64         `protobuf:"varint,1,opt,name=databaseViewID,proto3" json:"databaseViewID,omitempty"` // mdbx's tx.ID() - id of write transaction in db - where this changes happened
+	DatabaseViewID uint64         `protobuf:"varint,1,opt,name=databaseViewID,proto3" json:"databaseViewID,omitempty"` // mdbx's tx.ViewID() - id of write transaction in db - where this changes happened
 	ChangeBatch    []*StateChange `protobuf:"bytes,2,rep,name=changeBatch,proto3" json:"changeBatch,omitempty"`
 }
 

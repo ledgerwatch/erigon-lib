@@ -37,7 +37,7 @@ const MaxTxTTL = 60 * time.Second
 // 1.2.0 - Added separated services for mining and txpool methods
 // 2.0.0 - Rename all buckets
 // 3.0.0 - ??
-// 4.0.0 - Server send tx.ID() after open tx
+// 4.0.0 - Server send tx.ViewID() after open tx
 var KvServiceAPIVersion = &types.VersionReply{Major: 4, Minor: 0, Patch: 0}
 
 type KvServer struct {
@@ -80,7 +80,7 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 	}
 	defer rollback()
 
-	if err := stream.Send(&remote.Pair{TxID: tx.ID()}); err != nil {
+	if err := stream.Send(&remote.Pair{TxID: tx.ViewID()}); err != nil {
 		return fmt.Errorf("server-side error: %w", err)
 	}
 

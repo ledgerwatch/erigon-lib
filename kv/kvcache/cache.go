@@ -137,22 +137,22 @@ func (c *Coherent) selectOrCreateRoot(txID uint64) *CoherentView {
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(txID uint64) (r *CoherentView) {
+func (c *Coherent) advanceRoot(viewID uint64) (r *CoherentView) {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
-	r, rootExists := c.roots[txID]
+	r, rootExists := c.roots[viewID]
 	if !rootExists {
 		r = &CoherentView{ready: make(chan struct{}), hits: c.hits, miss: c.miss}
-		r.id.Store(txID)
-		c.roots[txID] = r
+		r.id.Store(viewID)
+		c.roots[viewID] = r
 	}
 
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
-	if prevView, ok := c.roots[txID-1]; ok {
-		//log.Info("advance: clone", "from", txID-1, "to", txID)
+	if prevView, ok := c.roots[viewID-1]; ok {
+		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
 		r.cache = prevView.Clone()
 	} else {
-		//log.Info("advance: new", "to", txID)
+		//log.Info("advance: new", "to", viewID)
 		r.cache = btree.New(32)
 	}
 	return r
@@ -199,23 +199,23 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 }
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
-	r := c.selectOrCreateRoot(tx.ID())
+	r := c.selectOrCreateRoot(tx.ViewID())
 	select { // fast non-blocking path
 	case <-r.ready:
-		//fmt.Printf("recv broadcast: %d,%d\n", r.id.Load(), tx.ID())
+		//fmt.Printf("recv broadcast: %d,%d\n", r.id.Load(), tx.ViewID())
 		return r, nil
 	default:
 	}
 
 	select { // slow blocking path
 	case <-r.ready:
-		//fmt.Printf("recv broadcast2: %d,%d\n", r.id.Load(), tx.ID())
+		//fmt.Printf("recv broadcast2: %d,%d\n", r.id.Load(), tx.ViewID())
 	case <-ctx.Done():
-		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ID(), ctx.Err())
+		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
 		c.timeout.Inc()
 		r.lock.Lock()
-		//log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ID(), "has_btree", r.cache != nil)
+		//log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ViewID(), "has_btree", r.cache != nil)
 		if r.cache == nil {
 			r.cache = btree.New(32)
 		}
@@ -327,7 +327,7 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 	checked := 0
 	casted.lock.RLock()
 	defer casted.lock.RUnlock()
-	//log.Info("AssertCheckValues start", "db_id", tx.ID(), "mem_id", casted.id.Load(), "len", casted.cache.Len())
+	//log.Info("AssertCheckValues start", "db_id", tx.ViewID(), "mem_id", casted.id.Load(), "len", casted.cache.Len())
 	casted.cache.Ascend(func(i btree.Item) bool {
 		k, v := i.(*Pair).K, i.(*Pair).V
 		var dbV []byte
