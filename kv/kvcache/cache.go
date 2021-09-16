@@ -377,7 +377,7 @@ func (c *Coherent) Evict() int {
 	keysAmount := lastView.Len()
 	c.keys.Set(uint64(keysAmount))
 	if lastView != nil {
-		lastView.evictOld(100, 200_000)
+		lastView.evictOld(100, 150_000)
 		//lastView.evictNew2Random(200_000)
 	}
 	return keysAmount
