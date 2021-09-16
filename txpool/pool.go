@@ -82,7 +82,7 @@ type Pool interface {
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddRemoteTxs(ctx context.Context, newTxs TxSlots)
-	OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, baseFee uint64) error
+	OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error
 
 	AddNewGoodPeer(peerID PeerID)
 }
@@ -233,39 +233,41 @@ func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
 	return nil
 }
 func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error {
-	for _, change := range stateChanges.Changes { // merge state changes
-		addrB := gointerfaces.ConvertH160toAddress(change.Address)
-		addr := string(addrB[:])
-		_, ok := sc.id(addr)
-		if !ok {
-			sc.senderID++
-			sc.senderIDs[addr] = sc.senderID
-			sc.senderID2Addr[sc.senderID] = addr
+	for _, diff := range stateChanges.StateDiff {
+		for _, change := range diff.Changes { // merge state changes
+			addrB := gointerfaces.ConvertH160toAddress(change.Address)
+			addr := string(addrB[:])
+			_, ok := sc.id(addr)
+			if !ok {
+				sc.senderID++
+				sc.senderIDs[addr] = sc.senderID
+				sc.senderID2Addr[sc.senderID] = addr
+			}
 		}
-	}
 
-	for i := 0; i < unwindTxs.senders.Len(); i++ {
-		addr := string(unwindTxs.senders.At(i))
-		id, ok := sc.id(addr)
-		if !ok {
-			sc.senderID++
-			id = sc.senderID
-			sc.senderIDs[addr] = sc.senderID
-			sc.senderID2Addr[sc.senderID] = addr
+		for i := 0; i < unwindTxs.senders.Len(); i++ {
+			addr := string(unwindTxs.senders.At(i))
+			id, ok := sc.id(addr)
+			if !ok {
+				sc.senderID++
+				id = sc.senderID
+				sc.senderIDs[addr] = sc.senderID
+				sc.senderID2Addr[sc.senderID] = addr
+			}
+			unwindTxs.txs[i].senderID = id
 		}
-		unwindTxs.txs[i].senderID = id
-	}
 
-	for i := 0; i < len(minedTxs.txs); i++ {
-		addr := string(minedTxs.senders.At(i))
-		id, ok := sc.id(addr)
-		if !ok {
-			sc.senderID++
-			id = sc.senderID
-			sc.senderIDs[addr] = sc.senderID
-			sc.senderID2Addr[sc.senderID] = addr
+		for i := 0; i < len(minedTxs.txs); i++ {
+			addr := string(minedTxs.senders.At(i))
+			id, ok := sc.id(addr)
+			if !ok {
+				sc.senderID++
+				id = sc.senderID
+				sc.senderIDs[addr] = sc.senderID
+				sc.senderID2Addr[sc.senderID] = addr
+			}
+			minedTxs.txs[i].senderID = id
 		}
-		minedTxs.txs[i].senderID = id
 	}
 	return nil
 }
@@ -739,14 +741,16 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
-func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots, baseFee uint64) error {
+func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	baseFee := stateChanges.StateDiff[len(stateChanges.StateDiff)-1].ProtocolBaseFee
+	blockHeight := stateChanges.StateDiff[len(stateChanges.StateDiff)-1].BlockHeight
 	t := time.Now()
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
-	p.lastSeenBlock.Store(stateChanges.BlockHeight)
+	p.lastSeenBlock.Store(blockHeight)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
 	}
@@ -793,7 +797,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	log.Info("[txpool] new block", "number", stateChanges.BlockHeight, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", blockHeight, "in", time.Since(t))
 	return nil
 }
 func (p *TxPool) discardLocked(mt *metaTx) {

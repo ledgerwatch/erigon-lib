@@ -261,7 +261,7 @@ func (mock *PoolMock) IdHashKnownCalls() []struct {
 }
 
 // OnNewBlock calls OnNewBlockFunc.
-func (mock *PoolMock) OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs TxSlots, minedTxs TxSlots, baseFee uint64) error {
+func (mock *PoolMock) OnNewBlock(ctx context.Context, stateChanges *remote.StateChange, unwindTxs, minedTxs TxSlots) error {
 	callInfo := struct {
 		Ctx          context.Context
 		StateChanges *remote.StateChange

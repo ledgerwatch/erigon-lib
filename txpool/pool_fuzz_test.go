@@ -539,23 +539,23 @@ func FuzzOnNewBlocks(f *testing.F) {
 		// go to first fork
 		//fmt.Printf("ll1: %d,%d,%d\n", pool.pending.Len(), pool.baseFee.Len(), pool.queued.Len())
 		txs1, txs2, p2pReceived, txs3 := splitDataset(txs)
-		err = pool.OnNewBlock(ctx, change, txs1, TxSlots{}, currentBaseFee)
+		err = pool.OnNewBlock(ctx, change, txs1, TxSlots{})
 		assert.NoError(err)
 		check(txs1, TxSlots{}, "fork1")
 		checkNotify(txs1, TxSlots{}, "fork1")
 
 		_, _, _ = p2pReceived, txs2, txs3
-		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs2, currentBaseFee)
+		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 1, BlockHash: h1, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs2)
 		check(TxSlots{}, txs2, "fork1 mined")
 		checkNotify(TxSlots{}, txs2, "fork1 mined")
 
 		// unwind everything and switch to new fork (need unwind mined now)
-		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 0, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 1, PrevBlockHash: h1}, txs2, TxSlots{}, currentBaseFee)
+		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 0, BlockHash: h1, Direction: remote.Direction_UNWIND, PrevBlockHeight: 1, PrevBlockHash: h1}, txs2, TxSlots{})
 		assert.NoError(err)
 		check(txs2, TxSlots{}, "fork2")
 		checkNotify(txs2, TxSlots{}, "fork2")
 
-		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 1, BlockHash: h22, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs3, currentBaseFee)
+		err = pool.OnNewBlock(ctx, &remote.StateChange{DatabaseViewID: txID, BlockHeight: 1, BlockHash: h22, PrevBlockHeight: 0, PrevBlockHash: h1}, TxSlots{}, txs3)
 		assert.NoError(err)
 		check(TxSlots{}, txs3, "fork2 mined")
 		checkNotify(TxSlots{}, txs3, "fork2 mined")
