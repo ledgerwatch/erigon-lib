@@ -738,7 +738,6 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 		p.protocolBaseFee.Store(calcProtocolBaseFee(baseFee))
 		p.currentBaseFee.Store(baseFee)
 	}
-	p.started.Store(true)
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
 
@@ -788,6 +787,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
+
+	p.started.Store(true)
 
 	notifyNewTxs := make(Hashes, 0, 32*len(unwindTxs.txs))
 	for i := range unwindTxs.txs {
