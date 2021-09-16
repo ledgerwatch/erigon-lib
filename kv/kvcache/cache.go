@@ -232,7 +232,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if it != nil {
 		c.hits.Inc()
 		goatomic.StoreUint64(&it.(*Pair).t, c.id.Load())
-		//fmt.Printf("from cache %x: %#x,%#v\n", c.id, k, it.(*Pair).V)
+		//fmt.Printf("from cache %x: %#x,%#v\n", c.id.Load(), k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
 	c.miss.Inc()
@@ -241,7 +241,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	//fmt.Printf("from db %x: %#x,%#v\n", c.id, k, v)
+	//fmt.Printf("from db %x: %#x,%#v\n", c.id.Load(), k, v)
 
 	it = &Pair{K: k, V: common.Copy(v), t: c.id.Load()}
 	c.lock.Lock()

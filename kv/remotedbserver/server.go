@@ -30,7 +30,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-const MaxTxTTL = 30 * time.Second
+const MaxTxTTL = 60 * time.Second
 
 // KvServiceAPIVersion - use it to track changes in API
 // 1.1.0 - added pending transactions, add methods eth_getRawTransactionByHash, eth_retRawTransactionByBlockHashAndIndex, eth_retRawTransactionByBlockNumberAndIndex| Yes     |                                            |
