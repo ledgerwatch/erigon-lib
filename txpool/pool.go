@@ -745,26 +745,6 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error {
 	p.senders.cache.OnNewBlock(stateChanges)
 
-	defer newBlockTimer.UpdateDuration(time.Now())
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
-	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
-	t := time.Now()
-	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
-	p.lastSeenBlock.Store(blockHeight)
-	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
-		return err
-	}
-	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	if err := unwindTxs.Valid(); err != nil {
-		return err
-	}
-	if err := minedTxs.Valid(); err != nil {
-		return err
-	}
-
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
 		return err
@@ -784,7 +764,26 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 		}
 	}
+	if err := unwindTxs.Valid(); err != nil {
+		return err
+	}
+	if err := minedTxs.Valid(); err != nil {
+		return err
+	}
 
+	defer newBlockTimer.UpdateDuration(time.Now())
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
+	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
+	t := time.Now()
+	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
+	p.lastSeenBlock.Store(blockHeight)
+	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
+		return err
+	}
+	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
 		return err
 	}
