@@ -376,10 +376,10 @@ func (c *Coherent) Evict() int {
 	c.evictRoots(latestBlockNum - 10)
 	keysAmount := lastView.Len()
 	c.keys.Set(uint64(keysAmount))
-	//if lastView != nil {
-	//lastView.evictOld(100, 200_000)
-	//lastView.evictNew2Random(200_000)
-	//}
+	if lastView != nil {
+		lastView.evictOld(100, 200_000)
+		//lastView.evictNew2Random(200_000)
+	}
 	return keysAmount
 }
 
