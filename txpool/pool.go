@@ -600,7 +600,7 @@ func (p *TxPool) AddLocals(ctx context.Context, newTxs TxSlots) ([]DiscardReason
 	}
 	defer coreTx.Rollback()
 
-	cache, err := p.senders.cache.View(ctx, coreTx)
+	cache, err := p.cache().View(ctx, coreTx)
 	if err != nil {
 		return nil, err
 	}
@@ -644,13 +644,13 @@ func (p *TxPool) copyDiscardReasons(from int) []DiscardReason {
 }
 func (p *TxPool) coreDB() kv.RoDB {
 	p.lock.RLock()
-	defer p.lock.RLock()
+	defer p.lock.RUnlock()
 	return p._coreDB
 }
 
 func (p *TxPool) cache() kvcache.Cache {
 	p.lock.RLock()
-	defer p.lock.RLock()
+	defer p.lock.RUnlock()
 	return p.senders.cache
 }
 func (p *TxPool) processRemoteTxs(ctx context.Context) error {
@@ -659,7 +659,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 
 	defer processBatchTxsTimer.UpdateDuration(time.Now())
-
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
@@ -673,6 +672,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	//t := time.Now()
 	p.lock.Lock()
 	defer p.lock.Unlock()
+
 	l := len(p.unprocessedRemoteTxs.txs)
 	if l == 0 {
 		return nil
@@ -752,7 +752,8 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
 	t := time.Now()
-	p.senders.cache.OnNewBlock(stateChanges)
+
+	p.cache().OnNewBlock(stateChanges)
 
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
@@ -764,10 +765,11 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	if ASSERT {
-		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.senders.cache); err != nil {
+		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.cache()); err != nil {
 			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 		}
 	}
+
 	if err := unwindTxs.Valid(); err != nil {
 		return err
 	}
