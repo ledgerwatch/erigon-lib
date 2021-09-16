@@ -213,9 +213,9 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
-		log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ID(), "has_btree", r.cache != nil)
 		c.timeout.Inc()
 		r.lock.Lock()
+		log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ID(), "has_btree", r.cache != nil)
 		if r.cache == nil {
 			r.cache = btree.New(32)
 		}
