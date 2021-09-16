@@ -399,7 +399,7 @@ func (p *TxPool) printDebug(prefix string) {
 	}
 }
 func (p *TxPool) logStats() {
-	protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
+	//protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -407,7 +407,8 @@ func (p *TxPool) logStats() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Info("[txpool] stat", "baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, currentBaseFee/1_000_000),
+	log.Info("[txpool] stat",
+		//"baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, currentBaseFee/1_000_000),
 		"pending", p.pending.Len(),
 		"baseFee", p.baseFee.Len(),
 		"queued", p.queued.Len(),
