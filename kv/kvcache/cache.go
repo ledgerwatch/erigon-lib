@@ -195,7 +195,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	if switched {
 		close(r.ready) //broadcast
 	}
-	log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
+	//log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
 }
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
