@@ -334,7 +334,7 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 			return false
 		}
 		if !bytes.Equal(dbV, v) {
-			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, dbV)
+			err = fmt.Errorf("key: %x, has different values: %x != %x, viewID: %d", k, v, dbV, casted.id)
 			return false
 		}
 		checked++
