@@ -196,3 +196,44 @@ func (ef DoubleEliasFano) jumpSizeWords() int {
 func (ef DoubleEliasFano) Data() []uint64 {
 	return ef.data
 }
+
+func (ef DoubleEliasFano) Get2(i uint64) (cumKeys uint64, position uint64) {
+	posLower := i * (ef.lCumKeys + ef.lPosition)
+	var lower uint64
+	idx8 := pos_lower / 8
+	idx64 := idx8 / 8
+	shift := 8*(idx8 % 8)
+	lower = ef.lowerBits[idx64] << shift
+	if shift > 0 {
+		lower |= ef.lowerBits[idx64+1] >> (64-shift)
+	}
+	lower >>= pos_lower % 8
+
+	const uint64_t jump_super_q = (i / super_q) * super_q_size * 2;
+	const uint64_t jump_inside_super_q = (i % super_q) / q;
+	const uint64_t jump_cum_keys = jump[jump_super_q] + ((uint16_t *)(&jump + jump_super_q + 2))[2 * jump_inside_super_q];
+	const uint64_t jump_position = jump[jump_super_q + 1] + ((uint16_t *)(&jump + jump_super_q + 2))[2 * jump_inside_super_q + 1];
+
+	uint64_t curr_word_cum_keys = jump_cum_keys / 64;
+	uint64_t curr_word_position = jump_position / 64;
+	uint64_t window_cum_keys = upper_bits_cum_keys[curr_word_cum_keys] & UINT64_C(-1) << jump_cum_keys % 64;
+	uint64_t window_position = upper_bits_position[curr_word_position] & UINT64_C(-1) << jump_position % 64;
+	uint64_t delta_cum_keys = i & q_mask;
+	uint64_t delta_position = i & q_mask;
+
+	for (uint64_t bit_count; (bit_count = nu(window_cum_keys)) <= delta_cum_keys; delta_cum_keys -= bit_count) window_cum_keys = upper_bits_cum_keys[++curr_word_cum_keys];
+	for (uint64_t bit_count; (bit_count = nu(window_position)) <= delta_position; delta_position -= bit_count) window_position = upper_bits_position[++curr_word_position];
+
+	const uint64_t select_cum_keys = select64(window_cum_keys, delta_cum_keys);
+	const size_t cum_delta = i * cum_keys_min_delta;
+	cum_keys = ((curr_word_cum_keys * 64 + select_cum_keys - i) << l_cum_keys | (lower & lower_bits_mask_cum_keys)) + cum_delta;
+
+	lower >>= l_cum_keys;
+	const int64_t bit_delta = i * min_diff;
+	position = ((curr_word_position * 64 + select64(window_position, delta_position) - i) << l_position | (lower & lower_bits_mask_position)) + bit_delta +
+			   int64_t(bits_per_key_fixed_point * cum_keys >> 20);
+}
+
+func (ef DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, position uint64) {
+	return 0, 0, 0
+}

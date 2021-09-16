@@ -60,22 +60,24 @@ func (b *Bucket) Swap(i, j int) {
 // Recsplit: Minimal perfect hashing via recursive splitting. In 2020 Proceedings of the Symposium on Algorithm Engineering and Experiments (ALENEX),
 // pages 175−185. SIAM, 2020.
 type RecSplit struct {
-	bucketSize         int
-	keyExpectedCount   uint64      // Number of keys in the hash table
-	keysAdded          uint64      // Number of keys actually added to the recSplit (to check the match with keyExpectedCount)
-	bucketCount        uint64      // Number of buckets
-	hasher             hash.Hash64 // Salted hash function to use for splitting into initial buckets
-	collector          *etl.Collector
-	built              bool            // Flag indicating that the hash function has been built and no more keys can be added
-	currentBucketIdx   uint64          // Current bucket being accumulated
-	currentBucket      []string        // Keys in the current bucket accumulated before the recsplit is performed for that bucket
-	gr                 GolombRice      // Helper object to encode sequence numbers using Golomb-Rice code
-	ef                 DoubleEliasFano // Helper object to
-	bucketSizeAcc      []uint64        // Bucket size accumulator
-	bucketPosAcc       []uint64        // Accumulator for position of every bucket in the encoding of the hash function
-	leafSize           int             // Leaf size for recursive split algorithm
-	primaryAggrBound   int             // The lower bound for primary key aggregation (computed from leafSize)
-	secondaryAggrBound int             // The lower bound for secondary key aggregation (computed from leadSize)
+	bucketSize       int
+	keyExpectedCount uint64      // Number of keys in the hash table
+	keysAdded        uint64      // Number of keys actually added to the recSplit (to check the match with keyExpectedCount)
+	bucketCount      uint64      // Number of buckets
+	hasher           hash.Hash64 // Salted hash function to use for splitting into initial buckets
+	collector        *etl.Collector
+	built            bool       // Flag indicating that the hash function has been built and no more keys can be added
+	currentBucketIdx uint64     // Current bucket being accumulated
+	currentBucket    []string   // Keys in the current bucket accumulated before the recsplit is performed for that bucket
+	gr               GolombRice // Helper object to encode the tree of hash function salts using Golomb-Rice code.
+	// Helper object to encode the sequence of cumulative number of keys in the buckets
+	// and the sequence of of cumulative bit offsets of buckets in the Golomb-Rice code.
+	ef                 DoubleEliasFano
+	bucketSizeAcc      []uint64 // Bucket size accumulator
+	bucketPosAcc       []uint64 // Accumulator for position of every bucket in the encoding of the hash function
+	leafSize           int      // Leaf size for recursive split algorithm
+	primaryAggrBound   int      // The lower bound for primary key aggregation (computed from leafSize)
+	secondaryAggrBound int      // The lower bound for secondary key aggregation (computed from leadSize)
 	startSeed          []uint32
 	golombRice         []uint32
 }
@@ -359,4 +361,12 @@ func (rs *RecSplit) Build() error {
 	rs.ef.Build(rs.bucketSizeAcc, rs.bucketPosAcc)
 	rs.built = true
 	return nil
+}
+
+func (rs *RecSplit) Lookup(key []byte) int {
+	rs.hasher.Reset()
+	rs.hasher.Write(key) //nolint:errcheck
+	hash := rs.hasher.Sum64()
+	bucket := remap(hash, rs.bucketCount)
+	return 0
 }

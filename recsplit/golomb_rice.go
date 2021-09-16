@@ -189,3 +189,40 @@ func select64(x uint64, k int) int {
 	byteRank := uint64(k) - (((byteSums << 8) >> place) & uint64(0xFF))
 	return place + int(kSelectInByte[((x>>place)&0xFF)|(byteRank<<8)])
 }
+
+func (g *GolombRice) ReadNext(log2golomb int) uint64 {
+	var result uint64
+
+	if g.currWindowUnary == 0 {
+		result += uint64(g.validLowerBitsUnary)
+		g.currWindowUnary = g.data[g.currPtrUnary]
+		g.currPtrUnary++
+		g.validLowerBitsUnary = 64
+		for g.currWindowUnary == 0 {
+			result += 64
+			g.currWindowUnary = g.data[g.currPtrUnary]
+			g.currPtrUnary++
+		}
+	}
+
+	pos := bits.OnesCount64(g.currWindowUnary)
+
+	g.currWindowUnary >>= pos
+	g.currWindowUnary >>= 1
+	g.validLowerBitsUnary -= pos + 1
+
+	result += uint64(pos)
+	result <<= log2golomb
+
+	idx8 := g.currFixedOffset / 8
+	idx64 := idx8 / 8
+	var fixed uint64
+	shift := 8 * (idx8 % 8)
+	fixed = g.data[idx64] << shift
+	if shift > 0 {
+		fixed |= g.data[idx64+1] >> (64 - shift)
+	}
+	result |= (fixed >> g.currFixedOffset % 8) & ((uint64(1) << log2golomb) - 1)
+	g.currFixedOffset += log2golomb
+	return result
+}
