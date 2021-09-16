@@ -743,6 +743,8 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 }
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error {
+	defer newBlockTimer.UpdateDuration(time.Now())
+	t := time.Now()
 	p.senders.cache.OnNewBlock(stateChanges)
 
 	coreTx, err := p.coreDB.BeginRo(ctx)
@@ -771,13 +773,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
-	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	defer func(t time.Time) { fmt.Printf("pool.go:778: %s\n", time.Since(t)) }(time.Now())
 
 	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
 	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
-	t := time.Now()
+
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
