@@ -743,6 +743,8 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 }
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error {
+	p.senders.cache.OnNewBlock(stateChanges)
+
 	defer newBlockTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -763,7 +765,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
-	p.senders.cache.OnNewBlock(stateChanges)
 	coreTx, err := p.coreDB.BeginRo(ctx)
 	if err != nil {
 		return err
