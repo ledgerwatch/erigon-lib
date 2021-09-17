@@ -152,9 +152,6 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 					idx64 := (c/superQ)*(superQSize*2) + 2 + (idx16 >> 2)
 					shift := 16 * (idx16 % 4)
 					mask := uint64(0xffff) << shift
-					if int(idx64) >= len(ef.jump) {
-						fmt.Printf("numBuckets = %d, c = %d, offset = %d, i*64+b = %d\n", ef.numBuckets, c, offset, i*64+b)
-					}
 					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
 				}
 				c++
@@ -207,9 +204,9 @@ func set(bits []uint64, pos uint64) {
 }
 
 func (ef DoubleEliasFano) jumpSizeWords() int {
-	size := (ef.numBuckets / superQ) * superQSize * 2 // Whole blocks
-	if ef.numBuckets%superQ != 0 {
-		size += (1 + ((ef.numBuckets%superQ+q-1)/q+3)/4) * 2 // Partial block
+	size := ((ef.numBuckets + 1) / superQ) * superQSize * 2 // Whole blocks
+	if (ef.numBuckets+1)%superQ != 0 {
+		size += (1 + (((ef.numBuckets+1)%superQ+q-1)/q+3)/4) * 2 // Partial block
 	}
 	return int(size)
 }
