@@ -53,7 +53,7 @@ type DoubleEliasFano struct {
 
 // Build construct double Elias Fano index for two given sequences
 func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
-	fmt.Printf("cumKeys = %d\nposition = %d\n", cumKeys, position)
+	//fmt.Printf("cumKeys = %d\nposition = %d\n", cumKeys, position)
 	if len(cumKeys) != len(position) {
 		panic("len(cumKeys) != len(position)")
 	}
@@ -76,7 +76,7 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 			ef.posMinDelta = bucketBits
 		}
 	}
-	fmt.Printf("cumKeysMinDelta = %d, posMinDelta = %d\n", ef.cumKeysMinDelta, ef.posMinDelta)
+	//fmt.Printf("cumKeysMinDelta = %d, posMinDelta = %d\n", ef.cumKeysMinDelta, ef.posMinDelta)
 	ef.uPosition = position[ef.numBuckets] - ef.numBuckets*ef.posMinDelta + 1
 	if ef.uPosition/(ef.numBuckets+1) == 0 {
 		ef.lPosition = 0
@@ -89,7 +89,7 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 	} else {
 		ef.lCumKeys = 63 ^ uint64(bits.LeadingZeros64(ef.uCumKeys/(ef.numBuckets+1)))
 	}
-	fmt.Printf("uPosition = %d, lPosition = %d, uCumKeys = %d, lCumKeys = %d\n", ef.uPosition, ef.lPosition, ef.uCumKeys, ef.lCumKeys)
+	//fmt.Printf("uPosition = %d, lPosition = %d, uCumKeys = %d, lCumKeys = %d\n", ef.uPosition, ef.lPosition, ef.uCumKeys, ef.lCumKeys)
 	if ef.lCumKeys*2+ef.lPosition > 56 {
 		panic(fmt.Sprintf("ef.lCumKeys (%d) * 2 + ef.lPosition (%d) > 56", ef.lCumKeys, ef.lPosition))
 	}
@@ -99,7 +99,7 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 	wordsCumKeys := int((ef.numBuckets + 1 + (ef.uCumKeys >> ef.lCumKeys) + 63) / 64)
 	wordsPosition := int((ef.numBuckets + 1 + (ef.uPosition >> ef.lPosition) + 63) / 64)
 	jumpWords := ef.jumpSizeWords()
-	fmt.Printf("wordsLowerBits = %d, wordsCumKeys = %d, wordsPosition = %d, jumpWords = %d\n", wordsLowerBits, wordsCumKeys, wordsPosition, jumpWords)
+	//fmt.Printf("wordsLowerBits = %d, wordsCumKeys = %d, wordsPosition = %d, jumpWords = %d\n", wordsLowerBits, wordsCumKeys, wordsPosition, jumpWords)
 	totalWords := wordsLowerBits + wordsCumKeys + wordsPosition + jumpWords
 	ef.data = make([]uint64, totalWords)
 	ef.lowerBits = ef.data[:wordsLowerBits]
@@ -109,19 +109,24 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 
 	for i, cumDelta, bitDelta := uint64(0), uint64(0), uint64(0); i <= ef.numBuckets; i, cumDelta, bitDelta = i+1, cumDelta+ef.cumKeysMinDelta, bitDelta+ef.posMinDelta {
 		if ef.lCumKeys != 0 {
-			fmt.Printf("i=%d, set_bits cum for %d = %b\n", i, cumKeys[i]-cumDelta, (cumKeys[i]-cumDelta)&ef.lowerBitsMaskCumKeys)
+			//fmt.Printf("i=%d, set_bits cum for %d = %b\n", i, cumKeys[i]-cumDelta, (cumKeys[i]-cumDelta)&ef.lowerBitsMaskCumKeys)
 			set_bits(ef.lowerBits, i*(ef.lCumKeys+ef.lPosition), int(ef.lCumKeys), (cumKeys[i]-cumDelta)&ef.lowerBitsMaskCumKeys)
+			//fmt.Printf("loweBits %b\n", ef.lowerBits)
 		}
 		set(ef.upperBitsCumKeys, ((cumKeys[i]-cumDelta)>>ef.lCumKeys)+i)
-		fmt.Printf("i=%d, set cum for %d = %d\n", i, cumKeys[i]-cumDelta, (cumKeys[i]-cumDelta)>>ef.lCumKeys+i)
+		//fmt.Printf("i=%d, set cum for %d = %d\n", i, cumKeys[i]-cumDelta, (cumKeys[i]-cumDelta)>>ef.lCumKeys+i)
 
 		if ef.lPosition != 0 {
-			fmt.Printf("i=%d, set_bits pos for %d = %b\n", i, position[i]-bitDelta, (position[i]-bitDelta)&ef.lowerBitsMaskPosition)
+			//fmt.Printf("i=%d, set_bits pos for %d = %b\n", i, position[i]-bitDelta, (position[i]-bitDelta)&ef.lowerBitsMaskPosition)
 			set_bits(ef.lowerBits, i*(ef.lCumKeys+ef.lPosition)+ef.lCumKeys, int(ef.lPosition), (position[i]-bitDelta)&ef.lowerBitsMaskPosition)
+			//fmt.Printf("lowerBits %b\n", ef.lowerBits)
 		}
 		set(ef.upperBitsPosition, ((position[i]-bitDelta)>>ef.lPosition)+i)
-		fmt.Printf("i=%d, set pos for %d = %d\n", i, position[i]-bitDelta, (position[i]-bitDelta)>>ef.lPosition+i)
+		//fmt.Printf("i=%d, set pos for %d = %d\n", i, position[i]-bitDelta, (position[i]-bitDelta)>>ef.lPosition+i)
 	}
+	//fmt.Printf("loweBits %b\n", ef.lowerBits)
+	//fmt.Printf("upperBitsCumKeys %b\n", ef.upperBitsCumKeys)
+	//fmt.Printf("upperBitsPosition %b\n", ef.upperBitsPosition)
 	// i iterates over the 64-bit words in the wordCumKeys vector
 	// c iterates over bits in the wordCumKeys
 	// lastSuperQ is the largest multiple of 2^14 (4096) which is no larger than c
@@ -176,16 +181,21 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 			}
 		}
 	}
+	//fmt.Printf("jump: %x\n", ef.jump)
 }
 
 // set_bits assumes that bits are set in monotonic order, so that
 // we can skip the masking for the second word
 func set_bits(bits []uint64, start uint64, width int, value uint64) {
-	mask := (uint64(1)<<width - 1) << (start & 63)
-	bits[start>>6] = (bits[start>>6] &^ mask) | (value << start)
-	if int(start)+width > 64 {
+	shift := int(start & 63)
+	idx64 := start >> 6
+	mask := (uint64(1)<<width - 1) << shift
+	//fmt.Printf("mask = %b, idx64 = %d\n", mask, idx64)
+	bits[idx64] = (bits[idx64] &^ mask) | (value << shift)
+	//fmt.Printf("start = %d, width = %d, shift + width = %d\n", start, width, shift+width)
+	if shift+width > 64 {
 		// changes two 64-bit words
-		bits[start>>6+1] = value >> (64 - start&63)
+		bits[idx64+1] = value >> (64 - shift)
 	}
 }
 
@@ -206,17 +216,16 @@ func (ef DoubleEliasFano) Data() []uint64 {
 	return ef.data
 }
 
-func (ef DoubleEliasFano) Get2(i uint64) (cumKeys uint64, position uint64) {
+func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
+	windowCumKeys uint64, selectCumKeys int, currWordCumKeys uint64, lower uint64, cumDelta uint64) {
 	posLower := i * (ef.lCumKeys + ef.lPosition)
-	var lower uint64
-	idx8 := posLower / 8
-	idx64 := idx8 / 8
-	shift := 8 * (idx8 % 8)
-	lower = ef.lowerBits[idx64] << shift
+	idx64 := posLower / 64
+	shift := posLower % 64
+	lower = ef.lowerBits[idx64] >> shift
 	if shift > 0 {
-		lower |= ef.lowerBits[idx64+1] >> (64 - shift)
+		lower |= ef.lowerBits[idx64+1] << (64 - shift)
 	}
-	lower >>= posLower % 8
+	//fmt.Printf("i = %d, posLower = %d, lower = %b\n", i, posLower, lower)
 
 	jumpSuperQ := (i / superQ) * superQSize * 2
 	jumpInsideSuperQ := (i % superQ) / q
@@ -230,88 +239,54 @@ func (ef DoubleEliasFano) Get2(i uint64) (cumKeys uint64, position uint64) {
 	shift = 16 * (idx16 % 4)
 	mask = uint64(0xffff) << shift
 	jumpPosition := ef.jump[jumpSuperQ+1] + (ef.jump[idx64]&mask)>>shift
+	//fmt.Printf("i = %d, jumpCumKeys = %d, jumpPosition = %d\n", i, jumpCumKeys, jumpPosition)
 
-	currWordCumKeys := jumpCumKeys / 64
+	currWordCumKeys = jumpCumKeys / 64
 	currWordPosition := jumpPosition / 64
-	windowCumKeys := ef.upperBitsCumKeys[currWordCumKeys] & uint64(0xffffffffffffffff) << jumpCumKeys % 64
-	windowPosition := ef.upperBitsPosition[currWordPosition] & uint64(0xffffffffffffffff) << jumpPosition % 64
+	windowCumKeys = ef.upperBitsCumKeys[currWordCumKeys] & (uint64(0xffffffffffffffff) << (jumpCumKeys % 64))
+	windowPosition := ef.upperBitsPosition[currWordPosition] & (uint64(0xffffffffffffffff) << (jumpPosition % 64))
 	deltaCumKeys := int(i & qMask)
 	deltaPosition := int(i & qMask)
 
 	for bitCount := bits.OnesCount64(windowCumKeys); bitCount <= deltaCumKeys; bitCount = bits.OnesCount64(windowCumKeys) {
+		//fmt.Printf("i = %d, bitCount cum = %d\n", i, bitCount)
 		currWordCumKeys++
 		windowCumKeys = ef.upperBitsCumKeys[currWordCumKeys]
 		deltaCumKeys -= bitCount
 	}
 	for bitCount := bits.OnesCount64(windowPosition); bitCount <= deltaPosition; bitCount = bits.OnesCount64(windowPosition) {
+		//fmt.Printf("i = %d, bitCount pos = %d\n", i, bitCount)
 		currWordPosition++
 		windowPosition = ef.upperBitsPosition[currWordPosition]
 		deltaPosition -= bitCount
 	}
 
-	selectCumKeys := select64(windowCumKeys, deltaCumKeys)
-	cumDelta := i * ef.cumKeysMinDelta
+	selectCumKeys = select64(windowCumKeys, deltaCumKeys)
+	//fmt.Printf("i = %d, select cum in %b for %d = %d\n", i, windowCumKeys, deltaCumKeys, selectCumKeys)
+	cumDelta = i * ef.cumKeysMinDelta
 	cumKeys = ((currWordCumKeys*64+uint64(selectCumKeys)-i)<<ef.lCumKeys | (lower & ef.lowerBitsMaskCumKeys)) + cumDelta
 
 	lower >>= ef.lCumKeys
+	//fmt.Printf("i = %d, lower = %b\n", i, lower)
 	selectPosition := select64(windowPosition, deltaPosition)
+	//fmt.Printf("i = %d, select pos in %b for %d = %d\n", i, windowPosition, deltaPosition, selectPosition)
 	bitDelta := i * ef.posMinDelta
 	position = ((currWordPosition*64+uint64(selectPosition)-i)<<ef.lPosition | (lower & ef.lowerBitsMaskPosition)) + bitDelta
 	return
 }
 
+func (ef DoubleEliasFano) Get2(i uint64) (cumKeys uint64, position uint64) {
+	cumKeys, position, _, _, _, _, _ = ef.get2(i)
+	return
+}
+
 func (ef DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, position uint64) {
-	posLower := i * (ef.lCumKeys + ef.lPosition)
+	var windowCumKeys uint64
+	var selectCumKeys int
+	var currWordCumKeys uint64
 	var lower uint64
-	idx8 := posLower / 8
-	idx64 := idx8 / 8
-	shift := 8 * (idx8 % 8)
-	lower = ef.lowerBits[idx64] << shift
-	if shift > 0 {
-		lower |= ef.lowerBits[idx64+1] >> (64 - shift)
-	}
-	lower >>= posLower % 8
-
-	jumpSuperQ := (i / superQ) * superQSize * 2
-	jumpInsideSuperQ := (i % superQ) / q
-	idx16 := 4*(jumpSuperQ+2) + 2*jumpInsideSuperQ
-	idx64 = idx16 / 4
-	shift = 16 * (idx16 % 4)
-	mask := uint64(0xffff) << shift
-	jumpCumKeys := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
-	idx16++
-	idx64 = idx16 / 4
-	shift = 16 * (idx16 % 4)
-	mask = uint64(0xffff) << shift
-	jumpPosition := ef.jump[jumpSuperQ+1] + (ef.jump[idx64]&mask)>>shift
-
-	currWordCumKeys := jumpCumKeys / 64
-	currWordPosition := jumpPosition / 64
-	windowCumKeys := ef.upperBitsCumKeys[currWordCumKeys] & uint64(0xffffffffffffffff) << jumpCumKeys % 64
-	windowPosition := ef.upperBitsPosition[currWordPosition] & uint64(0xffffffffffffffff) << jumpPosition % 64
-	deltaCumKeys := int(i & qMask)
-	deltaPosition := int(i & qMask)
-
-	for bitCount := bits.OnesCount64(windowCumKeys); bitCount <= deltaCumKeys; bitCount = bits.OnesCount64(windowCumKeys) {
-		currWordCumKeys++
-		windowCumKeys = ef.upperBitsCumKeys[currWordCumKeys]
-		deltaCumKeys -= bitCount
-	}
-	for bitCount := bits.OnesCount64(windowPosition); bitCount <= deltaPosition; bitCount = bits.OnesCount64(windowPosition) {
-		currWordPosition++
-		windowPosition = ef.upperBitsPosition[currWordPosition]
-		deltaPosition -= bitCount
-	}
-
-	selectCumKeys := select64(windowCumKeys, deltaCumKeys)
-	cumDelta := i * ef.cumKeysMinDelta
-	cumKeys = ((currWordCumKeys*64+uint64(selectCumKeys)-i)<<ef.lCumKeys | (lower & ef.lowerBitsMaskCumKeys)) + cumDelta
-
-	lower >>= ef.lCumKeys
-	selectPosition := select64(windowPosition, deltaPosition)
-	bitDelta := i * ef.posMinDelta
-	position = ((currWordPosition*64+uint64(selectPosition)-i)<<ef.lPosition | (lower & ef.lowerBitsMaskPosition)) + bitDelta
-
+	var cumDelta uint64
+	cumKeys, position, windowCumKeys, selectCumKeys, currWordCumKeys, lower, cumDelta = ef.get2(i)
 	windowCumKeys &= (uint64(0xffffffffffffffff) << selectCumKeys) << 1
 	for windowCumKeys == 0 {
 		currWordCumKeys++

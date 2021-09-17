@@ -49,10 +49,10 @@ func FuzzEliasFano(f *testing.F) {
 		for bucket := 0; bucket < numBuckets; bucket++ {
 			cumKey, bitPos := ef.Get2(uint64(bucket))
 			if cumKey != cumKeys[bucket] {
-				t.Errorf("cumKey from EF = %d, expected %d", cumKey, cumKeys[bucket])
+				t.Fatalf("bucket %d: cumKey from EF = %d, expected %d", bucket, cumKey, cumKeys[bucket])
 			}
 			if bitPos != position[bucket] {
-				t.Errorf("position from EF = %d, expected %d", bitPos, position[bucket])
+				t.Fatalf("bucket %d: position from EF = %d, expected %d", bucket, bitPos, position[bucket])
 			}
 		}
 	})

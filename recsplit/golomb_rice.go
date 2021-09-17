@@ -178,9 +178,9 @@ const (
  */
 func select64(x uint64, k int) int {
 	s := x
-	s = s - ((s & 0xA * kOnesStep4) >> 1)
-	s = (s & 0x3 * kOnesStep4) + ((s >> 2) & 0x3 * kOnesStep4)
-	s = (s + (s >> 4)) & 0xF * kOnesStep8
+	s = s - ((s & (0xA * kOnesStep4)) >> 1)
+	s = (s & (0x3 * kOnesStep4)) + ((s >> 2) & (0x3 * kOnesStep4))
+	s = (s + (s >> 4)) & (0xF * kOnesStep8)
 	byteSums := s * kOnesStep8
 
 	kStep8 := uint64(k) * kOnesStep8
