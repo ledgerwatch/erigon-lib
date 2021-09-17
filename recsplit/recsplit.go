@@ -363,8 +363,12 @@ func (rs *RecSplit) Build() error {
 	return nil
 }
 
-func (rs *RecSplit) skipBits(m uint64) int {
+func (rs *RecSplit) skipBits(m int) int {
 	return int(rs.golombRice[m] & 0xffff)
+}
+
+func (rs *RecSplit) skipNodes(m int) int {
+	return int(rs.golombRice[m]>>16) & 0x7FF
 }
 
 func (rs *RecSplit) Lookup(key []byte) int {
@@ -373,7 +377,60 @@ func (rs *RecSplit) Lookup(key []byte) int {
 	hash := rs.hasher.Sum64()
 	bucket := remap(hash, rs.bucketCount)
 	cumKeys, cumKeysNext, bitPos := rs.ef.Get3(bucket)
-	m := cumKeysNext - cumKeys // Number of keys in this bucket
+	m := int(cumKeysNext - cumKeys) // Number of keys in this bucket
 	rs.gr.ReadReset(int(bitPos), rs.skipBits(m))
-	return 0
+	var level int
+	for m > rs.secondaryAggrBound { // fanout = 2
+		d := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+		hasher := murmur3.New64WithSeed(rs.startSeed[level] + d)
+		hasher.Write(key)
+		hmod := remap16(hasher.Sum64(), m)
+		split := ((m/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
+		if hmod < split {
+			m = split
+		} else {
+			rs.gr.SkipSubtree(rs.skipNodes(split), rs.skipBits(split))
+			m -= split
+			cumKeys += uint64(split)
+		}
+		level++
+	}
+	if m > rs.primaryAggrBound {
+		d := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+		hasher := murmur3.New64WithSeed(rs.startSeed[level] + d)
+		hasher.Write(key)
+		hmod := remap16(hasher.Sum64(), m)
+		part := hmod / rs.primaryAggrBound
+		if rs.primaryAggrBound < m-part*rs.primaryAggrBound {
+			m = rs.primaryAggrBound
+		} else {
+			m = m - part*rs.primaryAggrBound
+		}
+		cumKeys += uint64(rs.primaryAggrBound * part)
+		if part != 0 {
+			rs.gr.SkipSubtree(rs.skipNodes(rs.primaryAggrBound)*part, rs.skipBits(rs.primaryAggrBound)*part)
+		}
+		level++
+	}
+	if m > rs.leafSize {
+		d := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+		hasher := murmur3.New64WithSeed(rs.startSeed[level] + d)
+		hasher.Write(key)
+		hmod := remap16(hasher.Sum64(), m)
+		part := hmod / rs.leafSize
+		if rs.leafSize < m-part*rs.leafSize {
+			m = rs.leafSize
+		} else {
+			m = m - part*rs.leafSize
+		}
+		cumKeys += uint64(rs.leafSize * part)
+		if part != 0 {
+			rs.gr.SkipSubtree(part, rs.skipBits(rs.leafSize)*part)
+		}
+		level++
+	}
+	b := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+	hasher := murmur3.New64WithSeed(rs.startSeed[level] + b)
+	hasher.Write(key)
+	return int(cumKeys) + remap16(hasher.Sum64(), m)
 }

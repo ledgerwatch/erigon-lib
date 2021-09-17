@@ -205,7 +205,7 @@ func (g *GolombRice) ReadNext(log2golomb int) uint64 {
 		}
 	}
 
-	pos := bits.OnesCount64(g.currWindowUnary)
+	pos := bits.TrailingZeros64(g.currWindowUnary)
 
 	g.currWindowUnary >>= pos
 	g.currWindowUnary >>= 1

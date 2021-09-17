@@ -294,6 +294,6 @@ func (ef DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, po
 	}
 
 	lower >>= ef.lPosition
-	cumKeysNext = ((currWordCumKeys*64+uint64(bits.LeadingZeros64(windowCumKeys))-i-1)<<ef.lCumKeys | (lower & ef.lowerBitsMaskCumKeys)) + cumDelta + ef.cumKeysMinDelta
+	cumKeysNext = ((currWordCumKeys*64+uint64(bits.TrailingZeros64(windowCumKeys))-i-1)<<ef.lCumKeys | (lower & ef.lowerBitsMaskCumKeys)) + cumDelta + ef.cumKeysMinDelta
 	return
 }
