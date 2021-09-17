@@ -206,7 +206,11 @@ func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (
 	if len(encoded) == 0 {
 		return emptySender.nonce, emptySender.balance, nil
 	}
-	return DecodeSender(encoded)
+	nonce, balance, err = DecodeSender(encoded)
+	if err != nil {
+		return 0, emptySender.balance, err
+	}
+	return nonce, balance, nil
 }
 
 //nolint
@@ -781,7 +785,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	defer func(t time.Time) { fmt.Printf("pool.go:778: %s\n", time.Since(t)) }(time.Now())
 
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
@@ -810,7 +813,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	log.Info("[txpool] new block", "number", blockHeight, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", blockHeight, "view_id", stateChanges.DatabaseViewID, "in", time.Since(t))
 	return nil
 }
 func (p *TxPool) discardLocked(mt *metaTx) {

@@ -152,8 +152,10 @@ func (c *Coherent) advanceRoot(viewID uint64) (r *CoherentView) {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
 		r.cache = prevView.Clone()
 	} else {
-		//log.Info("advance: new", "to", viewID)
-		r.cache = btree.New(32)
+		if r.cache == nil {
+			//log.Info("advance: new", "to", viewID)
+			r.cache = btree.New(32)
+		}
 	}
 	return r
 }
@@ -217,6 +219,12 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 		r.lock.Lock()
 		//log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ViewID(), "has_btree", r.cache != nil)
 		if r.cache == nil {
+			//parent := c.selectOrCreateRoot(tx.ViewID() - 1)
+			//if parent.cache != nil {
+			//	r.cache = parent.Clone()
+			//} else {
+			//	r.cache = btree.New(32)
+			//}
 			r.cache = btree.New(32)
 		}
 		r.lock.Unlock()
@@ -232,7 +240,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if it != nil {
 		c.hits.Inc()
 		goatomic.StoreUint64(&it.(*Pair).t, c.id.Load())
-		//fmt.Printf("from cache %x: %#x,%#v\n", c.id.Load(), k, it.(*Pair).V)
+		//fmt.Printf("from cache %x: %#x,%x\n", c.id.Load(), k, it.(*Pair).V)
 		return it.(*Pair).V, nil
 	}
 	c.miss.Inc()
@@ -241,7 +249,7 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	//fmt.Printf("from db %x: %#x,%#v\n", c.id.Load(), k, v)
+	//fmt.Printf("from db %x: %#x,%x\n", c.id.Load(), k, v)
 
 	it = &Pair{K: k, V: common.Copy(v), t: c.id.Load()}
 	c.lock.Lock()
@@ -376,10 +384,10 @@ func (c *Coherent) Evict() int {
 	c.evictRoots(latestBlockNum - 10)
 	keysAmount := lastView.Len()
 	c.keys.Set(uint64(keysAmount))
-	if lastView != nil {
-		lastView.evictOld(100, 150_000)
-		//lastView.evictNew2Random(200_000)
-	}
+	//if lastView != nil {
+	//lastView.evictOld(100, 150_000)
+	//lastView.evictNew2Random(200_000)
+	//}
 	return lastView.Len()
 }
 

@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -161,17 +160,14 @@ func u256Slice(in []byte) ([]uint256.Int, bool) {
 	return res, true
 }
 
-func parseSenders(in []byte) (senders Addresses, nonces []uint64, balances []uint256.Int) {
-	zeroes := [20]byte{}
-	for i := 0; i < len(in)-(1+1+1-1); i += 1 + 1 + 1 {
-		zeroes[19] = in[i] % 8
-		senders = append(senders, zeroes[:]...)
-		nonce := uint64(in[i+1] % 8)
+func parseSenders(in []byte) (nonces []uint64, balances []uint256.Int) {
+	for i := 0; i < len(in)-(1+1-1); i += 1 + 1 {
+		nonce := uint64(in[i] % 8)
 		if nonce == 0 {
 			nonce = 1
 		}
 		nonces = append(nonces, nonce)
-		balances = append(balances, *uint256.NewInt(uint64(in[i+1+1])))
+		balances = append(balances, *uint256.NewInt(uint64(in[i+1])))
 	}
 	return
 }
@@ -190,10 +186,10 @@ func parseTxs(in []byte) (nonces, tips []uint64, values []uint256.Int) {
 }
 
 func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []byte) (sendersInfo map[uint64]*sender, senderIDs map[string]uint64, txs TxSlots, ok bool) {
-	if len(rawTxNonce) < 1 || len(rawValues) < 1 || len(rawTips) < 1 || len(rawFeeCap) < 1 || len(rawSender) < 1+1+1 {
+	if len(rawTxNonce) < 1 || len(rawValues) < 1 || len(rawTips) < 1 || len(rawFeeCap) < 1 || len(rawSender) < 1+1 {
 		return nil, nil, txs, false
 	}
-	senders, senderNonce, senderBalance := parseSenders(rawSender)
+	senderNonce, senderBalance := parseSenders(rawSender)
 	txNonce, ok := u8Slice(rawTxNonce)
 	if !ok {
 		return nil, nil, txs, false
@@ -213,8 +209,10 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 
 	sendersInfo = map[uint64]*sender{}
 	senderIDs = map[string]uint64{}
+	senders := make(Addresses, 20*len(senderNonce))
 	for i := 0; i < len(senderNonce); i++ {
 		senderID := uint64(i + 1) //non-zero expected
+		binary.BigEndian.PutUint64(senders.At(i%senders.Len()), senderID)
 		sendersInfo[senderID] = newSender(senderNonce[i], senderBalance[i%len(senderBalance)])
 		senderIDs[string(senders.At(i%senders.Len()))] = senderID
 	}
@@ -362,7 +360,11 @@ func FuzzOnNewBlocks(f *testing.F) {
 			for _, tx := range pending.best {
 				i := tx.Tx
 				if tx.subPool&NoNonceGaps > 0 {
-					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg)
+					//for id := range senders {
+					//	fmt.Printf("now: %d, %d\n", id, senders[id].nonce)
+					//}
+					//fmt.Printf("?? %d,%d\n", i.senderID, senders[i.senderID].nonce)
+					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg, i.senderID)
 				}
 				if tx.subPool&EnoughBalance > 0 {
 					//assert.True(tx.SenderHasEnoughBalance)
@@ -428,11 +430,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 			iterateSubPoolUnordered(queued, func(tx *metaTx) {
 				i := tx.Tx
 				if tx.subPool&NoNonceGaps > 0 {
-					for id := range senders {
-						fmt.Printf("now: %d, %d\n", id, senders[id].nonce)
-					}
-					fmt.Printf("?? %d,%d\n", i.senderID, senders[i.senderID].nonce)
-					fmt.Printf("?? %##+v\n", senders)
 					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg, i.senderID, senders[i.senderID].nonce)
 				}
 				if tx.subPool&EnoughBalance > 0 {
@@ -511,7 +508,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 			prevTotal = pending.Len() + baseFee.Len() + queued.Len()
 		}
 		//TODO: check that id=>addr and addr=>id mappings have same len
-		//fmt.Printf("-------\n")
 
 		tx, err := db.BeginRw(ctx)
 		require.NoError(err)
@@ -590,9 +586,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 		check(p2pReceived, TxSlots{}, "p2pmsg1")
 		checkNotify(p2pReceived, TxSlots{}, "p2pmsg1")
 
-		//senderIdsBeforeFlush := len(pool.senders.senderIDs)
-		//senderInfoBeforeFlush := len(pool.senders.senderInfo)
-
 		err = pool.flushLocked(tx) // we don't test eviction here, because dedicated test exists
 		require.NoError(err)
 		check(p2pReceived, TxSlots{}, "after_flush")
@@ -612,11 +605,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 		//checkNotify(txs2, TxSlots{}, "fromDB")
 		//assert.Equal(pool.senders.senderID, p2.senders.senderID)
 		//assert.Equal(pool.senders.blockHeight.Load(), p2.senders.blockHeight.Load())
-
-		//idsCountAfterFlush := p2.senders.idsCount()
-		//assert.LessOrEqual(senderIdsBeforeFlush, idsCountAfterFlush)
-		//infoCountAfterFlush := p2.senders.infoCount()
-		//assert.LessOrEqual(senderInfoBeforeFlush, infoCountAfterFlush)
 
 		assert.Equal(pool.pending.Len(), p2.pending.Len())
 		assert.Equal(pool.baseFee.Len(), p2.baseFee.Len())
