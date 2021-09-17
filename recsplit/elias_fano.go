@@ -148,10 +148,13 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 						panic("")
 					}
 					// c % superQ is the bit index inside the group of 4096 bits
-					idx16 := 4*((c/superQ)*(superQSize*2)+2) + 2*((c%superQ)/q)
-					idx64 := idx16 >> 2
+					idx16 := 2 * ((c % superQ) / q)
+					idx64 := (c/superQ)*(superQSize*2) + 2 + (idx16 >> 2)
 					shift := 16 * (idx16 % 4)
 					mask := uint64(0xffff) << shift
+					if int(idx64) >= len(ef.jump) {
+						fmt.Printf("numBuckets = %d, c = %d, offset = %d, i*64+b = %d\n", ef.numBuckets, c, offset, i*64+b)
+					}
 					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
 				}
 				c++
@@ -171,8 +174,8 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 					if offset >= (1 << 16) {
 						panic("")
 					}
-					idx16 := 4*((c/superQ)*(superQSize*2)+2) + 2*((c%superQ)/q) + 1
-					idx64 := idx16 >> 2
+					idx16 := 2*((c%superQ)/q) + 1
+					idx64 := (c/superQ)*(superQSize*2) + 2 + (idx16 >> 2)
 					shift := 16 * (idx16 % 4)
 					mask := uint64(0xffff) << shift
 					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
