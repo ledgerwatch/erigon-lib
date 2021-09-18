@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/chain"
+	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -217,7 +219,7 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 		senderIDs[string(senders.At(i%senders.Len()))] = senderID
 	}
 	txs.txs = make([]*TxSlot, len(txNonce))
-	parseCtx := NewTxParseContext()
+	parseCtx := NewTxParseContext(chain.MainnetRules, *u256.N1)
 	parseCtx.WithSender(false)
 	for i := range txNonce {
 		txs.txs[i] = &TxSlot{
@@ -337,7 +339,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		cfg := DefaultConfig
 		sendersCache := kvcache.New(kvcache.DefaultCoherentCacheConfig)
 
-		pool, err := New(ch, coreDB, cfg, sendersCache)
+		pool, err := New(ch, coreDB, cfg, sendersCache, chain.MainnetRules, *u256.N1)
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs
 		for addr, id := range senderIDs {
@@ -591,7 +593,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		check(p2pReceived, TxSlots{}, "after_flush")
 		//checkNotify(p2pReceived, TxSlots{}, "after_flush")
 
-		p2, err := New(ch, coreDB, DefaultConfig, sendersCache)
+		p2, err := New(ch, coreDB, DefaultConfig, sendersCache, chain.MainnetRules, *u256.N1)
 		assert.NoError(err)
 		p2.senders = pool.senders // senders are not persisted
 		err = coreDB.View(ctx, func(coreTx kv.Tx) error { return p2.fromDB(ctx, tx, coreTx) })

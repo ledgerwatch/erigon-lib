@@ -17,9 +17,11 @@
 package txpool
 
 import (
+	"bytes"
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -34,6 +36,8 @@ import (
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/chain"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	proto_txpool "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
@@ -203,6 +207,7 @@ func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
+	fmt.Printf("sender: %x,%t\n", addr, len(encoded) > 0)
 	if len(encoded) == 0 {
 		return emptySender.nonce, emptySender.balance, nil
 	}
@@ -361,10 +366,12 @@ type TxPool struct {
 	unprocessedRemoteTxs    *TxSlots
 	unprocessedRemoteByHash map[string]int // to reject duplicates
 
-	cfg Config
+	cfg     Config
+	rules   chain.Rules
+	chainID uint256.Int
 }
 
-func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache) (*TxPool, error) {
+func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, rules chain.Rules, chainID uint256.Int) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(1024, nil)
 	if err != nil {
 		return nil, err
@@ -382,6 +389,8 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache) (*
 		senders:                 newSendersCache(cache),
 		_coreDB:                 coreDB,
 		cfg:                     cfg,
+		rules:                   rules,
+		chainID:                 chainID,
 		senderID:                1,
 		unprocessedRemoteTxs:    &TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
@@ -936,6 +945,7 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		// 5. Local transaction. Set to 1 if transaction is local.
 		// can't change
 
+		fmt.Printf("subPool: %b\n", mt.subPool)
 		return true
 	})
 }
@@ -1425,7 +1435,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		if metaTx.Tx.rlp == nil {
 			continue
 		}
-		v = ensureEnoughSize(v, 20+len(metaTx.Tx.rlp))
+		v = common.EnsureEnoughSize(v, 20+len(metaTx.Tx.rlp))
 		for addr, id := range p.senders.senderIDs { // no inverted index - tradeoff flush speed for memory usage
 			if id == metaTx.Tx.senderID {
 				copy(v[:20], addr)
@@ -1475,9 +1485,14 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	}); err != nil {
 		return err
 	}
+	lastSeenBlock, err := LastSeenBlock(tx)
+	if err != nil {
+		return err
+	}
+	p.lastSeenBlock.Store(lastSeenBlock)
 
 	txs := TxSlots{}
-	parseCtx := NewTxParseContext()
+	parseCtx := NewTxParseContext(p.rules, p.chainID)
 	parseCtx.WithSender(false)
 
 	i := 0
@@ -1540,6 +1555,49 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.currentBaseFee.Store(currentBaseFee)
 	p.protocolBaseFee.Store(protocolBaseFee)
 
+	return nil
+}
+func LastSeenBlock(tx kv.Getter) (uint64, error) {
+	v, err := tx.GetOne(kv.PoolInfo, PoolLastSeenBlockKey)
+	if err != nil {
+		return 0, err
+	}
+	if len(v) == 0 {
+		return 0, nil
+	}
+	return binary.BigEndian.Uint64(v), nil
+}
+func PutLastSeenBlock(tx kv.Putter, n uint64, buf []byte) error {
+	buf = common.EnsureEnoughSize(buf, 8)
+	binary.BigEndian.PutUint64(buf, n)
+	err := tx.Put(kv.PoolInfo, PoolLastSeenBlockKey, buf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func ChainConfig(tx kv.Getter) (*chain.Config, error) {
+	v, err := tx.GetOne(kv.PoolInfo, PoolChainConfigKey)
+	if err != nil {
+		return nil, err
+	}
+	if len(v) == 0 {
+		return nil, nil
+	}
+	var config chain.Config
+	if err := json.Unmarshal(v, &config); err != nil {
+		return nil, fmt.Errorf("invalid chain config JSON in pool db: %w", err)
+	}
+	return &config, nil
+}
+func PutChainConfig(tx kv.Putter, cc *chain.Config, buf []byte) error {
+	wr := bytes.NewBuffer(buf)
+	if err := json.NewEncoder(wr).Encode(cc); err != nil {
+		return fmt.Errorf("invalid chain config JSON in pool db: %w", err)
+	}
+	if err := tx.Put(kv.PoolInfo, PoolChainConfigKey, wr.Bytes()); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1632,6 +1690,8 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 	return nil
 }
 
+var PoolChainConfigKey = []byte("pending_chain_config")
+var PoolLastSeenBlockKey = []byte("pending_last_seen_block")
 var PoolPendingBaseFeeKey = []byte("pending_base_fee")
 var PoolProtocolBaseFeeKey = []byte("protocol_base_fee")
 

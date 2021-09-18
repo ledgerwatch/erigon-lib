@@ -1,3 +1,19 @@
+/*
+   Copyright 2021 Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package txpool
 
 import (
@@ -9,6 +25,8 @@ import (
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
+	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -37,10 +55,14 @@ type GrpcServer struct {
 	txPool          txPool
 	db              kv.RoDB
 	NewSlotsStreams *NewSlotsStreams
+
+	singleThreadRecovery sync.Mutex
+	rules                chain.Rules
+	chainID              uint256.Int
 }
 
-func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB) *GrpcServer {
-	return &GrpcServer{ctx: ctx, txPool: txPool, db: db, NewSlotsStreams: &NewSlotsStreams{}}
+func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB, rules chain.Rules, chainID uint256.Int) *GrpcServer {
+	return &GrpcServer{ctx: ctx, txPool: txPool, db: db, NewSlotsStreams: &NewSlotsStreams{}, rules: rules, chainID: chainID}
 }
 
 func (s *GrpcServer) Version(context.Context, *emptypb.Empty) (*types2.VersionReply, error) {
@@ -108,7 +130,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 
 	var slots TxSlots
 	slots.Resize(uint(len(in.RlpTxs)))
-	parseCtx := NewTxParseContext()
+	parseCtx := NewTxParseContext(s.rules, s.chainID)
 	parseCtx.Reject(func(hash []byte) bool {
 		known, _ := s.txPool.IdHashKnown(tx, hash)
 		return known
@@ -116,10 +138,13 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	for i := range in.RlpTxs {
 		slots.txs[i] = &TxSlot{}
 		slots.isLocal[i] = true
+		//		0xf8620101830186a09400000000000000000000000000000000000000006401820a96a04f353451b272c6b183cedf20787dab556db5afadf16733a3c6bffb0d2fcd2563a0773cd45f7cc62250f7ee715b9e19f0489176f8966f75c8eed2fbf1ac861cb50c
+		fmt.Printf("tlp: %x\n", in.RlpTxs[i])
 		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[i], slots.senders.At(i)); err != nil {
 			log.Warn("stream.Recv", "err", err)
 			continue
 		}
+		fmt.Printf("sender: %x\n", slots.senders.At(i))
 	}
 
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
