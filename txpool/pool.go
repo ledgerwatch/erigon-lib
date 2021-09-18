@@ -884,7 +884,7 @@ func unsafeAddToPendingPool(blockNum uint64, byNonce *ByNonce, newTxs TxSlots, p
 }
 
 func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64) {
-	noGapsNonce := senderNonce + 1
+	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
 	minTip := uint64(math.MaxUint64)
