@@ -207,7 +207,6 @@ func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
-	fmt.Printf("sender: %x,%t\n", addr, len(encoded) > 0)
 	if len(encoded) == 0 {
 		return emptySender.nonce, emptySender.balance, nil
 	}
@@ -945,7 +944,6 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		// 5. Local transaction. Set to 1 if transaction is local.
 		// can't change
 
-		fmt.Printf("subPool: %b\n", mt.subPool)
 		return true
 	})
 }

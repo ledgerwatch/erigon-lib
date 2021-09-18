@@ -137,13 +137,10 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	for i := range in.RlpTxs {
 		slots.txs[i] = &TxSlot{}
 		slots.isLocal[i] = true
-		//		0xf8620101830186a09400000000000000000000000000000000000000006401820a96a04f353451b272c6b183cedf20787dab556db5afadf16733a3c6bffb0d2fcd2563a0773cd45f7cc62250f7ee715b9e19f0489176f8966f75c8eed2fbf1ac861cb50c
-		fmt.Printf("tlp: %x\n", in.RlpTxs[i])
 		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[i], slots.senders.At(i)); err != nil {
 			log.Warn("stream.Recv", "err", err)
 			continue
 		}
-		fmt.Printf("sender: %x\n", slots.senders.At(i))
 	}
 
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
