@@ -17,7 +17,7 @@
 package chain
 
 import (
-	"github.com/holiman/uint256"
+	"math/big"
 )
 
 // Config is the core config which determines the blockchain settings.
@@ -27,29 +27,28 @@ import (
 // set of configuration options.
 type Config struct {
 	ChainName string
-	ChainID   *uint256.Int `json:"chainId"` // chainId identifies the current chain and is used for replay protection
+	ChainID   *big.Int `json:"chainId"` // chainId identifies the current chain and is used for replay protection
 
-	HomesteadBlock *uint256.Int `json:"homesteadBlock,omitempty"` // Homestead switch block (nil = no fork, 0 = already homestead)
+	HomesteadBlock *big.Int `json:"homesteadBlock,omitempty"` // Homestead switch block (nil = no fork, 0 = already homestead)
 
-	DAOForkBlock   *uint256.Int `json:"daoForkBlock,omitempty"`   // TheDAO hard-fork switch block (nil = no fork)
-	DAOForkSupport bool         `json:"daoForkSupport,omitempty"` // Whether the nodes supports or opposes the DAO hard-fork
+	DAOForkBlock   *big.Int `json:"daoForkBlock,omitempty"`   // TheDAO hard-fork switch block (nil = no fork)
+	DAOForkSupport bool     `json:"daoForkSupport,omitempty"` // Whether the nodes supports or opposes the DAO hard-fork
 
 	// EIP150 implements the Gas price changes (https://github.com/ethereum/EIPs/issues/150)
-	EIP150Block *uint256.Int `json:"eip150Block,omitempty"` // EIP150 HF block (nil = no fork)
-	EIP150Hash  [32]byte     `json:"eip150Hash,omitempty"`  // EIP150 HF hash (needed for header only clients as only gas pricing changed)
+	EIP150Block *big.Int `json:"eip150Block,omitempty"` // EIP150 HF block (nil = no fork)
 
-	EIP155Block *uint256.Int `json:"eip155Block,omitempty"` // EIP155 HF block
-	EIP158Block *uint256.Int `json:"eip158Block,omitempty"` // EIP158 HF block
+	EIP155Block *big.Int `json:"eip155Block,omitempty"` // EIP155 HF block
+	EIP158Block *big.Int `json:"eip158Block,omitempty"` // EIP158 HF block
 
-	ByzantiumBlock      *uint256.Int `json:"byzantiumBlock,omitempty"`      // Byzantium switch block (nil = no fork, 0 = already on byzantium)
-	ConstantinopleBlock *uint256.Int `json:"constantinopleBlock,omitempty"` // Constantinople switch block (nil = no fork, 0 = already activated)
-	PetersburgBlock     *uint256.Int `json:"petersburgBlock,omitempty"`     // Petersburg switch block (nil = same as Constantinople)
-	IstanbulBlock       *uint256.Int `json:"istanbulBlock,omitempty"`       // Istanbul switch block (nil = no fork, 0 = already on istanbul)
-	MuirGlacierBlock    *uint256.Int `json:"muirGlacierBlock,omitempty"`    // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	BerlinBlock         *uint256.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
-	LondonBlock         *uint256.Int `json:"londonBlock,omitempty"`         // London switch block (nil = no fork, 0 = already on london)
+	ByzantiumBlock      *big.Int `json:"byzantiumBlock,omitempty"`      // Byzantium switch block (nil = no fork, 0 = already on byzantium)
+	ConstantinopleBlock *big.Int `json:"constantinopleBlock,omitempty"` // Constantinople switch block (nil = no fork, 0 = already activated)
+	PetersburgBlock     *big.Int `json:"petersburgBlock,omitempty"`     // Petersburg switch block (nil = same as Constantinople)
+	IstanbulBlock       *big.Int `json:"istanbulBlock,omitempty"`       // Istanbul switch block (nil = no fork, 0 = already on istanbul)
+	MuirGlacierBlock    *big.Int `json:"muirGlacierBlock,omitempty"`    // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	BerlinBlock         *big.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
+	LondonBlock         *big.Int `json:"londonBlock,omitempty"`         // London switch block (nil = no fork, 0 = already on london)
 
-	CatalystBlock *uint256.Int `json:"catalystBlock,omitempty"` // Catalyst switch block (nil = no fork, 0 = already on catalyst)
+	CatalystBlock *big.Int `json:"catalystBlock,omitempty"` // Catalyst switch block (nil = no fork, 0 = already on catalyst)
 }
 
 // Rules wraps Config and is merely syntactic sugar or can be used for functions
@@ -94,7 +93,7 @@ func (r Rules) Changed(c *Config, num uint64) bool {
 }
 
 // isForked returns whether a fork scheduled at block s is active at the given head block.
-func isForked(s *uint256.Int, head uint64) bool { return s != nil && s.Uint64() <= head }
+func isForked(s *big.Int, head uint64) bool { return s != nil && s.Uint64() <= head }
 
 var (
 	MainnetRules = Rules{

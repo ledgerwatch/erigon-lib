@@ -18,8 +18,10 @@ package txpooluitl
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/direct"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -35,12 +37,16 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 		if err != nil {
 			return err
 		}
+		blockNum, err = txpool.LastSeenBlock(tx)
+		if err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return nil, 0, err
 	}
 	if cc != nil {
-		return nil, 0, nil
+		return cc, blockNum, nil
 	}
 
 	for {
@@ -69,6 +75,7 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 		break
 	}
 
+	fmt.Printf("a:%#v\n", cc)
 	if err = txPoolDB.Update(ctx, func(tx kv.RwTx) error {
 		if err = txpool.PutChainConfig(tx, cc, nil); err != nil {
 			return err
@@ -80,6 +87,7 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 	}); err != nil {
 		return nil, 0, err
 	}
+	fmt.Printf("a:%#v\n", cc)
 	return cc, blockNum, nil
 }
 
@@ -95,17 +103,17 @@ func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, 
 	}
 
 	rules := chain.NewRules(chainConfig, blockNum)
-
-	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, rules, *chainConfig.ChainID)
+	chainID, _ := uint256.FromBig(chainConfig.ChainID)
+	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, rules, *chainID)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	fetch := txpool.NewFetch(ctx, sentryClients, txPool, stateChangesClient, chainDB, txPoolDB, rules, *chainConfig.ChainID)
+	fetch := txpool.NewFetch(ctx, sentryClients, txPool, stateChangesClient, chainDB, txPoolDB, rules, *chainID)
 	//fetch.ConnectCore()
 	//fetch.ConnectSentries()
 
 	send := txpool.NewSend(ctx, sentryClients, txPool)
-	txpoolGrpcServer := txpool.NewGrpcServer(ctx, txPool, txPoolDB, rules, *chainConfig.ChainID)
+	txpoolGrpcServer := txpool.NewGrpcServer(ctx, txPool, txPoolDB, rules, *chainID)
 	return txPoolDB, txPool, fetch, send, txpoolGrpcServer, nil
 }

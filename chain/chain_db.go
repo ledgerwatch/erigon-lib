@@ -42,8 +42,13 @@ func GetConfig(db kv.Getter, buf []byte) (*Config, error) {
 		return nil, nil
 	}
 	var config Config
+	fmt.Printf("%s\n", data)
+	err = json.Unmarshal([]byte(`{"ChainName":"","chainId":1337,"homesteadBlock":0,"eip150Block":0,"eip150Hash":"0x0000000000000000000000000000000000000000000000000000000000000000","eip155Block":0,"eip158Block":0,"byzantiumBlock":0,"constantinopleBlock":0,"petersburgBlock":0,"istanbulBlock":0,"muirGlacierBlock":0,"berlinBlock":0,"clique":{"period":0,"epoch":30000}}`), &config)
+	if err != nil {
+		panic(err)
+	}
 	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("invalid chain config JSON: %x, %w", hash, err)
+		return nil, fmt.Errorf("invalid chain config JSON: %s, %w", data, err)
 	}
 	return &config, nil
 }
