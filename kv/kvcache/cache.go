@@ -108,11 +108,11 @@ type CoherentCacheConfig struct {
 }
 
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
-	KeepViews:    5,
+	KeepViews:    50,
 	NewBlockWait: 50 * time.Millisecond,
-	KeysLimit:    10_000,
+	KeysLimit:    1_000_000,
 	MetricsLabel: "default",
-	WithStorage:  false,
+	WithStorage:  true,
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
