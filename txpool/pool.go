@@ -1622,7 +1622,7 @@ func (p *TxPool) logStats() {
 
 	ctx := []interface{}{
 		//"baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, currentBaseFee/1_000_000),
-		"block_num", p.lastSeenBlock.Load(),
+		"block", p.lastSeenBlock.Load(),
 		"pending", p.pending.Len(),
 		"baseFee", p.baseFee.Len(),
 		"queued", p.queued.Len(),
