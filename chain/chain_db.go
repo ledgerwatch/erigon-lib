@@ -34,7 +34,7 @@ func GetConfig(db kv.Getter, buf []byte) (*Config, error) {
 	if hash == nil {
 		return nil, nil
 	}
-	data, err := db.GetOne(kv.ConfigTable, hash[:])
+	data, err := db.GetOne(kv.ConfigTable, hash)
 	if err != nil {
 		return nil, err
 	}

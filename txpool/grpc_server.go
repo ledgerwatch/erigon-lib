@@ -56,9 +56,8 @@ type GrpcServer struct {
 	db              kv.RoDB
 	NewSlotsStreams *NewSlotsStreams
 
-	singleThreadRecovery sync.Mutex
-	rules                chain.Rules
-	chainID              uint256.Int
+	rules   chain.Rules
+	chainID uint256.Int
 }
 
 func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB, rules chain.Rules, chainID uint256.Int) *GrpcServer {

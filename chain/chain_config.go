@@ -64,10 +64,6 @@ type Rules struct {
 }
 
 func NewRules(c *Config, num uint64) Rules {
-	chainID := c.ChainID
-	if chainID == nil {
-		chainID = uint256.NewInt(0)
-	}
 	return Rules{
 		IsHomestead:      isForked(c.HomesteadBlock, num),
 		IsEIP150:         isForked(c.EIP150Block, num),
