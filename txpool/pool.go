@@ -458,7 +458,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	log.Info("[txpool] new block", "number", blockHeight, "view_id", stateChanges.DatabaseViewID, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", blockHeight, "in", time.Since(t))
 	return nil
 }
 
