@@ -16,7 +16,9 @@
 
 package recsplit
 
-import "math/bits"
+import (
+	"math/bits"
+)
 
 // Optimal Golomb-Rice parameters for leaves
 var bijMemo []uint32 = []uint32{0, 0, 0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 21, 22, 23, 25, 26, 28, 29, 30}
@@ -214,15 +216,14 @@ func (g *GolombRice) ReadNext(log2golomb int) uint64 {
 	result += uint64(pos)
 	result <<= log2golomb
 
-	idx8 := g.currFixedOffset / 8
-	idx64 := idx8 / 8
+	idx64 := g.currFixedOffset >> 6
 	var fixed uint64
-	shift := 8 * (idx8 % 8)
-	fixed = g.data[idx64] << shift
-	if shift > 0 {
-		fixed |= g.data[idx64+1] >> (64 - shift)
+	shift := g.currFixedOffset & 63
+	fixed = g.data[idx64] >> shift
+	if shift+log2golomb > 64 {
+		fixed |= g.data[idx64+1] << (64 - shift)
 	}
-	result |= (fixed >> g.currFixedOffset % 8) & ((uint64(1) << log2golomb) - 1)
+	result |= fixed & ((uint64(1) << log2golomb) - 1)
 	g.currFixedOffset += log2golomb
 	return result
 }

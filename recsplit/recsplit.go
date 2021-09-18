@@ -159,17 +159,18 @@ func (rs *RecSplit) computeGolombRice(m int, table []uint32) {
 		sqrt_prod *= math.Sqrt(float64(k[i]))
 	}
 	p := math.Sqrt(float64(m)) / (math.Pow(2*math.Pi, (float64(fanout)-1.)/2.0) * sqrt_prod)
-	golomb_rice_length := uint32(math.Ceil(math.Log2(-math.Log((math.Sqrt(5)+1.0)/2.0) / math.Log1p(-p)))) // log2 Golomb modulus
-	if golomb_rice_length > 0x1F {
-		panic("golomb_rice_length > 0x1F")
+	golombRiceLength := uint32(math.Ceil(math.Log2(-math.Log((math.Sqrt(5)+1.0)/2.0) / math.Log1p(-p)))) // log2 Golomb modulus
+	if golombRiceLength > 0x1F {
+		panic("golombRiceLength > 0x1F")
 	}
-	table[m] = golomb_rice_length << 27
+	table[m] = golombRiceLength << 27
 	for i := 0; i < fanout; i++ {
-		golomb_rice_length += table[k[i]] & 0xFFFF
+		golombRiceLength += table[k[i]] & 0xFFFF
 	}
-	if golomb_rice_length > 0xFFFF {
-		panic("golomb_rice_length > 0xFFFF")
+	if golombRiceLength > 0xFFFF {
+		panic("golombRiceLength > 0xFFFF")
 	}
+	table[m] |= golombRiceLength // Sum of Golomb-Rice codeslengths in the subtree, stored in the lower 16 bits
 	nodes := uint32(1)
 	for i := 0; i < fanout; i++ {
 		nodes += (table[k[i]] >> 16) & 0x7FF
@@ -189,9 +190,9 @@ func (rs *RecSplit) golombParam(m int) int {
 		rs.golombRice = append(rs.golombRice, 0)
 		// For the case where bucket is larger than planned
 		if s == 0 {
-			rs.golombRice[0] = bijMemo[0]<<27 | bijMemo[0]
+			rs.golombRice[0] = (bijMemo[0] << 27) | bijMemo[0]
 		} else if s <= rs.leafSize {
-			rs.golombRice[s] = bijMemo[s]<<27 | uint32(1)<<16 | bijMemo[s]
+			rs.golombRice[s] = (bijMemo[s] << 27) | (uint32(1) << 16) | bijMemo[s]
 		} else {
 			rs.computeGolombRice(s, rs.golombRice)
 		}
@@ -230,7 +231,9 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 				return fmt.Errorf("duplicate key %x", key)
 			}
 		}
+		//bitPos := rs.gr.bitCount
 		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
+		//fmt.Printf("recsplitBucket(%d, %d, bitsize = %d, keys = %x)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos, rs.currentBucket)
 		rs.gr.appendUnaryAll(unary)
 	}
 	// Extend rs.bucketPosAcc to accomodate current bucket index + 1
@@ -274,6 +277,7 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		}
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
+		//fmt.Printf("encode bij %d with log2golomn %d at p = %d\n", salt, log2golomb, rs.gr.bitCount)
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
 	} else {
@@ -308,6 +312,7 @@ func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint3
 		sort.Sort(&b)
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
+		//fmt.Printf("encode fanout %d: %d with log2golomn %d at p = %d\n", fanout, salt, log2golomb, rs.gr.bitCount)
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
 		var i int
@@ -372,16 +377,20 @@ func (rs *RecSplit) skipNodes(m int) int {
 }
 
 func (rs *RecSplit) Lookup(key []byte) int {
+	//fmt.Printf("lookup %x\n", key)
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
 	hash := rs.hasher.Sum64()
 	bucket := remap(hash, rs.bucketCount)
 	cumKeys, cumKeysNext, bitPos := rs.ef.Get3(bucket)
 	m := int(cumKeysNext - cumKeys) // Number of keys in this bucket
+	//fmt.Printf("bucket: %d, m = %d, bitPos = %d, unaryOffset = %d\n", bucket, m, bitPos, rs.skipBits(m))
 	rs.gr.ReadReset(int(bitPos), rs.skipBits(m))
 	var level int
 	for m > rs.secondaryAggrBound { // fanout = 2
+		//p := rs.gr.currFixedOffset
 		d := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+		//fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
 		hasher := murmur3.New64WithSeed(rs.startSeed[level] + d)
 		hasher.Write(key)
 		hmod := remap16(hasher.Sum64(), m)
@@ -396,7 +405,9 @@ func (rs *RecSplit) Lookup(key []byte) int {
 		level++
 	}
 	if m > rs.primaryAggrBound {
+		//p := rs.gr.currFixedOffset
 		d := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+		//fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
 		hasher := murmur3.New64WithSeed(rs.startSeed[level] + d)
 		hasher.Write(key)
 		hmod := remap16(hasher.Sum64(), m)
@@ -413,7 +424,9 @@ func (rs *RecSplit) Lookup(key []byte) int {
 		level++
 	}
 	if m > rs.leafSize {
+		//p := rs.gr.currFixedOffset
 		d := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+		//fmt.Printf("level %d, p = %d, d = %d, golomb %d\n", level, p, d, rs.golombParam(m))
 		hasher := murmur3.New64WithSeed(rs.startSeed[level] + d)
 		hasher.Write(key)
 		hmod := remap16(hasher.Sum64(), m)
@@ -429,7 +442,9 @@ func (rs *RecSplit) Lookup(key []byte) int {
 		}
 		level++
 	}
+	//p := rs.gr.currFixedOffset
 	b := uint32(rs.gr.ReadNext(rs.golombParam(m)))
+	//fmt.Printf("level %d, p = %d, b = %d, golomn = %d\n", level, p, b, rs.golombParam(m))
 	hasher := murmur3.New64WithSeed(rs.startSeed[level] + b)
 	hasher.Write(key)
 	return int(cumKeys) + remap16(hasher.Sum64(), m)
