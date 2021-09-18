@@ -1629,7 +1629,7 @@ func (p *TxPool) logStats() {
 	}
 	cacheKeys := p.senders.cache.Len()
 	if cacheKeys > 0 {
-		ctx = append(ctx, "state_cache_keys", cacheKeys)
+		ctx = append(ctx, "cache_keys", cacheKeys)
 	}
 	ctx = append(ctx, "alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024)
 	log.Info("[txpool] stat", ctx...)
