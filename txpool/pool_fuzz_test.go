@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -55,13 +56,15 @@ func FuzzTwoQueue(f *testing.F) {
 			assert.Equal(len(in), sub.Len())
 
 			var prevBest *uint8
+			var prev *metaTx
 			for i := range sub.best {
-				best := uint8(sub.best[i].subPool)
+				current := uint8(sub.best[i].subPool)
 				if prevBest != nil {
-					assert.LessOrEqual(best, *prevBest)
+					assert.LessOrEqual(current, *prevBest)
 				}
 				assert.Equal(i, sub.best[i].bestIndex)
-				prevBest = &best
+				prevBest = &current
+				prev = sub.best[i]
 			}
 		}
 		{

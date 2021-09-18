@@ -1049,7 +1049,7 @@ func (s bestSlice) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 	s[i].bestIndex, s[j].bestIndex = i, j
 }
-func (s bestSlice) Less(i, j int) bool { return s[i].Less(s[j]) }
+func (s bestSlice) Less(i, j int) bool { return !s[i].Less(s[j]) }
 func (s bestSlice) UnsafeRemove(i *metaTx) bestSlice {
 	s.Swap(i.bestIndex, len(s)-1)
 	s[len(s)-1].bestIndex = -1
