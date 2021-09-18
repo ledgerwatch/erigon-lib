@@ -56,7 +56,6 @@ func FuzzTwoQueue(f *testing.F) {
 			assert.Equal(len(in), sub.Len())
 
 			var prevBest *uint8
-			var prev *metaTx
 			for i := range sub.best {
 				current := uint8(sub.best[i].subPool)
 				if prevBest != nil {
@@ -64,7 +63,6 @@ func FuzzTwoQueue(f *testing.F) {
 				}
 				assert.Equal(i, sub.best[i].bestIndex)
 				prevBest = &current
-				prev = sub.best[i]
 			}
 		}
 		{
