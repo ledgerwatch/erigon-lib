@@ -753,6 +753,7 @@ func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Conf
 		}
 	}
 	for i := range minedTxs {
+		fmt.Printf("mined txs: %x\n", minedTxs[i].idHash)
 		if minedTxs[i].senderID == 0 {
 			return fmt.Errorf("onNewBlock.minedTxs: senderID can't be zero")
 		}
@@ -927,7 +928,7 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		// set if there is currently a guarantee that the transaction and all its required prior
 		// transactions will be able to pay for gas.
 		mt.subPool &^= EnoughBalance
-		if mt.Tx.nonce > senderNonce {
+		if mt.Tx.nonce >= senderNonce {
 			cumulativeRequiredBalance = cumulativeRequiredBalance.Add(cumulativeRequiredBalance, needBalance) // already deleted all transactions with nonce <= sender.nonce
 			if senderBalance.Gt(cumulativeRequiredBalance) || senderBalance.Eq(cumulativeRequiredBalance) {
 				mt.subPool |= EnoughBalance
@@ -943,6 +944,8 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 
 		// 5. Local transaction. Set to 1 if transaction is local.
 		// can't change
+
+		fmt.Printf("tx: %x,%d, %b\n", mt.Tx.idHash, mt.Tx.nonce, mt.subPool)
 
 		return true
 	})
@@ -1423,7 +1426,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	}
 	for i := range txHashes {
 		binary.BigEndian.PutUint64(encID, uint64(i))
-		if err := tx.Append(kv.RecentLocalTransaction, encID, txHashes[i].([]byte)); err != nil {
+		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHashes[i].(string))); err != nil {
 			return err
 		}
 	}

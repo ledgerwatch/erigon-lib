@@ -138,7 +138,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 		slots.txs[i] = &TxSlot{}
 		slots.isLocal[i] = true
 		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[i], slots.senders.At(i)); err != nil {
-			log.Warn("stream.Recv", "err", err)
+			log.Warn("pool add", "err", err)
 			continue
 		}
 	}
