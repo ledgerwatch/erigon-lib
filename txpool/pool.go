@@ -945,8 +945,6 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		// 5. Local transaction. Set to 1 if transaction is local.
 		// can't change
 
-		fmt.Printf("tx: %x,%d, %b\n", mt.Tx.idHash, mt.Tx.nonce, mt.subPool)
-
 		return true
 	})
 }
