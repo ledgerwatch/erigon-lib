@@ -18,7 +18,6 @@ package txpooluitl
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/holiman/uint256"
@@ -75,7 +74,6 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 		break
 	}
 
-	fmt.Printf("a:%#v\n", cc)
 	if err = txPoolDB.Update(ctx, func(tx kv.RwTx) error {
 		if err = txpool.PutChainConfig(tx, cc, nil); err != nil {
 			return err
@@ -87,7 +85,6 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 	}); err != nil {
 		return nil, 0, err
 	}
-	fmt.Printf("a:%#v\n", cc)
 	return cc, blockNum, nil
 }
 

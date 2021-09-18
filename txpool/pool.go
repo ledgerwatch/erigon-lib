@@ -753,7 +753,6 @@ func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Conf
 		}
 	}
 	for i := range minedTxs {
-		fmt.Printf("mined txs: %x\n", minedTxs[i].idHash)
 		if minedTxs[i].senderID == 0 {
 			return fmt.Errorf("onNewBlock.minedTxs: senderID can't be zero")
 		}
