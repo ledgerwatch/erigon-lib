@@ -103,11 +103,13 @@ type CoherentCacheConfig struct {
 	NewBlockWait time.Duration // how long wait
 	MetricsLabel string
 	WithStorage  bool
+	KeysLimit    int
 }
 
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
-	KeepViews:    100,
+	KeepViews:    50,
 	NewBlockWait: 50 * time.Millisecond,
+	KeysLimit:    1_000_000,
 	MetricsLabel: "default",
 	WithStorage:  false,
 }
@@ -382,12 +384,13 @@ func (c *Coherent) Evict() int {
 	defer c.evict.UpdateDuration(time.Now())
 	latestBlockNum, lastView := c.lastRoot()
 	c.evictRoots(latestBlockNum - 10)
+	if lastView == nil {
+		return 0
+	}
 	keysAmount := lastView.Len()
 	c.keys.Set(uint64(keysAmount))
-	//if lastView != nil {
-	//lastView.evictOld(100, 150_000)
-	//lastView.evictNew2Random(200_000)
-	//}
+	lastView.evictOld(c.cfg.KeepViews, c.cfg.KeysLimit)
+	//lastView.evictNew2Random(c.cfg.KeysLimit)
 	return lastView.Len()
 }
 

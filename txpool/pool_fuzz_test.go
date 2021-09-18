@@ -351,7 +351,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 			//}
 
 			best, worst := pending.Best(), pending.Worst()
-			assert.LessOrEqual(pending.Len(), PendingSubPoolLimit)
+			assert.LessOrEqual(pending.Len(), cfg.PendingSubPoolLimit)
 			assert.False(worst != nil && best == nil, msg)
 			assert.False(worst == nil && best != nil, msg)
 			if worst != nil && worst.subPool < 0b11110 {
@@ -396,7 +396,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 			assert.False(worst != nil && best == nil, msg)
 			assert.False(worst == nil && best != nil, msg)
-			assert.LessOrEqual(baseFee.Len(), BaseFeeSubPoolLimit, msg)
+			assert.LessOrEqual(baseFee.Len(), cfg.BaseFeeSubPoolLimit, msg)
 			if worst != nil && worst.subPool < 0b11100 {
 				t.Fatalf("baseFee worst too small %b", worst.subPool)
 			}
@@ -421,7 +421,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 			})
 
 			best, worst = queued.Best(), queued.Worst()
-			assert.LessOrEqual(queued.Len(), QueuedSubPoolLimit)
+			assert.LessOrEqual(queued.Len(), cfg.QueuedSubPoolLimit)
 			assert.False(worst != nil && best == nil, msg)
 			assert.False(worst == nil && best != nil, msg)
 			if worst != nil && worst.subPool < 0b10000 {
