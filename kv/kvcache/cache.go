@@ -108,9 +108,9 @@ type CoherentCacheConfig struct {
 }
 
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
-	KeepViews:    50,
+	KeepViews:    5,
 	NewBlockWait: 50 * time.Millisecond,
-	KeysLimit:    100_000,
+	KeysLimit:    50_000,
 	MetricsLabel: "default",
 	WithStorage:  false,
 }
@@ -369,6 +369,7 @@ func (c *Coherent) lastRoot() (latestTxId uint64, view *CoherentView) {
 func (c *Coherent) evictRoots(to uint64) {
 	c.rootsLock.Lock()
 	defer c.rootsLock.Unlock()
+	//fmt.Printf("collecting: %d\n", to)
 	var toDel []uint64
 	for txId := range c.roots {
 		if txId > to {
@@ -389,13 +390,13 @@ func (c *Coherent) Len() int {
 func (c *Coherent) Evict() int {
 	defer c.evict.UpdateDuration(time.Now())
 	latestBlockNum, lastView := c.lastRoot()
-	c.evictRoots(latestBlockNum - 10)
+	c.evictRoots(latestBlockNum - c.cfg.KeepViews)
 	if lastView == nil {
 		return 0
 	}
 	keysAmount := lastView.Len()
 	c.keys.Set(uint64(keysAmount))
-	lastView.evictOld(c.cfg.KeepViews, c.cfg.KeysLimit)
+	lastView.evictOld(latestBlockNum-c.cfg.KeepViews, c.cfg.KeysLimit)
 	//lastView.evictNew2Random(c.cfg.KeysLimit)
 	return lastView.Len()
 }
@@ -411,6 +412,7 @@ func (c *CoherentView) evictOld(dropOlder uint64, keysLimit int) {
 	var toDel []btree.Item
 	c.cache.Ascend(func(it btree.Item) bool {
 		age := goatomic.LoadUint64(&it.(*Pair).t)
+		fmt.Printf("%d\n")
 		if age < dropOlder {
 			toDel = append(toDel, it)
 		}
