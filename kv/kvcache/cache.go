@@ -40,6 +40,7 @@ type Cache interface {
 	View(ctx context.Context, tx kv.Tx) (CacheView, error)
 	OnNewBlock(sc *remote.StateChangeBatch)
 	Evict() int
+	Len() int
 }
 type CacheView interface {
 	Get(k []byte, tx kv.Tx) ([]byte, error)
@@ -380,6 +381,11 @@ func (c *Coherent) evictRoots(to uint64) {
 		delete(c.roots, txId)
 	}
 }
+func (c *Coherent) Len() int {
+	_, lastView := c.lastRoot()
+	return lastView.Len()
+}
+
 func (c *Coherent) Evict() int {
 	defer c.evict.UpdateDuration(time.Now())
 	latestBlockNum, lastView := c.lastRoot()

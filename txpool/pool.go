@@ -1373,8 +1373,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			send.PropagatePooledTxsToPeersList(newPeers, remoteTxHashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
 		case <-cacheEvictEvery.C:
-			keysLeft := p.senders.cache.Evict()
-			log.Info("[txpool] cache", "keys_amount", keysLeft)
+			p.senders.cache.Evict()
 		}
 	}
 }
@@ -1621,15 +1620,20 @@ func (p *TxPool) logStats() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Info("[txpool] stat",
+	ctx := []interface{}{
 		//"baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, currentBaseFee/1_000_000),
 		"block_num", p.lastSeenBlock.Load(),
 		"pending", p.pending.Len(),
 		"baseFee", p.baseFee.Len(),
 		"queued", p.queued.Len(),
-		//"ids_in_mem", idsInMem,
-		"alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024,
-	)
+		"state_cache_keys", p.senders.cache.Len(),
+	}
+	cacheKeys := p.senders.cache.Len()
+	if cacheKeys > 0 {
+		ctx = append(ctx, "state_cache_keys", p.senders.cache.Len())
+	}
+	ctx = append(ctx, "alloc_mb", m.Alloc/1024/1024, "sys_mb", m.Sys/1024/1024)
+	log.Info("[txpool] stat", ctx...)
 	//if ASSERT {
 	//stats := kvcache.DebugStats(p.senders.cache)
 	//log.Info(fmt.Sprintf("[txpool] cache %T, roots amount %d", p.senders.cache, len(stats)))
