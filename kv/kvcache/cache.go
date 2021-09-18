@@ -110,7 +110,7 @@ type CoherentCacheConfig struct {
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
 	KeepViews:    5,
 	NewBlockWait: 50 * time.Millisecond,
-	KeysLimit:    50_000,
+	KeysLimit:    10_000,
 	MetricsLabel: "default",
 	WithStorage:  false,
 }
@@ -412,7 +412,6 @@ func (c *CoherentView) evictOld(dropOlder uint64, keysLimit int) {
 	var toDel []btree.Item
 	c.cache.Ascend(func(it btree.Item) bool {
 		age := goatomic.LoadUint64(&it.(*Pair).t)
-		fmt.Printf("%d\n")
 		if age < dropOlder {
 			toDel = append(toDel, it)
 		}
