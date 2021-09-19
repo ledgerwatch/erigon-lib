@@ -45,6 +45,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
+	"github.com/spaolacci/murmur3"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/status"
 )
@@ -124,13 +125,18 @@ type DiscardReason uint8
 
 const (
 	//TODO: all below codes are not fixed yet. Need add them to discardLocked func. Need save discard reasons to LRU or DB.
-	Success       DiscardReason = 1
-	AlreadyKnown  DiscardReason = 2
-	UnderPriced   DiscardReason = 3
-	FeeTooLow     DiscardReason = 4
-	OversizedData DiscardReason = 5
-	InvalidSender DiscardReason = 6
-	NegativeValue DiscardReason = 7
+	Success             DiscardReason = 1
+	AlreadyKnown        DiscardReason = 2
+	Mined               DiscardReason = 3
+	ReplacedByHigherTip DiscardReason = 4
+	UnderPriced         DiscardReason = 5
+	FeeTooLow           DiscardReason = 6
+	OversizedData       DiscardReason = 7
+	InvalidSender       DiscardReason = 8
+	NegativeValue       DiscardReason = 9
+	PendingPoolOverflow DiscardReason = 10
+	BaseFeePoolOverflow DiscardReason = 11
+	QueuedPoolOverflow  DiscardReason = 12
 )
 
 // metaTx holds transaction and some metadata
@@ -332,6 +338,8 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 // txpool doesn't start any goroutines - "leave concurrency to user" design
 // txpool has no DB or TX fields - "leave db transactions management to user" design
 // txpool has _coreDB field - but it must maximize local state cache hit-rate - and perform minimum _coreDB transactions
+//
+// It preserve TxSlot objects immutable
 type TxPool struct {
 	lock *sync.RWMutex
 
@@ -341,8 +349,8 @@ type TxPool struct {
 	currentBaseFee  atomic.Uint64
 
 	senderID        uint64
-	byHash          map[string]*metaTx // tx_hash => tx
-	discardReasons  map[uint32]DiscardReason
+	byHash          map[string]*metaTx       // tx_hash => tx
+	discardReasons  map[uint32]DiscardReason // murmur3(tx_hash) => discard_reason
 	pending         *PendingPool
 	baseFee, queued *SubPool
 
@@ -378,6 +386,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 	return &TxPool{
 		lock:                    &sync.RWMutex{},
 		byHash:                  map[string]*metaTx{},
+		discardReasons:          map[uint32]DiscardReason{},
 		byNonce:                 &ByNonce{btree.New(32)},
 		isLocalHashLRU:          localsHistory,
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
@@ -701,11 +710,11 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 		default:
 		}
 	}
+
 	reasons := make([]DiscardReason, len(newTxs.txs))
-	//for i := range newTxs.txs {
-	//	_ =newTxs.txs[i].idHash,
-	//	reasons[i]=p.discardReasons[mur(newTxs.txs[i].idHash)]
-	//}
+	for i := range newTxs.txs {
+		reasons[i] = p.discardReasons[murmur3.Sum32(newTxs.txs[i].idHash[:])]
+	}
 	return reasons, nil
 }
 func (p *TxPool) coreDB() kv.RoDB {
@@ -719,7 +728,7 @@ func (p *TxPool) cache() kvcache.Cache {
 	defer p.lock.RUnlock()
 	return p.senders.cache
 }
-func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx)) error {
+func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -785,7 +794,7 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 			//already removed
 		}
 
-		p.discardLocked(found)
+		p.discardLocked(found, ReplacedByHigherTip)
 	}
 
 	p.byHash[string(mt.Tx.idHash[:])] = mt
@@ -807,10 +816,11 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 	fmt.Printf("--\n")
 	return true
 }
-func (p *TxPool) discardLocked(mt *metaTx) {
+func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 	delete(p.byHash, string(mt.Tx.idHash[:]))
 	p.deletedTxs = append(p.deletedTxs, mt)
 	p.byNonce.delete(mt)
+	p.discardReasons[murmur3.Sum32(mt.Tx.idHash[:])] = reason
 }
 
 // removeMined - apply new highest block (or batch of blocks)
@@ -820,7 +830,7 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 // modify state_balance and state_nonce, potentially remove some elements (if transaction with some nonce is
 // included into a block), and finally, walk over the transaction records and update SubPool fields depending on
 // the actual presence of nonce gaps and what the balance is.
-func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, baseFee, queued *SubPool, discard func(tx *metaTx)) error {
+func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) error {
 	noncesToRemove := map[uint64]uint64{}
 	for _, txn := range minedTxs {
 		nonce, ok := noncesToRemove[txn.senderID]
@@ -856,7 +866,7 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 		})
 
 		for i := range toDel {
-			discard(toDel[i])
+			discard(toDel[i], Mined)
 		}
 		toDel = toDel[:0]
 	}
@@ -944,7 +954,7 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 	})
 }
 
-func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard func(*metaTx)) {
+func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard func(*metaTx, DiscardReason)) {
 	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
 	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
 	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
@@ -960,7 +970,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 			queued.Add(pending.PopWorst())
 			continue
 		}
-		discard(pending.PopWorst())
+		discard(pending.PopWorst(), FeeTooLow)
 	}
 
 	//2. If top element in the worst green queue has subPool == 0b1111, but there is not enough room in the pool, discard.
@@ -968,7 +978,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 		if worst.subPool >= 0b11111 { // TODO: here must 'subPool == 0b1111' or 'subPool <= 0b1111' ?
 			break
 		}
-		discard(pending.PopWorst())
+		discard(pending.PopWorst(), PendingPoolOverflow)
 	}
 
 	//3. If the top element in the best yellow queue has subPool == 0b1111, promote to the green pool.
@@ -989,7 +999,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 			queued.Add(baseFee.PopWorst())
 			continue
 		}
-		discard(baseFee.PopWorst())
+		discard(baseFee.PopWorst(), FeeTooLow)
 	}
 
 	//5. If the top element in the worst yellow queue has subPool == 0x1110, but there is not enough room in the pool, discard.
@@ -997,7 +1007,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 		if worst.subPool >= 0b11110 {
 			break
 		}
-		discard(baseFee.PopWorst())
+		discard(baseFee.PopWorst(), BaseFeePoolOverflow)
 	}
 
 	//6. If the top element in the best red queue has subPool == 0x1110, promote to the yellow pool. If subPool == 0x1111, promote to the green pool.
@@ -1019,12 +1029,12 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 			break
 		}
 
-		discard(queued.PopWorst())
+		discard(queued.PopWorst(), FeeTooLow)
 	}
 
 	//8. If the top element in the worst red queue has subPool >= 0b100, but there is not enough room in the pool, discard.
 	for _ = queued.Worst(); queued.Len() > cfg.QueuedSubPoolLimit; _ = queued.Worst() {
-		discard(queued.PopWorst())
+		discard(queued.PopWorst(), QueuedPoolOverflow)
 	}
 }
 
