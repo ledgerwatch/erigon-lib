@@ -1110,6 +1110,14 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	lastSeenBlock, err := LastSeenBlock(tx)
+	if err != nil {
+		return err
+	}
+	p.lastSeenBlock.Store(lastSeenBlock)
+
+	p._cache.OnNewBlock(&remote.StateChangeBatch{DatabaseViewID: lastSeenBlock})
+
 	viewID, err := p._cache.View(ctx, coreTx)
 	if err != nil {
 		return err
@@ -1121,11 +1129,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	}); err != nil {
 		return err
 	}
-	lastSeenBlock, err := LastSeenBlock(tx)
-	if err != nil {
-		return err
-	}
-	p.lastSeenBlock.Store(lastSeenBlock)
 
 	txs := TxSlots{}
 	parseCtx := NewTxParseContext(p.rules, p.chainID)

@@ -244,7 +244,6 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
 	if !ok {
-		fmt.Printf("%#v\n", c.roots)
 		return nil, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
 	it := r.cache.Get(&Element{K: k})
