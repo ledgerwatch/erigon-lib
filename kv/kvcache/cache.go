@@ -30,6 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 )
 
@@ -122,15 +123,25 @@ func New(cfg CoherentCacheConfig) *Coherent {
 }
 
 // selectOrCreateRoot - used for usual getting root
-func (c *Coherent) selectOrCreateRoot(txID ViewID) *CoherentView {
+func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentView {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	r, ok := c.roots[txID]
+	r, ok := c.roots[viewID]
 	if ok {
 		return r
 	}
 	r = &CoherentView{ready: make(chan struct{})}
-	c.roots[txID] = r
+	if prevView, ok := c.roots[viewID-1]; ok {
+		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
+		r.cache = prevView.Clone()
+	} else {
+		//log.Info("advance: new", "to", viewID)
+		r.cache = btree.New(32)
+	}
+	c.roots[viewID] = r
+	c.evictRoots()
+	c.latestViewID = viewID
+	c.latestView = r
 	return r
 }
 
@@ -139,28 +150,27 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 	r, rootExists := c.roots[viewID]
 	if !rootExists {
 		r = &CoherentView{ready: make(chan struct{})}
+		if prevView, ok := c.roots[viewID-1]; ok {
+			//log.Info("advance: clone", "from", viewID-1, "to", viewID)
+			r.cache = prevView.Clone()
+		} else {
+			//log.Info("advance: new", "to", viewID)
+			r.cache = btree.New(32)
+		}
+
 		c.roots[viewID] = r
 		c.evictRoots()
 		c.latestViewID = viewID
 		c.latestView = r
 	}
 
-	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
-	if prevView, ok := c.roots[viewID-1]; ok {
-		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
-		r.cache = prevView.Clone()
-	} else {
-		if r.cache == nil {
-			//log.Info("advance: new", "to", viewID)
-			r.cache = btree.New(32)
-		}
-	}
 	c.keys.Set(uint64(c.latestView.cache.Len()))
 	c.keys2.Set(uint64(c.evictList.Len()))
 	return r
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
+	fmt.Printf("OnNewBlock\n")
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
@@ -202,44 +212,39 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	if switched {
 		close(r.ready) //broadcast
 	}
-	//log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
+	log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
 }
 
 type ViewID uint64
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
-	r := c.selectOrCreateRoot(ViewID(tx.ViewID()))
+	fmt.Printf("view\n")
+	id := ViewID(tx.ViewID())
+	r := c.selectOrCreateRoot(id)
 	select { // fast non-blocking path
 	case <-r.ready:
-		//fmt.Printf("recv broadcast: %d,%d\n", r.id.Load(), tx.ViewID())
-		return ViewID(tx.ViewID()), nil
+		fmt.Printf("recv broadcast: %d\n", id)
+		return id, nil
 	default:
 	}
 
 	select { // slow blocking path
 	case <-r.ready:
-		//fmt.Printf("recv broadcast2: %d,%d\n", r.id.Load(), tx.ViewID())
+		fmt.Printf("recv broadcast2: %d\n", tx.ViewID())
 	case <-ctx.Done():
 		return 0, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
 		c.timeout.Inc()
 		//c.lock.Lock()
-		//log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ViewID(), "has_btree", r.cache != nil)
-		if r.cache == nil {
-			parent, parentExists := c.roots[ViewID(tx.ViewID()-1)]
-			if parentExists && parent.cache != nil {
-				r.cache = parent.Clone()
-			} else {
-				r.cache = btree.New(32)
-			}
-			//r.cache = btree.New(32)
-		}
+		log.Info("timeout", "db_id", id, "has_btree", r.cache != nil)
 		//c.lock.Unlock()
 	}
 	return ViewID(tx.ViewID()), nil
 }
 
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
+	fmt.Printf("Get\n")
+
 	c.lock.RLock()
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
@@ -254,7 +259,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		//fmt.Printf("from cache %x: %#x,%x\n", c.id.Load(), k, it.(*Pair).V)
+		fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
 	c.miss.Inc()
@@ -263,11 +268,12 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	//fmt.Printf("from db %x: %#x,%x\n", c.id.Load(), k, v)
+	fmt.Printf("from db: %#x,%x\n", k, v)
 
 	c.lock.Lock()
 	v = c.add(common.Copy(k), common.Copy(v), r, id).V
 	c.lock.Unlock()
+	fmt.Printf("1\n")
 	return v, nil
 }
 

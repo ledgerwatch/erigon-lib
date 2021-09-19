@@ -29,6 +29,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEviction(t *testing.T) {
+	require, ctx := require.New(t), context.Background()
+	cfg := DefaultCoherentCacheConfig
+	cfg.KeysLimit = 3
+	c := New(DefaultCoherentCacheConfig)
+	db := memdb.NewTestDB(t)
+	k1, k2 := [20]byte{1}, [20]byte{2}
+
+	var id uint64
+	_ = db.Update(ctx, func(tx kv.RwTx) error {
+		_ = tx.Put(kv.PlainState, k1[:], []byte{1})
+		viewID, _ := c.View(ctx, tx)
+		id = tx.ViewID()
+		_, _ = c.Get(k1[:], tx, viewID)
+		return nil
+	})
+
+	fmt.Printf("c.latestViewID: %d, %d\n", c.latestViewID, id)
+	fmt.Printf("l1: %d\n", c.roots[c.latestViewID].cache.Len())
+	fmt.Printf("l2: %d\n", c.evictList.Len())
+
+	_ = k2
+	_ = require
+}
+
 func TestAPI(t *testing.T) {
 	require := require.New(t)
 	c := New(DefaultCoherentCacheConfig)
