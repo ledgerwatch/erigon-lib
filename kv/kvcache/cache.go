@@ -101,7 +101,7 @@ type CoherentCacheConfig struct {
 var DefaultCoherentCacheConfig = CoherentCacheConfig{
 	KeepViews:    50,
 	NewBlockWait: 50 * time.Millisecond,
-	KeysLimit:    140_000,
+	KeysLimit:    110_000,
 	MetricsLabel: "default",
 	WithStorage:  true,
 }
