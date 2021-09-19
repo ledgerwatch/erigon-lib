@@ -160,7 +160,8 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	r := c.advanceRoot(ViewID(stateChanges.DatabaseViewID))
+	id := ViewID(stateChanges.DatabaseViewID)
+	r := c.advanceRoot(id)
 	for _, sc := range stateChanges.ChangeBatch {
 		for i := range sc.Changes {
 			switch sc.Changes[i].Action {
@@ -168,10 +169,10 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 				v := sc.Changes[i].Data
 				//fmt.Printf("set: %x,%x\n", addr, v)
-				r.cache.ReplaceOrInsert(&Element{K: addr[:], V: v})
+				c.add(addr[:], v, r, id)
 			case remote.Action_DELETE:
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-				r.cache.ReplaceOrInsert(&Element{K: addr[:], V: nil})
+				c.add(addr[:], nil, r, id)
 			case remote.Action_CODE, remote.Action_STORAGE:
 				//skip
 			default:
@@ -185,7 +186,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 					copy(k, addr[:])
 					binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
 					copy(k[20+8:], loc[:])
-					r.cache.ReplaceOrInsert(&Element{K: k, V: change.Data})
+					c.add(k, change.Data, r, id)
 				}
 			}
 		}
@@ -219,18 +220,18 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
 		return 0, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
 		c.timeout.Inc()
-		//r.Lock()
+		//c.lock.Lock()
 		//log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ViewID(), "has_btree", r.cache != nil)
 		if r.cache == nil {
-			//parent := c.selectOrCreateRoot(tx.ViewID() - 1)
-			//if parent.cache != nil {
+			//parent, parentExists := c.roots[ViewID(tx.ViewID()-1)]
+			//if parentExists && parent.cache != nil {
 			//	r.cache = parent.Clone()
 			//} else {
 			//	r.cache = btree.New(32)
 			//}
 			r.cache = btree.New(32)
 		}
-		//r.lock.Unlock()
+		//c.lock.Unlock()
 	}
 	return ViewID(tx.ViewID()), nil
 }
@@ -262,30 +263,35 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	}
 	//fmt.Printf("from db %x: %#x,%x\n", c.id.Load(), k, v)
 
-	it = &Element{K: common.Copy(k), V: common.Copy(v)}
 	c.lock.Lock()
-	replaced := r.cache.ReplaceOrInsert(it)
-	if isLatest {
-		if replaced != nil {
-			c.evictList.Remove(replaced.(*Element))
-		}
-		c.evictList.PushFront(it.(*Element))
-		evict := c.evictList.Len() > c.cfg.KeysLimit
-		// Verify size not exceeded
-		if evict {
-			c.removeOldest(r)
-		}
-	}
-
+	v = c.add(common.Copy(k), common.Copy(v), r, id).V
 	c.lock.Unlock()
-	return it.(*Element).V, nil
+	return v, nil
 }
+
 func (c *Coherent) removeOldest(r *CoherentView) {
 	e := c.evictList.Back()
 	if e != nil {
 		c.evictList.Remove(e)
 		r.cache.Delete(e)
 	}
+}
+func (c *Coherent) add(k, v []byte, r *CoherentView, id ViewID) *Element {
+	it := &Element{K: k, V: v}
+	replaced := r.cache.ReplaceOrInsert(it)
+	if c.latestViewID != id {
+		return it
+	}
+	if replaced != nil {
+		c.evictList.Remove(replaced.(*Element))
+	}
+	c.evictList.PushFront(it)
+	evict := c.evictList.Len() > c.cfg.KeysLimit
+	// Verify size not exceeded
+	if evict {
+		c.removeOldest(r)
+	}
+	return it
 }
 
 func (c *CoherentView) Clone() *btree.BTree {
@@ -486,6 +492,8 @@ type Element struct {
 }
 
 func (p *Element) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Element).K) < 0 }
+
+// ========= copypaste of List implementation from stdlib ========
 
 // Next returns the next list element or nil.
 func (e *Element) Next() *Element {
