@@ -190,6 +190,10 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 			}
 		}
 	}
+	for c.evictList.Len() > c.cfg.KeysLimit {
+		c.removeOldest(r)
+	}
+
 	switched := r.readyChanClosed.CAS(false, true)
 	if switched {
 		close(r.ready) //broadcast
