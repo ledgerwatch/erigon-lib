@@ -1116,8 +1116,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	}
 	p.lastSeenBlock.Store(lastSeenBlock)
 
-	p._cache.OnNewBlock(&remote.StateChangeBatch{DatabaseViewID: lastSeenBlock})
-
 	viewID, err := p._cache.View(ctx, coreTx)
 	if err != nil {
 		return err

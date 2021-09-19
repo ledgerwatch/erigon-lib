@@ -33,7 +33,7 @@ func TestEviction(t *testing.T) {
 	require, ctx := require.New(t), context.Background()
 	cfg := DefaultCoherentCacheConfig
 	cfg.KeysLimit = 3
-	c := New(DefaultCoherentCacheConfig)
+	c := New(cfg)
 	db := memdb.NewTestDB(t)
 	k1, k2 := [20]byte{1}, [20]byte{2}
 
@@ -43,6 +43,10 @@ func TestEviction(t *testing.T) {
 		viewID, _ := c.View(ctx, tx)
 		id = tx.ViewID()
 		_, _ = c.Get(k1[:], tx, viewID)
+		_, _ = c.Get([]byte{1}, tx, viewID)
+		_, _ = c.Get([]byte{2}, tx, viewID)
+		_, _ = c.Get([]byte{3}, tx, viewID)
+		require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
 		return nil
 	})
 	require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
@@ -70,13 +74,12 @@ func TestEviction(t *testing.T) {
 		id = tx.ViewID()
 		_, _ = c.Get(k1[:], tx, viewID)
 		_, _ = c.Get(k2[:], tx, viewID)
+		_, _ = c.Get([]byte{5}, tx, viewID)
+		_, _ = c.Get([]byte{6}, tx, viewID)
+		require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
 		return nil
 	})
-	require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
-	fmt.Printf("c.latestViewID: %d, %d\n", c.latestViewID, id)
-
-	_ = k2
-	_ = require
+	require.Equal(cfg.KeysLimit, c.evictList.Len())
 }
 
 func TestAPI(t *testing.T) {
