@@ -138,6 +138,9 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 	if !rootExists {
 		r = &CoherentView{ready: make(chan struct{})}
 		c.roots[viewID] = r
+		c.evictRoots()
+		c.latestViewID = viewID
+		c.latestView = r
 	}
 
 	//TODO: need check if c.latest hash is still canonical. If not - can't clone from it
@@ -150,9 +153,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 			r.cache = btree.New(32)
 		}
 	}
-	c.latestViewID = viewID
-	c.latestView = r
-	c.evictRoots()
+	c.keys.Set(uint64(c.latestView.cache.Len()))
 	return r
 }
 
