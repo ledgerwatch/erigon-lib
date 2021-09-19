@@ -375,6 +375,9 @@ func (c *Coherent) evictRoots() {
 func (c *Coherent) Len() int {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
+	if c.latestView == nil {
+		return 0
+	}
 	return c.latestView.cache.Len() //todo: is it same with cache.len()?
 }
 
