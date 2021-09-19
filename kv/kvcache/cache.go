@@ -30,7 +30,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 )
 
@@ -170,7 +169,6 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
-	fmt.Printf("OnNewBlock\n")
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
@@ -212,39 +210,34 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	if switched {
 		close(r.ready) //broadcast
 	}
-	log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
+	//log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
 }
 
 type ViewID uint64
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
-	fmt.Printf("view\n")
 	id := ViewID(tx.ViewID())
 	r := c.selectOrCreateRoot(id)
 	select { // fast non-blocking path
 	case <-r.ready:
-		fmt.Printf("recv broadcast: %d\n", id)
+		//fmt.Printf("recv broadcast: %d\n", id)
 		return id, nil
 	default:
 	}
 
 	select { // slow blocking path
 	case <-r.ready:
-		fmt.Printf("recv broadcast2: %d\n", tx.ViewID())
+		//fmt.Printf("recv broadcast2: %d\n", tx.ViewID())
 	case <-ctx.Done():
 		return 0, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
 		c.timeout.Inc()
-		//c.lock.Lock()
-		log.Info("timeout", "db_id", id, "has_btree", r.cache != nil)
-		//c.lock.Unlock()
+		//log.Info("timeout", "db_id", id, "has_btree", r.cache != nil)
 	}
 	return ViewID(tx.ViewID()), nil
 }
 
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
-	fmt.Printf("Get\n")
-
 	c.lock.RLock()
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
@@ -259,7 +252,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
+		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
 	c.miss.Inc()
@@ -268,12 +261,11 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("from db: %#x,%x\n", k, v)
+	//fmt.Printf("from db: %#x,%x\n", k, v)
 
 	c.lock.Lock()
 	v = c.add(common.Copy(k), common.Copy(v), r, id).V
 	c.lock.Unlock()
-	fmt.Printf("1\n")
 	return v, nil
 }
 
