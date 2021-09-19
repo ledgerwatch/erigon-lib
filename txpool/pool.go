@@ -748,6 +748,7 @@ func unsafeAddToPendingPool(blockNum uint64, newTxs TxSlots, byHash map[string]*
 			changedSenders[txn.senderID] = struct{}{}
 		}
 	}
+	fmt.Printf("changedSenders: %d\n", len(changedSenders))
 	return changedSenders
 }
 
