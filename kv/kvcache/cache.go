@@ -258,7 +258,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	}
 	//fmt.Printf("from db %x: %#x,%x\n", c.id.Load(), k, v)
 
-	it = &Element{K: k, V: common.Copy(v)}
+	it = &Element{K: common.Copy(k), V: common.Copy(v)}
 	c.lock.Lock()
 	replaced := r.cache.ReplaceOrInsert(it)
 	if isLatest {
