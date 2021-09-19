@@ -17,6 +17,7 @@
 package recsplit
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -68,7 +69,7 @@ type RecSplit struct {
 	collector        *etl.Collector
 	built            bool       // Flag indicating that the hash function has been built and no more keys can be added
 	currentBucketIdx uint64     // Current bucket being accumulated
-	currentBucket    []string   // Keys in the current bucket accumulated before the recsplit is performed for that bucket
+	currentBucket    [][]byte   // Keys in the current bucket accumulated before the recsplit is performed for that bucket
 	gr               GolombRice // Helper object to encode the tree of hash function salts using Golomb-Rice code.
 	// Helper object to encode the sequence of cumulative number of keys in the buckets
 	// and the sequence of of cumulative bit offsets of buckets in the Golomb-Rice code.
@@ -80,6 +81,7 @@ type RecSplit struct {
 	secondaryAggrBound int      // The lower bound for secondary key aggregation (computed from leadSize)
 	startSeed          []uint32
 	golombRice         []uint32
+	buffer             [][]byte
 }
 
 type RecSplitArgs struct {
@@ -100,7 +102,7 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	rs := &RecSplit{bucketSize: args.BucketSize, keyExpectedCount: uint64(args.KeyCount), bucketCount: uint64(bucketCount)}
 	rs.hasher = murmur3.New64WithSeed(args.Salt)
 	rs.collector = etl.NewCollector(args.TmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
-	rs.currentBucket = make([]string, 0, args.BucketSize)
+	rs.currentBucket = make([][]byte, 0, args.BucketSize)
 	rs.bucketSizeAcc = make([]uint64, 1, bucketCount+1)
 	rs.bucketPosAcc = make([]uint64, 1, bucketCount+1)
 	if args.LeafSize > MaxLeafSize {
@@ -211,10 +213,11 @@ func (rs *RecSplit) AddKey(key []byte) error {
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
 	hash := rs.hasher.Sum64()
-	var bucket [8]byte
-	binary.BigEndian.PutUint64(bucket[:], remap(hash, rs.bucketCount))
+	bucketKey := make([]byte, 8+len(key))
+	binary.BigEndian.PutUint64(bucketKey[:], remap(hash, rs.bucketCount))
+	copy(bucketKey[8:], key)
 	rs.keysAdded++
-	return rs.collector.Collect(bucket[:], key)
+	return rs.collector.Collect(bucketKey[:], []byte{})
 }
 
 func (rs *RecSplit) recsplitCurrentBucket() error {
@@ -224,15 +227,20 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 	}
 	rs.bucketSizeAcc[int(rs.currentBucketIdx)+1] += uint64(len(rs.currentBucket))
 	if len(rs.currentBucket) > 1 {
-		// First we check that the keys are distinct by sorting them
-		sort.Strings(rs.currentBucket)
 		for i, key := range rs.currentBucket[1:] {
-			if key == rs.currentBucket[i] {
+			if bytes.Equal(key, rs.currentBucket[i]) {
 				return fmt.Errorf("duplicate key %x", key)
 			}
 		}
 		bitPos := rs.gr.bitCount
-		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
+		if rs.buffer == nil {
+			rs.buffer = make([][]byte, len(rs.currentBucket))
+		} else {
+			for len(rs.buffer) < len(rs.currentBucket) {
+				rs.buffer = append(rs.buffer, nil)
+			}
+		}
+		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */, rs.buffer)
 		rs.gr.appendUnaryAll(unary)
 		fmt.Printf("recsplitBucket(%d, %d, bitsize = %d)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos)
 	}
@@ -247,7 +255,7 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 }
 
 // recsplit applies recSplit algorithm to the given bucket
-func (rs *RecSplit) recsplit(level int, bucket []string, unary []uint32) []uint32 {
+func (rs *RecSplit) recsplit(level int, bucket [][]byte, unary []uint32) []uint32 {
 	//fmt.Printf("recsplit(%d, %d, %x)\n", level, len(bucket), bucket)
 	// Pick initial salt for this level of recursive split
 	salt := rs.startSeed[level]
@@ -338,7 +346,7 @@ func (rs *RecSplit) loadFunc(k, v []byte, table etl.CurrentTableReader, next etl
 		}
 		rs.currentBucketIdx = bucketIdx
 	}
-	rs.currentBucket = append(rs.currentBucket, string(v))
+	rs.currentBucket = append(rs.currentBucket, k[8:])
 	return nil
 }
 
