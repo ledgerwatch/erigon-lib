@@ -1128,6 +1128,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	txs := TxSlots{}
 	parseCtx := NewTxParseContext(p.rules, p.chainID)
 	parseCtx.WithSender(false)
+	fmt.Printf("--\n")
 
 	i := 0
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
@@ -1154,6 +1155,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
 		txs.isLocal[i] = isLocalTx
+		fmt.Printf("from: %x\n", txs.txs[i].idHash)
 		i++
 		return nil
 	}); err != nil {

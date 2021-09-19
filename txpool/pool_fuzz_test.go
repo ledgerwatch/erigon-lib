@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -587,6 +588,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		assert.NoError(err)
 		check(p2pReceived, TxSlots{}, "p2pmsg1")
 		checkNotify(p2pReceived, TxSlots{}, "p2pmsg1")
+		fmt.Printf("========\n")
 
 		err = pool.flushLocked(tx) // we don't test eviction here, because dedicated test exists
 		require.NoError(err)
