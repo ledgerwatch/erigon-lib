@@ -271,15 +271,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	t := time.Now()
 
-	defer func(t time.Time) { fmt.Printf("pool.go:274: %s\n", time.Since(t)) }(time.Now())
 	p.cache().OnNewBlock(stateChanges)
-	defer func(t time.Time) { fmt.Printf("pool.go:276: %s\n", time.Since(t)) }(time.Now())
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
 	}
 	defer coreTx.Rollback()
-	cache, err := p.cache().View(ctx, coreTx)
+	viewID, err := p.cache().View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -298,10 +296,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
 	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
 
-	defer func(t time.Time) { fmt.Printf("pool.go:301: %s\n", time.Since(t)) }(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	defer func(t time.Time) { fmt.Printf("pool.go:304: %s\n", time.Since(t)) }(time.Now())
 
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
@@ -326,8 +322,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
+	defer func(t time.Time) { fmt.Printf("pool.go:304: %s\n", time.Since(t)) }(time.Now())
+
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	if err := addTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), p._cache, viewID, coreTx, p.cfg, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -365,7 +363,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 	defer coreTx.Rollback()
-	cache, err := p.cache().View(ctx, coreTx)
+	viewID, err := p.cache().View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -388,7 +386,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	if err := addTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), p._cache, viewID, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -547,7 +545,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 	}
 	defer coreTx.Rollback()
 
-	cache, err := p.cache().View(ctx, coreTx)
+	viewID, err := p.cache().View(ctx, coreTx)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +560,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 	if err = p.senders.onNewTxs(newTxs); err != nil {
 		return nil, err
 	}
-	if err := addTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), p._cache, viewID, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
 
@@ -602,7 +600,7 @@ func (p *TxPool) cache() kvcache.Cache {
 	defer p.lock.RUnlock()
 	return p._cache
 }
-func addTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
+func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -622,7 +620,7 @@ func addTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, 
 	// time (up to some "immutability threshold").
 	changedSenders := unsafeAddToPendingPool(blockNum, newTxs, byHash, add)
 	for id := range changedSenders {
-		nonce, balance, err := senders.info(cache, coreTx, id)
+		nonce, balance, err := senders.info(cache, viewID, coreTx, id)
 		if err != nil {
 			return err
 		}
@@ -753,7 +751,6 @@ func unsafeAddToPendingPool(blockNum uint64, newTxs TxSlots, byHash map[string]*
 			changedSenders[txn.senderID] = struct{}{}
 		}
 	}
-	fmt.Printf("changedSenders: %d\n", len(changedSenders))
 	return changedSenders
 }
 
@@ -936,8 +933,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	defer commitEvery.Stop()
 	logEvery := time.NewTicker(p.cfg.LogEvery)
 	defer logEvery.Stop()
-	cacheEvictEvery := time.NewTicker(p.cfg.CacheEvictEvery)
-	defer cacheEvictEvery.Stop()
 
 	localTxHashes := make([]byte, 0, 128)
 	remoteTxHashes := make([]byte, 0, 128)
@@ -1012,8 +1007,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			remoteTxHashes = p.AppendAllHashes(remoteTxHashes[:0])
 			send.PropagatePooledTxsToPeersList(newPeers, remoteTxHashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
-		case <-cacheEvictEvery.C:
-			p.cache().Evict()
 		}
 	}
 }
@@ -1108,7 +1101,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	cache, err := p._cache.View(ctx, coreTx)
+	viewID, err := p._cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -1183,7 +1176,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := addTxs(0, cache, coreTx, p.cfg, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(0, p._cache, viewID, coreTx, p.cfg, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.currentBaseFee.Store(currentBaseFee)
@@ -1383,13 +1376,13 @@ func (sc *sendersBatch) id(addr string) (uint64, bool) {
 	id, ok := sc.senderIDs[addr]
 	return id, ok
 }
-func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (nonce uint64, balance uint256.Int, err error) {
+func (sc *sendersBatch) info(cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx, id uint64) (nonce uint64, balance uint256.Int, err error) {
 	//cacheTotalCounter.Inc()
 	addr, ok := sc.senderID2Addr[id]
 	if !ok {
 		panic("must not happen")
 	}
-	encoded, err := cache.Get([]byte(addr), coreTx)
+	encoded, err := cache.Get([]byte(addr), coreTx, viewID)
 	if err != nil {
 		return 0, emptySender.balance, err
 	}

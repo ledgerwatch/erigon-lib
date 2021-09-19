@@ -45,11 +45,11 @@ func TestAPI(t *testing.T) {
 						panic(fmt.Sprintf("epxected: %d, got: %d", expectTxnID, tx.ViewID()))
 					}
 					wg.Done()
-					cache, err := c.View(context.Background(), tx)
+					viewID, err := c.View(context.Background(), tx)
 					if err != nil {
 						panic(err)
 					}
-					v, err := cache.Get(key[:], tx)
+					v, err := c.Get(key[:], tx, viewID)
 					if err != nil {
 						panic(err)
 					}

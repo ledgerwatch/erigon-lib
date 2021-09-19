@@ -17,13 +17,11 @@ package kvcache
 
 import (
 	"bytes"
-	"container/list"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"sort"
 	"sync"
-	goatomic "sync/atomic"
 	"time"
 
 	"github.com/VictoriaMetrics/metrics"
@@ -32,19 +30,16 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 )
 
 type Cache interface {
 	// View - returns CacheView consistent with givent kv.Tx
-	View(ctx context.Context, tx kv.Tx) (CacheView, error)
+	View(ctx context.Context, tx kv.Tx) (ViewID, error)
 	OnNewBlock(sc *remote.StateChangeBatch)
-	Evict() int
+	//Evict() int
 	Len() int
-}
-type CacheView interface {
-	Get(k []byte, tx kv.Tx) ([]byte, error)
+	Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error)
 }
 
 // Coherent works on top of Database Transaction and pair Coherent+ReadTransaction must
@@ -78,28 +73,22 @@ type CacheView interface {
 type Coherent struct {
 	hits, miss, timeout, keys *metrics.Counter
 	evict                     *metrics.Summary
-	evictList                 *list.List
-	roots                     map[uint64]*CoherentView
-	rootsLock                 sync.RWMutex
+	latestViewID              ViewID
+	latestView                *CoherentView
+	evictList                 *List
+	roots                     map[ViewID]*CoherentView
+	lock                      sync.RWMutex
 	cfg                       CoherentCacheConfig
 }
 type CoherentView struct {
-	hits, miss      *metrics.Counter
+	evictList       *List
 	cache           *btree.BTree
-	lock            sync.RWMutex
-	id              atomic.Uint64
 	ready           chan struct{} // close when ready
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
 }
 
-var _ Cache = (*Coherent)(nil)         // compile-time interface check
-var _ CacheView = (*CoherentView)(nil) // compile-time interface check
-type Pair struct {
-	K, V []byte
-	t    uint64 //TODO: can be uint32 if remember first txID and use it as base zero. because it's monotonic.
-}
-
-func (p *Pair) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Pair).K) < 0 }
+var _ Cache = (*Coherent)(nil) // compile-time interface check
+//var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 
 type CoherentCacheConfig struct {
 	KeepViews    uint64        // keep in memory up to this amount of views, evict older
@@ -118,37 +107,36 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
-	return &Coherent{roots: map[uint64]*CoherentView{}, cfg: cfg,
-		miss:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
-		hits:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
-		timeout: metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
-		keys:    metrics.GetOrCreateCounter(fmt.Sprintf(`cache_keys_total{name="%s"}`, cfg.MetricsLabel)),
-		evict:   metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
+	return &Coherent{
+		roots:     map[ViewID]*CoherentView{},
+		evictList: NewList(),
+		cfg:       cfg,
+		miss:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
+		hits:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
+		timeout:   metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
+		keys:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_keys_total{name="%s"}`, cfg.MetricsLabel)),
+		evict:     metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
 	}
 }
 
 // selectOrCreateRoot - used for usual getting root
-func (c *Coherent) selectOrCreateRoot(txID uint64) *CoherentView {
-	c.rootsLock.Lock()
-	defer c.rootsLock.Unlock()
+func (c *Coherent) selectOrCreateRoot(txID ViewID) *CoherentView {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	r, ok := c.roots[txID]
 	if ok {
 		return r
 	}
-	r = &CoherentView{ready: make(chan struct{}), hits: c.hits, miss: c.miss}
-	r.id.Store(txID)
+	r = &CoherentView{ready: make(chan struct{})}
 	c.roots[txID] = r
 	return r
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(viewID uint64) (r *CoherentView) {
-	c.rootsLock.Lock()
-	defer c.rootsLock.Unlock()
+func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 	r, rootExists := c.roots[viewID]
 	if !rootExists {
-		r = &CoherentView{ready: make(chan struct{}), hits: c.hits, miss: c.miss}
-		r.id.Store(viewID)
+		r = &CoherentView{ready: make(chan struct{})}
 		c.roots[viewID] = r
 	}
 
@@ -162,13 +150,16 @@ func (c *Coherent) advanceRoot(viewID uint64) (r *CoherentView) {
 			r.cache = btree.New(32)
 		}
 	}
+	c.latestViewID = viewID
+	c.latestView = r
+	c.evictRoots()
 	return r
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
-	r := c.advanceRoot(stateChanges.DatabaseViewID)
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	r := c.advanceRoot(ViewID(stateChanges.DatabaseViewID))
 	for _, sc := range stateChanges.ChangeBatch {
 		for i := range sc.Changes {
 			switch sc.Changes[i].Action {
@@ -176,10 +167,10 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 				v := sc.Changes[i].Data
 				//fmt.Printf("set: %x,%x\n", addr, v)
-				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: v, t: sc.BlockHeight})
+				r.cache.ReplaceOrInsert(&Element{K: addr[:], V: v})
 			case remote.Action_DELETE:
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-				r.cache.ReplaceOrInsert(&Pair{K: addr[:], V: nil, t: sc.BlockHeight})
+				r.cache.ReplaceOrInsert(&Element{K: addr[:], V: nil})
 			case remote.Action_CODE, remote.Action_STORAGE:
 				//skip
 			default:
@@ -193,7 +184,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 					copy(k, addr[:])
 					binary.BigEndian.PutUint64(k[20:], sc.Changes[i].Incarnation)
 					copy(k[20+8:], loc[:])
-					r.cache.ReplaceOrInsert(&Pair{K: k, V: change.Data, t: sc.BlockHeight})
+					r.cache.ReplaceOrInsert(&Element{K: k, V: change.Data})
 				}
 			}
 		}
@@ -205,12 +196,14 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	//log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
 }
 
-func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
-	r := c.selectOrCreateRoot(tx.ViewID())
+type ViewID uint64
+
+func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
+	r := c.selectOrCreateRoot(ViewID(tx.ViewID()))
 	select { // fast non-blocking path
 	case <-r.ready:
 		//fmt.Printf("recv broadcast: %d,%d\n", r.id.Load(), tx.ViewID())
-		return r, nil
+		return ViewID(tx.ViewID()), nil
 	default:
 	}
 
@@ -218,10 +211,10 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	case <-r.ready:
 		//fmt.Printf("recv broadcast2: %d,%d\n", r.id.Load(), tx.ViewID())
 	case <-ctx.Done():
-		return nil, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
+		return 0, fmt.Errorf("kvcache rootNum=%x, %w", tx.ViewID(), ctx.Err())
 	case <-time.After(c.cfg.NewBlockWait): //TODO: switch to timer to save resources
 		c.timeout.Inc()
-		r.lock.Lock()
+		//r.Lock()
 		//log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ViewID(), "has_btree", r.cache != nil)
 		if r.cache == nil {
 			//parent := c.selectOrCreateRoot(tx.ViewID() - 1)
@@ -232,21 +225,29 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 			//}
 			r.cache = btree.New(32)
 		}
-		r.lock.Unlock()
+		//r.lock.Unlock()
 	}
-	return r, nil
+	return ViewID(tx.ViewID()), nil
 }
 
-func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
+func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.RLock()
-	it := c.cache.Get(&Pair{K: k})
+	isLatest := c.latestViewID == id
+	r, ok := c.roots[id]
+	if !ok {
+		fmt.Printf("%#v\n", c.roots)
+		return nil, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
+	}
+	it := r.cache.Get(&Element{K: k})
 	c.lock.RUnlock()
 
 	if it != nil {
 		c.hits.Inc()
-		goatomic.StoreUint64(&it.(*Pair).t, c.id.Load())
+		if isLatest {
+			c.evictList.MoveToFront(it.(*Element))
+		}
 		//fmt.Printf("from cache %x: %#x,%x\n", c.id.Load(), k, it.(*Pair).V)
-		return it.(*Pair).V, nil
+		return it.(*Element).V, nil
 	}
 	c.miss.Inc()
 
@@ -256,23 +257,35 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 	}
 	//fmt.Printf("from db %x: %#x,%x\n", c.id.Load(), k, v)
 
-	it = &Pair{K: k, V: common.Copy(v), t: c.id.Load()}
+	it = &Element{K: k, V: common.Copy(v)}
 	c.lock.Lock()
-	c.cache.ReplaceOrInsert(it)
-	c.lock.Unlock()
-	return it.(*Pair).V, nil
-}
-func (c *CoherentView) Len() int {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-	if c.cache == nil {
-		return 0
+	replaced := r.cache.ReplaceOrInsert(it)
+	if isLatest {
+		if replaced != nil {
+			c.evictList.Remove(replaced.(*Element))
+		}
+		c.evictList.PushFront(it.(*Element))
+		evict := c.evictList.Len() > c.cfg.KeysLimit
+		// Verify size not exceeded
+		if evict {
+			c.removeOldest(r)
+		}
 	}
-	return c.cache.Len()
+
+	c.lock.Unlock()
+	return it.(*Element).V, nil
 }
+func (c *Coherent) removeOldest(r *CoherentView) {
+	e := c.evictList.Back()
+	if e != nil {
+		c.evictList.Remove(e)
+		r.cache.Delete(e)
+	}
+}
+
 func (c *CoherentView) Clone() *btree.BTree {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	//c.lock.Lock()
+	//defer c.lock.Unlock()
 	if c.cache == nil {
 		c.cache = btree.New(32)
 		return btree.New(32) // return independent tree because nothing to share
@@ -292,51 +305,24 @@ func DebugStats(cache Cache) []Stat {
 	if !ok {
 		return res
 	}
-	casted.rootsLock.RLock()
-	defer casted.rootsLock.RUnlock()
+	casted.lock.RLock()
+	defer casted.lock.RUnlock()
 	for root, r := range casted.roots {
 		res = append(res, Stat{
-			BlockNum: root,
-			Lenght:   r.Len(),
+			BlockNum: uint64(root),
+			Lenght:   r.cache.Len(),
 		})
-	}
-	sort.Slice(res, func(i, j int) bool { return res[i].BlockNum < res[j].BlockNum })
-	return res
-}
-func DebugAges(cache Cache) []Stat {
-	res := []Stat{}
-	casted, ok := cache.(*Coherent)
-	if !ok {
-		return res
-	}
-	casted.rootsLock.RLock()
-	defer casted.rootsLock.RUnlock()
-	_, latestView := cache.(*Coherent).lastRoot()
-	latestView.lock.RLock()
-	defer latestView.lock.RUnlock()
-	counters := map[uint64]int{}
-	latestView.cache.Ascend(func(it btree.Item) bool {
-		age := goatomic.LoadUint64(&it.(*Pair).t)
-		_, ok := counters[age]
-		if !ok {
-			counters[age] = 0
-		}
-		counters[age]++
-		return true
-	})
-	for i, j := range counters {
-		res = append(res, Stat{BlockNum: i, Lenght: j})
 	}
 	sort.Slice(res, func(i, j int) bool { return res[i].BlockNum < res[j].BlockNum })
 	return res
 }
 func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) {
 	defer func(t time.Time) { fmt.Printf("AssertCheckValues:327: %s\n", time.Since(t)) }(time.Now())
-	c, err := cache.View(ctx, tx)
+	viewID, err := cache.View(ctx, tx)
 	if err != nil {
 		return 0, err
 	}
-	casted, ok := c.(*CoherentView)
+	casted, ok := cache.(*Coherent)
 	if !ok {
 		return 0, nil
 	}
@@ -344,15 +330,19 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 	casted.lock.RLock()
 	defer casted.lock.RUnlock()
 	//log.Info("AssertCheckValues start", "db_id", tx.ViewID(), "mem_id", casted.id.Load(), "len", casted.cache.Len())
-	casted.cache.Ascend(func(i btree.Item) bool {
-		k, v := i.(*Pair).K, i.(*Pair).V
+	view, ok := casted.roots[viewID]
+	if !ok {
+		return 0, nil
+	}
+	view.cache.Ascend(func(i btree.Item) bool {
+		k, v := i.(*Element).K, i.(*Element).V
 		var dbV []byte
 		dbV, err = tx.GetOne(kv.PlainState, k)
 		if err != nil {
 			return false
 		}
 		if !bytes.Equal(dbV, v) {
-			err = fmt.Errorf("key: %x, has different values: %x != %x, viewID: %d", k, v, dbV, casted.id.Load())
+			err = fmt.Errorf("key: %x, has different values: %x != %x", k, v, dbV)
 			return false
 		}
 		checked++
@@ -360,22 +350,16 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 	})
 	return checked, err
 }
-
-func (c *Coherent) lastRoot() (latestTxId uint64, view *CoherentView) {
-	c.rootsLock.RLock()
-	defer c.rootsLock.RUnlock()
-	for txID := range c.roots { // max
-		if txID > latestTxId {
-			latestTxId = txID
-		}
+func (c *Coherent) evictRoots() {
+	if c.latestViewID <= ViewID(c.cfg.KeepViews) {
+		return
 	}
-	return latestTxId, c.roots[latestTxId]
-}
-func (c *Coherent) evictRoots(to uint64) {
-	c.rootsLock.Lock()
-	defer c.rootsLock.Unlock()
+	if len(c.roots) < int(c.cfg.KeepViews) {
+		return
+	}
+	to := c.latestViewID - ViewID(c.cfg.KeepViews)
 	//fmt.Printf("collecting: %d\n", to)
-	var toDel []uint64
+	var toDel []ViewID
 	for txId := range c.roots {
 		if txId > to {
 			continue
@@ -388,25 +372,29 @@ func (c *Coherent) evictRoots(to uint64) {
 	}
 }
 func (c *Coherent) Len() int {
-	_, lastView := c.lastRoot()
-	return lastView.Len()
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	return c.evictList.Len() //todo: is it same with cache.len()?
 }
 
+/*
 func (c *Coherent) Evict() int {
 	defer c.evict.UpdateDuration(time.Now())
 	latestBlockNum, lastView := c.lastRoot()
-	c.evictRoots(latestBlockNum - c.cfg.KeepViews)
+	c.evictRoots(latestBlockNum - ViewID(c.cfg.KeepViews))
 	if lastView == nil {
 		return 0
 	}
-	keysAmount := lastView.Len()
+	keysAmount := lastView.cache.Len()
 	c.keys.Set(uint64(keysAmount))
 
 	//lastView.evictOld(latestBlockNum-c.cfg.KeepViews, c.cfg.KeysLimit)
 	//lastView.evictNew2Random(c.cfg.KeysLimit)
-	return lastView.Len()
+	return lastView.cache.Len()
 }
+*/
 
+/*
 //nolint
 func (c *CoherentView) evictOld(dropOlder uint64, keysLimit int) {
 	if c.Len() < keysLimit {
@@ -470,4 +458,215 @@ func (c *CoherentView) evictNew2Random(keysLimit int) {
 		c.cache.Delete(it)
 	}
 	log.Info("evicted", "2_random__amount", len(toDel))
+}
+*/
+
+// Element is an element of a linked list.
+type Element struct {
+	// Next and previous pointers in the doubly-linked list of elements.
+	// To simplify the implementation, internally a list l is implemented
+	// as a ring, such that &l.root is both the next element of the last
+	// list element (l.Back()) and the previous element of the first list
+	// element (l.Front()).
+	next, prev *Element
+
+	// The list to which this element belongs.
+	list *List
+
+	// The value stored with this element.
+	K, V []byte
+}
+
+func (p *Element) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Element).K) < 0 }
+
+// Next returns the next list element or nil.
+func (e *Element) Next() *Element {
+	if p := e.next; e.list != nil && p != &e.list.root {
+		return p
+	}
+	return nil
+}
+
+// Prev returns the previous list element or nil.
+func (e *Element) Prev() *Element {
+	if p := e.prev; e.list != nil && p != &e.list.root {
+		return p
+	}
+	return nil
+}
+
+// List represents a doubly linked list.
+// The zero value for List is an empty list ready to use.
+type List struct {
+	root Element // sentinel list element, only &root, root.prev, and root.next are used
+	len  int     // current list length excluding (this) sentinel element
+}
+
+// Init initializes or clears list l.
+func (l *List) Init() *List {
+	l.root.next = &l.root
+	l.root.prev = &l.root
+	l.len = 0
+	return l
+}
+
+// New returns an initialized list.
+func NewList() *List { return new(List).Init() }
+
+// Len returns the number of elements of list l.
+// The complexity is O(1).
+func (l *List) Len() int { return l.len }
+
+// Front returns the first element of list l or nil if the list is empty.
+func (l *List) Front() *Element {
+	if l.len == 0 {
+		return nil
+	}
+	return l.root.next
+}
+
+// Back returns the last element of list l or nil if the list is empty.
+func (l *List) Back() *Element {
+	if l.len == 0 {
+		return nil
+	}
+	return l.root.prev
+}
+
+// lazyInit lazily initializes a zero List value.
+func (l *List) lazyInit() {
+	if l.root.next == nil {
+		l.Init()
+	}
+}
+
+// insert inserts e after at, increments l.len, and returns e.
+func (l *List) insert(e, at *Element) *Element {
+	e.prev = at
+	e.next = at.next
+	e.prev.next = e
+	e.next.prev = e
+	e.list = l
+	l.len++
+	return e
+}
+
+// insertValue is a convenience wrapper for insert(&Element{Value: v}, at).
+func (l *List) insertValue(e, at *Element) *Element {
+	return l.insert(e, at)
+}
+
+// remove removes e from its list, decrements l.len, and returns e.
+func (l *List) remove(e *Element) *Element {
+	e.prev.next = e.next
+	e.next.prev = e.prev
+	e.next = nil // avoid memory leaks
+	e.prev = nil // avoid memory leaks
+	e.list = nil
+	l.len--
+	return e
+}
+
+// move moves e to next to at and returns e.
+func (l *List) move(e, at *Element) *Element {
+	if e == at {
+		return e
+	}
+	e.prev.next = e.next
+	e.next.prev = e.prev
+
+	e.prev = at
+	e.next = at.next
+	e.prev.next = e
+	e.next.prev = e
+
+	return e
+}
+
+// Remove removes e from l if e is an element of list l.
+// It returns the element value e.Value.
+// The element must not be nil.
+func (l *List) Remove(e *Element) ([]byte, []byte) {
+	if e.list == l {
+		// if e.list == l, l must have been initialized when e was inserted
+		// in l or l == nil (e is a zero Element) and l.remove will crash
+		l.remove(e)
+	}
+	return e.K, e.V
+}
+
+// PushFront inserts a new element e with value v at the front of list l and returns e.
+func (l *List) PushFront(e *Element) *Element {
+	l.lazyInit()
+	return l.insertValue(e, &l.root)
+}
+
+// PushBack inserts a new element e with value v at the back of list l and returns e.
+func (l *List) PushBack(e *Element) *Element {
+	l.lazyInit()
+	return l.insertValue(e, l.root.prev)
+}
+
+// InsertBefore inserts a new element e with value v immediately before mark and returns e.
+// If mark is not an element of l, the list is not modified.
+// The mark must not be nil.
+func (l *List) InsertBefore(e *Element, mark *Element) *Element {
+	if mark.list != l {
+		return nil
+	}
+	// see comment in List.Remove about initialization of l
+	return l.insertValue(e, mark.prev)
+}
+
+// InsertAfter inserts a new element e with value v immediately after mark and returns e.
+// If mark is not an element of l, the list is not modified.
+// The mark must not be nil.
+func (l *List) InsertAfter(e *Element, mark *Element) *Element {
+	if mark.list != l {
+		return nil
+	}
+	// see comment in List.Remove about initialization of l
+	return l.insertValue(e, mark)
+}
+
+// MoveToFront moves element e to the front of list l.
+// If e is not an element of l, the list is not modified.
+// The element must not be nil.
+func (l *List) MoveToFront(e *Element) {
+	if e.list != l || l.root.next == e {
+		return
+	}
+	// see comment in List.Remove about initialization of l
+	l.move(e, &l.root)
+}
+
+// MoveToBack moves element e to the back of list l.
+// If e is not an element of l, the list is not modified.
+// The element must not be nil.
+func (l *List) MoveToBack(e *Element) {
+	if e.list != l || l.root.prev == e {
+		return
+	}
+	// see comment in List.Remove about initialization of l
+	l.move(e, l.root.prev)
+}
+
+// MoveBefore moves element e to its new position before mark.
+// If e or mark is not an element of l, or e == mark, the list is not modified.
+// The element and mark must not be nil.
+func (l *List) MoveBefore(e, mark *Element) {
+	if e.list != l || e == mark || mark.list != l {
+		return
+	}
+	l.move(e, mark.prev)
+}
+
+// MoveAfter moves element e to its new position after mark.
+// If e or mark is not an element of l, or e == mark, the list is not modified.
+// The element and mark must not be nil.
+func (l *List) MoveAfter(e, mark *Element) {
+	if e.list != l || e == mark || mark.list != l {
+		return
+	}
+	l.move(e, mark)
 }
