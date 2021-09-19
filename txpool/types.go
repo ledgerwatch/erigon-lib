@@ -55,7 +55,7 @@ type TxParseContext struct {
 	sig              [65]byte
 	withSender       bool
 	isProtected      bool
-	reject           func([]byte) bool
+	checkHash        func([]byte) error
 
 	cfg TxParsseConfig
 }
@@ -125,9 +125,10 @@ const (
 const ParseTransactionErrorPrefix = "parse transaction payload"
 
 var ErrRejected = errors.New("rejected")
+var ErrAlreadyKnown = errors.New("already known")
 
-func (ctx *TxParseContext) Reject(f func(hash []byte) bool) { ctx.reject = f }
-func (ctx *TxParseContext) WithSender(v bool)               { ctx.withSender = v }
+func (ctx *TxParseContext) Reject(f func(hash []byte) error) { ctx.checkHash = f }
+func (ctx *TxParseContext) WithSender(v bool)                { ctx.withSender = v }
 
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
@@ -371,8 +372,10 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if !ctx.withSender {
 		return p, nil
 	}
-	if ctx.reject != nil && ctx.reject(slot.idHash[:32]) {
-		return p, ErrRejected
+	if ctx.checkHash != nil {
+		if err := ctx.checkHash(slot.idHash[:32]); err != nil {
+			return p, err
+		}
 	}
 
 	// Computing sigHash (hash used to recover sender from the signature)
@@ -460,9 +463,10 @@ func (h Addresses) At(i int) []byte { return h[i*20 : (i+1)*20] }
 func (h Addresses) Len() int        { return len(h) / 20 }
 
 type TxSlots struct {
-	txs     []*TxSlot
-	senders Addresses
-	isLocal []bool
+	txs           []*TxSlot
+	senders       Addresses
+	isLocal       []bool
+	discardReason []DiscardReason
 }
 
 func (s TxSlots) Valid() error {
@@ -486,10 +490,14 @@ func (s *TxSlots) Resize(targetSize uint) {
 	for uint(len(s.isLocal)) < targetSize {
 		s.isLocal = append(s.isLocal, false)
 	}
+	for uint(len(s.discardReason)) < targetSize {
+		s.discardReason = append(s.discardReason, 0)
+	}
 	//todo: set nil to overflow txs
 	s.txs = s.txs[:targetSize]
 	s.senders = s.senders[:20*targetSize]
 	s.isLocal = s.isLocal[:targetSize]
+	s.discardReason = s.discardReason[:targetSize]
 }
 func (s *TxSlots) Append(slot *TxSlot, sender []byte, isLocal bool) {
 	n := len(s.txs)

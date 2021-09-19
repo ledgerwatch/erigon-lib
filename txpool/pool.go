@@ -342,6 +342,7 @@ type TxPool struct {
 
 	senderID        uint64
 	byHash          map[string]*metaTx // tx_hash => tx
+	discardReasons  map[uint32]DiscardReason
 	pending         *PendingPool
 	baseFee, queued *SubPool
 
@@ -353,7 +354,6 @@ type TxPool struct {
 	recentlyConnectedPeers *recentlyConnectedPeers
 	newTxs                 chan Hashes
 	deletedTxs             []*metaTx
-	discardReasons         []DiscardReason
 	senders                *sendersBatch
 	byNonce                *ByNonce // senderID => (sorted map of tx nonce => *metaTx)
 
@@ -678,7 +678,6 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	discardReasonsIndex := len(p.discardReasons)
 
 	if err = p.senders.onNewTxs(newTxs); err != nil {
 		return nil, err
@@ -702,12 +701,12 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 		default:
 		}
 	}
-	return p.copyDiscardReasons(discardReasonsIndex), nil
-}
-func (p *TxPool) copyDiscardReasons(from int) []DiscardReason {
-	cpy := make([]DiscardReason, len(p.discardReasons)-from)
-	copy(cpy, p.discardReasons[from:])
-	return cpy
+	reasons := make([]DiscardReason, len(newTxs.txs))
+	//for i := range newTxs.txs {
+	//	_ =newTxs.txs[i].idHash,
+	//	reasons[i]=p.discardReasons[mur(newTxs.txs[i].idHash)]
+	//}
+	return reasons, nil
 }
 func (p *TxPool) coreDB() kv.RoDB {
 	p.lock.RLock()
@@ -769,12 +768,14 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
 	found := p.byNonce.get(mt.Tx.senderID, mt.Tx.nonce)
 	if found != nil {
+		fmt.Printf("found: bestIndex=%d, nonce=%d, tip=%d, vs tip=%d\n", found.bestIndex, found.Tx.nonce, found.Tx.tip, mt.Tx.tip)
 		if mt.Tx.tip <= found.Tx.tip {
 			return false
 		}
 
 		switch found.currentSubPool {
 		case PendingSubPool:
+			fmt.Printf("remove: bestIndex=%d, nonce=%d, tip=%d\n", found.bestIndex, found.Tx.nonce, found.Tx.tip)
 			p.pending.UnsafeRemove(found)
 		case BaseFeeSubPool:
 			p.baseFee.UnsafeRemove(found)
@@ -799,6 +800,11 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 	p.pending.UnsafeAdd(mt)
+	fmt.Printf("added: bestIndex=%d, nonce=%d, tip=%d\n", mt.bestIndex, mt.Tx.nonce, mt.Tx.tip)
+	for i, b := range p.pending.best {
+		fmt.Printf("best: i=%d, bestIndex=%d, nonce=%d, tip=%d\n", i, b.bestIndex, b.Tx.nonce, b.Tx.tip)
+	}
+	fmt.Printf("--\n")
 	return true
 }
 func (p *TxPool) discardLocked(mt *metaTx) {
@@ -1454,7 +1460,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
 	// failed write transaction must not create side-effects
 	p.deletedTxs = p.deletedTxs[:0]
-	p.discardReasons = p.discardReasons[:0]
+	p.discardReasons = map[uint32]DiscardReason{}
 	return nil
 }
 
