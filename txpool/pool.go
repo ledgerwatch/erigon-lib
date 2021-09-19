@@ -710,8 +710,8 @@ func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config
 		}
 	}
 
-	changedSenders := unsafeAddToPendingPool(blockNum, byNonce, newTxs, pending, baseFee, queued, byHash, discard)
-	for id := range changedSenders {
+	_ = unsafeAddToPendingPool(blockNum, byNonce, newTxs, pending, baseFee, queued, byHash, discard)
+	for id := range senders.senderID2Addr {
 		nonce, balance, err := senders.info(cache, coreTx, id)
 		if err != nil {
 			return err
@@ -769,8 +769,8 @@ func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Conf
 	// they effective lose their priority over the "remote" transactions. In order to prevent that,
 	// somehow the fact that certain transactions were local, needs to be remembered for some
 	// time (up to some "immutability threshold").
-	changedSenders := unsafeAddToPendingPool(blockNum, byNonce, unwindTxs, pending, baseFee, queued, byHash, discard)
-	for id := range changedSenders {
+	_ = unsafeAddToPendingPool(blockNum, byNonce, unwindTxs, pending, baseFee, queued, byHash, discard)
+	for id := range senders.senderID2Addr {
 		nonce, balance, err := senders.info(cache, coreTx, id)
 		if err != nil {
 			return err
