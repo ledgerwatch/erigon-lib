@@ -23,7 +23,6 @@ import (
 	"hash"
 	"math"
 	"math/bits"
-	"sort"
 
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/spaolacci/murmur3"
@@ -240,7 +239,7 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 				rs.buffer = append(rs.buffer, nil)
 			}
 		}
-		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */, rs.buffer)
+		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
 		rs.gr.appendUnaryAll(unary)
 		fmt.Printf("recsplitBucket(%d, %d, bitsize = %d)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos)
 	}
@@ -269,7 +268,7 @@ func (rs *RecSplit) recsplit(level int, bucket [][]byte, unary []uint32) []uint3
 			var fail bool
 			for i := 0; !fail && i < m; i++ {
 				hasher.Reset()
-				hasher.Write([]byte(bucket[i]))
+				hasher.Write(bucket[i])
 				bit := uint32(1) << (remap16(hasher.Sum64(), m))
 				if mask&bit != 0 {
 					fail = true
@@ -295,7 +294,7 @@ func (rs *RecSplit) recsplit(level int, bucket [][]byte, unary []uint32) []uint3
 			var fail bool
 			for i := 0; !fail && i < m; i++ {
 				hasher.Reset()
-				hasher.Write([]byte(bucket[i]))
+				hasher.Write(bucket[i])
 				j := remap16(hasher.Sum64(), m) / unit
 				if j >= len(count) {
 					fmt.Printf("rs.primaryAggrBound = %d, s.secondaryAggrBound = %d\n", rs.primaryAggrBound, rs.secondaryAggrBound)
@@ -316,8 +315,18 @@ func (rs *RecSplit) recsplit(level int, bucket [][]byte, unary []uint32) []uint3
 				count[i] = 0
 			}
 		}
-		b := Bucket{keys: bucket, hasher: hasher}
-		sort.Sort(&b)
+		for i, c := 0, 0; i < fanout; i++ {
+			count[i] = c
+			c += unit
+		}
+		for _, key := range bucket {
+			hasher.Reset()
+			hasher.Write(key)
+			j := remap16(hasher.Sum64(), m) / unit
+			rs.buffer[count[j]] = key
+			count[j]++
+		}
+		copy(bucket, rs.buffer)
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
 		//fmt.Printf("encode fanout %d: %d with log2golomn %d at p = %d\n", fanout, salt, log2golomb, rs.gr.bitCount)
@@ -325,10 +334,10 @@ func (rs *RecSplit) recsplit(level int, bucket [][]byte, unary []uint32) []uint3
 		unary = append(unary, salt>>log2golomb)
 		var i int
 		for i = 0; i < m-unit; i += unit {
-			unary = rs.recsplit(level+1, b.keys[i:i+unit], unary)
+			unary = rs.recsplit(level+1, bucket[i:i+unit], unary)
 		}
 		if m-i > 1 {
-			unary = rs.recsplit(level+1, b.keys[i:], unary)
+			unary = rs.recsplit(level+1, bucket[i:], unary)
 		}
 	}
 	return unary
