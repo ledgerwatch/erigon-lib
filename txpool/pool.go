@@ -624,15 +624,15 @@ func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx 
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, baseFee, queued)
+		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
 	}
 
 	//defer func(t time.Time) { fmt.Printf("pool.go:630: %s\n", time.Since(t)) }(time.Now())
-	pending.EnforceWorstInvariants()
+	//pending.EnforceWorstInvariants()
 	//baseFee.EnforceInvariants()
 	//queued.EnforceInvariants()
 	promote(pending, baseFee, queued, cfg, discard)
-	pending.EnforceWorstInvariants()
+	//pending.EnforceWorstInvariants()
 	pending.EnforceBestInvariants()
 
 	return nil
@@ -755,7 +755,7 @@ func unsafeAddToPendingPool(blockNum uint64, newTxs TxSlots, byHash map[string]*
 	return changedSenders
 }
 
-func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64, baseFee, queued *SubPool) {
+func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -817,12 +817,12 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		// can't change
 
 		switch mt.currentSubPool {
+		case PendingSubPool:
+			pending.Updated(mt)
 		case BaseFeeSubPool:
-			heap.Fix(baseFee.best, mt.bestIndex)
-			heap.Fix(baseFee.worst, mt.worstIndex)
+			baseFee.Updated(mt)
 		case QueuedSubPool:
-			heap.Fix(queued.best, mt.bestIndex)
-			heap.Fix(queued.worst, mt.worstIndex)
+			queued.Updated(mt)
 		}
 		return true
 	})
@@ -860,7 +860,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 		if best.subPool < 0b11110 {
 			break
 		}
-		pending.UnsafeAdd(baseFee.PopBest())
+		pending.Add(baseFee.PopBest())
 	}
 
 	//4. If the top element in the worst yellow queue has subPool != 0x1110, it needs to be removed from the yellow pool.
@@ -894,7 +894,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 			continue
 		}
 
-		pending.UnsafeAdd(queued.PopBest())
+		pending.Add(queued.PopBest())
 	}
 
 	//7. If the top element in the worst red queue has subPool < 0b1000 (not satisfying minimum fee), discard.
@@ -1558,6 +1558,9 @@ func (p *PendingPool) PopWorst() *metaTx {
 	p.best = p.best.UnsafeRemove(i)
 	return i
 }
+func (p *PendingPool) Updated(mt *metaTx) {
+	heap.Fix(p.worst, mt.worstIndex)
+}
 func (p *PendingPool) Len() int { return len(p.best) }
 
 // UnsafeRemove - does break Heap invariants, but it has O(1) instead of O(log(n)) complexity.
@@ -1581,6 +1584,11 @@ func (p *PendingPool) UnsafeRemove(i *metaTx) {
 func (p *PendingPool) UnsafeAdd(i *metaTx) {
 	i.currentSubPool = p.t
 	p.worst.Push(i)
+	p.best = p.best.UnsafeAdd(i)
+}
+func (p *PendingPool) Add(i *metaTx) {
+	i.currentSubPool = p.t
+	heap.Push(p.worst, i)
 	p.best = p.best.UnsafeAdd(i)
 }
 func (p *PendingPool) DebugPrint(prefix string) {
@@ -1639,6 +1647,10 @@ func (p *SubPool) Remove(i *metaTx) {
 	heap.Remove(p.best, i.bestIndex)
 	heap.Remove(p.worst, i.worstIndex)
 	i.currentSubPool = 0
+}
+func (p *SubPool) Updated(i *metaTx) {
+	heap.Fix(p.best, i.bestIndex)
+	heap.Fix(p.worst, i.worstIndex)
 }
 
 // UnsafeRemove - does break Heap invariants, but it has O(1) instead of O(log(n)) complexity.
