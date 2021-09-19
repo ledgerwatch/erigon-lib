@@ -630,7 +630,7 @@ func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx 
 	//defer func(t time.Time) { fmt.Printf("pool.go:630: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
 	//baseFee.EnforceInvariants()
-	queued.EnforceInvariants()
+	//queued.EnforceInvariants()
 	promote(pending, baseFee, queued, cfg, discard)
 	pending.EnforceWorstInvariants()
 	pending.EnforceBestInvariants()
