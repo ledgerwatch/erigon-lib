@@ -608,7 +608,7 @@ func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx 
 			}
 		}
 	}
-	defer func(t time.Time) { fmt.Printf("pool.go:611: %s\n", time.Since(t)) }(time.Now())
+	//defer func(t time.Time) { fmt.Printf("pool.go:611: %s\n", time.Since(t)) }(time.Now())
 	// This can be thought of a reverse operation from the one described before.
 	// When a block that was deemed "the best" of its height, is no longer deemed "the best", the
 	// transactions contained in it, are now viable for inclusion in other blocks, and therefore should
@@ -624,10 +624,10 @@ func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx 
 		if err != nil {
 			return err
 		}
-		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, baseFee)
+		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, baseFee, queued)
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:630: %s\n", time.Since(t)) }(time.Now())
+	//defer func(t time.Time) { fmt.Printf("pool.go:630: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
 	//baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
@@ -755,7 +755,7 @@ func unsafeAddToPendingPool(blockNum uint64, newTxs TxSlots, byHash map[string]*
 	return changedSenders
 }
 
-func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64, baseFee *SubPool) {
+func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64, baseFee, queued *SubPool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -820,6 +820,9 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		case BaseFeeSubPool:
 			heap.Fix(baseFee.best, mt.bestIndex)
 			heap.Fix(baseFee.worst, mt.worstIndex)
+		case QueuedSubPool:
+			heap.Fix(queued.best, mt.bestIndex)
+			heap.Fix(queued.worst, mt.worstIndex)
 		}
 		return true
 	})
