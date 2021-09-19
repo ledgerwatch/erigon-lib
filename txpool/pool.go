@@ -777,14 +777,12 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
 	found := p.byNonce.get(mt.Tx.senderID, mt.Tx.nonce)
 	if found != nil {
-		fmt.Printf("found: bestIndex=%d, nonce=%d, tip=%d, vs tip=%d\n", found.bestIndex, found.Tx.nonce, found.Tx.tip, mt.Tx.tip)
 		if mt.Tx.tip <= found.Tx.tip {
 			return false
 		}
 
 		switch found.currentSubPool {
 		case PendingSubPool:
-			fmt.Printf("remove: bestIndex=%d, nonce=%d, tip=%d\n", found.bestIndex, found.Tx.nonce, found.Tx.tip)
 			p.pending.UnsafeRemove(found)
 		case BaseFeeSubPool:
 			p.baseFee.UnsafeRemove(found)
