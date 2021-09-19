@@ -271,13 +271,14 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	t := time.Now()
 
-	p.cache().OnNewBlock(stateChanges)
+	cache := p.cache()
+	cache.OnNewBlock(stateChanges)
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
 	}
 	defer coreTx.Rollback()
-	viewID, err := p.cache().View(ctx, coreTx)
+	viewID, err := cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -323,7 +324,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	if err := addTxs(p.lastSeenBlock.Load(), p._cache, viewID, coreTx, p.cfg, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), cache, viewID, coreTx, p.cfg, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -355,13 +356,14 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return fmt.Errorf("txpool not started yet")
 	}
 
+	cache := p.cache()
 	defer processBatchTxsTimer.UpdateDuration(time.Now())
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
 	}
 	defer coreTx.Rollback()
-	viewID, err := p.cache().View(ctx, coreTx)
+	viewID, err := cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -384,7 +386,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	if err := addTxs(p.lastSeenBlock.Load(), p._cache, viewID, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), cache, viewID, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -1266,7 +1268,7 @@ func (p *TxPool) logStats() {
 		"baseFee", p.baseFee.Len(),
 		"queued", p.queued.Len(),
 	}
-	cacheKeys := p.cache().Len()
+	cacheKeys := p._cache.Len()
 	if cacheKeys > 0 {
 		ctx = append(ctx, "cache_keys", cacheKeys)
 	}
