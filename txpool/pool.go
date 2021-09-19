@@ -795,6 +795,9 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 		}
 	}
 
+	if mt.subPool&IsLocal != 0 {
+		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
+	}
 	p.pending.UnsafeAdd(mt)
 	return true
 }
@@ -802,9 +805,6 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 	delete(p.byHash, string(mt.Tx.idHash[:]))
 	p.deletedTxs = append(p.deletedTxs, mt)
 	p.byNonce.delete(mt)
-	if mt.subPool&IsLocal != 0 {
-		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
-	}
 }
 
 // removeMined - apply new highest block (or batch of blocks)
