@@ -81,8 +81,8 @@ var DefaultConfig = Config{
 	CacheEvictEvery:       1 * time.Minute,
 
 	PendingSubPoolLimit: 50_000,
-	BaseFeeSubPoolLimit: 50_000,
-	QueuedSubPoolLimit:  50_000,
+	BaseFeeSubPoolLimit: 60_000,
+	QueuedSubPoolLimit:  60_000,
 }
 
 // Pool is interface for the transaction pool
