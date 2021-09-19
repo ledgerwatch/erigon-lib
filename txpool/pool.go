@@ -809,11 +809,6 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 	p.pending.UnsafeAdd(mt)
-	fmt.Printf("added: bestIndex=%d, nonce=%d, tip=%d\n", mt.bestIndex, mt.Tx.nonce, mt.Tx.tip)
-	for i, b := range p.pending.best {
-		fmt.Printf("best: i=%d, bestIndex=%d, nonce=%d, tip=%d\n", i, b.bestIndex, b.Tx.nonce, b.Tx.tip)
-	}
-	fmt.Printf("--\n")
 	return true
 }
 func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
