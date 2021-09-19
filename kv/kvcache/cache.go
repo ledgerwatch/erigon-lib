@@ -399,8 +399,8 @@ func (c *Coherent) Evict() int {
 	}
 	keysAmount := lastView.Len()
 	c.keys.Set(uint64(keysAmount))
-	lastView.evictOld(latestBlockNum-c.cfg.KeepViews, c.cfg.KeysLimit)
-	//lastView.evictNew2Random(c.cfg.KeysLimit)
+	//lastView.evictOld(latestBlockNum-c.cfg.KeepViews, c.cfg.KeysLimit)
+	lastView.evictNew2Random(c.cfg.KeysLimit)
 	return lastView.Len()
 }
 
@@ -434,14 +434,21 @@ func (c *CoherentView) evictNew2Random(keysLimit int) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	i := 0
+	id := c.id.Load()
 	var toDel []btree.Item
 	var fst, snd btree.Item
 	firstPrime, secondPrime := 11, 13 // to choose 2-pseudo-random elements and evict worse one
 	c.cache.Ascend(func(it btree.Item) bool {
 		if i%firstPrime == 0 {
+			if goatomic.LoadUint64(&it.(*Pair).t) >= id {
+				return true
+			}
 			fst = it
 		}
 		if i%secondPrime == 0 {
+			if goatomic.LoadUint64(&it.(*Pair).t) >= id {
+				return true
+			}
 			snd = it
 		}
 		if fst != nil && snd != nil {
