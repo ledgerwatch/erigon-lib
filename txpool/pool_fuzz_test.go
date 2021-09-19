@@ -600,7 +600,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 		require.NoError(err)
 		for _, txn := range p2.byHash {
 			assert.Nil(txn.Tx.rlp)
-			assert.True(txn.subPool&IsLocal != 0)
 		}
 		//todo: check that after load from db tx linked to same senderAddr
 

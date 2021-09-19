@@ -44,6 +44,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
+	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/status"
 )
@@ -433,7 +434,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.discardLocked); err != nil {
+	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -734,6 +735,40 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
 	}
 	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 }
+
+func (p *TxPool) addLocked(mt *metaTx) bool {
+	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
+	found := p.byNonce.get(mt.Tx.senderID, mt.Tx.nonce)
+	if found != nil {
+		if mt.Tx.tip <= found.Tx.tip {
+			return false
+		}
+
+		switch found.currentSubPool {
+		case PendingSubPool:
+			p.pending.UnsafeRemove(found)
+		case BaseFeeSubPool:
+			p.baseFee.UnsafeRemove(found)
+		case QueuedSubPool:
+			p.queued.UnsafeRemove(found)
+		default:
+			//already removed
+		}
+
+		p.discardLocked(found)
+	}
+
+	p.byHash[string(mt.Tx.idHash[:])] = mt
+
+	if replaced := p.byNonce.replaceOrInsert(mt); replaced != nil {
+		if ASSERT {
+			panic("must neve happen")
+		}
+	}
+
+	p.pending.UnsafeAdd(mt)
+	return true
+}
 func (p *TxPool) discardLocked(mt *metaTx) {
 	delete(p.byHash, string(mt.Tx.idHash[:]))
 	p.deletedTxs = append(p.deletedTxs, mt)
@@ -742,7 +777,7 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 }
-func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, discard func(*metaTx)) error {
+func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx)) error {
 	for i := range unwindTxs.txs {
 		if unwindTxs.txs[i].senderID == 0 {
 			return fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero")
@@ -767,8 +802,8 @@ func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Conf
 	// they effective lose their priority over the "remote" transactions. In order to prevent that,
 	// somehow the fact that certain transactions were local, needs to be remembered for some
 	// time (up to some "immutability threshold").
-	_ = unsafeAddToPendingPool(blockNum, unwindTxs, byHash, discard)
-	for id := range senders.senderID2Addr {
+	changedSenders := unsafeAddToPendingPool(blockNum, unwindTxs, byHash, add)
+	for id := range changedSenders {
 		nonce, balance, err := senders.info(cache, coreTx, id)
 		if err != nil {
 			return err
@@ -834,40 +869,6 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 		toDel = toDel[:0]
 	}
 	return nil
-}
-func (p *TxPool) addLocked(mt *metaTx) bool {
-	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
-	found := p.byNonce.get(mt.Tx.senderID, mt.Tx.nonce)
-	if found != nil {
-		if mt.Tx.tip <= found.Tx.tip {
-			return false
-		}
-
-		switch found.currentSubPool {
-		case PendingSubPool:
-			panic(1)
-			p.pending.UnsafeRemove(found)
-		case BaseFeeSubPool:
-			p.baseFee.UnsafeRemove(found)
-		case QueuedSubPool:
-			p.queued.UnsafeRemove(found)
-		default:
-			//already removed
-		}
-
-		p.discardLocked(found)
-	}
-
-	p.byHash[string(mt.Tx.idHash[:])] = mt
-
-	if replaced := p.byNonce.replaceOrInsert(mt); replaced != nil {
-		if ASSERT {
-			panic("must neve happen")
-		}
-	}
-
-	p.pending.UnsafeAdd(mt)
-	return true
 }
 
 // unwind
@@ -1552,7 +1553,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := onNewTxs(0, cache, coreTx, p.cfg, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.isLocalHashLRU, p.discardLocked); err != nil {
+	if err := onNewTxs(0, cache, coreTx, p.cfg, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.currentBaseFee.Store(currentBaseFee)
