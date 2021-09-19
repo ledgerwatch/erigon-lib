@@ -1426,7 +1426,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	}
 	for i := range txHashes {
 		binary.BigEndian.PutUint64(encID, uint64(i))
-		fmt.Printf("put:%x,%x\n", encID, txHashes[i])
 		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHashes[i].(string))); err != nil {
 			return err
 		}
@@ -1482,7 +1481,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	}
 
 	if err := tx.ForEach(kv.RecentLocalTransaction, nil, func(k, v []byte) error {
-		fmt.Printf("get: %x,%x\n", k, v)
 		p.isLocalHashLRU.Add(string(v), struct{}{})
 		return nil
 	}); err != nil {
@@ -1522,7 +1520,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 		binary.BigEndian.Uint64(v)
 
 		isLocalTx := p.isLocalHashLRU.Contains(string(k))
-		fmt.Printf("resotre: %x, %t\n", k, isLocalTx)
 		txs.isLocal[i] = isLocalTx
 		i++
 		return nil
