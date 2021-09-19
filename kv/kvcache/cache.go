@@ -202,9 +202,6 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 			}
 		}
 	}
-	for c.evictList.Len() > c.cfg.KeysLimit {
-		c.removeOldest(r)
-	}
 
 	switched := r.readyChanClosed.CAS(false, true)
 	if switched {
@@ -292,16 +289,6 @@ func (c *Coherent) add(k, v []byte, r *CoherentView, id ViewID) *Element {
 		c.removeOldest(r)
 	}
 	return it
-}
-
-func (c *CoherentView) Clone() *btree.BTree {
-	//c.lock.Lock()
-	//defer c.lock.Unlock()
-	if c.cache == nil {
-		c.cache = btree.New(32)
-		return btree.New(32) // return independent tree because nothing to share
-	}
-	return c.cache.Clone()
 }
 
 type Stat struct {

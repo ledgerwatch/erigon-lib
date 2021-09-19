@@ -45,10 +45,35 @@ func TestEviction(t *testing.T) {
 		_, _ = c.Get(k1[:], tx, viewID)
 		return nil
 	})
-
+	require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
+	c.OnNewBlock(&remote.StateChangeBatch{
+		DatabaseViewID: id,
+		ChangeBatch: []*remote.StateChange{
+			{
+				Direction:       remote.Direction_FORWARD,
+				PrevBlockHeight: 1,
+				PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
+				BlockHeight:     2,
+				BlockHash:       gointerfaces.ConvertHashToH256([32]byte{}),
+				Changes: []*remote.AccountChange{{
+					Action:  remote.Action_UPSERT,
+					Address: gointerfaces.ConvertAddressToH160(k1),
+					Data:    []byte{2},
+				}},
+			},
+		},
+	})
+	require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
+	_ = db.Update(ctx, func(tx kv.RwTx) error {
+		_ = tx.Put(kv.PlainState, k1[:], []byte{1})
+		viewID, _ := c.View(ctx, tx)
+		id = tx.ViewID()
+		_, _ = c.Get(k1[:], tx, viewID)
+		_, _ = c.Get(k2[:], tx, viewID)
+		return nil
+	})
+	require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
 	fmt.Printf("c.latestViewID: %d, %d\n", c.latestViewID, id)
-	fmt.Printf("l1: %d\n", c.roots[c.latestViewID].cache.Len())
-	fmt.Printf("l2: %d\n", c.evictList.Len())
 
 	_ = k2
 	_ = require
