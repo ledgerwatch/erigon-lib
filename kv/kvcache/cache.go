@@ -17,6 +17,7 @@ package kvcache
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -77,6 +78,7 @@ type CacheView interface {
 type Coherent struct {
 	hits, miss, timeout, keys *metrics.Counter
 	evict                     *metrics.Summary
+	evictList                 *list.List
 	roots                     map[uint64]*CoherentView
 	rootsLock                 sync.RWMutex
 	cfg                       CoherentCacheConfig
@@ -399,8 +401,9 @@ func (c *Coherent) Evict() int {
 	}
 	keysAmount := lastView.Len()
 	c.keys.Set(uint64(keysAmount))
+
 	//lastView.evictOld(latestBlockNum-c.cfg.KeepViews, c.cfg.KeysLimit)
-	lastView.evictNew2Random(c.cfg.KeysLimit)
+	//lastView.evictNew2Random(c.cfg.KeysLimit)
 	return lastView.Len()
 }
 

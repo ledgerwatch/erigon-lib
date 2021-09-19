@@ -269,9 +269,11 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
+	t := time.Now()
 
+	defer func(t time.Time) { fmt.Printf("pool.go:274: %s\n", time.Since(t)) }(time.Now())
 	p.cache().OnNewBlock(stateChanges)
-
+	defer func(t time.Time) { fmt.Printf("pool.go:276: %s\n", time.Since(t)) }(time.Now())
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
@@ -296,8 +298,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
 	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
 
+	defer func(t time.Time) { fmt.Printf("pool.go:301: %s\n", time.Since(t)) }(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	defer func(t time.Time) { fmt.Printf("pool.go:304: %s\n", time.Since(t)) }(time.Now())
 
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
@@ -346,6 +350,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
+	log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "in", time.Since(t))
 	return nil
 }
 
