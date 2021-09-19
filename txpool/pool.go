@@ -45,7 +45,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/spaolacci/murmur3"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/status"
 )
@@ -223,14 +222,6 @@ func (sc *sendersBatch) info(cache kvcache.CacheView, coreTx kv.Tx, id uint64) (
 	return nonce, balance, nil
 }
 
-//nolint
-func (sc *sendersBatch) printDebug(prefix string) {
-	fmt.Printf("%s.sendersBatch.sender\n", prefix)
-	//for i, j := range sc.senderInfo {
-	//	fmt.Printf("\tid=%d,nonce=%d,balance=%d\n", i, j.nonce, j.balance.Uint64())
-	//}
-}
-
 func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
 	for i := 0; i < len(newTxs.txs); i++ {
 		id, ok := sc.id(string(newTxs.senders.At(i)))
@@ -290,48 +281,6 @@ func calcProtocolBaseFee(baseFee uint64) uint64 {
 	return 7
 }
 
-type ByNonce struct {
-	tree *btree.BTree
-}
-
-func (b *ByNonce) ascend(senderID uint64, f func(*metaTx) bool) {
-	b.tree.AscendGreaterOrEqual(&sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID}}}, func(i btree.Item) bool {
-		mt := i.(*sortByNonce).metaTx
-		if mt.Tx.senderID != senderID {
-			return false
-		}
-		return f(mt)
-	})
-}
-func (b *ByNonce) hasTxs(senderID uint64) bool {
-	has := false
-	b.ascend(senderID, func(*metaTx) bool {
-		has = true
-		return false
-	})
-	return has
-}
-func (b *ByNonce) get(senderID, txNonce uint64) *metaTx {
-	if found := b.tree.Get(&sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID, nonce: txNonce}}}); found != nil {
-		return found.(*sortByNonce).metaTx
-	}
-	return nil
-}
-
-//nolint
-func (b *ByNonce) has(mt *metaTx) bool {
-	found := b.tree.Get(&sortByNonce{mt})
-	return found != nil
-}
-func (b *ByNonce) delete(mt *metaTx) { b.tree.Delete(&sortByNonce{mt}) }
-func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
-	it := b.tree.ReplaceOrInsert(&sortByNonce{mt})
-	if it != nil {
-		return it.(*sortByNonce).metaTx
-	}
-	return nil
-}
-
 // TxPool - holds all pool-related data structures and lock-based tiny methods
 // most of logic implemented by pure tests-friendly functions
 //
@@ -348,15 +297,15 @@ type TxPool struct {
 	protocolBaseFee atomic.Uint64
 	currentBaseFee  atomic.Uint64
 
-	senderID        uint64
-	byHash          map[string]*metaTx       // tx_hash => tx
-	discardReasons  map[uint32]DiscardReason // murmur3(tx_hash) => discard_reason
-	pending         *PendingPool
-	baseFee, queued *SubPool
+	senderID          uint64
+	byHash            map[string]*metaTx // tx_hash => tx
+	discardReasonsLRU *simplelru.LRU     // tx_hash => discard_reason
+	pending           *PendingPool
+	baseFee, queued   *SubPool
 
 	// track isLocal flag of already mined transactions. used at unwind.
-	isLocalHashLRU *simplelru.LRU
-	_coreDB        kv.RoDB
+	isLocalLRU *simplelru.LRU // tx_hash => is_local
+	_coreDB    kv.RoDB
 
 	// fields for transaction propagation
 	recentlyConnectedPeers *recentlyConnectedPeers
@@ -379,16 +328,20 @@ type TxPool struct {
 }
 
 func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, rules chain.Rules, chainID uint256.Int) (*TxPool, error) {
-	localsHistory, err := simplelru.NewLRU(1024, nil)
+	localsHistory, err := simplelru.NewLRU(10_000, nil)
+	if err != nil {
+		return nil, err
+	}
+	discardHistory, err := simplelru.NewLRU(10_000, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &TxPool{
 		lock:                    &sync.RWMutex{},
 		byHash:                  map[string]*metaTx{},
-		discardReasons:          map[uint32]DiscardReason{},
+		isLocalLRU:              localsHistory,
+		discardReasonsLRU:       discardHistory,
 		byNonce:                 &ByNonce{btree.New(32)},
-		isLocalHashLRU:          localsHistory,
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool),
 		baseFee:                 NewSubPool(BaseFeeSubPool),
@@ -461,7 +414,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -521,7 +474,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -614,12 +567,16 @@ func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 func (p *TxPool) IsLocal(idHash []byte) bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-
-	txn, ok := p.byHash[string(idHash)]
-	if ok && txn.subPool&IsLocal != 0 {
-		return true
+	return p.isLocalLRU.Contains(string(idHash))
+}
+func (p *TxPool) DiscardReason(idHash []byte) DiscardReason {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	reason, ok := p.discardReasonsLRU.Get(string(idHash))
+	if ok {
+		return reason.(DiscardReason)
 	}
-	return p.isLocalHashLRU.Contains(string(idHash))
+	return 0
 }
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                { return p.started.Load() }
@@ -691,7 +648,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 	if err = p.senders.onNewTxs(newTxs); err != nil {
 		return nil, err
 	}
-	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
 
@@ -713,7 +670,10 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 
 	reasons := make([]DiscardReason, len(newTxs.txs))
 	for i := range newTxs.txs {
-		reasons[i] = p.discardReasons[murmur3.Sum32(newTxs.txs[i].idHash[:])]
+		reason, ok := p.discardReasonsLRU.Get(string(newTxs.txs[i].idHash[:]))
+		if ok {
+			reasons[i] = reason.(DiscardReason)
+		}
 	}
 	return reasons, nil
 }
@@ -728,7 +688,7 @@ func (p *TxPool) cache() kvcache.Cache {
 	defer p.lock.RUnlock()
 	return p.senders.cache
 }
-func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
+func addTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -804,7 +764,7 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 	}
 
 	if mt.subPool&IsLocal != 0 {
-		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
+		p.isLocalLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 	p.pending.UnsafeAdd(mt)
 	return true
@@ -813,7 +773,7 @@ func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 	delete(p.byHash, string(mt.Tx.idHash[:]))
 	p.deletedTxs = append(p.deletedTxs, mt)
 	p.byNonce.delete(mt)
-	p.discardReasons[murmur3.Sum32(mt.Tx.idHash[:])] = reason
+	p.discardReasonsLRU.Add(string(mt.Tx.idHash[:]), reason)
 }
 
 // removeMined - apply new highest block (or batch of blocks)
@@ -1029,6 +989,48 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 	for _ = queued.Worst(); queued.Len() > cfg.QueuedSubPoolLimit; _ = queued.Worst() {
 		discard(queued.PopWorst(), QueuedPoolOverflow)
 	}
+}
+
+type ByNonce struct {
+	tree *btree.BTree
+}
+
+func (b *ByNonce) ascend(senderID uint64, f func(*metaTx) bool) {
+	b.tree.AscendGreaterOrEqual(&sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID}}}, func(i btree.Item) bool {
+		mt := i.(*sortByNonce).metaTx
+		if mt.Tx.senderID != senderID {
+			return false
+		}
+		return f(mt)
+	})
+}
+func (b *ByNonce) hasTxs(senderID uint64) bool {
+	has := false
+	b.ascend(senderID, func(*metaTx) bool {
+		has = true
+		return false
+	})
+	return has
+}
+func (b *ByNonce) get(senderID, txNonce uint64) *metaTx {
+	if found := b.tree.Get(&sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID, nonce: txNonce}}}); found != nil {
+		return found.(*sortByNonce).metaTx
+	}
+	return nil
+}
+
+//nolint
+func (b *ByNonce) has(mt *metaTx) bool {
+	found := b.tree.Get(&sortByNonce{mt})
+	return found != nil
+}
+func (b *ByNonce) delete(mt *metaTx) { b.tree.Delete(&sortByNonce{mt}) }
+func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
+	it := b.tree.ReplaceOrInsert(&sortByNonce{mt})
+	if it != nil {
+		return it.(*sortByNonce).metaTx
+	}
+	return nil
 }
 
 type PendingPool struct {
@@ -1414,7 +1416,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		p.deletedTxs[i] = nil // for gc
 	}
 
-	txHashes := p.isLocalHashLRU.Keys()
+	txHashes := p.isLocalLRU.Keys()
 	encID := make([]byte, 8)
 	if err := tx.ClearBucket(kv.RecentLocalTransaction); err != nil {
 		return err
@@ -1463,7 +1465,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
 	// failed write transaction must not create side-effects
 	p.deletedTxs = p.deletedTxs[:0]
-	p.discardReasons = map[uint32]DiscardReason{}
 	return nil
 }
 
@@ -1476,7 +1477,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	}
 
 	if err := tx.ForEach(kv.RecentLocalTransaction, nil, func(k, v []byte) error {
-		p.isLocalHashLRU.Add(string(v), struct{}{})
+		p.isLocalLRU.Add(string(v), struct{}{})
 		return nil
 	}); err != nil {
 		return err
@@ -1514,7 +1515,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 		txs.txs[i].senderID = id
 		binary.BigEndian.Uint64(v)
 
-		isLocalTx := p.isLocalHashLRU.Contains(string(k))
+		isLocalTx := p.isLocalLRU.Contains(string(k))
 		txs.isLocal[i] = isLocalTx
 		i++
 		return nil
@@ -1545,7 +1546,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := onNewTxs(0, cache, coreTx, p.cfg, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(0, cache, coreTx, p.cfg, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.currentBaseFee.Store(currentBaseFee)
@@ -1718,6 +1719,14 @@ func (l *recentlyConnectedPeers) GetAndClean() []PeerID {
 	peers := l.peers
 	l.peers = nil
 	return peers
+}
+
+//nolint
+func (sc *sendersBatch) printDebug(prefix string) {
+	fmt.Printf("%s.sendersBatch.sender\n", prefix)
+	//for i, j := range sc.senderInfo {
+	//	fmt.Printf("\tid=%d,nonce=%d,balance=%d\n", i, j.nonce, j.balance.Uint64())
+	//}
 }
 
 func min(a, b uint64) uint64 {

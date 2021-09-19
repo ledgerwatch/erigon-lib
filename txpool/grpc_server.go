@@ -156,10 +156,10 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	if err != nil {
 		return nil, err
 	}
-	//TODO: concept of discardReasons not really implemented yet
+	//TODO: concept of discardReasonsLRU not really implemented yet
 	_ = discardReasons
 	/*
-		for i, err := range discardReasons {
+		for i, err := range discardReasonsLRU {
 			if err == nil {
 				continue
 			}
