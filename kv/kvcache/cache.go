@@ -226,13 +226,13 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
 		//c.lock.Lock()
 		//log.Info("timeout", "mem_id", r.id.Load(), "db_id", tx.ViewID(), "has_btree", r.cache != nil)
 		if r.cache == nil {
-			//parent, parentExists := c.roots[ViewID(tx.ViewID()-1)]
-			//if parentExists && parent.cache != nil {
-			//	r.cache = parent.Clone()
-			//} else {
-			//	r.cache = btree.New(32)
-			//}
-			r.cache = btree.New(32)
+			parent, parentExists := c.roots[ViewID(tx.ViewID()-1)]
+			if parentExists && parent.cache != nil {
+				r.cache = parent.Clone()
+			} else {
+				r.cache = btree.New(32)
+			}
+			//r.cache = btree.New(32)
 		}
 		//c.lock.Unlock()
 	}
