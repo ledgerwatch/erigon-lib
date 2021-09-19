@@ -71,14 +71,15 @@ type Cache interface {
 // Pair.Value == nil - is a marker of absense key in db
 
 type Coherent struct {
-	hits, miss, timeout, keys *metrics.Counter
-	evict                     *metrics.Summary
-	latestViewID              ViewID
-	latestView                *CoherentView
-	evictList                 *List
-	roots                     map[ViewID]*CoherentView
-	lock                      sync.RWMutex
-	cfg                       CoherentCacheConfig
+	hits, miss, timeout *metrics.Counter
+	keys, keys2         *metrics.Counter
+	evict               *metrics.Summary
+	latestViewID        ViewID
+	latestView          *CoherentView
+	evictList           *List
+	roots               map[ViewID]*CoherentView
+	lock                sync.RWMutex
+	cfg                 CoherentCacheConfig
 }
 type CoherentView struct {
 	evictList       *List
@@ -115,6 +116,7 @@ func New(cfg CoherentCacheConfig) *Coherent {
 		hits:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 		timeout:   metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
 		keys:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_keys_total{name="%s"}`, cfg.MetricsLabel)),
+		keys2:     metrics.GetOrCreateCounter(fmt.Sprintf(`cache_list_total{name="%s"}`, cfg.MetricsLabel)),
 		evict:     metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
 	}
 }
@@ -154,6 +156,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 		}
 	}
 	c.keys.Set(uint64(c.latestView.cache.Len()))
+	c.keys2.Set(uint64(c.evictList.Len()))
 	return r
 }
 
