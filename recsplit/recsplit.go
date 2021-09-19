@@ -240,7 +240,7 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 	for len(rs.bucketPosAcc) <= int(rs.currentBucketIdx)+1 {
 		rs.bucketPosAcc = append(rs.bucketPosAcc, rs.bucketPosAcc[len(rs.bucketPosAcc)-1])
 	}
-	rs.bucketPosAcc[int(rs.currentBucketIdx)+1] = uint64(rs.gr.bits())
+	rs.bucketPosAcc[int(rs.currentBucketIdx)+1] = uint64(rs.gr.Bits())
 	// clear for the next buckey
 	rs.currentBucket = rs.currentBucket[:0]
 	return nil
@@ -448,4 +448,9 @@ func (rs *RecSplit) Lookup(key []byte) int {
 	hasher := murmur3.New64WithSeed(rs.startSeed[level] + b)
 	hasher.Write(key)
 	return int(cumKeys) + remap16(hasher.Sum64(), m)
+}
+
+// Stats returns the size of golomb rice encoding and ellias fano encoding
+func (rs RecSplit) Stats() (int, int) {
+	return len(rs.gr.Data()), len(rs.ef.Data())
 }

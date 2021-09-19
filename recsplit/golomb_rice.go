@@ -17,6 +17,7 @@
 package recsplit
 
 import (
+	"io"
 	"math/bits"
 )
 
@@ -82,13 +83,8 @@ func (g *GolombRice) appendFixed(v uint32, log2golomb int) {
 }
 
 // bits returns currrent number of bits in the compact encoding of the hash function representation
-func (g GolombRice) bits() int {
+func (g GolombRice) Bits() int {
 	return g.bitCount
-}
-
-// Build returns the binary representation of the Golomb-Rice code that is built
-func (g GolombRice) Build() []uint64 {
-	return g.data
 }
 
 func (g *GolombRice) ReadReset(bitPos int, unaryOffset int) {
@@ -226,4 +222,19 @@ func (g *GolombRice) ReadNext(log2golomb int) uint64 {
 	result |= fixed & ((uint64(1) << log2golomb) - 1)
 	g.currFixedOffset += log2golomb
 	return result
+}
+
+// Data returns the binary representation of the Golomb-Rice code that is built
+func (g GolombRice) Data() []uint64 {
+	return g.data
+}
+
+// Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
+func (g GolombRice) Write(w io.Writer) error {
+	return nil
+}
+
+// Read inputs the state of golomb rice encoding from a reader s
+func (g *GolombRice) Read(r io.Reader) error {
+	return nil
 }
