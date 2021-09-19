@@ -132,7 +132,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentView {
 	r = &CoherentView{ready: make(chan struct{})}
 	if prevView, ok := c.roots[viewID-1]; ok {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
-		r.cache = prevView.Clone()
+		r.cache = prevView.cache.Clone()
 	} else {
 		//log.Info("advance: new", "to", viewID)
 		r.cache = btree.New(32)
@@ -151,7 +151,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 		r = &CoherentView{ready: make(chan struct{})}
 		if prevView, ok := c.roots[viewID-1]; ok {
 			//log.Info("advance: clone", "from", viewID-1, "to", viewID)
-			r.cache = prevView.Clone()
+			r.cache = prevView.cache.Clone()
 		} else {
 			//log.Info("advance: new", "to", viewID)
 			r.cache = btree.New(32)
