@@ -263,6 +263,9 @@ func (c *CoherentView) Get(k []byte, tx kv.Tx) ([]byte, error) {
 func (c *CoherentView) Len() int {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
+	if c.cache == nil {
+		return 0
+	}
 	return c.cache.Len()
 }
 func (c *CoherentView) Clone() *btree.BTree {
