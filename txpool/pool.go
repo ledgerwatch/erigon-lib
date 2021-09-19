@@ -632,6 +632,7 @@ func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx 
 	queued.EnforceInvariants()
 
 	promote(pending, baseFee, queued, cfg, discard)
+	pending.EnforceWorstInvariants()
 	pending.EnforceBestInvariants()
 
 	return nil
@@ -1624,6 +1625,12 @@ func (p *SubPool) Add(i *metaTx) {
 	i.currentSubPool = p.t
 	heap.Push(p.best, i)
 	heap.Push(p.worst, i)
+}
+
+func (p *SubPool) Remove(i *metaTx) {
+	heap.Remove(p.best, i.bestIndex)
+	heap.Remove(p.worst, i.worstIndex)
+	i.currentSubPool = 0
 }
 
 // UnsafeRemove - does break Heap invariants, but it has O(1) instead of O(log(n)) complexity.
