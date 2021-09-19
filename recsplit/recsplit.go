@@ -231,9 +231,9 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 				return fmt.Errorf("duplicate key %x", key)
 			}
 		}
-		//bitPos := rs.gr.bitCount
+		bitPos := rs.gr.bitCount
 		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
-		//fmt.Printf("recsplitBucket(%d, %d, bitsize = %d, keys = %x)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos, rs.currentBucket)
+		fmt.Printf("recsplitBucket(%d, %d, bitsize = %d, keys = %x)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos, rs.currentBucket)
 		rs.gr.appendUnaryAll(unary)
 	}
 	// Extend rs.bucketPosAcc to accomodate current bucket index + 1
