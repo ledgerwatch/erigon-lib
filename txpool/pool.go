@@ -677,7 +677,7 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 	if mt.subPool&IsLocal != 0 {
 		p.isLocalLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
-	p.pending.UnsafeAdd(mt)
+	p.pending.Add(mt)
 	return true
 }
 func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
