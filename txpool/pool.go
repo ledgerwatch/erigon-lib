@@ -433,8 +433,26 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
 	}
+
+	if ASSERT {
+		for i := range unwindTxs.txs {
+			if unwindTxs.txs[i].senderID == 0 {
+				panic(fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero"))
+			}
+		}
+		for i := range minedTxs.txs {
+			if minedTxs.txs[i].senderID == 0 {
+				panic(fmt.Errorf("onNewBlock.minedTxs: senderID can't be zero"))
+			}
+		}
+	}
+
+	if err := removeMined(p.byNonce, minedTxs.txs, p.pending, p.baseFee, p.queued, p.discardLocked); err != nil {
+		return err
+	}
+
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	if err := onNewBlock(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, minedTxs.txs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := onNewTxs(p.lastSeenBlock.Load(), cache, coreTx, p.cfg, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 
@@ -703,12 +721,23 @@ func (p *TxPool) cache() kvcache.Cache {
 	return p.senders.cache
 }
 func onNewTxs(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx)) error {
-	for i := range newTxs.txs {
-		if newTxs.txs[i].senderID == 0 {
-			return fmt.Errorf("senderID can't be zero")
+	if ASSERT {
+		for i := range newTxs.txs {
+			if newTxs.txs[i].senderID == 0 {
+				panic(fmt.Errorf("senderID can't be zero"))
+			}
 		}
 	}
 
+	// This can be thought of a reverse operation from the one described before.
+	// When a block that was deemed "the best" of its height, is no longer deemed "the best", the
+	// transactions contained in it, are now viable for inclusion in other blocks, and therefore should
+	// be returned into the transaction pool.
+	// An interesting note here is that if the block contained any transactions local to the node,
+	// by being first removed from the pool (from the "local" part of it), and then re-injected,
+	// they effective lose their priority over the "remote" transactions. In order to prevent that,
+	// somehow the fact that certain transactions were local, needs to be remembered for some
+	// time (up to some "immutability threshold").
 	changedSenders := unsafeAddToPendingPool(blockNum, newTxs, byHash, add)
 	for id := range changedSenders {
 		nonce, balance, err := senders.info(cache, coreTx, id)
@@ -776,49 +805,6 @@ func (p *TxPool) discardLocked(mt *metaTx) {
 	if mt.subPool&IsLocal != 0 {
 		p.isLocalHashLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
-}
-func onNewBlock(blockNum uint64, cache kvcache.CacheView, coreTx kv.Tx, cfg Config, senders *sendersBatch, unwindTxs TxSlots, minedTxs []*TxSlot, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx)) error {
-	for i := range unwindTxs.txs {
-		if unwindTxs.txs[i].senderID == 0 {
-			return fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero")
-		}
-	}
-	for i := range minedTxs {
-		if minedTxs[i].senderID == 0 {
-			return fmt.Errorf("onNewBlock.minedTxs: senderID can't be zero")
-		}
-	}
-
-	if err := removeMined(byNonce, minedTxs, pending, baseFee, queued, discard); err != nil {
-		return err
-	}
-
-	// This can be thought of a reverse operation from the one described before.
-	// When a block that was deemed "the best" of its height, is no longer deemed "the best", the
-	// transactions contained in it, are now viable for inclusion in other blocks, and therefore should
-	// be returned into the transaction pool.
-	// An interesting note here is that if the block contained any transactions local to the node,
-	// by being first removed from the pool (from the "local" part of it), and then re-injected,
-	// they effective lose their priority over the "remote" transactions. In order to prevent that,
-	// somehow the fact that certain transactions were local, needs to be remembered for some
-	// time (up to some "immutability threshold").
-	changedSenders := unsafeAddToPendingPool(blockNum, unwindTxs, byHash, add)
-	for id := range changedSenders {
-		nonce, balance, err := senders.info(cache, coreTx, id)
-		if err != nil {
-			return err
-		}
-		onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee)
-	}
-
-	pending.EnforceWorstInvariants()
-	baseFee.EnforceInvariants()
-	queued.EnforceInvariants()
-
-	promote(pending, baseFee, queued, cfg, discard)
-	pending.EnforceBestInvariants()
-
-	return nil
 }
 
 // removeMined - apply new highest block (or batch of blocks)
