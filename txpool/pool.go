@@ -81,7 +81,7 @@ var DefaultConfig = Config{
 	CacheEvictEvery:       1 * time.Minute,
 
 	PendingSubPoolLimit: 50_000,
-	BaseFeeSubPoolLimit: 60_000,
+	BaseFeeSubPoolLimit: 80_000,
 	QueuedSubPoolLimit:  60_000,
 }
 
