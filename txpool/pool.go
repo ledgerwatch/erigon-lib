@@ -283,8 +283,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if err := p.fromDB(ctx, tx, coreTx); err != nil {
-		return err
+	if !p.started.Load() {
+		if err := p.fromDB(ctx, tx, coreTx); err != nil {
+			return err
+		}
 	}
 
 	viewID, err := cache.View(ctx, coreTx)
