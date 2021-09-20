@@ -158,7 +158,7 @@ func (rs *RecSplit) ResetNextSalt() {
 
 func (rs *RecSplit) splitParams(m int) (fanout, unit int) {
 	if m > rs.secondaryAggrBound { // High-level aggregation (fanout 2)
-		unit = rs.secondaryAggrBound * (((m)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound)
+		unit = rs.secondaryAggrBound * (((m+1)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound)
 		fanout = 2
 	} else if m > rs.primaryAggrBound { // Second-level aggregation
 		unit = rs.primaryAggrBound
@@ -448,7 +448,7 @@ func (rs *RecSplit) Lookup(key []byte, trace bool) int {
 			fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
 		}
 		hmod := remap16(remix(fingerprint+rs.startSeed[level]+d), m)
-		split := (((m)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
+		split := (((m+1)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
 		if hmod < split {
 			m = split
 		} else {
