@@ -280,6 +280,9 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 	defer coreTx.Rollback()
 
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	if err := p.fromDB(ctx, tx, coreTx); err != nil {
 		return err
 	}
@@ -302,9 +305,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
 	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
-
-	p.lock.Lock()
-	defer p.lock.Unlock()
 
 	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
