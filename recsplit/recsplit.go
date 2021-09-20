@@ -120,7 +120,7 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	}
 	rs.startSeed = args.StartSeed
 	rs.count = make([]int, rs.secondaryAggrBound)
-	rs.indices = make([]int, rs.secondaryAggrBound)
+	rs.indices = make([]int, rs.bucketSize*2)
 	return rs, nil
 }
 
