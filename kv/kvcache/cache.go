@@ -64,16 +64,25 @@ type Cache interface {
 // it until either cache with the given identifier appears, or timeout (indicating that the cache update
 // mechanism is broken and cache is likely invalidated).
 //
-// Tech details:
-// - If found in cache - return value without copy (reader can rely on fact that data are immutable until end of db transaction)
-// - Otherwise just read from db (no requests deduplication for now - preliminary optimization).
-//
+
 // Pair.Value == nil - is a marker of absense key in db
 
+// Coherent
+// High-level guaranties:
+// - Keys/Values returned by cache are valid/immutable until end of db transaction
+// - CacheView is always coherent with given db transaction -
+//
+// Rules of set view.isCanonical value:
+//  - method View can't parent.Clone() - because parent view is not coherent with current kv.Tx
+//  - only OnNewBlock method may do parent.Clone() and apply StateChanges to create coherent view of kv.Tx
+//  - parent.Clone() can't be caled if parent.isCanonical=false
+//  - only OnNewBlock method can set view.isCanonical=true
+// Rules of filling cache.evictList:
+//  - changes in Canonical View SHOULD reflect in evictList
+//  - changes in Non-Canonical View SHOULD NOT reflect in evictList
 type Coherent struct {
 	hits, miss, timeout *metrics.Counter
 	keys, keys2         *metrics.Counter
-	evict               *metrics.Summary
 	latestViewID        ViewID
 	latestView          *CoherentView
 	evictList           *List
@@ -85,6 +94,12 @@ type CoherentView struct {
 	cache           *btree.BTree
 	ready           chan struct{} // close when ready
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
+
+	// Views marked as `Canonical` if it received onNewBlock message
+	// we may drop `Non-Canonical` views even if they had fresh keys
+	// keys added to `Non-Canonical` views SHOULD NOT be added to evictList
+	// cache.latestView is always `Canonical`
+	isCanonical bool
 }
 
 var _ Cache = (*Coherent)(nil) // compile-time interface check
@@ -116,10 +131,38 @@ func New(cfg CoherentCacheConfig) *Coherent {
 		timeout:   metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
 		keys:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_keys_total{name="%s"}`, cfg.MetricsLabel)),
 		keys2:     metrics.GetOrCreateCounter(fmt.Sprintf(`cache_list_total{name="%s"}`, cfg.MetricsLabel)),
-		evict:     metrics.GetOrCreateSummary(fmt.Sprintf(`cache_evict{name="%s"}`, cfg.MetricsLabel)),
 	}
 }
 
+//view: 75227
+//OnNewBlock: 75228
+//view: 75230
+//[INFO] [09-20|03:37:44.706] [txpool] Started
+//[INFO] [09-20|03:37:44.706] [txpool] new block                       number=13259741 in=1m55.400790395s
+//view: 75230
+//OnNewBlock: 75229
+//view: 75230
+//add to non-last viewID: 75229<75230
+//add to non-last viewID: 75229<75230
+//add to non-last viewID: 75229<75230
+//add to non-last viewID: 75229<75230
+
+//view: 75227        0, don't set lastViewID, don't add to evict, then need drop all that cache later
+//OnNewBlock: 75228  0->75228, but we MUST add them to evict (set lastViewID to current before add)
+//view: 75230        75228, work on empty cache, don't add to evict
+//[INFO] [09-20|03:37:44.706] [txpool] Started
+//[INFO] [09-20|03:37:44.706] [txpool] new block                       number=13259741 in=1m55.400790395s
+//view: 75230        75228, work on empty cache, don't add to evict
+//OnNewBlock: 75229  75228->75229, replace existing cache
+//view: 75230
+//add to non-last viewID: 75229<75230
+//add to non-last viewID: 75229<75230
+//add to non-last viewID: 75229<75230
+//add to non-last viewID: 75229<75230
+
+//
+
+//view
 // selectOrCreateRoot - used for usual getting root
 func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentView {
 	c.lock.Lock()
@@ -132,14 +175,12 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentView {
 	if prevView, ok := c.roots[viewID-1]; ok {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
 		r.cache = prevView.cache.Clone()
+		r.isCanonical = prevView.isCanonical
 	} else {
 		//log.Info("advance: new", "to", viewID)
 		r.cache = btree.New(32)
 	}
 	c.roots[viewID] = r
-	c.evictRoots()
-	c.latestViewID = viewID
-	c.latestView = r
 	return r
 }
 
@@ -148,19 +189,28 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 	r, rootExists := c.roots[viewID]
 	if !rootExists {
 		r = &CoherentView{ready: make(chan struct{})}
-		if prevView, ok := c.roots[viewID-1]; ok {
-			//log.Info("advance: clone", "from", viewID-1, "to", viewID)
-			r.cache = prevView.cache.Clone()
-		} else {
+		c.roots[viewID] = r
+	}
+	if prevView, ok := c.roots[viewID-1]; ok && prevView.isCanonical {
+		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
+		r.cache = prevView.cache.Clone()
+	} else {
+		c.evictList.Init()
+		if r.cache == nil {
 			//log.Info("advance: new", "to", viewID)
 			r.cache = btree.New(32)
+		} else {
+			r.cache.Ascend(func(i btree.Item) bool {
+				c.evictList.PushFront(i.(*Element))
+				return true
+			})
 		}
-
-		c.roots[viewID] = r
-		c.evictRoots()
-		c.latestViewID = viewID
-		c.latestView = r
 	}
+	r.isCanonical = true
+
+	c.evictRoots()
+	c.latestViewID = viewID
+	c.latestView = r
 
 	c.keys.Set(uint64(c.latestView.cache.Len()))
 	c.keys2.Set(uint64(c.evictList.Len()))
