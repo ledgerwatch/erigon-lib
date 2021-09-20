@@ -24,12 +24,9 @@ import (
 
 // DummyCache - doesn't remember anything - can be used when service is not remote
 type DummyCache struct{}
-type DummyView struct{}
 
 var _ Cache = (*DummyCache)(nil) // compile-time interface check
 //var _ CacheView = (*DummyView)(nil) // compile-time interface check
-
-var dummyView = &DummyView{}
 
 func NewDummy() *DummyCache                                              { return &DummyCache{} }
 func (c *DummyCache) View(ctx context.Context, tx kv.Tx) (ViewID, error) { return 0, nil }

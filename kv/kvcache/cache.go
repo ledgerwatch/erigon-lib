@@ -82,7 +82,6 @@ type Coherent struct {
 	cfg                 CoherentCacheConfig
 }
 type CoherentView struct {
-	evictList       *List
 	cache           *btree.BTree
 	ready           chan struct{} // close when ready
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
