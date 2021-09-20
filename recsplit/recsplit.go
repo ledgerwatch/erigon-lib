@@ -287,7 +287,7 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 	salt := rs.startSeed[level]
 	m := uint16(len(bucket))
 	if m <= rs.leafSize {
-		start := time.Now()
+		//start := time.Now()
 		// No need to build aggregation levels - just find find bijection
 		var mask uint32
 		for {
@@ -313,13 +313,13 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		}
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
-		rs.bij_time += time.Since(start)
+		//rs.bij_time += time.Since(start)
 	} else {
-		start := time.Now()
+		//start := time.Now()
 		fanout, unit := rs.splitParams(m)
 		count := rs.count
 		for {
-			for i := uint16(0); i < fanout; i++ {
+			for i := uint16(0); i < fanout-1; i++ {
 				count[i] = 0
 			}
 			var fail bool
@@ -342,11 +342,11 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			//}
 			salt++
 		}
-		if fanout == 2 {
-			rs.agg_search_time_2 += time.Since(start)
-		} else {
-			rs.agg_search_time += time.Since(start)
-		}
+		//if fanout == 2 {
+		//	rs.agg_search_time_2 += time.Since(start)
+		//} else {
+		//	rs.agg_search_time += time.Since(start)
+		//}
 		for i, c := uint16(0), uint16(0); i < fanout; i++ {
 			count[i] = c
 			c += unit
@@ -356,9 +356,9 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			rs.buffer[count[j]] = bucket[i]
 			count[j]++
 		}
-		rs.agg_copy1_time += time.Since(start)
+		//rs.agg_copy1_time += time.Since(start)
 		copy(bucket, rs.buffer)
-		rs.agg_copy2_time += time.Since(start)
+		//rs.agg_copy2_time += time.Since(start)
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
 		if rs.trace {
@@ -366,7 +366,7 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		}
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
-		rs.agg_time += time.Since(start)
+		//rs.agg_time += time.Since(start)
 		var i uint16
 		for i = 0; i < m-unit; i += unit {
 			unary = rs.recsplit(level+1, bucket[i:i+unit], unary)
