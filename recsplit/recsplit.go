@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math"
 	"math/bits"
-	"time"
 
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/spaolacci/murmur3"
@@ -77,12 +76,6 @@ type RecSplit struct {
 	collision          bool
 	tmpDir             string
 	trace              bool
-	bij_time           time.Duration
-	agg_time           time.Duration
-	agg_search_time_2  time.Duration
-	agg_search_time    time.Duration
-	agg_copy1_time     time.Duration
-	agg_copy2_time     time.Duration
 }
 
 type RecSplitArgs struct {
@@ -287,7 +280,6 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 	salt := rs.startSeed[level]
 	m := uint16(len(bucket))
 	if m <= rs.leafSize {
-		//start := time.Now()
 		// No need to build aggregation levels - just find find bijection
 		var mask uint32
 		for {
@@ -313,9 +305,7 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		}
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
-		//rs.bij_time += time.Since(start)
 	} else {
-		//start := time.Now()
 		fanout, unit := rs.splitParams(m)
 		count := rs.count
 		for {
@@ -323,13 +313,8 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 				count[i] = 0
 			}
 			var fail bool
-			for i := uint16(0); !fail && i < m; i++ {
-				j := remap16(remix(bucket[i]+salt), m) / unit
-				//if count[j] == unit {
-				//	fail = true
-				//} else {
-				count[j]++
-				//}
+			for i := uint16(0); i < m; i++ {
+				count[remap16(remix(bucket[i]+salt), m)/unit]++
 			}
 			for i := uint16(0); i < fanout-1; i++ {
 				fail = fail || (count[i] != unit)
@@ -337,16 +322,8 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			if !fail {
 				break
 			}
-			//if !fail && count[fanout-1] == m-(fanout-1)*unit {
-			//	break
-			//}
 			salt++
 		}
-		//if fanout == 2 {
-		//	rs.agg_search_time_2 += time.Since(start)
-		//} else {
-		//	rs.agg_search_time += time.Since(start)
-		//}
 		for i, c := uint16(0), uint16(0); i < fanout; i++ {
 			count[i] = c
 			c += unit
@@ -356,9 +333,7 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			rs.buffer[count[j]] = bucket[i]
 			count[j]++
 		}
-		//rs.agg_copy1_time += time.Since(start)
 		copy(bucket, rs.buffer)
-		//rs.agg_copy2_time += time.Since(start)
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
 		if rs.trace {
@@ -366,7 +341,6 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		}
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
-		//rs.agg_time += time.Since(start)
 		var i uint16
 		for i = 0; i < m-unit; i += unit {
 			unary = rs.recsplit(level+1, bucket[i:i+unit], unary)
@@ -525,8 +499,4 @@ func (rs RecSplit) Stats() (int, int) {
 // RecSplit needs to be reset, re-populated with keys, and rebuilt
 func (rs RecSplit) Collision() bool {
 	return rs.collision
-}
-
-func (rs RecSplit) PrintTimings() {
-	fmt.Printf("bij_time = %s, agg_time = %s, agg_search_time = %s, agg_search_time_2 = %s, agg_copy1_time = %s, agg_copy2_time = %s\n", rs.bij_time, rs.agg_time, rs.agg_search_time, rs.agg_search_time_2, rs.agg_copy1_time, rs.agg_copy2_time)
 }
