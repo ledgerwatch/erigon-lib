@@ -54,7 +54,8 @@ var (
 	addRemoteTxsTimer       = metrics.NewSummary(`pool_add_remote_txs`)
 	newBlockTimer           = metrics.NewSummary(`pool_new_block`)
 	writeToDbTimer          = metrics.NewSummary(`pool_write_to_db`)
-	propagateToNewPeerTimer = metrics.NewSummary(`pool_propagate_new_peer`)
+	propagateToNewPeerTimer = metrics.NewSummary(`pool_propagate_to_new_peer`)
+	propagateNewTxsTimer    = metrics.NewSummary(`pool_propagate_new_txs`)
 	writeToDbBytesCounter   = metrics.GetOrCreateCounter(`pool_write_to_db_bytes`)
 )
 
@@ -976,7 +977,8 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				writeToDbBytesCounter.Set(written)
 				log.Debug("[txpool] Commit", "written_kb", written/1024, "in", time.Since(t))
 			}
-		case h := <-newTxs: //TODO: maybe send TxSlots object instead of Hashes?
+		case h := <-newTxs:
+			t := time.Now()
 			notifyMiningAboutNewSlots()
 			if err := db.View(ctx, func(tx kv.Tx) error {
 				slotsRlp := make([][]byte, 0, h.Len())
@@ -1007,6 +1009,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 
 			send.BroadcastLocalPooledTxs(localTxHashes)
 			send.BroadcastRemotePooledTxs(remoteTxHashes)
+			propagateNewTxsTimer.UpdateDuration(t)
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()
 			if len(newPeers) == 0 {
