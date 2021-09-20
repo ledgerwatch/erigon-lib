@@ -463,10 +463,9 @@ func (h Addresses) At(i int) []byte { return h[i*20 : (i+1)*20] }
 func (h Addresses) Len() int        { return len(h) / 20 }
 
 type TxSlots struct {
-	txs           []*TxSlot
-	senders       Addresses
-	isLocal       []bool
-	discardReason []DiscardReason
+	txs     []*TxSlot
+	senders Addresses
+	isLocal []bool
 }
 
 func (s TxSlots) Valid() error {
@@ -490,14 +489,10 @@ func (s *TxSlots) Resize(targetSize uint) {
 	for uint(len(s.isLocal)) < targetSize {
 		s.isLocal = append(s.isLocal, false)
 	}
-	for uint(len(s.discardReason)) < targetSize {
-		s.discardReason = append(s.discardReason, 0)
-	}
 	//todo: set nil to overflow txs
 	s.txs = s.txs[:targetSize]
 	s.senders = s.senders[:20*targetSize]
 	s.isLocal = s.isLocal[:targetSize]
-	s.discardReason = s.discardReason[:targetSize]
 }
 func (s *TxSlots) Append(slot *TxSlot, sender []byte, isLocal bool) {
 	n := len(s.txs)
