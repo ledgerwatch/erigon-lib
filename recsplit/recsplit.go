@@ -325,15 +325,21 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			var fail bool
 			for i := uint16(0); !fail && i < m; i++ {
 				j := remap16(remix(bucket[i]+salt), m) / unit
-				if count[j] == unit {
-					fail = true
-				} else {
-					count[j]++
-				}
+				//if count[j] == unit {
+				//	fail = true
+				//} else {
+				count[j]++
+				//}
 			}
-			if !fail && count[fanout-1] == m-(fanout-1)*unit {
+			for i := uint16(0); i < fanout-1; i++ {
+				fail = fail || (count[i] != unit)
+			}
+			if !fail {
 				break
 			}
+			//if !fail && count[fanout-1] == m-(fanout-1)*unit {
+			//	break
+			//}
 			salt++
 		}
 		if fanout == 2 {
