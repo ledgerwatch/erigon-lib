@@ -522,5 +522,5 @@ func (rs RecSplit) Collision() bool {
 }
 
 func (rs RecSplit) PrintTimings() {
-	fmt.Printf("bij_time = %s, agg_time = %s, agg_search_time = %s, agg_search_time_2 = %s, agg_copy1_time = %s, agg_copy2_time = %s\n", rs.bij_time, rs.agg_time, rs.agg_search_time, rs.agg_search_time, rs.agg_copy1_time, rs.agg_copy2_time)
+	fmt.Printf("bij_time = %s, agg_time = %s, agg_search_time = %s, agg_search_time_2 = %s, agg_copy1_time = %s, agg_copy2_time = %s\n", rs.bij_time, rs.agg_time, rs.agg_search_time, rs.agg_search_time_2, rs.agg_copy1_time, rs.agg_copy2_time)
 }
