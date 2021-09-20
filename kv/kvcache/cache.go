@@ -169,6 +169,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
+	fmt.Printf("OnNewBlock: %d\n", stateChanges.DatabaseViewID)
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
@@ -213,6 +214,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 type ViewID uint64
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
+	fmt.Printf("view: %d\n", tx.ViewID())
 	id := ViewID(tx.ViewID())
 	r := c.selectOrCreateRoot(id)
 	select { // fast non-blocking path
