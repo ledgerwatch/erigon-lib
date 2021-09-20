@@ -303,7 +303,11 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 	case sentry.MessageId_POOLED_TRANSACTIONS_65, sentry.MessageId_POOLED_TRANSACTIONS_66:
 		txs := TxSlots{}
 		f.pooledTxsParseCtx.Reject(func(hash []byte) error {
-			if known, _ := f.pool.IdHashKnown(tx, hash); known {
+			known, err := f.pool.IdHashKnown(tx, hash)
+			if err != nil {
+				return err
+			}
+			if known {
 				return ErrRejected
 			}
 			return nil
