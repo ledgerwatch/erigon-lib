@@ -71,7 +71,6 @@ type RecSplit struct {
 	golombRice         []uint32
 	buffer             []uint64
 	count              []uint16
-	indices            []int
 	salt               uint32 // Murmur3 hash used for converting keys to 64-bit values and assigning to buckets
 	collision          bool
 	tmpDir             string
