@@ -79,6 +79,7 @@ type RecSplit struct {
 	trace              bool
 	bij_time           time.Duration
 	agg_time           time.Duration
+	agg_search_time_2  time.Duration
 	agg_search_time    time.Duration
 	agg_copy1_time     time.Duration
 	agg_copy2_time     time.Duration
@@ -335,7 +336,11 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			}
 			salt++
 		}
-		rs.agg_search_time += time.Since(start)
+		if fanout == 2 {
+			rs.agg_search_time_2 += time.Since(start)
+		} else {
+			rs.agg_search_time += time.Since(start)
+		}
 		for i, c := 0, 0; i < fanout; i++ {
 			count[i] = c
 			c += unit
@@ -517,5 +522,5 @@ func (rs RecSplit) Collision() bool {
 }
 
 func (rs RecSplit) PrintTimings() {
-	fmt.Printf("bij_time = %s, agg_time = %s, agg_search_time = %s, agg_copy1_time = %s, agg_copy2_time = %s\n", rs.bij_time, rs.agg_time, rs.agg_search_time, rs.agg_copy1_time, rs.agg_copy2_time)
+	fmt.Printf("bij_time = %s, agg_time = %s, agg_search_time = %s, agg_search_time_2 = %s, agg_copy1_time = %s, agg_copy2_time = %s\n", rs.bij_time, rs.agg_time, rs.agg_search_time, rs.agg_search_time_2, rs.agg_copy1_time, rs.agg_copy2_time)
 }
