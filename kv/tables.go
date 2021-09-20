@@ -285,11 +285,6 @@ var (
 	PruneDistanceTxIndex    = []byte("pruneTxIndex")
 	PruneDistanceCallTraces = []byte("pruneCallTraces")
 
-	PruneDistanceHistory    = []byte("pruneHistory")
-	PruneDistanceReceipts   = []byte("pruneReceipts")
-	PruneDistanceTxIndex    = []byte("pruneTxIndex")
-	PruneDistanceCallTraces = []byte("pruneCallTraces")
-
 	DBSchemaVersionKey = []byte("dbVersion")
 
 	BittorrentPeerID            = "peerID"
