@@ -72,6 +72,7 @@ type RecSplit struct {
 	golombRice         []uint32
 	buffer             []uint64
 	count              []int
+	indices            []int
 	salt               uint32 // Murmur3 hash used for converting keys to 64-bit values and assigning to buckets
 	collision          bool
 	tmpDir             string
@@ -119,6 +120,7 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	}
 	rs.startSeed = args.StartSeed
 	rs.count = make([]int, rs.secondaryAggrBound)
+	rs.indices = make([]int, rs.secondaryAggrBound)
 	return rs, nil
 }
 
@@ -317,6 +319,7 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		start := time.Now()
 		fanout, unit := rs.splitParams(m)
 		count := rs.count
+		indices := rs.indices
 		for {
 			for i := 0; i < fanout; i++ {
 				count[i] = 0
@@ -327,6 +330,7 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 				if count[j] == unit {
 					fail = true
 				} else {
+					indices[i] = j
 					count[j]++
 				}
 			}
@@ -344,9 +348,9 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			count[i] = c
 			c += unit
 		}
-		for _, fingerprint := range bucket {
-			j := remap16(remix(fingerprint+salt), m) / unit
-			rs.buffer[count[j]] = fingerprint
+		for i := 0; i < m; i++ {
+			j := indices[i]
+			rs.buffer[count[indices[i]]] = bucket[i]
 			count[j]++
 		}
 		rs.agg_copy1_time += time.Since(start)
