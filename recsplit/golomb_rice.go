@@ -36,7 +36,7 @@ type GolombRice struct {
 
 // appendUnaryAll adds the unary encoding of specified sequence of numbers to the end of the
 // current encoding
-func (g *GolombRice) appendUnaryAll(unary []uint32) {
+func (g *GolombRice) appendUnaryAll(unary []uint64) {
 	bitInc := 0
 	for _, u := range unary {
 		// Each number u uses u+1 bits for its unary representation
@@ -58,11 +58,11 @@ func (g *GolombRice) appendUnaryAll(unary []uint32) {
 // appendFixed encodes the next value using specified Golomb parameter. Since we are using Golomb-Rice encoding,
 // all Golomb parameters are powers of two. Therefore we input log2 of golomb parameter, rather than golomn paramter itself,
 // for convinience
-func (g *GolombRice) appendFixed(v uint32, log2golomb int) {
+func (g *GolombRice) appendFixed(v uint64, log2golomb int) {
 	if log2golomb == 0 {
 		return
 	}
-	lowerBits := v & ((uint32(1) << log2golomb) - 1) // Extract the part of the number that will be encoded using truncated binary encoding
+	lowerBits := v & ((uint64(1) << log2golomb) - 1) // Extract the part of the number that will be encoded using truncated binary encoding
 	usedBits := g.bitCount & 63                      // How many bits of the last element of b.data is used by previous value
 	targetSize := (g.bitCount + log2golomb + 63) / 64
 	//fmt.Printf("g.bitCount = %d, log2golomb = %d, targetSize = %d\n", g.bitCount, log2golomb, targetSize)
