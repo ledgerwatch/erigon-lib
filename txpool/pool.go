@@ -1249,6 +1249,9 @@ func (p *TxPool) printDebug(prefix string) {
 	}
 }
 func (p *TxPool) logStats() {
+	if !p.started.Load() {
+		log.Info("[txpool] Not started yet...")
+	}
 	//protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
 
 	p.lock.RLock()
