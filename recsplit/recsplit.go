@@ -213,10 +213,10 @@ func (rs *RecSplit) AddKey(key []byte) error {
 	rs.hasher.Write(key) //nolint:errcheck
 	hash := rs.hasher.Sum64()
 	bucketKey := make([]byte, 8+len(key))
-	binary.BigEndian.PutUint64(bucketKey[:], remap(hash, rs.bucketCount))
+	binary.BigEndian.PutUint64(bucketKey, remap(hash, rs.bucketCount))
 	copy(bucketKey[8:], key)
 	rs.keysAdded++
-	return rs.collector.Collect(bucketKey[:], []byte{})
+	return rs.collector.Collect(bucketKey, []byte{})
 }
 
 func (rs *RecSplit) recsplitCurrentBucket() error {
