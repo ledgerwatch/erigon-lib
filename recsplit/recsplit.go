@@ -240,7 +240,7 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 				return fmt.Errorf("duplicate key %x", key)
 			}
 		}
-		//bitPos := rs.gr.bitCount
+		bitPos := rs.gr.bitCount
 		if rs.buffer == nil {
 			rs.buffer = make([]uint64, len(rs.currentBucket))
 		} else {
@@ -250,7 +250,7 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 		}
 		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
 		rs.gr.appendUnaryAll(unary)
-		//fmt.Printf("recsplitBucket(%d, %d, bitsize = %d)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos)
+		fmt.Printf("recsplitBucket(%d, %d, bitsize = %d)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos)
 	}
 	// Extend rs.bucketPosAcc to accomodate current bucket index + 1
 	for len(rs.bucketPosAcc) <= int(rs.currentBucketIdx)+1 {
