@@ -431,7 +431,7 @@ func (rs *RecSplit) Lookup(key []byte, trace bool) int {
 			fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
 		}
 		hmod := remap16(remix(fingerprint+rs.startSeed[level]+d), m)
-		split := ((m/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
+		split := (((m+1)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
 		if hmod < split {
 			m = split
 		} else {
