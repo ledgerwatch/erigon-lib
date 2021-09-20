@@ -120,7 +120,7 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	}
 	rs.startSeed = args.StartSeed
 	rs.count = make([]int, rs.secondaryAggrBound)
-	rs.indices = make([]int, rs.bucketSize*2)
+	rs.indices = make([]int, rs.secondaryAggrBound)
 	return rs, nil
 }
 
@@ -158,7 +158,7 @@ func (rs *RecSplit) ResetNextSalt() {
 
 func (rs *RecSplit) splitParams(m int) (fanout, unit int) {
 	if m > rs.secondaryAggrBound { // High-level aggregation (fanout 2)
-		unit = rs.secondaryAggrBound * (((m+1)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound)
+		unit = rs.secondaryAggrBound * (((m)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound)
 		fanout = 2
 	} else if m > rs.primaryAggrBound { // Second-level aggregation
 		unit = rs.primaryAggrBound
@@ -319,7 +319,6 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		start := time.Now()
 		fanout, unit := rs.splitParams(m)
 		count := rs.count
-		indices := rs.indices
 		for {
 			for i := 0; i < fanout; i++ {
 				count[i] = 0
@@ -330,7 +329,6 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 				if count[j] == unit {
 					fail = true
 				} else {
-					indices[i] = j
 					count[j]++
 				}
 			}
@@ -349,8 +347,8 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 			c += unit
 		}
 		for i := 0; i < m; i++ {
-			j := indices[i]
-			rs.buffer[count[indices[i]]] = bucket[i]
+			j := remap16(remix(bucket[i]+salt), m) / unit
+			rs.buffer[count[j]] = bucket[i]
 			count[j]++
 		}
 		rs.agg_copy1_time += time.Since(start)
@@ -450,7 +448,7 @@ func (rs *RecSplit) Lookup(key []byte, trace bool) int {
 			fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
 		}
 		hmod := remap16(remix(fingerprint+rs.startSeed[level]+d), m)
-		split := (((m+1)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
+		split := (((m)/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
 		if hmod < split {
 			m = split
 		} else {
