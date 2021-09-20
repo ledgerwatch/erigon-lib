@@ -19,7 +19,6 @@ package recsplit
 import (
 	"encoding/binary"
 	"fmt"
-	"hash"
 	"math"
 	"math/bits"
 	"time"
@@ -52,10 +51,10 @@ func remix(z uint64) uint64 {
 // pages 175−185. SIAM, 2020.
 type RecSplit struct {
 	bucketSize       int
-	keyExpectedCount uint64      // Number of keys in the hash table
-	keysAdded        uint64      // Number of keys actually added to the recSplit (to check the match with keyExpectedCount)
-	bucketCount      uint64      // Number of buckets
-	hasher           hash.Hash64 // Salted hash function to use for splitting into initial buckets
+	keyExpectedCount uint64          // Number of keys in the hash table
+	keysAdded        uint64          // Number of keys actually added to the recSplit (to check the match with keyExpectedCount)
+	bucketCount      uint64          // Number of buckets
+	hasher           murmur3.Hash128 // Salted hash function to use for splitting into initial buckets and mapping to 64-bit fingerprints
 	collector        *etl.Collector
 	built            bool       // Flag indicating that the hash function has been built and no more keys can be added
 	currentBucketIdx uint64     // Current bucket being accumulated
@@ -102,7 +101,7 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	bucketCount := (args.KeyCount + args.BucketSize - 1) / args.BucketSize
 	rs := &RecSplit{bucketSize: args.BucketSize, keyExpectedCount: uint64(args.KeyCount), bucketCount: uint64(bucketCount)}
 	rs.salt = args.Salt
-	rs.hasher = murmur3.New64WithSeed(rs.salt)
+	rs.hasher = murmur3.New128WithSeed(rs.salt)
 	rs.tmpDir = args.TmpDir
 	rs.collector = etl.NewCollector(rs.tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	rs.currentBucket = make([]uint64, 0, args.BucketSize)
@@ -148,7 +147,7 @@ func (rs *RecSplit) ResetNextSalt() {
 	rs.collision = false
 	rs.keysAdded = 0
 	rs.salt++
-	rs.hasher = murmur3.New64WithSeed(rs.salt)
+	rs.hasher = murmur3.New128WithSeed(rs.salt)
 	rs.collector = etl.NewCollector(rs.tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	rs.currentBucket = rs.currentBucket[:0]
 	rs.bucketSizeAcc = rs.bucketSizeAcc[:1] // First entry is always zero
@@ -233,10 +232,10 @@ func (rs *RecSplit) AddKey(key []byte) error {
 	}
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
-	hash := rs.hasher.Sum64()
+	hi, lo := rs.hasher.Sum128()
 	var bucketKey [16]byte
-	binary.BigEndian.PutUint64(bucketKey[:], remap(hash, rs.bucketCount))
-	binary.BigEndian.PutUint64(bucketKey[8:], hash)
+	binary.BigEndian.PutUint64(bucketKey[:], remap(hi, rs.bucketCount))
+	binary.BigEndian.PutUint64(bucketKey[8:], lo)
 	rs.keysAdded++
 	return rs.collector.Collect(bucketKey[:], []byte{})
 }
@@ -425,11 +424,11 @@ func (rs *RecSplit) skipNodes(m int) int {
 func (rs *RecSplit) Lookup(key []byte, trace bool) int {
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
-	fingerprint := rs.hasher.Sum64()
+	bucketHash, fingerprint := rs.hasher.Sum128()
 	if trace {
 		fmt.Printf("lookup key %x, fingerprint %x\n", key, fingerprint)
 	}
-	bucket := remap(fingerprint, rs.bucketCount)
+	bucket := remap(bucketHash, rs.bucketCount)
 	cumKeys, cumKeysNext, bitPos := rs.ef.Get3(bucket)
 	m := int(cumKeysNext - cumKeys) // Number of keys in this bucket
 	if trace {
