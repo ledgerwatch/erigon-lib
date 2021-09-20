@@ -74,6 +74,7 @@ type RecSplit struct {
 	salt               uint32 // Murmur3 hash used for converting keys to 64-bit values and assigning to buckets
 	collision          bool
 	tmpDir             string
+	trace              bool
 }
 
 type RecSplitArgs struct {
@@ -111,6 +112,10 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	}
 	rs.startSeed = args.StartSeed
 	return rs, nil
+}
+
+func (rs *RecSplit) SetTrace(trace bool) {
+	rs.trace = trace
 }
 
 // remap converts the number x which is assumed to be uniformly distributed over the range [0..2^64) to the number that is uniformly
@@ -250,7 +255,9 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 		}
 		unary := rs.recsplit(0 /* level */, rs.currentBucket, nil /* unary */)
 		rs.gr.appendUnaryAll(unary)
-		fmt.Printf("recsplitBucket(%d, %d, bitsize = %d)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos)
+		if rs.trace {
+			fmt.Printf("recsplitBucket(%d, %d, bitsize = %d)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos)
+		}
 	}
 	// Extend rs.bucketPosAcc to accomodate current bucket index + 1
 	for len(rs.bucketPosAcc) <= int(rs.currentBucketIdx)+1 {
@@ -264,7 +271,9 @@ func (rs *RecSplit) recsplitCurrentBucket() error {
 
 // recsplit applies recSplit algorithm to the given bucket
 func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint64 {
-	//fmt.Printf("recsplit(%d, %d, %x)\n", level, len(bucket), bucket)
+	if rs.trace {
+		fmt.Printf("recsplit(%d, %d, %x)\n", level, len(bucket), bucket)
+	}
 	// Pick initial salt for this level of recursive split
 	salt := rs.startSeed[level]
 	m := len(bucket)
@@ -289,7 +298,9 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		}
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
-		//fmt.Printf("encode bij %d with log2golomn %d at p = %d\n", salt, log2golomb, rs.gr.bitCount)
+		if rs.trace {
+			fmt.Printf("encode bij %d with log2golomn %d at p = %d\n", salt, log2golomb, rs.gr.bitCount)
+		}
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
 	} else {
@@ -329,7 +340,9 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		copy(bucket, rs.buffer)
 		salt -= rs.startSeed[level]
 		log2golomb := rs.golombParam(m)
-		//fmt.Printf("encode fanout %d: %d with log2golomn %d at p = %d\n", fanout, salt, log2golomb, rs.gr.bitCount)
+		if rs.trace {
+			fmt.Printf("encode fanout %d: %d with log2golomn %d at p = %d\n", fanout, salt, log2golomb, rs.gr.bitCount)
+		}
 		rs.gr.appendFixed(salt, log2golomb)
 		unary = append(unary, salt>>log2golomb)
 		var i int
@@ -393,21 +406,30 @@ func (rs *RecSplit) skipNodes(m int) int {
 	return int(rs.golombRice[m]>>16) & 0x7FF
 }
 
-func (rs *RecSplit) Lookup(key []byte) int {
+func (rs *RecSplit) Lookup(key []byte, trace bool) int {
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
 	fingerprint := rs.hasher.Sum64()
-	//fmt.Printf("lookup %x\n", hashKey)
+	if trace {
+		fmt.Printf("lookup key %x, fingerprint %x\n", key, fingerprint)
+	}
 	bucket := remap(fingerprint, rs.bucketCount)
 	cumKeys, cumKeysNext, bitPos := rs.ef.Get3(bucket)
 	m := int(cumKeysNext - cumKeys) // Number of keys in this bucket
-	//fmt.Printf("bucket: %d, m = %d, bitPos = %d, unaryOffset = %d\n", bucket, m, bitPos, rs.skipBits(m))
+	if trace {
+		fmt.Printf("bucket: %d, m = %d, bitPos = %d, unaryOffset = %d\n", bucket, m, bitPos, rs.skipBits(m))
+	}
 	rs.gr.ReadReset(int(bitPos), rs.skipBits(m))
 	var level int
+	var p int
 	for m > rs.secondaryAggrBound { // fanout = 2
-		//p := rs.gr.currFixedOffset
+		if trace {
+			p = rs.gr.currFixedOffset
+		}
 		d := rs.gr.ReadNext(rs.golombParam(m))
-		//fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
+		if trace {
+			fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
+		}
 		hmod := remap16(remix(fingerprint+rs.startSeed[level]+d), m)
 		split := ((m/2 + rs.secondaryAggrBound - 1) / rs.secondaryAggrBound) * rs.secondaryAggrBound
 		if hmod < split {
@@ -420,9 +442,13 @@ func (rs *RecSplit) Lookup(key []byte) int {
 		level++
 	}
 	if m > rs.primaryAggrBound {
-		//p := rs.gr.currFixedOffset
+		if trace {
+			p = rs.gr.currFixedOffset
+		}
 		d := rs.gr.ReadNext(rs.golombParam(m))
-		//fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
+		if trace {
+			fmt.Printf("level %d, p = %d, d = %d golomb %d\n", level, p, d, rs.golombParam(m))
+		}
 		hmod := remap16(remix(fingerprint+rs.startSeed[level]+d), m)
 		part := hmod / rs.primaryAggrBound
 		if rs.primaryAggrBound < m-part*rs.primaryAggrBound {
@@ -437,9 +463,13 @@ func (rs *RecSplit) Lookup(key []byte) int {
 		level++
 	}
 	if m > rs.leafSize {
-		//p := rs.gr.currFixedOffset
+		if trace {
+			p = rs.gr.currFixedOffset
+		}
 		d := rs.gr.ReadNext(rs.golombParam(m))
-		//fmt.Printf("level %d, p = %d, d = %d, golomb %d\n", level, p, d, rs.golombParam(m))
+		if trace {
+			fmt.Printf("level %d, p = %d, d = %d, golomb %d\n", level, p, d, rs.golombParam(m))
+		}
 		hmod := remap16(remix(fingerprint+rs.startSeed[level]+d), m)
 		part := hmod / rs.leafSize
 		if rs.leafSize < m-part*rs.leafSize {
@@ -453,9 +483,13 @@ func (rs *RecSplit) Lookup(key []byte) int {
 		}
 		level++
 	}
-	//p := rs.gr.currFixedOffset
+	if trace {
+		p = rs.gr.currFixedOffset
+	}
 	b := rs.gr.ReadNext(rs.golombParam(m))
-	//fmt.Printf("level %d, p = %d, b = %d, golomn = %d\n", level, p, b, rs.golombParam(m))
+	if trace {
+		fmt.Printf("level %d, p = %d, b = %d, golomn = %d\n", level, p, b, rs.golombParam(m))
+	}
 	return int(cumKeys) + remap16(remix(fingerprint+rs.startSeed[level]+b), m)
 }
 

@@ -70,7 +70,7 @@ func FuzzRecSplit(f *testing.F) {
 		bitCount := (count + 63) / 64
 		bits := make([]uint64, bitCount)
 		for i = 0; i < len(in)-l; i += l {
-			idx := rs.Lookup(in[i : i+l])
+			idx := rs.Lookup(in[i:i+l], false /* trace */)
 			if idx >= count {
 				t.Errorf("idx %d >= count %d", idx, count)
 			}
