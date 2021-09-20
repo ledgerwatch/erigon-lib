@@ -319,28 +319,21 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		fanout, unit := rs.splitParams(m)
 		count := rs.count
 		for {
-			for i := 0; i < fanout-1; i++ {
+			for i := 0; i < fanout; i++ {
 				count[i] = 0
 			}
 			var fail bool
-			//for i := 0; !fail && i < m; i++ {
-			for _, fingerprint := range bucket {
-				j := remap16(remix(fingerprint+salt), m) / unit
-				//if count[j] == unit {
-				//	fail = true
-				//} else {
-				count[j]++
-				//}
+			for i := 0; !fail && i < m; i++ {
+				j := remap16(remix(bucket[i]+salt), m) / unit
+				if count[j] == unit {
+					fail = true
+				} else {
+					count[j]++
+				}
 			}
-			for i := 0; i < fanout-1; i++ {
-				fail = fail || (count[i] != unit)
-			}
-			if !fail {
+			if !fail && count[fanout-1] == m-(fanout-1)*unit {
 				break
 			}
-			//if !fail && count[fanout-1] == m-(fanout-1)*unit {
-			//	break
-			//}
 			salt++
 		}
 		if fanout == 2 {
@@ -529,5 +522,5 @@ func (rs RecSplit) Collision() bool {
 }
 
 func (rs RecSplit) PrintTimings() {
-	fmt.Printf("bij_time = %s, agg_time = %s, agg_search_time = %s, agg_search_time_2 = %s, agg_copy1_time = %s, agg_copy2_time = %s\n", rs.bij_time, rs.agg_time, rs.agg_search_time, rs.agg_search_time_2, rs.agg_copy1_time, rs.agg_copy2_time)
+	fmt.Printf("bij_time = %s, agg_time = %s, agg_search_time = %s, agg_search_time_2 = %s, agg_copy1_time = %s, agg_copy2_time = %s\n", rs.bij_time, rs.agg_time, rs.agg_search_time, rs.agg_search_time, rs.agg_copy1_time, rs.agg_copy2_time)
 }
