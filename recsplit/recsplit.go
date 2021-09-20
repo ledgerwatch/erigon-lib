@@ -71,6 +71,7 @@ type RecSplit struct {
 	startSeed          []uint64
 	golombRice         []uint32
 	buffer             []uint64
+	count              []int
 	salt               uint32 // Murmur3 hash used for converting keys to 64-bit values and assigning to buckets
 	collision          bool
 	tmpDir             string
@@ -111,6 +112,7 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 		rs.secondaryAggrBound = rs.primaryAggrBound * int(math.Ceil(0.21*float64(rs.leafSize)+9./10.))
 	}
 	rs.startSeed = args.StartSeed
+	rs.count = make([]int, rs.secondaryAggrBound)
 	return rs, nil
 }
 
@@ -305,37 +307,32 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, unary []uint64) []uint6
 		unary = append(unary, salt>>log2golomb)
 	} else {
 		fanout, unit := rs.splitParams(m)
-		count := make([]int, fanout)
 		for {
+			for i := 0; i < fanout; i++ {
+				rs.count[i] = 0
+			}
 			var fail bool
 			for i := 0; !fail && i < m; i++ {
 				j := remap16(remix(bucket[i]+salt), m) / unit
-				if j >= len(count) {
-					fmt.Printf("rs.primaryAggrBound = %d, s.secondaryAggrBound = %d\n", rs.primaryAggrBound, rs.secondaryAggrBound)
-					fmt.Printf("m = %d, len(count) = %d, unit = %d, remap16(remix(bucket[i]+salt), m) = %d\n", m, len(count), unit, remap16(remix(bucket[i]+salt), m))
-				}
-				if count[j] == unit {
+				if rs.count[j] == unit {
 					fail = true
 				} else {
-					count[j]++
+					rs.count[j]++
 				}
 			}
-			if !fail && count[fanout-1] == m-(fanout-1)*unit {
+			if !fail && rs.count[fanout-1] == m-(fanout-1)*unit {
 				break
 			}
 			salt++
-			for i := 0; i < fanout; i++ {
-				count[i] = 0
-			}
 		}
 		for i, c := 0, 0; i < fanout; i++ {
-			count[i] = c
+			rs.count[i] = c
 			c += unit
 		}
 		for _, fingerprint := range bucket {
 			j := remap16(remix(fingerprint+salt), m) / unit
-			rs.buffer[count[j]] = fingerprint
-			count[j]++
+			rs.buffer[rs.count[j]] = fingerprint
+			rs.count[j]++
 		}
 		copy(bucket, rs.buffer)
 		salt -= rs.startSeed[level]
