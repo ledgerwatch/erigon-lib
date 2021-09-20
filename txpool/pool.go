@@ -93,7 +93,7 @@ type Pool interface {
 	// Handle 3 main events - new remote txs from p2p, new local txs from RPC, new blocks from execution layer
 	AddRemoteTxs(ctx context.Context, newTxs TxSlots)
 	AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error)
-	OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error
+	OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots, tx kv.Tx) error
 
 	// IdHashKnown check whether transaction with given Id hash is known to the pool
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
@@ -268,7 +268,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 	}, nil
 }
 
-func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots) error {
+func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots, tx kv.Tx) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
 	t := time.Now()
 
@@ -279,12 +279,17 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	defer coreTx.Rollback()
+
+	if err := p.fromDB(ctx, tx, coreTx); err != nil {
+		return err
+	}
+
 	viewID, err := cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
 	if ASSERT {
-		if _, err := kvcache.AssertCheckValues(context.Background(), coreTx, p.cache()); err != nil {
+		if _, err := kvcache.AssertCheckValues(ctx, coreTx, cache); err != nil {
 			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 		}
 	}
@@ -921,20 +926,6 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, cfg Config, discard
 // promote/demote transactions
 // reorgs
 func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan Hashes, send *Send, newSlotsStreams *NewSlotsStreams, notifyMiningAboutNewSlots func()) {
-	for {
-		if err := db.Update(ctx, func(tx kv.RwTx) error {
-			return coreDB.View(ctx, func(coreTx kv.Tx) error {
-				return p.fromDB(ctx, tx, coreTx)
-			})
-		}); err != nil {
-			log.Error("[txpool] restore from db", "err", err)
-		} else {
-			break
-		}
-		time.Sleep(time.Second)
-	}
-	//p.logStats()
-
 	syncToNewPeersEvery := time.NewTicker(p.cfg.SyncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
 	processRemoteTxsEvery := time.NewTicker(p.cfg.ProcessRemoteTxsEvery)
@@ -1110,9 +1101,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	return nil
 }
 
-func (p *TxPool) fromDB(ctx context.Context, tx kv.RwTx, coreTx kv.Tx) error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	lastSeenBlock, err := LastSeenBlock(tx)
 	if err != nil {
 		return err

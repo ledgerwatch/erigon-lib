@@ -451,7 +451,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 			}
 		}
 		if err := f.db.View(ctx, func(tx kv.Tx) error {
-			return f.pool.OnNewBlock(ctx, req, unwindTxs, minedTxs)
+			return f.pool.OnNewBlock(ctx, req, unwindTxs, minedTxs, tx)
 		}); err != nil {
 			log.Warn("onNewBlock", "err", err)
 		}
