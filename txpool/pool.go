@@ -44,7 +44,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
-	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/status"
 )
@@ -1077,12 +1076,14 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		}
 		copy(v[20:], metaTx.Tx.rlp)
 
-		has, _ := tx.Has(kv.PoolTransaction, []byte(txHash))
-		if has {
-			panic("must not happen")
-		}
-		if err := tx.Put(kv.PoolTransaction, []byte(txHash), v); err != nil {
+		has, err := tx.Has(kv.PoolTransaction, []byte(txHash))
+		if err != nil {
 			return err
+		}
+		if !has {
+			if err := tx.Put(kv.PoolTransaction, []byte(txHash), v); err != nil {
+				return err
+			}
 		}
 		metaTx.Tx.rlp = nil
 	}
