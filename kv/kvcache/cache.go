@@ -134,35 +134,6 @@ func New(cfg CoherentCacheConfig) *Coherent {
 	}
 }
 
-//view: 75227
-//OnNewBlock: 75228
-//view: 75230
-//[INFO] [09-20|03:37:44.706] [txpool] Started
-//[INFO] [09-20|03:37:44.706] [txpool] new block                       number=13259741 in=1m55.400790395s
-//view: 75230
-//OnNewBlock: 75229
-//view: 75230
-//add to non-last viewID: 75229<75230
-//add to non-last viewID: 75229<75230
-//add to non-last viewID: 75229<75230
-//add to non-last viewID: 75229<75230
-
-//view: 75227        0, don't set lastViewID, don't add to evict, then need drop all that cache later
-//OnNewBlock: 75228  0->75228, but we MUST add them to evict (set lastViewID to current before add)
-//view: 75230        75228, work on empty cache, don't add to evict
-//[INFO] [09-20|03:37:44.706] [txpool] Started
-//[INFO] [09-20|03:37:44.706] [txpool] new block                       number=13259741 in=1m55.400790395s
-//view: 75230        75228, work on empty cache, don't add to evict
-//OnNewBlock: 75229  75228->75229, replace existing cache
-//view: 75230
-//add to non-last viewID: 75229<75230
-//add to non-last viewID: 75229<75230
-//add to non-last viewID: 75229<75230
-//add to non-last viewID: 75229<75230
-
-//
-
-//view
 // selectOrCreateRoot - used for usual getting root
 func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentView {
 	c.lock.Lock()
@@ -218,7 +189,6 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentView) {
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
-	fmt.Printf("OnNewBlock: %d\n", stateChanges.DatabaseViewID)
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
@@ -263,7 +233,6 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 type ViewID uint64
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (ViewID, error) {
-	fmt.Printf("view: %d\n", tx.ViewID())
 	id := ViewID(tx.ViewID())
 	r := c.selectOrCreateRoot(id)
 	select { // fast non-blocking path
@@ -328,7 +297,7 @@ func (c *Coherent) add(k, v []byte, r *CoherentView, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.cache.ReplaceOrInsert(it)
 	if c.latestViewID != id {
-		fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
+		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
 	}
 	if replaced != nil {
@@ -429,90 +398,6 @@ func (c *Coherent) Len() int {
 	}
 	return c.latestView.cache.Len() //todo: is it same with cache.len()?
 }
-
-/*
-func (c *Coherent) Evict() int {
-	defer c.evict.UpdateDuration(time.Now())
-	latestBlockNum, lastView := c.lastRoot()
-	c.evictRoots(latestBlockNum - ViewID(c.cfg.KeepViews))
-	if lastView == nil {
-		return 0
-	}
-	keysAmount := lastView.cache.Len()
-	c.keys.Set(uint64(keysAmount))
-
-	//lastView.evictOld(latestBlockNum-c.cfg.KeepViews, c.cfg.KeysLimit)
-	//lastView.evictNew2Random(c.cfg.KeysLimit)
-	return lastView.cache.Len()
-}
-*/
-
-/*
-//nolint
-func (c *CoherentView) evictOld(dropOlder uint64, keysLimit int) {
-	if c.Len() < keysLimit {
-		return
-	}
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	var toDel []btree.Item
-	c.cache.Ascend(func(it btree.Item) bool {
-		age := goatomic.LoadUint64(&it.(*Pair).t)
-		if age < dropOlder {
-			toDel = append(toDel, it)
-		}
-		return true
-	})
-	for _, it := range toDel {
-		c.cache.Delete(it)
-	}
-	log.Info("evicted", "too_old_amount", len(toDel))
-}
-
-//nolint
-func (c *CoherentView) evictNew2Random(keysLimit int) {
-	if c.Len() < keysLimit {
-		return
-	}
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	i := 0
-	id := c.id.Load()
-	var toDel []btree.Item
-	var fst, snd btree.Item
-	firstPrime, secondPrime := 11, 13 // to choose 2-pseudo-random elements and evict worse one
-	c.cache.Ascend(func(it btree.Item) bool {
-		if i%firstPrime == 0 {
-			if goatomic.LoadUint64(&it.(*Pair).t) >= id {
-				return true
-			}
-			fst = it
-		}
-		if i%secondPrime == 0 {
-			if goatomic.LoadUint64(&it.(*Pair).t) >= id {
-				return true
-			}
-			snd = it
-		}
-		if fst != nil && snd != nil {
-			if goatomic.LoadUint64(&fst.(*Pair).t) < goatomic.LoadUint64(&snd.(*Pair).t) {
-				toDel = append(toDel, fst)
-			} else {
-				toDel = append(toDel, snd)
-			}
-			fst = nil
-			snd = nil
-		}
-		return true
-	})
-
-	for _, it := range toDel {
-		c.cache.Delete(it)
-	}
-	log.Info("evicted", "2_random__amount", len(toDel))
-}
-*/
 
 // Element is an element of a linked list.
 type Element struct {
