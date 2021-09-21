@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -349,10 +348,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 		pool.senders.senderID = uint64(len(senderIDs))
 		check := func(unwindTxs, minedTxs TxSlots, msg string) {
 			pending, baseFee, queued := pool.pending, pool.baseFee, pool.queued
-			//if pending.Len() > 5 && baseFee.Len() > 5 && queued.Len() > 5 {
-			//	fmt.Printf("len %s: %d,%d,%d\n", msg, pending.Len(), baseFee.Len(), queued.Len())
-			//}
-
 			best, worst := pending.Best(), pending.Worst()
 			assert.LessOrEqual(pending.Len(), cfg.PendingSubPoolLimit)
 			assert.False(worst != nil && best == nil, msg)
@@ -363,10 +358,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 			for _, tx := range pending.best {
 				i := tx.Tx
 				if tx.subPool&NoNonceGaps > 0 {
-					//for id := range senders {
-					//	fmt.Printf("now: %d, %d\n", id, senders[id].nonce)
-					//}
-					//fmt.Printf("?? %d,%d\n", i.senderID, senders[i.senderID].nonce)
 					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg, i.senderID)
 				}
 				if tx.subPool&EnoughBalance > 0 {
@@ -507,14 +498,13 @@ func FuzzOnNewBlocks(f *testing.F) {
 					assert.False(foundInMined, msg)
 				}
 			default: // no notifications - means pools must be unchanged or drop some txs
-				//difference := intersect(prevHashes, copyHashes(pending))
-				//assert.Zero(difference.Len())
+				difference := intersect(prevHashes, copyHashes(pending))
+				assert.Zero(difference.Len())
 			}
 			prevHashes = copyHashes(pending)
 			_ = prevHashes
 		}
 		//TODO: check that id=>addr and addr=>id mappings have same len
-		fmt.Printf("-------\n")
 
 		tx, err := db.BeginRw(ctx)
 		require.NoError(err)
@@ -545,7 +535,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 			})
 		}
 		// go to first fork
-		//fmt.Printf("ll1: %d,%d,%d\n", pool.pending.Len(), pool.baseFee.Len(), pool.queued.Len())
 		txs1, txs2, p2pReceived, txs3 := splitDataset(txs)
 		err = pool.OnNewBlock(ctx, change, txs1, TxSlots{}, tx)
 		assert.NoError(err)
@@ -613,26 +602,11 @@ func FuzzOnNewBlocks(f *testing.F) {
 		//assert.Equal(pool.senders.senderID, p2.senders.senderID)
 		//assert.Equal(pool.senders.blockHeight.Load(), p2.senders.blockHeight.Load())
 
-		if pool.queued.Len() != p2.queued.Len() {
-			pool.printDebug("pool1")
-			p2.printDebug("pool2")
-			//for _, txn := range *pool.queued.best {
-			//	fmt.Printf("a: %d,%d,%d,%b\n", txn.Tx.senderID, txn.Tx.nonce, txn.Tx.tip, txn.subPool)
-			//}
-			//for _, txn := range *p2.queued.best {
-			//	fmt.Printf("b: %d,%d,%d,%b\n", txn.Tx.senderID, txn.Tx.nonce, txn.Tx.tip, txn.subPool)
-			//}
-			for _, k := range p2.discardReasonsLRU.Keys() {
-				v, _ := p2.discardReasonsLRU.Get(k)
-				fmt.Printf("discard: %x,%d\n", k, v)
-			}
-		}
 		assert.Equal(pool.pending.Len(), p2.pending.Len())
 		assert.Equal(pool.baseFee.Len(), p2.baseFee.Len())
 		require.Equal(pool.queued.Len(), p2.queued.Len())
 		assert.Equal(pool.currentBaseFee.Load(), p2.currentBaseFee.Load())
 		assert.Equal(pool.protocolBaseFee.Load(), p2.protocolBaseFee.Load())
-		fmt.Printf("-------\n")
 	})
 
 }
