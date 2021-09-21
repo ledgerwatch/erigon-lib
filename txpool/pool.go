@@ -662,7 +662,6 @@ func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcach
 	//queued.EnforceInvariants()
 	promote(pending, baseFee, queued, discard)
 	//pending.EnforceWorstInvariants()
-	defer func(t time.Time) { fmt.Printf("pool.go:665: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceBestInvariants()
 
 	return nil
