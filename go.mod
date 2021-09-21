@@ -3,7 +3,7 @@ module github.com/ledgerwatch/erigon-lib
 go 1.16
 
 require (
-	github.com/VictoriaMetrics/metrics v1.17.3
+	github.com/VictoriaMetrics/metrics v1.18.0
 	github.com/c2h5oh/datasize v0.0.0-20200825124411-48ed595a09d2
 	github.com/go-stack/stack v1.8.1
 	github.com/golang/protobuf v1.5.2
@@ -19,7 +19,6 @@ require (
 	github.com/torquem-ch/mdbx-go v0.18.1
 	github.com/ugorji/go/codec v1.1.13
 	go.uber.org/atomic v1.9.0
-	golang.org/dl v0.0.0-20210909185531-e2a88a019121 // indirect
 	golang.org/x/crypto v0.0.0-20210616213533-5ff15b29337e
 	google.golang.org/grpc v1.39.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0
