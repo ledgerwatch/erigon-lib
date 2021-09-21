@@ -44,7 +44,7 @@ func FuzzTwoQueue(f *testing.F) {
 		t.Parallel()
 		assert := assert.New(t)
 		{
-			sub := NewPendingSubPool(PendingSubPool)
+			sub := NewPendingSubPool(PendingSubPool, 1024)
 			for _, i := range in {
 				sub.UnsafeAdd(&metaTx{subPool: SubPoolMarker(i & 0b11111), Tx: &TxSlot{nonce: 1, value: *uint256.NewInt(1)}})
 			}
@@ -65,7 +65,7 @@ func FuzzTwoQueue(f *testing.F) {
 			}
 		}
 		{
-			sub := NewSubPool(BaseFeeSubPool)
+			sub := NewSubPool(BaseFeeSubPool, 1024)
 			for _, i := range in {
 				sub.Add(&metaTx{subPool: SubPoolMarker(i & 0b11111), Tx: &TxSlot{nonce: 1, value: *uint256.NewInt(1)}})
 			}
@@ -98,7 +98,7 @@ func FuzzTwoQueue(f *testing.F) {
 		}
 
 		{
-			sub := NewSubPool(QueuedSubPool)
+			sub := NewSubPool(QueuedSubPool, 1024)
 			for _, i := range in {
 				sub.Add(&metaTx{subPool: SubPoolMarker(i & 0b11111), Tx: &TxSlot{nonce: 1, value: *uint256.NewInt(1)}})
 			}
