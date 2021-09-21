@@ -272,7 +272,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots, tx kv.Tx) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
-	t := time.Now()
+	//t := time.Now()
 
 	cache := p.cache()
 	cache.OnNewBlock(stateChanges)
@@ -352,7 +352,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "in", time.Since(t))
+	//log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "in", time.Since(t))
 	return nil
 }
 
