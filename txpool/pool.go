@@ -908,12 +908,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 		if worst.subPool >= 0b10000 {
 			break
 		}
-		mt := queued.PopWorst()
-		if mt.Tx.nonce == 24 && mt.Tx.senderID == 1 {
-			fmt.Printf("d3: %b,%d\n", mt.subPool, mt.Tx.tip)
-		}
-
-		discard(mt, FeeTooLow)
+		discard(queued.PopWorst(), FeeTooLow)
 	}
 
 	//8. If the top element in the worst red queue has subPool >= 0b100, but there is not enough room in the pool, discard.
