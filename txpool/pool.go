@@ -397,7 +397,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 	p.pending.added = nil
 
-	fmt.Printf("b: %d\n", p.promoted.Len())
 	if p.promoted.Len() > 0 {
 		select {
 		case <-ctx.Done():

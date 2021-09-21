@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -506,8 +505,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 			_ = prevHashes
 		}
 		//TODO: check that id=>addr and addr=>id mappings have same len
-
-		fmt.Printf("----\n")
 
 		tx, err := db.BeginRw(ctx)
 		require.NoError(err)
