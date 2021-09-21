@@ -333,31 +333,9 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
-	// re-calc all transactions of changed senders
-	for _, changesList := range stateChanges.ChangeBatch {
-		for _, change := range changesList.Changes {
-			switch change.Action {
-			case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
-				if change.Incarnation > 0 {
-					continue
-				}
-				addr := gointerfaces.ConvertH160toAddress(change.Address)
-				id, ok := p.senders.id(string(addr[:]))
-				if !ok {
-					continue
-				}
-				nonce, balance, err := p.senders.info(cache, viewID, coreTx, id)
-				if err != nil {
-					return err
-				}
-				onSenderChange(id, nonce, balance, p.byNonce, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued)
-			}
-		}
-	}
-
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 	p.pending.added = p.promoted[:0]
-	if err := addTxs(p.lastSeenBlock.Load(), cache, viewID, coreTx, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), stateChanges, cache, viewID, coreTx, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.pending.added = nil
@@ -413,7 +391,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 
 	p.pending.added = p.promoted[:0]
-	if err := addTxs(p.lastSeenBlock.Load(), cache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), nil, cache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.pending.added = nil
@@ -581,7 +559,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 	}
 
 	p.pending.added = p.promoted[:0]
-	if err := addTxs(p.lastSeenBlock.Load(), p._cache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), nil, p._cache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
 	p.pending.added = nil
@@ -613,7 +591,7 @@ func (p *TxPool) cache() kvcache.Cache {
 	defer p.lock.RUnlock()
 	return p._cache
 }
-func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
+func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -650,6 +628,33 @@ func addTxs(blockNum uint64, cache kvcache.Cache, viewID kvcache.ViewID, coreTx 
 			return err
 		}
 		onSenderChange(mt.Tx.senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
+	}
+
+	if stateChanges != nil {
+		// re-calc all transactions of changed senders
+		for _, changesList := range stateChanges.ChangeBatch {
+			for _, change := range changesList.Changes {
+				switch change.Action {
+				case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
+					if change.Incarnation > 0 {
+						continue
+					}
+					addr := gointerfaces.ConvertH160toAddress(change.Address)
+					id, ok := senders.id(string(addr[:]))
+					if !ok {
+						continue
+					}
+					if _, ok := changedSenders[id]; ok {
+						continue
+					}
+					nonce, balance, err := senders.info(cache, viewID, coreTx, id)
+					if err != nil {
+						return err
+					}
+					onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
+				}
+			}
+		}
 	}
 
 	//pending.EnforceWorstInvariants()
@@ -1182,7 +1187,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := addTxs(0, p._cache, viewID, coreTx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(0, nil, p._cache, viewID, coreTx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.currentBaseFee.Store(currentBaseFee)
