@@ -334,7 +334,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	p.pending.added = p.promoted[:0]
+
+	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxs(p.lastSeenBlock.Load(), stateChanges, cache, viewID, coreTx, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -344,7 +345,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		log.Info("[txpool] Started")
 	}
 
-	//fmt.Printf("a: %d\n", p.promoted.Len())
 	if p.promoted.Len() > 0 {
 		select {
 		case p.newTxs <- common.Copy(p.promoted):
@@ -391,12 +391,13 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	p.pending.added = p.promoted[:0]
+	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxs(p.lastSeenBlock.Load(), nil, cache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.pending.added = nil
 
+	fmt.Printf("b: %d\n", p.promoted.Len())
 	if p.promoted.Len() > 0 {
 		select {
 		case <-ctx.Done():
@@ -559,7 +560,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 		return nil, err
 	}
 
-	p.pending.added = p.promoted[:0]
+	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxs(p.lastSeenBlock.Load(), nil, p._cache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
@@ -1184,10 +1185,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	for _, mt := range txs.txs {
-		fmt.Printf("from db: %d, %d\n", mt.senderID, mt.nonce)
-	}
-
 	if err := addTxs(p.lastSeenBlock.Load(), nil, p._cache, viewID, coreTx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -1516,11 +1513,16 @@ type PendingPool struct {
 	t     SubPoolType
 	best  bestSlice
 	worst *WorstQueue
-	added Hashes
+	added *Hashes
 }
 
 func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
 	return &PendingPool{limit: limit, t: t, best: []*metaTx{}, worst: &WorstQueue{}}
+}
+
+func (p *PendingPool) captureAddedHashes(to *Hashes) {
+	p.added = to
+	*p.added = (*p.added)[:0]
 }
 
 // bestSlice - is similar to best queue, but with O(n log n) complexity and
@@ -1594,7 +1596,7 @@ func (p *PendingPool) UnsafeRemove(i *metaTx) {
 }
 func (p *PendingPool) UnsafeAdd(i *metaTx) {
 	if p.added != nil {
-		p.added = append(p.added, i.Tx.idHash[:]...)
+		*p.added = append(*p.added, i.Tx.idHash[:]...)
 	}
 	i.currentSubPool = p.t
 	p.worst.Push(i)
@@ -1602,7 +1604,7 @@ func (p *PendingPool) UnsafeAdd(i *metaTx) {
 }
 func (p *PendingPool) Add(i *metaTx) {
 	if p.added != nil {
-		p.added = append(p.added, i.Tx.idHash[:]...)
+		*p.added = append(*p.added, i.Tx.idHash[:]...)
 	}
 	i.currentSubPool = p.t
 	heap.Push(p.worst, i)

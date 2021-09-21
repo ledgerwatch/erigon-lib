@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -498,13 +499,15 @@ func FuzzOnNewBlocks(f *testing.F) {
 					assert.False(foundInMined, msg)
 				}
 			default: // no notifications - means pools must be unchanged or drop some txs
-				difference := intersect(prevHashes, copyHashes(pending))
-				assert.Zero(difference.Len())
+				pendingHashes := copyHashes(pending)
+				require.Zero(extractNewHashes(pendingHashes, prevHashes).Len())
 			}
 			prevHashes = copyHashes(pending)
 			_ = prevHashes
 		}
 		//TODO: check that id=>addr and addr=>id mappings have same len
+
+		fmt.Printf("----\n")
 
 		tx, err := db.BeginRw(ctx)
 		require.NoError(err)
@@ -623,12 +626,19 @@ func copyHashes(p *PendingPool) (hashes Hashes) {
 	}
 	return hashes
 }
-func intersect(h1, h2 Hashes) (result Hashes) {
+
+//extractNewHashes - extract from h1 hashes which do not exist in h2
+func extractNewHashes(h1, h2 Hashes) (result Hashes) {
 	for i := 0; i < h1.Len(); i++ {
+		found := false
 		for j := 0; j < h2.Len(); j++ {
-			if !bytes.Equal(h1.At(i), h2.At(j)) {
-				result = append(result, h1.At(i)...)
+			if bytes.Equal(h1.At(i), h2.At(j)) {
+				found = true
+				break
 			}
+		}
+		if !found {
+			result = append(result, h1.At(i)...)
 		}
 	}
 	return result
