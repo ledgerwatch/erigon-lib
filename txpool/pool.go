@@ -344,6 +344,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		log.Info("[txpool] Started")
 	}
 
+	//fmt.Printf("a: %d\n", p.promoted.Len())
 	if p.promoted.Len() > 0 {
 		select {
 		case p.newTxs <- common.Copy(p.promoted):
@@ -599,7 +600,6 @@ func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcach
 			}
 		}
 	}
-
 	// This can be thought of a reverse operation from the one described before.
 	// When a block that was deemed "the best" of its height, is no longer deemed "the best", the
 	// transactions contained in it, are now viable for inclusion in other blocks, and therefore should
@@ -618,16 +618,7 @@ func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcach
 		if !add(mt) {
 			continue
 		}
-		if _, ok := changedSenders[mt.Tx.senderID]; ok {
-			continue
-		}
 		changedSenders[mt.Tx.senderID] = struct{}{}
-
-		nonce, balance, err := senders.info(cache, viewID, coreTx, mt.Tx.senderID)
-		if err != nil {
-			return err
-		}
-		onSenderChange(mt.Tx.senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
 	}
 
 	if stateChanges != nil {
@@ -644,17 +635,18 @@ func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcach
 					if !ok {
 						continue
 					}
-					if _, ok := changedSenders[id]; ok {
-						continue
-					}
-					nonce, balance, err := senders.info(cache, viewID, coreTx, id)
-					if err != nil {
-						return err
-					}
-					onSenderChange(id, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
+					changedSenders[id] = struct{}{}
 				}
 			}
 		}
+	}
+
+	for senderID := range changedSenders {
+		nonce, balance, err := senders.info(cache, viewID, coreTx, senderID)
+		if err != nil {
+			return err
+		}
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
 	}
 
 	//pending.EnforceWorstInvariants()
@@ -915,8 +907,12 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 		if worst.subPool >= 0b10000 {
 			break
 		}
+		mt := queued.PopWorst()
+		if mt.Tx.nonce == 24 && mt.Tx.senderID == 1 {
+			fmt.Printf("d3: %b,%d\n", mt.subPool, mt.Tx.tip)
+		}
 
-		discard(queued.PopWorst(), FeeTooLow)
+		discard(mt, FeeTooLow)
 	}
 
 	//8. If the top element in the worst red queue has subPool >= 0b100, but there is not enough room in the pool, discard.
@@ -1050,6 +1046,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 				delete(p.senders.senderIDs, addr)
 			}
 		}
+		//fmt.Printf("del:%d,%d,%d\n", p.deletedTxs[i].Tx.senderID, p.deletedTxs[i].Tx.nonce, p.deletedTxs[i].Tx.tip)
 		if err := tx.Delete(kv.PoolTransaction, p.deletedTxs[i].Tx.idHash[:], nil); err != nil {
 			return err
 		}
@@ -1187,7 +1184,11 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := addTxs(0, nil, p._cache, viewID, coreTx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	for _, mt := range txs.txs {
+		fmt.Printf("from db: %d, %d\n", mt.senderID, mt.nonce)
+	}
+
+	if err := addTxs(p.lastSeenBlock.Load(), nil, p._cache, viewID, coreTx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.currentBaseFee.Store(currentBaseFee)
@@ -1246,11 +1247,14 @@ func (p *TxPool) printDebug(prefix string) {
 		fmt.Printf("\tsenderID=%d, nonce=%d, tip=%d\n", j.Tx.senderID, j.Tx.nonce, j.Tx.tip)
 	}
 	fmt.Printf("%s.pool.queues.len: %d,%d,%d\n", prefix, p.pending.Len(), p.baseFee.Len(), p.queued.Len())
-	for i := range p.pending.best {
-		p.pending.best[i].Tx.printDebug(fmt.Sprintf("%s.pending: %b", prefix, p.pending.best[i].subPool))
+	for _, mt := range p.pending.best {
+		mt.Tx.printDebug(fmt.Sprintf("%s.pending: %b,%d,%d,%d", prefix, mt.subPool, mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip))
 	}
-	for i := range *p.queued.best {
-		(*p.queued.best)[i].Tx.printDebug(fmt.Sprintf("%s.queued : %b", prefix, (*p.queued.best)[i].subPool))
+	for _, mt := range *p.baseFee.best {
+		mt.Tx.printDebug(fmt.Sprintf("%s.baseFee : %b,%d,%d,%d", prefix, mt.subPool, mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip))
+	}
+	for _, mt := range *p.queued.best {
+		mt.Tx.printDebug(fmt.Sprintf("%s.queued : %b,%d,%d,%d", prefix, mt.subPool, mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip))
 	}
 }
 func (p *TxPool) logStats() {
