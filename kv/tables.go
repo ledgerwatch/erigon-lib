@@ -347,7 +347,10 @@ var ChaindataTables = []string{
 const (
 	RecentLocalTransaction = "RecentLocalTransaction" // sequence_u64 -> tx_hash
 	PoolTransaction        = "PoolTransaction"        // txHash -> sender_id_u64+tx_rlp
-	PoolInfo               = "PoolInfo"               // option_key -> option_value
+	// PoolMined - stores recentely mined transactions, for faster re-orgs
+	// only after txn expired from PoolMined table - it deleted from PoolTransaction table
+	PoolMined = "PoolMined" // block_num -> tx_hash
+	PoolInfo  = "PoolInfo"  // option_key -> option_value
 )
 
 var TxPoolTables = []string{

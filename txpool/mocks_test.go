@@ -20,13 +20,13 @@ var _ Pool = &PoolMock{}
 //
 // 		// make and configure a mocked Pool
 // 		mockedPool := &PoolMock{
-// 			AddLocalTxsFunc: func(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error) {
+// 			AddLocalTxsFunc: func(ctx context.Context, newPendingTxs TxSlots) ([]DiscardReason, error) {
 // 				panic("mock out the AddLocalTxs method")
 // 			},
 // 			AddNewGoodPeerFunc: func(peerID PeerID)  {
 // 				panic("mock out the AddNewGoodPeer method")
 // 			},
-// 			AddRemoteTxsFunc: func(ctx context.Context, newTxs TxSlots)  {
+// 			AddRemoteTxsFunc: func(ctx context.Context, newPendingTxs TxSlots)  {
 // 				panic("mock out the AddRemoteTxs method")
 // 			},
 // 			GetRlpFunc: func(tx kv.Tx, hash []byte) ([]byte, error) {
@@ -75,7 +75,7 @@ type PoolMock struct {
 		AddLocalTxs []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// NewTxs is the newTxs argument value.
+			// NewTxs is the newPendingTxs argument value.
 			NewTxs TxSlots
 		}
 		// AddNewGoodPeer holds details about calls to the AddNewGoodPeer method.
@@ -87,7 +87,7 @@ type PoolMock struct {
 		AddRemoteTxs []struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
-			// NewTxs is the newTxs argument value.
+			// NewTxs is the newPendingTxs argument value.
 			NewTxs TxSlots
 		}
 		// GetRlp holds details about calls to the GetRlp method.
