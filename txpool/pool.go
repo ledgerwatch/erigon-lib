@@ -67,7 +67,6 @@ type Config struct {
 	ProcessRemoteTxsEvery time.Duration
 	CommitEvery           time.Duration
 	LogEvery              time.Duration
-	CacheEvictEvery       time.Duration
 
 	PendingSubPoolLimit int
 	BaseFeeSubPoolLimit int
@@ -79,7 +78,6 @@ var DefaultConfig = Config{
 	ProcessRemoteTxsEvery: 100 * time.Millisecond,
 	CommitEvery:           15 * time.Second,
 	LogEvery:              30 * time.Second,
-	CacheEvictEvery:       1 * time.Minute,
 
 	PendingSubPoolLimit: 200_000,
 	BaseFeeSubPoolLimit: 200_000,
