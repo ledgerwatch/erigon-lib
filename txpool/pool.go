@@ -252,7 +252,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 		byHash:                  map[string]*metaTx{},
 		isLocalLRU:              localsHistory,
 		discardReasonsLRU:       discardHistory,
-		byNonce:                 &ByNonce2{bySenderID: map[uint64]*btree.BTree{}},
+		byNonce:                 &ByNonce2{bySenderID: map[uint64]*btree.BTree{}, search: &sortByNonce2{&metaTx{Tx: &TxSlot{}}}},
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool, cfg.PendingSubPoolLimit),
 		baseFee:                 NewSubPool(BaseFeeSubPool, cfg.BaseFeeSubPoolLimit),
@@ -1554,6 +1554,7 @@ func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
 
 type ByNonce2 struct {
 	bySenderID map[uint64]*btree.BTree // senderID -> nonce ordered txs
+	search     *sortByNonce2
 }
 
 func (b *ByNonce2) ascend(senderID uint64, f func(*metaTx) bool) {
@@ -1575,7 +1576,8 @@ func (b *ByNonce2) get(senderID, txNonce uint64) *metaTx {
 	if !ok || byNonce == nil || byNonce.Len() == 0 {
 		return nil
 	}
-	if found := byNonce.Get(&sortByNonce2{&metaTx{Tx: &TxSlot{nonce: txNonce}}}); found != nil {
+	b.search.metaTx.Tx.nonce = txNonce
+	if found := byNonce.Get(b.search); found != nil {
 		return found.(*sortByNonce2).metaTx
 	}
 	return nil
