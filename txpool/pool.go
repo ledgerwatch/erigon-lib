@@ -675,7 +675,10 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		add(mt)
 	}
 	defer func(t time.Time) { fmt.Printf("pool.go:671: %s\n", time.Since(t)) }(time.Now())
-	for senderID := range senderIDs {
+	for senderID, byNonceSet := range byNonce.bySenderID {
+		if byNonceSet == nil || byNonceSet.Len() == 0 {
+			continue
+		}
 		nonce, balance, err := senders.info(cacheView, senderID)
 		if err != nil {
 			return err
