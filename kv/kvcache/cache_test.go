@@ -17,13 +17,10 @@ package kvcache
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 
-	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
@@ -340,116 +337,3 @@ func TestAPI(t *testing.T) {
 
 	wg.Wait()
 }
-
-func BenchmarkCache1(b *testing.B) {
-	ctx := context.Background()
-	cfg := DefaultCoherentCacheConfig
-	cfg.KeysLimit = 3
-	cfg.NewBlockWait = 0
-	c := New(cfg)
-	db := memdb.NewTestDB(b)
-	var keys [][]byte
-
-	k := make([]byte, 8)
-	for i := uint64(0); i < 1_000_000; i++ {
-		binary.BigEndian.PutUint64(k, i)
-		keys = append(keys, common.Copy(k))
-	}
-	_ = db.Update(ctx, func(tx kv.RwTx) error {
-		for i := range keys {
-			_ = tx.Put(kv.PlainState, keys[i], keys[i])
-		}
-
-		cacheView, _ := c.View(ctx, tx)
-		view := cacheView.(*CoherentView)
-		for i := range keys {
-			_, _ = view.Get(keys[i])
-		}
-		//require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
-		return nil
-	})
-
-	tx, _ := db.BeginRo(ctx)
-	defer tx.Rollback()
-
-	cacheView, _ := c.View(ctx, tx)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = cacheView.Get(keys[i%len(keys)])
-	}
-}
-
-func BenchmarkCache2(b *testing.B) {
-	cfg := DefaultCoherentCacheConfig
-	cfg.KeysLimit = 3
-	cfg.NewBlockWait = 0
-	c := map[string]bool{}
-	var keys []string
-
-	k := make([]byte, 8)
-	for i := uint64(0); i < 1_000_000; i++ {
-		binary.BigEndian.PutUint64(k, i)
-		keys = append(keys, string(common.Copy(k)))
-		c[string(common.Copy(k))] = true
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = c[keys[i%len(keys)]]
-	}
-}
-
-func BenchmarkCache3(b *testing.B) {
-	c := btree.New(32)
-	keys := make([]E, 1_000_000)
-	for i := uint64(0); i < 1_000_000; i++ {
-		keys[i] = E{rand.Uint64()}
-		c.ReplaceOrInsert(keys[i])
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		c.Get(keys[i%len(keys)])
-	}
-}
-
-type E struct {
-	k uint64
-}
-
-func (e E) Less(than btree.Item) bool { return e.k < than.(E).k }
-
-func BenchmarkCache4(b *testing.B) {
-	c := btree.New(32)
-	keys := make([]E2, 1_000_000)
-	for i := uint64(0); i < 1_000_000; i++ {
-		keys[i] = E2{rand.Uint32()}
-		c.ReplaceOrInsert(keys[i])
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		c.Get(keys[i%len(keys)])
-	}
-}
-
-type E2 struct {
-	k uint32
-}
-
-func (e E2) Less(than btree.Item) bool { return e.k < than.(E2).k }
-
-func BenchmarkCache5(b *testing.B) {
-	c := btree.New(32)
-	keys := make([]btree.Item, 1_000_000)
-	for i := uint64(0); i < 1_000_000; i++ {
-		keys[i] = E3(rand.Uint64())
-		c.ReplaceOrInsert(keys[i])
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		c.Get(keys[i%len(keys)])
-	}
-}
-
-type E3 uint64
-
-func (e E3) Less(than btree.Item) bool { return e < than.(E3) }
