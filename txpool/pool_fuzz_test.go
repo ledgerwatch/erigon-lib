@@ -607,7 +607,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		assert.Equal(pool.pending.Len(), p2.pending.Len())
 		assert.Equal(pool.baseFee.Len(), p2.baseFee.Len())
 		require.Equal(pool.queued.Len(), p2.queued.Len())
-		assert.Equal(pool.currentBaseFee.Load(), p2.currentBaseFee.Load())
+		assert.Equal(pool.pendingBaseFee.Load(), p2.pendingBaseFee.Load())
 		assert.Equal(pool.protocolBaseFee.Load(), p2.protocolBaseFee.Load())
 		assert.Equal(1, 0)
 	})

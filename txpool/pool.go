@@ -201,7 +201,7 @@ type TxPool struct {
 	started         atomic.Bool
 	lastSeenBlock   atomic.Uint64
 	protocolBaseFee atomic.Uint64
-	currentBaseFee  atomic.Uint64
+	pendingBaseFee  atomic.Uint64
 
 	// batch processing of remote transactions
 	// handling works fast without batching, but batching allow:
@@ -301,11 +301,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := minedTxs.Valid(); err != nil {
 		return err
 	}
-	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
-	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
+	baseFee := stateChanges.PendingBlockBaseFee
+	p.lastSeenBlock.Store(stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight)
 
 	protocolBaseFee, baseFee, _ := p.setBaseFee(baseFee)
-	p.lastSeenBlock.Store(blockHeight)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
 	}
@@ -389,7 +388,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 
 	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
-		p.protocolBaseFee.Load(), p.currentBaseFee.Load(),
+		p.protocolBaseFee.Load(), p.pendingBaseFee.Load(),
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -559,7 +558,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 
 	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
-		p.protocolBaseFee.Load(), p.currentBaseFee.Load(),
+		p.protocolBaseFee.Load(), p.pendingBaseFee.Load(),
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
@@ -692,11 +691,11 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64, bool) {
 	changed := false
 	if baseFee > 0 {
-		changed = baseFee != p.currentBaseFee.Load()
+		changed = baseFee != p.pendingBaseFee.Load()
 		p.protocolBaseFee.Store(calcProtocolBaseFee(baseFee))
-		p.currentBaseFee.Store(baseFee)
+		p.pendingBaseFee.Store(baseFee)
 	}
-	return p.protocolBaseFee.Load(), p.currentBaseFee.Load(), changed
+	return p.protocolBaseFee.Load(), p.pendingBaseFee.Load(), changed
 }
 
 func (p *TxPool) addLocked(mt *metaTx) bool {
@@ -1122,7 +1121,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	if err := tx.Put(kv.PoolInfo, PoolProtocolBaseFeeKey, encID); err != nil {
 		return err
 	}
-	binary.BigEndian.PutUint64(encID, p.currentBaseFee.Load())
+	binary.BigEndian.PutUint64(encID, p.pendingBaseFee.Load())
 	if err := tx.Put(kv.PoolInfo, PoolPendingBaseFeeKey, encID); err != nil {
 		return err
 	}
@@ -1216,7 +1215,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
-	p.currentBaseFee.Store(currentBaseFee)
+	p.pendingBaseFee.Store(currentBaseFee)
 	p.protocolBaseFee.Store(protocolBaseFee)
 
 	return nil
@@ -1286,7 +1285,7 @@ func (p *TxPool) logStats() {
 	if !p.started.Load() {
 		log.Info("[txpool] Not started yet, waiting for new blocks...")
 	}
-	//protocolBaseFee, currentBaseFee := p.protocolBaseFee.Load(), p.currentBaseFee.Load()
+	//protocolBaseFee, pendingBaseFee := p.protocolBaseFee.Load(), p.pendingBaseFee.Load()
 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -1296,7 +1295,7 @@ func (p *TxPool) logStats() {
 	runtime.ReadMemStats(&m)
 
 	ctx := []interface{}{
-		//"baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, currentBaseFee/1_000_000),
+		//"baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, pendingBaseFee/1_000_000),
 		"block", p.lastSeenBlock.Load(),
 		"pending", p.pending.Len(),
 		"baseFee", p.baseFee.Len(),
