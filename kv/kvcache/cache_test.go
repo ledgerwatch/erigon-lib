@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
 
@@ -349,7 +350,7 @@ func BenchmarkCache1(b *testing.B) {
 	db := memdb.NewTestDB(b)
 	var keys [][]byte
 
-	k := make([]byte, 20)
+	k := make([]byte, 8)
 	for i := uint64(0); i < 1_000_000; i++ {
 		binary.BigEndian.PutUint64(k, i)
 		keys = append(keys, common.Copy(k))
@@ -386,7 +387,7 @@ func BenchmarkCache2(b *testing.B) {
 	c := map[string]bool{}
 	var keys []string
 
-	k := make([]byte, 20)
+	k := make([]byte, 8)
 	for i := uint64(0); i < 1_000_000; i++ {
 		binary.BigEndian.PutUint64(k, i)
 		keys = append(keys, string(common.Copy(k)))
@@ -402,8 +403,8 @@ func BenchmarkCache3(b *testing.B) {
 	c := btree.New(32)
 	keys := make([]E, 1_000_000)
 	for i := uint64(0); i < 1_000_000; i++ {
-		keys[i] = E(i)
-		c.ReplaceOrInsert(E(keys[i]))
+		keys[i] = E{rand.Uint64()}
+		c.ReplaceOrInsert(keys[i])
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -411,6 +412,44 @@ func BenchmarkCache3(b *testing.B) {
 	}
 }
 
-type E uint64
+type E struct {
+	k uint64
+}
 
-func (e E) Less(than btree.Item) bool { return uint64(e) < uint64(than.(E)) }
+func (e E) Less(than btree.Item) bool { return e.k < than.(E).k }
+
+func BenchmarkCache4(b *testing.B) {
+	c := btree.New(32)
+	keys := make([]E2, 1_000_000)
+	for i := uint64(0); i < 1_000_000; i++ {
+		keys[i] = E2{rand.Uint32()}
+		c.ReplaceOrInsert(keys[i])
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Get(keys[i%len(keys)])
+	}
+}
+
+type E2 struct {
+	k uint32
+}
+
+func (e E2) Less(than btree.Item) bool { return e.k < than.(E2).k }
+
+func BenchmarkCache5(b *testing.B) {
+	c := btree.New(32)
+	keys := make([]E3, 1_000_000)
+	for i := uint64(0); i < 1_000_000; i++ {
+		keys[i] = E3(rand.Uint64())
+		c.ReplaceOrInsert(keys[i])
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Get(keys[i%len(keys)])
+	}
+}
+
+type E3 uint64
+
+func (e E3) Less(than btree.Item) bool { return e < than.(E3) }

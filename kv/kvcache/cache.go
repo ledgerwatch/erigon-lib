@@ -136,7 +136,7 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 	NewBlockWait: 50 * time.Millisecond,
 	KeysLimit:    1_000_000,
 	MetricsLabel: "default",
-	WithStorage:  true,
+	WithStorage:  false,
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
@@ -276,7 +276,6 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.RLock()
 
-	t := time.Now()
 	i = 0
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
@@ -292,7 +291,6 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		fmt.Printf("i: %d,%s\n", i, time.Since(t))
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
