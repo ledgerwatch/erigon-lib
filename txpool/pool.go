@@ -285,7 +285,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	viewID, err := cache.View(ctx, coreTx)
+	cacheView, err := cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -304,7 +304,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
 	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
 
-	protocolBaseFee, baseFee, baseFeeChanged := p.setBaseFee(baseFee)
+	protocolBaseFee, baseFee, _ := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
@@ -330,7 +330,9 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
 	p.pending.captureAddedHashes(&p.promoted)
-	if err := addTxs(p.lastSeenBlock.Load(), stateChanges, cache, viewID, coreTx, p.senders, unwindTxs, protocolBaseFee, baseFee, baseFeeChanged, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, p.senders.senderID2Addr, p.senders, unwindTxs,
+		protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued,
+		p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.pending.added = nil
@@ -362,7 +364,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 	defer coreTx.Rollback()
-	viewID, err := cache.View(ctx, coreTx)
+	cacheView, err := cache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -386,8 +388,8 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 
 	p.pending.captureAddedHashes(&p.promoted)
-	if err := addTxs(p.lastSeenBlock.Load(), nil, cache, viewID, coreTx, p.senders, newTxs,
-		p.protocolBaseFee.Load(), p.currentBaseFee.Load(), false,
+	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
+		p.protocolBaseFee.Load(), p.currentBaseFee.Load(),
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -539,7 +541,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 	}
 	defer coreTx.Rollback()
 
-	viewID, err := p.cache().View(ctx, coreTx)
+	cacheView, err := p.cache().View(ctx, coreTx)
 	if err != nil {
 		return nil, err
 	}
@@ -556,8 +558,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 	}
 
 	p.pending.captureAddedHashes(&p.promoted)
-	if err := addTxs(p.lastSeenBlock.Load(), nil, p._stateCache, viewID, coreTx, p.senders, newTxs,
-		p.protocolBaseFee.Load(), p.currentBaseFee.Load(), false,
+	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
+		p.protocolBaseFee.Load(), p.currentBaseFee.Load(),
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
@@ -590,8 +592,8 @@ func (p *TxPool) cache() kvcache.Cache {
 	defer p.lock.RUnlock()
 	return p._stateCache
 }
-func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx,
-	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, baseFeeChanged bool,
+func addTxs(blockNum uint64, cacheView kvcache.CacheView,
+	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
@@ -622,43 +624,66 @@ func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcach
 		changedSenders[mt.Tx.senderID] = struct{}{}
 	}
 
-	if stateChanges != nil {
-		// re-calc all transactions of changed senders
-		for _, changesList := range stateChanges.ChangeBatch {
-			for _, change := range changesList.Changes {
-				switch change.Action {
-				case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
-					if change.Incarnation > 0 {
-						continue
-					}
-					addr := gointerfaces.ConvertH160toAddress(change.Address)
-					id, ok := senders.id(string(addr[:]))
-					if !ok {
-						continue
-					}
-					changedSenders[id] = struct{}{}
-				}
-			}
-		}
-	}
-
 	for senderID := range changedSenders {
-		nonce, balance, err := senders.info(cache, viewID, coreTx, senderID)
+		nonce, balance, err := senders.info(cacheView, senderID)
 		if err != nil {
 			return err
 		}
 		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
 	}
 
-	if baseFeeChanged {
-		pending.EnforceWorstInvariants()
-		baseFee.EnforceInvariants()
-		queued.EnforceInvariants()
-	}
+	//pending.EnforceWorstInvariants()
+	//baseFee.EnforceInvariants()
+	//queued.EnforceInvariants()
 	promote(pending, baseFee, queued, discard)
-	if baseFeeChanged {
-		pending.EnforceWorstInvariants()
+	//pending.EnforceWorstInvariants()
+	pending.EnforceBestInvariants()
+
+	return nil
+}
+func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
+	senderIDs map[uint64]string,
+	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64,
+	pending *PendingPool, baseFee, queued *SubPool,
+	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
+	if ASSERT {
+		for i := range newTxs.txs {
+			if newTxs.txs[i].senderID == 0 {
+				panic(fmt.Errorf("senderID can't be zero"))
+			}
+		}
 	}
+	// This can be thought of a reverse operation from the one described before.
+	// When a block that was deemed "the best" of its height, is no longer deemed "the best", the
+	// transactions contained in it, are now viable for inclusion in other blocks, and therefore should
+	// be returned into the transaction pool.
+	// An interesting note here is that if the block contained any transactions local to the node,
+	// by being first removed from the pool (from the "local" part of it), and then re-injected,
+	// they effective lose their priority over the "remote" transactions. In order to prevent that,
+	// somehow the fact that certain transactions were local, needs to be remembered for some
+	// time (up to some "immutability threshold").
+	for i, txn := range newTxs.txs {
+		if _, ok := byHash[string(txn.idHash[:])]; ok {
+			continue
+		}
+		mt := newMetaTx(txn, newTxs.isLocal[i], blockNum)
+		add(mt)
+	}
+	for senderID := range senderIDs {
+		nonce, balance, err := senders.info(cacheView, senderID)
+		if err != nil {
+			return err
+		}
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
+	}
+
+	defer func(t time.Time) { fmt.Printf("pool.go:680: %s\n", time.Since(t)) }(time.Now())
+	pending.EnforceWorstInvariants()
+	baseFee.EnforceInvariants()
+	queued.EnforceInvariants()
+	promote(pending, baseFee, queued, discard)
+	pending.EnforceWorstInvariants()
+	defer func(t time.Time) { fmt.Printf("pool.go:686: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceBestInvariants()
 
 	return nil
@@ -1116,7 +1141,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	}
 	p.lastSeenBlock.Store(lastSeenBlock)
 
-	viewID, err := p._stateCache.View(ctx, coreTx)
+	cacheView, err := p._stateCache.View(ctx, coreTx)
 	if err != nil {
 		return err
 	}
@@ -1186,8 +1211,8 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := addTxs(p.lastSeenBlock.Load(), nil, p._stateCache, viewID, coreTx, p.senders, txs,
-		protocolBaseFee, currentBaseFee, true,
+	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, txs,
+		protocolBaseFee, currentBaseFee,
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -1394,12 +1419,12 @@ func (sc *sendersBatch) id(addr string) (uint64, bool) {
 	id, ok := sc.senderIDs[addr]
 	return id, ok
 }
-func (sc *sendersBatch) info(cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx, id uint64) (nonce uint64, balance uint256.Int, err error) {
+func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint64, balance uint256.Int, err error) {
 	addr, ok := sc.senderID2Addr[id]
 	if !ok {
 		panic("must not happen")
 	}
-	encoded, err := cache.Get([]byte(addr), coreTx, viewID)
+	encoded, err := cacheView.Get([]byte(addr))
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
