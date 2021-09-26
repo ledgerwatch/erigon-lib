@@ -1168,6 +1168,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	parseCtx.WithSender(false)
 
 	i := 0
+	j := 0
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
 		addr, txRlp := v[:20], v[20:]
 		txs.Resize(uint(i + 1))
@@ -1186,6 +1187,9 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			id = p.senders.senderID
 			p.senders.senderIDs[string(addr)] = id
 			p.senders.senderID2Addr[id] = addr
+		} else {
+			j++
+			fmt.Printf("found: %d\n", j)
 		}
 		txs.txs[i].senderID = id
 		binary.BigEndian.Uint64(v)
