@@ -164,7 +164,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 		r.isCanonical = prevView.isCanonical
 	} else {
 		//log.Info("advance: new", "to", viewID)
-		r.cache = btree.New(8)
+		r.cache = btree.New(128)
 	}
 	c.roots[viewID] = r
 	return r
@@ -184,7 +184,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 		c.evictList.Init()
 		if r.cache == nil {
 			//log.Info("advance: new", "to", viewID)
-			r.cache = btree.New(32)
+			r.cache = btree.New(128)
 		} else {
 			r.cache.Ascend(func(i btree.Item) bool {
 				c.evictList.PushFront(i.(*Element))
