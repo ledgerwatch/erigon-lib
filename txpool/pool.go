@@ -1498,7 +1498,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 				sc.senderID++
 				id = sc.senderID
 				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = unwindTxs.senders.At(i)
+				sc.senderID2Addr[sc.senderID] = minedTxs.senders.At(i)
 			}
 			minedTxs.txs[i].senderID = id
 		}
