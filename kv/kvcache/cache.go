@@ -164,7 +164,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 		r.isCanonical = prevView.isCanonical
 	} else {
 		//log.Info("advance: new", "to", viewID)
-		r.cache = btree.New(64)
+		r.cache = btree.New(128)
 	}
 	c.roots[viewID] = r
 	return r
