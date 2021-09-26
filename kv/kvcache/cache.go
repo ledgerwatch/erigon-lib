@@ -44,6 +44,8 @@ type CacheView interface {
 	Get(k []byte) ([]byte, error)
 }
 
+var i = 0
+
 // Coherent works on top of Database Transaction and pair Coherent+ReadTransaction must
 // provide "Serializable Isolation Level" semantic: all data form consistent db view at moment
 // when read transaction started, read data are immutable until end of read transaction, reader can't see newer updates
@@ -269,6 +271,7 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.RLock()
+	i = 0
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
 	if !ok {
@@ -282,6 +285,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
+		fmt.Printf("i: %d\n", i)
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
@@ -432,7 +436,10 @@ type Element struct {
 	K, V []byte
 }
 
-func (e *Element) Less(than btree.Item) bool { return bytes.Compare(e.K, than.(*Element).K) < 0 }
+func (e *Element) Less(than btree.Item) bool {
+	i++
+	return bytes.Compare(e.K, than.(*Element).K) < 0
+}
 
 // ========= copypaste of List implementation from stdlib ========
 
