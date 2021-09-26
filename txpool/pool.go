@@ -673,7 +673,6 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		mt := newMetaTx(txn, newTxs.isLocal[i], blockNum)
 		add(mt)
 	}
-	defer func(t time.Time) { fmt.Printf("pool.go:677: %s, %d\n", time.Since(t), len(byNonce.bySenderID)) }(time.Now())
 	for senderID, byNonceSet := range byNonce.bySenderID {
 		if byNonceSet == nil || byNonceSet.Len() == 0 {
 			continue
@@ -685,13 +684,11 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:680: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
 	promote(pending, baseFee, queued, discard)
 	pending.EnforceWorstInvariants()
-	defer func(t time.Time) { fmt.Printf("pool.go:686: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceBestInvariants()
 
 	return nil
