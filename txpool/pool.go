@@ -1168,8 +1168,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	parseCtx.WithSender(false)
 
 	i := 0
-	j := 0
-	fmt.Printf("from db\n")
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
 		addr, txRlp := v[:20], v[20:]
 		txs.Resize(uint(i + 1))
@@ -1187,10 +1185,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			p.senders.senderID++
 			id = p.senders.senderID
 			p.senders.senderIDs[string(addr)] = id
-			p.senders.senderID2Addr[id] = addr
-		} else {
-			j++
-			fmt.Printf("found: %d\n", j)
+			p.senders.senderID2Addr[id] = string(addr)
 		}
 		txs.txs[i].senderID = id
 		binary.BigEndian.Uint64(v)
@@ -1426,11 +1421,11 @@ func (sc *sendersBatch) printDebug(prefix string) {
 type sendersBatch struct {
 	senderID      uint64
 	senderIDs     map[string]uint64
-	senderID2Addr map[uint64][]byte
+	senderID2Addr map[uint64]string
 }
 
 func newSendersCache() *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64][]byte{}}
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}}
 }
 
 func (sc *sendersBatch) id(addr string) (uint64, bool) {
@@ -1442,7 +1437,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 	if !ok {
 		panic("must not happen")
 	}
-	encoded, err := cacheView.Get(addr)
+	encoded, err := cacheView.Get([]byte(addr))
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
@@ -1458,14 +1453,16 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 
 func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
 	for i := 0; i < len(newTxs.txs); i++ {
-		id, ok := sc.id(string(newTxs.senders.At(i)))
+		addr := newTxs.senders.At(i)
+		addrS := string(addr)
+		id, ok := sc.id(addrS)
 		if ok {
 			newTxs.txs[i].senderID = id
 			continue
 		}
 		sc.senderID++
 		sc.senderIDs[string(newTxs.senders.At(i))] = sc.senderID
-		sc.senderID2Addr[sc.senderID] = newTxs.senders.At(i)
+		sc.senderID2Addr[sc.senderID] = addrS
 
 		newTxs.txs[i].senderID = sc.senderID
 	}
@@ -1480,7 +1477,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 			if !ok {
 				sc.senderID++
 				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addrB[:]
+				sc.senderID2Addr[sc.senderID] = addr
 			}
 		}
 
@@ -1492,7 +1489,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 				sc.senderID++
 				id = sc.senderID
 				sc.senderIDs[addrS] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addr
+				sc.senderID2Addr[sc.senderID] = addrS
 			}
 			unwindTxs.txs[i].senderID = id
 		}
@@ -1505,7 +1502,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 				sc.senderID++
 				id = sc.senderID
 				sc.senderIDs[addrS] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addr
+				sc.senderID2Addr[sc.senderID] = addrS
 			}
 			minedTxs.txs[i].senderID = id
 		}
