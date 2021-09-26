@@ -79,9 +79,9 @@ var DefaultConfig = Config{
 	CommitEvery:           15 * time.Second,
 	LogEvery:              30 * time.Second,
 
-	PendingSubPoolLimit: 200_000,
-	BaseFeeSubPoolLimit: 200_000,
-	QueuedSubPoolLimit:  200_000,
+	PendingSubPoolLimit: 100_000,
+	BaseFeeSubPoolLimit: 100_000,
+	QueuedSubPoolLimit:  10_000,
 }
 
 // Pool is interface for the transaction pool
