@@ -92,10 +92,6 @@ type Coherent struct {
 	lock                sync.RWMutex
 	cfg                 CoherentCacheConfig
 	search              *Element
-
-	senderID      uint64
-	senderIDs     map[string]uint64
-	senderID2Addr map[uint64]string
 }
 
 type CoherentRoot struct {
