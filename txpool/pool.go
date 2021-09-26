@@ -592,7 +592,7 @@ func (p *TxPool) cache() kvcache.Cache {
 	return p._stateCache
 }
 func addTxs(blockNum uint64, cacheView kvcache.CacheView,
-	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64,
+	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
@@ -628,7 +628,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 		if err != nil {
 			return err
 		}
-		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued)
 	}
 
 	//pending.EnforceWorstInvariants()
@@ -642,7 +642,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 }
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 	senderIDs map[uint64]string,
-	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64,
+	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
@@ -673,7 +673,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		if err != nil {
 			return err
 		}
-		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued)
 	}
 
 	defer func(t time.Time) { fmt.Printf("pool.go:680: %s\n", time.Since(t)) }(time.Now())
@@ -791,7 +791,7 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 	return nil
 }
 
-func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool) {
+func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -803,8 +803,8 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		needBalance.Add(needBalance, &mt.Tx.value)
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		minTip = min(minTip, mt.Tx.tip)
-		if currentBaseFee < minFeeCap {
-			mt.effectiveTip = minFeeCap - currentBaseFee
+		if pendingBaseFee < minFeeCap {
+			mt.effectiveTip = minFeeCap - pendingBaseFee
 		} else {
 			mt.effectiveTip = minTip
 		}
@@ -845,7 +845,7 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 		// baseFee of the currently pending block. Set to 0 otherwise.
 		mt.subPool &^= EnoughFeeCapBlock
-		if mt.Tx.feeCap >= currentBaseFee {
+		if mt.Tx.feeCap >= pendingBaseFee {
 			mt.subPool |= EnoughFeeCapBlock
 		}
 
@@ -1187,7 +1187,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		return err
 	}
 
-	var protocolBaseFee, currentBaseFee uint64
+	var protocolBaseFee, pendingBaseFee uint64
 	{
 		v, err := tx.GetOne(kv.PoolInfo, PoolProtocolBaseFeeKey)
 		if err != nil {
@@ -1203,7 +1203,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			return err
 		}
 		if len(v) > 0 {
-			currentBaseFee = binary.BigEndian.Uint64(v)
+			pendingBaseFee = binary.BigEndian.Uint64(v)
 		}
 	}
 	err = p.senders.onNewTxs(txs)
@@ -1211,11 +1211,11 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		return err
 	}
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, txs,
-		protocolBaseFee, currentBaseFee,
+		protocolBaseFee, pendingBaseFee,
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
-	p.pendingBaseFee.Store(currentBaseFee)
+	p.pendingBaseFee.Store(pendingBaseFee)
 	p.protocolBaseFee.Store(protocolBaseFee)
 
 	return nil
