@@ -628,7 +628,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 		if err != nil {
 			return err
 		}
-		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued)
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, false)
 	}
 
 	//pending.EnforceWorstInvariants()
@@ -674,7 +674,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		if err != nil {
 			return err
 		}
-		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued)
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
 	}
 
 	defer func(t time.Time) { fmt.Printf("pool.go:680: %s\n", time.Since(t)) }(time.Now())
@@ -792,7 +792,7 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 	return nil
 }
 
-func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool) {
+func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -853,13 +853,15 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		// 5. Local transaction. Set to 1 if transaction is local.
 		// can't change
 
-		switch mt.currentSubPool {
-		case PendingSubPool:
-			pending.Updated(mt)
-		case BaseFeeSubPool:
-			baseFee.Updated(mt)
-		case QueuedSubPool:
-			queued.Updated(mt)
+		if !unsafe {
+			switch mt.currentSubPool {
+			case PendingSubPool:
+				pending.Updated(mt)
+			case BaseFeeSubPool:
+				baseFee.Updated(mt)
+			case QueuedSubPool:
+				queued.Updated(mt)
+			}
 		}
 		return true
 	})
