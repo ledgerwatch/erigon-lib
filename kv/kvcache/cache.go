@@ -292,7 +292,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		fmt.Printf("i: %d,%s\n", i, t)
+		fmt.Printf("i: %d,%s\n", i, time.Since(t))
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}

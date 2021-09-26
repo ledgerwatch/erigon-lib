@@ -439,7 +439,7 @@ func (e E2) Less(than btree.Item) bool { return e.k < than.(E2).k }
 
 func BenchmarkCache5(b *testing.B) {
 	c := btree.New(32)
-	keys := make([]E3, 1_000_000)
+	keys := make([]btree.Item, 1_000_000)
 	for i := uint64(0); i < 1_000_000; i++ {
 		keys[i] = E3(rand.Uint64())
 		c.ReplaceOrInsert(keys[i])
