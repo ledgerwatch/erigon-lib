@@ -1563,11 +1563,7 @@ func (b *ByNonce2) ascend(senderID uint64, f func(*metaTx) bool) {
 	}
 
 	byNonce.Ascend(func(i btree.Item) bool {
-		mt := i.(*sortByNonce2).metaTx
-		if mt.Tx.senderID != senderID {
-			return false
-		}
-		return f(mt)
+		return f(i.(*sortByNonce2).metaTx)
 	})
 }
 func (b *ByNonce2) hasTxs(senderID uint64) bool {
