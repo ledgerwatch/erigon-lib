@@ -362,7 +362,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg, i.senderID)
 				}
 				if tx.subPool&EnoughBalance > 0 {
-					fmt.Printf("enough balance: %d, %d\n", tx.Tx.senderID, tx.effectiveTip)
 					//assert.True(tx.SenderHasEnoughBalance)
 				}
 				if tx.subPool&EnoughFeeCapProtocol > 0 {
