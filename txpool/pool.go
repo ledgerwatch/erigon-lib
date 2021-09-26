@@ -674,7 +674,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		mt := newMetaTx(txn, newTxs.isLocal[i], blockNum)
 		add(mt)
 	}
-	defer func(t time.Time) { fmt.Printf("pool.go:671: %s\n", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { fmt.Printf("pool.go:677: %s\n", time.Since(t)) }(time.Now())
 	for senderID, byNonceSet := range byNonce.bySenderID {
 		if byNonceSet == nil || byNonceSet.Len() == 0 {
 			continue
