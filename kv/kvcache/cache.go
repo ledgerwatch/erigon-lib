@@ -93,6 +93,7 @@ type Coherent struct {
 	roots               map[ViewID]*CoherentRoot
 	lock                sync.RWMutex
 	cfg                 CoherentCacheConfig
+	search              *Element
 }
 
 type CoherentRoot struct {
@@ -120,6 +121,8 @@ func (c *CoherentView) Get(k []byte) ([]byte, error) { return c.cache.Get(k, c.t
 var _ Cache = (*Coherent)(nil)         // compile-time interface check
 var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 
+const DEGREE = 32
+
 type CoherentCacheConfig struct {
 	KeepViews    uint64        // keep in memory up to this amount of views, evict older
 	NewBlockWait time.Duration // how long wait
@@ -141,6 +144,7 @@ func New(cfg CoherentCacheConfig) *Coherent {
 		roots:     map[ViewID]*CoherentRoot{},
 		evictList: NewList(),
 		cfg:       cfg,
+		search:    &Element{},
 		miss:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
 		hits:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 		timeout:   metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
@@ -164,7 +168,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 		r.isCanonical = prevView.isCanonical
 	} else {
 		//log.Info("advance: new", "to", viewID)
-		r.cache = btree.New(8)
+		r.cache = btree.New(DEGREE)
 	}
 	c.roots[viewID] = r
 	return r
@@ -184,7 +188,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 		c.evictList.Init()
 		if r.cache == nil {
 			//log.Info("advance: new", "to", viewID)
-			r.cache = btree.New(8)
+			r.cache = btree.New(DEGREE)
 		} else {
 			r.cache.Ascend(func(i btree.Item) bool {
 				c.evictList.PushFront(i.(*Element))
@@ -277,7 +281,8 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
-	it := r.cache.Get(&Element{K: k})
+	c.search.K = k
+	it := r.cache.Get(c.search)
 	c.lock.RUnlock()
 
 	if it != nil {
@@ -285,7 +290,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		fmt.Printf("i: %d\n", i)
+		//fmt.Printf("i: %d\n", i)
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}

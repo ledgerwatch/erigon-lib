@@ -17,6 +17,7 @@ package kvcache
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"testing"
@@ -336,4 +337,43 @@ func TestAPI(t *testing.T) {
 	require.NoError(err)
 
 	wg.Wait()
+}
+
+func BenchmarkCache1(b *testing.B) {
+	ctx := context.Background()
+	cfg := DefaultCoherentCacheConfig
+	cfg.KeysLimit = 3
+	cfg.NewBlockWait = 0
+	c := New(cfg)
+	db := memdb.NewTestDB(b)
+	var keys [][]byte
+
+	k := make([]byte, 20)
+	for i := uint64(0); i < 1_000_000; i++ {
+		binary.BigEndian.PutUint64(k, i)
+		keys = append(keys, common.Copy(k))
+	}
+	_ = db.Update(ctx, func(tx kv.RwTx) error {
+		for i := range keys {
+			_ = tx.Put(kv.PlainState, keys[i], keys[i])
+		}
+
+		cacheView, _ := c.View(ctx, tx)
+		view := cacheView.(*CoherentView)
+		for i := range keys {
+			_, _ = view.Get(keys[i])
+		}
+		//require.Equal(c.roots[c.latestViewID].cache.Len(), c.evictList.Len())
+		return nil
+	})
+
+	tx, _ := db.BeginRo(ctx)
+	defer tx.Rollback()
+
+	cacheView, _ := c.View(ctx, tx)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = cacheView.Get(keys[i%len(keys)])
+	}
 }
