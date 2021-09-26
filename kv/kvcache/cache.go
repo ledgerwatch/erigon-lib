@@ -432,7 +432,7 @@ type Element struct {
 	K, V []byte
 }
 
-func (p *Element) Less(than btree.Item) bool { return bytes.Compare(p.K, than.(*Element).K) < 0 }
+func (e *Element) Less(than btree.Item) bool { return bytes.Compare(e.K, than.(*Element).K) < 0 }
 
 // ========= copypaste of List implementation from stdlib ========
 
