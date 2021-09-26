@@ -1147,7 +1147,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-
+	defer func(t time.Time) { fmt.Printf("pool.go:1150: %s\n", time.Since(t)) }(time.Now())
 	if err := tx.ForEach(kv.RecentLocalTransaction, nil, func(k, v []byte) error {
 		p.isLocalLRU.Add(string(v), struct{}{})
 		return nil
@@ -1213,6 +1213,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
+	defer func(t time.Time) { fmt.Printf("pool.go:1216: %s\n", time.Since(t)) }(time.Now())
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, txs,
 		protocolBaseFee, pendingBaseFee,
 		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
