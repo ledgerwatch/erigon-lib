@@ -1169,6 +1169,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 
 	i := 0
 	j := 0
+	fmt.Printf("from db\n")
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
 		addr, txRlp := v[:20], v[20:]
 		txs.Resize(uint(i + 1))
