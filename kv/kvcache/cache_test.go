@@ -22,6 +22,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
@@ -377,3 +378,39 @@ func BenchmarkCache1(b *testing.B) {
 		_, _ = cacheView.Get(keys[i%len(keys)])
 	}
 }
+
+func BenchmarkCache2(b *testing.B) {
+	cfg := DefaultCoherentCacheConfig
+	cfg.KeysLimit = 3
+	cfg.NewBlockWait = 0
+	c := map[string]bool{}
+	var keys []string
+
+	k := make([]byte, 20)
+	for i := uint64(0); i < 1_000_000; i++ {
+		binary.BigEndian.PutUint64(k, i)
+		keys = append(keys, string(common.Copy(k)))
+		c[string(common.Copy(k))] = true
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = c[keys[i%len(keys)]]
+	}
+}
+
+func BenchmarkCache3(b *testing.B) {
+	c := btree.New(32)
+	keys := make([]E, 1_000_000)
+	for i := uint64(0); i < 1_000_000; i++ {
+		keys[i] = E(i)
+		c.ReplaceOrInsert(E(keys[i]))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Get(keys[i%len(keys)])
+	}
+}
+
+type E uint64
+
+func (e E) Less(than btree.Item) bool { return uint64(e) < uint64(than.(E)) }

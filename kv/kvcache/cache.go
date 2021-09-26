@@ -121,7 +121,7 @@ func (c *CoherentView) Get(k []byte) ([]byte, error) { return c.cache.Get(k, c.t
 var _ Cache = (*Coherent)(nil)         // compile-time interface check
 var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 
-const DEGREE = 16
+const DEGREE = 1024
 
 type CoherentCacheConfig struct {
 	KeepViews    uint64        // keep in memory up to this amount of views, evict older
@@ -275,6 +275,8 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.RLock()
+
+	t := time.Now()
 	i = 0
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
@@ -290,7 +292,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		//fmt.Printf("i: %d\n", i)
+		fmt.Printf("i: %d,%s\n", i, time.Since(t))
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
