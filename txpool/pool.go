@@ -335,7 +335,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
 	p.pending.captureAddedHashes(&p.promoted)
-	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, p.senders.senderID2Addr, p.senders, unwindTxs,
+	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, p.senders, unwindTxs,
 		protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued,
 		p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
@@ -647,7 +647,6 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 	return nil
 }
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
-	senderIDs map[uint64]string,
 	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *ByNonce2, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
@@ -1081,7 +1080,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 			addr, ok := p.senders.senderID2Addr[p.deletedTxs[i].Tx.senderID]
 			if ok {
 				delete(p.senders.senderID2Addr, p.deletedTxs[i].Tx.senderID)
-				delete(p.senders.senderIDs, addr)
+				delete(p.senders.senderIDs, string(addr))
 			}
 		}
 		//fmt.Printf("del:%d,%d,%d\n", p.deletedTxs[i].Tx.senderID, p.deletedTxs[i].Tx.nonce, p.deletedTxs[i].Tx.tip)
@@ -1186,7 +1185,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			p.senders.senderID++
 			id = p.senders.senderID
 			p.senders.senderIDs[string(addr)] = id
-			p.senders.senderID2Addr[id] = string(addr)
+			p.senders.senderID2Addr[id] = addr
 		}
 		txs.txs[i].senderID = id
 		binary.BigEndian.Uint64(v)
@@ -1422,11 +1421,11 @@ func (sc *sendersBatch) printDebug(prefix string) {
 type sendersBatch struct {
 	senderID      uint64
 	senderIDs     map[string]uint64
-	senderID2Addr map[uint64]string
+	senderID2Addr map[uint64][]byte
 }
 
 func newSendersCache() *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}}
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64][]byte{}}
 }
 
 func (sc *sendersBatch) id(addr string) (uint64, bool) {
@@ -1438,7 +1437,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 	if !ok {
 		panic("must not happen")
 	}
-	encoded, err := cacheView.Get([]byte(addr))
+	encoded, err := cacheView.Get(addr)
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
@@ -1461,7 +1460,7 @@ func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
 		}
 		sc.senderID++
 		sc.senderIDs[string(newTxs.senders.At(i))] = sc.senderID
-		sc.senderID2Addr[sc.senderID] = string(newTxs.senders.At(i))
+		sc.senderID2Addr[sc.senderID] = newTxs.senders.At(i)
 
 		newTxs.txs[i].senderID = sc.senderID
 	}
@@ -1476,7 +1475,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 			if !ok {
 				sc.senderID++
 				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addr
+				sc.senderID2Addr[sc.senderID] = addrB[:]
 			}
 		}
 
@@ -1487,7 +1486,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 				sc.senderID++
 				id = sc.senderID
 				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addr
+				sc.senderID2Addr[sc.senderID] = unwindTxs.senders.At(i)
 			}
 			unwindTxs.txs[i].senderID = id
 		}
@@ -1499,7 +1498,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 				sc.senderID++
 				id = sc.senderID
 				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addr
+				sc.senderID2Addr[sc.senderID] = unwindTxs.senders.At(i)
 			}
 			minedTxs.txs[i].senderID = id
 		}
