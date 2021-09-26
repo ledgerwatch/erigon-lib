@@ -217,14 +217,13 @@ func TestAPI(t *testing.T) {
 	txID3 := put(k1[:], []byte{3})               // even if core already on block 3
 
 	c.OnNewBlock(&remote.StateChangeBatch{
-		DatabaseViewID: txID2,
+		DatabaseViewID:      txID2,
+		PendingBlockBaseFee: 1,
 		ChangeBatch: []*remote.StateChange{
 			{
-				Direction:       remote.Direction_FORWARD,
-				PrevBlockHeight: 1,
-				PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
-				BlockHeight:     2,
-				BlockHash:       gointerfaces.ConvertHashToH256([32]byte{}),
+				Direction:   remote.Direction_FORWARD,
+				BlockHeight: 2,
+				BlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
 				Changes: []*remote.AccountChange{{
 					Action:  remote.Action_UPSERT,
 					Address: gointerfaces.ConvertAddressToH160(k1),
@@ -249,14 +248,13 @@ func TestAPI(t *testing.T) {
 
 	res5, res6 := get(k1, txID3), get(k2, txID3) // will see View of transaction 3, even if notification has not enough changes
 	c.OnNewBlock(&remote.StateChangeBatch{
-		DatabaseViewID: txID3,
+		DatabaseViewID:      txID3,
+		PendingBlockBaseFee: 1,
 		ChangeBatch: []*remote.StateChange{
 			{
-				Direction:       remote.Direction_FORWARD,
-				PrevBlockHeight: 2,
-				PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
-				BlockHeight:     3,
-				BlockHash:       gointerfaces.ConvertHashToH256([32]byte{}),
+				Direction:   remote.Direction_FORWARD,
+				BlockHeight: 3,
+				BlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
 				Changes: []*remote.AccountChange{{
 					Action:  remote.Action_UPSERT,
 					Address: gointerfaces.ConvertAddressToH160(k1),
@@ -282,14 +280,13 @@ func TestAPI(t *testing.T) {
 	txID4 := put(k1[:], []byte{2})
 	_ = txID4
 	c.OnNewBlock(&remote.StateChangeBatch{
-		DatabaseViewID: txID4,
+		DatabaseViewID:      txID4,
+		PendingBlockBaseFee: 1,
 		ChangeBatch: []*remote.StateChange{
 			{
-				Direction:       remote.Direction_UNWIND,
-				PrevBlockHeight: 3,
-				PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
-				BlockHeight:     2,
-				BlockHash:       gointerfaces.ConvertHashToH256([32]byte{}),
+				Direction:   remote.Direction_UNWIND,
+				BlockHeight: 2,
+				BlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
 				Changes: []*remote.AccountChange{{
 					Action:  remote.Action_UPSERT,
 					Address: gointerfaces.ConvertAddressToH160(k1),
@@ -301,14 +298,13 @@ func TestAPI(t *testing.T) {
 	fmt.Printf("-----4\n")
 	txID5 := put(k1[:], []byte{4}) // reorg to new chain
 	c.OnNewBlock(&remote.StateChangeBatch{
-		DatabaseViewID: txID4,
+		DatabaseViewID:      txID4,
+		PendingBlockBaseFee: 1,
 		ChangeBatch: []*remote.StateChange{
 			{
-				Direction:       remote.Direction_FORWARD,
-				PrevBlockHeight: 2,
-				PrevBlockHash:   gointerfaces.ConvertHashToH256([32]byte{}),
-				BlockHeight:     3,
-				BlockHash:       gointerfaces.ConvertHashToH256([32]byte{2}),
+				Direction:   remote.Direction_FORWARD,
+				BlockHeight: 3,
+				BlockHash:   gointerfaces.ConvertHashToH256([32]byte{2}),
 				Changes: []*remote.AccountChange{{
 					Action:  remote.Action_UPSERT,
 					Address: gointerfaces.ConvertAddressToH160(k1),
