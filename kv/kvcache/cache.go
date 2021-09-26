@@ -121,7 +121,7 @@ func (c *CoherentView) Get(k []byte) ([]byte, error) { return c.cache.Get(k, c.t
 var _ Cache = (*Coherent)(nil)         // compile-time interface check
 var _ CacheView = (*CoherentView)(nil) // compile-time interface check
 
-const DEGREE = 32
+const DEGREE = 16
 
 type CoherentCacheConfig struct {
 	KeepViews    uint64        // keep in memory up to this amount of views, evict older
