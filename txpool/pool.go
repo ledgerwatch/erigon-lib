@@ -304,7 +304,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	baseFee := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].ProtocolBaseFee
 	blockHeight := stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight
 
-	protocolBaseFee, baseFee := p.setBaseFee(baseFee)
+	protocolBaseFee, baseFee, baseFeeChanged := p.setBaseFee(baseFee)
 	p.lastSeenBlock.Store(blockHeight)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
@@ -330,7 +330,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
 	p.pending.captureAddedHashes(&p.promoted)
-	if err := addTxs(p.lastSeenBlock.Load(), stateChanges, cache, viewID, coreTx, p.senders, unwindTxs, protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), stateChanges, cache, viewID, coreTx, p.senders, unwindTxs, protocolBaseFee, baseFee, baseFeeChanged, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.pending.added = nil
@@ -386,7 +386,9 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 
 	p.pending.captureAddedHashes(&p.promoted)
-	if err := addTxs(p.lastSeenBlock.Load(), nil, cache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), nil, cache, viewID, coreTx, p.senders, newTxs,
+		p.protocolBaseFee.Load(), p.currentBaseFee.Load(), false,
+		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.pending.added = nil
@@ -554,7 +556,9 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 	}
 
 	p.pending.captureAddedHashes(&p.promoted)
-	if err := addTxs(p.lastSeenBlock.Load(), nil, p._stateCache, viewID, coreTx, p.senders, newTxs, p.protocolBaseFee.Load(), p.currentBaseFee.Load(), p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), nil, p._stateCache, viewID, coreTx, p.senders, newTxs,
+		p.protocolBaseFee.Load(), p.currentBaseFee.Load(), false,
+		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
 	p.pending.added = nil
@@ -586,7 +590,10 @@ func (p *TxPool) cache() kvcache.Cache {
 	defer p.lock.RUnlock()
 	return p._stateCache
 }
-func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx, senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
+func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcache.Cache, viewID kvcache.ViewID, coreTx kv.Tx,
+	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, currentBaseFee uint64, baseFeeChanged bool,
+	pending *PendingPool, baseFee, queued *SubPool,
+	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -643,22 +650,28 @@ func addTxs(blockNum uint64, stateChanges *remote.StateChangeBatch, cache kvcach
 		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, currentBaseFee, pending, baseFee, queued)
 	}
 
-	//pending.EnforceWorstInvariants()
-	//baseFee.EnforceInvariants()
-	//queued.EnforceInvariants()
+	if baseFeeChanged {
+		pending.EnforceWorstInvariants()
+		baseFee.EnforceInvariants()
+		queued.EnforceInvariants()
+	}
 	promote(pending, baseFee, queued, discard)
-	//pending.EnforceWorstInvariants()
+	if baseFeeChanged {
+		pending.EnforceWorstInvariants()
+	}
 	pending.EnforceBestInvariants()
 
 	return nil
 }
 
-func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64) {
+func (p *TxPool) setBaseFee(baseFee uint64) (uint64, uint64, bool) {
+	changed := false
 	if baseFee > 0 {
+		changed = baseFee != p.currentBaseFee.Load()
 		p.protocolBaseFee.Store(calcProtocolBaseFee(baseFee))
 		p.currentBaseFee.Store(baseFee)
 	}
-	return p.protocolBaseFee.Load(), p.currentBaseFee.Load()
+	return p.protocolBaseFee.Load(), p.currentBaseFee.Load(), changed
 }
 
 func (p *TxPool) addLocked(mt *metaTx) bool {
@@ -1173,7 +1186,9 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := addTxs(p.lastSeenBlock.Load(), nil, p._stateCache, viewID, coreTx, p.senders, txs, protocolBaseFee, currentBaseFee, p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxs(p.lastSeenBlock.Load(), nil, p._stateCache, viewID, coreTx, p.senders, txs,
+		protocolBaseFee, currentBaseFee, true,
+		p.pending, p.baseFee, p.queued, p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.currentBaseFee.Store(currentBaseFee)
