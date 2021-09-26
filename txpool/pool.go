@@ -804,10 +804,10 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 		needBalance.Add(needBalance, &mt.Tx.value)
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		minTip = min(minTip, mt.Tx.tip)
-		if currentBaseFee >= minFeeCap {
-			mt.effectiveTip = minTip
-		} else {
+		if currentBaseFee < minFeeCap {
 			mt.effectiveTip = minFeeCap - currentBaseFee
+		} else {
+			mt.effectiveTip = minTip
 		}
 		// 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol
 		// parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means

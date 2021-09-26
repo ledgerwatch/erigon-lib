@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -361,6 +362,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 					assert.GreaterOrEqual(i.nonce, senders[i.senderID].nonce, msg, i.senderID)
 				}
 				if tx.subPool&EnoughBalance > 0 {
+					fmt.Printf("enough balance: %d, %d\n", tx.Tx.senderID, tx.effectiveTip)
 					//assert.True(tx.SenderHasEnoughBalance)
 				}
 				if tx.subPool&EnoughFeeCapProtocol > 0 {
@@ -607,6 +609,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		require.Equal(pool.queued.Len(), p2.queued.Len())
 		assert.Equal(pool.currentBaseFee.Load(), p2.currentBaseFee.Load())
 		assert.Equal(pool.protocolBaseFee.Load(), p2.protocolBaseFee.Load())
+		assert.Equal(1, 0)
 	})
 
 }
