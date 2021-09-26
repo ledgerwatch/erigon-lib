@@ -1480,25 +1480,27 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 		}
 
 		for i := 0; i < unwindTxs.senders.Len(); i++ {
-			addr := string(unwindTxs.senders.At(i))
-			id, ok := sc.id(addr)
+			addr := unwindTxs.senders.At(i)
+			addrS := string(addr)
+			id, ok := sc.id(addrS)
 			if !ok {
 				sc.senderID++
 				id = sc.senderID
-				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = unwindTxs.senders.At(i)
+				sc.senderIDs[addrS] = sc.senderID
+				sc.senderID2Addr[sc.senderID] = addr
 			}
 			unwindTxs.txs[i].senderID = id
 		}
 
 		for i := 0; i < len(minedTxs.txs); i++ {
-			addr := string(minedTxs.senders.At(i))
-			id, ok := sc.id(addr)
+			addr := minedTxs.senders.At(i)
+			addrS := string(addr)
+			id, ok := sc.id(addrS)
 			if !ok {
 				sc.senderID++
 				id = sc.senderID
-				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = minedTxs.senders.At(i)
+				sc.senderIDs[addrS] = sc.senderID
+				sc.senderID2Addr[sc.senderID] = addr
 			}
 			minedTxs.txs[i].senderID = id
 		}
