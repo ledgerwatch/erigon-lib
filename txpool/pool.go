@@ -623,7 +623,6 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 		changedSenders[mt.Tx.senderID] = struct{}{}
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:626: %s\n", time.Since(t)) }(time.Now())
 	for senderID := range changedSenders {
 		nonce, balance, err := senders.info(cacheView, senderID)
 		if err != nil {
@@ -669,6 +668,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		mt := newMetaTx(txn, newTxs.isLocal[i], blockNum)
 		add(mt)
 	}
+	defer func(t time.Time) { fmt.Printf("pool.go:626: %s\n", time.Since(t)) }(time.Now())
 	for senderID := range senderIDs {
 		nonce, balance, err := senders.info(cacheView, senderID)
 		if err != nil {
