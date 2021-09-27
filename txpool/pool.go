@@ -1836,10 +1836,7 @@ func (mt *metaTx) Less(than *metaTx) bool {
 	if mt.effectiveTip != than.effectiveTip {
 		return mt.effectiveTip < than.effectiveTip
 	}
-	if mt.timestamp != than.timestamp {
-		return mt.timestamp < than.timestamp
-	}
-	return false
+	return mt.timestamp < than.timestamp
 }
 
 func (p BestQueue) Len() int           { return len(p) }
