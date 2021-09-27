@@ -686,7 +686,6 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 			}
 		}
 	}
-
 	if baseFeeChanged {
 		// TODO: add here protocolBaseFee also
 		onBaseFeeChange(byNonce, pendingBaseFee) // re-calc all fields depending on pendingBaseFee
@@ -814,6 +813,7 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 }
 
 func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
+	defer func(t time.Time) { fmt.Printf("pool.go:816: %s\n", time.Since(t)) }(time.Now())
 	for _, byNonceSet := range byNonce.bySenderID {
 		if byNonceSet == nil || byNonceSet.Len() == 0 {
 			continue
