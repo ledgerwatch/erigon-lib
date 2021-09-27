@@ -253,7 +253,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 		isLocalLRU:        localsHistory,
 		discardReasonsLRU: discardHistory,
 		//byNonce:                 &ByNonce{bySenderID: map[uint64]*btree.BTree{}, search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
-		byNonce:                 &ByNonce2{tree: btree.New(128), search: sortByNonce2{&metaTx{Tx: &TxSlot{}}}},
+		byNonce:                 &ByNonce2{tree: btree.New(32), search: sortByNonce2{&metaTx{Tx: &TxSlot{}}}},
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool, cfg.PendingSubPoolLimit),
 		baseFee:                 NewSubPool(BaseFeeSubPool, cfg.BaseFeeSubPoolLimit),
