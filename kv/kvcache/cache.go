@@ -314,11 +314,11 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.RUnlock()
 
 	if it != nil {
-		c.hits.Inc()
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
 		//fmt.Printf("i: %s\n", time.Since(t))
+		c.hits.Inc()
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
