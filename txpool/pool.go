@@ -789,7 +789,6 @@ func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 	p.deletedTxs = append(p.deletedTxs, mt)
 	p.byNonce.delete(mt)
 	p.discardReasonsLRU.Add(string(mt.Tx.idHash[:]), reason)
-	fmt.Printf("del: %d,%b, reason: %d\n", mt.Tx.senderID, mt.subPool, reason)
 }
 
 // removeMined - apply new highest block (or batch of blocks)
