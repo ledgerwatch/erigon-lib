@@ -505,6 +505,9 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 
 	best := p.pending.best
 	for i := 0; i < int(n) && i < len(best); i++ {
+		if best[i].effectiveTip == 0 { // Tx cannot be included
+			break
+		}
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best[i].Tx.idHash[:])
 		if err != nil {
 			return err
