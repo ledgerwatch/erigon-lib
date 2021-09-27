@@ -836,13 +836,8 @@ func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
 		minFeeCap, minTip = math.MaxUint64, math.MaxUint64
 		byNonceSet.Ascend(func(i btree.Item) bool {
 			mt := i.(*sortByNonce2).metaTx
-			if minFeeCap > mt.Tx.feeCap {
-				minFeeCap = mt.Tx.feeCap
-			}
-			if minTip > mt.Tx.tip {
-				minTip = mt.Tx.tip
-			}
-
+			minFeeCap = min(minFeeCap, mt.Tx.feeCap)
+			minTip = min(minTip, mt.Tx.tip)
 			if pendingBaseFee <= minFeeCap {
 				mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 			} else {
