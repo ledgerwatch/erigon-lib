@@ -893,7 +893,9 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 			queued.Add(pending.PopWorst())
 			continue
 		}
-		discard(pending.PopWorst(), FeeTooLow)
+		txn := pending.PopWorst()
+		fmt.Printf("FeeTooLow: %d,%d,%d\n", txn.effectiveTip, txn.Tx.tip, txn.Tx.feeCap)
+		discard(txn, FeeTooLow)
 	}
 
 	//2. If top element in the worst green queue has subPool == 0b1111, but there is not enough room in the pool, discard.
@@ -951,7 +953,9 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 		if worst.subPool >= 0b10000 {
 			break
 		}
-		discard(queued.PopWorst(), FeeTooLow)
+		txn := queued.PopWorst()
+		fmt.Printf("FeeTooLow: %d,%d,%d\n", txn.effectiveTip, txn.Tx.tip, txn.Tx.feeCap)
+		discard(txn, FeeTooLow)
 	}
 
 	//8. If the top element in the worst red queue has subPool >= 0b100, but there is not enough room in the pool, discard.
