@@ -679,31 +679,28 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		}
 		changedSenders[mt.Tx.senderID] = struct{}{}
 	}
+	// add senders changed in state to `changedSenders` list
+	for _, changesList := range stateChanges.ChangeBatch {
+		for _, change := range changesList.Changes {
+			switch change.Action {
+			case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
+				if change.Incarnation > 0 {
+					continue
+				}
+				addr := gointerfaces.ConvertH160toAddress(change.Address)
+				id, ok := senders.id(string(addr[:]))
+				if !ok {
+					continue
+				}
+				changedSenders[id] = struct{}{}
+			}
+		}
+	}
 
 	defer func(t time.Time) { fmt.Printf("pool.go:682: %s\n", time.Since(t)) }(time.Now())
 	baseFeeChanged := true
 	if baseFeeChanged {
 		onBaseFeeChange(byNonce, pendingBaseFee)
-	}
-
-	if stateChanges != nil {
-		// add senders changed in state to `changedSenders` list
-		for _, changesList := range stateChanges.ChangeBatch {
-			for _, change := range changesList.Changes {
-				switch change.Action {
-				case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
-					if change.Incarnation > 0 {
-						continue
-					}
-					addr := gointerfaces.ConvertH160toAddress(change.Address)
-					id, ok := senders.id(string(addr[:]))
-					if !ok {
-						continue
-					}
-					changedSenders[id] = struct{}{}
-				}
-			}
-		}
 	}
 
 	defer func(t time.Time) { fmt.Printf("pool.go:687: %s\n", time.Since(t)) }(time.Now())
