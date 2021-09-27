@@ -22,6 +22,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/google/btree"
@@ -280,6 +281,10 @@ func (c *Coherent) hasID(k []byte) bool {
 	_, ok := c.senderIDs[string(k)]
 	return ok
 }
+
+//func byteSlice2String(bs []byte) string {
+//	return *(*string)(unsafe.Pointer(&bs))
+//}
 func (c *Coherent) id(k []byte) uint64 {
 	id, ok := c.senderIDs[string(k)]
 	if ok {
