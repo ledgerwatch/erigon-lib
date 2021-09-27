@@ -838,10 +838,11 @@ func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
 			if minTip > mt.Tx.tip {
 				minTip = mt.Tx.tip
 			}
-			if pendingBaseFee < minFeeCap {
-				mt.effectiveTip = minFeeCap - pendingBaseFee
+
+			if pendingBaseFee <= minFeeCap {
+				mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 			} else {
-				mt.effectiveTip = minTip
+				mt.effectiveTip = 0 // Tx cannot be included
 			}
 
 			// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
