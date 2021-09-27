@@ -298,7 +298,7 @@ func (c *Coherent) id(k []byte) uint64 {
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.RLock()
 
-	//t := time.Now()
+	t := time.Now()
 	isLatest := c.latestViewID == id
 	r, ok := c.roots[id]
 	if !ok {
@@ -316,7 +316,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.evictList.MoveToFront(it.(*Element))
 		}
-		//fmt.Printf("i: %d,%s\n", i, time.Since(t))
+		fmt.Printf("i: %s\n", time.Since(t))
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}

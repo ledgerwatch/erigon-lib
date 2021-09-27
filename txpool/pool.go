@@ -335,6 +335,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
 	p.pending.captureAddedHashes(&p.promoted)
+	defer func(t time.Time) { fmt.Printf("pool.go:338: %s\n", time.Since(t)) }(time.Now())
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, p.senders, unwindTxs,
 		protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued,
 		p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
@@ -673,6 +674,8 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		mt := newMetaTx(txn, newTxs.isLocal[i], blockNum)
 		add(mt)
 	}
+
+	defer func(t time.Time) { fmt.Printf("pool.go:678: %s\n", time.Since(t)) }(time.Now())
 	for senderID, byNonceSet := range byNonce.bySenderID {
 		if byNonceSet == nil || byNonceSet.Len() == 0 {
 			continue
@@ -684,6 +687,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
 	}
 
+	defer func(t time.Time) { fmt.Printf("pool.go:690: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
