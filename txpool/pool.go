@@ -310,7 +310,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	baseFee := stateChanges.PendingBlockBaseFee
 	p.lastSeenBlock.Store(stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight)
 
-	protocolBaseFee, baseFee, _ := p.setBaseFee(baseFee)
+	protocolBaseFee, baseFee, baseFeeChanged := p.setBaseFee(baseFee)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
 	}
@@ -335,9 +335,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
 	p.pending.captureAddedHashes(&p.promoted)
-	defer func(t time.Time) { fmt.Printf("pool.go:338: %s\n", time.Since(t)) }(time.Now())
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
-		protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued,
+		protocolBaseFee, baseFee, baseFeeChanged, p.pending, p.baseFee, p.queued,
 		p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -649,7 +648,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 }
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 	stateChanges *remote.StateChangeBatch,
-	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64,
+	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64, baseFeeChanged bool,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
@@ -697,14 +696,11 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		}
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:682: %s\n", time.Since(t)) }(time.Now())
-	baseFeeChanged := true
 	if baseFeeChanged {
 		// TODO: add here protocolBaseFee also
 		onBaseFeeChange(byNonce, pendingBaseFee) // re-calc all fields depending on pendingBaseFee
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:687: %s\n", time.Since(t)) }(time.Now())
 	for senderID := range changedSenders {
 		nonce, balance, err := senders.info(cacheView, senderID)
 		if err != nil {
@@ -713,7 +709,6 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:690: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
