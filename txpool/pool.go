@@ -700,7 +700,8 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 	defer func(t time.Time) { fmt.Printf("pool.go:682: %s\n", time.Since(t)) }(time.Now())
 	baseFeeChanged := true
 	if baseFeeChanged {
-		onBaseFeeChange(byNonce, pendingBaseFee)
+		// TODO: add here protocolBaseFee also
+		onBaseFeeChange(byNonce, pendingBaseFee) // re-calc all fields depending on pendingBaseFee
 	}
 
 	defer func(t time.Time) { fmt.Printf("pool.go:687: %s\n", time.Since(t)) }(time.Now())
