@@ -714,7 +714,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		if err != nil {
 			return err
 		}
-		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, false)
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
 	}
 
 	defer func(t time.Time) { fmt.Printf("pool.go:690: %s\n", time.Since(t)) }(time.Now())
