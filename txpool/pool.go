@@ -336,7 +336,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	p.pending.captureAddedHashes(&p.promoted)
 	defer func(t time.Time) { fmt.Printf("pool.go:338: %s\n", time.Since(t)) }(time.Now())
-	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, p.senders, unwindTxs,
+	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
 		protocolBaseFee, baseFee, p.pending, p.baseFee, p.queued,
 		p.byNonce, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
@@ -648,6 +648,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 	return nil
 }
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
+	stateChanges *remote.StateChangeBatch,
 	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
@@ -679,36 +680,33 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		changedSenders[mt.Tx.senderID] = struct{}{}
 	}
 
+	defer func(t time.Time) { fmt.Printf("pool.go:682: %s\n", time.Since(t)) }(time.Now())
 	baseFeeChanged := true
 	if baseFeeChanged {
-		for senderID, byNonceSet := range byNonce.bySenderID {
-			if byNonceSet == nil || byNonceSet.Len() == 0 {
-				continue
+		onBaseFeeChange(byNonce, pendingBaseFee)
+	}
+
+	if stateChanges != nil {
+		// add senders changed in state to `changedSenders` list
+		for _, changesList := range stateChanges.ChangeBatch {
+			for _, change := range changesList.Changes {
+				switch change.Action {
+				case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
+					if change.Incarnation > 0 {
+						continue
+					}
+					addr := gointerfaces.ConvertH160toAddress(change.Address)
+					id, ok := senders.id(string(addr[:]))
+					if !ok {
+						continue
+					}
+					changedSenders[id] = struct{}{}
+				}
 			}
-
-			minFeeCap := uint64(math.MaxUint64)
-			minTip := uint64(math.MaxUint64)
-			byNonce.ascend(senderID, func(mt *metaTx) bool {
-				// Sender has enough balance for: gasLimit x feeCap + transferred_value
-				minFeeCap = min(minFeeCap, mt.Tx.feeCap)
-				minTip = min(minTip, mt.Tx.tip)
-				if pendingBaseFee < minFeeCap {
-					mt.effectiveTip = minFeeCap - pendingBaseFee
-				} else {
-					mt.effectiveTip = minTip
-				}
-
-				// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
-				// baseFee of the currently pending block. Set to 0 otherwise.
-				mt.subPool &^= EnoughFeeCapBlock
-				if mt.Tx.feeCap >= pendingBaseFee {
-					mt.subPool |= EnoughFeeCapBlock
-				}
-				return true
-			})
 		}
 	}
 
+	defer func(t time.Time) { fmt.Printf("pool.go:687: %s\n", time.Since(t)) }(time.Now())
 	for senderID := range changedSenders {
 		nonce, balance, err := senders.info(cacheView, senderID)
 		if err != nil {
@@ -831,10 +829,48 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 	return nil
 }
 
+func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
+	for senderID, byNonceSet := range byNonce.bySenderID {
+		if byNonceSet == nil || byNonceSet.Len() == 0 {
+			continue
+		}
+
+		minFeeCap := uint64(math.MaxUint64)
+		minTip := uint64(math.MaxUint64)
+		byNonce.ascend(senderID, func(mt *metaTx) bool {
+			minFeeCap = min(minFeeCap, mt.Tx.feeCap)
+			minTip = min(minTip, mt.Tx.tip)
+			if pendingBaseFee < minFeeCap {
+				mt.effectiveTip = minFeeCap - pendingBaseFee
+			} else {
+				mt.effectiveTip = minTip
+			}
+
+			// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
+			// baseFee of the currently pending block. Set to 0 otherwise.
+			mt.subPool &^= EnoughFeeCapBlock
+			if mt.Tx.feeCap >= pendingBaseFee {
+				mt.subPool |= EnoughFeeCapBlock
+			}
+			return true
+		})
+	}
+}
+
 func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
+	minFeeCap := uint64(math.MaxUint64)
+	minTip := uint64(math.MaxUint64)
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
+		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
+		minTip = min(minTip, mt.Tx.tip)
+		if pendingBaseFee < minFeeCap {
+			mt.effectiveTip = minFeeCap - pendingBaseFee
+		} else {
+			mt.effectiveTip = minTip
+		}
+
 		// Sender has enough balance for: gasLimit x feeCap + transferred_value
 		needBalance := uint256.NewInt(mt.Tx.gas)
 		needBalance.Mul(needBalance, uint256.NewInt(mt.Tx.feeCap))
