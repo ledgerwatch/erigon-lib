@@ -667,15 +667,56 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 	// they effective lose their priority over the "remote" transactions. In order to prevent that,
 	// somehow the fact that certain transactions were local, needs to be remembered for some
 	// time (up to some "immutability threshold").
+	changedSenders := map[uint64]struct{}{}
 	for i, txn := range newTxs.txs {
 		if _, ok := byHash[string(txn.idHash[:])]; ok {
 			continue
 		}
 		mt := newMetaTx(txn, newTxs.isLocal[i], blockNum)
-		add(mt)
+		if !add(mt) {
+			continue
+		}
+		changedSenders[mt.Tx.senderID] = struct{}{}
 	}
 
-	defer func(t time.Time) { fmt.Printf("pool.go:678: %s\n", time.Since(t)) }(time.Now())
+	baseFeeChanged := true
+	if baseFeeChanged {
+		for senderID, byNonceSet := range byNonce.bySenderID {
+			if byNonceSet == nil || byNonceSet.Len() == 0 {
+				continue
+			}
+
+			minFeeCap := uint64(math.MaxUint64)
+			minTip := uint64(math.MaxUint64)
+			byNonce.ascend(senderID, func(mt *metaTx) bool {
+				// Sender has enough balance for: gasLimit x feeCap + transferred_value
+				minFeeCap = min(minFeeCap, mt.Tx.feeCap)
+				minTip = min(minTip, mt.Tx.tip)
+				if pendingBaseFee < minFeeCap {
+					mt.effectiveTip = minFeeCap - pendingBaseFee
+				} else {
+					mt.effectiveTip = minTip
+				}
+
+				// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
+				// baseFee of the currently pending block. Set to 0 otherwise.
+				mt.subPool &^= EnoughFeeCapBlock
+				if mt.Tx.feeCap >= pendingBaseFee {
+					mt.subPool |= EnoughFeeCapBlock
+				}
+				return true
+			})
+		}
+	}
+
+	for senderID := range changedSenders {
+		nonce, balance, err := senders.info(cacheView, senderID)
+		if err != nil {
+			return err
+		}
+		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, false)
+	}
+
 	for senderID, byNonceSet := range byNonce.bySenderID {
 		if byNonceSet == nil || byNonceSet.Len() == 0 {
 			continue
@@ -686,7 +727,6 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		}
 		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
 	}
-
 	defer func(t time.Time) { fmt.Printf("pool.go:690: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
@@ -805,20 +845,11 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
-	minFeeCap := uint64(math.MaxUint64)
-	minTip := uint64(math.MaxUint64)
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
 		// Sender has enough balance for: gasLimit x feeCap + transferred_value
 		needBalance := uint256.NewInt(mt.Tx.gas)
 		needBalance.Mul(needBalance, uint256.NewInt(mt.Tx.feeCap))
 		needBalance.Add(needBalance, &mt.Tx.value)
-		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
-		minTip = min(minTip, mt.Tx.tip)
-		if pendingBaseFee < minFeeCap {
-			mt.effectiveTip = minFeeCap - pendingBaseFee
-		} else {
-			mt.effectiveTip = minTip
-		}
 		// 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol
 		// parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means
 		// this transaction will never be included into this particular chain.
