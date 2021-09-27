@@ -22,6 +22,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/google/btree"
@@ -142,7 +143,7 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 
 func New(cfg CoherentCacheConfig) *Coherent {
 	return &Coherent{
-		roots:         map[ViewID]*CoherentRoot{},
+		roots:         make(map[ViewID]*CoherentRoot, cfg.KeepViews),
 		evictList:     NewList(),
 		cfg:           cfg,
 		search:        &Element{},
@@ -151,8 +152,8 @@ func New(cfg CoherentCacheConfig) *Coherent {
 		timeout:       metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
 		keys:          metrics.GetOrCreateCounter(fmt.Sprintf(`cache_keys_total{name="%s"}`, cfg.MetricsLabel)),
 		keys2:         metrics.GetOrCreateCounter(fmt.Sprintf(`cache_list_total{name="%s"}`, cfg.MetricsLabel)),
-		senderIDs:     map[string]uint64{},
-		senderID2Addr: map[uint64]string{},
+		senderIDs:     make(map[string]uint64, cfg.KeysLimit),
+		senderID2Addr: make(map[uint64]string, cfg.KeysLimit),
 	}
 }
 
@@ -281,17 +282,18 @@ func (c *Coherent) hasID(k []byte) bool {
 	return ok
 }
 
-//func byteSlice2String(bs []byte) string {
-//	return *(*string)(unsafe.Pointer(&bs))
-//}
+func byteSlice2String(bs []byte) string {
+	return *(*string)(unsafe.Pointer(&bs))
+}
 func (c *Coherent) id(k []byte) uint64 {
-	id, ok := c.senderIDs[string(k)]
+	ks := *(*string)(unsafe.Pointer(&k))
+	id, ok := c.senderIDs[ks]
 	if ok {
 		return id
 	}
 	c.senderID++
-	c.senderIDs[string(k)] = c.senderID
-	c.senderID2Addr[c.senderID] = string(k)
+	c.senderIDs[ks] = c.senderID
+	c.senderID2Addr[c.senderID] = ks
 	return c.senderID
 }
 
