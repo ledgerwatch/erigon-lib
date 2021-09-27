@@ -22,7 +22,6 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/VictoriaMetrics/metrics"
 	"github.com/google/btree"
