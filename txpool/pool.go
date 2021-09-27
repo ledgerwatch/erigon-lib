@@ -505,9 +505,6 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 
 	best := p.pending.best
 	for i := 0; i < int(n) && i < len(best); i++ {
-		if best[i].effectiveTip == 0 { // Tx cannot be included
-			break
-		}
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best[i].Tx.idHash[:])
 		if err != nil {
 			return err
@@ -844,7 +841,7 @@ func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
 			if pendingBaseFee <= minFeeCap {
 				mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 			} else {
-				mt.effectiveTip = 0 // Tx cannot be included
+				mt.effectiveTip = 0
 			}
 
 			// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
