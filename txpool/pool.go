@@ -828,14 +828,15 @@ func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, bas
 }
 
 func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
-	for senderID, byNonceSet := range byNonce.bySenderID {
+	var minFeeCap, minTip uint64
+	for _, byNonceSet := range byNonce.bySenderID {
 		if byNonceSet == nil || byNonceSet.Len() == 0 {
 			continue
 		}
 
-		minFeeCap := uint64(math.MaxUint64)
-		minTip := uint64(math.MaxUint64)
-		byNonce.ascend(senderID, func(mt *metaTx) bool {
+		minFeeCap, minTip = uint64(math.MaxUint64), uint64(math.MaxUint64)
+		byNonceSet.Ascend(func(i btree.Item) bool {
+			mt := i.(*sortByNonce2).metaTx
 			minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 			minTip = min(minTip, mt.Tx.tip)
 			if pendingBaseFee < minFeeCap {
