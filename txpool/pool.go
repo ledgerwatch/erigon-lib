@@ -846,10 +846,9 @@ func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
 
 			// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 			// baseFee of the currently pending block. Set to 0 otherwise.
+			mt.subPool &^= EnoughFeeCapBlock
 			if mt.Tx.feeCap >= pendingBaseFee {
 				mt.subPool |= EnoughFeeCapBlock
-			} else {
-				mt.subPool &^= EnoughFeeCapBlock
 			}
 			return true
 		})
@@ -864,8 +863,8 @@ func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.I
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		minTip = min(minTip, mt.Tx.tip)
-		if pendingBaseFee < minFeeCap {
-			mt.effectiveTip = minFeeCap - pendingBaseFee
+		if pendingBaseFee <= minFeeCap {
+			mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 		} else {
 			mt.effectiveTip = minTip
 		}
