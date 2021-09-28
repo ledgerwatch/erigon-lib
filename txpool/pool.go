@@ -706,9 +706,9 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
+	defer func(t time.Time) { fmt.Printf("pool.go:718: %s\n", time.Since(t)) }(time.Now())
 	promote(pending, baseFee, queued, discard)
 	pending.EnforceWorstInvariants()
-	defer func(t time.Time) { fmt.Printf("pool.go:718: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceBestInvariants()
 
 	return nil
