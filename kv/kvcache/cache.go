@@ -134,7 +134,7 @@ var DefaultCoherentCacheConfig = CoherentCacheConfig{
 	NewBlockWait: 50 * time.Millisecond,
 	KeysLimit:    1_000_000,
 	MetricsLabel: "default",
-	WithStorage:  false,
+	WithStorage:  true,
 }
 
 func New(cfg CoherentCacheConfig) *Coherent {
