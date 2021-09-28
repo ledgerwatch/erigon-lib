@@ -33,7 +33,7 @@ import (
 func TestEvictionInUnexpectedOrder(t *testing.T) {
 	// Order: View - 2, OnNewBlock - 2, View - 5, View - 6, OnNewBlock - 3, OnNewBlock - 4, View - 5, OnNewBlock - 5, OnNewBlock - 100
 	require := require.New(t)
-	cfg := DefaultCoherentCacheConfig
+	cfg := DefaultCoherentConfig
 	cfg.KeysLimit = 3
 	cfg.NewBlockWait = 0
 	c := New(cfg)
@@ -100,7 +100,7 @@ func TestEvictionInUnexpectedOrder(t *testing.T) {
 
 func TestEviction(t *testing.T) {
 	require, ctx := require.New(t), context.Background()
-	cfg := DefaultCoherentCacheConfig
+	cfg := DefaultCoherentConfig
 	cfg.KeysLimit = 3
 	cfg.NewBlockWait = 0
 	c := New(cfg)
@@ -154,7 +154,7 @@ func TestEviction(t *testing.T) {
 
 func TestAPI(t *testing.T) {
 	require := require.New(t)
-	c := New(DefaultCoherentCacheConfig)
+	c := New(DefaultCoherentConfig)
 	k1, k2 := [20]byte{1}, [20]byte{2}
 	db := memdb.NewTestDB(t)
 	get := func(key [20]byte, expectTxnID uint64) (res [1]chan []byte) {
