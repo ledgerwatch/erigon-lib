@@ -823,13 +823,12 @@ func removeMined(byNonce *ByNonce2, minedTxs []*TxSlot, pending *PendingPool, ba
 }
 
 func onBaseFeeChange(byNonce *ByNonce2, pendingBaseFee uint64) {
-	defer func(t time.Time) { fmt.Printf("pool.go:816: %s,%d\n", time.Since(t), byNonce.tree.Len()) }(time.Now())
 	var prevSenderID uint64
 	var minFeeCap, minTip uint64
 	byNonce.tree.Ascend(func(i btree.Item) bool {
 		mt := i.(sortByNonce2).metaTx
 		if mt.Tx.senderID != prevSenderID {
-			minFeeCap, minTip = uint64(math.MaxUint64), uint64(math.MaxUint64)
+			minFeeCap, minTip = uint64(math.MaxUint64), uint64(math.MaxUint64) // min of given sender
 			prevSenderID = mt.Tx.senderID
 		}
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
@@ -848,34 +847,6 @@ func onBaseFeeChange(byNonce *ByNonce2, pendingBaseFee uint64) {
 		}
 		return true
 	})
-
-	/*
-		for _, byNonceSet := range byNonce.bySenderID {
-			if byNonceSet == nil || byNonceSet.Len() == 0 {
-				continue
-			}
-
-			minFeeCap, minTip := uint64(math.MaxUint64), uint64(math.MaxUint64)
-			byNonceSet.Ascend(func(i btree.Item) bool {
-				mt := i.(sortByNonce).metaTx
-				minFeeCap = min(minFeeCap, mt.Tx.feeCap)
-				minTip = min(minTip, mt.Tx.tip)
-				if pendingBaseFee <= minFeeCap {
-					mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
-				} else {
-					mt.effectiveTip = 0
-				}
-
-				// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
-				// baseFee of the currently pending block. Set to 0 otherwise.
-				mt.subPool &^= EnoughFeeCapBlock
-				if mt.Tx.feeCap >= pendingBaseFee {
-					mt.subPool |= EnoughFeeCapBlock
-				}
-				return true
-			})
-		}
-	*/
 }
 
 func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce2, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
