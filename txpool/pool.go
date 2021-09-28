@@ -701,6 +701,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		onBaseFeeChange(byNonce, pendingBaseFee) // re-calc all fields depending on pendingBaseFee
 	}
 
+	defer func(t time.Time) { fmt.Printf("pool.go:704: %s\n", time.Since(t)) }(time.Now())
 	for senderID := range changedSenders {
 		nonce, balance, err := senders.info(cacheView, senderID)
 		if err != nil {
@@ -708,12 +709,13 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 		}
 		onSenderChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
 	}
-
+	defer func(t time.Time) { fmt.Printf("pool.go:712: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
 	queued.EnforceInvariants()
 	promote(pending, baseFee, queued, discard)
 	pending.EnforceWorstInvariants()
+	defer func(t time.Time) { fmt.Printf("pool.go:718: %s\n", time.Since(t)) }(time.Now())
 	pending.EnforceBestInvariants()
 
 	return nil
@@ -823,6 +825,7 @@ func removeMined(byNonce *ByNonce2, minedTxs []*TxSlot, pending *PendingPool, ba
 }
 
 func onBaseFeeChange(byNonce *ByNonce2, pendingBaseFee uint64) {
+	defer func(t time.Time) { fmt.Printf("pool.go:816: %s,%d\n", time.Since(t), byNonce.tree.Len()) }(time.Now())
 	var prevSenderID uint64
 	var minFeeCap, minTip uint64
 	byNonce.tree.Ascend(func(i btree.Item) bool {
