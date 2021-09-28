@@ -174,18 +174,12 @@ func newSender(nonce uint64, balance uint256.Int) *sender {
 
 var emptySender = newSender(0, *uint256.NewInt(0))
 
-type sortByNonce2 struct{ *metaTx }
-
-func (i sortByNonce2) Less(than btree.Item) bool {
-	if i.metaTx.Tx.senderID != than.(sortByNonce2).metaTx.Tx.senderID {
-		return i.metaTx.Tx.senderID < than.(sortByNonce2).metaTx.Tx.senderID
-	}
-	return i.metaTx.Tx.nonce < than.(sortByNonce2).metaTx.Tx.nonce
-}
-
 type sortByNonce struct{ *metaTx }
 
 func (i sortByNonce) Less(than btree.Item) bool {
+	if i.metaTx.Tx.senderID != than.(sortByNonce).metaTx.Tx.senderID {
+		return i.metaTx.Tx.senderID < than.(sortByNonce).metaTx.Tx.senderID
+	}
 	return i.metaTx.Tx.nonce < than.(sortByNonce).metaTx.Tx.nonce
 }
 
@@ -224,7 +218,7 @@ type TxPool struct {
 	isLocalLRU        *simplelru.LRU // tx_hash => is_local : to restore isLocal flag of unwinded transactions
 	newPendingTxs     chan Hashes    // notifications about new txs in Pending sub-pool
 	deletedTxs        []*metaTx      // list of discarded txs since last db commit
-	byNonce           *ByNonce2      // senderID => (sorted map of tx nonce => *metaTx)
+	byNonce           *ByNonce       // senderID => (sorted map of tx nonce => *metaTx)
 	promoted          Hashes         // pre-allocated temporary buffer to write promoted to pending pool txn hashes
 	_chainDB          kv.RoDB        // remote db - use it wisely
 	_stateCache       kvcache.Cache
@@ -253,7 +247,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 		isLocalLRU:        localsHistory,
 		discardReasonsLRU: discardHistory,
 		//byNonce:                 &ByNonce{bySenderID: map[uint64]*btree.BTree{}, search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
-		byNonce:                 &ByNonce2{tree: btree.New(32), search: sortByNonce2{&metaTx{Tx: &TxSlot{}}}},
+		byNonce:                 &ByNonce{tree: btree.New(32), search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool, cfg.PendingSubPoolLimit),
 		baseFee:                 NewSubPool(BaseFeeSubPool, cfg.BaseFeeSubPoolLimit),
@@ -601,7 +595,7 @@ func (p *TxPool) cache() kvcache.Cache {
 func addTxs(blockNum uint64, cacheView kvcache.CacheView,
 	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
-	byNonce *ByNonce2, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
+	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -651,7 +645,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView,
 	stateChanges *remote.StateChangeBatch,
 	senders *sendersBatch, newTxs TxSlots, protocolBaseFee, pendingBaseFee uint64, baseFeeChanged bool,
 	pending *PendingPool, baseFee, queued *SubPool,
-	byNonce *ByNonce2, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
+	byNonce *ByNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -781,7 +775,7 @@ func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 // modify state_balance and state_nonce, potentially remove some elements (if transaction with some nonce is
 // included into a block), and finally, walk over the transaction records and update SubPool fields depending on
 // the actual presence of nonce gaps and what the balance is.
-func removeMined(byNonce *ByNonce2, minedTxs []*TxSlot, pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) error {
+func removeMined(byNonce *ByNonce, minedTxs []*TxSlot, pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) error {
 	noncesToRemove := map[uint64]uint64{}
 	for _, txn := range minedTxs {
 		nonce, ok := noncesToRemove[txn.senderID]
@@ -824,12 +818,12 @@ func removeMined(byNonce *ByNonce2, minedTxs []*TxSlot, pending *PendingPool, ba
 	return nil
 }
 
-func onBaseFeeChange(byNonce *ByNonce2, pendingBaseFee uint64) {
+func onBaseFeeChange(byNonce *ByNonce, pendingBaseFee uint64) {
 	defer func(t time.Time) { fmt.Printf("pool.go:816: %s,%d\n", time.Since(t), byNonce.tree.Len()) }(time.Now())
 	var prevSenderID uint64
 	var minFeeCap, minTip uint64
 	byNonce.tree.Ascend(func(i btree.Item) bool {
-		mt := i.(sortByNonce2).metaTx
+		mt := i.(sortByNonce).metaTx
 		if mt.Tx.senderID != prevSenderID {
 			minFeeCap, minTip = uint64(math.MaxUint64), uint64(math.MaxUint64) // min of given sender
 			prevSenderID = mt.Tx.senderID
@@ -852,7 +846,7 @@ func onBaseFeeChange(byNonce *ByNonce2, pendingBaseFee uint64) {
 	})
 }
 
-func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce2, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
+func onSenderChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *ByNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -1562,21 +1556,21 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 	return nil
 }
 
-type ByNonce2 struct {
+type ByNonce struct {
 	tree   *btree.BTree
-	search sortByNonce2
+	search sortByNonce
 }
 
-func (b *ByNonce2) ascend(senderID uint64, f func(*metaTx) bool) {
-	b.tree.AscendGreaterOrEqual(sortByNonce2{&metaTx{Tx: &TxSlot{senderID: senderID}}}, func(i btree.Item) bool {
-		mt := i.(sortByNonce2).metaTx
+func (b *ByNonce) ascend(senderID uint64, f func(*metaTx) bool) {
+	b.tree.AscendGreaterOrEqual(sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID}}}, func(i btree.Item) bool {
+		mt := i.(sortByNonce).metaTx
 		if mt.Tx.senderID != senderID {
 			return false
 		}
 		return f(mt)
 	})
 }
-func (b *ByNonce2) hasTxs(senderID uint64) bool {
+func (b *ByNonce) hasTxs(senderID uint64) bool {
 	has := false
 	b.ascend(senderID, func(*metaTx) bool {
 		has = true
@@ -1584,53 +1578,8 @@ func (b *ByNonce2) hasTxs(senderID uint64) bool {
 	})
 	return has
 }
-func (b *ByNonce2) get(senderID, txNonce uint64) *metaTx {
-	if found := b.tree.Get(sortByNonce2{&metaTx{Tx: &TxSlot{senderID: senderID, nonce: txNonce}}}); found != nil {
-		return found.(sortByNonce2).metaTx
-	}
-	return nil
-}
-
-//nolint
-func (b *ByNonce2) has(mt *metaTx) bool {
-	found := b.tree.Get(sortByNonce2{mt})
-	return found != nil
-}
-func (b *ByNonce2) delete(mt *metaTx) { b.tree.Delete(sortByNonce2{mt}) }
-func (b *ByNonce2) replaceOrInsert(mt *metaTx) *metaTx {
-	it := b.tree.ReplaceOrInsert(sortByNonce2{mt})
-	if it != nil {
-		return it.(sortByNonce2).metaTx
-	}
-	return nil
-}
-
-type ByNonce struct {
-	bySenderID map[uint64]*btree.BTree // senderID -> nonce ordered txs
-	search     sortByNonce
-}
-
-func (b *ByNonce) ascend(senderID uint64, f func(*metaTx) bool) {
-	byNonce, ok := b.bySenderID[senderID]
-	if !ok || byNonce == nil || byNonce.Len() == 0 {
-		return
-	}
-
-	byNonce.Ascend(func(i btree.Item) bool {
-		return f(i.(sortByNonce).metaTx)
-	})
-}
-func (b *ByNonce) hasTxs(senderID uint64) bool {
-	byNonce, ok := b.bySenderID[senderID]
-	return ok && byNonce != nil && byNonce.Len() > 0
-}
 func (b *ByNonce) get(senderID, txNonce uint64) *metaTx {
-	byNonce, ok := b.bySenderID[senderID]
-	if !ok || byNonce == nil || byNonce.Len() == 0 {
-		return nil
-	}
-	b.search.metaTx.Tx.nonce = txNonce
-	if found := byNonce.Get(b.search); found != nil {
+	if found := b.tree.Get(sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID, nonce: txNonce}}}); found != nil {
 		return found.(sortByNonce).metaTx
 	}
 	return nil
@@ -1638,30 +1587,12 @@ func (b *ByNonce) get(senderID, txNonce uint64) *metaTx {
 
 //nolint
 func (b *ByNonce) has(mt *metaTx) bool {
-	byNonce, ok := b.bySenderID[mt.Tx.senderID]
-	if !ok || byNonce == nil || byNonce.Len() == 0 {
-		return false
-	}
-	found := byNonce.Get(sortByNonce{mt})
+	found := b.tree.Get(sortByNonce{mt})
 	return found != nil
 }
-func (b *ByNonce) delete(mt *metaTx) {
-	byNonce, ok := b.bySenderID[mt.Tx.senderID]
-	if !ok || byNonce == nil || byNonce.Len() == 0 {
-		return
-	}
-	byNonce.Delete(sortByNonce{mt})
-	if byNonce.Len() == 0 {
-		delete(b.bySenderID, mt.Tx.senderID)
-	}
-}
+func (b *ByNonce) delete(mt *metaTx) { b.tree.Delete(sortByNonce{mt}) }
 func (b *ByNonce) replaceOrInsert(mt *metaTx) *metaTx {
-	byNonce, ok := b.bySenderID[mt.Tx.senderID]
-	if !ok || byNonce == nil || byNonce.Len() == 0 {
-		byNonce = btree.New(64)
-		b.bySenderID[mt.Tx.senderID] = byNonce
-	}
-	it := byNonce.ReplaceOrInsert(sortByNonce{mt})
+	it := b.tree.ReplaceOrInsert(sortByNonce{mt})
 	if it != nil {
 		return it.(sortByNonce).metaTx
 	}
