@@ -242,11 +242,10 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 	}
 
 	return &TxPool{
-		lock:              &sync.RWMutex{},
-		byHash:            map[string]*metaTx{},
-		isLocalLRU:        localsHistory,
-		discardReasonsLRU: discardHistory,
-		//byNonce:                 &ByNonce{bySenderID: map[uint64]*btree.BTree{}, search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
+		lock:                    &sync.RWMutex{},
+		byHash:                  map[string]*metaTx{},
+		isLocalLRU:              localsHistory,
+		discardReasonsLRU:       discardHistory,
 		byNonce:                 &ByNonce{tree: btree.New(32), search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool, cfg.PendingSubPoolLimit),
@@ -1562,7 +1561,10 @@ type ByNonce struct {
 }
 
 func (b *ByNonce) ascend(senderID uint64, f func(*metaTx) bool) {
-	b.tree.AscendGreaterOrEqual(sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID}}}, func(i btree.Item) bool {
+	s := b.search
+	s.metaTx.Tx.senderID = senderID
+	s.metaTx.Tx.nonce = 0
+	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
 		mt := i.(sortByNonce).metaTx
 		if mt.Tx.senderID != senderID {
 			return false
@@ -1579,7 +1581,10 @@ func (b *ByNonce) hasTxs(senderID uint64) bool {
 	return has
 }
 func (b *ByNonce) get(senderID, txNonce uint64) *metaTx {
-	if found := b.tree.Get(sortByNonce{&metaTx{Tx: &TxSlot{senderID: senderID, nonce: txNonce}}}); found != nil {
+	s := b.search
+	s.metaTx.Tx.senderID = senderID
+	s.metaTx.Tx.nonce = txNonce
+	if found := b.tree.Get(s); found != nil {
 		return found.(sortByNonce).metaTx
 	}
 	return nil
