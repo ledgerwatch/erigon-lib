@@ -823,7 +823,7 @@ func removeMined(byNonce *ByNonce2, minedTxs []*TxSlot, pending *PendingPool, ba
 }
 
 func onBaseFeeChange(byNonce *ByNonce2, pendingBaseFee uint64) {
-	defer func(t time.Time) { fmt.Printf("pool.go:816: %s\n", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { fmt.Printf("pool.go:816: %s,%d\n", time.Since(t), byNonce.tree.Len()) }(time.Now())
 	var prevSenderID uint64
 	var minFeeCap, minTip uint64
 	byNonce.tree.Ascend(func(i btree.Item) bool {
