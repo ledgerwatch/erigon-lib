@@ -146,8 +146,10 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 			j--
 			switch err {
 			case ErrAlreadyKnown: // Noop, but need to handle to not count these
+				reply.Errors[i] = AlreadyKnown.String()
 				reply.Imported[i] = txpool_proto.ImportResult_ALREADY_EXISTS
 			default:
+				reply.Errors[i] = err.Error()
 				reply.Imported[i] = txpool_proto.ImportResult_INTERNAL_ERROR
 			}
 		}

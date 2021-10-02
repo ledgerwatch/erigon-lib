@@ -142,6 +142,41 @@ const (
 	QueuedPoolOverflow  DiscardReason = 13
 )
 
+func (r DiscardReason) String() string {
+	switch r {
+	case NotSet:
+		return "not set"
+	case Success:
+		return "success"
+	case AlreadyKnown:
+		return "already known"
+	case Mined:
+		return "mined"
+	case ReplacedByHigherTip:
+		return "replaced by transaction with higher tip"
+	case UnderPriced:
+		return "underpriced"
+	case ReplaceUnderpriced:
+		return "replacement transaction underpriced"
+	case FeeTooLow:
+		return "fee too low"
+	case OversizedData:
+		return "oversized data"
+	case InvalidSender:
+		return "invalid sender"
+	case NegativeValue:
+		return "negative value"
+	case PendingPoolOverflow:
+		return "pending sub-pool is full"
+	case BaseFeePoolOverflow:
+		return "baseFee sub-pool is full"
+	case QueuedPoolOverflow:
+		return "queued sub-pool is full"
+	default:
+		panic(r)
+	}
+}
+
 // metaTx holds transaction and some metadata
 type metaTx struct {
 	Tx             *TxSlot
