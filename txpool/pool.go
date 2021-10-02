@@ -72,7 +72,7 @@ type Config struct {
 	BaseFeeSubPoolLimit int
 	QueuedSubPoolLimit  int
 
-	MinFeeCap uint256.Int
+	MinFeeCap uint64
 }
 
 var DefaultConfig = Config{
@@ -85,7 +85,7 @@ var DefaultConfig = Config{
 	BaseFeeSubPoolLimit: 200_000,
 	QueuedSubPoolLimit:  200_000,
 
-	MinFeeCap: *uint256.NewInt(1),
+	MinFeeCap: 1,
 }
 
 // Pool is interface for the transaction pool
@@ -531,7 +531,7 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 
 func (p *TxPool) validateTx(txn *TxSlot, isLocal bool) DiscardReason {
 	// Drop non-local transactions under our own minimal accepted gas price or tip
-	if !isLocal && txn.feeCap < p.cfg.MinFeeCap.Uint64() {
+	if !isLocal && txn.feeCap < p.cfg.MinFeeCap {
 		return UnderPriced
 	}
 	return Success
