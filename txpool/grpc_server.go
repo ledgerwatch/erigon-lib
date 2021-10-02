@@ -138,12 +138,12 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	})
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
 
-	for i, j := 0, 0; i < len(in.RlpTxs); i, j = i+1, j+1 { // some incoming txs may be rejected, so - need secnod index
+	j := 0
+	for i := 0; i < len(in.RlpTxs); i++ { // some incoming txs may be rejected, so - need secnod index
 		slots.Resize(uint(j + 1))
 		slots.txs[j] = &TxSlot{}
 		slots.isLocal[j] = true
-		if _, err := parseCtx.ParseTransaction(in.RlpTxs[j], 0, slots.txs[j], slots.senders.At(j)); err != nil {
-			j--
+		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[j], slots.senders.At(j)); err != nil {
 			switch err {
 			case ErrAlreadyKnown: // Noop, but need to handle to not count these
 				reply.Errors[i] = AlreadyKnown.String()
@@ -152,7 +152,9 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 				reply.Errors[i] = err.Error()
 				reply.Imported[i] = txpool_proto.ImportResult_INTERNAL_ERROR
 			}
+			continue
 		}
+		j++
 	}
 
 	discardReasons, err := s.txPool.AddLocalTxs(ctx, slots)
@@ -160,7 +162,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 		return nil, err
 	}
 
-	var j = 0
+	j = 0
 	for i := range reply.Imported {
 		if reply.Imported[i] != txpool_proto.ImportResult_SUCCESS {
 			j++
