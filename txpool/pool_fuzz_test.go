@@ -616,12 +616,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 }
 
-func bigEndian(n uint64) []byte {
-	num := [8]byte{}
-	binary.BigEndian.PutUint64(num[:], n)
-	return num[:]
-}
-
 func copyHashes(p *PendingPool) (hashes Hashes) {
 	for i := range p.best {
 		hashes = append(hashes, p.best[i].Tx.idHash[:]...)
