@@ -1226,6 +1226,9 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	if err := tx.Put(kv.PoolInfo, PoolPendingBaseFeeKey, encID); err != nil {
 		return err
 	}
+	if err := PutLastSeenBlock(tx, p.lastSeenBlock.Load(), encID); err != nil {
+		return err
+	}
 
 	// clean - in-memory data structure as later as possible - because if during this Tx will happen error,
 	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work

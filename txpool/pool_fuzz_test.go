@@ -604,8 +604,8 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		check(txs2, TxSlots{}, "fromDB")
 		//checkNotify(txs2, TxSlots{}, "fromDB")
-		//assert.Equal(pool.senders.senderID, p2.senders.senderID)
-		//assert.Equal(pool.senders.blockHeight.Load(), p2.senders.blockHeight.Load())
+		assert.Equal(pool.senders.senderID, p2.senders.senderID)
+		//assert.Equal(pool.lastSeenBlock.Load(), p2.lastSeenBlock.Load())
 
 		assert.Equal(pool.pending.Len(), p2.pending.Len())
 		assert.Equal(pool.baseFee.Len(), p2.baseFee.Len())
