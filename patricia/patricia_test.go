@@ -17,32 +17,19 @@
 package patricia
 
 import (
-	"strconv"
+	"fmt"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
-type computePrefixTest struct {
-	key       []byte
-	bitOffset int
-	bits      int
-	prefix    uint32
-}
-
-var computePrefixTests = []computePrefixTest{
-	{[]byte{0x0}, 0, 1, 1},
-	{[]byte{0x0}, 0, 2, 2},
-	{[]byte{0xff}, 0, 2, 0xff000002},
-	{[]byte{0xff}, 1, 2, 0xfe000002},
-}
-
-func TestComputePrefix(t *testing.T) {
-	for i, testSet := range computePrefixTests {
-		require := require.New(t)
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			p := computePrefix(testSet.key, testSet.bitOffset, testSet.bits)
-			require.Equal(testSet.prefix, p)
-		})
-	}
+func TestInserts(t *testing.T) {
+	n := &node{}
+	s := makestate(n)
+	d := s.transition(0x34)
+	fmt.Printf("tree:\n%s\nstate: %s\ndivergence %s\n", n, s, tostr(d))
+	s.diverge(d)
+	fmt.Printf("tree:\n%s\nstate: %s\n", n, s)
+	d = s.transition(0x56)
+	fmt.Printf("tree:\n%s\nstate: %s\ndivergence %s\n", n, s, tostr(d))
+	s.diverge(d)
+	fmt.Printf("tree:\n%s\nstate: %s\n", n, s)
 }
