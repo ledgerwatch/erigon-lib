@@ -84,10 +84,10 @@ func (s *state) transition(b byte) uint32 {
 	bitsLeft := 8 // Bits in b to process
 	b32 := uint32(b) << 24
 	for bitsLeft > 0 {
-		fmt.Printf("bitsLeft = %d, b32 = %x\n", bitsLeft, b32)
+		//fmt.Printf("bitsLeft = %d, b32 = %x\n", bitsLeft, b32)
 		if s.head == 0 {
 			// tail has not been determined yet, do it now
-			if b32&0x80 == 0 {
+			if b32&0x80000000 == 0 {
 				s.tail = s.n.p0
 			} else {
 				s.tail = s.n.p1
@@ -103,10 +103,10 @@ func (s *state) transition(b byte) uint32 {
 			b32 <<= firstDiff
 			if firstDiff >= tailLen {
 				// Need to switch to the next node
-				if s.head&0x80 == 0 {
+				if s.head&0x80000000 == 0 {
 					if s.n.n0 == nil {
 						s.n.n0 = &node{}
-						if b32&0x80 == 0 {
+						if b32&0x80000000 == 0 {
 							s.n.n0.p0 = b32 | uint32(bitsLeft)
 						} else {
 							s.n.n0.p1 = b32 | uint32(bitsLeft)
@@ -116,7 +116,7 @@ func (s *state) transition(b byte) uint32 {
 				} else {
 					if s.n.n1 == nil {
 						s.n.n1 = &node{}
-						if b32&0x80 == 0 {
+						if b32&0x80000000 == 0 {
 							s.n.n1.p0 = b32 | uint32(bitsLeft)
 						} else {
 							s.n.n1.p1 = b32 | uint32(bitsLeft)
@@ -139,10 +139,10 @@ func (s *state) transition(b byte) uint32 {
 			bitsLeft -= tailLen
 			b32 <<= tailLen
 			// Switch to the next node
-			if s.head&0x80 == 0 {
+			if s.head&0x80000000 == 0 {
 				if s.n.n0 == nil {
 					s.n.n0 = &node{}
-					if b32&0x80 == 0 {
+					if b32&0x80000000 == 0 {
 						s.n.n0.p0 = b32 | uint32(bitsLeft)
 					} else {
 						s.n.n0.p1 = b32 | uint32(bitsLeft)
@@ -152,7 +152,7 @@ func (s *state) transition(b byte) uint32 {
 			} else {
 				if s.n.n1 == nil {
 					s.n.n1 = &node{}
-					if b32&0x80 == 0 {
+					if b32&0x80000000 == 0 {
 						s.n.n1.p0 = b32 | uint32(bitsLeft)
 					} else {
 						s.n.n1.p1 = b32 | uint32(bitsLeft)
@@ -176,32 +176,38 @@ func (s *state) transition(b byte) uint32 {
 }
 
 func (s *state) diverge(divergence uint32) {
-	if divergence&0x80 == 0 {
-		if s.n.p0 == 0 {
-			s.n.p0 = divergence
-			s.head = divergence
-			s.tail = 0
-			return
+	/*
+		if divergence&0x80000000 == 0 {
+			if s.n.p0 == 0 {
+				s.n.p0 = divergence
+				s.head = divergence
+				s.tail = 0
+				return
+			}
+		} else {
+			if s.n.p1 == 0 {
+				s.n.p1 = divergence
+				s.head = divergence
+				s.tail = 0
+				return
+			}
 		}
-	} else {
-		if s.n.p1 == 0 {
-			s.n.p1 = divergence
-			s.head = divergence
-			s.tail = 0
-			return
-		}
-	}
+	*/
 	if s.tail == 0 {
 		// try to add to the existing head
+		//fmt.Printf("adding divergence to existing head\n")
 		dLen := int(divergence & 0x1f)
 		headLen := int(s.head & 0x1f)
 		d32 := divergence & 0xffffffe0
+		//fmt.Printf("headLen %d + dLen %d = %d\n", headLen, dLen, headLen+dLen)
 		if headLen+dLen > 27 {
 			mask := ^(uint32(1)<<(headLen+5) - 1)
+			//fmt.Printf("mask = %b\n", mask)
 			s.head |= (d32 & mask) >> headLen
 			s.head += uint32(27 - headLen)
+			//fmt.Printf("s.head %s\n", tostr(s.head))
 			var dn node
-			if s.head&0x80 == 0 {
+			if s.head&0x80000000 == 0 {
 				s.n.p0 = s.head
 				s.n.n0 = &dn
 			} else {
@@ -215,10 +221,13 @@ func (s *state) diverge(divergence uint32) {
 			dLen -= (27 - headLen)
 			headLen = 0
 		}
+		//fmt.Printf("headLen %d + dLen %d = %d\n", headLen, dLen, headLen+dLen)
 		mask := ^(uint32(1)<<(32-dLen) - 1)
+		//fmt.Printf("mask = %b\n", mask)
 		s.head |= (d32 & mask) >> headLen
 		s.head += uint32(dLen)
-		if s.head&0x80 == 0 {
+		//fmt.Printf("s.head %s\n", tostr(s.head))
+		if s.head&0x80000000 == 0 {
 			s.n.p0 = s.head
 		} else {
 			s.n.p1 = s.head
@@ -227,10 +236,10 @@ func (s *state) diverge(divergence uint32) {
 	}
 	// create a new node
 	var dn node
-	if divergence&0x80 == 0 {
+	if divergence&0x80000000 == 0 {
 		dn.p0 = divergence
 		dn.p1 = s.tail
-		if s.head&0x80 == 0 {
+		if s.head&0x80000000 == 0 {
 			dn.n1 = s.n.n0
 		} else {
 			dn.n1 = s.n.n1
@@ -238,18 +247,30 @@ func (s *state) diverge(divergence uint32) {
 	} else {
 		dn.p1 = divergence
 		dn.p0 = s.tail
-		if s.head&0x80 == 0 {
+		if s.head&0x80000000 == 0 {
 			dn.n0 = s.n.n0
 		} else {
 			dn.n0 = s.n.n1
 		}
 	}
-	if s.head&0x80 == 0 {
+	if s.head&0x80000000 == 0 {
 		s.n.n0 = &dn
+		s.n.p0 = s.head
 	} else {
 		s.n.n1 = &dn
+		s.n.p1 = s.head
 	}
 	s.n = &dn
-	s.head = s.tail
+	s.head = divergence
 	s.tail = 0
+}
+
+func (n *node) insert(key []byte) {
+	s := makestate(n)
+	for _, b := range key {
+		divergence := s.transition(b)
+		if divergence != 0 {
+			s.diverge(divergence)
+		}
+	}
 }
