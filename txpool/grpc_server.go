@@ -168,6 +168,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 		}
 
 		reply.Imported[i] = mapDiscardReasonToProto(discardReasons[j])
+		reply.Errors[i] = discardReasons[j].String()
 		j++
 	}
 	return reply, nil
@@ -175,7 +176,8 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 
 func mapDiscardReasonToProto(reason DiscardReason) txpool_proto.ImportResult {
 	switch reason {
-	case Success: // Noop, but need to handle to not count these
+	case Success:
+		return txpool_proto.ImportResult_SUCCESS
 	case AlreadyKnown:
 		return txpool_proto.ImportResult_ALREADY_EXISTS
 	case UnderPriced, ReplaceUnderpriced, FeeTooLow:
@@ -185,7 +187,6 @@ func mapDiscardReasonToProto(reason DiscardReason) txpool_proto.ImportResult {
 	default:
 		return txpool_proto.ImportResult_INTERNAL_ERROR
 	}
-	return txpool_proto.ImportResult_INTERNAL_ERROR
 }
 
 func (s *GrpcServer) OnAdd(req *txpool_proto.OnAddRequest, stream txpool_proto.Txpool_OnAddServer) error {

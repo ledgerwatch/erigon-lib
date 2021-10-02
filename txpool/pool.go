@@ -173,7 +173,7 @@ func (r DiscardReason) String() string {
 	case QueuedPoolOverflow:
 		return "queued sub-pool is full"
 	default:
-		panic(r)
+		panic(fmt.Sprintf("discard reason: %d", r))
 	}
 }
 
@@ -1310,7 +1310,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		if reason := p.validateTx(txn, isLocalTx); reason != NotSet && reason != Success {
 			return nil
 		}
-
 		txs.Resize(uint(i + 1))
 		txs.txs[i] = txn
 		txs.isLocal[i] = isLocalTx
