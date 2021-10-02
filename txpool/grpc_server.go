@@ -129,7 +129,6 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	defer tx.Rollback()
 
 	var slots TxSlots
-	slots.Resize(uint(len(in.RlpTxs)))
 	parseCtx := NewTxParseContext(s.rules, s.chainID)
 	parseCtx.Reject(func(hash []byte) error {
 		if known, _ := s.txPool.IdHashKnown(tx, hash); known {
@@ -140,6 +139,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
 
 	for i, j := 0, 0; i < len(in.RlpTxs); i, j = i+1, j+1 { // some incoming txs may be rejected, so - need secnod index
+		slots.Resize(uint(j + 1))
 		slots.txs[j] = &TxSlot{}
 		slots.isLocal[j] = true
 		if _, err := parseCtx.ParseTransaction(in.RlpTxs[j], 0, slots.txs[j], slots.senders.At(j)); err != nil {
@@ -157,32 +157,33 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	if err != nil {
 		return nil, err
 	}
-	//TODO: concept of discardReasonsLRU not really implemented yet. Indices are not match here!
-	_ = discardReasons
-	/*
-		for i, err := range discardReasonsLRU {
-			if err == nil {
-				continue
-			}
 
-			reply.Errors[i] = err.Error()
-
-			// Track a few interesting failure types
-			switch err {
-			case Success: // Noop, but need to handle to not count these
-
-			//case core.ErrAlreadyKnown:
-			//	reply.Imported[i] = txpool_proto.ImportResult_ALREADY_EXISTS
-			//case core.ErrUnderpriced, core.ErrReplaceUnderpriced:
-			//	reply.Imported[i] = txpool_proto.ImportResult_FEE_TOO_LOW
-			//case core.ErrInvalidSender, core.ErrGasLimit, core.ErrNegativeValue, core.ErrOversizedData:
-			//	reply.Imported[i] = txpool_proto.ImportResult_INVALID
-			default:
-				reply.Imported[i] = txpool_proto.ImportResult_INTERNAL_ERROR
-			}
+	var j = 0
+	for i := range reply.Imported {
+		if reply.Imported[i] != txpool_proto.ImportResult_SUCCESS {
+			j++
+			continue
 		}
-	*/
+
+		reply.Imported[i] = mapDiscardReasonToProto(discardReasons[j])
+		j++
+	}
 	return reply, nil
+}
+
+func mapDiscardReasonToProto(reason DiscardReason) txpool_proto.ImportResult {
+	switch reason {
+	case Success: // Noop, but need to handle to not count these
+	case AlreadyKnown:
+		return txpool_proto.ImportResult_ALREADY_EXISTS
+	case UnderPriced, ReplaceUnderpriced, FeeTooLow:
+		return txpool_proto.ImportResult_FEE_TOO_LOW
+	case InvalidSender, NegativeValue, OversizedData:
+		return txpool_proto.ImportResult_INVALID
+	default:
+		return txpool_proto.ImportResult_INTERNAL_ERROR
+	}
+	return txpool_proto.ImportResult_INTERNAL_ERROR
 }
 
 func (s *GrpcServer) OnAdd(req *txpool_proto.OnAddRequest, stream txpool_proto.Txpool_OnAddServer) error {

@@ -132,13 +132,14 @@ const (
 	Mined               DiscardReason = 3
 	ReplacedByHigherTip DiscardReason = 4
 	UnderPriced         DiscardReason = 5
-	FeeTooLow           DiscardReason = 6
-	OversizedData       DiscardReason = 7
-	InvalidSender       DiscardReason = 8
-	NegativeValue       DiscardReason = 9
-	PendingPoolOverflow DiscardReason = 10
-	BaseFeePoolOverflow DiscardReason = 11
-	QueuedPoolOverflow  DiscardReason = 12
+	ReplaceUnderpriced  DiscardReason = 6 // if a transaction is attempted to be replaced with a different one without the required price bump.
+	FeeTooLow           DiscardReason = 7
+	OversizedData       DiscardReason = 8
+	InvalidSender       DiscardReason = 9
+	NegativeValue       DiscardReason = 10 // ensure no one is able to specify a transaction with a negative value.
+	PendingPoolOverflow DiscardReason = 11
+	BaseFeePoolOverflow DiscardReason = 12
+	QueuedPoolOverflow  DiscardReason = 13
 )
 
 // metaTx holds transaction and some metadata
