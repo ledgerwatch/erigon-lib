@@ -435,7 +435,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 				assert.True(pool.byNonce.has(tx), "%s, %d, %x", msg, tx.Tx.nonce, tx.Tx.idHash)
 				_, ok = pool.byHash[string(i.idHash[:])]
 				assert.True(ok, msg)
-				assert.GreaterOrEqual(tx.Tx.feeCap, pool.cfg.MinFeeCap.Uint64())
+				assert.GreaterOrEqual(tx.Tx.feeCap, pool.cfg.MinFeeCap)
 			})
 
 			// all txs in side data structures must be in some queue
