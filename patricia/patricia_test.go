@@ -86,3 +86,15 @@ func TestInserts2(t *testing.T) {
 	vs, ok = n.get([]byte{0xed})
 	fmt.Printf("vs = %x, ok = %t\n", vs, ok)
 }
+
+func TestFindMatches1(t *testing.T) {
+	var pt PatriciaTree
+	pt.Insert([]byte("wolf"), []byte{1})
+	pt.Insert([]byte("winter"), []byte{2})
+	pt.Insert([]byte("wolfs"), []byte{3})
+	fmt.Printf("n\n%s", &pt.root)
+	matches := pt.FindMatches([]byte("Who lives here in winter, wolfs?"))
+	for _, m := range matches {
+		fmt.Printf("%+v\n", m)
+	}
+}

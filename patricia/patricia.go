@@ -287,9 +287,7 @@ func (n *node) insert(key []byte, value []byte) {
 			s.diverge(divergence)
 		}
 	}
-	//fmt.Printf("n.insert before s.insert: %s\n", s)
 	s.insert(value)
-	//fmt.Printf("n.insert after s.insert: %s\n", s)
 }
 
 func (s *state) insert(value []byte) {
@@ -322,4 +320,55 @@ func (n *node) get(key []byte) ([][]byte, bool) {
 		return nil, false
 	}
 	return s.n.values, true
+}
+
+type PatriciaTree struct {
+	root node
+}
+
+func (pt *PatriciaTree) Insert(key []byte, value []byte) {
+	pt.root.insert(key, value)
+}
+
+func (pt PatriciaTree) Get(key []byte) ([][]byte, bool) {
+	return pt.root.get(key)
+}
+
+type Match struct {
+	Pos   int
+	Slice []byte
+	Vals  [][]byte
+}
+
+func (pt PatriciaTree) FindMatches(data []byte) []Match {
+	var states []*state // pipeline of states
+	var pos []int       // starting positions
+	var matches []Match
+	for i, b := range data {
+		s := makestate(&pt.root)
+		states = append(states, s)
+		pos = append(pos, i)
+		// adjust existing pipeline
+		j := 0
+		for j < len(states) {
+			s := states[j]
+			if d := s.transition(b); d == 0 {
+				if s.tail == 0 {
+					// emit the match
+					matches = append(matches, Match{Pos: pos[j], Slice: data[pos[j] : i+1], Vals: s.n.values})
+				}
+				j++
+			} else {
+				// divergence, remove this pipeline
+				if j < len(states)-1 {
+					states[j] = states[len(states)-1]
+					pos[j] = pos[len(pos)-1]
+				}
+				states = states[:len(states)-1]
+				pos = pos[:len(pos)-1]
+				// not incrementing j, will go over this index again
+			}
+		}
+	}
+	return matches
 }
