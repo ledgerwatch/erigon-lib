@@ -71,6 +71,8 @@ type Config struct {
 	PendingSubPoolLimit int
 	BaseFeeSubPoolLimit int
 	QueuedSubPoolLimit  int
+
+	MinFeeCap uint256.Int
 }
 
 var DefaultConfig = Config{
@@ -82,6 +84,8 @@ var DefaultConfig = Config{
 	PendingSubPoolLimit: 100_000,
 	BaseFeeSubPoolLimit: 200_000,
 	QueuedSubPoolLimit:  200_000,
+
+	MinFeeCap: *uint256.NewInt(1),
 }
 
 // Pool is interface for the transaction pool
@@ -122,7 +126,7 @@ const (
 type DiscardReason uint8
 
 const (
-	//TODO: all below codes are not fixed yet. Need add them to discardLocked func. Need save discard reasons to LRU or DB.
+	NotSet              DiscardReason = 0 // analog of "nil-value", means it will be set in future
 	Success             DiscardReason = 1
 	AlreadyKnown        DiscardReason = 2
 	Mined               DiscardReason = 3
@@ -376,11 +380,11 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if l == 0 {
 		return nil
 	}
-	newTxs := *p.unprocessedRemoteTxs
-
-	if err := newTxs.Valid(); err != nil {
+	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs)
+	if err != nil {
 		return err
 	}
+
 	err = p.senders.onNewTxs(newTxs)
 	if err != nil {
 		return err
@@ -529,8 +533,58 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), newTxs.isLocal[i])
 	}
 }
-func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error) {
-	if err := newTxs.Valid(); err != nil {
+
+func (p *TxPool) validateTx(txn *TxSlot, isLocal bool) DiscardReason {
+	// Drop non-local transactions under our own minimal accepted gas price or tip
+	if !isLocal && txn.feeCap < p.cfg.MinFeeCap.Uint64() {
+		return UnderPriced
+	}
+	return Success
+}
+
+func (p *TxPool) validateTxs(txs TxSlots) ([]DiscardReason, TxSlots, error) {
+	reasons := make([]DiscardReason, len(txs.txs))
+	newTxs := TxSlots{}
+
+	if err := txs.Valid(); err != nil {
+		return reasons, newTxs, err
+	}
+
+	j := 0
+	for i := range txs.txs {
+		reasons[i] = p.validateTx(txs.txs[i], true)
+		if reasons[i] != Success {
+			continue
+		} else {
+			reasons[i] = NotSet
+		}
+		newTxs.Resize(uint(j + 1))
+		newTxs.txs[j] = txs.txs[i]
+		newTxs.isLocal[j] = true
+		copy(newTxs.senders.At(j), txs.senders.At(i))
+		j++
+	}
+	return reasons, newTxs, nil
+}
+
+func fillDiscardReasons(reasons []DiscardReason, newTxs TxSlots, discardReasonsLRU *simplelru.LRU) []DiscardReason {
+	for i := range reasons {
+		if reasons[i] != NotSet {
+			continue
+		}
+		reason, ok := discardReasonsLRU.Get(string(newTxs.txs[i].idHash[:]))
+		if ok {
+			reasons[i] = reason.(DiscardReason)
+		} else {
+			reasons[i] = Success
+		}
+	}
+	return reasons
+}
+
+func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]DiscardReason, error) {
+	reasons, newTxs, err := p.validateTxs(newTransactions)
+	if err != nil {
 		return nil, err
 	}
 
@@ -571,15 +625,9 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReas
 		}
 	}
 
-	reasons := make([]DiscardReason, len(newTxs.txs))
-	for i := range newTxs.txs {
-		reason, ok := p.discardReasonsLRU.Get(string(newTxs.txs[i].idHash[:]))
-		if ok {
-			reasons[i] = reason.(DiscardReason)
-		}
-	}
-	return reasons, nil
+	return fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU), nil
 }
+
 func (p *TxPool) coreDB() kv.RoDB {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -1211,15 +1259,13 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	i := 0
 	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
 		addr, txRlp := v[:20], v[20:]
-		txs.Resize(uint(i + 1))
-		txs.txs[i] = &TxSlot{}
+		txn := &TxSlot{}
 
-		_, err := parseCtx.ParseTransaction(txRlp, 0, txs.txs[i], nil)
+		_, err := parseCtx.ParseTransaction(txRlp, 0, txn, nil)
 		if err != nil {
 			return fmt.Errorf("err: %w, rlp: %x\n", err, txRlp)
 		}
-		txs.txs[i].rlp = nil // means that we don't need store it in db anymore
-		copy(txs.senders.At(i), addr)
+		txn.rlp = nil // means that we don't need store it in db anymore
 
 		id, ok := p.senders.senderIDs[string(addr)]
 		if !ok {
@@ -1228,11 +1274,19 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			p.senders.senderIDs[string(addr)] = id
 			p.senders.senderID2Addr[id] = string(addr)
 		}
-		txs.txs[i].senderID = id
+		txn.senderID = id
 		binary.BigEndian.Uint64(v)
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
+
+		if reason := p.validateTx(txn, isLocalTx); reason != NotSet && reason != Success {
+			return nil
+		}
+
+		txs.Resize(uint(i + 1))
+		txs.txs[i] = txn
 		txs.isLocal[i] = isLocalTx
+		copy(txs.senders.At(i), addr)
 		i++
 		return nil
 	}); err != nil {
