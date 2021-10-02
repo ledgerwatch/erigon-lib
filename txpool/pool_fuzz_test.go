@@ -315,10 +315,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 		if pendingBaseFee == 0 {
 			t.Skip()
 		}
-		if len(senderAddr) < 1+1+1 {
-			t.Skip()
-		}
-
 		senders, senderIDs, txs, ok := poolsFromFuzzBytes(txNonce, values, tips, feeCap, senderAddr)
 		if !ok {
 			t.Skip()
