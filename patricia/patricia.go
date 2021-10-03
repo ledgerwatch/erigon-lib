@@ -319,7 +319,7 @@ func (n *node) get(key []byte) ([][]byte, bool) {
 	if s.tail != 0 {
 		return nil, false
 	}
-	return s.n.values, true
+	return s.n.values, len(s.n.values) > 0
 }
 
 type PatriciaTree struct {
@@ -353,7 +353,7 @@ func (pt PatriciaTree) FindMatches(data []byte) []Match {
 		for j < len(states) {
 			s := states[j]
 			if d := s.transition(b); d == 0 {
-				if s.tail == 0 {
+				if s.tail == 0 && len(s.n.values) > 0 {
 					// emit the match
 					matches = append(matches, Match{Pos: pos[j], Slice: data[pos[j] : i+1], Vals: s.n.values})
 				}

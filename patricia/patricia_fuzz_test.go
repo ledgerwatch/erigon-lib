@@ -47,9 +47,9 @@ func FuzzPatricia(f *testing.F) {
 				i++
 				valLen--
 			}
-			if len(key) == 0 {
-				continue
-			}
+			//if len(key) == 0 {
+			//	continue
+			//}
 			n.insert(key, val)
 			m, _ := keyMap[string(key)]
 			m = append(m, val)
@@ -66,9 +66,9 @@ func FuzzPatricia(f *testing.F) {
 				i++
 				keyLen--
 			}
-			if len(key) == 0 {
-				continue
-			}
+			//if len(key) == 0 {
+			//	continue
+			//}
 			if _, ok := keyMap[string(key)]; !ok {
 				testKeys = append(testKeys, key)
 			}
