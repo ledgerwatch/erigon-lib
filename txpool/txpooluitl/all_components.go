@@ -18,6 +18,7 @@ package txpooluitl
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/holiman/uint256"
@@ -45,6 +46,9 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 		return nil, 0, err
 	}
 	if cc != nil && !force {
+		if cc.ChainID.Uint64() == 0 {
+			return nil, 0, fmt.Errorf("wrong chain config")
+		}
 		return cc, blockNum, nil
 	}
 
@@ -84,6 +88,9 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 		return nil
 	}); err != nil {
 		return nil, 0, err
+	}
+	if cc.ChainID.Uint64() == 0 {
+		return nil, 0, fmt.Errorf("wrong chain config")
 	}
 	return cc, blockNum, nil
 }
