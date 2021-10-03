@@ -18,6 +18,7 @@ package txpooluitl
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/holiman/uint256"
@@ -101,6 +102,7 @@ func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, 
 
 	rules := chain.NewRules(chainConfig, blockNum)
 	chainID, _ := uint256.FromBig(chainConfig.ChainID)
+	fmt.Printf("c: %d,%d\n", chainConfig.ChainID.Uint64(), chainID.Uint64())
 	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, rules, *chainID)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
