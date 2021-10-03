@@ -347,7 +347,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		ctx.chainId.Set(&ctx.cfg.chainID)
 	}
 	if ctx.chainId != ctx.cfg.chainID {
-		return 0, fmt.Errorf("%s: %s", ParseTransactionErrorPrefix, "invalid chainID")
+		return 0, fmt.Errorf("%s: %s, %d (expected %d)", ParseTransactionErrorPrefix, "invalid chainID", ctx.chainId, ctx.cfg.chainID)
 	}
 
 	// Next follows R of the signature
