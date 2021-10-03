@@ -18,7 +18,6 @@ package txpooluitl
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/holiman/uint256"
