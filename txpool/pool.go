@@ -321,6 +321,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	p.lastSeenBlock.Store(stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight)
 	if !p.started.Load() {
 		if err := p.fromDB(ctx, tx, coreTx); err != nil {
 			return err
@@ -344,7 +345,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 	baseFee := stateChanges.PendingBlockBaseFee
-	p.lastSeenBlock.Store(stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight)
 
 	pendingBaseFee, baseFeeChanged := p.setBaseFee(baseFee)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
@@ -1287,11 +1287,13 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 }
 
 func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
-	lastSeenBlock, err := LastSeenBlock(tx)
-	if err != nil {
-		return err
+	if p.lastSeenBlock.Load() == 0 {
+		lastSeenBlock, err := LastSeenBlock(tx)
+		if err != nil {
+			return err
+		}
+		p.lastSeenBlock.Store(lastSeenBlock)
 	}
-	p.lastSeenBlock.Store(lastSeenBlock)
 
 	cacheView, err := p._stateCache.View(ctx, coreTx)
 	if err != nil {
@@ -1303,7 +1305,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("ccc: %d\n", p.chainID.Uint64())
 
 	txs := TxSlots{}
 	parseCtx := NewTxParseContext(p.rules, p.chainID)

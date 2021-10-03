@@ -31,7 +31,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
-func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB) (cc *chain.Config, blockNum uint64, err error) {
+func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB, force bool) (cc *chain.Config, blockNum uint64, err error) {
 	if err = txPoolDB.View(ctx, func(tx kv.Tx) error {
 		cc, err = txpool.ChainConfig(tx)
 		if err != nil {
@@ -45,7 +45,7 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 	}); err != nil {
 		return nil, 0, err
 	}
-	if cc != nil {
+	if cc != nil && !force {
 		return cc, blockNum, nil
 	}
 
@@ -95,7 +95,7 @@ func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, 
 		return nil, nil, nil, nil, nil, err
 	}
 
-	chainConfig, blockNum, err := SaveChainConfigIfNeed(ctx, chainDB, txPoolDB)
+	chainConfig, blockNum, err := SaveChainConfigIfNeed(ctx, chainDB, txPoolDB, true)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
