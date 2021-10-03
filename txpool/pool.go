@@ -1315,7 +1315,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 
 		_, err := parseCtx.ParseTransaction(txRlp, 0, txn, nil)
 		if err != nil {
-			return fmt.Errorf("err: %w, rlp: %x\n", err, txRlp)
+			return fmt.Errorf("err: %w, rlp: %x", err, txRlp)
 		}
 		txn.rlp = nil // means that we don't need store it in db anymore
 
