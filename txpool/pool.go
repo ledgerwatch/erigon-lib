@@ -1929,11 +1929,11 @@ func (mt *metaTx) Less(than *metaTx) bool {
 	if mt.subPool != than.subPool {
 		return mt.subPool < than.subPool
 	}
-	if mt.Tx.nonce != than.Tx.nonce {
-		return mt.Tx.nonce < than.Tx.nonce
-	}
 	if mt.effectiveTip != than.effectiveTip {
 		return mt.effectiveTip < than.effectiveTip
+	}
+	if mt.Tx.nonce != than.Tx.nonce {
+		return mt.Tx.nonce < than.Tx.nonce
 	}
 	return mt.timestamp < than.timestamp
 }
