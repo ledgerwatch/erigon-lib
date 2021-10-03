@@ -1303,6 +1303,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	}); err != nil {
 		return err
 	}
+	fmt.Printf("ccc: %d\n", p.chainID.Uint64())
 
 	txs := TxSlots{}
 	parseCtx := NewTxParseContext(p.rules, p.chainID)
@@ -1390,14 +1391,12 @@ func ChainConfig(tx kv.Getter) (*chain.Config, error) {
 		return nil, err
 	}
 	if len(v) == 0 {
-		fmt.Printf("not found\n")
 		return nil, nil
 	}
 	var config chain.Config
 	if err := json.Unmarshal(v, &config); err != nil {
 		return nil, fmt.Errorf("invalid chain config JSON in pool db: %w", err)
 	}
-	fmt.Printf("found: %#v\n", config)
 	return &config, nil
 }
 func PutChainConfig(tx kv.Putter, cc *chain.Config, buf []byte) error {
