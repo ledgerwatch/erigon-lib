@@ -1649,6 +1649,7 @@ type BySenderAndNonce struct {
 	search sortByNonce
 }
 
+//nolint
 func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64) {
 	s := b.search
 	s.metaTx.Tx.senderID = senderID
