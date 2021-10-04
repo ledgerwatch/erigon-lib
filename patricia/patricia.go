@@ -356,16 +356,14 @@ func (mf *MatchFinder) FindMatches(pt PatriciaTree, data []byte) []*Match {
 	stateCount := 0
 	matchCount := 0
 	for i, b := range data {
-		if stateCount >= len(mf.states) {
-			s := makestate(&pt.root)
-			mf.states = append(mf.states, s)
+		if stateCount == len(mf.states) {
+			mf.states = append(mf.states, makestate(&pt.root))
 			mf.pos = append(mf.pos, i)
 		} else {
-			s := mf.states[stateCount]
-			s.reset(&pt.root)
+			mf.states[stateCount].reset(&pt.root)
 			mf.pos[stateCount] = i
-			stateCount++
 		}
+		stateCount++
 		// adjust existing pipeline
 		j := 0
 		for j < stateCount {
@@ -374,13 +372,13 @@ func (mf *MatchFinder) FindMatches(pt PatriciaTree, data []byte) []*Match {
 				if s.tail == 0 && len(s.n.values) > 0 {
 					// emit the match
 					var m *Match
-					if matchCount >= len(mf.matches) {
+					if matchCount == len(mf.matches) {
 						m = &Match{}
 						mf.matches = append(mf.matches, m)
 					} else {
 						m = mf.matches[matchCount]
-						matchCount++
 					}
+					matchCount++
 					m.Pos = mf.pos[j]
 					m.Slice = data[mf.pos[j] : i+1]
 					m.Vals = s.n.values
@@ -389,7 +387,7 @@ func (mf *MatchFinder) FindMatches(pt PatriciaTree, data []byte) []*Match {
 			} else {
 				// divergence, remove this pipeline
 				if j < stateCount-1 {
-					mf.states[j] = mf.states[stateCount-1]
+					mf.states[j], mf.states[stateCount-1] = mf.states[stateCount-1], mf.states[j] // Need to swap to keep state objects distinct
 					mf.pos[j] = mf.pos[stateCount-1]
 				}
 				stateCount--
