@@ -82,6 +82,12 @@ func (s *state) String() string {
 	return fmt.Sprintf("%p head %s tail %s", s.n, tostr(s.head), tostr(s.tail))
 }
 
+func (s *state) reset(n *node) {
+	s.n = n
+	s.head = 0
+	s.tail = 0
+}
+
 func makestate(n *node) *state {
 	return &state{n: n, head: 0, tail: 0}
 }
@@ -340,35 +346,56 @@ type Match struct {
 	Vals  [][]byte
 }
 
-func (pt PatriciaTree) FindMatches(data []byte) []Match {
-	var states []*state // pipeline of states
-	var pos []int       // starting positions
-	var matches []Match
+type MatchFinder struct {
+	states  []*state
+	pos     []int
+	matches []*Match
+}
+
+func (mf *MatchFinder) FindMatches(pt PatriciaTree, data []byte) []*Match {
+	stateCount := 0
+	matchCount := 0
 	for i, b := range data {
-		s := makestate(&pt.root)
-		states = append(states, s)
-		pos = append(pos, i)
+		if stateCount >= len(mf.states) {
+			s := makestate(&pt.root)
+			mf.states = append(mf.states, s)
+			mf.pos = append(mf.pos, i)
+		} else {
+			s := mf.states[stateCount]
+			s.reset(&pt.root)
+			mf.pos[stateCount] = i
+			stateCount++
+		}
 		// adjust existing pipeline
 		j := 0
-		for j < len(states) {
-			s := states[j]
+		for j < stateCount {
+			s := mf.states[j]
 			if d := s.transition(b); d == 0 {
 				if s.tail == 0 && len(s.n.values) > 0 {
 					// emit the match
-					matches = append(matches, Match{Pos: pos[j], Slice: data[pos[j] : i+1], Vals: s.n.values})
+					var m *Match
+					if matchCount >= len(mf.matches) {
+						m = &Match{}
+						mf.matches = append(mf.matches, m)
+					} else {
+						m = mf.matches[matchCount]
+						matchCount++
+					}
+					m.Pos = mf.pos[j]
+					m.Slice = data[mf.pos[j] : i+1]
+					m.Vals = s.n.values
 				}
 				j++
 			} else {
 				// divergence, remove this pipeline
-				if j < len(states)-1 {
-					states[j] = states[len(states)-1]
-					pos[j] = pos[len(pos)-1]
+				if j < stateCount-1 {
+					mf.states[j] = mf.states[stateCount-1]
+					mf.pos[j] = mf.pos[stateCount-1]
 				}
-				states = states[:len(states)-1]
-				pos = pos[:len(pos)-1]
+				stateCount--
 				// not incrementing j, will go over this index again
 			}
 		}
 	}
-	return matches
+	return mf.matches[:matchCount]
 }

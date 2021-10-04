@@ -93,8 +93,9 @@ func TestFindMatches1(t *testing.T) {
 	pt.Insert([]byte("winter"), []byte{2})
 	pt.Insert([]byte("wolfs"), []byte{3})
 	fmt.Printf("n\n%s", &pt.root)
-	matches := pt.FindMatches([]byte("Who lives here in winter, wolfs?"))
+	var mf MatchFinder
+	matches := mf.FindMatches(pt, []byte("Who lives here in winter, wolfs?"))
 	for _, m := range matches {
-		fmt.Printf("%+v\n", m)
+		fmt.Printf("%+v\n", *m)
 	}
 }
