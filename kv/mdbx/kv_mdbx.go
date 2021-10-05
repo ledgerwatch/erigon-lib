@@ -217,9 +217,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		return nil, err
 	}
 
-	fmt.Printf("before open\n")
 	err = env.Open(opts.path, opts.flags, 0664)
-	fmt.Printf("after open\n")
 	if err != nil {
 		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), callers(10))
 	}
@@ -315,7 +313,6 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 			return err
 		}
 
-		fmt.Printf("ro fail: %s\n", err)
 		if err := db.Update(context.Background(), func(tx kv.RwTx) error {
 			for _, name := range buckets {
 				if db.buckets[name].IsDeprecated {
@@ -330,7 +327,6 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 			return err
 		}
 	}
-	fmt.Printf("openDBIs: done open\n")
 	return nil
 }
 
