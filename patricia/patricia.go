@@ -347,79 +347,42 @@ type Match struct {
 }
 
 type MatchFinder struct {
-	states  []*state
-	start   []int
-	end     []int
-	vals    [][][]byte
+	s       state
 	matches []*Match
 }
 
 func (mf *MatchFinder) FindLongestMatches(pt PatriciaTree, data []byte) []*Match {
-	stateCount := 0
 	matchCount := 0
-	for i, b := range data {
-		if stateCount == len(mf.states) {
-			mf.states = append(mf.states, makestate(&pt.root))
-			mf.start = append(mf.start, i)
-			mf.end = append(mf.end, 0)
-			mf.vals = append(mf.vals, nil)
-		} else {
-			mf.states[stateCount].reset(&pt.root)
-			mf.start[stateCount] = i
-			mf.end[stateCount] = 0
-			mf.vals[stateCount] = nil
-		}
-		stateCount++
-		// adjust existing pipeline
-		j := 0
-		for j < stateCount {
-			s := mf.states[j]
-			if d := s.transition(b); d == 0 {
-				if s.tail == 0 && len(s.n.values) > 0 {
-					mf.end[j] = i + 1
-					mf.vals[j] = s.n.values
-				}
-				j++
-			} else {
-				// divergence, emit last match of this pipeline, if exists, and remove this pipeline
-				if mf.end[j] > mf.start[j] {
+	s := &mf.s
+	lastEnd := 0
+	for start := 0; start < len(data)-1; start++ {
+		s.reset(&pt.root)
+		emitted := false
+		for end := start + 1; end < len(data); end++ {
+			if d := s.transition(data[end-1]); d == 0 {
+				if s.tail == 0 && len(s.n.values) > 0 && end > lastEnd {
 					var m *Match
-					if matchCount == len(mf.matches) {
-						m = &Match{}
-						mf.matches = append(mf.matches, m)
+					if !emitted {
+						if matchCount == len(mf.matches) {
+							m = &Match{}
+							mf.matches = append(mf.matches, m)
+						} else {
+							m = mf.matches[matchCount]
+						}
+						matchCount++
+						emitted = true
 					} else {
-						m = mf.matches[matchCount]
+						m = mf.matches[matchCount-1]
 					}
-					matchCount++
-					m.Pos = mf.start[j]
-					m.Slice = data[mf.start[j]:mf.end[j]]
-					m.Vals = mf.vals[j]
+					// This possible overwrites previous match for the same start position
+					m.Pos = start
+					m.Slice = data[start:end]
+					m.Vals = s.n.values
+					lastEnd = end
 				}
-				if j < stateCount-1 {
-					mf.states[j], mf.states[stateCount-1] = mf.states[stateCount-1], mf.states[j] // Need to swap to keep state objects distinct
-					mf.start[j] = mf.start[stateCount-1]
-					mf.end[j] = mf.end[stateCount-1]
-					mf.vals[j] = mf.vals[stateCount-1]
-				}
-				stateCount--
-				// not incrementing j, will go over this index again
-			}
-		}
-	}
-	// Go through the remaining pipelines again and emit their last matches
-	for j := 0; j < stateCount; j++ {
-		if mf.end[j] > mf.start[j] {
-			var m *Match
-			if matchCount == len(mf.matches) {
-				m = &Match{}
-				mf.matches = append(mf.matches, m)
 			} else {
-				m = mf.matches[matchCount]
+				break
 			}
-			matchCount++
-			m.Pos = mf.start[j]
-			m.Slice = data[mf.start[j]:mf.end[j]]
-			m.Vals = mf.vals[j]
 		}
 	}
 	return mf.matches[:matchCount]
