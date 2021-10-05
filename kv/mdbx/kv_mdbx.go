@@ -184,13 +184,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 	}
 
-	fmt.Printf("before open\n")
-	err = env.Open(opts.path, opts.flags, 0664)
-	fmt.Printf("after open\n")
-	if err != nil {
-		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), callers(10))
-	}
-
 	defaultDirtyPagesLimit, err := env.GetOption(mdbx.OptTxnDpLimit)
 	if err != nil {
 		return nil, err
@@ -222,6 +215,11 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	dirtyPagesLimit, err := env.GetOption(mdbx.OptTxnDpLimit)
 	if err != nil {
 		return nil, err
+	}
+
+	err = env.Open(opts.path, opts.flags, 0664)
+	if err != nil {
+		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), callers(10))
 	}
 
 	db := &MdbxKV{
