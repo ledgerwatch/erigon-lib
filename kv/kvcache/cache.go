@@ -275,10 +275,12 @@ func (c *Coherent) getFromCache(k []byte, id ViewID) (btree.Item, *CoherentRoot,
 	defer c.lock.RUnlock()
 
 	isLatest := c.latestViewID == id
+
 	r, ok := c.roots[id]
 	if !ok {
 		return nil, r, isLatest, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
+
 	it := r.cache.Get(&Element{K: k})
 	return it, r, isLatest, nil
 }
