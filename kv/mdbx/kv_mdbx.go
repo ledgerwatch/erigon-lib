@@ -313,6 +313,7 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 			return err
 		}
 
+		fmt.Printf("ro fail: %s\n", err)
 		if err := db.Update(context.Background(), func(tx kv.RwTx) error {
 			for _, name := range buckets {
 				if db.buckets[name].IsDeprecated {
@@ -327,6 +328,7 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 			return err
 		}
 	}
+	fmt.Printf("openDBIs: done open\n")
 	return nil
 }
 
