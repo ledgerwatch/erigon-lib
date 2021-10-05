@@ -184,7 +184,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 	}
 
+	fmt.Printf("before open\n")
 	err = env.Open(opts.path, opts.flags, 0664)
+	fmt.Printf("after open\n")
 	if err != nil {
 		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), callers(10))
 	}
