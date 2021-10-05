@@ -86,7 +86,6 @@ type Coherent struct {
 	keys, evict         *metrics.Counter
 	latestView          *CoherentRoot
 	evictList           *List
-	search              *Element // pre-allocated object used for search in b-tree
 	roots               map[ViewID]*CoherentRoot
 	lock                sync.RWMutex
 	cfg                 CoherentConfig
@@ -141,7 +140,6 @@ func New(cfg CoherentConfig) *Coherent {
 		roots:     map[ViewID]*CoherentRoot{},
 		evictList: NewList(),
 		cfg:       cfg,
-		search:    &Element{},
 		miss:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
 		hits:      metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
 		timeout:   metrics.GetOrCreateCounter(fmt.Sprintf(`cache_timeout_total{name="%s"}`, cfg.MetricsLabel)),
