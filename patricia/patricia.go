@@ -348,20 +348,26 @@ type Match struct {
 
 type MatchFinder struct {
 	states  []*state
-	pos     []int
+	start   []int
+	end     []int
+	vals    [][][]byte
 	matches []*Match
 }
 
-func (mf *MatchFinder) FindMatches(pt PatriciaTree, data []byte) []*Match {
+func (mf *MatchFinder) FindLongestMatches(pt PatriciaTree, data []byte) []*Match {
 	stateCount := 0
 	matchCount := 0
 	for i, b := range data {
 		if stateCount == len(mf.states) {
 			mf.states = append(mf.states, makestate(&pt.root))
-			mf.pos = append(mf.pos, i)
+			mf.start = append(mf.start, i)
+			mf.end = append(mf.end, 0)
+			mf.vals = append(mf.vals, nil)
 		} else {
 			mf.states[stateCount].reset(&pt.root)
-			mf.pos[stateCount] = i
+			mf.start[stateCount] = i
+			mf.end[stateCount] = 0
+			mf.vals[stateCount] = nil
 		}
 		stateCount++
 		// adjust existing pipeline
@@ -370,7 +376,13 @@ func (mf *MatchFinder) FindMatches(pt PatriciaTree, data []byte) []*Match {
 			s := mf.states[j]
 			if d := s.transition(b); d == 0 {
 				if s.tail == 0 && len(s.n.values) > 0 {
-					// emit the match
+					mf.end[j] = i + 1
+					mf.vals[j] = s.n.values
+				}
+				j++
+			} else {
+				// divergence, emit last match of this pipeline, if exists, and remove this pipeline
+				if mf.end[j] > mf.start[j] {
 					var m *Match
 					if matchCount == len(mf.matches) {
 						m = &Match{}
@@ -379,20 +391,35 @@ func (mf *MatchFinder) FindMatches(pt PatriciaTree, data []byte) []*Match {
 						m = mf.matches[matchCount]
 					}
 					matchCount++
-					m.Pos = mf.pos[j]
-					m.Slice = data[mf.pos[j] : i+1]
-					m.Vals = s.n.values
+					m.Pos = mf.start[j]
+					m.Slice = data[mf.start[j]:mf.end[j]]
+					m.Vals = mf.vals[j]
 				}
-				j++
-			} else {
-				// divergence, remove this pipeline
 				if j < stateCount-1 {
 					mf.states[j], mf.states[stateCount-1] = mf.states[stateCount-1], mf.states[j] // Need to swap to keep state objects distinct
-					mf.pos[j] = mf.pos[stateCount-1]
+					mf.start[j] = mf.start[stateCount-1]
+					mf.end[j] = mf.end[stateCount-1]
+					mf.vals[j] = mf.vals[stateCount-1]
 				}
 				stateCount--
 				// not incrementing j, will go over this index again
 			}
+		}
+	}
+	// Go through the remaining pipelines again and emit their last matches
+	for j := 0; j < stateCount; j++ {
+		if mf.end[j] > mf.start[j] {
+			var m *Match
+			if matchCount == len(mf.matches) {
+				m = &Match{}
+				mf.matches = append(mf.matches, m)
+			} else {
+				m = mf.matches[matchCount]
+			}
+			matchCount++
+			m.Pos = mf.start[j]
+			m.Slice = data[mf.start[j]:mf.end[j]]
+			m.Vals = mf.vals[j]
 		}
 	}
 	return mf.matches[:matchCount]
