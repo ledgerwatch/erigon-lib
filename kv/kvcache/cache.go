@@ -279,8 +279,7 @@ func (c *Coherent) getFromCache(k []byte, id ViewID) (btree.Item, *CoherentRoot,
 	if !ok {
 		return nil, r, isLatest, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
-	c.search.K = k
-	it := r.cache.Get(c.search)
+	it := r.cache.Get(&Element{K: k})
 	return it, r, isLatest, nil
 }
 
