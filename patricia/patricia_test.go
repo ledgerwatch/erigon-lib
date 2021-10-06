@@ -94,7 +94,7 @@ func TestFindMatches1(t *testing.T) {
 	pt.Insert([]byte("wolfs"), []byte{3})
 	fmt.Printf("n\n%s", &pt.root)
 	var mf MatchFinder
-	matches := mf.FindLongestMatches(pt, []byte("Who lives here in winter, wolfs?"))
+	matches := mf.FindLongestMatches(&pt, []byte("Who lives here in winter, wolfs?"))
 	for _, m := range matches {
 		fmt.Printf("%+v\n", m)
 	}

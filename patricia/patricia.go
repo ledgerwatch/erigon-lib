@@ -351,7 +351,7 @@ type MatchFinder struct {
 	matches []Match
 }
 
-func (mf *MatchFinder) FindLongestMatches(pt PatriciaTree, data []byte) []Match {
+func (mf *MatchFinder) FindLongestMatches(pt *PatriciaTree, data []byte) []Match {
 	matchCount := 0
 	s := &mf.s
 	lastEnd := 0
