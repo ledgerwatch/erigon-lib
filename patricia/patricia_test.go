@@ -96,6 +96,6 @@ func TestFindMatches1(t *testing.T) {
 	var mf MatchFinder
 	matches := mf.FindLongestMatches(pt, []byte("Who lives here in winter, wolfs?"))
 	for _, m := range matches {
-		fmt.Printf("%+v\n", *m)
+		fmt.Printf("%+v\n", m)
 	}
 }

@@ -348,10 +348,10 @@ type Match struct {
 
 type MatchFinder struct {
 	s       state
-	matches []*Match
+	matches []Match
 }
 
-func (mf *MatchFinder) FindLongestMatches(pt PatriciaTree, data []byte) []*Match {
+func (mf *MatchFinder) FindLongestMatches(pt PatriciaTree, data []byte) []Match {
 	matchCount := 0
 	s := &mf.s
 	lastEnd := 0
@@ -364,15 +364,15 @@ func (mf *MatchFinder) FindLongestMatches(pt PatriciaTree, data []byte) []*Match
 					var m *Match
 					if !emitted {
 						if matchCount == len(mf.matches) {
-							m = &Match{}
-							mf.matches = append(mf.matches, m)
+							mf.matches = append(mf.matches, Match{})
+							m = &mf.matches[len(mf.matches)-1]
 						} else {
-							m = mf.matches[matchCount]
+							m = &mf.matches[matchCount]
 						}
 						matchCount++
 						emitted = true
 					} else {
-						m = mf.matches[matchCount-1]
+						m = &mf.matches[matchCount-1]
 					}
 					// This possible overwrites previous match for the same start position
 					m.Start = start
