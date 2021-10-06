@@ -341,8 +341,8 @@ func (pt PatriciaTree) Get(key []byte) ([][]byte, bool) {
 }
 
 type Match struct {
-	Pos   int
-	Slice []byte
+	Start int
+	End   int
 	Vals  [][]byte
 }
 
@@ -375,8 +375,8 @@ func (mf *MatchFinder) FindLongestMatches(pt PatriciaTree, data []byte) []*Match
 						m = mf.matches[matchCount-1]
 					}
 					// This possible overwrites previous match for the same start position
-					m.Pos = start
-					m.Slice = data[start:end]
+					m.Start = start
+					m.End = end
 					m.Vals = s.n.values
 					lastEnd = end
 				}
