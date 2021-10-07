@@ -284,7 +284,7 @@ func (s *state) diverge(divergence uint32) {
 	s.tail = 0
 }
 
-func (n *node) insert(key []byte, value []byte) {
+func (n *node) insert(key []byte, value interface{}) {
 	s := makestate(n)
 	for _, b := range key {
 		divergence := s.transition(b)
@@ -331,7 +331,7 @@ type PatriciaTree struct {
 	root node
 }
 
-func (pt *PatriciaTree) Insert(key []byte, value []byte) {
+func (pt *PatriciaTree) Insert(key []byte, value interface{}) {
 	pt.root.insert(key, value)
 }
 
