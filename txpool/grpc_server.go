@@ -29,7 +29,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
-	types "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
@@ -236,13 +235,9 @@ func (s *GrpcServer) Status(_ context.Context, _ *txpool_proto.StatusRequest) (*
 
 // GetTransactionCount
 // TODO: Ask if the transaction pool can be passed in or if it has to be retrieved (maybe with the address or something)
-func (s *GrpcServer) GetTransactionCount(ctx context.Context, p *TxPool, address *types.H160) (nonce uint64) {
+func (s *GrpcServer) GetTransactionCount(ctx context.Context, p *TxPool, address *types2.H160) (nonce uint64, inPool bool) {
 	addr := gointerfaces.ConvertH160toAddress(address)
-	nonce, err := GetNonceFromAddress(p.all, p.senders, addr)
-	if err != nil {
-		panic("Error occurred getting nonce") // TODO: Ask how to handle errors, whether to stop the process or not
-	}
-	return nonce
+	return GetNonceFromAddress(p.all, p.senders, addr)
 }
 
 // NewSlotsStreams - it's safe to use this class as non-pointer

@@ -1996,12 +1996,8 @@ func min(a, b uint64) uint64 {
 	return b
 }
 
-func GetNonceFromAddress(b *BySenderAndNonce, senders *sendersBatch, addr [20]byte) (nonce uint64, err error) {
+func GetNonceFromAddress(b *BySenderAndNonce, senders *sendersBatch, addr [20]byte) (nonce uint64, inPool bool) {
 	id, ok := senders.id(string(addr[:]))
-	if !ok {
-		return 0, errors.New("error occurred getting sender's id") // TODO: What should be returned as the nonce and the error as well
-	}
-
 	// TODO: Modify the TxPool service and add this method as an rpc method if it's correct
-	return b.nonce(id), nil
+	return b.nonce(id), ok
 }
