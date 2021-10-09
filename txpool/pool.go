@@ -182,17 +182,20 @@ func (r DiscardReason) String() string {
 
 // metaTx holds transaction and some metadata
 type metaTx struct {
-	Tx             *TxSlot
-	subPool        SubPoolMarker
-	effectiveTip   uint64 // max(minTip, minFeeCap - baseFee)
-	bestIndex      int
-	worstIndex     int
-	currentSubPool SubPoolType
-	timestamp      uint64 // when it was added to pool
+	Tx                        *TxSlot
+	subPool                   SubPoolMarker
+	nonceDistance             uint64       // how far their nonces are from the state's nonce for the sender
+	cumulativeBalanceDistance *uint256.Int // how far their cumulativeRequiredBalance are from the state's balance for the sender
+	minFeeCapDistance         uint64       // how far their min(FeeCap) from pendingBaseFee
+	effectiveTip              uint64       // max(minTip, minFeeCap - baseFee)
+	bestIndex                 int
+	worstIndex                int
+	currentSubPool            SubPoolType
+	timestamp                 uint64 // when it was added to pool
 }
 
 func newMetaTx(slot *TxSlot, isLocal bool, timestmap uint64) *metaTx {
-	mt := &metaTx{Tx: slot, worstIndex: -1, bestIndex: -1, timestamp: timestmap}
+	mt := &metaTx{Tx: slot, worstIndex: -1, bestIndex: -1, timestamp: timestmap, cumulativeBalanceDistance: uint256.NewInt(0)}
 	if isLocal {
 		mt.subPool = IsLocal
 	}
@@ -927,9 +930,11 @@ func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		minTip = min(minTip, mt.Tx.tip)
 		if pendingBaseFee <= minFeeCap {
+			mt.minFeeCapDistance = 0
 			mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 		} else {
 			mt.effectiveTip = 0
+			mt.minFeeCapDistance = pendingBaseFee - minFeeCap
 		}
 
 		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
@@ -954,6 +959,12 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 		} else {
 			mt.effectiveTip = minTip
+			mt.minFeeCapDistance = pendingBaseFee - minFeeCap
+		}
+
+		mt.nonceDistance = 0
+		if mt.Tx.nonce > senderNonce { // no uint underflow
+			mt.nonceDistance = mt.Tx.nonce - senderNonce
 		}
 
 		// Sender has enough balance for: gasLimit x feeCap + transferred_value
@@ -991,6 +1002,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			cumulativeRequiredBalance = cumulativeRequiredBalance.Add(cumulativeRequiredBalance, needBalance) // already deleted all transactions with nonce <= sender.nonce
 			if senderBalance.Gt(cumulativeRequiredBalance) || senderBalance.Eq(cumulativeRequiredBalance) {
 				mt.subPool |= EnoughBalance
+				mt.cumulativeBalanceDistance.SetUint64(0)
+			} else {
+				mt.cumulativeBalanceDistance.Sub(cumulativeRequiredBalance, &senderBalance)
 			}
 		}
 
@@ -1929,11 +1943,29 @@ func (mt *metaTx) Less(than *metaTx) bool {
 	if mt.subPool != than.subPool {
 		return mt.subPool < than.subPool
 	}
-	if mt.effectiveTip != than.effectiveTip {
-		return mt.effectiveTip < than.effectiveTip
-	}
-	if mt.Tx.nonce != than.Tx.nonce {
-		return mt.Tx.nonce < than.Tx.nonce
+
+	switch mt.currentSubPool {
+	case PendingSubPool:
+		if mt.nonceDistance != than.nonceDistance {
+			return mt.nonceDistance < than.nonceDistance
+		}
+		if mt.effectiveTip != than.effectiveTip {
+			return mt.effectiveTip < than.effectiveTip
+		}
+	case BaseFeeSubPool:
+		if mt.minFeeCapDistance != than.minFeeCapDistance {
+			return mt.minFeeCapDistance > than.minFeeCapDistance // yes, here is greaterOrEqual because minFeeCapDistance is inversed value
+		}
+		if mt.nonceDistance != than.nonceDistance {
+			return mt.nonceDistance < than.nonceDistance
+		}
+	case QueuedSubPool:
+		if mt.nonceDistance != than.nonceDistance {
+			return mt.nonceDistance < than.nonceDistance
+		}
+		if !mt.cumulativeBalanceDistance.Eq(than.cumulativeBalanceDistance) {
+			return mt.cumulativeBalanceDistance.Lt(than.cumulativeBalanceDistance)
+		}
 	}
 	return mt.timestamp < than.timestamp
 }
