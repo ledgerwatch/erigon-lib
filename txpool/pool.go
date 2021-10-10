@@ -184,10 +184,10 @@ func (r DiscardReason) String() string {
 type metaTx struct {
 	Tx                        *TxSlot
 	subPool                   SubPoolMarker
-	nonceDistance             uint64       // how far their nonces are from the state's nonce for the sender
-	cumulativeBalanceDistance *uint256.Int // how far their cumulativeRequiredBalance are from the state's balance for the sender
-	minFeeCapDistance         uint64       // how far their min(FeeCap) from pendingBaseFee
-	effectiveTip              uint64       // max(minTip, minFeeCap - baseFee)
+	nonceDistance             uint64 // how far their nonces are from the state's nonce for the sender
+	cumulativeBalanceDistance uint64 // how far their cumulativeRequiredBalance are from the state's balance for the sender
+	minFeeCap                 uint64
+	effectiveTip              uint64 // max(minTip, minFeeCap - baseFee)
 	bestIndex                 int
 	worstIndex                int
 	currentSubPool            SubPoolType
@@ -195,7 +195,7 @@ type metaTx struct {
 }
 
 func newMetaTx(slot *TxSlot, isLocal bool, timestmap uint64) *metaTx {
-	mt := &metaTx{Tx: slot, worstIndex: -1, bestIndex: -1, timestamp: timestmap, cumulativeBalanceDistance: uint256.NewInt(0)}
+	mt := &metaTx{Tx: slot, worstIndex: -1, bestIndex: -1, timestamp: timestmap}
 	if isLocal {
 		mt.subPool = IsLocal
 	}
@@ -928,13 +928,12 @@ func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 			prevSenderID = mt.Tx.senderID
 		}
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
+		mt.minFeeCap = minFeeCap
 		minTip = min(minTip, mt.Tx.tip)
 		if pendingBaseFee <= minFeeCap {
-			mt.minFeeCapDistance = 0
 			mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 		} else {
 			mt.effectiveTip = 0
-			mt.minFeeCapDistance = pendingBaseFee - minFeeCap
 		}
 
 		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
@@ -954,12 +953,12 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 	minTip := uint64(math.MaxUint64)
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
+		mt.minFeeCap = minFeeCap
 		minTip = min(minTip, mt.Tx.tip)
 		if pendingBaseFee <= minFeeCap {
 			mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
 		} else {
 			mt.effectiveTip = minTip
-			mt.minFeeCapDistance = pendingBaseFee - minFeeCap
 		}
 
 		mt.nonceDistance = 0
@@ -998,20 +997,22 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		// set if there is currently a guarantee that the transaction and all its required prior
 		// transactions will be able to pay for gas.
 		mt.subPool &^= EnoughBalance
-		mt.cumulativeBalanceDistance.SetUint64(0)
+		mt.cumulativeBalanceDistance = math.MaxUint64
 		if mt.Tx.nonce >= senderNonce {
 			cumulativeRequiredBalance = cumulativeRequiredBalance.Add(cumulativeRequiredBalance, needBalance) // already deleted all transactions with nonce <= sender.nonce
 			if senderBalance.Gt(cumulativeRequiredBalance) || senderBalance.Eq(cumulativeRequiredBalance) {
 				mt.subPool |= EnoughBalance
 			} else {
-				mt.cumulativeBalanceDistance.Sub(cumulativeRequiredBalance, &senderBalance)
+				if cumulativeRequiredBalance.IsUint64() && senderBalance.IsUint64() {
+					mt.cumulativeBalanceDistance = cumulativeRequiredBalance.Uint64() - senderBalance.Uint64()
+				}
 			}
 		}
 
 		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 		// baseFee of the currently pending block. Set to 0 otherwise.
 		mt.subPool &^= EnoughFeeCapBlock
-		if mt.Tx.feeCap >= pendingBaseFee {
+		if mt.minFeeCap >= pendingBaseFee {
 			mt.subPool |= EnoughFeeCapBlock
 		}
 
@@ -1953,8 +1954,8 @@ func (mt *metaTx) Less(than *metaTx) bool {
 			return mt.effectiveTip < than.effectiveTip
 		}
 	case BaseFeeSubPool:
-		if mt.minFeeCapDistance != than.minFeeCapDistance {
-			return mt.minFeeCapDistance > than.minFeeCapDistance // yes, here is greaterOrEqual because minFeeCapDistance is inversed value
+		if mt.minFeeCap != than.minFeeCap {
+			return mt.minFeeCap > than.minFeeCap // yes, here is greaterOrEqual to sort by revert order of minFeeCap
 		}
 		if mt.nonceDistance != than.nonceDistance {
 			return mt.nonceDistance < than.nonceDistance
@@ -1963,8 +1964,8 @@ func (mt *metaTx) Less(than *metaTx) bool {
 		if mt.nonceDistance != than.nonceDistance {
 			return mt.nonceDistance < than.nonceDistance
 		}
-		if !mt.cumulativeBalanceDistance.Eq(than.cumulativeBalanceDistance) {
-			return mt.cumulativeBalanceDistance.Lt(than.cumulativeBalanceDistance)
+		if mt.cumulativeBalanceDistance != than.cumulativeBalanceDistance {
+			return mt.cumulativeBalanceDistance < than.cumulativeBalanceDistance
 		}
 	}
 	return mt.timestamp < than.timestamp
