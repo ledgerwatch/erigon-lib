@@ -448,7 +448,7 @@ func (c *Coherent) addCode(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	evict := c.codeEvict.Len() > c.cfg.CodeKeysLimit
 	// Verify size not exceeded
 	if evict {
-		c.removeOldest(c.codeEvict, r)
+		c.removeOldestCode(r)
 	}
 	return it
 }
