@@ -147,6 +147,9 @@ var DefaultCoherentConfig = CoherentConfig{
 }
 
 func New(cfg CoherentConfig) *Coherent {
+	if cfg.KeepViews == 0 {
+		panic("empty config passed")
+	}
 	return &Coherent{
 		roots:      map[ViewID]*CoherentRoot{},
 		stateEvict: NewList(),
