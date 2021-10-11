@@ -344,8 +344,10 @@ func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *Co
 	} else {
 		it = r.cache.Get(&Element{K: k})
 	}
-	if it == nil && rand.Intn(3000) == 1 {
-		fmt.Printf("miss: %d,%t,%t,%d, %d,%d\n", id, ok, isLatest, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+	if it == nil {
+		if rand.Intn(3000) == 1 {
+			fmt.Printf("miss: %d,%t,%t,%d, %d,%d\n", id, ok, isLatest, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+		}
 	} else {
 		if rand.Intn(3000) == 1 {
 			fmt.Printf("hit: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
