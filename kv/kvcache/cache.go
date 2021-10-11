@@ -411,9 +411,9 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	return it
 }
 func (c *Coherent) addCode(k, v []byte, r *CoherentRoot, id ViewID) *Element {
-	fmt.Printf("add: %x, %d, %d\n", k, len(v), id)
 	it := &Element{K: k, V: v}
 	replaced := r.cache.ReplaceOrInsert(it)
+	fmt.Printf("add: %x, %d, %d, %d\n", k, len(v), id, r.cache.Len())
 	if c.latestViewID != id {
 		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
