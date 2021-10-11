@@ -186,6 +186,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 			r.codeCache = btree.New(DEGREE)
 		}
 	*/
+	fmt.Printf("alex02: %d\n", viewID)
 	r.cache = btree.New(DEGREE)
 	r.codeCache = btree.New(DEGREE)
 	c.roots[viewID] = r
