@@ -185,7 +185,8 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	return r
 }
 
-func (c *Coherent) advanceRoot2(viewID ViewID) (r *CoherentRoot) {
+// advanceRoot - used for advancing root onNewBlock
+func (c *Coherent) advanceRoot(viewID ViewID) (r, rCode *CoherentRoot) {
 	r, rootExists := c.roots[viewID]
 	if !rootExists {
 		r = &CoherentRoot{ready: make(chan struct{})}
@@ -198,21 +199,16 @@ func (c *Coherent) advanceRoot2(viewID ViewID) (r *CoherentRoot) {
 		r.codeCache = prevView.codeCache.Clone()
 	} else {
 		c.stateEvict.Init()
+		c.codeEvict.Init()
 		if r.cache == nil {
 			//log.Info("advance: new", "to", viewID)
 			r.cache = btree.New(DEGREE)
+			r.codeCache = btree.New(DEGREE)
 		} else {
 			r.cache.Ascend(func(i btree.Item) bool {
 				c.stateEvict.PushFront(i.(*Element))
 				return true
 			})
-		}
-
-		c.codeEvict.Init()
-		if r.codeCache == nil {
-			//log.Info("advance: new", "to", viewID)
-			r.codeCache = btree.New(DEGREE)
-		} else {
 			r.codeCache.Ascend(func(i btree.Item) bool {
 				c.codeEvict.PushFront(i.(*Element))
 				return true
@@ -220,12 +216,6 @@ func (c *Coherent) advanceRoot2(viewID ViewID) (r *CoherentRoot) {
 		}
 	}
 	r.isCanonical = true
-	return r
-}
-
-// advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(viewID ViewID) (r, rCode *CoherentRoot) {
-	r = c.advanceRoot2(viewID)
 
 	c.evictRoots()
 	c.latestViewID = viewID
