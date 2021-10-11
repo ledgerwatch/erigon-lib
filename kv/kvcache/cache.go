@@ -204,19 +204,19 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 
 	if prevView, ok := c.roots[viewID-1]; ok && prevView.isCanonical {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
-		fmt.Printf("alex1: %d, %d,%d\n", viewID, prevView.cache.Len(), prevView.codeCache.Len())
+		fmt.Printf("advanceRoot clone: %d, %d,%d\n", viewID, prevView.cache.Len(), prevView.codeCache.Len())
 		r.cache = prevView.cache.Clone()
 		r.codeCache = prevView.codeCache.Clone()
 	} else {
 		c.stateEvict.Init()
 		c.codeEvict.Init()
 		if r.cache == nil {
-			fmt.Printf("alex2\n")
+			fmt.Printf("advanceRoot create new %d\n", viewID)
 			//log.Info("advance: new", "to", viewID)
 			r.cache = btree.New(DEGREE)
 			r.codeCache = btree.New(DEGREE)
 		} else {
-			fmt.Printf("alex3: %d,%d\n", r.cache.Len(), r.codeCache.Len())
+			fmt.Printf("advanceRoot use existing: %d,%d\n", r.cache.Len(), r.codeCache.Len())
 			r.cache.Ascend(func(i btree.Item) bool {
 				c.stateEvict.PushFront(i.(*Element))
 				return true
