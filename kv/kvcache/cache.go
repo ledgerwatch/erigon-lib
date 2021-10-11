@@ -402,11 +402,18 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	v = c.addCode(common.Copy(k), common.Copy(v), r, id).V
 	return v, nil
 }
-func (c *Coherent) removeOldest(l *List, r *CoherentRoot) {
-	e := l.Back()
+func (c *Coherent) removeOldest(r *CoherentRoot) {
+	e := c.stateEvict.Back()
 	if e != nil {
-		l.Remove(e)
+		c.stateEvict.Remove(e)
 		r.cache.Delete(e)
+	}
+}
+func (c *Coherent) removeOldestCode(r *CoherentRoot) {
+	e := c.codeEvict.Back()
+	if e != nil {
+		c.codeEvict.Remove(e)
+		r.codeCache.Delete(e)
 	}
 }
 func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
@@ -423,7 +430,7 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	evict := c.stateEvict.Len() > c.cfg.KeysLimit
 	// Verify size not exceeded
 	if evict {
-		c.removeOldest(c.stateEvict, r)
+		c.removeOldest(r)
 	}
 	return it
 }
