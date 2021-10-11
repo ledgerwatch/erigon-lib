@@ -358,12 +358,14 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	if it != nil {
 		c.codeHits.Inc()
 
+		fmt.Printf("hit: %x\n", k)
 		if isLatest {
 			c.codeEvict.MoveToFront(it.(*Element))
 		}
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
+	fmt.Printf("miss: %x\n", k)
 	c.codeMiss.Inc()
 
 	v, err := tx.GetOne(kv.Code, k)
