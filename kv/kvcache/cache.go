@@ -370,8 +370,8 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.codeEvict.MoveToFront(it.(*Element))
 		}
-		if rand.Intn(100) == 1 {
-			fmt.Printf("hit: %d,%d\n", id, c.latestViewID)
+		if rand.Intn(300) == 1 {
+			fmt.Printf("hit: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 		}
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
@@ -384,8 +384,8 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	//	}
 	//}
 	c.codeMiss.Inc()
-	if rand.Intn(100) == 1 {
-		fmt.Printf("miss: %d,%d\n", id, c.latestViewID)
+	if rand.Intn(300) == 1 {
+		fmt.Printf("miss: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 	}
 	v, err := tx.GetOne(kv.Code, k)
 	if err != nil {
