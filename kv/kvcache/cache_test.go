@@ -337,3 +337,24 @@ func TestAPI(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestCode(t *testing.T) {
+	require, ctx := require.New(t), context.Background()
+	c := New(DefaultCoherentConfig)
+	db := memdb.NewTestDB(t)
+	k1, k2 := [20]byte{1}, [20]byte{2}
+
+	_ = db.Update(ctx, func(tx kv.RwTx) error {
+		_ = tx.Put(kv.Code, k1[:], k2[:])
+		cacheView, _ := c.View(ctx, tx)
+		view := cacheView.(*CoherentView)
+		v, err := c.GetCode(k1[:], tx, view.viewID)
+		require.NoError(err)
+		fmt.Printf("%x\n", v)
+		v, err = c.GetCode(k1[:], tx, view.viewID)
+		require.NoError(err)
+		fmt.Printf("%x\n", v)
+		//require.Equal(c.roots[c.latestViewID].cache.Len(), c.stateEvict.Len())
+		return nil
+	})
+}

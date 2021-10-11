@@ -383,12 +383,12 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		return it.(*Element).V, nil
 	}
 
-	{
-		r, ok := c.roots[id]
-		if ok {
-			fmt.Printf("miss: %x,%d,%d\n", k, id, r.codeCache.Len())
-		}
-	}
+	//{
+	//	r, ok := c.roots[id]
+	//	if ok {
+	//		fmt.Printf("miss: %x,%d,%d\n", k, id, r.codeCache.Len())
+	//	}
+	//}
 	c.codeMiss.Inc()
 
 	v, err := tx.GetOne(kv.Code, k)
