@@ -186,7 +186,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 }
 
 // advanceRoot - used for advancing root onNewBlock
-func (c *Coherent) advanceRoot(viewID ViewID) (r, rCode *CoherentRoot) {
+func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 	r, rootExists := c.roots[viewID]
 	if !rootExists {
 		r = &CoherentRoot{ready: make(chan struct{})}
@@ -224,14 +224,14 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r, rCode *CoherentRoot) {
 	c.keys.Set(uint64(c.latestStateView.cache.Len()))
 	c.codeKeys.Set(uint64(c.latestStateView.codeCache.Len()))
 	c.evict.Set(uint64(c.stateEvict.Len()))
-	return r, rCode
+	return r
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
-	r, rCode := c.advanceRoot(id)
+	r := c.advanceRoot(id)
 	for _, sc := range stateChanges.ChangeBatch {
 		for i := range sc.Changes {
 			switch sc.Changes[i].Action {
@@ -248,7 +248,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 				c.hasher.Write(sc.Changes[i].Code)
 				k := make([]byte, 32)
 				c.hasher.Sum(k)
-				c.addCode(k, sc.Changes[i].Code, rCode, id)
+				c.addCode(k, sc.Changes[i].Code, r, id)
 			case remote.Action_DELETE:
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 				c.add(addr[:], nil, r, id)
@@ -259,7 +259,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 				c.hasher.Write(sc.Changes[i].Code)
 				k := make([]byte, 32)
 				c.hasher.Sum(k)
-				c.addCode(k, sc.Changes[i].Code, rCode, id)
+				c.addCode(k, sc.Changes[i].Code, r, id)
 			default:
 				panic("not implemented yet")
 			}
