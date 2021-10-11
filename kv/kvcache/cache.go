@@ -169,6 +169,9 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	defer c.lock.Unlock()
 	r, ok := c.roots[viewID]
 	if ok {
+		if rand.Intn(3000) == 1 {
+			fmt.Printf("selectOrCreateRoot found: %d,%d, %d,%d\n", viewID, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+		}
 		return r
 	}
 	fmt.Printf("selectOrCreateRoot create new: %d\n", viewID)
