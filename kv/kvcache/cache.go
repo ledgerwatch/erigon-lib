@@ -375,7 +375,6 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	if it != nil {
 		c.codeHits.Inc()
 
-		fmt.Printf("hit: %x\n", k)
 		if isLatest {
 			c.codeEvict.MoveToFront(it.(*Element))
 		}
