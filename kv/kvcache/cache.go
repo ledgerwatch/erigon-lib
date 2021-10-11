@@ -21,7 +21,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
-	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -173,15 +172,8 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	defer c.lock.Unlock()
 	r, ok := c.roots[viewID]
 	if ok {
-		if rand.Intn(4000) == 1 {
-			fmt.Printf("selectOrCreateRoot found: %d,%d, %d,%d\n", viewID, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-			for i, j := range c.roots {
-				fmt.Printf("selectOrCreateRoot all: %d,%d,%d\n", i, j.cache.Len(), j.codeCache.Len())
-			}
-		}
 		return r
 	}
-	fmt.Printf("selectOrCreateRoot create new: %d\n", viewID)
 
 	r = &CoherentRoot{ready: make(chan struct{})}
 	/*
@@ -359,15 +351,6 @@ func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *Co
 	} else {
 		it = r.cache.Get(&Element{K: k})
 	}
-	if it == nil {
-		if rand.Intn(4000) == 1 {
-			fmt.Printf("miss: %d,%t,%t,%d, %d,%d\n", id, ok, isLatest, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-		}
-	} else {
-		if rand.Intn(4000) == 1 {
-			fmt.Printf("hit: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-		}
-	}
 	if it != nil && isLatest {
 		c.stateEvict.MoveToFront(it.(*Element))
 	}
@@ -446,9 +429,6 @@ func (c *Coherent) removeOldestCode(r *CoherentRoot) {
 func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.cache.ReplaceOrInsert(it)
-	if rand.Intn(4000) == 1 {
-		fmt.Printf("after add: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-	}
 	if c.latestViewID != id {
 		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
@@ -467,9 +447,6 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 func (c *Coherent) addCode(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.codeCache.ReplaceOrInsert(it)
-	if rand.Intn(4000) == 1 {
-		fmt.Printf("after addCode: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-	}
 	if c.latestViewID != id {
 		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
