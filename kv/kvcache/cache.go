@@ -328,16 +328,15 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	return &CoherentView{viewID: ViewID(tx.ViewID()), tx: tx, cache: c}, nil
 }
 
-func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *CoherentRoot, bool, error) {
+func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *CoherentRoot, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
-	isLatest := c.latestViewID == id
-
 	r, ok := c.roots[id]
 	if !ok {
-		return nil, r, isLatest, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
+		return nil, r, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
+	isLatest := c.latestViewID == id
 
 	var it btree.Item
 	if code {
@@ -348,21 +347,20 @@ func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *Co
 	if it == nil && rand.Intn(3000) == 1 {
 		fmt.Printf("miss: %d,%t,%t,%d, %d,%d\n", id, ok, isLatest, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 	}
+	if it != nil && isLatest {
+		c.stateEvict.MoveToFront(it.(*Element))
+	}
 
-	return it, r, isLatest, nil
+	return it, r, nil
 }
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
-	it, r, isLatest, err := c.getFromCache(k, id, false)
+	it, r, err := c.getFromCache(k, id, false)
 	if err != nil {
 		return nil, err
 	}
 
 	if it != nil {
 		c.hits.Inc()
-
-		if isLatest {
-			c.stateEvict.MoveToFront(it.(*Element))
-		}
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
@@ -381,17 +379,13 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 }
 
 func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
-	it, r, isLatest, err := c.getFromCache(k, id, true)
+	it, r, err := c.getFromCache(k, id, true)
 	if err != nil {
 		return nil, err
 	}
 
 	if it != nil {
 		c.codeHits.Inc()
-
-		if isLatest {
-			c.codeEvict.MoveToFront(it.(*Element))
-		}
 		if rand.Intn(3000) == 1 {
 			fmt.Printf("hit: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 		}
