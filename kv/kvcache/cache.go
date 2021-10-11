@@ -239,9 +239,6 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 	c.keys.Set(uint64(c.latestStateView.cache.Len()))
 	c.codeKeys.Set(uint64(c.latestStateView.codeCache.Len()))
 	c.evict.Set(uint64(c.stateEvict.Len()))
-	for i, j := range c.roots {
-		fmt.Printf("advanceRoot all: %d,%d,%d\n", i, j.cache.Len(), j.codeCache.Len())
-	}
 	return r
 }
 
@@ -249,9 +246,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
-	defer func(t time.Time) { fmt.Printf("cache.go:253: %s\n", time.Since(t)) }(time.Now())
 	r := c.advanceRoot(id)
-	fmt.Printf("OnNewBlock: %d,%d\n", r.cache.Len(), r.codeCache.Len())
 	for _, sc := range stateChanges.ChangeBatch {
 		for i := range sc.Changes {
 			switch sc.Changes[i].Action {
@@ -301,11 +296,6 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	if switched {
 		close(r.ready) //broadcast
 	}
-	fmt.Printf("OnNewBlock2: %d,%d\n", r.cache.Len(), r.codeCache.Len())
-	for i, j := range c.roots {
-		fmt.Printf("OnNewBlock2 all: %d,%d,%d\n", i, j.cache.Len(), j.codeCache.Len())
-	}
-
 	//log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
 }
 
