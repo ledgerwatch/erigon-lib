@@ -43,6 +43,7 @@ type Cache interface {
 }
 type CacheView interface {
 	Get(k []byte) ([]byte, error)
+	GetCode(k []byte) ([]byte, error)
 }
 
 // Coherent works on top of Database Transaction and pair Coherent+ReadTransaction must
@@ -116,7 +117,8 @@ type CoherentView struct {
 	tx     kv.Tx
 }
 
-func (c *CoherentView) Get(k []byte) ([]byte, error) { return c.cache.Get(k, c.tx, c.viewID) }
+func (c *CoherentView) Get(k []byte) ([]byte, error)     { return c.cache.Get(k, c.tx, c.viewID) }
+func (c *CoherentView) GetCode(k []byte) ([]byte, error) { return c.cache.GetCode(k, c.tx, c.viewID) }
 
 var _ Cache = (*Coherent)(nil)         // compile-time interface check
 var _ CacheView = (*CoherentView)(nil) // compile-time interface check
