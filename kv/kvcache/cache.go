@@ -171,6 +171,9 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	if ok {
 		if rand.Intn(4000) == 1 {
 			fmt.Printf("selectOrCreateRoot found: %d,%d, %d,%d\n", viewID, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+			for i, j := range c.roots {
+				fmt.Printf("selectOrCreateRoot all: %d,%d,%d\n", i, j.cache.Len(), j.codeCache.Len())
+			}
 		}
 		return r
 	}
@@ -303,6 +306,9 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 		close(r.ready) //broadcast
 	}
 	fmt.Printf("OnNewBlock2: %d,%d\n", r.cache.Len(), r.codeCache.Len())
+	for i, j := range c.roots {
+		fmt.Printf("OnNewBlock2 all: %d,%d,%d\n", i, j.cache.Len(), j.codeCache.Len())
+	}
 
 	//log.Info("on new block handled", "viewID", stateChanges.DatabaseViewID)
 }
