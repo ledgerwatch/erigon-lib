@@ -179,7 +179,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 		r.codeCache = prevView.codeCache.Clone()
 		r.isCanonical = prevView.isCanonical
 	} else {
-		fmt.Printf("alex02: %d, %d,%d\n", viewID, prevView.cache.Len(), prevView.codeCache.Len())
+		fmt.Printf("alex02: %d\n", viewID)
 		//log.Info("advance: new", "to", viewID)
 		r.cache = btree.New(DEGREE)
 		r.codeCache = btree.New(DEGREE)
