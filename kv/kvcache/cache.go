@@ -174,10 +174,12 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	r = &CoherentRoot{ready: make(chan struct{})}
 	if prevView, ok := c.roots[viewID-1]; ok {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
+		fmt.Printf("alex01: %d, %d,%d\n", viewID, prevView.cache.Len(), prevView.codeCache.Len())
 		r.cache = prevView.cache.Clone()
 		r.codeCache = prevView.codeCache.Clone()
 		r.isCanonical = prevView.isCanonical
 	} else {
+		fmt.Printf("alex02: %d, %d,%d\n", viewID, prevView.cache.Len(), prevView.codeCache.Len())
 		//log.Info("advance: new", "to", viewID)
 		r.cache = btree.New(DEGREE)
 		r.codeCache = btree.New(DEGREE)
@@ -196,7 +198,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 
 	if prevView, ok := c.roots[viewID-1]; ok && prevView.isCanonical {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
-		fmt.Printf("alex1: %d,%d\n", prevView.cache.Len(), prevView.codeCache.Len())
+		fmt.Printf("alex1: %d, %d,%d\n", viewID, prevView.cache.Len(), prevView.codeCache.Len())
 		r.cache = prevView.cache.Clone()
 		r.codeCache = prevView.codeCache.Clone()
 	} else {
@@ -373,7 +375,7 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.codeEvict.MoveToFront(it.(*Element))
 		}
-		if rand.Intn(1000) == 1 {
+		if rand.Intn(3000) == 1 {
 			fmt.Printf("hit: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 		}
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
@@ -387,7 +389,7 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	//	}
 	//}
 	c.codeMiss.Inc()
-	if rand.Intn(1000) == 1 {
+	if rand.Intn(3000) == 1 {
 		fmt.Printf("miss: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 	}
 	v, err := tx.GetOne(kv.Code, k)
