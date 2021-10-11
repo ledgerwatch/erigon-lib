@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -381,8 +382,9 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	//	}
 	//}
 	c.codeMiss.Inc()
-	fmt.Printf("miss: %d\n", id)
-
+	if rand.Intn(100) == 1 {
+		fmt.Printf("miss: %d\n", id)
+	}
 	v, err := tx.GetOne(kv.Code, k)
 	if err != nil {
 		return nil, err
