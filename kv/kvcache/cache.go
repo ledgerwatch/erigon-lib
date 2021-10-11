@@ -85,20 +85,21 @@ type CacheView interface {
 //  - changes in Canonical View SHOULD reflect in stateEvict
 //  - changes in Non-Canonical View SHOULD NOT reflect in stateEvict
 type Coherent struct {
-	hits, miss, timeout             *metrics.Counter
-	keys, evict                     *metrics.Counter
-	codeHits, codeMiss, codeKeys    *metrics.Counter
-	latestStateView, latestCodeView *CoherentRoot
-	stateRoots, codeRoots           map[ViewID]*CoherentRoot
-	stateEvict, codeEvict           *List
-	lock                            sync.RWMutex
-	cfg                             CoherentConfig
-	latestViewID                    ViewID
-	hasher                          hash.Hash
+	hits, miss, timeout          *metrics.Counter
+	keys, evict                  *metrics.Counter
+	codeHits, codeMiss, codeKeys *metrics.Counter
+	latestStateView              *CoherentRoot
+	roots                        map[ViewID]*CoherentRoot
+	stateEvict, codeEvict        *List
+	lock                         sync.RWMutex
+	cfg                          CoherentConfig
+	latestViewID                 ViewID
+	hasher                       hash.Hash
 }
 
 type CoherentRoot struct {
 	cache           *btree.BTree
+	codeCache       *btree.BTree
 	ready           chan struct{} // close when ready
 	readyChanClosed atomic.Bool   // protecting `ready` field from double-close (on unwind). Consumers don't need check this field.
 
@@ -145,8 +146,7 @@ var DefaultCoherentConfig = CoherentConfig{
 
 func New(cfg CoherentConfig) *Coherent {
 	return &Coherent{
-		stateRoots: map[ViewID]*CoherentRoot{},
-		codeRoots:  map[ViewID]*CoherentRoot{},
+		roots:      map[ViewID]*CoherentRoot{},
 		stateEvict: NewList(),
 		codeEvict:  NewList(),
 		hasher:     sha3.NewLegacyKeccak256(),
@@ -166,41 +166,55 @@ func New(cfg CoherentConfig) *Coherent {
 func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	r, ok := c.stateRoots[viewID]
+	r, ok := c.roots[viewID]
 	if ok {
 		return r
 	}
 	r = &CoherentRoot{ready: make(chan struct{})}
-	if prevView, ok := c.stateRoots[viewID-1]; ok {
+	if prevView, ok := c.roots[viewID-1]; ok {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
 		r.cache = prevView.cache.Clone()
+		r.codeCache = prevView.codeCache.Clone()
 		r.isCanonical = prevView.isCanonical
 	} else {
 		//log.Info("advance: new", "to", viewID)
 		r.cache = btree.New(DEGREE)
+		r.codeCache = btree.New(DEGREE)
 	}
-	c.stateRoots[viewID] = r
+	c.roots[viewID] = r
 	return r
 }
 
-func (c *Coherent) advanceRoot2(viewID ViewID, all map[ViewID]*CoherentRoot, evict *List) (r *CoherentRoot) {
-	r, rootExists := all[viewID]
+func (c *Coherent) advanceRoot2(viewID ViewID) (r *CoherentRoot) {
+	r, rootExists := c.roots[viewID]
 	if !rootExists {
 		r = &CoherentRoot{ready: make(chan struct{})}
-		all[viewID] = r
+		c.roots[viewID] = r
 	}
 
-	if prevView, ok := all[viewID-1]; ok && prevView.isCanonical {
+	if prevView, ok := c.roots[viewID-1]; ok && prevView.isCanonical {
 		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
 		r.cache = prevView.cache.Clone()
+		r.codeCache = prevView.codeCache.Clone()
 	} else {
-		evict.Init()
+		c.stateEvict.Init()
 		if r.cache == nil {
 			//log.Info("advance: new", "to", viewID)
 			r.cache = btree.New(DEGREE)
 		} else {
 			r.cache.Ascend(func(i btree.Item) bool {
-				evict.PushFront(i.(*Element))
+				c.stateEvict.PushFront(i.(*Element))
+				return true
+			})
+		}
+
+		c.codeEvict.Init()
+		if r.codeCache == nil {
+			//log.Info("advance: new", "to", viewID)
+			r.codeCache = btree.New(DEGREE)
+		} else {
+			r.codeCache.Ascend(func(i btree.Item) bool {
+				c.codeEvict.PushFront(i.(*Element))
 				return true
 			})
 		}
@@ -211,16 +225,14 @@ func (c *Coherent) advanceRoot2(viewID ViewID, all map[ViewID]*CoherentRoot, evi
 
 // advanceRoot - used for advancing root onNewBlock
 func (c *Coherent) advanceRoot(viewID ViewID) (r, rCode *CoherentRoot) {
-	r = c.advanceRoot2(viewID, c.stateRoots, c.stateEvict)
-	rCode = c.advanceRoot2(viewID, c.codeRoots, c.codeEvict)
+	r = c.advanceRoot2(viewID)
 
 	c.evictRoots()
 	c.latestViewID = viewID
 	c.latestStateView = r
-	c.latestCodeView = rCode
 
 	c.keys.Set(uint64(c.latestStateView.cache.Len()))
-	c.codeKeys.Set(uint64(c.latestCodeView.cache.Len()))
+	c.codeKeys.Set(uint64(c.latestStateView.codeCache.Len()))
 	c.evict.Set(uint64(c.stateEvict.Len()))
 	return r, rCode
 }
@@ -306,13 +318,13 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	return &CoherentView{viewID: ViewID(tx.ViewID()), tx: tx, cache: c}, nil
 }
 
-func (c *Coherent) getFromCache(k []byte, roots map[ViewID]*CoherentRoot, id ViewID) (btree.Item, *CoherentRoot, bool, error) {
+func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *CoherentRoot, bool, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
 	isLatest := c.latestViewID == id
 
-	r, ok := roots[id]
+	r, ok := c.roots[id]
 	if !ok {
 		return nil, r, isLatest, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
@@ -321,7 +333,7 @@ func (c *Coherent) getFromCache(k []byte, roots map[ViewID]*CoherentRoot, id Vie
 	return it, r, isLatest, nil
 }
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
-	it, r, isLatest, err := c.getFromCache(k, c.stateRoots, id)
+	it, r, isLatest, err := c.getFromCache(k, id, false)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +362,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 }
 
 func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
-	it, r, isLatest, err := c.getFromCache(k, c.codeRoots, id)
+	it, r, isLatest, err := c.getFromCache(k, id, true)
 	if err != nil {
 		return nil, err
 	}
@@ -367,9 +379,9 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	}
 
 	{
-		r, ok := c.codeRoots[id]
+		r, ok := c.roots[id]
 		if ok {
-			fmt.Printf("miss: %x,%d,%d\n", k, id, r.cache.Len())
+			fmt.Printf("miss: %x,%d,%d\n", k, id, r.codeCache.Len())
 		}
 	}
 	c.codeMiss.Inc()
@@ -413,7 +425,6 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 func (c *Coherent) addCode(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.cache.ReplaceOrInsert(it)
-	fmt.Printf("add: %x, %d, %d, %d\n", k, len(v), id, r.cache.Len())
 	if c.latestViewID != id {
 		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
@@ -444,7 +455,7 @@ func DebugStats(cache Cache) []Stat {
 	}
 	casted.lock.RLock()
 	defer casted.lock.RUnlock()
-	for root, r := range casted.stateRoots {
+	for root, r := range casted.roots {
 		res = append(res, Stat{
 			BlockNum: uint64(root),
 			Lenght:   r.cache.Len(),
@@ -471,7 +482,7 @@ func AssertCheckValues(ctx context.Context, tx kv.Tx, cache Cache) (int, error) 
 	casted.lock.RLock()
 	defer casted.lock.RUnlock()
 	//log.Info("AssertCheckValues start", "db_id", tx.ViewID(), "mem_id", casted.id.Load(), "len", casted.cache.Len())
-	root, ok := casted.stateRoots[castedView.viewID]
+	root, ok := casted.roots[castedView.viewID]
 	if !ok {
 		return 0, nil
 	}
@@ -495,35 +506,22 @@ func (c *Coherent) evictRoots() {
 	if c.latestViewID <= ViewID(c.cfg.KeepViews) {
 		return
 	}
-	if len(c.stateRoots) < int(c.cfg.KeepViews) {
+	if len(c.roots) < int(c.cfg.KeepViews) {
 		return
 	}
 	to := c.latestViewID - ViewID(c.cfg.KeepViews)
 	//fmt.Printf("collecting: %d\n", to)
 	{
 		var toDel []ViewID
-		for txId := range c.stateRoots {
+		for txId := range c.roots {
 			if txId > to {
 				continue
 			}
 			toDel = append(toDel, txId)
 		}
-		//log.Info("forget old stateRoots", "list", fmt.Sprintf("%d", toDel))
+		//log.Info("forget old roots", "list", fmt.Sprintf("%d", toDel))
 		for _, txId := range toDel {
-			delete(c.stateRoots, txId)
-		}
-	}
-	{
-		var toDel []ViewID
-		for txId := range c.codeRoots {
-			if txId > to {
-				continue
-			}
-			toDel = append(toDel, txId)
-		}
-		//log.Info("forget old stateRoots", "list", fmt.Sprintf("%d", toDel))
-		for _, txId := range toDel {
-			delete(c.codeRoots, txId)
+			delete(c.roots, txId)
 		}
 	}
 }

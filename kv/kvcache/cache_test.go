@@ -37,62 +37,62 @@ func TestEvictionInUnexpectedOrder(t *testing.T) {
 	cfg.NewBlockWait = 0
 	c := New(cfg)
 	c.selectOrCreateRoot(2)
-	require.Equal(1, len(c.stateRoots))
+	require.Equal(1, len(c.roots))
 	require.Equal(0, int(c.latestViewID))
-	require.False(c.stateRoots[2].isCanonical)
+	require.False(c.roots[2].isCanonical)
 
-	c.add([]byte{1}, nil, c.stateRoots[2], 2)
+	c.add([]byte{1}, nil, c.roots[2], 2)
 	require.Equal(0, c.stateEvict.Len())
 
 	c.advanceRoot(2)
-	require.Equal(1, len(c.stateRoots))
+	require.Equal(1, len(c.roots))
 	require.Equal(2, int(c.latestViewID))
-	require.True(c.stateRoots[2].isCanonical)
+	require.True(c.roots[2].isCanonical)
 
-	c.add([]byte{1}, nil, c.stateRoots[2], 2)
+	c.add([]byte{1}, nil, c.roots[2], 2)
 	require.Equal(1, c.stateEvict.Len())
 
 	c.selectOrCreateRoot(5)
-	require.Equal(2, len(c.stateRoots))
+	require.Equal(2, len(c.roots))
 	require.Equal(2, int(c.latestViewID))
-	require.False(c.stateRoots[5].isCanonical)
+	require.False(c.roots[5].isCanonical)
 
-	c.add([]byte{2}, nil, c.stateRoots[5], 5) // not added to evict list
+	c.add([]byte{2}, nil, c.roots[5], 5) // not added to evict list
 	require.Equal(1, c.stateEvict.Len())
-	c.add([]byte{2}, nil, c.stateRoots[2], 2) // added to evict list, because it's latest view
+	c.add([]byte{2}, nil, c.roots[2], 2) // added to evict list, because it's latest view
 	require.Equal(2, c.stateEvict.Len())
 
 	c.selectOrCreateRoot(6)
-	require.Equal(3, len(c.stateRoots))
+	require.Equal(3, len(c.roots))
 	require.Equal(2, int(c.latestViewID))
-	require.False(c.stateRoots[6].isCanonical) // parrent exists, but parent has isCanonical=false
+	require.False(c.roots[6].isCanonical) // parrent exists, but parent has isCanonical=false
 
 	c.advanceRoot(3)
-	require.Equal(4, len(c.stateRoots))
+	require.Equal(4, len(c.roots))
 	require.Equal(3, int(c.latestViewID))
-	require.True(c.stateRoots[3].isCanonical)
+	require.True(c.roots[3].isCanonical)
 
 	c.advanceRoot(4)
-	require.Equal(5, len(c.stateRoots))
+	require.Equal(5, len(c.roots))
 	require.Equal(4, int(c.latestViewID))
-	require.True(c.stateRoots[4].isCanonical)
+	require.True(c.roots[4].isCanonical)
 
 	c.selectOrCreateRoot(5)
-	require.Equal(5, len(c.stateRoots))
+	require.Equal(5, len(c.roots))
 	require.Equal(4, int(c.latestViewID))
-	require.False(c.stateRoots[5].isCanonical)
+	require.False(c.roots[5].isCanonical)
 
 	c.advanceRoot(5)
-	require.Equal(5, len(c.stateRoots))
+	require.Equal(5, len(c.roots))
 	require.Equal(5, int(c.latestViewID))
-	require.True(c.stateRoots[5].isCanonical)
+	require.True(c.roots[5].isCanonical)
 
 	c.advanceRoot(100)
-	require.Equal(6, len(c.stateRoots))
+	require.Equal(6, len(c.roots))
 	require.Equal(100, int(c.latestViewID))
-	require.True(c.stateRoots[100].isCanonical)
+	require.True(c.roots[100].isCanonical)
 
-	//c.add([]byte{1}, nil, c.stateRoots[2], 2)
+	//c.add([]byte{1}, nil, c.roots[2], 2)
 	require.Equal(0, c.latestStateView.cache.Len())
 	require.Equal(0, c.stateEvict.Len())
 }
@@ -116,11 +116,11 @@ func TestEviction(t *testing.T) {
 		_, _ = c.Get([]byte{1}, tx, view.viewID)
 		_, _ = c.Get([]byte{2}, tx, view.viewID)
 		_, _ = c.Get([]byte{3}, tx, view.viewID)
-		//require.Equal(c.stateRoots[c.latestViewID].cache.Len(), c.stateEvict.Len())
+		//require.Equal(c.roots[c.latestViewID].cache.Len(), c.stateEvict.Len())
 		return nil
 	})
 	require.Equal(0, c.stateEvict.Len())
-	//require.Equal(c.stateRoots[c.latestViewID].cache.Len(), c.stateEvict.Len())
+	//require.Equal(c.roots[c.latestViewID].cache.Len(), c.stateEvict.Len())
 	c.OnNewBlock(&remote.StateChangeBatch{
 		DatabaseViewID: id + 1,
 		ChangeBatch: []*remote.StateChange{
@@ -135,7 +135,7 @@ func TestEviction(t *testing.T) {
 		},
 	})
 	require.Equal(1, c.stateEvict.Len())
-	require.Equal(c.stateRoots[c.latestViewID].cache.Len(), c.stateEvict.Len())
+	require.Equal(c.roots[c.latestViewID].cache.Len(), c.stateEvict.Len())
 	_ = db.Update(ctx, func(tx kv.RwTx) error {
 		_ = tx.Put(kv.PlainState, k1[:], []byte{1})
 		cacheView, _ := c.View(ctx, tx)
@@ -147,7 +147,7 @@ func TestEviction(t *testing.T) {
 		_, _ = c.Get([]byte{6}, tx, view.viewID)
 		return nil
 	})
-	require.Equal(c.stateRoots[c.latestViewID].cache.Len(), c.stateEvict.Len())
+	require.Equal(c.roots[c.latestViewID].cache.Len(), c.stateEvict.Len())
 	require.Equal(cfg.KeysLimit, c.stateEvict.Len())
 }
 
