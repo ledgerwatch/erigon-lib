@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"sort"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"go.uber.org/atomic"
+	"golang.org/x/crypto/sha3"
 )
 
 type Cache interface {
@@ -91,6 +93,7 @@ type Coherent struct {
 	lock                            sync.RWMutex
 	cfg                             CoherentConfig
 	latestViewID                    ViewID
+	hasher                          hash.Hash
 }
 
 type CoherentRoot struct {
@@ -144,6 +147,7 @@ func New(cfg CoherentConfig) *Coherent {
 		codeRoots:  map[ViewID]*CoherentRoot{},
 		stateEvict: NewList(),
 		codeEvict:  NewList(),
+		hasher:     sha3.NewLegacyKeccak256(),
 		cfg:        cfg,
 		miss:       metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
 		hits:       metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="hit",name="%s"}`, cfg.MetricsLabel)),
@@ -235,16 +239,22 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 				v := sc.Changes[i].Data
 				c.add(addr[:], v, r, id)
-				c.addCode(addr[:], sc.Changes[i].Code, rCode, id)
+				c.hasher.Reset()
+				c.hasher.Write(sc.Changes[i].Code)
+				k := make([]byte, 32)
+				c.hasher.Sum(k)
+				c.addCode(k, sc.Changes[i].Code, rCode, id)
 			case remote.Action_DELETE:
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 				c.add(addr[:], nil, r, id)
-				c.addCode(addr[:], nil, r, id)
 			case remote.Action_STORAGE:
 				//skip, will check later
 			case remote.Action_CODE:
-				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
-				c.addCode(addr[:], sc.Changes[i].Code, rCode, id)
+				c.hasher.Reset()
+				c.hasher.Write(sc.Changes[i].Code)
+				k := make([]byte, 32)
+				c.hasher.Sum(k)
+				c.addCode(k, sc.Changes[i].Code, rCode, id)
 			default:
 				panic("not implemented yet")
 			}
