@@ -552,6 +552,7 @@ func (c *Coherent) evictRoots() {
 		return
 	}
 	to := c.latestViewID - ViewID(c.cfg.KeepViews)
+	fmt.Printf("evict: %d,%d,%d\n", c.cfg.KeepViews, c.latestViewID, to)
 	//fmt.Printf("collecting: %d\n", to)
 	var toDel []ViewID
 	for txId := range c.roots {
