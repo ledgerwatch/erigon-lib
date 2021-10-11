@@ -171,6 +171,8 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	if ok {
 		return r
 	}
+	fmt.Printf("selectOrCreateRoot create new: %d\n", viewID)
+
 	r = &CoherentRoot{ready: make(chan struct{})}
 	/*
 		if prevView, ok := c.roots[viewID-1]; ok {
