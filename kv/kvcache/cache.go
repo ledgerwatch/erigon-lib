@@ -175,23 +175,11 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 		return r
 	}
 
-	r = &CoherentRoot{ready: make(chan struct{})}
-	/*
-		if prevView, ok := c.roots[viewID-1]; ok {
-			//log.Info("advance: clone", "from", viewID-1, "to", viewID)
-			fmt.Printf("alex01: %d, %d,%d\n", viewID, prevView.cache.Len(), prevView.codeCache.Len())
-			r.cache = prevView.cache.Clone()
-			r.codeCache = prevView.codeCache.Clone()
-			r.isCanonical = prevView.isCanonical
-		} else {
-			fmt.Printf("alex02: %d\n", viewID)
-			//log.Info("advance: new", "to", viewID)
-			r.cache = btree.New(DEGREE)
-			r.codeCache = btree.New(DEGREE)
-		}
-	*/
-	r.cache = btree.New(DEGREE)
-	r.codeCache = btree.New(DEGREE)
+	r = &CoherentRoot{
+		ready:     make(chan struct{}),
+		cache:     btree.New(DEGREE),
+		codeCache: btree.New(DEGREE),
+	}
 	c.roots[viewID] = r
 	return r
 }
