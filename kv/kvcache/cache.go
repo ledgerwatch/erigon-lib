@@ -199,6 +199,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 	if !rootExists {
 		r = &CoherentRoot{ready: make(chan struct{})}
 		c.roots[viewID] = r
+		fmt.Printf("advanceRoot not found: %d\n", viewID)
 	}
 
 	if prevView, ok := c.roots[viewID-1]; ok && prevView.isCanonical {
