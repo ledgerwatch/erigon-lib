@@ -220,6 +220,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r, rCode *CoherentRoot) {
 	c.latestCodeView = rCode
 
 	c.keys.Set(uint64(c.latestStateView.cache.Len()))
+	c.codeKeys.Set(uint64(c.latestCodeView.cache.Len()))
 	c.evict.Set(uint64(c.stateEvict.Len()))
 	return r, rCode
 }
@@ -355,7 +356,7 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	}
 
 	if it != nil {
-		c.hits.Inc()
+		c.codeHits.Inc()
 
 		if isLatest {
 			c.codeEvict.MoveToFront(it.(*Element))
@@ -363,7 +364,7 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
-	c.miss.Inc()
+	c.codeMiss.Inc()
 
 	v, err := tx.GetOne(kv.Code, k)
 	if err != nil {
