@@ -348,12 +348,15 @@ func TestCode(t *testing.T) {
 		_ = tx.Put(kv.Code, k1[:], k2[:])
 		cacheView, _ := c.View(ctx, tx)
 		view := cacheView.(*CoherentView)
+
 		v, err := c.GetCode(k1[:], tx, view.viewID)
 		require.NoError(err)
-		fmt.Printf("%x\n", v)
+		require.Equal(k2[:], v)
+
 		v, err = c.GetCode(k1[:], tx, view.viewID)
 		require.NoError(err)
-		fmt.Printf("%x\n", v)
+		require.Equal(k2[:], v)
+
 		//require.Equal(c.roots[c.latestViewID].cache.Len(), c.stateEvict.Len())
 		return nil
 	})
