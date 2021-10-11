@@ -370,7 +370,9 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 		if isLatest {
 			c.codeEvict.MoveToFront(it.(*Element))
 		}
-		fmt.Printf("hit: %d\n", id)
+		if rand.Intn(100) == 1 {
+			fmt.Printf("hit: %d\n", id)
+		}
 		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
 		return it.(*Element).V, nil
 	}
