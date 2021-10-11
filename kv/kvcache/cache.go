@@ -379,9 +379,6 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	v = c.add(common.Copy(k), common.Copy(v), r, id).V
-	if rand.Intn(3000) == 1 {
-		fmt.Printf("after add: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-	}
 	return v, nil
 }
 
@@ -432,6 +429,9 @@ func (c *Coherent) removeOldestCode(r *CoherentRoot) {
 func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.cache.ReplaceOrInsert(it)
+	if rand.Intn(3000) == 1 {
+		fmt.Printf("after add: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+	}
 	if c.latestViewID != id {
 		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
@@ -450,6 +450,9 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 func (c *Coherent) addCode(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.codeCache.ReplaceOrInsert(it)
+	if rand.Intn(3000) == 1 {
+		fmt.Printf("after addCode: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+	}
 	if c.latestViewID != id {
 		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
