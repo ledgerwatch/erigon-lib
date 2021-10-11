@@ -62,8 +62,8 @@ func NewServer(rateLimit uint32, creds credentials.TransportCredentials) *grpc.S
 
 	//cpus := uint32(runtime.GOMAXPROCS(-1))
 	opts := []grpc.ServerOption{
-		grpc.ReadBufferSize(1024),
-		grpc.WriteBufferSize(1024),
+		//grpc.ReadBufferSize(1024),
+		//grpc.WriteBufferSize(1024),
 		//grpc.NumStreamWorkers(cpus), // reduce amount of goroutines
 		grpc.MaxConcurrentStreams(rateLimit), // to force clients reduce concurrency level
 		// Don't drop the connection, settings accordign to this comment on GitHub
