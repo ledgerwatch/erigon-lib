@@ -236,6 +236,9 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 	c.keys.Set(uint64(c.latestStateView.cache.Len()))
 	c.codeKeys.Set(uint64(c.latestStateView.codeCache.Len()))
 	c.evict.Set(uint64(c.stateEvict.Len()))
+	for i, j := range c.roots {
+		fmt.Printf("advanceRoot all: %d,%d,%d\n", i, j.cache.Len(), j.codeCache.Len())
+	}
 	return r
 }
 
