@@ -216,7 +216,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 			r.cache = btree.New(DEGREE)
 			r.codeCache = btree.New(DEGREE)
 		} else {
-			fmt.Printf("advanceRoot use existing: %d,%d\n", r.cache.Len(), r.codeCache.Len())
+			fmt.Printf("advanceRoot use existing: %d,%d,%d\n", viewID, r.cache.Len(), r.codeCache.Len())
 			r.cache.Ascend(func(i btree.Item) bool {
 				c.stateEvict.PushFront(i.(*Element))
 				return true
