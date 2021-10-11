@@ -169,7 +169,7 @@ func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
 	defer c.lock.Unlock()
 	r, ok := c.roots[viewID]
 	if ok {
-		if rand.Intn(3000) == 1 {
+		if rand.Intn(4000) == 1 {
 			fmt.Printf("selectOrCreateRoot found: %d,%d, %d,%d\n", viewID, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 		}
 		return r
@@ -345,11 +345,11 @@ func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *Co
 		it = r.cache.Get(&Element{K: k})
 	}
 	if it == nil {
-		if rand.Intn(3000) == 1 {
+		if rand.Intn(4000) == 1 {
 			fmt.Printf("miss: %d,%t,%t,%d, %d,%d\n", id, ok, isLatest, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 		}
 	} else {
-		if rand.Intn(3000) == 1 {
+		if rand.Intn(4000) == 1 {
 			fmt.Printf("hit: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 		}
 	}
@@ -431,7 +431,7 @@ func (c *Coherent) removeOldestCode(r *CoherentRoot) {
 func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.cache.ReplaceOrInsert(it)
-	if rand.Intn(3000) == 1 {
+	if rand.Intn(4000) == 1 {
 		fmt.Printf("after add: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 	}
 	if c.latestViewID != id {
@@ -452,7 +452,7 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 func (c *Coherent) addCode(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
 	replaced := r.codeCache.ReplaceOrInsert(it)
-	if rand.Intn(3000) == 1 {
+	if rand.Intn(4000) == 1 {
 		fmt.Printf("after addCode: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
 	}
 	if c.latestViewID != id {
