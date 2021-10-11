@@ -250,7 +250,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
-	defer func(t time.Time) { fmt.Printf("cache.go:233: %s,%d\n", time.Since(t), id) }(time.Now())
+	defer func(t time.Time) { fmt.Printf("cache.go:253: %s\n", time.Since(t)) }(time.Now())
 	r := c.advanceRoot(id)
 	for _, sc := range stateChanges.ChangeBatch {
 		for i := range sc.Changes {
