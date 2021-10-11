@@ -375,6 +375,9 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	v = c.add(common.Copy(k), common.Copy(v), r, id).V
+	if rand.Intn(3000) == 1 {
+		fmt.Printf("after add: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+	}
 	return v, nil
 }
 
