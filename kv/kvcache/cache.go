@@ -92,7 +92,7 @@ type Coherent struct {
 	codeHits, codeMiss, codeKeys *metrics.Counter
 	latestStateView              *CoherentRoot
 	roots                        map[ViewID]*CoherentRoot
-	stateEvict, codeEvict        *List
+	stateEvict, codeEvict        *ThreadSafeEvictionList
 	lock                         sync.RWMutex
 	cfg                          CoherentConfig
 	latestViewID                 ViewID
@@ -152,8 +152,8 @@ func New(cfg CoherentConfig) *Coherent {
 	}
 	return &Coherent{
 		roots:      map[ViewID]*CoherentRoot{},
-		stateEvict: NewList(),
-		codeEvict:  NewList(),
+		stateEvict: &ThreadSafeEvictionList{l: NewList()},
+		codeEvict:  &ThreadSafeEvictionList{l: NewList()},
 		hasher:     sha3.NewLegacyKeccak256(),
 		cfg:        cfg,
 		miss:       metrics.GetOrCreateCounter(fmt.Sprintf(`cache_total{result="miss",name="%s"}`, cfg.MetricsLabel)),
@@ -430,14 +430,14 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	return v, nil
 }
 func (c *Coherent) removeOldest(r *CoherentRoot) {
-	e := c.stateEvict.Back()
+	e := c.stateEvict.Oldest()
 	if e != nil {
 		c.stateEvict.Remove(e)
 		r.cache.Delete(e)
 	}
 }
 func (c *Coherent) removeOldestCode(r *CoherentRoot) {
-	e := c.codeEvict.Back()
+	e := c.codeEvict.Oldest()
 	if e != nil {
 		c.codeEvict.Remove(e)
 		r.codeCache.Delete(e)
@@ -596,6 +596,48 @@ type Element struct {
 
 func (e *Element) Less(than btree.Item) bool {
 	return bytes.Compare(e.K, than.(*Element).K) < 0
+}
+
+type ThreadSafeEvictionList struct {
+	l    *List
+	lock sync.RWMutex
+}
+
+func (l *ThreadSafeEvictionList) Init() {
+	l.lock.Lock()
+	l.l.Init()
+	l.lock.Unlock()
+}
+func (l *ThreadSafeEvictionList) PushFront(e *Element) {
+	l.lock.Lock()
+	l.l.PushFront(e)
+	l.lock.Unlock()
+}
+
+func (l *ThreadSafeEvictionList) MoveToFront(e *Element) {
+	l.lock.Lock()
+	l.l.MoveToFront(e)
+	l.lock.Unlock()
+}
+
+func (l *ThreadSafeEvictionList) Remove(e *Element) {
+	l.lock.Lock()
+	l.l.Remove(e)
+	l.lock.Unlock()
+}
+
+func (l *ThreadSafeEvictionList) Oldest() *Element {
+	l.lock.Lock()
+	e := l.l.Back()
+	l.lock.Unlock()
+	return e
+}
+
+func (l *ThreadSafeEvictionList) Len() int {
+	l.lock.RLock()
+	length := l.l.Len()
+	l.lock.RUnlock()
+	return length
 }
 
 // ========= copypaste of List implementation from stdlib ========
