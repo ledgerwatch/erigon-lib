@@ -32,6 +32,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/crypto/sha3"
 )
@@ -341,6 +342,8 @@ func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *Co
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
+	//TODO: create thread-safe list wrapper
+
 	r, ok := c.roots[id]
 	if !ok {
 		return nil, r, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
@@ -557,7 +560,7 @@ func (c *Coherent) evictRoots() {
 		}
 		toDel = append(toDel, txId)
 	}
-	//log.Info("forget old roots", "list", fmt.Sprintf("%d", toDel))
+	log.Info("forget old roots", "list", fmt.Sprintf("%d", toDel))
 	for _, txId := range toDel {
 		delete(c.roots, txId)
 	}
