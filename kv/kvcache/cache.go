@@ -338,6 +338,10 @@ func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *Co
 	} else {
 		it = r.cache.Get(&Element{K: k})
 	}
+	if rand.Intn(3000) == 1 {
+		fmt.Printf("miss: %d,%t,%t,%d, %d,%d\n", id, ok, isLatest, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+	}
+
 	return it, r, isLatest, nil
 }
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
@@ -403,11 +407,6 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if rand.Intn(3000) == 1 {
-		_, ok := c.roots[id]
-		fmt.Printf("miss: %d,%t,%d, %d,%d\n", id, ok, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-	}
-
 	v = c.addCode(common.Copy(k), common.Copy(v), r, id).V
 	return v, nil
 }
