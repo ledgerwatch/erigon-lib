@@ -329,7 +329,12 @@ func (c *Coherent) getFromCache(k []byte, id ViewID, code bool) (btree.Item, *Co
 		return nil, r, isLatest, fmt.Errorf("too old ViewID: %d, latestViewID=%d", id, c.latestViewID)
 	}
 
-	it := r.cache.Get(&Element{K: k})
+	var it btree.Item
+	if code {
+		it = r.codeCache.Get(&Element{K: k})
+	} else {
+		it = r.cache.Get(&Element{K: k})
+	}
 	return it, r, isLatest, nil
 }
 func (c *Coherent) Get(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
@@ -424,7 +429,7 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 }
 func (c *Coherent) addCode(k, v []byte, r *CoherentRoot, id ViewID) *Element {
 	it := &Element{K: k, V: v}
-	replaced := r.cache.ReplaceOrInsert(it)
+	replaced := r.codeCache.ReplaceOrInsert(it)
 	if c.latestViewID != id {
 		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
 		return it
