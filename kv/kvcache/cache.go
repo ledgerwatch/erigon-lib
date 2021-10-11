@@ -395,9 +395,6 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 	//	}
 	//}
 	c.codeMiss.Inc()
-	if rand.Intn(3000) == 1 {
-		fmt.Printf("miss: %d,%d, %d,%d\n", id, c.latestViewID, r.cache.Len(), r.codeCache.Len())
-	}
 	v, err := tx.GetOne(kv.Code, k)
 	if err != nil {
 		return nil, err
@@ -406,6 +403,11 @@ func (c *Coherent) GetCode(k []byte, tx kv.Tx, id ViewID) ([]byte, error) {
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if rand.Intn(3000) == 1 {
+		_, ok := c.roots[id]
+		fmt.Printf("miss: %d,%t,%d, %d,%d\n", id, ok, c.latestViewID, r.cache.Len(), r.codeCache.Len())
+	}
+
 	v = c.addCode(common.Copy(k), common.Copy(v), r, id).V
 	return v, nil
 }
