@@ -365,7 +365,6 @@ type HuffmanCoder struct {
 	w          *bufio.Writer
 	outputBits int
 	outputByte byte
-	trace      bool
 }
 
 func (hf *HuffmanCoder) encode(code uint64, codeBits int) error {
@@ -602,8 +601,7 @@ func (c *Compressor) CompressNextWord(word []byte) error {
 			if maxInclude {
 				d.coverStart = f.Start
 				d.patternIdx = len(c.patterns)
-				c.patterns = append(c.patterns, i-1)
-				c.patterns = append(c.patterns, maxCell.patternIdx)
+				c.patterns = append(c.patterns, i-1, maxCell.patternIdx)
 			} else {
 				d.coverStart = maxCell.coverStart
 				d.patternIdx = maxCell.patternIdx
