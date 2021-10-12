@@ -52,6 +52,9 @@ message StatusReply {
   uint32 baseFeeCount = 3;
 }
 
+message TransactionCountRequest {}
+message TransactionCountReply { uint64 nonce = 1; }
+
 service Txpool {
   // Version returns the service version number
   rpc Version(google.protobuf.Empty) returns (types.VersionReply);
@@ -68,4 +71,6 @@ service Txpool {
   rpc OnAdd(OnAddRequest) returns (stream OnAddReply);
   // returns high level status
   rpc Status(StatusRequest) returns (StatusReply);
+  // returns transaction count
+  rpc GetTransactionCount(TransactionCountRequest) returns (TransactionCountReply);
 }
