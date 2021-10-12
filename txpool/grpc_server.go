@@ -233,6 +233,13 @@ func (s *GrpcServer) Status(_ context.Context, _ *txpool_proto.StatusRequest) (*
 	}, nil
 }
 
+// GetTransactionCount
+// TODO: Ask if the transaction pool can be passed in or if it has to be retrieved (maybe with the address or something)
+func (s *GrpcServer) GetTransactionCount(ctx context.Context, p *TxPool, address *types2.H160) (nonce uint64, inPool bool) {
+	addr := gointerfaces.ConvertH160toAddress(address)
+	return GetNonceFromAddress(p.all, p.senders, addr)
+}
+
 // NewSlotsStreams - it's safe to use this class as non-pointer
 type NewSlotsStreams struct {
 	chans map[uint]txpool_proto.Txpool_OnAddServer
