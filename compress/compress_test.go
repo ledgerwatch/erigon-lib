@@ -17,13 +17,15 @@
 package compress
 
 import (
+	"fmt"
 	"path"
 	"testing"
 )
 
-func TestCompress(t *testing.T) {
+func TestCompressEmptyDict(t *testing.T) {
 	tmpDir := t.TempDir()
-	c, err := NewCompressor(path.Join(tmpDir, "compressed"), tmpDir, 100)
+	file := path.Join(tmpDir, "compressed")
+	c, err := NewCompressor(file, tmpDir, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,4 +35,31 @@ func TestCompress(t *testing.T) {
 	if err = c.Compress(); err != nil {
 		t.Fatal(err)
 	}
+	var d *Decompressor
+	if d, err = NewDecompressor(file); err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+}
+
+func TestCompressDict1(t *testing.T) {
+	tmpDir := t.TempDir()
+	file := path.Join(tmpDir, "compressed")
+	c, err := NewCompressor(file, tmpDir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = c.Compress(); err != nil {
+		t.Fatal(err)
+	}
+	var d *Decompressor
+	if d, err = NewDecompressor(file); err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
 }
