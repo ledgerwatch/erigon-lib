@@ -573,6 +573,8 @@ func (c *Compressor) findMatches() error {
 	var readBuf []byte
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
+		c.posMap[l+1]++
+		c.posMap[0]++
 		if int(l) > len(readBuf) {
 			readBuf = make([]byte, l)
 		}
@@ -595,7 +597,7 @@ func (c *Compressor) findMatches() error {
 				if _, err := c.interW.Write(word); err != nil {
 					return err
 				}
-				return nil
+				continue
 			}
 			c.ring.Reset()
 			c.patterns = append(c.patterns[:0], 0, 0) // Sentinel entry - no meaning

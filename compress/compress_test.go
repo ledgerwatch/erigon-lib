@@ -39,6 +39,17 @@ func TestCompressEmptyDict(t *testing.T) {
 	if d, err = NewDecompressor(file); err != nil {
 		t.Fatal(err)
 	}
+	g := d.MakeGetter()
+	if !g.HasNext() {
+		t.Fatalf("expected a word")
+	}
+	word, _ := g.Next(nil)
+	if string(word) != "word" {
+		t.Fatalf("expeced word, got (hex) %x", word)
+	}
+	if g.HasNext() {
+		t.Fatalf("not expecting anything else")
+	}
 	defer d.Close()
 }
 
@@ -60,6 +71,16 @@ func TestCompressDict1(t *testing.T) {
 	var d *Decompressor
 	if d, err = NewDecompressor(file); err != nil {
 		t.Fatal(err)
+	}
+	g := d.MakeGetter()
+	i := 0
+	for g.HasNext() {
+		word, _ := g.Next(nil)
+		expected := fmt.Sprintf("longlongword %d", i)
+		if string(word) != expected {
+			t.Errorf("expected %s, got (hex) %x", expected, word)
+		}
+		i++
 	}
 	defer d.Close()
 }

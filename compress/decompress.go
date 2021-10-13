@@ -30,6 +30,7 @@ type Decompressor struct {
 	data           []byte            // slice of correct size for the decompressor to work with
 	dict           Dictionary
 	posDict        Dictionary
+	wordsStart     uint64 // Offset of whether the words actually start
 }
 
 func NewDecompressor(compressedFile string) (*Decompressor, error) {
@@ -59,6 +60,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	d.posDict.rootOffset = binary.BigEndian.Uint64(d.data[pos+8 : pos+16])
 	d.posDict.cutoff = binary.BigEndian.Uint64(d.data[pos+16 : pos+24])
 	d.posDict.data = d.data[pos+24 : pos+24+dictSize]
+	d.wordsStart = pos + 24 + dictSize
 	return d, nil
 }
 
@@ -78,132 +80,153 @@ type Dictionary struct {
 	cutoff     uint64
 }
 
-type DictionaryState struct {
+type Getter struct {
 	data        []byte
-	dataP       int
+	dataP       uint64
 	patternDict *Dictionary
 	posDict     *Dictionary
 	offset      uint64
 	b           byte
 	mask        byte
+	uncovered   []int // Buffer for uncovered portions of the word
+	word        []byte
 }
 
-func (ds *DictionaryState) zero() bool {
-	ds.offset, _ = binary.Uvarint(ds.patternDict.data[ds.offset:])
-	return ds.offset < ds.patternDict.cutoff
+func (g *Getter) zero() bool {
+	g.offset, _ = binary.Uvarint(g.patternDict.data[g.offset:])
+	return g.offset < g.patternDict.cutoff
 }
 
-func (ds *DictionaryState) one() bool {
-	_, n := binary.Uvarint(ds.patternDict.data[ds.offset:])
-	ds.offset, _ = binary.Uvarint(ds.patternDict.data[ds.offset+uint64(n):])
-	return ds.offset < ds.patternDict.cutoff
+func (g *Getter) one() bool {
+	_, n := binary.Uvarint(g.patternDict.data[g.offset:])
+	g.offset, _ = binary.Uvarint(g.patternDict.data[g.offset+uint64(n):])
+	return g.offset < g.patternDict.cutoff
 }
 
-func (ds *DictionaryState) posZero() bool {
-	ds.offset, _ = binary.Uvarint(ds.posDict.data[ds.offset:])
-	return ds.offset < ds.posDict.cutoff
+func (g *Getter) posZero() bool {
+	g.offset, _ = binary.Uvarint(g.posDict.data[g.offset:])
+	return g.offset < g.posDict.cutoff
 }
 
-func (ds *DictionaryState) posOne() bool {
-	_, n := binary.Uvarint(ds.posDict.data[ds.offset:])
-	ds.offset, _ = binary.Uvarint(ds.posDict.data[ds.offset+uint64(n):])
-	return ds.offset < ds.posDict.cutoff
+func (g *Getter) posOne() bool {
+	_, n := binary.Uvarint(g.posDict.data[g.offset:])
+	g.offset, _ = binary.Uvarint(g.posDict.data[g.offset+uint64(n):])
+	return g.offset < g.posDict.cutoff
 }
 
-func (ds *DictionaryState) pattern() []byte {
-	l, n := binary.Uvarint(ds.patternDict.data[ds.offset:])
-	return ds.patternDict.data[ds.offset+uint64(n) : ds.offset+uint64(n)+l]
+func (g *Getter) pattern() []byte {
+	l, n := binary.Uvarint(g.patternDict.data[g.offset:])
+	return g.patternDict.data[g.offset+uint64(n) : g.offset+uint64(n)+l]
 }
 
-func (ds *DictionaryState) pos() uint64 {
-	pos, _ := binary.Uvarint(ds.posDict.data[ds.offset:])
+func (g *Getter) pos() uint64 {
+	pos, _ := binary.Uvarint(g.posDict.data[g.offset:])
 	return pos
 }
 
-func (ds *DictionaryState) NextPos(clean bool) uint64 {
+func (g *Getter) nextPos(clean bool) uint64 {
 	if clean {
-		ds.mask = 0
+		g.mask = 0
 	}
-	ds.offset = ds.posDict.rootOffset
+	g.offset = g.posDict.rootOffset
+	if g.offset < g.posDict.cutoff {
+		return g.pos()
+	}
 	for {
-		if ds.mask == 0 {
-			ds.mask = 1
-			ds.b = ds.data[ds.dataP]
-			ds.dataP++
+		if g.mask == 0 {
+			g.mask = 1
+			g.b = g.data[g.dataP]
+			g.dataP++
 		}
-		if ds.b&ds.mask == 0 {
-			ds.mask <<= 1
-			if ds.posZero() {
+		if g.b&g.mask == 0 {
+			g.mask <<= 1
+			if g.posZero() {
 				break
 			}
 		} else {
-			ds.mask <<= 1
-			if ds.posOne() {
+			g.mask <<= 1
+			if g.posOne() {
 				break
 			}
 		}
 	}
-	return ds.pos()
+	return g.pos()
 }
 
-func (ds *DictionaryState) NextPattern() []byte {
-	ds.offset = ds.patternDict.rootOffset
+func (g *Getter) nextPattern() []byte {
+	g.offset = g.patternDict.rootOffset
+	if g.offset < g.patternDict.cutoff {
+		return g.pattern()
+	}
 	for {
-		if ds.mask == 0 {
-			ds.mask = 1
-			ds.b = ds.data[ds.dataP]
-			ds.dataP++
+		if g.mask == 0 {
+			g.mask = 1
+			g.b = g.data[g.dataP]
+			g.dataP++
 		}
-		if ds.b&ds.mask == 0 {
-			ds.mask <<= 1
-			if ds.zero() {
+		if g.b&g.mask == 0 {
+			g.mask <<= 1
+			if g.zero() {
 				break
 			}
 		} else {
-			ds.mask <<= 1
-			if ds.one() {
+			g.mask <<= 1
+			if g.one() {
 				break
 			}
 		}
 	}
-	return ds.pattern()
+	return g.pattern()
 }
 
-// Decompress extracts a compressed word from given offset in the file
+// MakeGetter creates an object that can be used to access words in the decompressor's file
+// Getter is not thread-safe, but there can be multiple getters used simultaneously and concrently
+// for the same decompressor
+func (d *Decompressor) MakeGetter() *Getter {
+	return &Getter{patternDict: &d.dict, posDict: &d.posDict, data: d.data[d.wordsStart:], uncovered: make([]int, 0, 128)}
+}
+
+func (g *Getter) Reset(offset uint64) {
+	g.dataP = offset
+}
+
+func (g *Getter) HasNext() bool {
+	return g.dataP < uint64(len(g.data))
+}
+
+// Next extracts a compressed word from current offset in the file
 // and appends it to the given buf, returning the result of appending
-func (d Decompressor) Decompress(offset uint64, buf []byte) ([]byte, error) {
-	ds := DictionaryState{patternDict: &d.dict, posDict: &d.posDict, data: d.data[offset:], dataP: 0}
-	uncovered := make([]int, 0, 256)
-	var word []byte
-	l := ds.NextPos(true)
+// After extracting next word, it moves to the beginning of the next one
+func (g *Getter) Next(buf []byte) ([]byte, uint64) {
+	l := g.nextPos(true)
+	l--
 	if l > 0 {
-		if int(l) > len(word) {
-			word = make([]byte, l)
+		if int(l) > len(g.word) {
+			g.word = make([]byte, l)
 		}
 		var pos uint64
 		var lastPos int
 		var lastUncovered int
-		uncovered = uncovered[:0]
-		for pos = ds.NextPos(false /* clean */); pos != 0; pos = ds.NextPos(false) {
+		g.uncovered = g.uncovered[:0]
+		for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 			intPos := lastPos + int(pos) - 1
 			lastPos = intPos
-			pattern := ds.NextPattern()
-			copy(word[intPos:], pattern)
+			pattern := g.nextPattern()
+			copy(g.word[intPos:], pattern)
 			if intPos > lastUncovered {
-				uncovered = append(uncovered, lastUncovered, intPos)
+				g.uncovered = append(g.uncovered, lastUncovered, intPos)
 			}
 			lastUncovered = intPos + len(pattern)
 		}
 		if int(l) > lastUncovered {
-			uncovered = append(uncovered, lastUncovered, int(l))
+			g.uncovered = append(g.uncovered, lastUncovered, int(l))
 		}
 		// Uncovered characters
-		offset += uint64(ds.dataP)
-		for i := 0; i < len(uncovered); i += 2 {
-			copy(word[uncovered[i]:uncovered[i+1]], d.data[offset:])
-			offset += uint64(uncovered[i+1] - uncovered[i])
+		for i := 0; i < len(g.uncovered); i += 2 {
+			copy(g.word[g.uncovered[i]:g.uncovered[i+1]], g.data[g.dataP:])
+			g.dataP += uint64(g.uncovered[i+1] - g.uncovered[i])
 		}
-		buf = append(buf, word[:l]...)
+		buf = append(buf, g.word[:l]...)
 	}
-	return buf, nil
+	return buf, g.dataP
 }
