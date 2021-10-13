@@ -17,7 +17,6 @@
 package compress
 
 import (
-	"bufio"
 	"encoding/binary"
 	"os"
 )
@@ -26,10 +25,9 @@ import (
 type Decompressor struct {
 	compressedFile string
 	f              *os.File
-	mmapHandle1    []byte                      // mmap handle for unix (this is used to close mmap)
-	mmapHandle2    *[maxMapSize]byte           // mmap handle for windows (this is used to close mmap)
-	data           []byte                      // slice of correct size for the decompressor to work with
-	numBuf         [binary.MaxVarintLen64]byte // Buffer for producing var int deserialisation
+	mmapHandle1    []byte            // mmap handle for unix (this is used to close mmap)
+	mmapHandle2    *[maxMapSize]byte // mmap handle for windows (this is used to close mmap)
+	data           []byte            // slice of correct size for the decompressor to work with
 }
 
 func NewDecompressor(compressedFile string) (*Decompressor, error) {
@@ -81,58 +79,57 @@ type Dictionary struct {
 }
 
 type DictionaryState struct {
-	r      *bufio.Reader
-	d      *Dictionary
-	posD   *Dictionary
-	offset uint64
-	b      byte
-	mask   byte
+	data        []byte
+	dataP       int
+	patternDict *Dictionary
+	posDict     *Dictionary
+	offset      uint64
+	b           byte
+	mask        byte
 }
 
 func (ds *DictionaryState) zero() bool {
-	ds.offset, _ = binary.Uvarint(ds.d.data[ds.offset:])
-	return ds.offset < ds.d.cutoff
+	ds.offset, _ = binary.Uvarint(ds.patternDict.data[ds.offset:])
+	return ds.offset < ds.patternDict.cutoff
 }
 
 func (ds *DictionaryState) one() bool {
-	_, n := binary.Uvarint(ds.d.data[ds.offset:])
-	ds.offset, _ = binary.Uvarint(ds.d.data[ds.offset+uint64(n):])
-	return ds.offset < ds.d.cutoff
+	_, n := binary.Uvarint(ds.patternDict.data[ds.offset:])
+	ds.offset, _ = binary.Uvarint(ds.patternDict.data[ds.offset+uint64(n):])
+	return ds.offset < ds.patternDict.cutoff
 }
 
 func (ds *DictionaryState) posZero() bool {
-	ds.offset, _ = binary.Uvarint(ds.posD.data[ds.offset:])
-	return ds.offset < ds.posD.cutoff
+	ds.offset, _ = binary.Uvarint(ds.posDict.data[ds.offset:])
+	return ds.offset < ds.posDict.cutoff
 }
 
 func (ds *DictionaryState) posOne() bool {
-	_, n := binary.Uvarint(ds.posD.data[ds.offset:])
-	ds.offset, _ = binary.Uvarint(ds.posD.data[ds.offset+uint64(n):])
-	return ds.offset < ds.posD.cutoff
+	_, n := binary.Uvarint(ds.posDict.data[ds.offset:])
+	ds.offset, _ = binary.Uvarint(ds.posDict.data[ds.offset+uint64(n):])
+	return ds.offset < ds.posDict.cutoff
 }
 
 func (ds *DictionaryState) pattern() []byte {
-	l, n := binary.Uvarint(ds.d.data[ds.offset:])
-	return ds.d.data[ds.offset+uint64(n) : ds.offset+uint64(n)+l]
+	l, n := binary.Uvarint(ds.patternDict.data[ds.offset:])
+	return ds.patternDict.data[ds.offset+uint64(n) : ds.offset+uint64(n)+l]
 }
 
 func (ds *DictionaryState) pos() uint64 {
-	pos, _ := binary.Uvarint(ds.posD.data[ds.offset:])
+	pos, _ := binary.Uvarint(ds.posDict.data[ds.offset:])
 	return pos
 }
 
-func (ds *DictionaryState) NextPos(clean bool) (uint64, error) {
+func (ds *DictionaryState) NextPos(clean bool) uint64 {
 	if clean {
 		ds.mask = 0
 	}
-	ds.offset = ds.posD.rootOffset
+	ds.offset = ds.posDict.rootOffset
 	for {
 		if ds.mask == 0 {
 			ds.mask = 1
-			var e error
-			if ds.b, e = ds.r.ReadByte(); e != nil {
-				return 0, e
-			}
+			ds.b = ds.data[ds.dataP]
+			ds.dataP++
 		}
 		if ds.b&ds.mask == 0 {
 			ds.mask <<= 1
@@ -146,18 +143,16 @@ func (ds *DictionaryState) NextPos(clean bool) (uint64, error) {
 			}
 		}
 	}
-	return ds.pos(), nil
+	return ds.pos()
 }
 
-func (ds *DictionaryState) NextPattern() ([]byte, error) {
-	ds.offset = ds.d.rootOffset
+func (ds *DictionaryState) NextPattern() []byte {
+	ds.offset = ds.patternDict.rootOffset
 	for {
 		if ds.mask == 0 {
 			ds.mask = 1
-			var e error
-			if ds.b, e = ds.r.ReadByte(); e != nil {
-				return nil, e
-			}
+			ds.b = ds.data[ds.dataP]
+			ds.dataP++
 		}
 		if ds.b&ds.mask == 0 {
 			ds.mask <<= 1
@@ -171,7 +166,7 @@ func (ds *DictionaryState) NextPattern() ([]byte, error) {
 			}
 		}
 	}
-	return ds.pattern(), nil
+	return ds.pattern()
 }
 
 // Decompress extracts a compressed word from given offset in the file
