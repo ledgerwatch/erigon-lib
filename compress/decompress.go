@@ -187,8 +187,7 @@ func (d Decompressor) Decompress(offset uint64, buf []byte) ([]byte, error) {
 		for pos = ds.NextPos(false /* clean */); pos != 0; pos = ds.NextPos(false) {
 			intPos := lastPos + int(pos) - 1
 			lastPos = intPos
-			var pattern []byte
-			pattern = ds.NextPattern()
+			pattern := ds.NextPattern()
 			copy(word[intPos:], pattern)
 			if intPos > lastUncovered {
 				uncovered = append(uncovered, lastUncovered, intPos)
