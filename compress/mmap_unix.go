@@ -1,3 +1,4 @@
+// +build !windows
 /*
    Copyright 2021 Erigon contributors
 
