@@ -47,15 +47,15 @@ func mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
 
 	// Convert to a byte array.
 	data := ((*[maxMapSize]byte)(unsafe.Pointer(addr)))
-	return data, data, nil
+	return data[:size], data, nil
 }
 
-func munmap(b []byte) error {
-	if b == nil {
+func munmap(_ []byte, data *[maxMapSize]byte) error {
+	if data == nil {
 		return nil
 	}
 
-	addr := (uintptr)(unsafe.Pointer(&b[0]))
+	addr := (uintptr)(unsafe.Pointer(&data[0]))
 	if err := windows.UnmapViewOfFile(addr); err != nil {
 		return os.NewSyscallError("UnmapViewOfFile", err)
 	}

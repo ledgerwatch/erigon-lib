@@ -49,7 +49,7 @@ func mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
 }
 
 // munmap unmaps a DB's data file from memory.
-func munmap(b []byte) error {
+func munmap(b []byte, _ *[maxMapSize]byte) error {
 	// Ignore the unmap if we have no mapped data.
 	if b == nil {
 		return nil
