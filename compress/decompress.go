@@ -28,6 +28,8 @@ type Decompressor struct {
 	mmapHandle1    []byte            // mmap handle for unix (this is used to close mmap)
 	mmapHandle2    *[maxMapSize]byte // mmap handle for windows (this is used to close mmap)
 	data           []byte            // slice of correct size for the decompressor to work with
+	dict           Dictionary
+	posDict        Dictionary
 }
 
 func NewDecompressor(compressedFile string) (*Decompressor, error) {
@@ -49,16 +51,14 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	}
 	d.data = d.mmapHandle1[:size]
 	dictSize := binary.BigEndian.Uint64(d.data[:8])
-	var dict Dictionary
-	dict.rootOffset = binary.BigEndian.Uint64(d.data[8:16])
-	dict.cutoff = binary.BigEndian.Uint64(d.data[16:24])
-	dict.data = d.data[24 : 24+dictSize]
+	d.dict.rootOffset = binary.BigEndian.Uint64(d.data[8:16])
+	d.dict.cutoff = binary.BigEndian.Uint64(d.data[16:24])
+	d.dict.data = d.data[24 : 24+dictSize]
 	pos := 24 + dictSize
 	dictSize = binary.BigEndian.Uint64(d.data[pos : pos+8])
-	var posDict Dictionary
-	posDict.rootOffset = binary.BigEndian.Uint64(d.data[pos+8 : pos+16])
-	posDict.cutoff = binary.BigEndian.Uint64(d.data[pos+16 : pos+24])
-	posDict.data = d.data[pos+24 : pos+24+dictSize]
+	d.posDict.rootOffset = binary.BigEndian.Uint64(d.data[pos+8 : pos+16])
+	d.posDict.cutoff = binary.BigEndian.Uint64(d.data[pos+16 : pos+24])
+	d.posDict.data = d.data[pos+24 : pos+24+dictSize]
 	return d, nil
 }
 
@@ -172,5 +172,39 @@ func (ds *DictionaryState) NextPattern() []byte {
 // Decompress extracts a compressed word from given offset in the file
 // and appends it to the given buf, returning the result of appending
 func (d Decompressor) Decompress(offset uint64, buf []byte) ([]byte, error) {
-	return nil, nil
+	ds := DictionaryState{patternDict: &d.dict, posDict: &d.posDict, data: d.data[offset:], dataP: 0}
+	uncovered := make([]int, 0, 256)
+	var word []byte
+	l := ds.NextPos(true)
+	if l > 0 {
+		if int(l) > len(word) {
+			word = make([]byte, l)
+		}
+		var pos uint64
+		var lastPos int
+		var lastUncovered int
+		uncovered = uncovered[:0]
+		for pos = ds.NextPos(false /* clean */); pos != 0; pos = ds.NextPos(false) {
+			intPos := lastPos + int(pos) - 1
+			lastPos = intPos
+			var pattern []byte
+			pattern = ds.NextPattern()
+			copy(word[intPos:], pattern)
+			if intPos > lastUncovered {
+				uncovered = append(uncovered, lastUncovered, intPos)
+			}
+			lastUncovered = intPos + len(pattern)
+		}
+		if int(l) > lastUncovered {
+			uncovered = append(uncovered, lastUncovered, int(l))
+		}
+		// Uncovered characters
+		offset += uint64(ds.dataP)
+		for i := 0; i < len(uncovered); i += 2 {
+			copy(word[uncovered[i]:uncovered[i+1]], d.data[offset:])
+			offset += uint64(uncovered[i+1] - uncovered[i])
+		}
+		buf = append(buf, word[:l]...)
+	}
+	return buf, nil
 }
