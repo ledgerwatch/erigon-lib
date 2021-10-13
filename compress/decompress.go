@@ -26,8 +26,10 @@ import (
 type Decompressor struct {
 	compressedFile string
 	f              *os.File
-	mmap           []byte
-	data           *[maxMapSize]byte
+	mmapHandle1    []byte                      // mmap handle for unix (this is used to close mmap)
+	mmapHandle2    *[maxMapSize]byte           // mmap handle for windows (this is used to close mmap)
+	data           []byte                      // slice of correct size for the decompressor to work with
+	numBuf         [binary.MaxVarintLen64]byte // Buffer for producing var int deserialisation
 }
 
 func NewDecompressor(compressedFile string) (*Decompressor, error) {
@@ -44,15 +46,26 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		return nil, err
 	}
 	size := int(stat.Size())
-	if d.mmap, d.data, err = mmap(d.f, size); err != nil {
+	if d.mmapHandle1, d.mmapHandle2, err = mmap(d.f, size); err != nil {
 		return nil, err
 	}
-
+	d.data = d.mmapHandle1[:size]
+	dictSize := binary.BigEndian.Uint64(d.data[:8])
+	var dict Dictionary
+	dict.rootOffset = binary.BigEndian.Uint64(d.data[8:16])
+	dict.cutoff = binary.BigEndian.Uint64(d.data[16:24])
+	dict.data = d.data[24 : 24+dictSize]
+	pos := 24 + dictSize
+	dictSize = binary.BigEndian.Uint64(d.data[pos : pos+8])
+	var posDict Dictionary
+	posDict.rootOffset = binary.BigEndian.Uint64(d.data[pos+8 : pos+16])
+	posDict.cutoff = binary.BigEndian.Uint64(d.data[pos+16 : pos+24])
+	posDict.data = d.data[pos+24 : pos+24+dictSize]
 	return d, nil
 }
 
 func (d *Decompressor) Close() error {
-	if err := munmap(d.mmap, d.data); err != nil {
+	if err := munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
 		return err
 	}
 	if err := d.f.Close(); err != nil {
