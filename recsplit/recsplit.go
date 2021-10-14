@@ -387,7 +387,12 @@ func (rs *RecSplit) recsplit(level int, bucket []uint64, offsets []uint64, unary
 			}
 		}
 		if m-i > 1 {
-			if unary, err = rs.recsplit(level+1, bucket[i:], offsets[i:i+unit], unary); err != nil {
+			if unary, err = rs.recsplit(level+1, bucket[i:], offsets[i:], unary); err != nil {
+				return nil, err
+			}
+		} else if m-i == 1 {
+			binary.BigEndian.PutUint64(rs.numBuf[:], offsets[i])
+			if _, err := rs.indexW.Write(rs.numBuf[8-rs.bytesPerRec:]); err != nil {
 				return nil, err
 			}
 		}

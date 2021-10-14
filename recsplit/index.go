@@ -35,6 +35,7 @@ type Index struct {
 	data               []byte                 // slice of correct size for the index to work with
 	keyCount           uint64
 	bytesPerRec        int
+	recMask            uint64
 	grData             []uint64
 	ef                 DoubleEliasFano
 	bucketCount        uint64          // Number of buckets
@@ -69,6 +70,7 @@ func NewIndex(indexFile string) (*Index, error) {
 	// Read number of keys and bytes per record
 	idx.keyCount = binary.BigEndian.Uint64(idx.data[:8])
 	idx.bytesPerRec = int(idx.data[8])
+	idx.recMask = (uint64(1) << (8 * idx.bytesPerRec)) - 1
 	offset := 9 + int(idx.keyCount)*idx.bytesPerRec
 	// Bucket count, bucketSize, leafSize
 	idx.bucketCount = binary.BigEndian.Uint64(idx.data[offset:])
@@ -77,9 +79,16 @@ func NewIndex(indexFile string) (*Index, error) {
 	offset += 2
 	idx.leafSize = binary.BigEndian.Uint16(idx.data[offset:])
 	offset += 2
+	idx.primaryAggrBound = idx.leafSize * uint16(math.Max(2, math.Ceil(0.35*float64(idx.leafSize)+1./2.)))
+	if idx.leafSize < 7 {
+		idx.secondaryAggrBound = idx.primaryAggrBound * 2
+	} else {
+		idx.secondaryAggrBound = idx.primaryAggrBound * uint16(math.Ceil(0.21*float64(idx.leafSize)+9./10.))
+	}
 	// Salt
 	idx.salt = binary.BigEndian.Uint32(idx.data[offset:])
 	offset += 4
+	idx.hasher = murmur3.New128WithSeed(idx.salt)
 	// Start seed
 	startSeedLen := int(idx.data[offset])
 	offset++
@@ -107,13 +116,6 @@ func NewIndex(indexFile string) (*Index, error) {
 	idx.grData = p[:l]
 	offset += 8 * int(l)
 	idx.ef.Read(idx.data[offset:])
-	idx.hasher = murmur3.New128WithSeed(idx.salt)
-	idx.primaryAggrBound = idx.leafSize * uint16(math.Max(2, math.Ceil(0.35*float64(idx.leafSize)+1./2.)))
-	if idx.leafSize < 7 {
-		idx.secondaryAggrBound = idx.primaryAggrBound * 2
-	} else {
-		idx.secondaryAggrBound = idx.primaryAggrBound * uint16(math.Ceil(0.21*float64(idx.leafSize)+9./10.))
-	}
 	return idx, nil
 }
 
@@ -142,7 +144,7 @@ func (idx *Index) golombParam(m uint16) int {
 	return int(idx.golombRice[m] >> 27)
 }
 
-func (idx *Index) Lookup(key []byte) int {
+func (idx *Index) Lookup(key []byte) uint64 {
 	var gr GolombRiceReader
 	gr.data = idx.grData
 	idx.hasher.Reset()
@@ -197,5 +199,6 @@ func (idx *Index) Lookup(key []byte) int {
 		level++
 	}
 	b := gr.ReadNext(idx.golombParam(m))
-	return int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
+	rec := int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
+	return binary.BigEndian.Uint64(idx.data[1+idx.bytesPerRec*(rec+1):]) & idx.recMask
 }
