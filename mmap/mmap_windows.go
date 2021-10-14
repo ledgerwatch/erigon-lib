@@ -25,7 +25,7 @@ import (
 
 const MaxMapSize = 0xFFFFFFFFFFFF
 
-func Mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
+func Mmap(f *os.File, size int) ([]byte, *[MaxMapSize]byte, error) {
 	// Open a file mapping handle.
 	sizelo := uint32(size >> 32)
 	sizehi := uint32(size) & 0xffffffff
@@ -50,7 +50,7 @@ func Mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
 	return mmapHandle2[:size], mmapHandle2, nil
 }
 
-func Munmap(_ []byte, mmapHandle2 *[maxMapSize]byte) error {
+func Munmap(_ []byte, mmapHandle2 *[MaxMapSize]byte) error {
 	if mmapHandle2 == nil {
 		return nil
 	}
