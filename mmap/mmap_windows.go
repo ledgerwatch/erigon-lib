@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-package compress
+package mmap
 
 import (
 	"os"
@@ -23,9 +23,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const maxMapSize = 0xFFFFFFFFFFFF
+const MaxMapSize = 0xFFFFFFFFFFFF
 
-func mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
+func Mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
 	// Open a file mapping handle.
 	sizelo := uint32(size >> 32)
 	sizehi := uint32(size) & 0xffffffff
@@ -46,11 +46,11 @@ func mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
 	}
 
 	// Convert to a byte array.
-	mmapHandle2 := ((*[maxMapSize]byte)(unsafe.Pointer(addr)))
+	mmapHandle2 := ((*[MaxMapSize]byte)(unsafe.Pointer(addr)))
 	return mmapHandle2[:size], mmapHandle2, nil
 }
 
-func munmap(_ []byte, mmapHandle2 *[maxMapSize]byte) error {
+func Munmap(_ []byte, mmapHandle2 *[maxMapSize]byte) error {
 	if mmapHandle2 == nil {
 		return nil
 	}

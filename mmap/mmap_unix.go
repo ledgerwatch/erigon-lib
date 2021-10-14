@@ -17,7 +17,7 @@
    limitations under the License.
 */
 
-package compress
+package mmap
 
 import (
 	"fmt"
@@ -28,10 +28,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const maxMapSize = 0xFFFFFFFFFFFF
+const MaxMapSize = 0xFFFFFFFFFFFF
 
 // mmap memory maps a DB's data file.
-func mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
+func Mmap(f *os.File, size int) ([]byte, *[MaxMapSize]byte, error) {
 	// Map the data file to memory.
 	mmapHandle1, err := unix.Mmap(int(f.Fd()), 0, size, syscall.PROT_READ, syscall.MAP_SHARED)
 	if err != nil {
@@ -44,12 +44,12 @@ func mmap(f *os.File, size int) ([]byte, *[maxMapSize]byte, error) {
 		// Ignore not implemented error in kernel because it still works.
 		return nil, nil, fmt.Errorf("madvise: %s", err)
 	}
-	mmapHandle2 := (*[maxMapSize]byte)(unsafe.Pointer(&mmapHandle1[0]))
+	mmapHandle2 := (*[MaxMapSize]byte)(unsafe.Pointer(&mmapHandle1[0]))
 	return mmapHandle1, mmapHandle2, nil
 }
 
 // munmap unmaps a DB's data file from memory.
-func munmap(mmapHandle1 []byte, _ *[maxMapSize]byte) error {
+func Munmap(mmapHandle1 []byte, _ *[MaxMapSize]byte) error {
 	// Ignore the unmap if we have no mapped data.
 	if mmapHandle1 == nil {
 		return nil

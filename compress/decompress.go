@@ -19,15 +19,17 @@ package compress
 import (
 	"encoding/binary"
 	"os"
+
+	"github.com/ledgerwatch/erigon-lib/mmap"
 )
 
 // Decompressor provides access to the words in a file produced by a compressor
 type Decompressor struct {
 	compressedFile string
 	f              *os.File
-	mmapHandle1    []byte            // mmap handle for unix (this is used to close mmap)
-	mmapHandle2    *[maxMapSize]byte // mmap handle for windows (this is used to close mmap)
-	data           []byte            // slice of correct size for the decompressor to work with
+	mmapHandle1    []byte                 // mmap handle for unix (this is used to close mmap)
+	mmapHandle2    *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
+	data           []byte                 // slice of correct size for the decompressor to work with
 	dict           Dictionary
 	posDict        Dictionary
 	wordsStart     uint64 // Offset of whether the words actually start
@@ -47,7 +49,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		return nil, err
 	}
 	size := int(stat.Size())
-	if d.mmapHandle1, d.mmapHandle2, err = mmap(d.f, size); err != nil {
+	if d.mmapHandle1, d.mmapHandle2, err = mmap.Mmap(d.f, size); err != nil {
 		return nil, err
 	}
 	d.data = d.mmapHandle1[:size]
@@ -65,7 +67,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 }
 
 func (d *Decompressor) Close() error {
-	if err := munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
+	if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
 		return err
 	}
 	if err := d.f.Close(); err != nil {

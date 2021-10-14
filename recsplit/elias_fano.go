@@ -17,9 +17,12 @@
 package recsplit
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"math/bits"
+	"unsafe"
 )
 
 const (
@@ -51,6 +54,40 @@ type DoubleEliasFano struct {
 	posMinDelta           uint64
 }
 
+func (ef *DoubleEliasFano) deriveFields() (int, int) {
+	if ef.uPosition/(ef.numBuckets+1) == 0 {
+		ef.lPosition = 0
+	} else {
+		ef.lPosition = 63 ^ uint64(bits.LeadingZeros64(ef.uPosition/(ef.numBuckets+1)))
+	}
+	if ef.uCumKeys/(ef.numBuckets+1) == 0 {
+		ef.lCumKeys = 0
+	} else {
+		ef.lCumKeys = 63 ^ uint64(bits.LeadingZeros64(ef.uCumKeys/(ef.numBuckets+1)))
+	}
+	//fmt.Printf("uPosition = %d, lPosition = %d, uCumKeys = %d, lCumKeys = %d\n", ef.uPosition, ef.lPosition, ef.uCumKeys, ef.lCumKeys)
+	if ef.lCumKeys*2+ef.lPosition > 56 {
+		panic(fmt.Sprintf("ef.lCumKeys (%d) * 2 + ef.lPosition (%d) > 56", ef.lCumKeys, ef.lPosition))
+	}
+	ef.lowerBitsMaskCumKeys = (uint64(1) << ef.lCumKeys) - 1
+	ef.lowerBitsMaskPosition = (uint64(1) << ef.lPosition) - 1
+	wordsLowerBits := int(((ef.numBuckets+1)*(ef.lCumKeys+ef.lPosition)+63)/64 + 1)
+	wordsCumKeys := int((ef.numBuckets + 1 + (ef.uCumKeys >> ef.lCumKeys) + 63) / 64)
+	wordsPosition := int((ef.numBuckets + 1 + (ef.uPosition >> ef.lPosition) + 63) / 64)
+	jumpWords := ef.jumpSizeWords()
+	totalWords := wordsLowerBits + wordsCumKeys + wordsPosition + jumpWords
+	if ef.data == nil {
+		ef.data = make([]uint64, totalWords)
+	} else {
+		ef.data = ef.data[:totalWords]
+	}
+	ef.lowerBits = ef.data[:wordsLowerBits]
+	ef.upperBitsCumKeys = ef.data[wordsLowerBits : wordsLowerBits+wordsCumKeys]
+	ef.upperBitsPosition = ef.data[wordsLowerBits+wordsCumKeys : wordsLowerBits+wordsCumKeys+wordsPosition]
+	ef.jump = ef.data[wordsLowerBits+wordsCumKeys+wordsPosition:]
+	return wordsCumKeys, wordsPosition
+}
+
 // Build construct double Elias Fano index for two given sequences
 func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 	//fmt.Printf("cumKeys = %d\nposition = %d\n", cumKeys, position)
@@ -78,34 +115,8 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 	}
 	//fmt.Printf("cumKeysMinDelta = %d, posMinDelta = %d\n", ef.cumKeysMinDelta, ef.posMinDelta)
 	ef.uPosition = position[ef.numBuckets] - ef.numBuckets*ef.posMinDelta + 1
-	if ef.uPosition/(ef.numBuckets+1) == 0 {
-		ef.lPosition = 0
-	} else {
-		ef.lPosition = 63 ^ uint64(bits.LeadingZeros64(ef.uPosition/(ef.numBuckets+1)))
-	}
 	ef.uCumKeys = cumKeys[ef.numBuckets] - ef.numBuckets*ef.cumKeysMinDelta + 1 // Largest possible encoding of the cumKeys
-	if ef.uCumKeys/(ef.numBuckets+1) == 0 {
-		ef.lCumKeys = 0
-	} else {
-		ef.lCumKeys = 63 ^ uint64(bits.LeadingZeros64(ef.uCumKeys/(ef.numBuckets+1)))
-	}
-	//fmt.Printf("uPosition = %d, lPosition = %d, uCumKeys = %d, lCumKeys = %d\n", ef.uPosition, ef.lPosition, ef.uCumKeys, ef.lCumKeys)
-	if ef.lCumKeys*2+ef.lPosition > 56 {
-		panic(fmt.Sprintf("ef.lCumKeys (%d) * 2 + ef.lPosition (%d) > 56", ef.lCumKeys, ef.lPosition))
-	}
-	ef.lowerBitsMaskCumKeys = (uint64(1) << ef.lCumKeys) - 1
-	ef.lowerBitsMaskPosition = (uint64(1) << ef.lPosition) - 1
-	wordsLowerBits := int(((ef.numBuckets+1)*(ef.lCumKeys+ef.lPosition)+63)/64 + 1)
-	wordsCumKeys := int((ef.numBuckets + 1 + (ef.uCumKeys >> ef.lCumKeys) + 63) / 64)
-	wordsPosition := int((ef.numBuckets + 1 + (ef.uPosition >> ef.lPosition) + 63) / 64)
-	jumpWords := ef.jumpSizeWords()
-	//fmt.Printf("wordsLowerBits = %d, wordsCumKeys = %d, wordsPosition = %d, jumpWords = %d\n", wordsLowerBits, wordsCumKeys, wordsPosition, jumpWords)
-	totalWords := wordsLowerBits + wordsCumKeys + wordsPosition + jumpWords
-	ef.data = make([]uint64, totalWords)
-	ef.lowerBits = ef.data[:wordsLowerBits]
-	ef.upperBitsCumKeys = ef.data[wordsLowerBits : wordsLowerBits+wordsCumKeys]
-	ef.upperBitsPosition = ef.data[wordsLowerBits+wordsCumKeys : wordsLowerBits+wordsCumKeys+wordsPosition]
-	ef.jump = ef.data[wordsLowerBits+wordsCumKeys+wordsPosition:]
+	wordsCumKeys, wordsPosition := ef.deriveFields()
 
 	for i, cumDelta, bitDelta := uint64(0), uint64(0), uint64(0); i <= ef.numBuckets; i, cumDelta, bitDelta = i+1, cumDelta+ef.cumKeysMinDelta, bitDelta+ef.posMinDelta {
 		if ef.lCumKeys != 0 {
@@ -296,4 +307,48 @@ func (ef DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, po
 	lower >>= ef.lPosition
 	cumKeysNext = ((currWordCumKeys*64+uint64(bits.TrailingZeros64(windowCumKeys))-i-1)<<ef.lCumKeys | (lower & ef.lowerBitsMaskCumKeys)) + cumDelta + ef.cumKeysMinDelta
 	return
+}
+
+// Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
+func (ef *DoubleEliasFano) Write(w io.Writer) error {
+	var numBuf [8]byte
+	binary.BigEndian.PutUint64(numBuf[:], ef.numBuckets)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	binary.BigEndian.PutUint64(numBuf[:], ef.uCumKeys)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	binary.BigEndian.PutUint64(numBuf[:], ef.uPosition)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	binary.BigEndian.PutUint64(numBuf[:], ef.cumKeysMinDelta)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	binary.BigEndian.PutUint64(numBuf[:], ef.posMinDelta)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
+	b := (*p)[:]
+	if _, e := w.Write(b[:len(ef.data)*8]); e != nil {
+		return e
+	}
+	return nil
+}
+
+// Read inputs the state of golomb rice encoding from a reader s
+func (ef *DoubleEliasFano) Read(r []byte) int {
+	ef.numBuckets = binary.BigEndian.Uint64(r[:8])
+	ef.uCumKeys = binary.BigEndian.Uint64(r[8:16])
+	ef.uPosition = binary.BigEndian.Uint64(r[16:24])
+	ef.cumKeysMinDelta = binary.BigEndian.Uint64(r[24:32])
+	ef.posMinDelta = binary.BigEndian.Uint64(r[32:40])
+	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[40]))
+	ef.data = p[:]
+	ef.deriveFields()
+	return 40 + 8*len(ef.data)
 }
