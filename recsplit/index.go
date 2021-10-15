@@ -38,6 +38,8 @@ type Index struct {
 	recMask            uint64
 	grData             []uint64
 	ef                 DoubleEliasFano
+	enums              bool
+	offsetEf           *EliasFano
 	bucketCount        uint64          // Number of buckets
 	hasher             murmur3.Hash128 // Salted hash function to use for splitting into initial buckets and mapping to 64-bit fingerprints
 	bucketSize         int
@@ -96,6 +98,11 @@ func NewIndex(indexFile string) (*Index, error) {
 	for i := 0; i < startSeedLen; i++ {
 		idx.startSeed[i] = binary.BigEndian.Uint64(idx.data[offset:])
 		offset += 8
+	}
+	idx.enums = idx.data[offset] != 0
+	offset++
+	if idx.enums {
+		offset += idx.offsetEf.Read(idx.data[offset:])
 	}
 	// Size of golomb rice params
 	golombParamSize := binary.BigEndian.Uint16(idx.data[offset:])

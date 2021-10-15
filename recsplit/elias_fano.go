@@ -37,15 +37,39 @@ const (
 
 // EliasFano can be used to encode one monotone sequence
 type EliasFano struct {
-	data          []uint64
-	lowerBits     []uint64
-	upperBits     []uint64
-	jump          []uint64
-	lowerBitsMask uint64
-	count         uint64
-	u             uint64
-	l             uint64
-	minDelta      uint64
+	data           []uint64
+	lowerBits      []uint64
+	upperBits      []uint64
+	jump           []uint64
+	lowerBitsMask  uint64
+	count          uint64
+	u              uint64
+	l              uint64
+	maxOffset      uint64
+	minDelta       uint64
+	i              uint64
+	delta          uint64
+	wordsUpperBits int
+}
+
+func NewEliasFano(count uint64, maxOffset, minDelta uint64) *EliasFano {
+	ef := &EliasFano{
+		count:     count - 1,
+		maxOffset: maxOffset,
+		minDelta:  minDelta,
+	}
+	ef.u = maxOffset - ef.count*ef.minDelta + 1
+	ef.wordsUpperBits = ef.deriveFields()
+	return ef
+}
+
+func (ef *EliasFano) AddOffset(offset uint64) {
+	if ef.l != 0 {
+		set_bits(ef.lowerBits, ef.i*ef.l, int(ef.l), (offset-ef.delta)&ef.lowerBitsMask)
+	}
+	set(ef.upperBits, ((offset-ef.delta)>>ef.l)+ef.i)
+	ef.i++
+	ef.delta += ef.minDelta
 }
 
 func (ef EliasFano) jumpSizeWords() int {
@@ -79,28 +103,8 @@ func (ef *EliasFano) deriveFields() int {
 }
 
 // Build construct Elias Fano index for a given sequences
-func (ef *EliasFano) Build(seq []uint64) {
-	ef.count = uint64(len(seq) - 1)
-	ef.minDelta = math.MaxUint64
-	for i := uint64(1); i <= ef.count; i++ {
-		if seq[i] < seq[i-1] {
-			panic("seq[i] <= seq[i-1]")
-		}
-		nDelta := seq[i] - seq[i-1]
-		if nDelta < ef.minDelta {
-			ef.minDelta = nDelta
-		}
-	}
-	ef.u = seq[ef.count] - ef.count*ef.minDelta + 1
-	wordsUpperBits := ef.deriveFields()
-
-	for i, delta := uint64(0), uint64(0); i <= ef.count; i, delta = i+1, delta+ef.minDelta {
-		if ef.l != 0 {
-			set_bits(ef.lowerBits, i*ef.l, int(ef.l), (seq[i]-delta)&ef.lowerBitsMask)
-		}
-		set(ef.upperBits, ((seq[i]-delta)>>ef.l)+i)
-	}
-	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < uint64(wordsUpperBits); i++ {
+func (ef *EliasFano) Build() {
+	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < uint64(ef.wordsUpperBits); i++ {
 		for b := uint64(0); b < 64; b++ {
 			if ef.upperBits[i]&(uint64(1)<<b) != 0 {
 				if (c & superQMask) == 0 {
@@ -183,6 +187,40 @@ func (ef EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 	lower >>= ef.l
 	valNext = ((currWord*64+uint64(bits.TrailingZeros64(window))-i-1)<<ef.l | (lower & ef.lowerBitsMask)) + delta + ef.minDelta
 	return
+}
+
+// Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
+func (ef *EliasFano) Write(w io.Writer) error {
+	var numBuf [8]byte
+	binary.BigEndian.PutUint64(numBuf[:], ef.count)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	binary.BigEndian.PutUint64(numBuf[:], ef.u)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	binary.BigEndian.PutUint64(numBuf[:], ef.minDelta)
+	if _, e := w.Write(numBuf[:]); e != nil {
+		return e
+	}
+	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
+	b := (*p)[:]
+	if _, e := w.Write(b[:len(ef.data)*8]); e != nil {
+		return e
+	}
+	return nil
+}
+
+// Read inputs the state of golomb rice encoding from a reader s
+func (ef *EliasFano) Read(r []byte) int {
+	ef.count = binary.BigEndian.Uint64(r[:8])
+	ef.u = binary.BigEndian.Uint64(r[8:16])
+	ef.minDelta = binary.BigEndian.Uint64(r[16:24])
+	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[24]))
+	ef.data = p[:]
+	ef.deriveFields()
+	return 24 + 8*len(ef.data)
 }
 
 // DoubleEliasFano can be used to encode two monotone sequences
