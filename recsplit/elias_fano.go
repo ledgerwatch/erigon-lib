@@ -35,7 +35,157 @@ const (
 	superQSize uint64 = 1 + qPerSuperQ/4 // 1 + 64/4 = 17
 )
 
-// DoubleEliasFano can be used to encde a monotone sequence
+// EliasFano can be used to encode one monotone sequence
+type EliasFano struct {
+	data          []uint64
+	lowerBits     []uint64
+	upperBits     []uint64
+	jump          []uint64
+	lowerBitsMask uint64
+	count         uint64
+	u             uint64
+	l             uint64
+	minDelta      uint64
+}
+
+func (ef EliasFano) jumpSizeWords() int {
+	size := ((ef.count + 1) / superQ) * superQSize // Whole blocks
+	if (ef.count+1)%superQ != 0 {
+		size += (1 + (((ef.count+1)%superQ+q-1)/q+3)/4) // Partial block
+	}
+	return int(size)
+}
+
+func (ef *EliasFano) deriveFields() int {
+	if ef.u/(ef.count+1) == 0 {
+		ef.l = 0
+	} else {
+		ef.l = 63 ^ uint64(bits.LeadingZeros64(ef.u/(ef.count+1)))
+	}
+	ef.lowerBitsMask = (uint64(1) << ef.l) - 1
+	wordsLowerBits := int(((ef.count+1)*ef.l+63)/64 + 1)
+	wordsUpperBits := int((ef.count + 1 + (ef.u >> ef.l) + 63) / 64)
+	jumpWords := ef.jumpSizeWords()
+	totalWords := wordsLowerBits + wordsUpperBits + jumpWords
+	if ef.data == nil {
+		ef.data = make([]uint64, totalWords)
+	} else {
+		ef.data = ef.data[:totalWords]
+	}
+	ef.lowerBits = ef.data[:wordsLowerBits]
+	ef.upperBits = ef.data[wordsLowerBits : wordsLowerBits+wordsUpperBits]
+	ef.jump = ef.data[wordsLowerBits+wordsUpperBits:]
+	return wordsUpperBits
+}
+
+// Build construct Elias Fano index for a given sequences
+func (ef *EliasFano) Build(seq []uint64) {
+	ef.count = uint64(len(seq) - 1)
+	ef.minDelta = math.MaxUint64
+	for i := uint64(1); i <= ef.count; i++ {
+		if seq[i] < seq[i-1] {
+			panic("seq[i] <= seq[i-1]")
+		}
+		nDelta := seq[i] - seq[i-1]
+		if nDelta < ef.minDelta {
+			ef.minDelta = nDelta
+		}
+	}
+	ef.u = seq[ef.count] - ef.count*ef.minDelta + 1
+	wordsUpperBits := ef.deriveFields()
+
+	for i, delta := uint64(0), uint64(0); i <= ef.count; i, delta = i+1, delta+ef.minDelta {
+		if ef.l != 0 {
+			set_bits(ef.lowerBits, i*ef.l, int(ef.l), (seq[i]-delta)&ef.lowerBitsMask)
+		}
+		set(ef.upperBits, ((seq[i]-delta)>>ef.l)+i)
+	}
+	for i, c, lastSuperQ := uint64(0), uint64(0), uint64(0); i < uint64(wordsUpperBits); i++ {
+		for b := uint64(0); b < 64; b++ {
+			if ef.upperBits[i]&(uint64(1)<<b) != 0 {
+				if (c & superQMask) == 0 {
+					// When c is multiple of 2^14 (4096)
+					lastSuperQ = i*64 + b
+					ef.jump[(c/superQ)*superQSize] = lastSuperQ
+				}
+				if (c & qMask) == 0 {
+					// When c is multiple of 2^8 (256)
+					var offset = i*64 + b - lastSuperQ // offset can be either 0, 256, 512, 768, ..., up to 4096-256
+					// offset needs to be encoded as 16-bit integer, therefore the following check
+					if offset >= (1 << 16) {
+						panic("")
+					}
+					// c % superQ is the bit index inside the group of 4096 bits
+					idx16 := (c % superQ) / q
+					idx64 := (c/superQ)*superQSize + 1 + (idx16 >> 2)
+					shift := 16 * (idx16 % 4)
+					mask := uint64(0xffff) << shift
+					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
+				}
+				c++
+			}
+		}
+	}
+}
+
+func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord uint64, lower uint64, delta uint64) {
+	lower = i * ef.l
+	idx64 := lower / 64
+	shift := lower % 64
+	lower = ef.lowerBits[idx64] >> shift
+	if shift > 0 {
+		lower |= ef.lowerBits[idx64+1] << (64 - shift)
+	}
+
+	jumpSuperQ := (i / superQ) * superQSize
+	jumpInsideSuperQ := (i % superQ) / q
+	idx16 := (jumpSuperQ + 2) + jumpInsideSuperQ
+	idx64 = idx16 / 4
+	shift = 16 * (idx16 % 4)
+	mask := uint64(0xffff) << shift
+	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
+
+	currWord = jump / 64
+	window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
+	d := int(i & qMask)
+
+	for bitCount := bits.OnesCount64(window); bitCount <= d; bitCount = bits.OnesCount64(window) {
+		currWord++
+		window = ef.upperBits[currWord]
+		d -= bitCount
+	}
+
+	sel = select64(window, d)
+	delta = i * ef.minDelta
+	val = ((currWord*64+uint64(sel)-i)<<ef.l | (lower & ef.lowerBitsMask)) + delta
+
+	return
+}
+
+func (ef EliasFano) Get(i uint64) uint64 {
+	val, _, _, _, _, _ := ef.get(i)
+	return val
+}
+
+func (ef EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
+	var window uint64
+	var sel int
+	var currWord uint64
+	var lower uint64
+	var delta uint64
+	val, window, sel, currWord, lower, delta = ef.get(i)
+	window &= (uint64(0xffffffffffffffff) << sel) << 1
+	for window == 0 {
+		currWord++
+		window = ef.upperBits[currWord]
+	}
+
+	lower >>= ef.l
+	valNext = ((currWord*64+uint64(bits.TrailingZeros64(window))-i-1)<<ef.l | (lower & ef.lowerBitsMask)) + delta + ef.minDelta
+	return
+}
+
+// DoubleEliasFano can be used to encode two monotone sequences
 // it is called "double" because the lower bits array contains two sequences interleaved
 type DoubleEliasFano struct {
 	data                  []uint64
