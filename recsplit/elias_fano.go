@@ -139,7 +139,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 
 	jumpSuperQ := (i / superQ) * superQSize
 	jumpInsideSuperQ := (i % superQ) / q
-	idx16 := (jumpSuperQ + 2) + jumpInsideSuperQ
+	idx16 := 2*(jumpSuperQ+2) + jumpInsideSuperQ
 	idx64 = idx16 / 4
 	shift = 16 * (idx16 % 4)
 	mask := uint64(0xffff) << shift
