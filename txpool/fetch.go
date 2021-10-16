@@ -321,7 +321,6 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			}
 			return nil
 		})
-		fmt.Printf("alex: %d\n", req.Id)
 		switch req.Id {
 		case sentry.MessageId_POOLED_TRANSACTIONS_65:
 			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
@@ -334,7 +333,6 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		default:
 			return fmt.Errorf("unexpected message: %s", req.Id.String())
 		}
-		fmt.Printf("alex3: %d\n", len(txs.txs))
 		if len(txs.txs) == 0 {
 			return nil
 		}
