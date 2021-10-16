@@ -410,12 +410,10 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	defer p.lock.Unlock()
 
 	l := len(p.unprocessedRemoteTxs.txs)
-	fmt.Printf("remotes %d\n", l)
 	if l == 0 {
 		return nil
 	}
 	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs)
-	fmt.Printf("validateTxs %d, %s\n", len(newTxs.txs), err)
 	if err != nil {
 		return err
 	}
@@ -430,6 +428,8 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 	p.pending.added = nil
+
+	fmt.Printf("p.promoted %d\n", len(p.promoted))
 
 	if p.promoted.Len() > 0 {
 		select {
