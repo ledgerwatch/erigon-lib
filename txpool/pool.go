@@ -861,7 +861,7 @@ func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 	p.all.delete(mt)
 	p.discardReasonsLRU.Add(string(mt.Tx.idHash[:]), reason)
 	if mt.subPool&IsLocal != 0 {
-		fmt.Printf("discard: %d", reason)
+		fmt.Printf("discard: %d, %b, %d, %d, %d\n", reason, mt.subPool, mt.Tx.feeCap, mt.Tx.tip, mt.Tx.nonce)
 	}
 }
 
