@@ -359,9 +359,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 				if tx.subPool&EnoughBalance > 0 {
 					//assert.True(tx.SenderHasEnoughBalance)
 				}
-				if tx.subPool&EnoughFeeCapProtocol > 0 {
-					assert.LessOrEqual(calcProtocolBaseFee(pendingBaseFee), tx.Tx.feeCap, msg)
-				}
 				if tx.subPool&EnoughFeeCapBlock > 0 {
 					assert.LessOrEqual(pendingBaseFee, tx.Tx.feeCap, msg)
 				}
@@ -398,9 +395,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 				if tx.subPool&EnoughBalance != 0 {
 					//assert.True(tx.SenderHasEnoughBalance, msg)
 				}
-				if tx.subPool&EnoughFeeCapProtocol > 0 {
-					assert.LessOrEqual(calcProtocolBaseFee(pendingBaseFee), tx.Tx.feeCap, msg)
-				}
 				if tx.subPool&EnoughFeeCapBlock > 0 {
 					assert.LessOrEqual(pendingBaseFee, tx.Tx.feeCap, msg)
 				}
@@ -424,9 +418,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 				}
 				if tx.subPool&EnoughBalance > 0 {
 					//assert.True(tx.SenderHasEnoughBalance, msg)
-				}
-				if tx.subPool&EnoughFeeCapProtocol > 0 {
-					assert.LessOrEqual(calcProtocolBaseFee(pendingBaseFee), tx.Tx.feeCap, msg)
 				}
 				if tx.subPool&EnoughFeeCapBlock > 0 {
 					assert.LessOrEqual(pendingBaseFee, tx.Tx.feeCap, msg)
