@@ -334,6 +334,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		default:
 			return fmt.Errorf("unexpected message: %s", req.Id.String())
 		}
+		fmt.Printf("alex3: %d\n", len(txs.txs))
 		if len(txs.txs) == 0 {
 			return nil
 		}
