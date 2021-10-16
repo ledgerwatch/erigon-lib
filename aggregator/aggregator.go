@@ -25,7 +25,7 @@ import (
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
-	"github.com/rs/zerolog/log"
+	"github.com/ledgerwatch/log/v3"
 )
 
 // Aggregator of multiple state files to support state reader and state writer
