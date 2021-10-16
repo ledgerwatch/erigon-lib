@@ -429,7 +429,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 	p.pending.added = nil
 
-	fmt.Printf("p.promoted %d\n", len(p.promoted))
+	fmt.Printf("p.promoted %d, %d,%d,%d\n", len(p.promoted), p.pending.Len(), p.baseFee.Len(), p.queued.Len())
 
 	if p.promoted.Len() > 0 {
 		select {
