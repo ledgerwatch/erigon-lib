@@ -110,19 +110,17 @@ type Pool interface {
 var _ Pool = (*TxPool)(nil) // compile-time interface check
 
 // SubPoolMarker ordered bitset responsible to sort transactions by sub-pools. Bits meaning:
-// 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means this transaction will never be included into this particular chain.
-// 2. Absence of nonce gaps. Set to 1 for transactions whose nonce is N, state nonce for the sender is M, and there are transactions for all nonces between M and N from the same sender. Set to 0 is the transaction's nonce is divided from the state nonce by one or more nonce gaps.
-// 3. Sufficient balance for gas. Set to 1 if the balance of sender's account in the state is B, nonce of the sender in the state is M, nonce of the transaction is N, and the sum of feeCap x gasLimit + transferred_value of all transactions from this sender with nonces N+1 ... M is no more than B. Set to 0 otherwise. In other words, this bit is set if there is currently a guarantee that the transaction and all its required prior transactions will be able to pay for gas.
-// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than baseFee of the currently pending block. Set to 0 otherwise.
-// 5. Local transaction. Set to 1 if transaction is local.
+// 1. Absence of nonce gaps. Set to 1 for transactions whose nonce is N, state nonce for the sender is M, and there are transactions for all nonces between M and N from the same sender. Set to 0 is the transaction's nonce is divided from the state nonce by one or more nonce gaps.
+// 2. Sufficient balance for gas. Set to 1 if the balance of sender's account in the state is B, nonce of the sender in the state is M, nonce of the transaction is N, and the sum of feeCap x gasLimit + transferred_value of all transactions from this sender with nonces N+1 ... M is no more than B. Set to 0 otherwise. In other words, this bit is set if there is currently a guarantee that the transaction and all its required prior transactions will be able to pay for gas.
+// 3. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than baseFee of the currently pending block. Set to 0 otherwise.
+// 4. Local transaction. Set to 1 if transaction is local.
 type SubPoolMarker uint8
 
 const (
-	EnoughFeeCapProtocol = 0b10000
-	NoNonceGaps          = 0b01000
-	EnoughBalance        = 0b00100
-	EnoughFeeCapBlock    = 0b00010
-	IsLocal              = 0b00001
+	NoNonceGaps       = 0b1000
+	EnoughBalance     = 0b0100
+	EnoughFeeCapBlock = 0b0010
+	IsLocal           = 0b0001
 )
 
 type DiscardReason uint8
@@ -227,10 +225,6 @@ func (i sortByNonce) Less(than btree.Item) bool {
 		return i.metaTx.Tx.senderID < than.(sortByNonce).metaTx.Tx.senderID
 	}
 	return i.metaTx.Tx.nonce < than.(sortByNonce).metaTx.Tx.nonce
-}
-
-func calcProtocolBaseFee(baseFee uint64) uint64 {
-	return 7
 }
 
 // TxPool - holds all pool-related data structures and lock-based tiny methods
@@ -696,7 +690,6 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	newTxs TxSlots, pendingBaseFee uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
-	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -730,7 +723,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 		if err != nil {
 			return err
 		}
-		onSenderStateChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, false)
+		onSenderStateChange(senderID, nonce, balance, byNonce, pendingBaseFee, pending, baseFee, queued, false)
 	}
 
 	//pending.EnforceWorstInvariants()
@@ -746,7 +739,6 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 	senders *sendersBatch, newTxs TxSlots, pendingBaseFee uint64, baseFeeChanged bool,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
-	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
 		for i := range newTxs.txs {
 			if newTxs.txs[i].senderID == 0 {
@@ -801,7 +793,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 		if err != nil {
 			return err
 		}
-		onSenderStateChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
+		onSenderStateChange(senderID, nonce, balance, byNonce, pendingBaseFee, pending, baseFee, queued, true)
 	}
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
@@ -936,7 +928,7 @@ func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 			mt.effectiveTip = 0
 		}
 
-		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
+		// 3. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 		// baseFee of the currently pending block. Set to 0 otherwise.
 		mt.subPool &^= EnoughFeeCapBlock
 		if mt.Tx.feeCap >= pendingBaseFee {
@@ -946,7 +938,7 @@ func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 	})
 }
 
-func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
+func onSenderStateChange(senderID, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -970,18 +962,8 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		needBalance := uint256.NewInt(mt.Tx.gas)
 		needBalance.Mul(needBalance, uint256.NewInt(mt.Tx.feeCap))
 		needBalance.Add(needBalance, &mt.Tx.value)
-		// 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol
-		// parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means
-		// this transaction will never be included into this particular chain.
-		mt.subPool &^= EnoughFeeCapProtocol
-		if mt.Tx.feeCap >= protocolBaseFee {
-			mt.subPool |= EnoughFeeCapProtocol
-		} else {
-			mt.subPool = 0 // TODO: we immediately drop all transactions if they have no first bit - then maybe we don't need this bit at all? And don't add such transactions to queue?
-			return true
-		}
 
-		// 2. Absence of nonce gaps. Set to 1 for transactions whose nonce is N, state nonce for
+		// 1. Absence of nonce gaps. Set to 1 for transactions whose nonce is N, state nonce for
 		// the sender is M, and there are transactions for all nonces between M and N from the same
 		// sender. Set to 0 is the transaction's nonce is divided from the state nonce by one or more nonce gaps.
 		mt.subPool &^= NoNonceGaps
@@ -990,7 +972,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			noGapsNonce++
 		}
 
-		// 3. Sufficient balance for gas. Set to 1 if the balance of sender's account in the
+		// 2. Sufficient balance for gas. Set to 1 if the balance of sender's account in the
 		// state is B, nonce of the sender in the state is M, nonce of the transaction is N, and the
 		// sum of feeCap x gasLimit + transferred_value of all transactions from this sender with
 		// nonces N+1 ... M is no more than B. Set to 0 otherwise. In other words, this bit is
@@ -1009,14 +991,14 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			}
 		}
 
-		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
+		// 3. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 		// baseFee of the currently pending block. Set to 0 otherwise.
 		mt.subPool &^= EnoughFeeCapBlock
 		if mt.minFeeCap >= pendingBaseFee {
 			mt.subPool |= EnoughFeeCapBlock
 		}
 
-		// 5. Local transaction. Set to 1 if transaction is local.
+		// 4. Local transaction. Set to 1 if transaction is local.
 		// can't change
 
 		if !unsafe {
