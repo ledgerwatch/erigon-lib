@@ -102,7 +102,9 @@ func NewIndex(indexFile string) (*Index, error) {
 	idx.enums = idx.data[offset] != 0
 	offset++
 	if idx.enums {
-		offset += idx.offsetEf.Read(idx.data[offset:])
+		var size int
+		idx.offsetEf, size = ReadEliasFano(idx.data[offset:])
+		offset += size
 	}
 	// Size of golomb rice params
 	golombParamSize := binary.BigEndian.Uint16(idx.data[offset:])
@@ -151,7 +153,7 @@ func (idx *Index) golombParam(m uint16) int {
 	return int(idx.golombRice[m] >> 27)
 }
 
-func (idx *Index) Lookup(key []byte) uint64 {
+func (idx Index) Lookup(key []byte) uint64 {
 	var gr GolombRiceReader
 	gr.data = idx.grData
 	idx.hasher.Reset()
@@ -208,4 +210,8 @@ func (idx *Index) Lookup(key []byte) uint64 {
 	b := gr.ReadNext(idx.golombParam(m))
 	rec := int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
 	return binary.BigEndian.Uint64(idx.data[1+idx.bytesPerRec*(rec+1):]) & idx.recMask
+}
+
+func (idx Index) Lookup2(i uint64) uint64 {
+	return idx.offsetEf.Get(i)
 }

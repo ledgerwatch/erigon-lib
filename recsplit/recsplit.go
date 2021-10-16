@@ -266,15 +266,22 @@ func (rs *RecSplit) AddKey(key []byte, offset uint64) error {
 			rs.minDelta = delta
 		}
 	}
-	rs.keysAdded++
-	if err := rs.bucketCollector.Collect(bucketKey[:], offsetVal[:]); err != nil {
-		return err
-	}
+
 	if rs.enums {
 		if err := rs.offsetCollector.Collect(offsetVal[:], nil); err != nil {
 			return err
 		}
+		var keyIdx [8]byte
+		binary.BigEndian.PutUint64(keyIdx[:], rs.keysAdded)
+		if err := rs.bucketCollector.Collect(bucketKey[:], keyIdx[:]); err != nil {
+			return err
+		}
+	} else {
+		if err := rs.bucketCollector.Collect(bucketKey[:], offsetVal[:]); err != nil {
+			return err
+		}
 	}
+	rs.keysAdded++
 	return nil
 }
 

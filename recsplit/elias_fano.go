@@ -213,14 +213,15 @@ func (ef *EliasFano) Write(w io.Writer) error {
 }
 
 // Read inputs the state of golomb rice encoding from a reader s
-func (ef *EliasFano) Read(r []byte) int {
+func ReadEliasFano(r []byte) (*EliasFano, int) {
+	ef := &EliasFano{}
 	ef.count = binary.BigEndian.Uint64(r[:8])
 	ef.u = binary.BigEndian.Uint64(r[8:16])
 	ef.minDelta = binary.BigEndian.Uint64(r[16:24])
 	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[24]))
 	ef.data = p[:]
 	ef.deriveFields()
-	return 24 + 8*len(ef.data)
+	return ef, 24 + 8*len(ef.data)
 }
 
 // DoubleEliasFano can be used to encode two monotone sequences
