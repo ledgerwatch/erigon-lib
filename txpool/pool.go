@@ -1021,18 +1021,18 @@ func onSenderStateChange(senderID, senderNonce uint64, senderBalance uint256.Int
 }
 
 func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) {
-	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
-	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
+	//1. If top element in the worst green queue has subPool != 0b1110 (binary), it needs to be removed from the green pool.
+	//   If subPool < 0b10000 (not satisfying minimum fee), discard.
 	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
 	for worst := pending.Worst(); pending.Len() > 0; worst = pending.Worst() {
-		if worst.subPool >= 0b11110 {
+		if worst.subPool >= 0b1110 {
 			break
 		}
-		if worst.subPool >= 0b11100 {
+		if worst.subPool >= 0b1100 {
 			baseFee.Add(pending.PopWorst())
 			continue
 		}
-		if worst.subPool >= 0b10000 {
+		if worst.subPool > 0b0000 {
 			queued.Add(pending.PopWorst())
 			continue
 		}
@@ -1041,7 +1041,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 
 	//2. If top element in the worst green queue has subPool == 0b1111, but there is not enough room in the pool, discard.
 	for worst := pending.Worst(); pending.Len() > pending.limit; worst = pending.Worst() {
-		if worst.subPool >= 0b11111 { // TODO: here must 'subPool == 0b1111' or 'subPool <= 0b1111' ?
+		if worst.subPool >= 0b1111 { // TODO: here must 'subPool == 0b1111' or 'subPool <= 0b1111' ?
 			break
 		}
 		discard(pending.PopWorst(), PendingPoolOverflow)
@@ -1049,7 +1049,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 
 	//3. If the top element in the best yellow queue has subPool == 0b1111, promote to the green pool.
 	for best := baseFee.Best(); baseFee.Len() > 0; best = baseFee.Best() {
-		if best.subPool < 0b11110 {
+		if best.subPool < 0b1110 {
 			break
 		}
 		pending.Add(baseFee.PopBest())
@@ -1058,10 +1058,10 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 	//4. If the top element in the worst yellow queue has subPool != 0x1110, it needs to be removed from the yellow pool.
 	//   If subPool < 0b1000 (not satisfying minimum fee), discard. Otherwise, demote to the red pool.
 	for worst := baseFee.Worst(); baseFee.Len() > 0; worst = baseFee.Worst() {
-		if worst.subPool >= 0b11100 {
+		if worst.subPool >= 0b1100 {
 			break
 		}
-		if worst.subPool >= 0b10000 {
+		if worst.subPool > 0b0000 {
 			queued.Add(baseFee.PopWorst())
 			continue
 		}
@@ -1070,18 +1070,18 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 
 	//5. If the top element in the worst yellow queue has subPool == 0x1110, but there is not enough room in the pool, discard.
 	for worst := baseFee.Worst(); baseFee.Len() > baseFee.limit; worst = baseFee.Worst() {
-		if worst.subPool >= 0b11110 {
+		if worst.subPool >= 0b1110 {
 			break
 		}
 		discard(baseFee.PopWorst(), BaseFeePoolOverflow)
 	}
 
-	//6. If the top element in the best red queue has subPool == 0x1110, promote to the yellow pool. If subPool == 0x1111, promote to the green pool.
+	//6. If the top element in the best red queue has subPool < 0x1100, promote to the yellow pool. If subPool < 0x1110, promote to the green pool.
 	for best := queued.Best(); queued.Len() > 0; best = queued.Best() {
-		if best.subPool < 0b11100 {
+		if best.subPool < 0b1100 {
 			break
 		}
-		if best.subPool < 0b11110 {
+		if best.subPool < 0b1110 {
 			baseFee.Add(queued.PopBest())
 			continue
 		}
@@ -1091,7 +1091,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 
 	//7. If the top element in the worst red queue has subPool < 0b1000 (not satisfying minimum fee), discard.
 	for worst := queued.Worst(); queued.Len() > 0; worst = queued.Worst() {
-		if worst.subPool >= 0b10000 {
+		if worst.subPool > 0b0000 {
 			break
 		}
 		discard(queued.PopWorst(), FeeTooLow)
