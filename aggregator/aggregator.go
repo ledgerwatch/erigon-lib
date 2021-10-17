@@ -43,10 +43,11 @@ import (
 // 1. Persistent table of expiration time for each of the files. Key - name of the file, value - timestamp, at which the file can be removed
 // 2. Transient (in-memory) mapping the "end block" of each file to the objects required for accessing the file (compress.Decompressor and resplit.Index)
 // 3. Persistent tables (one for accounts, one for contract storage, and one for contract code) summarising all the 1-block state diff files
-//    that were not yet merged together to form larger files. In these table, keys are the same as keys in the state diff files, but values are also
+//    that were not yet merged together to form larger files. In these tables, keys are the same as keys in the state diff files, but values are also
 //    augemented by the number of state diff files this key is present. This number gets decremented every time when a 1-block state diff files is removed
 //    from the summary table (due to being merged). And when this number gets to 0, the record is deleted from the summary table.
-// 4. Aggregating persistent hash table
+// 4. Aggregating persistent hash table. Maps state keys to the block numbers for the use in the part 2 (which is not necessarily the block number where
+//    the item last changed, but it is guaranteed to find correct element in the Transient mapping of part 2
 
 type Aggregator struct {
 	diffDir    string // Directory where the state diff files are stored
@@ -71,9 +72,15 @@ func (i *byEndBlockItem) Less(than btree.Item) bool {
 func NewAggregator(diffDir string, dbDir string) (*Aggregator, error) {
 	a := &Aggregator{
 		diffDir: diffDir,
-		dbDir:   dbDir,
 	}
 	byEndBlock := btree.New(32)
+	var closeBtree bool = true // It will be set to false in case of success at the end of the function
+	defer func() {
+		// Clean up all decompressor and indices upon error
+		if closeBtree {
+			closeFiles(byEndBlock)
+		}
+	}()
 	// Scan the diff directory and create the mapping of end blocks to files
 	files, err := os.ReadDir(diffDir)
 	if err != nil {
@@ -140,7 +147,35 @@ func NewAggregator(diffDir string, dbDir string) (*Aggregator, error) {
 			}
 		}
 	}
-	// TODO make sure all decompressors and indexes created are closed in case of an error
 	a.byEndBlock = byEndBlock
 	return a, nil
+}
+
+func closeFiles(byEndBlock *btree.BTree) {
+	byEndBlock.Ascend(func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.accountsD != nil {
+			item.accountsD.Close()
+		}
+		if item.accountsIdx != nil {
+			item.accountsIdx.Close()
+		}
+		if item.storageD != nil {
+			item.storageD.Close()
+		}
+		if item.storageIdx != nil {
+			item.storageIdx.Close()
+		}
+		if item.codeD != nil {
+			item.codeD.Close()
+		}
+		if item.codeIdx != nil {
+			item.codeIdx.Close()
+		}
+		return true
+	})
+}
+
+func (a *Aggregator) Close() {
+	closeFiles(a.byEndBlock)
 }
