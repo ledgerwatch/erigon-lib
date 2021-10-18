@@ -669,7 +669,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 		return nil, err
 	}
 	p.pending.added = nil
-
+	fmt.Printf("promoted: %d\n", p.promoted.Len())
 	if p.promoted.Len() > 0 {
 		select {
 		case p.newPendingTxs <- common.Copy(p.promoted):
