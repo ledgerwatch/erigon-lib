@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -178,4 +179,18 @@ func closeFiles(byEndBlock *btree.BTree) {
 
 func (a *Aggregator) Close() {
 	closeFiles(a.byEndBlock)
+}
+
+func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
+	return nil
+}
+
+type Reader struct {
+}
+
+func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) *Writer {
+	return nil
+}
+
+type Writer struct {
 }
