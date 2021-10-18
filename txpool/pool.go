@@ -677,7 +677,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	}
 
 	r := fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
-	fmt.Printf("reasons: %d\n", r)
+	fmt.Printf("reasons: %d,%d\n", r, p.pendingBaseFee.Load())
 	return r, nil
 }
 
