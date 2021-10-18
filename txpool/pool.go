@@ -370,7 +370,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
-	fmt.Printf("unwinded: %t\n", unwindTxs.isLocal)
 
 	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs, pendingBaseFee, baseFeeChanged, p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
@@ -429,6 +428,8 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 
 	p.pending.captureAddedHashes(&p.promoted)
+	fmt.Printf("processRemoteTxs: %t\n", newTxs.isLocal)
+
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -557,7 +558,6 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	defer addRemoteTxsTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	fmt.Printf("AddRemoteTxs: %t\n", newTxs.isLocal)
 	for i := range newTxs.txs {
 		_, ok := p.unprocessedRemoteByHash[string(newTxs.txs[i].idHash[:])]
 		if ok {
