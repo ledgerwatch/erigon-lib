@@ -6,7 +6,6 @@ package txpool
 import (
 	"testing"
 
-	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 )
 
