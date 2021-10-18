@@ -417,6 +417,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if l == 0 {
 		return nil
 	}
+	fmt.Printf("processRemoteTxs2: %t\n", p.unprocessedRemoteTxs.isLocal)
 	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs)
 	if err != nil {
 		return err
