@@ -1146,6 +1146,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			if !p.Started() {
 				continue
 			}
+			continue
 			if err := p.processRemoteTxs(ctx); err != nil {
 				if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
 					continue
