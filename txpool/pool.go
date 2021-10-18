@@ -854,6 +854,7 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 	}
 
 	if mt.subPool&IsLocal != 0 {
+		panic(1)
 		p.isLocalLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 	p.queued.Add(mt)
