@@ -661,21 +661,19 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 		return nil, err
 	}
 
-	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
-	p.pending.added = nil
-	if p.promoted.Len() > 0 {
-		select {
-		case p.newPendingTxs <- common.Copy(p.promoted):
-		default:
+
+	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
+	var notify Hashes
+	for i := range reasons {
+		if reasons[i] == Success {
+			notify = append(notify, newTxs.txs[i].idHash[:]...)
 		}
 	}
-
-	r := fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
-	fmt.Printf("reasons: %d,%d\n", r, p.pendingBaseFee.Load())
-	return r, nil
+	p.newPendingTxs <- notify
+	return reasons, nil
 }
 
 func (p *TxPool) coreDB() kv.RoDB {
