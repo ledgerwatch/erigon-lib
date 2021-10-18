@@ -588,7 +588,7 @@ func (p *TxPool) validateTxs(txs TxSlots) ([]DiscardReason, TxSlots, error) {
 
 	j := 0
 	for i := range txs.txs {
-		reasons[i] = p.validateTx(txs.txs[i], true)
+		reasons[i] = p.validateTx(txs.txs[i], txs.isLocal[i])
 		if reasons[i] != Success {
 			if reasons[i] == Spammer {
 				p.punishSpammer(txs.txs[i].senderID)
