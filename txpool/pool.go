@@ -423,13 +423,13 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
+	fmt.Printf("processRemoteTxs: %t\n", newTxs.isLocal)
 	err = p.senders.onNewTxs(newTxs)
 	if err != nil {
 		return err
 	}
 
 	p.pending.captureAddedHashes(&p.promoted)
-	fmt.Printf("processRemoteTxs: %t\n", newTxs.isLocal)
 
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
@@ -599,7 +599,7 @@ func (p *TxPool) validateTxs(txs TxSlots) ([]DiscardReason, TxSlots, error) {
 		reasons[i] = NotSet
 		newTxs.Resize(uint(j + 1))
 		newTxs.txs[j] = txs.txs[i]
-		newTxs.isLocal[j] = true
+		newTxs.isLocal[j] = txs.isLocal[i]
 		copy(newTxs.senders.At(j), txs.senders.At(i))
 		j++
 	}
