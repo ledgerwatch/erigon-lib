@@ -370,6 +370,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
+	fmt.Printf("unwinded: %t\n", unwindTxs.isLocal)
 
 	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs, pendingBaseFee, baseFeeChanged, p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
@@ -1322,7 +1323,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		return err
 	}
 	if err := tx.ForEach(kv.RecentLocalTransaction, nil, func(k, v []byte) error {
-		fmt.Printf("is local restored from db: %x\n", k)
+		//fmt.Printf("is local restored from db: %x\n", k)
 		p.isLocalLRU.Add(string(v), struct{}{})
 		return nil
 	}); err != nil {
