@@ -552,7 +552,6 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	defer addRemoteTxsTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	fmt.Printf("baseFee: %d\n", p.pendingBaseFee.Load())
 	for i := range newTxs.txs {
 		_, ok := p.unprocessedRemoteByHash[string(newTxs.txs[i].idHash[:])]
 		if ok {
