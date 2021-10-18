@@ -17,6 +17,8 @@
 package aggregator
 
 import (
+	"bytes"
+	"encoding/binary"
 	"os"
 	"path"
 	"regexp"
@@ -181,21 +183,116 @@ func (a *Aggregator) Close() {
 	closeFiles(a.byEndBlock)
 }
 
+const (
+	StateAccountsTable = "accounts"
+	StateStorageTable  = "storage"
+	StateCodeTable     = "code"
+)
+
 func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
 	r := &Reader{
-		a:  a,
-		tx: tx,
+		a:        a,
+		tx:       tx,
+		blockNum: blockNum,
 	}
 	return r
 }
 
 type Reader struct {
-	a  *Aggregator
-	tx kv.Getter
+	a        *Aggregator
+	tx       kv.Getter
+	blockNum uint64
 }
 
 func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
-	return nil, nil
+	// Look in the summary table first
+	v, err := r.tx.GetOne(StateAccountsTable, addr)
+	if err != nil {
+		return nil, err
+	}
+	if v != nil {
+		return v, nil
+	}
+	// Look in the files
+	var val []byte
+	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		offset := item.accountsIdx.Lookup(addr)
+		g := item.accountsD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if bytes.Equal(key, addr) {
+				val, _ = g.Next(nil)
+				return false
+			}
+		}
+		return true
+	})
+	return val, nil
+}
+
+func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte) ([]byte, error) {
+	// Look in the summary table first
+	dbkey := make([]byte, len(addr)+8+len(loc))
+	copy(dbkey[0:], addr)
+	binary.BigEndian.PutUint64(dbkey[len(addr):], incarnation)
+	copy(dbkey[len(addr)+8:], loc)
+	v, err := r.tx.GetOne(StateStorageTable, dbkey)
+	if err != nil {
+		return nil, err
+	}
+	if v != nil {
+		return v, nil
+	}
+	// Look in the files
+	filekey := make([]byte, len(addr)+len(loc))
+	copy(filekey[0:], addr)
+	copy(filekey[len(addr):], loc)
+	var val []byte
+	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		offset := item.storageIdx.Lookup(filekey)
+		g := item.storageD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if bytes.Equal(key, filekey) {
+				val, _ = g.Next(nil)
+				return false
+			}
+		}
+		return true
+	})
+	return val, nil
+}
+
+func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error) {
+	// Look in the summary table first
+	v, err := r.tx.GetOne(StateCodeTable, addr)
+	if err != nil {
+		return nil, err
+	}
+	if v != nil {
+		return v, nil
+	}
+	// Look in the files
+	var val []byte
+	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		offset := item.codeIdx.Lookup(addr)
+		g := item.codeD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if bytes.Equal(key, addr) {
+				val, _ = g.Next(nil)
+				return false
+			}
+		}
+		return true
+	})
+	return val, nil
 }
 
 func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) *Writer {
