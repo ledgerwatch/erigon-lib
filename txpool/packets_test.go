@@ -133,14 +133,6 @@ func TestPooledTransactionsPacket(t *testing.T) {
 	require.Equal(t, 34, pos)
 }
 
-func TestPooledTransactionsPacket6666(t *testing.T) {
-	var encodeBuf []byte
-	for i := 0; i < 100; i++ {
-		encodeBuf = encodeBuf[:0]
-		encodeBuf = EncodePooledTransactions66([][]byte{}, uint64(i), encodeBuf)
-	}
-}
-
 func TestPooledTransactionsPacket66(t *testing.T) {
 	for i, tt := range ptp66EncodeTests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
