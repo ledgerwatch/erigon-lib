@@ -35,11 +35,6 @@ import (
 
 type TxParsseConfig struct {
 	chainID uint256.Int
-
-	protected  bool
-	accessList bool
-	dynamicFee bool
-	maleable   bool
 }
 
 // TxParseContext is object that is required to parse transactions and turn transaction payload into TxSlot objects
