@@ -22,9 +22,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"math"
 	"runtime"
 	"sort"
@@ -46,7 +44,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
-	"google.golang.org/grpc/status"
 )
 
 var (
