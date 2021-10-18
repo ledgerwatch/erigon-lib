@@ -272,11 +272,10 @@ type TxPool struct {
 	recentlyConnectedPeers *recentlyConnectedPeers // all txs will be propagated to this peers eventually, and clear list
 	senders                *sendersBatch
 
-	rules   chain.Rules
 	chainID uint256.Int
 }
 
-func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, rules chain.Rules, chainID uint256.Int) (*TxPool, error) {
+func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(10_000, nil)
 	if err != nil {
 		return nil, err
@@ -301,7 +300,6 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ru
 		senders:                 newSendersCache(),
 		_chainDB:                coreDB,
 		cfg:                     cfg,
-		rules:                   rules,
 		chainID:                 chainID,
 		unprocessedRemoteTxs:    &TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
@@ -1322,7 +1320,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	}
 
 	txs := TxSlots{}
-	parseCtx := NewTxParseContext(p.rules, p.chainID)
+	parseCtx := NewTxParseContext(p.chainID)
 	parseCtx.WithSender(false)
 
 	i := 0

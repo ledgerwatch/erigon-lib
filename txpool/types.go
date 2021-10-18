@@ -25,7 +25,6 @@ import (
 	"math/bits"
 
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -61,7 +60,7 @@ type TxParseContext struct {
 	cfg TxParsseConfig
 }
 
-func NewTxParseContext(rules chain.Rules, chainID uint256.Int) *TxParseContext {
+func NewTxParseContext(chainID uint256.Int) *TxParseContext {
 	if chainID.IsZero() {
 		panic("wrong chainID")
 	}
@@ -72,28 +71,9 @@ func NewTxParseContext(rules chain.Rules, chainID uint256.Int) *TxParseContext {
 		recCtx:     secp256k1.NewContext(),
 	}
 
-	switch {
-	case rules.IsLondon:
-		// All transaction types are still supported
-		ctx.cfg.protected = true
-		ctx.cfg.accessList = true
-		ctx.cfg.dynamicFee = true
-		ctx.cfg.chainID.Set(&chainID)
-		ctx.chainIDMul.Mul(&chainID, u256.N2)
-	case rules.IsBerlin:
-		ctx.cfg.protected = true
-		ctx.cfg.accessList = true
-		ctx.cfg.chainID.Set(&chainID)
-		ctx.chainIDMul.Mul(&chainID, u256.N2)
-	case rules.IsEIP155:
-		ctx.cfg.protected = true
-		ctx.cfg.chainID.Set(&chainID)
-		ctx.chainIDMul.Mul(&chainID, u256.N2)
-	case rules.IsHomestead:
-	default:
-		// Only allow malleable transactions in Frontier
-		ctx.cfg.maleable = true
-	}
+	// behave as of London enabled
+	ctx.cfg.chainID.Set(&chainID)
+	ctx.chainIDMul.Mul(&chainID, u256.N2)
 	return ctx
 }
 
