@@ -1322,6 +1322,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		return err
 	}
 	if err := tx.ForEach(kv.RecentLocalTransaction, nil, func(k, v []byte) error {
+		fmt.Printf("is local restored from db: %x\n", k)
 		p.isLocalLRU.Add(string(v), struct{}{})
 		return nil
 	}); err != nil {
