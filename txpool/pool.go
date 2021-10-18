@@ -516,7 +516,9 @@ func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 func (p *TxPool) IsLocal(idHash []byte) bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return p.isLocalLRU.Contains(string(idHash))
+	re := p.isLocalLRU.Contains(string(idHash))
+	fmt.Printf("is local??? %d, %x, %t\n", p.isLocalLRU.Len(), idHash, re)
+	return re
 }
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                { return p.started.Load() }
