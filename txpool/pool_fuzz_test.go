@@ -333,7 +333,6 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		cfg := DefaultConfig
 		sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-
 		pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs

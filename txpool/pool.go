@@ -1194,7 +1194,14 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				}
 			}
 
-			send.BroadcastLocalPooledTxs(localTxHashes)
+			sentTo := send.BroadcastLocalPooledTxs(localTxHashes)
+			if len(localTxHashes)/32 > 0 {
+				if len(localTxHashes)/32 == 1 {
+					log.Info("local tx propagated", "to_peers_amount", sentTo, "tx_hash", fmt.Sprintf("%x", localTxHashes))
+				} else {
+					log.Info("local txs propagated", "to_peers_amount", sentTo, "txs_amount", len(localTxHashes)/32)
+				}
+			}
 			send.BroadcastRemotePooledTxs(remoteTxHashes)
 			propagateNewTxsTimer.UpdateDuration(t)
 		case <-syncToNewPeersEvery.C: // new peer
