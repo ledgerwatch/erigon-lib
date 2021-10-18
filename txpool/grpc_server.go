@@ -159,10 +159,8 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 
 	discardReasons, err := s.txPool.AddLocalTxs(ctx, slots)
 	if err != nil {
-		fmt.Printf("grpc add: %s\n", err)
 		return nil, err
 	}
-	fmt.Printf("grpc added\n")
 
 	j = 0
 	for i := range reply.Imported {
