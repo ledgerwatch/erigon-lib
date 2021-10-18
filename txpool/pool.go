@@ -417,13 +417,11 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if l == 0 {
 		return nil
 	}
-	fmt.Printf("processRemoteTxs2: %t\n", p.unprocessedRemoteTxs.isLocal)
 	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("processRemoteTxs: %t\n", newTxs.isLocal)
 	err = p.senders.onNewTxs(newTxs)
 	if err != nil {
 		return err
@@ -519,9 +517,7 @@ func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 func (p *TxPool) IsLocal(idHash []byte) bool {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	re := p.isLocalLRU.Contains(string(idHash))
-	fmt.Printf("is local??? %d, %x, %t\n", p.isLocalLRU.Len(), idHash, re)
-	return re
+	return p.isLocalLRU.Contains(string(idHash))
 }
 func (p *TxPool) AddNewGoodPeer(peerID PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                { return p.started.Load() }
