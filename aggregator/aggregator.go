@@ -182,15 +182,31 @@ func (a *Aggregator) Close() {
 }
 
 func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
-	return nil
+	r := &Reader{
+		a:  a,
+		tx: tx,
+	}
+	return r
 }
 
 type Reader struct {
+	a  *Aggregator
+	tx kv.Getter
+}
+
+func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
+	return nil, nil
 }
 
 func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) *Writer {
-	return nil
+	w := &Writer{
+		a:  a,
+		tx: tx,
+	}
+	return w
 }
 
 type Writer struct {
+	a  *Aggregator
+	tx kv.RwTx
 }
