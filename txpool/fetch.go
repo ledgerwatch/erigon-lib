@@ -336,6 +336,9 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		if len(txs.txs) == 0 {
 			return nil
 		}
+		for i := range txs.txs {
+			fmt.Printf("add: %d,%d,%d\n", txs.txs[i].tip, txs.txs[i].feeCap, txs.txs[i].gas)
+		}
 		f.pool.AddRemoteTxs(ctx, txs)
 	default:
 		//defer log.Info("dropped", "id", req.Id)
