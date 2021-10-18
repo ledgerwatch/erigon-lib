@@ -673,6 +673,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 		}
 	}
 	p.newPendingTxs <- notify
+	fmt.Printf("reasons: %d,%x\n", reasons, notify)
 	return reasons, nil
 }
 
