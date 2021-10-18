@@ -457,6 +457,8 @@ func (s TxSlots) Valid() error {
 	return nil
 }
 
+var zeroAddr = make([]byte, 20)
+
 // Resize internal arrays to len=targetSize, shrinks if need. It rely on `append` algorithm to realloc
 func (s *TxSlots) Resize(targetSize uint) {
 	for uint(len(s.txs)) < targetSize {
@@ -469,9 +471,19 @@ func (s *TxSlots) Resize(targetSize uint) {
 		s.isLocal = append(s.isLocal, false)
 	}
 	//todo: set nil to overflow txs
+	oldLen := uint(len(s.txs))
 	s.txs = s.txs[:targetSize]
+	for i := oldLen; i < targetSize; i++ {
+		s.txs[i] = nil
+	}
 	s.senders = s.senders[:length.Addr*targetSize]
+	for i := oldLen; i < targetSize; i++ {
+		copy(s.senders.At(int(i)), zeroAddr)
+	}
 	s.isLocal = s.isLocal[:targetSize]
+	for i := oldLen; i < targetSize; i++ {
+		s.isLocal[i] = false
+	}
 }
 func (s *TxSlots) Append(slot *TxSlot, sender []byte, isLocal bool) {
 	n := len(s.txs)

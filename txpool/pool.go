@@ -557,12 +557,13 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	defer addRemoteTxsTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	fmt.Printf("AddRemoteTxs: %t\n", newTxs.isLocal)
 	for i := range newTxs.txs {
 		_, ok := p.unprocessedRemoteByHash[string(newTxs.txs[i].idHash[:])]
 		if ok {
 			continue
 		}
-		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), newTxs.isLocal[i])
+		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), false)
 	}
 }
 
