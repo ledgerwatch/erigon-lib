@@ -866,6 +866,16 @@ func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 	p.discardReasonsLRU.Add(string(mt.Tx.idHash[:]), reason)
 }
 
+func (p *TxPool) NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	senderId, found := p.senders.id(string(addr[:]))
+	if !found {
+		return 0, false
+	}
+	return p.all.nonce(senderId), true
+}
+
 // removeMined - apply new highest block (or batch of blocks)
 //
 // 1. New best block arrives, which potentially changes the balance and the nonce of some senders.

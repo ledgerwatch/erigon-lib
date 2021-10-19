@@ -45,6 +45,14 @@ message AllReply {
   repeated Tx txs = 1;
 }
 
+message TransactionCountRequest {
+  types.H160 address = 1;
+}
+message TransactionCountReply {
+  bool found = 1;
+  uint64 nonce = 2;
+}
+
 message StatusRequest {}
 message StatusReply {
   uint32 pendingCount = 1;
@@ -68,4 +76,6 @@ service Txpool {
   rpc OnAdd(OnAddRequest) returns (stream OnAddReply);
   // returns high level status
   rpc Status(StatusRequest) returns (StatusReply);
+  // returns transaction count
+  rpc GetTransactionCount(TransactionCountRequest) returns (TransactionCountReply);
 }
