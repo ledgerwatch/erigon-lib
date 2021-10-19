@@ -385,6 +385,11 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
+	p.all.tree.Ascend(func(i btree.Item) bool {
+		mt := i.(sortByNonce).metaTx
+		fmt.Printf("all txs: %x, %b, %d,%d,%d\n", mt.Tx.idHash, mt.subPool, mt.effectiveTip, mt.nonceDistance, mt.cumulativeBalanceDistance)
+		return true
+	})
 	//log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "in", time.Since(t))
 	return nil
 }
@@ -425,7 +430,6 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	}
 
 	p.pending.captureAddedHashes(&p.promoted)
-
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
@@ -661,18 +665,19 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 		return nil, err
 	}
 
+	p.pending.captureAddedHashes(&p.promoted)
 	if err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return nil, err
 	}
+	p.pending.added = nil
 
 	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
-	var notify Hashes
 	for i := range reasons {
 		if reasons[i] == Success {
-			notify = append(notify, newTxs.txs[i].idHash[:]...)
+			p.promoted = append(p.promoted, newTxs.txs[i].idHash[:]...)
 		}
 	}
-	p.newPendingTxs <- notify
+	p.newPendingTxs <- common.Copy(p.promoted)
 	return reasons, nil
 }
 
@@ -848,6 +853,7 @@ func (p *TxPool) addLocked(mt *metaTx) bool {
 	}
 
 	if mt.subPool&IsLocal != 0 {
+		fmt.Printf("add local: %b, %d,%d,%d\n", mt.subPool, mt.effectiveTip, mt.nonceDistance, mt.cumulativeBalanceDistance)
 		p.isLocalLRU.Add(string(mt.Tx.idHash[:]), struct{}{})
 	}
 	p.queued.Add(mt)
@@ -1196,9 +1202,9 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			sentTo := send.BroadcastLocalPooledTxs(localTxHashes)
 			if len(localTxHashes)/32 > 0 {
 				if len(localTxHashes)/32 == 1 {
-					log.Info("local tx propagated", "to_peers_amount", sentTo, "tx_hash", fmt.Sprintf("%x", localTxHashes))
+					log.Info("local tx propagated", "to_peers_amount", sentTo, "tx_hash", fmt.Sprintf("%x", localTxHashes), "baseFee", p.pendingBaseFee.Load())
 				} else {
-					log.Info("local txs propagated", "to_peers_amount", sentTo, "txs_amount", len(localTxHashes)/32)
+					log.Info("local txs propagated", "to_peers_amount", sentTo, "txs_amount", len(localTxHashes)/32, "baseFee", p.pendingBaseFee.Load())
 				}
 			}
 			send.BroadcastRemotePooledTxs(remoteTxHashes)
