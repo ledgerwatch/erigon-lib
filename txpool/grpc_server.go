@@ -235,7 +235,7 @@ func (s *GrpcServer) Status(_ context.Context, _ *txpool_proto.StatusRequest) (*
 }
 
 // returns transaction count
-func (s *GrpcServer) GetTransactionCount(ctx context.Context, in *txpool_proto.TransactionCountRequest, opts ...grpc.CallOption) (*txpool_proto.TransactionCountReply, error) {
+func (s *GrpcServer) GetTransactionCount(ctx context.Context, in *txpool_proto.TransactionCountRequest) (*txpool_proto.TransactionCountReply, error) {
 	addr := gointerfaces.ConvertH160toAddress(in.Address)
 	nonce, inPool := s.txPool.NonceFromAddress(addr)
 	return &txpool_proto.TransactionCountReply{
