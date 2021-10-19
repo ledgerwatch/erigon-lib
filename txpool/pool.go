@@ -22,9 +22,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"math"
 	"runtime"
 	"sort"
@@ -46,7 +44,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
-	"google.golang.org/grpc/status"
 )
 
 var (
@@ -1144,15 +1141,17 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			if !p.Started() {
 				continue
 			}
-			if err := p.processRemoteTxs(ctx); err != nil {
-				if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
-					continue
+			/*
+				if err := p.processRemoteTxs(ctx); err != nil {
+					if s, ok := status.FromError(err); ok && retryLater(s.Code()) {
+						continue
+					}
+					if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+						continue
+					}
+					log.Error("[txpool] process batch remote txs", "err", err)
 				}
-				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-					continue
-				}
-				log.Error("[txpool] process batch remote txs", "err", err)
-			}
+			*/
 		case <-commitEvery.C:
 			if db != nil {
 				t := time.Now()
