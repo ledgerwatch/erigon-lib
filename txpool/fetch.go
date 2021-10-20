@@ -80,12 +80,15 @@ func (f *Fetch) SetWaitGroup(wg *sync.WaitGroup) {
 // ConnectSentries initialises connection to the sentry
 func (f *Fetch) ConnectSentries() {
 	//TODO: fix race in parse ctx - 2 sentries causing it
-	go func(i int) {
-		f.receiveMessageLoop(f.sentryClients[i])
-	}(0)
-	go func(i int) {
-		f.receivePeerLoop(f.sentryClients[i])
-	}(0)
+	eth66Sentry := f.sentryClients[0]
+	for i := 0; i < len(f.sentryClients); i++ {
+		if f.sentryClients[i].Ready() && f.sentryClients[i].Protocol() == direct.ETH66 {
+			eth66Sentry = f.sentryClients[i]
+			break
+		}
+	}
+	go f.receiveMessageLoop(eth66Sentry)
+	go f.receivePeerLoop(eth66Sentry)
 	/*
 		for i := range f.sentryClients {
 			go func(i int) {
@@ -258,7 +261,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}
 	case sentry.MessageId_GET_POOLED_TRANSACTIONS_66, sentry.MessageId_GET_POOLED_TRANSACTIONS_65:
 		//TODO: handleInboundMessage is single-threaded - means it can accept as argument couple buffers (or analog of txParseContext). Protobuf encoding will copy data anyway, but DirectClient doesn't
-		var encodedRequest []byte
+		var encodedResponse []byte
 		var messageId sentry.MessageId
 		switch req.Id {
 		case sentry.MessageId_GET_POOLED_TRANSACTIONS_66:
@@ -267,7 +270,6 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			if err != nil {
 				return err
 			}
-			_ = requestID
 			var txs [][]byte
 			for i := 0; i < len(hashes); i += 32 {
 				txn, err := f.pool.GetRlp(tx, hashes[i:i+32])
@@ -280,7 +282,8 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				txs = append(txs, txn)
 			}
 
-			encodedRequest = EncodePooledTransactions66(txs, requestID, nil)
+			encodedResponse = EncodePooledTransactions66(txs, requestID, nil)
+			fmt.Printf("encodedResponse: %x\n", encodedResponse)
 		case sentry.MessageId_GET_POOLED_TRANSACTIONS_65:
 			messageId = sentry.MessageId_POOLED_TRANSACTIONS_65
 			hashes, _, err := ParseGetPooledTransactions65(req.Data, 0, nil)
@@ -298,13 +301,13 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				}
 				txs = append(txs, txn)
 			}
-			encodedRequest = EncodePooledTransactions65(txs, nil)
+			encodedResponse = EncodePooledTransactions65(txs, nil)
 		default:
 			return fmt.Errorf("unexpected message: %s", req.Id.String())
 		}
 
 		if _, err := sentryClient.SendMessageById(f.ctx, &sentry.SendMessageByIdRequest{
-			Data:   &sentry.OutboundMessageData{Id: messageId, Data: encodedRequest},
+			Data:   &sentry.OutboundMessageData{Id: messageId, Data: encodedResponse},
 			PeerId: req.PeerId,
 		}, &grpc.EmptyCallOption{}); err != nil {
 			return err
