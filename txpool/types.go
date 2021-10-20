@@ -63,7 +63,7 @@ func NewTxParseContext(chainID uint256.Int) *TxParseContext {
 		withSender: true,
 		keccak1:    sha3.NewLegacyKeccak256(),
 		keccak2:    sha3.NewLegacyKeccak256(),
-		recCtx:     secp256k1.NewContext(),
+		recCtx:     secp256k1.DefaultContext,
 	}
 
 	// behave as of London enabled
