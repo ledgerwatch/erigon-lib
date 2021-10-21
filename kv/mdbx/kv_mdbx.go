@@ -761,6 +761,15 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbCommitEnding.Update(latency.Ending.Seconds())
 		kv.DbCommitTotal.Update(latency.Whole.Seconds())
 	}
+	log.Info("Commit",
+		"preparation", latency.Preparation,
+		"gc", latency.GC,
+		"audit", latency.Audit,
+		"write", latency.Write,
+		"fsync", latency.Sync,
+		"ending", latency.Ending,
+		"whole", latency.Whole,
+	)
 
 	//if latency.Whole > slowTx {
 	//	log.Info("Commit",
