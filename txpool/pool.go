@@ -1273,8 +1273,6 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 		}
 	}
 
-	puts := 0
-	putsl := 0
 	v := make([]byte, 0, 1024)
 	for txHash, metaTx := range p.byHash {
 		if metaTx.Tx.rlp == nil {
@@ -1294,15 +1292,12 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 			return err
 		}
 		if !has {
-			puts++
-			putsl += len(v)
 			if err := tx.Put(kv.PoolTransaction, []byte(txHash), v); err != nil {
 				return err
 			}
 		}
 		metaTx.Tx.rlp = nil
 	}
-	fmt.Printf("puts=%d,putsl=%d\n", puts, putsl)
 
 	binary.BigEndian.PutUint64(encID, p.pendingBaseFee.Load())
 	if err := tx.Put(kv.PoolInfo, PoolPendingBaseFeeKey, encID); err != nil {
