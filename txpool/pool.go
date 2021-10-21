@@ -1155,7 +1155,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				log.Error("[txpool] process batch remote txs", "err", err)
 			}
 		case <-commitEvery.C:
-			if db != nil {
+			if db != nil && p.Started() {
 				t := time.Now()
 				written, err := p.flush(db)
 				if err != nil {
