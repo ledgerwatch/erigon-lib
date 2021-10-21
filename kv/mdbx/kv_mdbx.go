@@ -69,7 +69,7 @@ func testKVPath() string {
 func NewMDBX(log log.Logger) MdbxOpts {
 	return MdbxOpts{
 		bucketsCfg: WithChaindataTables,
-		flags:      mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable | mdbx.LifoReclaim,
+		flags:      mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
 		log:        log,
 	}
 }
