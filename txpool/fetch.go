@@ -26,6 +26,7 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/chain"
+	"github.com/ledgerwatch/erigon-lib/common/debug"
 	"github.com/ledgerwatch/erigon-lib/direct"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
@@ -195,7 +196,7 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				continue
 			}
-			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err, "rlp", fmt.Sprintf("%x", req.Data))
+			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
 		}
 		if f.wg != nil {
 			f.wg.Done()
@@ -205,8 +206,8 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 
 func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMessage, sentryClient sentry.SentryClient) (err error) {
 	defer func() {
-		if rec := recover(); rec != nil {
-			err = fmt.Errorf("p2p message: %s, %s, %s", req.Id.String(), req.Data, rec)
+		if err = debug.Recover(err); err != nil {
+			err = fmt.Errorf("%w, rlp=%x", err, req.Data)
 		}
 	}()
 
