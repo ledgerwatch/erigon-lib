@@ -1249,8 +1249,14 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 			}
 		}
 		//fmt.Printf("del:%d,%d,%d\n", p.deletedTxs[i].Tx.senderID, p.deletedTxs[i].Tx.nonce, p.deletedTxs[i].Tx.tip)
-		if err := tx.Delete(kv.PoolTransaction, p.deletedTxs[i].Tx.idHash[:], nil); err != nil {
+		has, err := tx.Has(kv.PoolTransaction, p.deletedTxs[i].Tx.idHash[:])
+		if err != nil {
 			return err
+		}
+		if has {
+			if err := tx.Delete(kv.PoolTransaction, p.deletedTxs[i].Tx.idHash[:], nil); err != nil {
+				return err
+			}
 		}
 		p.deletedTxs[i] = nil // for gc
 	}
