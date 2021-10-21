@@ -107,6 +107,7 @@ func ParseGetPooledTransactions66(payload []byte, pos int, hashbuf []byte) (requ
 }
 
 func ParseGetPooledTransactions65(payload []byte, pos int, hashbuf []byte) (hashes []byte, newPos int, err error) {
+	panic(1)
 	var hashesCount int
 	hashesCount, pos, err = ParseHashesCount(payload, pos)
 	if err != nil {
@@ -165,6 +166,7 @@ func EncodePooledTransactions65(txsRlp [][]byte, encodeBuf []byte) []byte {
 }
 
 func ParsePooledTransactions65(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots) (newPos int, err error) {
+	panic(1)
 	pos, _, err = rlp.List(payload, pos)
 	if err != nil {
 		return 0, err
@@ -187,6 +189,7 @@ func ParsePooledTransactions65(payload []byte, pos int, ctx *TxParseContext, txS
 }
 
 func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots) (requestID uint64, newPos int, err error) {
+	panic(1)
 	p, _, err := rlp.List(payload, pos)
 	if err != nil {
 		return requestID, 0, err
