@@ -187,6 +187,7 @@ func ParsePooledTransactions65(payload []byte, pos int, ctx *TxParseContext, txS
 }
 
 func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots) (requestID uint64, newPos int, err error) {
+	panic(1)
 	p, _, err := rlp.List(payload, pos)
 	if err != nil {
 		return requestID, 0, err
