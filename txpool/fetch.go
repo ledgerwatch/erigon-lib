@@ -203,7 +203,13 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 	}
 }
 
-func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMessage, sentryClient sentry.SentryClient) error {
+func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMessage, sentryClient sentry.SentryClient) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("p2p message: %s, %s, %s", req.Id.String(), req.Data, rec)
+		}
+	}()
+
 	if !f.pool.Started() {
 		return nil
 	}
