@@ -1137,6 +1137,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	for {
 		select {
 		case <-ctx.Done():
+			_, _ = p.flush(db)
 			return
 		case <-logEvery.C:
 			p.logStats()
