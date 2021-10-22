@@ -34,8 +34,6 @@ import (
 	"github.com/torquem-ch/mdbx-go/mdbx"
 )
 
-const expectMdbxVersionMajor = 0
-const expectMdbxVersionMinor = 10
 const pageSize = 4 * 1024
 
 const NonExistingDBI kv.DBI = 999_999_999
@@ -129,10 +127,6 @@ func (opts MdbxOpts) WithTablessCfg(f TableCfgFunc) MdbxOpts {
 }
 
 func (opts MdbxOpts) Open() (kv.RwDB, error) {
-	if expectMdbxVersionMajor != mdbx.Major || expectMdbxVersionMinor != mdbx.Minor {
-		return nil, fmt.Errorf("unexpected mdbx version: %d.%d, expected %d %d. Please run 'make mdbx'", int(mdbx.Major), int(mdbx.Minor), expectMdbxVersionMajor, expectMdbxVersionMinor)
-	}
-
 	var err error
 	if opts.inMem {
 		opts.path = testKVPath()
