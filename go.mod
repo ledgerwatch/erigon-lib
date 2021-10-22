@@ -16,11 +16,11 @@ require (
 	github.com/matryer/moq v0.2.3
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.7.0
-	github.com/torquem-ch/mdbx-go v0.21.1
+	github.com/torquem-ch/mdbx-go v0.22.0
 	github.com/ugorji/go/codec v1.1.13
 	go.uber.org/atomic v1.9.0
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
-	golang.org/x/sys v0.0.0-20210917161153-d61c044b1678 // indirect
+	golang.org/x/sys v0.0.0-20210917161153-d61c044b1678
 	google.golang.org/grpc v1.41.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0
 	google.golang.org/protobuf v1.27.1
