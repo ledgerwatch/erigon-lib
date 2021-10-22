@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -597,12 +598,24 @@ func FuzzOnNewBlocks(f *testing.F) {
 		assert.Equal(pool.senders.senderID, p2.senders.senderID)
 		assert.Equal(pool.lastSeenBlock.Load(), p2.lastSeenBlock.Load())
 
+		if pool.pending.Len() != p2.pending.Len() {
+			fmt.Printf("a: %d,%d,%d\n", pool.pending.best.Len(), pool.pending.worst.Len(), p2.pending.Len())
+			fmt.Printf("a: %d,%d,\n", pool.baseFee.Len(), p2.baseFee.Len())
+			fmt.Printf("a: %d,%d,\n", pool.queued.Len(), p2.queued.Len())
+			fmt.Printf("a: base: %d,%d\n", pool.pendingBaseFee.Load(), p2.pendingBaseFee.Load())
+			for _, txn := range *pool.pending.worst {
+				r := pool.validateTx(txn.Tx, false)
+				fmt.Printf("b: %d,%d,%d,%d\n", txn.Tx.feeCap, txn.Tx.tip, txn.Tx.gas, r)
+			}
+			for _, txn := range *pool.baseFee.best {
+				fmt.Printf("b: %d,%d,%d\n", txn.Tx.feeCap, txn.Tx.tip, txn.Tx.gas)
+			}
+		}
 		assert.Equal(pool.pending.Len(), p2.pending.Len())
 		assert.Equal(pool.baseFee.Len(), p2.baseFee.Len())
 		require.Equal(pool.queued.Len(), p2.queued.Len())
 		assert.Equal(pool.pendingBaseFee.Load(), p2.pendingBaseFee.Load())
 	})
-
 }
 
 func copyHashes(p *PendingPool) (hashes Hashes) {
