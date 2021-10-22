@@ -206,8 +206,8 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 
 func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMessage, sentryClient sentry.SentryClient) (err error) {
 	defer func() {
-		if err = dbg.Recover(err); err != nil {
-			err = fmt.Errorf("%w, rlp=%x", err, req.Data)
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("%s, trace: %s", rec, dbg.StackInLogsFormat())
 		}
 	}()
 
