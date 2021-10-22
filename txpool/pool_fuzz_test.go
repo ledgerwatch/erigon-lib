@@ -34,7 +34,7 @@ import (
 // gotip test -trimpath -v -fuzz=Fuzz -fuzztime=10s ./txpool
 
 func init() {
-	//log.Root().SetHandler(log.LvlFilterHandler(log.LvlInfo, log.StderrHandler))
+	log.Root().SetHandler(log.LvlFilterHandler(log.LvlWarn, log.StderrHandler))
 }
 
 func FuzzTwoQueue(f *testing.F) {
