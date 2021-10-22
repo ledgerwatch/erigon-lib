@@ -2,16 +2,12 @@ package dbg
 
 import (
 	"fmt"
-	"runtime/debug"
-	"strings"
+
+	stack2 "github.com/go-stack/stack"
 )
 
-// PanicReplacer - does format panic to make it readable in our logs
-var PanicReplacer = strings.NewReplacer("\n", " ", "\t", "", "\r", "")
-
 func StackInLogsFormat() string {
-	stack := string(debug.Stack())
-	return PanicReplacer.Replace(stack)
+	return stack2.Trace().TrimBelow(stack2.Caller(1)).String()
 }
 
 // Recover - does save panic to datadir/crashreports, bud doesn't log to logger and doesn't stop the process
