@@ -308,7 +308,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 	f.Add(u64[:], u64[:], u64[:], u64[:], senderAddr[:], uint8(14))
 	f.Add(u64[:], u64[:], u64[:], u64[:], senderAddr[:], uint8(123))
 	f.Fuzz(func(t *testing.T, txNonce, values, tips, feeCap, senderAddr []byte, pendingBaseFee1 uint8) {
-		//t.Parallel()
+		t.Parallel()
 		ctx := context.Background()
 
 		pendingBaseFee := uint64(pendingBaseFee1%16 + 1)
