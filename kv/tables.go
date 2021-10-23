@@ -156,6 +156,11 @@ const (
 	//key - contract code hash
 	//value - contract TEVM code
 	ContractTEVMCode = "TEVMCode"
+	
+	// ExecutionPayload from beacon chain (could be subject to change)
+	//key - Payload id
+	//value - CBOR encoded Execution Payload
+	ExecutionPayload = "ExecutionPayload"
 )
 
 /*TrieOfAccounts and TrieOfStorage
@@ -317,6 +322,7 @@ var ChaindataTables = []string{
 	DatabaseInfo,
 	IncarnationMap,
 	ContractTEVMCode,
+	ExecutionPayload,
 	CliqueSeparate,
 	CliqueLastSnapshot,
 	CliqueSnapshot,
