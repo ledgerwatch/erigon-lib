@@ -252,6 +252,9 @@ const (
 	CliqueSnapshot     = "CliqueSnapshot"
 	CliqueLastSnapshot = "CliqueLastSnapshot"
 
+	// Aura snapshots
+	AuRa = "AuRa"
+
 	// this bucket stored in separated database
 	Inodes = "Inode"
 
@@ -306,6 +309,7 @@ var (
 // ChaindataTablesCfg - can be used to find index in sorted version of ChaindataTables list by name
 var ChaindataTables = []string{
 	AccountsHistory,
+	AuRa,
 	StorageHistory,
 	Code,
 	ContractCode,
