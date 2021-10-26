@@ -22,7 +22,7 @@ func FuzzPooledTransactions66(f *testing.F) {
 			t.Skip()
 		}
 
-		rlpTxs := [][]byte{}
+		var rlpTxs [][]byte
 		for i := range slots.txs {
 			rlpTxs = append(rlpTxs, slots.txs[i].rlp)
 		}
