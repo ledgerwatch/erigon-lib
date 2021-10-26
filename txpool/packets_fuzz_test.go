@@ -4,6 +4,7 @@
 package txpool
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/common/u256"
@@ -15,6 +16,7 @@ func FuzzPooledTransactions66(f *testing.F) {
 	f.Add(decodeHex("d78257f8d2f83535358202008025a00010702dfeccc57dd2d2d2d2d2d2322a463ad555a2018d2bad0203390a0a0a0a0a0a0a256d01f62b45b2e1c21c"))
 	f.Fuzz(func(t *testing.T, in []byte) {
 		t.Parallel()
+		fmt.Printf("%x\n", in)
 		ctx := NewTxParseContext(*u256.N1)
 		slots := TxSlots{}
 		reqId, _, err := ParsePooledTransactions66(in, 0, ctx, &slots)
