@@ -35,9 +35,14 @@ func NewTestDB(t testing.TB) kv.RwDB {
 	t.Cleanup(db.Close)
 	return db
 }
+
+func NewPoolDB() kv.RwDB {
+	logger := log.New()
+	return mdbx.NewMDBX(logger).InMem().WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).MustOpen()
+}
+
 func NewTestPoolDB(t testing.TB) kv.RwDB {
-	logger := log.New() //TODO: move higher
-	db := mdbx.NewMDBX(logger).InMem().WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).MustOpen()
+	db := NewPoolDB()
 	t.Cleanup(db.Close)
 	return db
 }
