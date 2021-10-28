@@ -454,7 +454,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				for i := range change.Txs {
 					minedTxs.txs[i] = &TxSlot{}
 					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i)); err != nil {
-						log.Warn("stream.Recv", "err", err)
+						log.Warn("stream.Recv", "err", err, "rlp", fmt.Sprintf("%x", change.Txs[i]))
 						continue
 					}
 				}
@@ -464,7 +464,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				for i := range change.Txs {
 					unwindTxs.txs[i] = &TxSlot{}
 					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i)); err != nil {
-						log.Warn("stream.Recv", "err", err)
+						log.Warn("stream.Recv", "err", err, "rlp", fmt.Sprintf("%x", change.Txs[i]))
 						continue
 					}
 				}
