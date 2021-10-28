@@ -18,7 +18,6 @@ package memdb
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -46,7 +45,6 @@ func NewTestDB(t testing.TB) kv.RwDB {
 
 func NewTestPoolDB(t testing.TB) kv.RwDB {
 	db := NewPoolDB()
-	fmt.Printf("sdfsdf: %s\n", t.Name())
 	t.Cleanup(db.Close)
 	return db
 }
