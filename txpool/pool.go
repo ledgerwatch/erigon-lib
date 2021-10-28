@@ -1147,6 +1147,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	for {
 		select {
 		case <-ctx.Done():
+			fmt.Printf("_ssdf\n")
 			_, _ = p.flush(db)
 			return
 		case <-logEvery.C:
@@ -1163,6 +1164,13 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 					continue
 				}
+				if stopped := common.Stopped(ctx.Done()); stopped != nil {
+					fmt.Printf("here1: %s\n", ctx.Value("_test_name").(string))
+
+					continue
+				}
+
+				fmt.Printf("here2: %s\n", ctx.Value("_test_name").(string))
 				log.Error("[txpool] process batch remote txs", "err", err)
 			}
 		case <-commitEvery.C:
