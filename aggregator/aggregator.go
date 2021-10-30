@@ -25,6 +25,7 @@ import (
 	"strconv"
 
 	"github.com/google/btree"
+	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -49,12 +50,12 @@ import (
 //    that were not yet merged together to form larger files. In these tables, keys are the same as keys in the state diff files, but values are also
 //    augemented by the number of state diff files this key is present. This number gets decremented every time when a 1-block state diff files is removed
 //    from the summary table (due to being merged). And when this number gets to 0, the record is deleted from the summary table.
+//    This number is encoded into first 4 bytes of the value
 // 4. Aggregating persistent hash table. Maps state keys to the block numbers for the use in the part 2 (which is not necessarily the block number where
 //    the item last changed, but it is guaranteed to find correct element in the Transient mapping of part 2
 
 type Aggregator struct {
 	diffDir    string // Directory where the state diff files are stored
-	dbDir      string // Directory where persistent parts of the aggregator are stored
 	byEndBlock *btree.BTree
 }
 
@@ -211,7 +212,8 @@ func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 		return nil, err
 	}
 	if v != nil {
-		return v, nil
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		return v[4:], nil
 	}
 	// Look in the files
 	var val []byte
@@ -243,7 +245,8 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 		return nil, err
 	}
 	if v != nil {
-		return v, nil
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		return v[4:], nil
 	}
 	// Look in the files
 	filekey := make([]byte, len(addr)+len(loc))
@@ -274,7 +277,8 @@ func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error
 		return nil, err
 	}
 	if v != nil {
-		return v, nil
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		return v[4:], nil
 	}
 	// Look in the files
 	var val []byte
@@ -295,15 +299,96 @@ func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error
 	return val, nil
 }
 
+func (r *Reader) ReadAccountIncarnation(addr []byte) uint64 {
+	return r.blockNum - 1
+}
+
 func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) *Writer {
 	w := &Writer{
-		a:  a,
-		tx: tx,
+		a:        a,
+		tx:       tx,
+		blockNum: blockNum,
 	}
 	return w
 }
 
 type Writer struct {
-	a  *Aggregator
-	tx kv.RwTx
+	a        *Aggregator
+	tx       kv.RwTx
+	blockNum uint64
+}
+
+func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
+	prevV, err := w.tx.GetOne(StateAccountsTable, addr)
+	if err != nil {
+		return err
+	}
+	var prevNum uint32
+	if prevV != nil {
+		prevNum = binary.BigEndian.Uint32(prevV[:4])
+	}
+	v := make([]byte, 4+len(account))
+	binary.BigEndian.PutUint32(v[:4], prevNum+1)
+	copy(v[4:], account)
+	if err = w.tx.Put(StateAccountsTable, addr, v); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
+	prevV, err := w.tx.GetOne(StateCodeTable, addr)
+	if err != nil {
+		return err
+	}
+	var prevNum uint32
+	if prevV != nil {
+		prevNum = binary.BigEndian.Uint32(prevV[:4])
+	}
+	v := make([]byte, 4+len(code))
+	binary.BigEndian.PutUint32(v[:4], prevNum+1)
+	copy(v[4:], code)
+	if err = w.tx.Put(StateCodeTable, addr, v); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *Writer) DeleteAccount(addr []byte) error {
+	prevV, err := w.tx.GetOne(StateAccountsTable, addr)
+	if err != nil {
+		return err
+	}
+	var prevNum uint32
+	if prevV != nil {
+		prevNum = binary.BigEndian.Uint32(prevV[:4])
+	}
+	v := make([]byte, 4)
+	binary.BigEndian.PutUint32(v[:4], prevNum+1)
+	if err = w.tx.Put(StateAccountsTable, addr, v); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte, original, value *uint256.Int) error {
+	dbkey := make([]byte, len(addr)+8+len(loc))
+	copy(dbkey[0:], addr)
+	binary.BigEndian.PutUint64(dbkey[len(addr):], incarnation)
+	copy(dbkey[len(addr)+8:], loc)
+	prevV, err := w.tx.GetOne(StateStorageTable, dbkey)
+	if err != nil {
+		return err
+	}
+	var prevNum uint32
+	if prevV != nil {
+		prevNum = binary.BigEndian.Uint32(prevV[:4])
+	}
+	v := make([]byte, 4+value.ByteLen())
+	binary.BigEndian.PutUint32(v[:4], prevNum+1)
+	value.WriteToSlice(v[4:])
+	if err = w.tx.Put(StateStorageTable, addr, v); err != nil {
+		return err
+	}
+	return nil
 }
