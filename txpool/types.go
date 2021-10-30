@@ -25,7 +25,6 @@ import (
 	"math/bits"
 
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -36,17 +35,11 @@ import (
 
 type TxParsseConfig struct {
 	chainID uint256.Int
-
-	protected  bool
-	accessList bool
-	dynamicFee bool
-	maleable   bool
 }
 
 // TxParseContext is object that is required to parse transactions and turn transaction payload into TxSlot objects
 // usage of TxContext helps avoid extra memory allocations
 type TxParseContext struct {
-	recCtx           *secp256k1.Context // Context for sender recovery
 	keccak1          hash.Hash
 	keccak2          hash.Hash
 	chainId, r, s, v uint256.Int // Signature values
@@ -61,7 +54,7 @@ type TxParseContext struct {
 	cfg TxParsseConfig
 }
 
-func NewTxParseContext(rules chain.Rules, chainID uint256.Int) *TxParseContext {
+func NewTxParseContext(chainID uint256.Int) *TxParseContext {
 	if chainID.IsZero() {
 		panic("wrong chainID")
 	}
@@ -69,31 +62,11 @@ func NewTxParseContext(rules chain.Rules, chainID uint256.Int) *TxParseContext {
 		withSender: true,
 		keccak1:    sha3.NewLegacyKeccak256(),
 		keccak2:    sha3.NewLegacyKeccak256(),
-		recCtx:     secp256k1.NewContext(),
 	}
 
-	switch {
-	case rules.IsLondon:
-		// All transaction types are still supported
-		ctx.cfg.protected = true
-		ctx.cfg.accessList = true
-		ctx.cfg.dynamicFee = true
-		ctx.cfg.chainID.Set(&chainID)
-		ctx.chainIDMul.Mul(&chainID, u256.N2)
-	case rules.IsBerlin:
-		ctx.cfg.protected = true
-		ctx.cfg.accessList = true
-		ctx.cfg.chainID.Set(&chainID)
-		ctx.chainIDMul.Mul(&chainID, u256.N2)
-	case rules.IsEIP155:
-		ctx.cfg.protected = true
-		ctx.cfg.chainID.Set(&chainID)
-		ctx.chainIDMul.Mul(&chainID, u256.N2)
-	case rules.IsHomestead:
-	default:
-		// Only allow malleable transactions in Frontier
-		ctx.cfg.maleable = true
-	}
+	// behave as of London enabled
+	ctx.cfg.chainID.Set(&chainID)
+	ctx.chainIDMul.Mul(&chainID, u256.N2)
 	return ctx
 }
 
@@ -102,17 +75,18 @@ func NewTxParseContext(rules chain.Rules, chainID uint256.Int) *TxParseContext {
 type TxSlot struct {
 	//txId        uint64      // Transaction id (distinct from transaction hash), used as a compact reference to a transaction accross data structures
 	//senderId    uint64      // Sender id (distinct from sender address), used as a compact referecne to to a sender accross data structures
-	nonce       uint64      // Nonce of the transaction
-	tip         uint64      // Maximum tip that transaction is giving to miner/block proposer
-	feeCap      uint64      // Maximum fee that transaction burns and gives to the miner/block proposer
-	gas         uint64      // Gas limit of the transaction
-	value       uint256.Int // Value transferred by the transaction
-	idHash      [32]byte    // Transaction hash for the purposes of using it as a transaction Id
-	senderID    uint64      // SenderID - require external mapping to it's address
-	creation    bool        // Set to true if "To" field of the transation is not set
-	dataLen     int         // Length of transaction's data (for calculation of intrinsic gas)
-	alAddrCount int         // Number of addresses in the access list
-	alStorCount int         // Number of storage keys in the access list
+	nonce          uint64      // Nonce of the transaction
+	tip            uint64      // Maximum tip that transaction is giving to miner/block proposer
+	feeCap         uint64      // Maximum fee that transaction burns and gives to the miner/block proposer
+	gas            uint64      // Gas limit of the transaction
+	value          uint256.Int // Value transferred by the transaction
+	IdHash         [32]byte    // Transaction hash for the purposes of using it as a transaction Id
+	senderID       uint64      // SenderID - require external mapping to it's address
+	creation       bool        // Set to true if "To" field of the transation is not set
+	dataLen        int         // Length of transaction's data (for calculation of intrinsic gas)
+	dataNonZeroLen int
+	alAddrCount    int // Number of addresses in the access list
+	alStorCount    int // Number of storage keys in the access list
 	//bestIdx     int         // Index of the transaction in the best priority queue (of whatever pool it currently belongs to)
 	//worstIdx    int         // Index of the transaction in the worst priority queue (of whatever pook it currently belongs to)
 	//local       bool        // Whether transaction has been injected locally (and hence needs priority when mining or proposing a block)
@@ -179,7 +153,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if !legacy {
 		txType = int(payload[p])
 		if _, err = ctx.keccak1.Write(payload[p : p+1]); err != nil {
-			return 0, fmt.Errorf("%s: computing idHash (hashing type Prefix): %w", ParseTransactionErrorPrefix, err)
+			return 0, fmt.Errorf("%s: computing IdHash (hashing type Prefix): %w", ParseTransactionErrorPrefix, err)
 		}
 		if _, err = ctx.keccak2.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%s: computing signHash (hashing type Prefix): %w", ParseTransactionErrorPrefix, err)
@@ -194,7 +168,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		}
 		// Hash the envelope, not the full payload
 		if _, err = ctx.keccak1.Write(payload[p : dataPos+dataLen]); err != nil {
-			return 0, fmt.Errorf("%s: computing idHash (hashing the envelope): %w", ParseTransactionErrorPrefix, err)
+			return 0, fmt.Errorf("%s: computing IdHash (hashing the envelope): %w", ParseTransactionErrorPrefix, err)
 		}
 		p = dataPos
 	}
@@ -259,7 +233,17 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		return 0, fmt.Errorf("%s: data len: %w", ParseTransactionErrorPrefix, err)
 	}
 	slot.dataLen = dataLen
+
+	// Zero and non-zero bytes are priced differently
+	slot.dataNonZeroLen = 0
+	for _, byt := range payload[dataPos : dataPos+dataLen] {
+		if byt != 0 {
+			slot.dataNonZeroLen++
+		}
+	}
+
 	p = dataPos + dataLen
+
 	// Next follows access list for non-legacy transactions, we are only interesting in number of addresses and storage keys
 	if !legacy {
 		dataPos, dataLen, err = rlp.List(payload, p)
@@ -323,6 +307,10 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		} else {
 			ctx.chainId.Sub(&ctx.v, u256.N35)
 			ctx.chainId.Rsh(&ctx.chainId, 1)
+			if ctx.chainId.Cmp(&ctx.cfg.chainID) != 0 {
+				return 0, fmt.Errorf("%s: %s, %d (expected %d)", ParseTransactionErrorPrefix, "invalid chainID", ctx.chainId.Uint64(), ctx.cfg.chainID.Uint64())
+			}
+
 			chainIdBits = ctx.chainId.BitLen()
 			if chainIdBits <= 7 {
 				chainIdLen = 1
@@ -368,16 +356,16 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// For legacy transactions, hash the full payload
 	if legacy {
 		if _, err = ctx.keccak1.Write(payload[pos:p]); err != nil {
-			return 0, fmt.Errorf("%s: computing idHash: %w", ParseTransactionErrorPrefix, err)
+			return 0, fmt.Errorf("%s: computing IdHash: %w", ParseTransactionErrorPrefix, err)
 		}
 	}
-	//ctx.keccak1.Sum(slot.idHash[:0])
-	_, _ = ctx.keccak1.(io.Reader).Read(slot.idHash[:32])
+	//ctx.keccak1.Sum(slot.IdHash[:0])
+	_, _ = ctx.keccak1.(io.Reader).Read(slot.IdHash[:32])
 	if !ctx.withSender {
 		return p, nil
 	}
 	if ctx.checkHash != nil {
-		if err := ctx.checkHash(slot.idHash[:32]); err != nil {
+		if err := ctx.checkHash(slot.IdHash[:32]); err != nil {
 			return p, err
 		}
 	}
@@ -438,7 +426,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	binary.BigEndian.PutUint64(ctx.sig[56:64], ctx.s[0])
 	ctx.sig[64] = vByte
 	// recover sender
-	if _, err = secp256k1.RecoverPubkeyWithContext(ctx.recCtx, ctx.sighash[:], ctx.sig[:], ctx.buf[:0]); err != nil {
+	if _, err = secp256k1.RecoverPubkeyWithContext(secp256k1.DefaultContext, ctx.sighash[:], ctx.sig[:], ctx.buf[:0]); err != nil {
 		return 0, fmt.Errorf("%s: recovering sender from signature: %w", ParseTransactionErrorPrefix, err)
 	}
 	//apply keccak to the public key
@@ -482,6 +470,8 @@ func (s TxSlots) Valid() error {
 	return nil
 }
 
+var zeroAddr = make([]byte, 20)
+
 // Resize internal arrays to len=targetSize, shrinks if need. It rely on `append` algorithm to realloc
 func (s *TxSlots) Resize(targetSize uint) {
 	for uint(len(s.txs)) < targetSize {
@@ -494,9 +484,19 @@ func (s *TxSlots) Resize(targetSize uint) {
 		s.isLocal = append(s.isLocal, false)
 	}
 	//todo: set nil to overflow txs
+	oldLen := uint(len(s.txs))
 	s.txs = s.txs[:targetSize]
+	for i := oldLen; i < targetSize; i++ {
+		s.txs[i] = nil
+	}
 	s.senders = s.senders[:length.Addr*targetSize]
+	for i := oldLen; i < targetSize; i++ {
+		copy(s.senders.At(int(i)), zeroAddr)
+	}
 	s.isLocal = s.isLocal[:targetSize]
+	for i := oldLen; i < targetSize; i++ {
+		s.isLocal[i] = false
+	}
 }
 func (s *TxSlots) Append(slot *TxSlot, sender []byte, isLocal bool) {
 	n := len(s.txs)
@@ -617,5 +617,23 @@ func bytesToUint64(buf []byte) (x uint64) {
 //nolint
 func (tx *TxSlot) printDebug(prefix string) {
 	fmt.Printf("%s: senderID=%d,nonce=%d,tip=%d,v=%d\n", prefix, tx.senderID, tx.nonce, tx.tip, tx.value.Uint64())
-	//fmt.Printf("%s: senderID=%d,nonce=%d,tip=%d,hash=%x\n", prefix, tx.senderID, tx.nonce, tx.tip, tx.idHash)
+	//fmt.Printf("%s: senderID=%d,nonce=%d,tip=%d,hash=%x\n", prefix, tx.senderID, tx.nonce, tx.tip, tx.IdHash)
+}
+
+// AccessList is an EIP-2930 access list.
+type AccessList []AccessTuple
+
+// AccessTuple is the element type of an access list.
+type AccessTuple struct {
+	Address     [20]byte   `json:"address"        gencodec:"required"`
+	StorageKeys [][32]byte `json:"storageKeys"    gencodec:"required"`
+}
+
+// StorageKeys returns the total number of storage keys in the access list.
+func (al AccessList) StorageKeys() int {
+	sum := 0
+	for _, tuple := range al {
+		sum += len(tuple.StorageKeys)
+	}
+	return sum
 }

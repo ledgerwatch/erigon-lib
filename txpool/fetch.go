@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/chain"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/direct"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
@@ -60,7 +60,7 @@ type StateChangesClient interface {
 // NewFetch creates a new fetch object that will work with given sentry clients. Since the
 // SentryClient here is an interface, it is suitable for mocking in tests (mock will need
 // to implement all the functions of the SentryClient interface).
-func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Pool, stateChangesClient StateChangesClient, coreDB kv.RoDB, db kv.RwDB, rules chain.Rules, chainID uint256.Int) *Fetch {
+func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Pool, stateChangesClient StateChangesClient, coreDB kv.RoDB, db kv.RwDB, chainID uint256.Int) *Fetch {
 	return &Fetch{
 		ctx:                  ctx,
 		sentryClients:        sentryClients,
@@ -68,8 +68,8 @@ func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Poo
 		coreDB:               coreDB,
 		db:                   db,
 		stateChangesClient:   stateChangesClient,
-		stateChangesParseCtx: NewTxParseContext(rules, chainID), //TODO: change ctx if rules changed
-		pooledTxsParseCtx:    NewTxParseContext(rules, chainID),
+		stateChangesParseCtx: NewTxParseContext(chainID), //TODO: change ctx if rules changed
+		pooledTxsParseCtx:    NewTxParseContext(chainID),
 	}
 }
 
@@ -195,7 +195,7 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				continue
 			}
-			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err, "rlp", fmt.Sprintf("%x", req.Data))
+			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
 		}
 		if f.wg != nil {
 			f.wg.Done()
@@ -203,7 +203,13 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 	}
 }
 
-func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMessage, sentryClient sentry.SentryClient) error {
+func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMessage, sentryClient sentry.SentryClient) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("%+v, trace: %s, rlp: %x", rec, dbg.Stack(), req.Data)
+		}
+	}()
+
 	if !f.pool.Started() {
 		return nil
 	}
@@ -309,7 +315,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}, &grpc.EmptyCallOption{}); err != nil {
 			return err
 		}
-	case sentry.MessageId_POOLED_TRANSACTIONS_65, sentry.MessageId_POOLED_TRANSACTIONS_66:
+	case sentry.MessageId_POOLED_TRANSACTIONS_65, sentry.MessageId_POOLED_TRANSACTIONS_66, sentry.MessageId_TRANSACTIONS_65, sentry.MessageId_TRANSACTIONS_66:
 		txs := TxSlots{}
 		f.pooledTxsParseCtx.Reject(func(hash []byte) error {
 			known, err := f.pool.IdHashKnown(tx, hash)
@@ -322,7 +328,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			return nil
 		})
 		switch req.Id {
-		case sentry.MessageId_POOLED_TRANSACTIONS_65:
+		case sentry.MessageId_POOLED_TRANSACTIONS_65, sentry.MessageId_TRANSACTIONS_65, sentry.MessageId_TRANSACTIONS_66:
 			if _, err := ParsePooledTransactions65(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
 				return err
 			}
@@ -338,7 +344,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}
 		f.pool.AddRemoteTxs(ctx, txs)
 	default:
-		//defer log.Info("dropped", "id", req.Id)
+		defer log.Trace("[txpool] dropped p2p message", "id", req.Id)
 	}
 
 	return nil
