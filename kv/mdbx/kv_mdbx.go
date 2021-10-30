@@ -29,13 +29,12 @@ import (
 	"sync"
 
 	"github.com/c2h5oh/datasize"
+	stack2 "github.com/go-stack/stack"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/torquem-ch/mdbx-go/mdbx"
 )
 
-const expectMdbxVersionMajor = 0
-const expectMdbxVersionMinor = 10
 const pageSize = 4 * 1024
 
 const NonExistingDBI kv.DBI = 999_999_999
@@ -129,10 +128,6 @@ func (opts MdbxOpts) WithTablessCfg(f TableCfgFunc) MdbxOpts {
 }
 
 func (opts MdbxOpts) Open() (kv.RwDB, error) {
-	if expectMdbxVersionMajor != mdbx.Major || expectMdbxVersionMinor != mdbx.Minor {
-		return nil, fmt.Errorf("unexpected mdbx version: %d.%d, expected %d %d. Please run 'make mdbx'", int(mdbx.Major), int(mdbx.Minor), expectMdbxVersionMajor, expectMdbxVersionMinor)
-	}
-
 	var err error
 	if opts.inMem {
 		opts.path = testKVPath()
@@ -174,7 +169,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 
 		if opts.augumentLimit == 0 {
-			opts.augumentLimit = 32 * 1024 * 1024 // mdbx's default 256 * 1024
+			opts.augumentLimit = 16 * 256 * 1024 // mdbx's default 256 * 1024
 		}
 		if err = env.SetOption(mdbx.OptRpAugmentLimit, opts.augumentLimit); err != nil {
 			return nil, err
@@ -219,7 +214,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 
 	err = env.Open(opts.path, opts.flags, 0664)
 	if err != nil {
-		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), callers(10))
+		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 	}
 
 	db := &MdbxKV{
@@ -298,21 +293,21 @@ type MdbxKV struct {
 // otherwise re-try by RW transaction
 // it allow open DB from another process - even if main process holding long RW transaction
 func (db *MdbxKV) openDBIs(buckets []string) error {
-	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		for _, name := range buckets {
-			if db.buckets[name].IsDeprecated {
-				continue
+	if db.opts.flags&mdbx.Readonly != 0 {
+		if err := db.View(context.Background(), func(tx kv.Tx) error {
+			for _, name := range buckets {
+				if db.buckets[name].IsDeprecated {
+					continue
+				}
+				if err := tx.(kv.BucketMigrator).CreateBucket(name); err != nil {
+					return err
+				}
 			}
-			if err := tx.(kv.BucketMigrator).CreateBucket(name); err != nil {
-				return err
-			}
-		}
-		return tx.Commit() // when open db as read-only, commit of this RO transaction is required
-	}); err != nil {
-		if db.opts.flags&mdbx.Readonly != 0 {
+			return tx.Commit() // when open db as read-only, commit of this RO transaction is required
+		}); err != nil {
 			return err
 		}
-
+	} else {
 		if err := db.Update(context.Background(), func(tx kv.RwTx) error {
 			for _, name := range buckets {
 				if db.buckets[name].IsDeprecated {
@@ -336,7 +331,6 @@ func (db *MdbxKV) Close() {
 	if db.env == nil {
 		return
 	}
-
 	db.wg.Wait()
 	db.env.Close()
 	db.env = nil
@@ -368,7 +362,7 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 
 	tx, err := db.env.BeginTxn(nil, mdbx.Readonly)
 	if err != nil {
-		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, db.opts.label.String(), callers(10))
+		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, db.opts.label.String(), stack2.Trace().String())
 	}
 	tx.RawRead = true
 	return &MdbxTx{
@@ -392,7 +386,7 @@ func (db *MdbxKV) BeginRw(_ context.Context) (txn kv.RwTx, err error) {
 	tx, err := db.env.BeginTxn(nil, 0)
 	if err != nil {
 		runtime.UnlockOSThread() // unlock only in case of error. normal flow is "defer .Rollback()"
-		return nil, fmt.Errorf("%w, lable: %s, trace: %s", err, db.opts.label.String(), callers(10))
+		return nil, fmt.Errorf("%w, lable: %s, trace: %s", err, db.opts.label.String(), stack2.Trace().String())
 	}
 	tx.RawRead = true
 	return &MdbxTx{
@@ -1592,24 +1586,4 @@ func bucketSlice(b kv.TableCfg) []string {
 		return strings.Compare(buckets[i], buckets[j]) < 0
 	})
 	return buckets
-}
-
-// Callers returns given number of callers with packages
-func callers(show int) []string {
-	fpcs := make([]uintptr, show)
-	n := runtime.Callers(2, fpcs)
-	if n == 0 {
-		return nil
-	}
-
-	callers := make([]string, 0, len(fpcs))
-	for _, p := range fpcs {
-		caller := runtime.FuncForPC(p - 1)
-		if caller == nil {
-			continue
-		}
-		callers = append(callers, caller.Name())
-	}
-
-	return callers
 }

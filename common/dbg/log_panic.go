@@ -14,16 +14,13 @@
    limitations under the License.
 */
 
-package length
+package dbg
 
-// Lengths of hashes and addresses in bytes.
-const (
-	// Hash is the expected length of the hash (in bytes)
-	Hash = 32
-	// Addr is the expected length of the address (in bytes)
-	Addr = 20
-	// BlockNumberLen length of uint64 big endian
-	BlockNum = 8
-	// Incarnation length of uint64 for contract incarnations
-	Incarnation = 8
+import (
+	stack2 "github.com/go-stack/stack"
 )
+
+// Stack returns stack-trace in logger-friendly compact formatting
+func Stack() string {
+	return stack2.Trace().TrimBelow(stack2.Caller(1)).String()
+}
