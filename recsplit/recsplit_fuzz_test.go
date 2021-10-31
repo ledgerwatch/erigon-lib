@@ -73,10 +73,7 @@ func FuzzRecSplit(f *testing.F) {
 			t.Fatal(err)
 		}
 		// Check that there is a bijection
-		var idx *Index
-		if idx, err = NewIndex(indexFile); err != nil {
-			t.Fatal(err)
-		}
+		idx := MustOpen(indexFile)
 		bitCount := (count + 63) / 64
 		bits := make([]uint64, bitCount)
 		for i = 0; i < len(in)-l; i += l {
