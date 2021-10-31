@@ -27,7 +27,7 @@ import (
 // gotip test -trimpath -v -fuzz=FuzzRecSplit -fuzztime=10s ./recsplit
 
 func FuzzRecSplit(f *testing.F) {
-	f.Add(2, "1stkey2ndkey")
+	f.Add(2, []byte("1stkey2ndkey"))
 	f.Fuzz(func(t *testing.T, count int, in []byte) {
 		if count < 1 {
 			t.Skip()
