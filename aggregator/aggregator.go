@@ -55,8 +55,10 @@ import (
 //    the item last changed, but it is guaranteed to find correct element in the Transient mapping of part 2
 
 type Aggregator struct {
-	diffDir    string // Directory where the state diff files are stored
-	byEndBlock *btree.BTree
+	diffDir         string // Directory where the state diff files are stored
+	byEndBlock      *btree.BTree
+	unwindLimit     uint64 // How far the chain may unwind
+	aggregationStep uint64 // How many items (block, but later perhaps txs or changes) are required to form one state diff file
 }
 
 type byEndBlockItem struct {
@@ -73,9 +75,11 @@ func (i *byEndBlockItem) Less(than btree.Item) bool {
 	return i.endBlock < than.(*byEndBlockItem).endBlock
 }
 
-func NewAggregator(diffDir string, dbDir string) (*Aggregator, error) {
+func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (*Aggregator, error) {
 	a := &Aggregator{
-		diffDir: diffDir,
+		diffDir:         diffDir,
+		unwindLimit:     unwindLimit,
+		aggregationStep: aggregationStep,
 	}
 	byEndBlock := btree.New(32)
 	var closeBtree bool = true // It will be set to false in case of success at the end of the function
@@ -86,6 +90,7 @@ func NewAggregator(diffDir string, dbDir string) (*Aggregator, error) {
 		}
 	}()
 	// Scan the diff directory and create the mapping of end blocks to files
+	// TODO: Larger files preferred over the small ones that overlap with them
 	files, err := os.ReadDir(diffDir)
 	if err != nil {
 		return nil, err
@@ -310,6 +315,7 @@ type Writer struct {
 	a        *Aggregator
 	tx       kv.RwTx
 	blockNum uint64
+	numBuf   [8]byte
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
@@ -325,6 +331,18 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	copy(v[4:], account)
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
+		return err
+	}
+	// Update changes
+	changeK := make([]byte, 8+len(addr))
+	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
+	copy(changeK[8:], addr)
+	n := binary.PutUvarint(w.numBuf[:], uint64(len(account)))
+	changeV := make([]byte, len(account)+n+len(prevV)-4)
+	copy(changeV, w.numBuf[:n])
+	copy(changeV[n:], account)
+	copy(changeV[n+len(account):], prevV[4:])
+	if err = w.tx.Put(kv.ChangeAccounts, changeK, changeV); err != nil {
 		return err
 	}
 	return nil
@@ -345,6 +363,18 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 	if err = w.tx.Put(kv.StateCode, addr, v); err != nil {
 		return err
 	}
+	// Update changes
+	changeK := make([]byte, 8+len(addr))
+	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
+	copy(changeK[8:], addr)
+	n := binary.PutUvarint(w.numBuf[:], uint64(len(code)))
+	changeV := make([]byte, len(code)+n+len(prevV)-4)
+	copy(changeV, w.numBuf[:n])
+	copy(changeV[n:], code)
+	copy(changeV[n+len(code):], prevV[4:])
+	if err = w.tx.Put(kv.ChangeCode, changeK, changeV); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -360,6 +390,17 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
+		return err
+	}
+	// Update changes
+	changeK := make([]byte, 8+len(addr))
+	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
+	copy(changeK[8:], addr)
+	n := binary.PutUvarint(w.numBuf[:], 0)
+	changeV := make([]byte, n+len(prevV)-4)
+	copy(changeV, w.numBuf[:n])
+	copy(changeV[n:], prevV[4:])
+	if err = w.tx.Put(kv.ChangeAccounts, changeK, changeV); err != nil {
 		return err
 	}
 	return nil
@@ -378,10 +419,23 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	if prevV != nil {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
-	v := make([]byte, 4+value.ByteLen())
+	vLen := value.ByteLen()
+	v := make([]byte, 4+vLen)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	value.WriteToSlice(v[4:])
 	if err = w.tx.Put(kv.StateStorage, addr, v); err != nil {
+		return err
+	}
+	// Update changes
+	changeK := make([]byte, 8+len(addr)+8+len(loc))
+	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
+	copy(changeK[8:], dbkey)
+	n := binary.PutUvarint(w.numBuf[:], uint64(vLen))
+	changeV := make([]byte, vLen+n+len(prevV)-4)
+	copy(changeV, w.numBuf[:n])
+	copy(changeV[n:], v[4:])
+	copy(changeV[n+vLen:], prevV[4:])
+	if err = w.tx.Put(kv.ChangeAccounts, changeK, changeV); err != nil {
 		return err
 	}
 	return nil
