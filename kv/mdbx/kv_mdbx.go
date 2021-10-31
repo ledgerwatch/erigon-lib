@@ -169,7 +169,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 
 		if opts.augumentLimit == 0 {
-			opts.augumentLimit = 32 * 1024 * 1024 // mdbx's default 256 * 1024
+			opts.augumentLimit = 16 * 256 * 1024 // mdbx's default 256 * 1024
 		}
 		if err = env.SetOption(mdbx.OptRpAugmentLimit, opts.augumentLimit); err != nil {
 			return nil, err
@@ -331,7 +331,6 @@ func (db *MdbxKV) Close() {
 	if db.env == nil {
 		return
 	}
-
 	db.wg.Wait()
 	db.env.Close()
 	db.env = nil

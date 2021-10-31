@@ -433,6 +433,7 @@ var ChaindataTablesCfg = TableCfg{
 }
 
 var TxpoolTablesCfg = TableCfg{}
+var SentryTablesCfg = TableCfg{}
 
 func sortBuckets() {
 	sort.SliceStable(ChaindataTables, func(i, j int) bool {
@@ -468,6 +469,13 @@ func reinit() {
 		_, ok := TxpoolTablesCfg[name]
 		if !ok {
 			TxpoolTablesCfg[name] = TableCfgItem{}
+		}
+	}
+
+	for _, name := range SentryTables {
+		_, ok := SentryTablesCfg[name]
+		if !ok {
+			SentryTablesCfg[name] = TableCfgItem{}
 		}
 	}
 
