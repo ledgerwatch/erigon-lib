@@ -21,15 +21,8 @@ package recsplit
 
 import (
 	"testing"
-
-	"github.com/ledgerwatch/log/v3"
 )
 
-func init() {
-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlWarn, log.StderrHandler))
-}
-
-// ~/go/bin/gotip test -trimpath  -fuzz=FuzzRecSplit -fuzztime=10s ./recsplit
 // gotip test -trimpath -v -fuzz=FuzzEliasFano -fuzztime=10s ./recsplit
 
 func FuzzEliasFano(f *testing.F) {
