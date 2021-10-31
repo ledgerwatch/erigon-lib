@@ -273,6 +273,14 @@ const (
 	PendingEpoch = "DevPendingEpoch" // block_num_u64+block_hash->transition_proof
 
 	Issuance = "Issuance" // block_num_u64->RLP(issuance+burnt[0 if < london])
+
+	StateAccounts = "StateAccounts"
+	StateStorage  = "StateStorage"
+	StateCode     = "StateCode"
+	// Change tables contain the two-level mapping: blockNumber => key => (value_before_change; value_after_change)
+	ChangeAccounts = "ChangeAccounts"
+	ChangeStorage  = "ChangeStorage"
+	ChangeCode     = "ChangeCode"
 )
 
 // Keys
@@ -349,6 +357,12 @@ var ChaindataTables = []string{
 	Epoch,
 	PendingEpoch,
 	Issuance,
+	StateAccounts,
+	StateStorage,
+	StateCode,
+	ChangeAccounts,
+	ChangeStorage,
+	ChangeCode,
 }
 
 const (
@@ -424,6 +438,15 @@ var ChaindataTablesCfg = TableCfg{
 		DupToLen:                  28,
 	},
 	CallTraceSet: {
+		Flags: DupSort,
+	},
+	ChangeAccounts: {
+		Flags: DupSort,
+	},
+	ChangeStorage: {
+		Flags: DupSort,
+	},
+	ChangeCode: {
 		Flags: DupSort,
 	},
 }

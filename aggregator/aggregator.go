@@ -184,12 +184,6 @@ func (a *Aggregator) Close() {
 	closeFiles(a.byEndBlock)
 }
 
-const (
-	StateAccountsTable = "accounts"
-	StateStorageTable  = "storage"
-	StateCodeTable     = "code"
-)
-
 func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
 	r := &Reader{
 		a:        a,
@@ -207,7 +201,7 @@ type Reader struct {
 
 func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 	// Look in the summary table first
-	v, err := r.tx.GetOne(StateAccountsTable, addr)
+	v, err := r.tx.GetOne(kv.StateAccounts, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +234,7 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 	copy(dbkey[0:], addr)
 	binary.BigEndian.PutUint64(dbkey[len(addr):], incarnation)
 	copy(dbkey[len(addr)+8:], loc)
-	v, err := r.tx.GetOne(StateStorageTable, dbkey)
+	v, err := r.tx.GetOne(kv.StateStorage, dbkey)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +266,7 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 
 func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error) {
 	// Look in the summary table first
-	v, err := r.tx.GetOne(StateCodeTable, addr)
+	v, err := r.tx.GetOne(kv.StateCode, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +313,7 @@ type Writer struct {
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
-	prevV, err := w.tx.GetOne(StateAccountsTable, addr)
+	prevV, err := w.tx.GetOne(kv.StateAccounts, addr)
 	if err != nil {
 		return err
 	}
@@ -330,14 +324,14 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 	v := make([]byte, 4+len(account))
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	copy(v[4:], account)
-	if err = w.tx.Put(StateAccountsTable, addr, v); err != nil {
+	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
-	prevV, err := w.tx.GetOne(StateCodeTable, addr)
+	prevV, err := w.tx.GetOne(kv.StateCode, addr)
 	if err != nil {
 		return err
 	}
@@ -348,14 +342,14 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 	v := make([]byte, 4+len(code))
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	copy(v[4:], code)
-	if err = w.tx.Put(StateCodeTable, addr, v); err != nil {
+	if err = w.tx.Put(kv.StateCode, addr, v); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (w *Writer) DeleteAccount(addr []byte) error {
-	prevV, err := w.tx.GetOne(StateAccountsTable, addr)
+	prevV, err := w.tx.GetOne(kv.StateAccounts, addr)
 	if err != nil {
 		return err
 	}
@@ -365,7 +359,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	}
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
-	if err = w.tx.Put(StateAccountsTable, addr, v); err != nil {
+	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
 	return nil
@@ -376,7 +370,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	copy(dbkey[0:], addr)
 	binary.BigEndian.PutUint64(dbkey[len(addr):], incarnation)
 	copy(dbkey[len(addr)+8:], loc)
-	prevV, err := w.tx.GetOne(StateStorageTable, dbkey)
+	prevV, err := w.tx.GetOne(kv.StateStorage, dbkey)
 	if err != nil {
 		return err
 	}
@@ -387,7 +381,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	v := make([]byte, 4+value.ByteLen())
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	value.WriteToSlice(v[4:])
-	if err = w.tx.Put(StateStorageTable, addr, v); err != nil {
+	if err = w.tx.Put(kv.StateStorage, addr, v); err != nil {
 		return err
 	}
 	return nil
