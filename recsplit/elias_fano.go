@@ -164,7 +164,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	if j > 100 {
 		fmt.Printf("j=%d, jump=%d, d=%d, currWord=%d,currWordBefore=%d,jumpSuperQ=%d\n", j, jump, d, currWord, currWordBefore, jumpSuperQ)
 		fmt.Printf("idx64=%d, %d\n", idx64, (ef.jump[idx64]&mask)>>shift)
-		fmt.Printf("jumps=%d\n", ef.jump)
+		fmt.Printf("superQSize=%d\n", superQSize)
 	}
 
 	sel = select64(window, int(d))
