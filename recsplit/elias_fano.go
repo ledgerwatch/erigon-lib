@@ -153,13 +153,11 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
 	d := int(i & qMask)
 
-	fmt.Printf("before: %d,%d,%d\n", window, i, d)
 	for bitCount := bits.OnesCount64(window); bitCount <= d; bitCount = bits.OnesCount64(window) {
 		currWord++
-		window = ef.upperBits[currWord]
+		window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
 		d -= bitCount
 	}
-	fmt.Printf("after: %d,%d,%d\n", window, i, d)
 
 	sel = select64(window, d)
 	delta = i * ef.minDelta
