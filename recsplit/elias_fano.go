@@ -154,6 +154,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	d := uint64(i & qMask)
 
 	j := 0
+	currWordBefore := currWord
 	for bitCount := uint64(bits.OnesCount64(window)); bitCount <= d; bitCount = uint64(bits.OnesCount64(window)) {
 		currWord++
 		window = ef.upperBits[currWord]
@@ -161,7 +162,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 		j++
 	}
 	if j > 100 {
-		fmt.Printf("j=%d, jump=%d, d=%d, currWord=%d,jumpSuperQ=%d\n", j, jump, d, currWord, jumpSuperQ)
+		fmt.Printf("j=%d, jump=%d, d=%d, currWord=%d,currWordBefore=%d,jumpSuperQ=%d\n", j, jump, d, currWord, currWordBefore, jumpSuperQ)
 	}
 
 	sel = select64(window, int(d))
