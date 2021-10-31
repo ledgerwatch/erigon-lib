@@ -523,8 +523,10 @@ func (ef *DoubleEliasFano) Write(w io.Writer) error {
 	}
 	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
 	b := (*p)[:]
-	if _, e := w.Write(b[:len(ef.data)*8]); e != nil {
+	if l, e := w.Write(b[:len(ef.data)*8]); e != nil {
 		return e
+	} else {
+		fmt.Printf("DoubleEliasFano len: %dKb\n", l/1024)
 	}
 	return nil
 }
