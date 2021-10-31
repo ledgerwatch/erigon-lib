@@ -151,7 +151,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 
 	currWord = jump / 64
 	window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
-	d := uint64(i & qMask)
+	d := i & qMask
 
 	j := 0
 	currWordBefore := currWord

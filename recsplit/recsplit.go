@@ -495,6 +495,7 @@ func (rs *RecSplit) Build() error {
 		if err := rs.offsetCollector.Load(nil, "", rs.loadFuncOffset, etl.TransformArgs{}); err != nil {
 			return err
 		}
+		rs.offsetEf.Build()
 	}
 	rs.gr.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
 	// Construct Elias Fano index
