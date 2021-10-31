@@ -545,10 +545,8 @@ func (rs *RecSplit) Build() error {
 	}
 	// Write out the size of golomb rice params
 	binary.BigEndian.PutUint16(rs.numBuf[:], uint16(len(rs.golombRice)))
-	if l, err := rs.indexW.Write(rs.numBuf[:4]); err != nil {
+	if _, err := rs.indexW.Write(rs.numBuf[:4]); err != nil {
 		return fmt.Errorf("writing golomb rice param size: %w", err)
-	} else {
-		fmt.Printf("RecSplit index len: %dKb\n", l/1024)
 	}
 	// Write out golomb rice
 	if err := rs.gr.Write(rs.indexW); err != nil {
