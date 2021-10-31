@@ -161,7 +161,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 		j++
 	}
 	if j > 100 {
-		fmt.Printf("j: %d\n", j)
+		fmt.Printf("j=%d, jump=%d, d=%d, currWord=%d,jumpSuperQ=%d\n", j, jump, d, currWord, jumpSuperQ)
 	}
 
 	sel = select64(window, int(d))
