@@ -323,8 +323,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			sigHashLen += 2                // For two extra zeros
 
 			ctx.deriveChainID.Sub(&ctx.v, &ctx.chainIDMul)
-			ctx.deriveChainID.Sub(&ctx.deriveChainID, u256.N8)
-			vByte = byte(ctx.deriveChainID.Uint64() - 27)
+			vByte = byte(ctx.deriveChainID.Sub(&ctx.deriveChainID, u256.N8).Uint64() - 27)
 		}
 	} else {
 		var v uint64
