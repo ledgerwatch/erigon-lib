@@ -440,3 +440,70 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	}
 	return nil
 }
+
+// Finish checks whether it is necessary to aggregate
+// some of the changes into a file, and perform it if necessary
+func (w *Writer) Finish() error {
+	if w.blockNum <= w.a.unwindLimit+w.a.aggregationStep {
+		return nil
+	}
+	diff := w.blockNum - w.a.unwindLimit
+	if diff%w.a.aggregationStep != 0 {
+		return nil
+	}
+	// Aggregate into a file
+	return w.aggregateUpto(diff-w.a.aggregationStep, diff)
+}
+
+type AggregateItem struct {
+	k, v []byte
+}
+
+func (i *AggregateItem) Less(than btree.Item) bool {
+	return bytes.Compare(i.k, than.(*AggregateItem).k) < 0
+}
+
+func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
+	var err error
+	var accountsC, codeC, storageC kv.RwCursorDupSort
+	if accountsC, err = w.tx.RwCursorDupSort(kv.ChangeAccounts); err != nil {
+		return err
+	}
+	defer accountsC.Close()
+	if codeC, err = w.tx.RwCursorDupSort(kv.ChangeCode); err != nil {
+		return err
+	}
+	defer codeC.Close()
+	if storageC, err := w.tx.RwCursorDupSort(kv.ChangeStorage); err != nil {
+		return err
+	}
+	defer storageC.Close()
+	accountsBtree := btree.New(32)
+	codeBtree := btree.New(32)
+	storageBtreee := btree.New(32)
+	// We iterate backwards to minimise number of updates (and therefore GC) required
+	var blockToBuf [8]byte
+	binary.BigEndian.PutUint64(blockToBuf[:], blockTo)
+	bk, _, e := accountsC.Seek(blockToBuf[:])
+	for ; bk != nil && e == nil; bk, _, e = accountsC.Prev() {
+		blockNum := binary.BigEndian.Uint64(bk[:8])
+		if blockNum <= blockFrom {
+			break
+		}
+		k, v, e1 := accountsC.FirstDup()
+		for ; k != nil && e1 == nil; k, v, e1 = accountsC.NextDup() {
+			i := &AggregateItem{k: k, v: v}
+			if !accountsBtree.Has(i) {
+				accountsBtree.ReplaceOrInsert(i)
+			}
+		}
+		if e1 != nil {
+			return e1
+		}
+
+	}
+	if e != nil {
+		return e
+	}
+	return nil
+}
