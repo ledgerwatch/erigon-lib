@@ -324,10 +324,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 			ctx.deriveChainID.Sub(&ctx.v, &ctx.chainIDMul)
 			ctx.deriveChainID.Sub(&ctx.deriveChainID, u256.N8)
-			if ctx.deriveChainID.Bytes()[0]-27 != byte(ctx.deriveChainID.Uint64()-27) {
-				fmt.Printf("%x,%x\n", ctx.deriveChainID.Bytes()[0], ctx.deriveChainID.Uint64())
-				panic(1)
-			}
 			vByte = byte(ctx.deriveChainID.Uint64() - 27)
 		}
 	} else {
