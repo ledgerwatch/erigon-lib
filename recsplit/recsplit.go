@@ -282,6 +282,7 @@ func (rs *RecSplit) AddKey(key []byte, offset uint64) error {
 		}
 	}
 	rs.keysAdded++
+	rs.prevOffset = offset
 	return nil
 }
 

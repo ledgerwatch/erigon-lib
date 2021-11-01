@@ -117,6 +117,12 @@ func (ef *EliasFano) Build() {
 					var offset = i*64 + b - lastSuperQ // offset can be either 0, 256, 512, 768, ..., up to 4096-256
 					// offset needs to be encoded as 16-bit integer, therefore the following check
 					if offset >= (1 << 16) {
+						fmt.Printf("ef.l=%x,ef.u=%x\n", ef.l, ef.u)
+						fmt.Printf("offset=%x,lastSuperQ=%x,i=%x,b=%x,c=%x\n", offset, lastSuperQ, i, b, c)
+						fmt.Printf("ef.minDelta=%x\n", ef.minDelta)
+						fmt.Printf("ef.upperBits=%x\n", ef.upperBits)
+						//fmt.Printf("ef.upperBits=%x\n", ef.upperBits)
+						//fmt.Printf("ef.wordsUpperBits=%x\n", ef.wordsUpperBits)
 						panic("")
 					}
 					// c % superQ is the bit index inside the group of 4096 bits
