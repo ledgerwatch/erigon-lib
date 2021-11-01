@@ -17,6 +17,7 @@
 package aggregator
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"os"
@@ -55,10 +56,17 @@ import (
 //    the item last changed, but it is guaranteed to find correct element in the Transient mapping of part 2
 
 type Aggregator struct {
-	diffDir         string // Directory where the state diff files are stored
-	byEndBlock      *btree.BTree
-	unwindLimit     uint64 // How far the chain may unwind
-	aggregationStep uint64 // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	diffDir           string // Directory where the state diff files are stored
+	byEndBlock        *btree.BTree
+	unwindLimit       uint64        // How far the chain may unwind
+	aggregationStep   uint64        // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	changeFileNum     uint64        // Block number associated with the current change files. It is the last block number whose changes will go into that file
+	accountChangeFile *os.File      // Currently open change file to append account changes to (or truncate when unwinding)
+	accountChangeW    *bufio.Writer // Writer associated with the currently open accounts change file
+	codeChangeFile    *os.File
+	codeChangeW       *bufio.Writer
+	storageChangeFile *os.File
+	storageChangeW    *bufio.Writer
 }
 
 type byEndBlockItem struct {
@@ -302,13 +310,54 @@ func (r *Reader) ReadAccountIncarnation(addr []byte) uint64 {
 	return r.blockNum - 1
 }
 
-func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) *Writer {
+func (a *Aggregator) closeChangeFile() error {
+	if a.accountChangeW != nil {
+		if err := a.accountChangeW.Flush(); err != nil {
+			return err
+		}
+		if err := a.accountChangeFile.Close(); err != nil {
+			return err
+		}
+	}
+	if a.codeChangeW != nil {
+		if err := a.codeChangeW.Flush(); err != nil {
+			return err
+		}
+		if err := a.codeChangeFile.Close(); err != nil {
+			return err
+		}
+	}
+	if a.storageChangeW != nil {
+		if err := a.storageChangeW.Flush(); err != nil {
+			return err
+		}
+		if err := a.storageChangeFile.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *Aggregator) openChangeFiles(blockNum uint64) error {
+	if a.accountChangeW == nil {
+		//if os.Exist(path.Join(diffDir, "account_change"))
+	}
+	return nil
+}
+
+func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, error) {
 	w := &Writer{
 		a:        a,
 		tx:       tx,
 		blockNum: blockNum,
 	}
-	return w
+	if blockNum > a.changeFileNum {
+		if err := a.closeChangeFile(); err != nil {
+			return nil, err
+		}
+	}
+
+	return w, nil
 }
 
 type Writer struct {
@@ -464,46 +513,5 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 }
 
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
-	var err error
-	var accountsC, codeC, storageC kv.RwCursorDupSort
-	if accountsC, err = w.tx.RwCursorDupSort(kv.ChangeAccounts); err != nil {
-		return err
-	}
-	defer accountsC.Close()
-	if codeC, err = w.tx.RwCursorDupSort(kv.ChangeCode); err != nil {
-		return err
-	}
-	defer codeC.Close()
-	if storageC, err := w.tx.RwCursorDupSort(kv.ChangeStorage); err != nil {
-		return err
-	}
-	defer storageC.Close()
-	accountsBtree := btree.New(32)
-	codeBtree := btree.New(32)
-	storageBtreee := btree.New(32)
-	// We iterate backwards to minimise number of updates (and therefore GC) required
-	var blockToBuf [8]byte
-	binary.BigEndian.PutUint64(blockToBuf[:], blockTo)
-	bk, _, e := accountsC.Seek(blockToBuf[:])
-	for ; bk != nil && e == nil; bk, _, e = accountsC.Prev() {
-		blockNum := binary.BigEndian.Uint64(bk[:8])
-		if blockNum <= blockFrom {
-			break
-		}
-		k, v, e1 := accountsC.FirstDup()
-		for ; k != nil && e1 == nil; k, v, e1 = accountsC.NextDup() {
-			i := &AggregateItem{k: k, v: v}
-			if !accountsBtree.Has(i) {
-				accountsBtree.ReplaceOrInsert(i)
-			}
-		}
-		if e1 != nil {
-			return e1
-		}
-
-	}
-	if e != nil {
-		return e
-	}
 	return nil
 }

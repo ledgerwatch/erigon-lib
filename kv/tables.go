@@ -277,10 +277,6 @@ const (
 	StateAccounts = "StateAccounts"
 	StateStorage  = "StateStorage"
 	StateCode     = "StateCode"
-	// Change tables contain the two-level mapping: blockNumber => key => (value_before_change; value_after_change)
-	ChangeAccounts = "ChangeAccounts"
-	ChangeStorage  = "ChangeStorage"
-	ChangeCode     = "ChangeCode"
 )
 
 // Keys
@@ -360,9 +356,6 @@ var ChaindataTables = []string{
 	StateAccounts,
 	StateStorage,
 	StateCode,
-	ChangeAccounts,
-	ChangeStorage,
-	ChangeCode,
 }
 
 const (
@@ -439,24 +432,6 @@ var ChaindataTablesCfg = TableCfg{
 	},
 	CallTraceSet: {
 		Flags: DupSort,
-	},
-	ChangeAccounts: {
-		Flags:                     DupSort,
-		AutoDupSortKeysConversion: true,
-		DupFromLen:                28,
-		DupToLen:                  8,
-	},
-	ChangeStorage: {
-		Flags:                     DupSort,
-		AutoDupSortKeysConversion: true,
-		DupFromLen:                68,
-		DupToLen:                  8,
-	},
-	ChangeCode: {
-		Flags:                     DupSort,
-		AutoDupSortKeysConversion: true,
-		DupFromLen:                28,
-		DupToLen:                  8,
 	},
 }
 
