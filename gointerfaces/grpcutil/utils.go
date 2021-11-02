@@ -92,7 +92,7 @@ func Connect(creds credentials.TransportCredentials, dialAddress string) (*grpc.
 	backoffCfg.MaxDelay = 10 * time.Second
 	dialOpts = []grpc.DialOption{
 		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoffCfg, MinConnectTimeout: 10 * time.Minute}),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(int(15 * datasize.MB))),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(int(1 * datasize.GB))),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{}),
 	}
 	if creds == nil {
