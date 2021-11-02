@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path"
 	"regexp"
@@ -339,8 +340,32 @@ func (a *Aggregator) closeChangeFile() error {
 }
 
 func (a *Aggregator) openChangeFiles(blockNum uint64) error {
+	rem := (blockNum - 1) % a.aggregationStep
+	startBlock := blockNum - rem
+	endBlock := startBlock + a.aggregationStep - 1
 	if a.accountChangeW == nil {
-		//if os.Exist(path.Join(diffDir, "account_change"))
+		path := path.Join(a.diffDir, fmt.Sprintf("accounts.%d-%d.chg", startBlock, endBlock))
+		var err error
+		if a.accountChangeFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
+			return err
+		}
+		a.accountChangeW = bufio.NewWriter(a.accountChangeFile)
+	}
+	if a.storageChangeW == nil {
+		path := path.Join(a.diffDir, fmt.Sprintf("storage.%d-%d.chg", startBlock, endBlock))
+		var err error
+		if a.storageChangeFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
+			return err
+		}
+		a.storageChangeW = bufio.NewWriter(a.storageChangeFile)
+	}
+	if a.codeChangeW == nil {
+		path := path.Join(a.diffDir, fmt.Sprintf("code.%d-%d.chg", startBlock, endBlock))
+		var err error
+		if a.codeChangeFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
+			return err
+		}
+		a.codeChangeW = bufio.NewWriter(a.codeChangeFile)
 	}
 	return nil
 }
@@ -356,15 +381,20 @@ func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, erro
 			return nil, err
 		}
 	}
-
+	if err := a.openChangeFiles(blockNum); err != nil {
+		return nil, err
+	}
 	return w, nil
 }
 
 type Writer struct {
-	a        *Aggregator
-	tx       kv.RwTx
-	blockNum uint64
-	numBuf   [8]byte
+	a                 *Aggregator
+	tx                kv.RwTx
+	blockNum          uint64
+	numBuf            [8]byte
+	accountChangeSize uint64
+	codeChangeSize    uint64
+	storageChangeSize uint64
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
