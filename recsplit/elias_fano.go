@@ -25,6 +25,10 @@ import (
 	"unsafe"
 )
 
+// EliasFano algo overview https://www.antoniomallia.it/sorted-integers-compression-with-elias-fano-encoding.html
+// P. Elias. Efficient storage and retrieval by content and address of static files. J. ACM, 21(2):246–260, 1974.
+// Partitioned Elias-Fano Indexes http://groups.di.unipi.it/~ottavian/files/elias_fano_sigir14.pdf
+
 const (
 	log2q      uint64 = 8
 	q          uint64 = 1 << log2q
@@ -69,7 +73,9 @@ func (ef *EliasFano) AddOffset(offset uint64) {
 	if ef.l != 0 {
 		set_bits(ef.lowerBits, ef.i*ef.l, int(ef.l), (offset-ef.delta)&ef.lowerBitsMask)
 	}
+	//pos := ((offset - ef.delta) >> ef.l) + ef.i
 	set(ef.upperBits, ((offset-ef.delta)>>ef.l)+ef.i)
+	//fmt.Printf("add:%x, pos=%x, set=%x, res=%x\n", offset, pos, pos/64, uint64(1)<<(pos%64))
 	ef.i++
 	ef.delta += ef.minDelta
 }
@@ -77,7 +83,7 @@ func (ef *EliasFano) AddOffset(offset uint64) {
 func (ef EliasFano) jumpSizeWords() int {
 	size := ((ef.count + 1) / superQ) * superQSize // Whole blocks
 	if (ef.count+1)%superQ != 0 {
-		size += (1 + (((ef.count+1)%superQ+q-1)/q+3)/4) // Partial block
+		size += 1 + (((ef.count+1)%superQ+q-1)/q+3)/4 // Partial block
 	}
 	return int(size)
 }
@@ -86,18 +92,26 @@ func (ef *EliasFano) deriveFields() int {
 	if ef.u/(ef.count+1) == 0 {
 		ef.l = 0
 	} else {
-		ef.l = 63 ^ uint64(bits.LeadingZeros64(ef.u/(ef.count+1)))
+		ef.l = 63 ^ uint64(bits.LeadingZeros64(ef.u/(ef.count+1))) // pos of first non-zero bit
+		//fmt.Printf("lllllllll: %d, %d\n", 63^uint64(bits.LeadingZeros64(24/7)), msb(ef.u/(ef.count+1)))
 	}
 	ef.lowerBitsMask = (uint64(1) << ef.l) - 1
 	wordsLowerBits := int(((ef.count+1)*ef.l+63)/64 + 1)
 	wordsUpperBits := int((ef.count + 1 + (ef.u >> ef.l) + 63) / 64)
 	jumpWords := ef.jumpSizeWords()
 	totalWords := wordsLowerBits + wordsUpperBits + jumpWords
+	fmt.Printf("res: %d,%d+%d+%d\n", totalWords, wordsLowerBits, wordsUpperBits, jumpWords)
 	if ef.data == nil {
 		ef.data = make([]uint64, totalWords)
 	} else {
 		ef.data = ef.data[:totalWords]
 	}
+	//res: 5268,2325+2903+40
+	//4688, 2906 + 1742 + 40
+	//4689, 3487 + 1162 + 40
+	//res: 4980,4068+872+40
+	// res: 5416,4649+727+40
+
 	ef.lowerBits = ef.data[:wordsLowerBits]
 	ef.upperBits = ef.data[wordsLowerBits : wordsLowerBits+wordsUpperBits]
 	ef.jump = ef.data[wordsLowerBits+wordsUpperBits:]
@@ -123,8 +137,8 @@ func (ef *EliasFano) Build() {
 						fmt.Printf("offset=%x,lastSuperQ=%x,i=%x,b=%x,c=%x\n", offset, lastSuperQ, i, b, c)
 						fmt.Printf("ef.minDelta=%x\n", ef.minDelta)
 						//fmt.Printf("ef.upperBits=%x\n", ef.upperBits)
-						//fmt.Printf("ef.upperBits=%x\n", ef.upperBits)
-						//fmt.Printf("ef.wordsUpperBits=%x\n", ef.wordsUpperBits)
+						//fmt.Printf("ef.lowerBits=%x\n", ef.lowerBits)
+						//fmt.Printf("ef.wordsUpperBits=%b\n", ef.wordsUpperBits)
 						panic("")
 					}
 					// c % superQ is the bit index inside the group of 4096 bits
@@ -408,7 +422,8 @@ func set_bits(bits []uint64, start uint64, width int, value uint64) {
 }
 
 func set(bits []uint64, pos uint64) {
-	bits[pos>>6] |= uint64(1) << (pos & 63)
+	//bits[pos>>6] |= uint64(1) << (pos & 63)
+	bits[pos/64] |= uint64(1) << (pos % 64)
 }
 
 func (ef DoubleEliasFano) jumpSizeWords() int {
@@ -548,4 +563,15 @@ func (ef *DoubleEliasFano) Read(r []byte) int {
 	ef.data = p[:]
 	ef.deriveFields()
 	return 40 + 8*len(ef.data)
+}
+
+func round(a float64) int64 {
+	if a < 0 {
+		return int64(a - 0.5)
+	}
+	return int64(a + 0.5)
+}
+
+func msb(x uint64) uint64 {
+	return uint64(round(math.Log2(float64(x))))
 }
