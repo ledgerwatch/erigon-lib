@@ -100,17 +100,11 @@ func (ef *EliasFano) deriveFields() int {
 	wordsUpperBits := int((ef.count + 1 + (ef.u >> ef.l) + 63) / 64)
 	jumpWords := ef.jumpSizeWords()
 	totalWords := wordsLowerBits + wordsUpperBits + jumpWords
-	fmt.Printf("res: %d,%d+%d+%d\n", totalWords, wordsLowerBits, wordsUpperBits, jumpWords)
 	if ef.data == nil {
 		ef.data = make([]uint64, totalWords)
 	} else {
 		ef.data = ef.data[:totalWords]
 	}
-	//res: 5268,2325+2903+40
-	//4688, 2906 + 1742 + 40
-	//4689, 3487 + 1162 + 40
-	//res: 4980,4068+872+40
-	// res: 5416,4649+727+40
 
 	ef.lowerBits = ef.data[:wordsLowerBits]
 	ef.upperBits = ef.data[wordsLowerBits : wordsLowerBits+wordsUpperBits]
