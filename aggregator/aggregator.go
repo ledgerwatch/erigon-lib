@@ -57,20 +57,170 @@ import (
 //    the item last changed, but it is guaranteed to find correct element in the Transient mapping of part 2
 
 type Aggregator struct {
-	diffDir           string // Directory where the state diff files are stored
-	byEndBlock        *btree.BTree
-	unwindLimit       uint64        // How far the chain may unwind
-	aggregationStep   uint64        // How many items (block, but later perhaps txs or changes) are required to form one state diff file
-	changeFileNum     uint64        // Block number associated with the current change files. It is the last block number whose changes will go into that file
-	accountChangeFile *os.File      // Currently open change file to append account changes to (or truncate when unwinding)
-	accountChangeW    *bufio.Writer // Writer associated with the currently open accounts change file
-	codeChangeFile    *os.File
-	codeChangeW       *bufio.Writer
-	storageChangeFile *os.File
-	storageChangeW    *bufio.Writer
+	diffDir         string // Directory where the state diff files are stored
+	byEndBlock      *btree.BTree
+	unwindLimit     uint64 // How far the chain may unwind
+	aggregationStep uint64 // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	changeFileNum   uint64 // Block number associated with the current change files. It is the last block number whose changes will go into that file
+	accountChanges  Changes
+	codeChanges     Changes
+	storageChanges  Changes
+	changesBtree    *btree.BTree // btree of ChangesItem
+}
+
+type ChangeFile struct {
+	dir         string
+	step        uint64
+	namebase    string
+	file        *os.File
+	w           *bufio.Writer
+	numBuf      [8]byte
+	sizeCounter uint64
+}
+
+func (cf *ChangeFile) closeFile() error {
+	if cf.w != nil {
+		if err := cf.w.Flush(); err != nil {
+			return err
+		}
+		if err := cf.file.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cf *ChangeFile) openFile(blockNum uint64) error {
+	rem := (blockNum - 1) % cf.step
+	startBlock := blockNum - rem
+	endBlock := startBlock + cf.step - 1
+	if cf.w == nil {
+		path := path.Join(cf.dir, fmt.Sprintf("%s.%d-%d.chg", cf.namebase, startBlock, endBlock))
+		var err error
+		if cf.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
+			return err
+		}
+		cf.w = bufio.NewWriter(cf.file)
+	}
+	return nil
+}
+
+func (cf *ChangeFile) add(word []byte) error {
+	n := binary.PutUvarint(cf.numBuf[:], uint64(len(word)))
+	if _, err := cf.w.Write(cf.numBuf[:n]); err != nil {
+		return err
+	}
+	if len(word) > 0 {
+		if _, err := cf.w.Write(word); err != nil {
+			return err
+		}
+	}
+	cf.sizeCounter += uint64(n + len(word))
+	return nil
+}
+
+func (cf *ChangeFile) finish(blockNum uint64) error {
+	// Write out block number and then size of changes in this block
+	binary.BigEndian.PutUint64(cf.numBuf[:], blockNum)
+	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint64(cf.numBuf[:], cf.sizeCounter)
+	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
+		return err
+	}
+	cf.sizeCounter = 0
+	return nil
+}
+
+type Changes struct {
+	namebase string
+	keys     ChangeFile
+	before   ChangeFile
+	after    ChangeFile
+	step     uint64
+	dir      string
+}
+
+func (c *Changes) Init(namebase string, step uint64, dir string) {
+	c.namebase = namebase
+	c.step = step
+	c.dir = dir
+	c.keys.namebase = namebase + ".keys"
+	c.keys.dir = dir
+	c.keys.step = step
+	c.before.namebase = namebase + ".before"
+	c.before.dir = dir
+	c.before.step = step
+	c.after.namebase = namebase + ".after"
+	c.after.dir = dir
+	c.after.step = step
+}
+
+func (c *Changes) closeFiles() error {
+	if err := c.keys.closeFile(); err != nil {
+		return err
+	}
+	if err := c.before.closeFile(); err != nil {
+		return err
+	}
+	if err := c.after.closeFile(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Changes) openFiles(blockNum uint64) error {
+	if err := c.keys.openFile(blockNum); err != nil {
+		return err
+	}
+	if err := c.before.openFile(blockNum); err != nil {
+		return err
+	}
+	if err := c.after.openFile(blockNum); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Changes) addChange(key, before, after []byte) error {
+	if err := c.keys.add(key); err != nil {
+		return err
+	}
+	if err := c.before.add(before); err != nil {
+		return err
+	}
+	if err := c.after.add(after); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Changes) finish(blockNum uint64) error {
+	if err := c.keys.finish(blockNum); err != nil {
+		return err
+	}
+	if err := c.before.finish(blockNum); err != nil {
+		return err
+	}
+	if err := c.after.finish(blockNum); err != nil {
+		return err
+	}
+	return nil
+}
+
+type ChangesItem struct {
+	endBlock   uint64
+	startBlock uint64
+	fileCount  int
+}
+
+func (i *ChangesItem) Less(than btree.Item) bool {
+	return i.endBlock < than.(*ChangesItem).endBlock
 }
 
 type byEndBlockItem struct {
+	startBlock  uint64
 	endBlock    uint64
 	accountsD   *compress.Decompressor
 	accountsIdx *recsplit.Index
@@ -125,9 +275,9 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 			log.Warn("File ignored by aggregator, startBlock > endBlock", "name", name)
 			continue
 		}
-		var item *byEndBlockItem = &byEndBlockItem{endBlock: endBlock}
+		var item *byEndBlockItem = &byEndBlockItem{startBlock: startBlock, endBlock: endBlock}
 		i := byEndBlock.Get(item)
-		if i != nil {
+		if i == nil || i != nil && i.(*byEndBlockItem).startBlock > startBlock {
 			byEndBlock.ReplaceOrInsert(item)
 		} else {
 			item = i.(*byEndBlockItem)
@@ -166,6 +316,40 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		}
 	}
 	a.byEndBlock = byEndBlock
+	a.accountChanges.Init(diffDir, aggregationStep, "accounts")
+	a.codeChanges.Init(diffDir, aggregationStep, "code")
+	a.storageChanges.Init(diffDir, aggregationStep, "storage")
+	a.changesBtree = btree.New(32)
+	re = regexp.MustCompile(`(accounts|storage|code).(keys|before|after).([0-9]+)-([0-9]+).chg`)
+	for _, f := range files {
+		name := f.Name()
+		subs := re.FindStringSubmatch(name)
+		if len(subs) != 5 {
+			log.Warn("File ignored by changes scan, more than 4 submatches", "name", name)
+			continue
+		}
+		var startBlock, endBlock uint64
+		if startBlock, err = strconv.ParseUint(subs[3], 10, 64); err != nil {
+			log.Warn("File ignored by changes scan, parsing startBlock", "error", err, "name", name)
+			continue
+		}
+		if endBlock, err = strconv.ParseUint(subs[4], 10, 64); err != nil {
+			log.Warn("File ignored by changes scan, parsing endBlock", "error", err, "name", name)
+			continue
+		}
+		if startBlock > endBlock {
+			log.Warn("File ignored by changes scan, startBlock > endBlock", "name", name)
+			continue
+		}
+		var item *ChangesItem = &ChangesItem{startBlock: startBlock, endBlock: endBlock}
+		i := a.changesBtree.Get(item)
+		if i != nil {
+			a.changesBtree.ReplaceOrInsert(item)
+		} else {
+			item = i.(*ChangesItem)
+		}
+		item.fileCount++
+	}
 	return a, nil
 }
 
@@ -311,63 +495,10 @@ func (r *Reader) ReadAccountIncarnation(addr []byte) uint64 {
 	return r.blockNum - 1
 }
 
-func (a *Aggregator) closeChangeFile() error {
-	if a.accountChangeW != nil {
-		if err := a.accountChangeW.Flush(); err != nil {
-			return err
-		}
-		if err := a.accountChangeFile.Close(); err != nil {
-			return err
-		}
-	}
-	if a.codeChangeW != nil {
-		if err := a.codeChangeW.Flush(); err != nil {
-			return err
-		}
-		if err := a.codeChangeFile.Close(); err != nil {
-			return err
-		}
-	}
-	if a.storageChangeW != nil {
-		if err := a.storageChangeW.Flush(); err != nil {
-			return err
-		}
-		if err := a.storageChangeFile.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (a *Aggregator) openChangeFiles(blockNum uint64) error {
-	rem := (blockNum - 1) % a.aggregationStep
-	startBlock := blockNum - rem
-	endBlock := startBlock + a.aggregationStep - 1
-	if a.accountChangeW == nil {
-		path := path.Join(a.diffDir, fmt.Sprintf("accounts.%d-%d.chg", startBlock, endBlock))
-		var err error
-		if a.accountChangeFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
-			return err
-		}
-		a.accountChangeW = bufio.NewWriter(a.accountChangeFile)
-	}
-	if a.storageChangeW == nil {
-		path := path.Join(a.diffDir, fmt.Sprintf("storage.%d-%d.chg", startBlock, endBlock))
-		var err error
-		if a.storageChangeFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
-			return err
-		}
-		a.storageChangeW = bufio.NewWriter(a.storageChangeFile)
-	}
-	if a.codeChangeW == nil {
-		path := path.Join(a.diffDir, fmt.Sprintf("code.%d-%d.chg", startBlock, endBlock))
-		var err error
-		if a.codeChangeFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
-			return err
-		}
-		a.codeChangeW = bufio.NewWriter(a.codeChangeFile)
-	}
-	return nil
+type Writer struct {
+	a        *Aggregator
+	tx       kv.RwTx
+	blockNum uint64
 }
 
 func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, error) {
@@ -377,24 +508,46 @@ func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, erro
 		blockNum: blockNum,
 	}
 	if blockNum > a.changeFileNum {
-		if err := a.closeChangeFile(); err != nil {
+		if err := a.accountChanges.closeFiles(); err != nil {
+			return nil, err
+		}
+		if err := a.codeChanges.closeFiles(); err != nil {
+			return nil, err
+		}
+		if err := a.storageChanges.closeFiles(); err != nil {
 			return nil, err
 		}
 	}
-	if err := a.openChangeFiles(blockNum); err != nil {
+	if err := a.accountChanges.openFiles(blockNum); err != nil {
+		return nil, err
+	}
+	if err := a.codeChanges.openFiles(blockNum); err != nil {
+		return nil, err
+	}
+	if err := a.codeChanges.openFiles(blockNum); err != nil {
 		return nil, err
 	}
 	return w, nil
 }
 
-type Writer struct {
-	a                 *Aggregator
-	tx                kv.RwTx
-	blockNum          uint64
-	numBuf            [8]byte
-	accountChangeSize uint64
-	codeChangeSize    uint64
-	storageChangeSize uint64
+func (w *Writer) Finish() error {
+	if err := w.a.accountChanges.finish(w.blockNum); err != nil {
+		return err
+	}
+	if err := w.a.codeChanges.finish(w.blockNum); err != nil {
+		return err
+	}
+	if err := w.a.storageChanges.finish(w.blockNum); err != nil {
+		return err
+	}
+	if w.blockNum <= w.a.unwindLimit+w.a.aggregationStep {
+		return nil
+	}
+	diff := w.blockNum - w.a.unwindLimit
+	if diff%w.a.aggregationStep != 0 {
+		return nil
+	}
+	return w.aggregateUpto(diff-w.a.aggregationStep, diff)
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
@@ -412,16 +565,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
-	// Update changes
-	changeK := make([]byte, 8+len(addr))
-	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
-	copy(changeK[8:], addr)
-	n := binary.PutUvarint(w.numBuf[:], uint64(len(account)))
-	changeV := make([]byte, len(account)+n+len(prevV)-4)
-	copy(changeV, w.numBuf[:n])
-	copy(changeV[n:], account)
-	copy(changeV[n+len(account):], prevV[4:])
-	if err = w.tx.Put(kv.ChangeAccounts, changeK, changeV); err != nil {
+	if err = w.a.accountChanges.addChange(addr, prevV[4:], account); err != nil {
 		return err
 	}
 	return nil
@@ -442,16 +586,7 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 	if err = w.tx.Put(kv.StateCode, addr, v); err != nil {
 		return err
 	}
-	// Update changes
-	changeK := make([]byte, 8+len(addr))
-	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
-	copy(changeK[8:], addr)
-	n := binary.PutUvarint(w.numBuf[:], uint64(len(code)))
-	changeV := make([]byte, len(code)+n+len(prevV)-4)
-	copy(changeV, w.numBuf[:n])
-	copy(changeV[n:], code)
-	copy(changeV[n+len(code):], prevV[4:])
-	if err = w.tx.Put(kv.ChangeCode, changeK, changeV); err != nil {
+	if err = w.a.codeChanges.addChange(addr, prevV[4:], code); err != nil {
 		return err
 	}
 	return nil
@@ -471,15 +606,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
-	// Update changes
-	changeK := make([]byte, 8+len(addr))
-	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
-	copy(changeK[8:], addr)
-	n := binary.PutUvarint(w.numBuf[:], 0)
-	changeV := make([]byte, n+len(prevV)-4)
-	copy(changeV, w.numBuf[:n])
-	copy(changeV[n:], prevV[4:])
-	if err = w.tx.Put(kv.ChangeAccounts, changeK, changeV); err != nil {
+	if err = w.a.accountChanges.addChange(addr, prevV[4:], nil); err != nil {
 		return err
 	}
 	return nil
@@ -505,33 +632,10 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	if err = w.tx.Put(kv.StateStorage, addr, v); err != nil {
 		return err
 	}
-	// Update changes
-	changeK := make([]byte, 8+len(addr)+8+len(loc))
-	binary.BigEndian.PutUint64(changeK[:], w.blockNum)
-	copy(changeK[8:], dbkey)
-	n := binary.PutUvarint(w.numBuf[:], uint64(vLen))
-	changeV := make([]byte, vLen+n+len(prevV)-4)
-	copy(changeV, w.numBuf[:n])
-	copy(changeV[n:], v[4:])
-	copy(changeV[n+vLen:], prevV[4:])
-	if err = w.tx.Put(kv.ChangeAccounts, changeK, changeV); err != nil {
+	if err = w.a.storageChanges.addChange(dbkey, prevV[4:], v[4:]); err != nil {
 		return err
 	}
 	return nil
-}
-
-// Finish checks whether it is necessary to aggregate
-// some of the changes into a file, and perform it if necessary
-func (w *Writer) Finish() error {
-	if w.blockNum <= w.a.unwindLimit+w.a.aggregationStep {
-		return nil
-	}
-	diff := w.blockNum - w.a.unwindLimit
-	if diff%w.a.aggregationStep != 0 {
-		return nil
-	}
-	// Aggregate into a file
-	return w.aggregateUpto(diff-w.a.aggregationStep, diff)
 }
 
 type AggregateItem struct {
