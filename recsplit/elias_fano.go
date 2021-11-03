@@ -73,6 +73,7 @@ func (ef *EliasFano) AddOffset(offset uint64) {
 	if ef.l != 0 {
 		set_bits(ef.lowerBits, ef.i*ef.l, int(ef.l), (offset-ef.delta)&ef.lowerBitsMask)
 	}
+	fmt.Printf("ef.delta=%d\n", ef.delta)
 	//pos := ((offset - ef.delta) >> ef.l) + ef.i
 	set(ef.upperBits, ((offset-ef.delta)>>ef.l)+ef.i)
 	//fmt.Printf("add:%x, pos=%x, set=%x, res=%x\n", offset, pos, pos/64, uint64(1)<<(pos%64))
