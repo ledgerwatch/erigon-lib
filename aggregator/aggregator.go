@@ -227,6 +227,7 @@ func (i *ChangesItem) Less(than btree.Item) bool {
 type byEndBlockItem struct {
 	startBlock  uint64
 	endBlock    uint64
+	fileCount   int
 	accountsD   *compress.Decompressor
 	accountsIdx *recsplit.Index
 	storageD    *compress.Decompressor
@@ -280,44 +281,15 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 			log.Warn("File ignored by aggregator, startBlock > endBlock", "name", name)
 			continue
 		}
-		var item *byEndBlockItem = &byEndBlockItem{startBlock: startBlock, endBlock: endBlock}
+		var item *byEndBlockItem = &byEndBlockItem{fileCount: 1, startBlock: startBlock, endBlock: endBlock}
 		i := byEndBlock.Get(item)
-		if i == nil || i != nil && i.(*byEndBlockItem).startBlock > startBlock {
+		if i == nil {
 			byEndBlock.ReplaceOrInsert(item)
-		} else {
+		} else if i.(*byEndBlockItem).startBlock > startBlock {
+			byEndBlock.ReplaceOrInsert(item)
+		} else if i.(*byEndBlockItem).startBlock == startBlock {
 			item = i.(*byEndBlockItem)
-		}
-		var d *compress.Decompressor
-		var idx *recsplit.Index
-		switch subs[4] {
-		case "dat":
-			if d, err = compress.NewDecompressor(path.Join(diffDir, name)); err != nil {
-				return nil, err
-			}
-		case "idx":
-			if idx, err = recsplit.NewIndex(path.Join(diffDir, name)); err != nil {
-				return nil, err
-			}
-		}
-		switch subs[1] {
-		case "accounts":
-			if d != nil {
-				item.accountsD = d
-			} else {
-				item.accountsIdx = idx
-			}
-		case "storage":
-			if d != nil {
-				item.storageD = d
-			} else {
-				item.storageIdx = idx
-			}
-		case "code":
-			if d != nil {
-				item.codeD = d
-			} else {
-				item.codeIdx = idx
-			}
+			item.fileCount++
 		}
 	}
 	// Check for overlaps and holes while moving items out of temporary btree
@@ -326,11 +298,51 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	byEndBlock.Descend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.startBlock < minStart {
+			if item.endBlock >= minStart {
+				err = fmt.Errorf("overlap of state files [%d-%d] with %d", item.startBlock, item.endBlock, minStart)
+				return false
+			}
+			if minStart != math.MaxUint64 && item.endBlock+1 != minStart {
+				err = fmt.Errorf("hole in state files [%d-%d]", item.endBlock, minStart)
+				return false
+			}
+			if item.fileCount != 6 {
+				err = fmt.Errorf("missing state files for interval [%d-%d]", item.startBlock, item.endBlock)
+				return false
+			}
 			minStart = item.startBlock
 			a.byEndBlock.ReplaceOrInsert(i)
 		}
 		return true
 	})
+	if err != nil {
+		return nil, err
+	}
+	a.byEndBlock.Ascend(func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.accountsD, err = compress.NewDecompressor(path.Join(diffDir, fmt.Sprintf("accounts.%d-%d.dat", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		if item.accountsIdx, err = recsplit.NewIndex(path.Join(diffDir, fmt.Sprintf("accounts.%d-%d.idx", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		if item.codeD, err = compress.NewDecompressor(path.Join(diffDir, fmt.Sprintf("code.%d-%d.dat", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		if item.codeIdx, err = recsplit.NewIndex(path.Join(diffDir, fmt.Sprintf("code.%d-%d.idx", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		if item.storageD, err = compress.NewDecompressor(path.Join(diffDir, fmt.Sprintf("storage.%d-%d.dat", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		if item.storageIdx, err = recsplit.NewIndex(path.Join(diffDir, fmt.Sprintf("storage.%d-%d.idx", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
 	a.accountChanges.Init(diffDir, aggregationStep, "accounts")
 	a.codeChanges.Init(diffDir, aggregationStep, "code")
 	a.storageChanges.Init(diffDir, aggregationStep, "storage")
@@ -356,14 +368,51 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 			log.Warn("File ignored by changes scan, startBlock > endBlock", "name", name)
 			continue
 		}
-		var item *ChangesItem = &ChangesItem{startBlock: startBlock, endBlock: endBlock}
+		var item *ChangesItem = &ChangesItem{fileCount: 1, startBlock: startBlock, endBlock: endBlock}
 		i := a.changesBtree.Get(item)
-		if i != nil {
+		if i == nil {
 			a.changesBtree.ReplaceOrInsert(item)
 		} else {
 			item = i.(*ChangesItem)
+			if item.startBlock == startBlock {
+				item.fileCount++
+			} else {
+				return nil, fmt.Errorf("change files overlap [%d-%d] with [%d-%d]", item.startBlock, item.endBlock, startBlock, endBlock)
+			}
 		}
-		item.fileCount++
+	}
+	// Check for holes in change files
+	minStart = math.MaxUint64
+	a.changesBtree.Descend(func(i btree.Item) bool {
+		item := i.(*ChangesItem)
+		if item.startBlock < minStart {
+			if item.endBlock >= minStart {
+				err = fmt.Errorf("overlap of change files [%d-%d] with %d", item.startBlock, item.endBlock, minStart)
+				return false
+			}
+			if minStart != math.MaxUint64 && item.endBlock+1 != minStart {
+				err = fmt.Errorf("whole in change files [%d-%d]", item.endBlock, minStart)
+				return false
+			}
+			if item.fileCount != 9 {
+				err = fmt.Errorf("missing change files for interval [%d-%d]", item.startBlock, item.endBlock)
+				return false
+			}
+			minStart = item.startBlock
+		} else {
+			err = fmt.Errorf("overlap of change files [%d-%d] with %d", item.startBlock, item.endBlock, minStart)
+			return false
+		}
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	if lastStateI := a.byEndBlock.Max(); lastStateI != nil {
+		item := lastStateI.(*byEndBlockItem)
+		if minStart != math.MaxUint64 && item.endBlock+1 != minStart {
+			return nil, fmt.Errorf("hole or overlap between state files and change files [%d-%d]", item.endBlock, minStart)
+		}
 	}
 	return a, nil
 }
