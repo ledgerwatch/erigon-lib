@@ -495,8 +495,12 @@ func (rs *RecSplit) Build() error {
 		rs.offsetEf = NewEliasFano(rs.keysAdded, rs.maxOffset, rs.minDelta)
 		defer rs.offsetCollector.Close()
 		r := roaring64.New()
+
+		var delta uint64
+
 		if err := rs.offsetCollector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			r.Add(binary.BigEndian.Uint64(k))
+			r.Add(binary.BigEndian.Uint64(k) - delta)
+			delta += rs.minDelta
 			return rs.loadFuncOffset(k, v, table, next)
 		}, etl.TransformArgs{}); err != nil {
 			return err
@@ -505,6 +509,7 @@ func (rs *RecSplit) Build() error {
 		r.RunOptimize()
 		r2 := roaring64.New()
 		r2.AddMany(r.ToArray())
+
 		fmt.Printf("sz: roaring=%d, ef=%d\n", r2.GetSerializedSizeInBytes(), len(rs.offsetEf.data))
 	}
 	rs.gr.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
