@@ -497,10 +497,11 @@ func (rs *RecSplit) Build() error {
 		r := roaring64.New()
 
 		var delta uint64
-
+		i := 0
 		if err := rs.offsetCollector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			r.Add(binary.BigEndian.Uint64(k) - delta)
+			r.Add(binary.BigEndian.Uint64(k) - delta + 1)
 			delta += rs.minDelta
+			i++
 			return rs.loadFuncOffset(k, v, table, next)
 		}, etl.TransformArgs{}); err != nil {
 			return err
