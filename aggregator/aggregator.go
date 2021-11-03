@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"regexp"
@@ -216,6 +217,10 @@ type ChangesItem struct {
 }
 
 func (i *ChangesItem) Less(than btree.Item) bool {
+	if i.endBlock == than.(*ChangesItem).endBlock {
+		// Larger intevals will come last
+		return i.startBlock > than.(*ChangesItem).startBlock
+	}
 	return i.endBlock < than.(*ChangesItem).endBlock
 }
 
@@ -315,7 +320,17 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 			}
 		}
 	}
-	a.byEndBlock = byEndBlock
+	// Check for overlaps and holes while moving items out of temporary btree
+	a.byEndBlock = btree.New(32)
+	var minStart uint64 = math.MaxUint64
+	byEndBlock.Descend(func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.startBlock < minStart {
+			minStart = item.startBlock
+			a.byEndBlock.ReplaceOrInsert(i)
+		}
+		return true
+	})
 	a.accountChanges.Init(diffDir, aggregationStep, "accounts")
 	a.codeChanges.Init(diffDir, aggregationStep, "code")
 	a.storageChanges.Init(diffDir, aggregationStep, "storage")
