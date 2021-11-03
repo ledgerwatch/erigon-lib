@@ -502,7 +502,8 @@ func (rs *RecSplit) Build() error {
 			return err
 		}
 		rs.offsetEf.Build()
-		fmt.Printf("sz: roaring=%d, roaring=%d\n", r.GetSerializedSizeInBytes(), len(rs.offsetEf.data))
+		r.RunOptimize()
+		fmt.Printf("sz: roaring=%d, ef=%d\n", r.GetSerializedSizeInBytes(), len(rs.offsetEf.data))
 	}
 	rs.gr.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
 	// Construct Elias Fano index
