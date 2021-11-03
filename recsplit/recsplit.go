@@ -492,7 +492,7 @@ func (rs *RecSplit) Build() error {
 	}
 	if rs.enums {
 		rs.offsetEf = NewEliasFano(rs.keysAdded, rs.maxOffset, rs.minDelta)
-		fmt.Printf("rs.keysAdded: %d, bytesPerRec=%d\n", rs.keysAdded, rs.bytesPerRec)
+		fmt.Printf("rs.keysAdded: %d, bytesPerRec=%d, rs.maxOffset=%d, rs.minDelta=%d \n", rs.keysAdded, rs.bytesPerRec, rs.maxOffset, rs.minDelta)
 		panic(1)
 		defer rs.offsetCollector.Close()
 		if err := rs.offsetCollector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
