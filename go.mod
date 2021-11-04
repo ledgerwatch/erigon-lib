@@ -3,7 +3,6 @@ module github.com/ledgerwatch/erigon-lib
 go 1.16
 
 require (
-	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/VictoriaMetrics/metrics v1.18.0
 	github.com/c2h5oh/datasize v0.0.0-20200825124411-48ed595a09d2
 	github.com/flanglet/kanzi-go v1.9.0
