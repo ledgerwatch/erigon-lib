@@ -24,7 +24,6 @@ import (
 	"math/bits"
 	"os"
 
-	"github.com/RoaringBitmap/roaring"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/spaolacci/murmur3"
 )
@@ -494,28 +493,10 @@ func (rs *RecSplit) Build() error {
 	if rs.enums {
 		rs.offsetEf = NewEliasFano(rs.keysAdded, rs.maxOffset, rs.minDelta)
 		defer rs.offsetCollector.Close()
-		r := roaring.New()
-
-		var first uint64
-		var delta uint64
-		i := 0
-		if err := rs.offsetCollector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			if first == 0 {
-				first = binary.BigEndian.Uint64(k)
-			}
-			r.Add(uint32(binary.BigEndian.Uint64(k) - first - delta + 1))
-			delta += rs.minDelta
-			i++
-			return rs.loadFuncOffset(k, v, table, next)
-		}, etl.TransformArgs{}); err != nil {
+		if err := rs.offsetCollector.Load(nil, "", rs.loadFuncOffset, etl.TransformArgs{}); err != nil {
 			return err
 		}
 		rs.offsetEf.Build()
-		r.RunOptimize()
-		r2 := roaring.New()
-		r2.AddMany(r.ToArray())
-
-		fmt.Printf("sz: roaring=%d, %d, ef=%d\n", r2.GetSerializedSizeInBytes(), r2.GetFrozenSizeInBytes(), len(rs.offsetEf.data))
 	}
 	rs.gr.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
 	// Construct Elias Fano index
