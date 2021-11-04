@@ -137,9 +137,9 @@ func (ef *EliasFano) Build() {
 					}
 					// c % superQ is the bit index inside the group of 4096 bits
 					jumpSuperQ := (c / superQ) * superQSize
-					idx16 := (c % superQ) / q
-					idx64 := jumpSuperQ + 1 + (idx16 >> 2)
-					shift := 16 * (idx16 % 4)
+					jumpInsideSuperQ := (c % superQ) / q
+					idx64 := jumpSuperQ + 1 + (jumpInsideSuperQ >> 2)
+					shift := 16 * (jumpInsideSuperQ % 4)
 					mask := uint64(0xffff) << shift
 					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
 				}
@@ -159,9 +159,9 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	}
 
 	jumpSuperQ := (i / superQ) * superQSize
-	idx16 := (i % superQ) / q
-	idx64 = jumpSuperQ + 1 + (idx16 >> 2)
-	shift = 16 * (idx16 % 4)
+	jumpInsideSuperQ := (i % superQ) / q
+	idx64 = jumpSuperQ + 1 + (jumpInsideSuperQ >> 2)
+	shift = 16 * (jumpInsideSuperQ % 4)
 	mask := uint64(0xffff) << shift
 	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
 
@@ -364,9 +364,10 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 						panic("")
 					}
 					// c % superQ is the bit index inside the group of 4096 bits
-					idx16 := 2 * ((c % superQ) / q)
-					idx64 := (c/superQ)*(superQSize*2) + 2 + (idx16 >> 2)
-					shift := 16 * (idx16 % 4)
+					jumpSuperQ := (c / superQ) * (superQSize * 2)
+					jumpInsideSuperQ := 2 * (c % superQ) / q
+					idx64 := jumpSuperQ + 2 + (jumpInsideSuperQ >> 2)
+					shift := 16 * (jumpInsideSuperQ % 4)
 					mask := uint64(0xffff) << shift
 					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
 				}
@@ -387,9 +388,10 @@ func (ef *DoubleEliasFano) Build(cumKeys []uint64, position []uint64) {
 					if offset >= (1 << 16) {
 						panic("")
 					}
-					idx16 := 2*((c%superQ)/q) + 1
-					idx64 := (c/superQ)*(superQSize*2) + 2 + (idx16 >> 2)
-					shift := 16 * (idx16 % 4)
+					jumpSuperQ := (c / superQ) * (superQSize * 2)
+					jumpInsideSuperQ := 2*((c%superQ)/q) + 1
+					idx64 := jumpSuperQ + 2 + (jumpInsideSuperQ >> 2)
+					shift := 16 * (jumpInsideSuperQ % 4)
 					mask := uint64(0xffff) << shift
 					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
 				}

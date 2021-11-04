@@ -66,7 +66,7 @@ func FuzzEliasFanoSimple(f *testing.F) {
 	})
 }
 
-func FuzzEliasFano2(f *testing.F) {
+func FuzzEliasFano(f *testing.F) {
 	f.Fuzz(func(t *testing.T, in []byte) {
 		if len(in)%2 == 1 {
 			t.Skip()
