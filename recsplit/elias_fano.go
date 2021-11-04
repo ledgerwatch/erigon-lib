@@ -560,14 +560,3 @@ func (ef *DoubleEliasFano) Read(r []byte) int {
 	ef.deriveFields()
 	return 40 + 8*len(ef.data)
 }
-
-func round(a float64) int64 {
-	if a < 0 {
-		return int64(a - 0.5)
-	}
-	return int64(a + 0.5)
-}
-
-func msb(x uint64) uint64 {
-	return uint64(round(math.Log2(float64(x))))
-}
