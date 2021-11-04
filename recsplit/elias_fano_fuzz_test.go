@@ -33,6 +33,10 @@ func FuzzEliasFano(f *testing.F) {
 		if len(in) == 0 {
 			t.Skip()
 		}
+		if len(in) < 30_000 {
+			t.Skip()
+		}
+
 		var ef DoubleEliasFano
 		// Treat each byte of the sequence as difference between previous value and the next
 		numBuckets := len(in) / 2
