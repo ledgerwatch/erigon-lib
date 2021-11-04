@@ -183,16 +183,11 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	idx64 = idx16 / 4
 	shift = 16 * (idx16 % 4)
 	mask := uint64(0xffff) << shift
-	fmt.Printf("idx16=%d\n", idx16)
-	fmt.Printf("ef.jump=%x\n", ef.jump)
 	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
 
 	currWord = jump / 64
-	fmt.Printf("currWord=%d\n", currWord)
 	window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
 	d := int(i & qMask)
-
-	fmt.Printf("i=%d\n", i)
 
 	for bitCount := bits.OnesCount64(window); bitCount <= d; bitCount = bits.OnesCount64(window) {
 		currWord++
