@@ -33,7 +33,7 @@ func FuzzEliasFano(f *testing.F) {
 		if len(in) == 0 {
 			t.Skip()
 		}
-		for len(in) < 20_000 {
+		for len(in) < 100_000 {
 			in = append(in, in...)
 		}
 
