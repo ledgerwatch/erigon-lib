@@ -25,7 +25,7 @@ import (
 
 // gotip test -trimpath -v -fuzz=FuzzEliasFano -fuzztime=10s ./recsplit
 
-func FuzzEliasFanoSimple(f *testing.F) {
+func FuzzSingleEliasFano(f *testing.F) {
 	f.Fuzz(func(t *testing.T, in []byte) {
 		if len(in)%2 == 1 {
 			t.Skip()
@@ -33,7 +33,7 @@ func FuzzEliasFanoSimple(f *testing.F) {
 		if len(in) == 0 {
 			t.Skip()
 		}
-		for len(in) < int(superQ) {
+		for len(in) < int(2*superQ) { // make input large enough to trigger supreQ jump logic
 			in = append(in, in...)
 		}
 
@@ -53,20 +53,16 @@ func FuzzEliasFanoSimple(f *testing.F) {
 		}
 		ef.Build()
 
-		v := ef.Get(16384)
-		if v != keys[16384] {
-			t.Fatalf("i %d: got %d, expected %d", 16384, v, keys[16384])
-		}
 		// Try to read from ef
-		//for i := 0; i < count; i++ {
-		//	if ef.Get(uint64(i)) != keys[i] {
-		//		t.Fatalf("i %d: got %d, expected %d", i, ef.Get(uint64(i)), keys[i])
-		//	}
-		//}
+		for i := 0; i < count; i++ {
+			if ef.Get(uint64(i)) != keys[i] {
+				t.Fatalf("i %d: got %d, expected %d", i, ef.Get(uint64(i)), keys[i])
+			}
+		}
 	})
 }
 
-func FuzzEliasFano(f *testing.F) {
+func FuzzDoubleEliasFano(f *testing.F) {
 	f.Fuzz(func(t *testing.T, in []byte) {
 		if len(in)%2 == 1 {
 			t.Skip()
@@ -74,7 +70,7 @@ func FuzzEliasFano(f *testing.F) {
 		if len(in) == 0 {
 			t.Skip()
 		}
-		for len(in) < int(2*superQ) {
+		for len(in) < int(2*superQ) { // make input large enough to trigger supreQ jump logic
 			in = append(in, in...)
 		}
 
