@@ -136,30 +136,11 @@ func (ef *EliasFano) Build() {
 						panic("")
 					}
 					// c % superQ is the bit index inside the group of 4096 bits
-					/*
-						idx16 := (c % superQ) / q
-						idx64 := (c/superQ)*superQSize + 1 + (idx16 >> 2)
-						shift := 16 * (idx16 % 4)
-						mask := uint64(0xffff) << shift
-					*/
-					/*
-						jumpSuperQ := (i / superQ) * superQSize
-						jumpInsideSuperQ := (i % superQ) / q
-						idx16 := 2*(jumpSuperQ+2) + jumpInsideSuperQ
-						idx64 = idx16 / 4
-						shift = 16 * (idx16 % 4)
-						mask := uint64(0xffff) << shift
-						jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
-						currWord = jump / 64
-					*/
-					jumpSuperQ := (i / superQ) * superQSize
-					jumpInsideSuperQ := (i % superQ) / q
-					idx16 := 2*(jumpSuperQ+2) + jumpInsideSuperQ
-					idx64 := idx16 / 4
+					jumpSuperQ := (c / superQ) * superQSize
+					idx16 := (c % superQ) / q
+					idx64 := jumpSuperQ + 1 + (idx16 >> 2)
 					shift := 16 * (idx16 % 4)
 					mask := uint64(0xffff) << shift
-					//((uint16_t *)(&jump + (c / super_q) * (super_q_size * 2) + 2))[2 * ((c % super_q) / q) + 1] = offset;
-
 					ef.jump[idx64] = (ef.jump[idx64] &^ mask) | (offset << shift)
 				}
 				c++
@@ -178,9 +159,8 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	}
 
 	jumpSuperQ := (i / superQ) * superQSize
-	jumpInsideSuperQ := (i % superQ) / q
-	idx16 := 2*(jumpSuperQ+2) + jumpInsideSuperQ
-	idx64 = idx16 / 4
+	idx16 := (i % superQ) / q
+	idx64 = jumpSuperQ + 1 + (idx16 >> 2)
 	shift = 16 * (idx16 % 4)
 	mask := uint64(0xffff) << shift
 	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
