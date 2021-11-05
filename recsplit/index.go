@@ -23,6 +23,7 @@ import (
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/mmap"
+	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/spaolacci/murmur3"
 )
 
@@ -39,7 +40,7 @@ type Index struct {
 	grData             []uint64
 	ef                 DoubleEliasFano
 	enums              bool
-	offsetEf           *EliasFano
+	offsetEf           *eliasfano32.EliasFano
 	bucketCount        uint64          // Number of buckets
 	hasher             murmur3.Hash128 // Salted hash function to use for splitting into initial buckets and mapping to 64-bit fingerprints
 	bucketSize         int
@@ -111,7 +112,7 @@ func NewIndex(indexFile string) (*Index, error) {
 	offset++
 	if idx.enums {
 		var size int
-		idx.offsetEf, size = ReadEliasFano(idx.data[offset:])
+		idx.offsetEf, size = eliasfano32.ReadEliasFano(idx.data[offset:])
 		offset += size
 	}
 	// Size of golomb rice params
