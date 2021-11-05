@@ -23,6 +23,8 @@ import (
 	"math"
 	"math/bits"
 	"unsafe"
+
+	"github.com/ledgerwatch/erigon-lib/common/bitutil"
 )
 
 // EliasFano algo overview https://www.antoniomallia.it/sorted-integers-compression-with-elias-fano-encoding.html
@@ -176,7 +178,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 		d -= bitCount
 	}
 
-	sel = select64(window, d)
+	sel = bitutil.Select64(window, d)
 	delta = i * ef.minDelta
 	val = ((currWord*64+uint64(sel)-i)<<ef.l | (lower & ef.lowerBitsMask)) + delta
 
@@ -228,6 +230,8 @@ func (ef *EliasFano) Write(w io.Writer) error {
 	}
 	return nil
 }
+
+const maxDataSize = 0xFFFFFFFFFFFF
 
 // Read inputs the state of golomb rice encoding from a reader s
 func ReadEliasFano(r []byte) (*EliasFano, int) {
@@ -481,14 +485,14 @@ func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 		deltaPosition -= bitCount
 	}
 
-	selectCumKeys = select64(windowCumKeys, deltaCumKeys)
+	selectCumKeys = bitutil.Select64(windowCumKeys, deltaCumKeys)
 	//fmt.Printf("i = %d, select cum in %b for %d = %d\n", i, windowCumKeys, deltaCumKeys, selectCumKeys)
 	cumDelta = i * ef.cumKeysMinDelta
 	cumKeys = ((currWordCumKeys*64+uint64(selectCumKeys)-i)<<ef.lCumKeys | (lower & ef.lowerBitsMaskCumKeys)) + cumDelta
 
 	lower >>= ef.lCumKeys
 	//fmt.Printf("i = %d, lower = %b\n", i, lower)
-	selectPosition := select64(windowPosition, deltaPosition)
+	selectPosition := bitutil.Select64(windowPosition, deltaPosition)
 	//fmt.Printf("i = %d, select pos in %b for %d = %d\n", i, windowPosition, deltaPosition, selectPosition)
 	bitDelta := i * ef.posMinDelta
 	position = ((currWordPosition*64+uint64(selectPosition)-i)<<ef.lPosition | (lower & ef.lowerBitsMaskPosition)) + bitDelta

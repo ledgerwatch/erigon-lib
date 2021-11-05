@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-package recsplit
+package eliasfano16
 
 import (
 	"encoding/binary"
@@ -23,6 +23,8 @@ import (
 	"math"
 	"math/bits"
 	"unsafe"
+
+	"github.com/ledgerwatch/erigon-lib/common/bitutil"
 )
 
 // EliasFano algo overview https://www.antoniomallia.it/sorted-integers-compression-with-elias-fano-encoding.html
@@ -175,7 +177,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 		d -= bitCount
 	}
 
-	sel = select64(window, d)
+	sel = bitutil.Select64(window, d)
 	delta = i * ef.minDelta
 	val = ((currWord*64+uint64(sel)-i)<<ef.l | (lower & ef.lowerBitsMask)) + delta
 
@@ -239,6 +241,8 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 	ef.deriveFields()
 	return ef, 24 + 8*len(ef.data)
 }
+
+const maxDataSize = 0xFFFFFFFFFFFF
 
 // DoubleEliasFano can be used to encode two monotone sequences
 // it is called "double" because the lower bits array contains two sequences interleaved
@@ -480,14 +484,14 @@ func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 		deltaPosition -= bitCount
 	}
 
-	selectCumKeys = select64(windowCumKeys, deltaCumKeys)
+	selectCumKeys = bitutil.Select64(windowCumKeys, deltaCumKeys)
 	//fmt.Printf("i = %d, select cum in %b for %d = %d\n", i, windowCumKeys, deltaCumKeys, selectCumKeys)
 	cumDelta = i * ef.cumKeysMinDelta
 	cumKeys = ((currWordCumKeys*64+uint64(selectCumKeys)-i)<<ef.lCumKeys | (lower & ef.lowerBitsMaskCumKeys)) + cumDelta
 
 	lower >>= ef.lCumKeys
 	//fmt.Printf("i = %d, lower = %b\n", i, lower)
-	selectPosition := select64(windowPosition, deltaPosition)
+	selectPosition := bitutil.Select64(windowPosition, deltaPosition)
 	//fmt.Printf("i = %d, select pos in %b for %d = %d\n", i, windowPosition, deltaPosition, selectPosition)
 	bitDelta := i * ef.posMinDelta
 	position = ((currWordPosition*64+uint64(selectPosition)-i)<<ef.lPosition | (lower & ef.lowerBitsMaskPosition)) + bitDelta

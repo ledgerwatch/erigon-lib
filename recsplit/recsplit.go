@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"github.com/ledgerwatch/erigon-lib/etl"
+	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/spaolacci/murmur3"
 )
@@ -68,7 +69,7 @@ type RecSplit struct {
 	gr                GolombRice      // Helper object to encode the tree of hash function salts using Golomb-Rice code.
 	// Helper object to encode the sequence of cumulative number of keys in the buckets
 	// and the sequence of of cumulative bit offsets of buckets in the Golomb-Rice code.
-	ef                 DoubleEliasFano
+	ef                 eliasfano16.DoubleEliasFano
 	offsetEf           *eliasfano32.EliasFano // Elias Fano instance for encoding the offsets
 	bucketSizeAcc      []uint64               // Bucket size accumulator
 	bucketPosAcc       []uint64               // Accumulator for position of every bucket in the encoding of the hash function
