@@ -57,7 +57,7 @@ func FlushToDisk(encoder Encoder, logPrefix string, b Buffer, tmpdir string) (da
 	}
 
 	suffix := strings.ToLower(strings.ReplaceAll(logPrefix, " ", "-"))
-	bufferFile, err := ioutil.TempFile(tmpdir, "erigon-sortable-buf-"+suffix+"-")
+	bufferFile, err := ioutil.TempFile(tmpdir, "sortable-buf-"+suffix+"-")
 	if err != nil {
 		return nil, err
 	}
