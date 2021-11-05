@@ -56,8 +56,8 @@ func FlushToDisk(encoder Encoder, logPrefix string, b Buffer, tmpdir string) (da
 		}
 	}
 
-	suffix := strings.ToLower(strings.ReplaceAll(logPrefix, " ", "_"))
-	bufferFile, err := ioutil.TempFile(tmpdir, "tg-sortable-buf_"+suffix)
+	suffix := strings.ToLower(strings.ReplaceAll(logPrefix, " ", "-"))
+	bufferFile, err := ioutil.TempFile(tmpdir, "tg-sortable-buf-"+suffix)
 	if err != nil {
 		return nil, err
 	}
