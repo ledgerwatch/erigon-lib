@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"github.com/ledgerwatch/erigon-lib/etl"
+	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/spaolacci/murmur3"
 )
 
@@ -68,12 +69,12 @@ type RecSplit struct {
 	// Helper object to encode the sequence of cumulative number of keys in the buckets
 	// and the sequence of of cumulative bit offsets of buckets in the Golomb-Rice code.
 	ef                 DoubleEliasFano
-	offsetEf           *EliasFano // Elias Fano instance for encoding the offsets
-	bucketSizeAcc      []uint64   // Bucket size accumulator
-	bucketPosAcc       []uint64   // Accumulator for position of every bucket in the encoding of the hash function
-	leafSize           uint16     // Leaf size for recursive split algorithm
-	primaryAggrBound   uint16     // The lower bound for primary key aggregation (computed from leafSize)
-	secondaryAggrBound uint16     // The lower bound for secondary key aggregation (computed from leadSize)
+	offsetEf           *eliasfano32.EliasFano // Elias Fano instance for encoding the offsets
+	bucketSizeAcc      []uint64               // Bucket size accumulator
+	bucketPosAcc       []uint64               // Accumulator for position of every bucket in the encoding of the hash function
+	leafSize           uint16                 // Leaf size for recursive split algorithm
+	primaryAggrBound   uint16                 // The lower bound for primary key aggregation (computed from leafSize)
+	secondaryAggrBound uint16                 // The lower bound for secondary key aggregation (computed from leadSize)
 	startSeed          []uint64
 	golombRice         []uint32
 	buffer             []uint64
@@ -491,7 +492,7 @@ func (rs *RecSplit) Build() error {
 		}
 	}
 	if rs.enums {
-		rs.offsetEf = NewEliasFano(rs.keysAdded, rs.maxOffset, rs.minDelta)
+		rs.offsetEf = eliasfano32.NewEliasFano(rs.keysAdded, rs.maxOffset, rs.minDelta)
 		defer rs.offsetCollector.Close()
 		if err := rs.offsetCollector.Load(nil, "", rs.loadFuncOffset, etl.TransformArgs{}); err != nil {
 			return err

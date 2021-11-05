@@ -17,7 +17,7 @@
    limitations under the License.
 */
 
-package recsplit
+package eliasfano32
 
 import (
 	"testing"
