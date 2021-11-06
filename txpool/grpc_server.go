@@ -46,7 +46,9 @@ type txPool interface {
 
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error)
-	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error
+	// Deprecated: need switch to streaming-like
+	// deprecatedForEach calls `f` for each tx in the pool optionally checking `yield` function if it's != nil
+	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), yield func(mt *metaTx) bool, tx kv.Tx) error
 	CountContent() (int, int, int)
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 }
@@ -80,6 +82,7 @@ func convertSubPoolType(t SubPoolType) txpool_proto.Tx_Type {
 		panic("unknown")
 	}
 }
+
 func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpool_proto.AllReply, error) {
 	tx, err := s.db.BeginRo(ctx)
 	if err != nil {
@@ -94,9 +97,41 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 			Type:   convertSubPoolType(t),
 			RlpTx:  rlp,
 		})
-	}, tx); err != nil {
+	}, nil, tx); err != nil {
 		return nil, err
 	}
+	return reply, nil
+}
+
+func (s *GrpcServer) Pending(ctx context.Context, req *txpool_proto.PendingRequest) (*txpool_proto.PendingReply, error) {
+	tx, err := s.db.BeginRo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	reply := &txpool_proto.PendingReply{
+		Txs: make([]*txpool_proto.Tx, 0, 32),
+	}
+
+	err = s.txPool.deprecatedForEach(
+		ctx,
+		func(rlp, sender []byte, t SubPoolType) {
+			reply.Txs = append(reply.Txs, &txpool_proto.Tx{
+				Sender: sender,
+				Type:   convertSubPoolType(t),
+				RlpTx:  rlp,
+			})
+		},
+		func(mt *metaTx) bool {
+			return convertSubPoolType(mt.currentSubPool) == req.Type
+		},
+		tx,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return reply, nil
 }
 

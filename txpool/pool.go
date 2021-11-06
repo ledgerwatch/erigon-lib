@@ -1543,12 +1543,15 @@ func (p *TxPool) logStats() {
 	//}
 }
 
-//Deprecated need switch to streaming-like
-func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error {
+func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), yield func(mt *metaTx) bool, tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	p.all.tree.Ascend(func(i btree.Item) bool {
 		mt := i.(sortByNonce).metaTx
+		if yield != nil && !yield(mt) {
+			return true
+		}
+
 		slot := mt.Tx
 		slotRlp := slot.rlp
 		if slot.rlp == nil {
