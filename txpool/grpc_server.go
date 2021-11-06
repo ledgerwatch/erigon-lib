@@ -68,14 +68,14 @@ func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB, chainID uint2
 func (s *GrpcServer) Version(context.Context, *emptypb.Empty) (*types2.VersionReply, error) {
 	return TxPoolAPIVersion, nil
 }
-func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_Type {
+func convertSubPoolType(t SubPoolType) txpool_proto.Tx_Type {
 	switch t {
 	case PendingSubPool:
-		return txpool_proto.AllReply_PENDING
+		return txpool_proto.Tx_PENDING
 	case BaseFeeSubPool:
-		return txpool_proto.AllReply_PENDING
+		return txpool_proto.Tx_BASE_FEE
 	case QueuedSubPool:
-		return txpool_proto.AllReply_QUEUED
+		return txpool_proto.Tx_QUEUED
 	default:
 		panic("unknown")
 	}
@@ -87,9 +87,9 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 	}
 	defer tx.Rollback()
 	reply := &txpool_proto.AllReply{}
-	reply.Txs = make([]*txpool_proto.AllReply_Tx, 0, 32)
+	reply.Txs = make([]*txpool_proto.Tx, 0, 32)
 	if err := s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
-		reply.Txs = append(reply.Txs, &txpool_proto.AllReply_Tx{
+		reply.Txs = append(reply.Txs, &txpool_proto.Tx{
 			Sender: sender,
 			Type:   convertSubPoolType(t),
 			RlpTx:  rlp,
