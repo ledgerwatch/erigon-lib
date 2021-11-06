@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/google/btree"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -75,8 +77,12 @@ type ChangeFile struct {
 	namebase    string
 	file        *os.File
 	w           *bufio.Writer
+	r           *bufio.Reader
 	numBuf      [8]byte
 	sizeCounter uint64
+	blockPos    int64 // Position of the last block iterated upon
+	blockNum    uint64
+	blockSize   uint64
 }
 
 func (cf *ChangeFile) closeFile() error {
@@ -91,17 +97,27 @@ func (cf *ChangeFile) closeFile() error {
 	return nil
 }
 
-func (cf *ChangeFile) openFile(blockNum uint64) error {
+func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 	rem := (blockNum - 1) % cf.step
 	startBlock := blockNum - rem
 	endBlock := startBlock + cf.step - 1
 	if cf.w == nil {
 		path := path.Join(cf.dir, fmt.Sprintf("%s.%d-%d.chg", cf.namebase, startBlock, endBlock))
 		var err error
-		if cf.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
-			return err
+		if write {
+			if cf.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
+				return err
+			}
+			cf.w = bufio.NewWriter(cf.file)
+		} else {
+			if cf.file, err = os.Open(path); err != nil {
+				return err
+			}
+			if cf.blockPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
+				return err
+			}
 		}
-		cf.w = bufio.NewWriter(cf.file)
+		cf.r = bufio.NewReader(cf.file)
 	}
 	return nil
 }
@@ -132,6 +148,56 @@ func (cf *ChangeFile) finish(blockNum uint64) error {
 	}
 	cf.sizeCounter = 0
 	return nil
+}
+
+// prevBlock positions the reader to the beginning
+// of the block
+func (cf *ChangeFile) prevBlock() (bool, error) {
+	if cf.blockPos == 0 {
+		return false, nil
+	}
+	// Move back 16 bytes to read block number and block size
+	pos, err := cf.file.Seek(cf.blockPos-16, 0 /* relative to the beginning */)
+	if err != nil {
+		return false, err
+	}
+	cf.r.Reset(cf.file)
+	if _, err = io.ReadFull(cf.r, cf.numBuf[:8]); err != nil {
+		return false, err
+	}
+	cf.blockNum = binary.BigEndian.Uint64(cf.numBuf[:])
+	if _, err = io.ReadFull(cf.r, cf.numBuf[:8]); err != nil {
+		return false, err
+	}
+	cf.blockSize = binary.BigEndian.Uint64(cf.numBuf[:])
+	cf.blockPos = pos - int64(cf.blockSize)
+	_, err = cf.file.Seek(cf.blockPos, 0)
+	if err != nil {
+		return false, err
+	}
+	cf.r.Reset(cf.file)
+	return true, nil
+}
+
+func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
+	if cf.blockSize == 0 {
+		return wordBuf, false, nil
+	}
+	n, err := binary.ReadUvarint(cf.r)
+	if err != nil {
+		return wordBuf, false, err
+	}
+	var buf []byte
+	if total := len(wordBuf) + int(n); cap(wordBuf) >= total {
+		buf = wordBuf[:total] // Reuse the space in wordBuf, is it has enough capacity
+	} else {
+		buf = make([]byte, total)
+		copy(buf, wordBuf)
+	}
+	if _, err = io.ReadFull(cf.r, buf[len(wordBuf):]); err != nil {
+		return wordBuf, false, err
+	}
+	return buf, true, nil
 }
 
 type Changes struct {
@@ -171,14 +237,14 @@ func (c *Changes) closeFiles() error {
 	return nil
 }
 
-func (c *Changes) openFiles(blockNum uint64) error {
-	if err := c.keys.openFile(blockNum); err != nil {
+func (c *Changes) openFiles(blockNum uint64, write bool) error {
+	if err := c.keys.openFile(blockNum, write); err != nil {
 		return err
 	}
-	if err := c.before.openFile(blockNum); err != nil {
+	if err := c.before.openFile(blockNum, write); err != nil {
 		return err
 	}
-	if err := c.after.openFile(blockNum); err != nil {
+	if err := c.after.openFile(blockNum, write); err != nil {
 		return err
 	}
 	return nil
@@ -206,6 +272,81 @@ func (c *Changes) finish(blockNum uint64) error {
 	}
 	if err := c.after.finish(blockNum); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (c *Changes) prevBlock(before bool) (bool, error) {
+	bkeys, err := c.keys.prevBlock()
+	if err != nil {
+		return false, err
+	}
+	var bvals bool
+	if before {
+		if bvals, err = c.before.prevBlock(); err != nil {
+			return false, err
+		}
+	} else {
+		if bvals, err = c.after.prevBlock(); err != nil {
+			return false, err
+		}
+	}
+	if bkeys != bvals {
+		return false, fmt.Errorf("inconsistent block iteration")
+	}
+	return bkeys, nil
+}
+
+func (c *Changes) nextPair(keyBuf, valBuf []byte, before bool) ([]byte, []byte, bool, error) {
+	key, bkeys, err := c.keys.nextWord(keyBuf)
+	if err != nil {
+		return keyBuf, valBuf, false, err
+	}
+	var val []byte
+	var bvals bool
+	if before {
+		if val, bvals, err = c.before.nextWord(valBuf); err != nil {
+			return keyBuf, valBuf, false, err
+		}
+	} else {
+		if val, bvals, err = c.after.nextWord(valBuf); err != nil {
+			return keyBuf, valBuf, false, err
+		}
+	}
+	if bkeys != bvals {
+		return keyBuf, valBuf, false, fmt.Errorf("inconsistent word iteration")
+	}
+	return key, val, bkeys, nil
+}
+
+type AggregateItem struct {
+	k, v []byte
+}
+
+func (i *AggregateItem) Less(than btree.Item) bool {
+	return bytes.Compare(i.k, than.(*AggregateItem).k) < 0
+}
+
+func (c *Changes) aggregateToBtree(bt *btree.BTree) error {
+	var b bool
+	var e error
+	var key, val []byte
+	var ai AggregateItem
+	for b, e = c.prevBlock(false /* before */); b && e == nil; b, e = c.prevBlock(false /* before */) {
+		for key, val, b, e = c.nextPair(key, val, false /* before */); b && e == nil; key, val, b, e = c.nextPair(key, val, false /* before */) {
+			ai.k = key
+			ai.v = val
+			i := bt.Get(&ai)
+			if i == nil {
+				bt.ReplaceOrInsert(&AggregateItem{k: common.Copy(key), v: common.Copy(val)})
+			}
+		}
+		if e != nil {
+			return e
+		}
+	}
+	if e != nil {
+		return e
 	}
 	return nil
 }
@@ -366,6 +507,10 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		}
 		if startBlock > endBlock {
 			log.Warn("File ignored by changes scan, startBlock > endBlock", "name", name)
+			continue
+		}
+		if endBlock != startBlock+aggregationStep-1 {
+			log.Warn("File ignored by changes scan, endBlock != startBlock+aggregationStep-1", "name", name)
 			continue
 		}
 		var item *ChangesItem = &ChangesItem{fileCount: 1, startBlock: startBlock, endBlock: endBlock}
@@ -582,13 +727,13 @@ func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, erro
 			return nil, err
 		}
 	}
-	if err := a.accountChanges.openFiles(blockNum); err != nil {
+	if err := a.accountChanges.openFiles(blockNum, true /* write */); err != nil {
 		return nil, err
 	}
-	if err := a.codeChanges.openFiles(blockNum); err != nil {
+	if err := a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
 		return nil, err
 	}
-	if err := a.codeChanges.openFiles(blockNum); err != nil {
+	if err := a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -702,14 +847,55 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	return nil
 }
 
-type AggregateItem struct {
-	k, v []byte
-}
-
-func (i *AggregateItem) Less(than btree.Item) bool {
-	return bytes.Compare(i.k, than.(*AggregateItem).k) < 0
-}
-
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
+	i := w.a.changesBtree.Get(&ChangesItem{endBlock: blockTo})
+	if i == nil {
+		return fmt.Errorf("did not find change files for [%d-%d]", blockFrom, blockTo)
+	}
+	item := i.(*ChangesItem)
+	if item.startBlock != blockFrom {
+		return fmt.Errorf("expected change files[%d-%d], got [%d-%d]", blockFrom, blockTo, item.startBlock, item.endBlock)
+	}
+	var accountChanges, codeChanges, storageChanges Changes
+	accountChanges.Init("accounts", w.a.aggregationStep, w.a.diffDir)
+	codeChanges.Init("code", w.a.aggregationStep, w.a.diffDir)
+	storageChanges.Init("storage", w.a.aggregationStep, w.a.diffDir)
+	if err := accountChanges.openFiles(blockTo, false /* write */); err != nil {
+		return err
+	}
+	accountBtree := btree.New(32)
+	if err := accountChanges.aggregateToBtree(accountBtree); err != nil {
+		return err
+	}
+	if err := accountChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err := codeChanges.openFiles(blockTo, false /* write */); err != nil {
+		return err
+	}
+	codeBtree := btree.New(32)
+	if err := codeChanges.aggregateToBtree(codeBtree); err != nil {
+		return err
+	}
+	if err := codeChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err := storageChanges.openFiles(blockTo, false /* write */); err != nil {
+		return err
+	}
+	storageBtree := btree.New(32)
+	if err := storageChanges.aggregateToBtree(storageBtree); err != nil {
+		return err
+	}
+	if err := storageChanges.closeFiles(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func btreeToFile(bt *btree.BTree, filename string, tmpdir string) error {
+	comp, err := compress.NewCompressor(filename, tmpdir, 1024 /* minPatterScore */)
+	if err != nil {
+		return err
+	}
 }
