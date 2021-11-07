@@ -870,6 +870,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if err := accountChanges.closeFiles(); err != nil {
 		return err
 	}
+	if err := btreeToFile(accountBtree, fmt.Sprintf("accounts.%d-%d.dat", blockFrom, blockTo), w.a.diffDir); err != nil {
+		return err
+	}
 	if err := codeChanges.openFiles(blockTo, false /* write */); err != nil {
 		return err
 	}
@@ -880,6 +883,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if err := codeChanges.closeFiles(); err != nil {
 		return err
 	}
+	if err := btreeToFile(codeBtree, fmt.Sprintf("code.%d-%d.dat", blockFrom, blockTo), w.a.diffDir); err != nil {
+		return err
+	}
 	if err := storageChanges.openFiles(blockTo, false /* write */); err != nil {
 		return err
 	}
@@ -888,6 +894,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		return err
 	}
 	if err := storageChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err := btreeToFile(storageBtree, fmt.Sprintf("storage.%d-%d.dat", blockFrom, blockTo), w.a.diffDir); err != nil {
 		return err
 	}
 	return nil
