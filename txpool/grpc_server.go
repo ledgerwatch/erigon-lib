@@ -17,6 +17,7 @@
 package txpool
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -48,7 +49,12 @@ type txPool interface {
 	AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error)
 	// Deprecated: need switch to streaming-like
 	// deprecatedForEach calls `f` for each tx in the pool optionally checking `yield` function if it's != nil
-	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), yield func(mt *metaTx) bool, tx kv.Tx) error
+	deprecatedForEach(
+		_ context.Context,
+		f func(rlp, sender []byte, t SubPoolType),
+		yield func(mt *metaTx, sender []byte) bool,
+		tx kv.Tx,
+	) error
 	CountContent() (int, int, int)
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 }
@@ -103,14 +109,14 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 	return reply, nil
 }
 
-func (s *GrpcServer) Pending(ctx context.Context, req *txpool_proto.PendingRequest) (*txpool_proto.PendingReply, error) {
+func (s *GrpcServer) Search(ctx context.Context, req *txpool_proto.SearchRequest) (*txpool_proto.SearchReply, error) {
 	tx, err := s.db.BeginRo(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
-	reply := &txpool_proto.PendingReply{
+	reply := &txpool_proto.SearchReply{
 		Txs: make([]*txpool_proto.Tx, 0, 32),
 	}
 
@@ -123,8 +129,13 @@ func (s *GrpcServer) Pending(ctx context.Context, req *txpool_proto.PendingReque
 				RlpTx:  rlp,
 			})
 		},
-		func(mt *metaTx) bool {
-			return convertSubPoolType(mt.currentSubPool) == req.Type
+		func(mt *metaTx, sender []byte) bool {
+			filterMatches := true
+			if req.Filter.From != nil {
+				filterMatches = bytes.Compare(req.Filter.From, sender) == 0
+			}
+
+			return convertSubPoolType(mt.currentSubPool) == req.Type && filterMatches
 		},
 		tx,
 	)
