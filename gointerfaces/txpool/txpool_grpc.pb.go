@@ -31,7 +31,7 @@ type TxpoolClient interface {
 	Transactions(ctx context.Context, in *TransactionsRequest, opts ...grpc.CallOption) (*TransactionsReply, error)
 	// returns all transactions from tx pool
 	All(ctx context.Context, in *AllRequest, opts ...grpc.CallOption) (*AllReply, error)
-	// returns pending transactions from tx pool
+	// returns transactions from tx pool for criteria (type / filter)
 	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error)
 	// subscribe to new transactions add event
 	OnAdd(ctx context.Context, in *OnAddRequest, opts ...grpc.CallOption) (Txpool_OnAddClient, error)
@@ -157,7 +157,7 @@ type TxpoolServer interface {
 	Transactions(context.Context, *TransactionsRequest) (*TransactionsReply, error)
 	// returns all transactions from tx pool
 	All(context.Context, *AllRequest) (*AllReply, error)
-	// returns pending transactions from tx pool
+	// returns transactions from tx pool for criteria (type / filter)
 	Search(context.Context, *SearchRequest) (*SearchReply, error)
 	// subscribe to new transactions add event
 	OnAdd(*OnAddRequest, Txpool_OnAddServer) error

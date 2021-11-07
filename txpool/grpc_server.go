@@ -131,11 +131,14 @@ func (s *GrpcServer) Search(ctx context.Context, req *txpool_proto.SearchRequest
 		},
 		func(mt *metaTx, sender []byte) bool {
 			filterMatches := true
+			if req.Filter.Type != nil {
+				filterMatches = filterMatches && convertSubPoolType(mt.currentSubPool) == *req.Filter.Type
+			}
 			if req.Filter.From != nil {
-				filterMatches = bytes.Compare(req.Filter.From, sender) == 0
+				filterMatches = filterMatches && bytes.Compare(req.Filter.From, sender) == 0
 			}
 
-			return convertSubPoolType(mt.currentSubPool) == req.Type && filterMatches
+			return filterMatches
 		},
 		tx,
 	)
