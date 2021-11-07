@@ -252,6 +252,8 @@ const (
 	CliqueSnapshot     = "CliqueSnapshot"
 	CliqueLastSnapshot = "CliqueLastSnapshot"
 
+	// Proof-of-stake beacon chain info
+	BeaconInfo = "BeaconInfo"
 	// this bucket stored in separated database
 	Inodes = "Inode"
 
@@ -299,6 +301,11 @@ var (
 	CurrentHeadersSnapshotBlock = []byte("CurrentHeadersSnapshotBlock")
 	CurrentBodiesSnapshotHash   = []byte("CurrentBodiesSnapshotHash")
 	CurrentBodiesSnapshotBlock  = []byte("CurrentBodiesSnapshotBlock")
+
+	// Value: true or false, 1 if the chain is in POS, 0 otherwise
+	POSTransition = []byte("transition")
+	// Value: blockNumber + blockHash
+	HeadPayload = []byte("headPayload")
 )
 
 // ChaindataTables - list of all buckets. App will panic if some bucket is not in this list.
@@ -310,6 +317,7 @@ var ChaindataTables = []string{
 	Code,
 	ContractCode,
 	HeaderNumber,
+	BeaconInfo,
 	BlockBody,
 	Receipts,
 	TxLookup,
