@@ -45,10 +45,10 @@ message AllReply { repeated Tx txs = 1; }
 
 message SearchRequest {
   message Filter {
-    optional bytes from = 1;
+    optional Tx.Type type = 1;
+    optional bytes from = 2;
   }
-  Tx.Type type = 1;
-  Filter filter = 2;
+  Filter filter = 1;
 }
 message SearchReply { repeated Tx txs = 1; }
 
@@ -71,7 +71,7 @@ service Txpool {
   rpc Transactions(TransactionsRequest) returns (TransactionsReply);
   // returns all transactions from tx pool
   rpc All(AllRequest) returns (AllReply);
-  // returns pending transactions from tx pool
+  // returns transactions from tx pool for criteria (type / filter)
   rpc Search(SearchRequest) returns (SearchReply);
   // subscribe to new transactions add event
   rpc OnAdd(OnAddRequest) returns (stream OnAddReply);
