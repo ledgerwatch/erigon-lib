@@ -895,7 +895,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 }
 
 func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
-	prevV, err := w.tx.GetOne(kv.StateCode, addr)
+	prevV, err := w.tx.	(kv.StateCode, addr)
 	if err != nil {
 		return err
 	}
@@ -915,6 +915,41 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 	return nil
 }
 
+// CursorItem is the item in the priority queue used to do merge interation
+// over storage of a given account
+type CursorItem struct {
+	var file bool // Whether this item represents state file or DB record
+	key []byte
+	dg *compress.Getter
+}
+
+type CursorHeap []CursorItem
+
+func (ch CursorHeap) Len() int {
+	return len(ph)
+}
+
+func (ch CursorHeap) Less(i, j int) bool {
+	return bytes.Compare(ch[i], ch[j]) < 0
+}
+
+func (ch *CursorHeap) Swap(i, j int) {
+	(*ch)[i], (*ch)[j] = (*ch)[j], (*ch)[i]
+}
+
+func (ch *CursorHeap) Push(x interface{}) {
+	*ch = append(*ch, x.(*CursorItem))
+}
+
+func (ch *CursorHeap) Pop() interface{} {
+	old := *ch
+	n := len(old)
+	x := old[n-1]
+	*ch = old[0 : n-1]
+	return x
+}
+
+
 func (w *Writer) DeleteAccount(addr []byte) error {
 	prevV, err := w.tx.GetOne(kv.StateAccounts, addr)
 	if err != nil {
@@ -933,6 +968,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 		return err
 	}
 	// Find all storage items for this address
+
 	return nil
 }
 
