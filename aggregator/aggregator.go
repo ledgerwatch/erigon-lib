@@ -337,12 +337,12 @@ func (c *Changes) deleteFiles() error {
 	return nil
 }
 
-func (c *Changes) aggregate(blockFrom, blockTo uint64) (*compress.Decompressor, *recsplit.Index, error) {
+func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress.Decompressor, *recsplit.Index, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
 		return nil, nil, err
 	}
 	bt := btree.New(32)
-	if err := c.aggregateToBtree(bt); err != nil {
+	if err := c.aggregateToBtree(bt, prefixLen); err != nil {
 		return nil, nil, err
 	}
 	if err := c.closeFiles(); err != nil {
@@ -410,13 +410,18 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 	return bytes.Compare(i.k, than.(*AggregateItem).k) < 0
 }
 
-func (c *Changes) aggregateToBtree(bt *btree.BTree) error {
+func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 	var b bool
 	var e error
 	var key, val []byte
 	var ai AggregateItem
+	var prefix []byte
 	for b, e = c.prevBlock(false /* before */); b && e == nil; b, e = c.prevBlock(false /* before */) {
 		for key, val, b, e = c.nextPair(key, val, false /* before */); b && e == nil; key, val, b, e = c.nextPair(key, val, false /* before */) {
+			if prefixLen > 0 && !bytes.Equal(prefix, key[:prefixLen]) {
+				prefix = common.Copy(key[:prefixLen])
+				bt.ReplaceOrInsert(&AggregateItem{k: prefix, v: nil})
+			}
 			ai.k = key
 			ai.v = val
 			i := bt.Get(&ai)
@@ -432,6 +437,32 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree) error {
 		return e
 	}
 	return nil
+}
+
+const AggregatorPrefix = "aggretator"
+
+func btreeToFile(bt *btree.BTree, filename string, tmpdir string) (int, error) {
+	comp, err := compress.NewCompressor(AggregatorPrefix, filename, tmpdir, 1024 /* minPatterScore */)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	bt.Ascend(func(i btree.Item) bool {
+		item := i.(*AggregateItem)
+		if err = comp.AddWord(item.k); err != nil {
+			return false
+		}
+		count++
+		if err = comp.AddWord(item.v); err != nil {
+			return false
+		}
+		count++
+		return true
+	})
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 type ChangesItem struct {
@@ -901,14 +932,14 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	if err = w.a.accountChanges.addChange(addr, prevV[4:], nil); err != nil {
 		return err
 	}
+	// Find all storage items for this address
 	return nil
 }
 
 func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte, original, value *uint256.Int) error {
-	dbkey := make([]byte, len(addr)+8+len(loc))
+	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
-	binary.BigEndian.PutUint64(dbkey[len(addr):], incarnation)
-	copy(dbkey[len(addr)+8:], loc)
+	copy(dbkey[len(addr):], loc)
 	prevV, err := w.tx.GetOne(kv.StateStorage, dbkey)
 	if err != nil {
 		return err
@@ -945,13 +976,13 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	storageChanges.Init("storage", w.a.aggregationStep, w.a.diffDir)
 	var err error
 	var item1 *byEndBlockItem = &byEndBlockItem{fileCount: 6, startBlock: blockFrom, endBlock: blockTo}
-	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo); err != nil {
+	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0); err != nil {
 		return err
 	}
-	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo); err != nil {
+	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0); err != nil {
 		return err
 	}
-	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo); err != nil {
+	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20); err != nil {
 		return err
 	}
 	if err = accountChanges.deleteFiles(); err != nil {
@@ -965,30 +996,4 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	}
 	w.a.byEndBlock.ReplaceOrInsert(item1)
 	return nil
-}
-
-const AggregatorPrefix = "aggretator"
-
-func btreeToFile(bt *btree.BTree, filename string, tmpdir string) (int, error) {
-	comp, err := compress.NewCompressor(AggregatorPrefix, filename, tmpdir, 1024 /* minPatterScore */)
-	if err != nil {
-		return 0, err
-	}
-	count := 0
-	bt.Ascend(func(i btree.Item) bool {
-		item := i.(*AggregateItem)
-		if err = comp.AddWord(item.k); err != nil {
-			return false
-		}
-		count++
-		if err = comp.AddWord(item.v); err != nil {
-			return false
-		}
-		count++
-		return true
-	})
-	if err != nil {
-		return 0, err
-	}
-	return count, nil
 }
