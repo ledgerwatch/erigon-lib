@@ -35,10 +35,6 @@ func FuzzRecSplit(f *testing.F) {
 		if len(in) < count {
 			t.Skip()
 		}
-		for len(in) < 300_000_000 {
-			in = append(in, in...)
-			count *= 2
-		}
 
 		// split in into count keys
 		dups := make(map[string]struct{})
