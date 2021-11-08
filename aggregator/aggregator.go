@@ -19,6 +19,7 @@ package aggregator
 import (
 	"bufio"
 	"bytes"
+	"container/heap"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -751,10 +752,9 @@ func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 
 func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte) ([]byte, error) {
 	// Look in the summary table first
-	dbkey := make([]byte, len(addr)+8+len(loc))
+	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
-	binary.BigEndian.PutUint64(dbkey[len(addr):], incarnation)
-	copy(dbkey[len(addr)+8:], loc)
+	copy(dbkey[len(addr):], loc)
 	v, err := r.tx.GetOne(kv.StateStorage, dbkey)
 	if err != nil {
 		return nil, err
@@ -895,7 +895,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 }
 
 func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
-	prevV, err := w.tx.	(kv.StateCode, addr)
+	prevV, err := w.tx.GetOne(kv.StateCode, addr)
 	if err != nil {
 		return err
 	}
@@ -918,19 +918,25 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 // CursorItem is the item in the priority queue used to do merge interation
 // over storage of a given account
 type CursorItem struct {
-	var file bool // Whether this item represents state file or DB record
-	key []byte
-	dg *compress.Getter
+	file     bool // Whether this item represents state file or DB record
+	endBlock uint64
+	key, val []byte
+	dg       *compress.Getter
+	c        kv.Cursor
 }
 
 type CursorHeap []CursorItem
 
 func (ch CursorHeap) Len() int {
-	return len(ph)
+	return len(ch)
 }
 
 func (ch CursorHeap) Less(i, j int) bool {
-	return bytes.Compare(ch[i], ch[j]) < 0
+	cmp := bytes.Compare(ch[i].key, ch[j].key)
+	if cmp == 0 {
+		return ch[i].endBlock < ch[j].endBlock
+	}
+	return cmp < 0
 }
 
 func (ch *CursorHeap) Swap(i, j int) {
@@ -938,7 +944,7 @@ func (ch *CursorHeap) Swap(i, j int) {
 }
 
 func (ch *CursorHeap) Push(x interface{}) {
-	*ch = append(*ch, x.(*CursorItem))
+	*ch = append(*ch, x.(CursorItem))
 }
 
 func (ch *CursorHeap) Pop() interface{} {
@@ -948,7 +954,6 @@ func (ch *CursorHeap) Pop() interface{} {
 	*ch = old[0 : n-1]
 	return x
 }
-
 
 func (w *Writer) DeleteAccount(addr []byte) error {
 	prevV, err := w.tx.GetOne(kv.StateAccounts, addr)
@@ -968,7 +973,74 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 		return err
 	}
 	// Find all storage items for this address
-
+	var cp CursorHeap
+	heap.Init(&cp)
+	var c kv.Cursor
+	if c, err = w.tx.Cursor(kv.StateStorage); err != nil {
+		return err
+	}
+	var k []byte
+	if k, v, err = c.Seek(addr); err != nil {
+		return err
+	}
+	if k != nil && bytes.HasPrefix(k, addr) {
+		heap.Push(&cp, CursorItem{file: false, key: k, val: v, c: c, endBlock: w.blockNum})
+	}
+	w.a.byEndBlock.Ascend(func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		offset := item.storageIdx.Lookup(addr)
+		g := item.storageD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if !bytes.Equal(key, addr) {
+				return true
+			}
+			g.Next(nil)
+		}
+		if g.HasNext() {
+			key, _ := g.Next(nil)
+			if bytes.HasPrefix(key, addr) {
+				val, _ := g.Next(nil)
+				heap.Push(&cp, CursorItem{file: true, key: key, val: val, dg: g, endBlock: item.endBlock})
+			}
+		}
+		return true
+	})
+	for cp.Len() > 0 {
+		firstKey := common.Copy(cp[0].key)
+		firstVal := common.Copy(cp[0].val)
+		// Advance all the items that have this key (including the top)
+		for cp.Len() > 0 && bytes.Equal(cp[0].key, firstKey) {
+			ci1 := &cp[0]
+			if ci1.file {
+				if ci1.dg.HasNext() {
+					ci1.key, _ = ci1.dg.Next(ci1.key)
+					if bytes.HasPrefix(ci1.key, addr) {
+						ci1.val, _ = ci1.dg.Next(ci1.val)
+						heap.Fix(&cp, 0)
+					} else {
+						heap.Pop(&cp)
+					}
+				}
+			} else {
+				k, v, err = ci1.c.Next()
+				if err != nil {
+					return err
+				}
+				if k != nil && bytes.HasPrefix(k, addr) {
+					ci1.key = k
+					ci1.val = v
+					heap.Fix(&cp, 0)
+				} else {
+					heap.Pop(&cp)
+				}
+			}
+		}
+		if err = w.a.storageChanges.addChange(firstKey, firstVal, nil); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
