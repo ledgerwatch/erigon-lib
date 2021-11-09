@@ -43,7 +43,7 @@ type Encoder interface {
 	Reset(writer io.Writer)
 }
 
-func FlushToDisk(encoder Encoder, currentKey []byte, b Buffer, tmpdir string) (dataProvider, error) {
+func FlushToDisk(encoder Encoder, logPrefix string, b Buffer, tmpdir string) (dataProvider, error) {
 	if b.Len() == 0 {
 		return nil, nil
 	}
@@ -55,7 +55,7 @@ func FlushToDisk(encoder Encoder, currentKey []byte, b Buffer, tmpdir string) (d
 		}
 	}
 
-	bufferFile, err := ioutil.TempFile(tmpdir, "tg-sync-sortable-buf")
+	bufferFile, err := ioutil.TempFile(tmpdir, "erigon-sortable-buf-")
 	if err != nil {
 		return nil, err
 	}
