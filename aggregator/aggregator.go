@@ -308,47 +308,41 @@ func (c *Changes) finish(blockNum uint64) error {
 	return nil
 }
 
-func (c *Changes) prevBlock(before bool) (bool, error) {
+func (c *Changes) prevBlock() (bool, error) {
 	bkeys, err := c.keys.prevBlock()
 	if err != nil {
 		return false, err
 	}
-	var bvals bool
-	if before {
-		if bvals, err = c.before.prevBlock(); err != nil {
-			return false, err
-		}
-	} else {
-		if bvals, err = c.after.prevBlock(); err != nil {
-			return false, err
-		}
+	var bbefore, bafter bool
+	if bbefore, err = c.before.prevBlock(); err != nil {
+		return false, err
 	}
-	if bkeys != bvals {
+	if bafter, err = c.after.prevBlock(); err != nil {
+		return false, err
+	}
+	if bkeys != bbefore || bkeys != bafter {
 		return false, fmt.Errorf("inconsistent block iteration")
 	}
 	return bkeys, nil
 }
 
-func (c *Changes) nextPair(keyBuf, valBuf []byte, before bool) ([]byte, []byte, bool, error) {
+func (c *Changes) nextTriple(keyBuf, beforeBuf []byte, afterBuf []byte) ([]byte, []byte, []byte, bool, error) {
 	key, bkeys, err := c.keys.nextWord(keyBuf)
 	if err != nil {
-		return keyBuf, valBuf, false, err
+		return keyBuf, beforeBuf, afterBuf, false, err
 	}
-	var val []byte
-	var bvals bool
-	if before {
-		if val, bvals, err = c.before.nextWord(valBuf); err != nil {
-			return keyBuf, valBuf, false, err
-		}
-	} else {
-		if val, bvals, err = c.after.nextWord(valBuf); err != nil {
-			return keyBuf, valBuf, false, err
-		}
+	var before, after []byte
+	var bbefore, bafter bool
+	if before, bbefore, err = c.before.nextWord(beforeBuf); err != nil {
+		return keyBuf, beforeBuf, afterBuf, false, err
 	}
-	if bkeys != bvals {
-		return keyBuf, valBuf, false, fmt.Errorf("inconsistent word iteration")
+	if after, bafter, err = c.after.nextWord(afterBuf); err != nil {
+		return keyBuf, beforeBuf, afterBuf, false, err
 	}
-	return key, val, bkeys, nil
+	if bkeys != bbefore || bkeys != bafter {
+		return keyBuf, beforeBuf, afterBuf, false, fmt.Errorf("inconsistent word iteration")
+	}
+	return key, before, after, bkeys, nil
 }
 
 func (c *Changes) deleteFiles() error {
@@ -444,20 +438,36 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 	var b bool
 	var e error
-	var key, val []byte
+	var key, before, after []byte
 	var ai AggregateItem
 	var prefix []byte
-	for b, e = c.prevBlock(false /* before */); b && e == nil; b, e = c.prevBlock(false /* before */) {
-		for key, val, b, e = c.nextPair(key, val, false /* before */); b && e == nil; key, val, b, e = c.nextPair(key, val, false /* before */) {
+	for b, e = c.prevBlock(); b && e == nil; b, e = c.prevBlock() {
+		for key, before, after, b, e = c.nextTriple(key, before, after); b && e == nil; key, before, after, b, e = c.nextTriple(key, before, after) {
 			if prefixLen > 0 && !bytes.Equal(prefix, key[:prefixLen]) {
 				prefix = common.Copy(key[:prefixLen])
-				bt.ReplaceOrInsert(&AggregateItem{k: prefix, v: nil})
+				item := &AggregateItem{k: prefix}
+				if len(after) > 0 {
+					item.v = make([]byte, 1+len(after))
+					if len(before) == 0 {
+						item.v[0] = 1
+					}
+					copy(item.v[1:], after)
+				}
+				bt.ReplaceOrInsert(item)
 			}
 			ai.k = key
-			ai.v = val
+			ai.v = after
 			i := bt.Get(&ai)
 			if i == nil {
-				bt.ReplaceOrInsert(&AggregateItem{k: common.Copy(key), v: common.Copy(val)})
+				item := &AggregateItem{k: common.Copy(key)}
+				if len(after) > 0 {
+					item.v = make([]byte, 1+len(after))
+					if len(before) == 0 {
+						item.v[0] = 1
+					}
+					copy(item.v[1:], after)
+				}
+				bt.ReplaceOrInsert(item)
 			}
 		}
 		if e != nil {
