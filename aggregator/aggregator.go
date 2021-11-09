@@ -338,6 +338,54 @@ func (c *Changes) deleteFiles() error {
 	return nil
 }
 
+func buildIndex(datName, idxName, tmpDir string, count int) (*compress.Decompressor, *recsplit.Index, error) {
+	d, err := compress.NewDecompressor(datName)
+	if err != nil {
+		return nil, nil, err
+	}
+	var rs *recsplit.RecSplit
+	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
+		KeyCount:   count,
+		Enums:      false,
+		BucketSize: 2000,
+		Salt:       0,
+		LeafSize:   8,
+		TmpDir:     tmpDir,
+		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
+			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
+			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
+		IndexFile: idxName,
+	}); err != nil {
+		return nil, nil, err
+	}
+	word := make([]byte, 0, 256)
+	for {
+		g := d.MakeGetter()
+		for g.HasNext() {
+			word, pos := g.Next(word[:0])
+			if err = rs.AddKey(word, pos); err != nil {
+				return nil, nil, err
+			}
+			// Skip value
+			word, _ = g.Next(word[:0])
+		}
+		if err = rs.Build(); err != nil {
+			return nil, nil, err
+		}
+		if rs.Collision() {
+			log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
+			rs.ResetNextSalt()
+		} else {
+			break
+		}
+	}
+	var idx *recsplit.Index
+	if idx, err = recsplit.NewIndex(idxName); err != nil {
+		return nil, nil, err
+	}
+	return d, idx, nil
+}
+
 func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress.Decompressor, *recsplit.Index, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
 		return nil, nil, err
@@ -356,51 +404,7 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress
 	if count, err = btreeToFile(bt, datName, c.dir); err != nil {
 		return nil, nil, err
 	}
-	var d *compress.Decompressor
-	if d, err = compress.NewDecompressor(datName); err != nil {
-		return nil, nil, err
-	}
-	var rs *recsplit.RecSplit
-	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
-		KeyCount:   count,
-		Enums:      false,
-		BucketSize: 2000,
-		Salt:       0,
-		LeafSize:   8,
-		TmpDir:     c.dir,
-		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
-			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
-			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-		IndexFile: idxName,
-	}); err != nil {
-		return nil, nil, err
-	}
-	word := make([]byte, 0, 256)
-	for {
-		g := d.MakeGetter()
-		for g.HasNext() {
-			word, pos := g.Next(word[:0])
-			if err = rs.AddKey(word, pos); err != nil {
-				return nil, nil, err
-			}
-			// Skip value
-			g.Next(word[:0])
-		}
-		if err = rs.Build(); err != nil {
-			return nil, nil, err
-		}
-		if rs.Collision() {
-			log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
-			rs.ResetNextSalt()
-		} else {
-			break
-		}
-	}
-	var idx *recsplit.Index
-	if idx, err = recsplit.NewIndex(idxName); err != nil {
-		return nil, nil, err
-	}
-	return d, idx, nil
+	return buildIndex(datName, idxName, c.dir, count)
 }
 
 type AggregateItem struct {
@@ -461,6 +465,9 @@ func btreeToFile(bt *btree.BTree, filename string, tmpdir string) (int, error) {
 		return true
 	})
 	if err != nil {
+		return 0, err
+	}
+	if err = comp.Compress(); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -1022,6 +1029,8 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 					} else {
 						heap.Pop(&cp)
 					}
+				} else {
+					heap.Pop(&cp)
 				}
 			} else {
 				k, v, err = ci1.c.Next()
@@ -1103,5 +1112,112 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		return err
 	}
 	w.a.byEndBlock.ReplaceOrInsert(item1)
+	// Now aggregate state files
+	var toAggregate []*byEndBlockItem
+	toAggregate = append(toAggregate, item1)
+	lastStart := blockFrom
+	nextSize := blockTo - blockFrom + 1
+	nextEnd := blockFrom - 1
+	nextStart := nextEnd - nextSize + 1
+	nextI := w.a.byEndBlock.Get(&byEndBlockItem{endBlock: nextEnd})
+	for nextI != nil {
+		nextItem := nextI.(*byEndBlockItem)
+		if nextItem.startBlock != nextStart {
+			break
+		}
+		lastStart = nextStart
+		toAggregate = append(toAggregate, nextItem)
+		nextSize *= 2
+		nextEnd = nextStart - 1
+		nextStart = nextEnd - nextSize + 1
+		nextI = w.a.byEndBlock.Get(&byEndBlockItem{endBlock: nextEnd})
+	}
+	if len(toAggregate) == 1 {
+		// Nothing to aggregate yet
+		return nil
+	}
+	var item2 *byEndBlockItem = &byEndBlockItem{fileCount: 6, startBlock: lastStart, endBlock: blockTo}
+	var cp CursorHeap
+	heap.Init(&cp)
+	for _, ag := range toAggregate {
+		g := ag.accountsD.MakeGetter()
+		if g.HasNext() {
+			key, _ := g.Next(nil)
+			val, _ := g.Next(nil)
+			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
+		}
+	}
+	if item2.accountsD, item2.accountsIdx, err = aggregateChanges(&cp, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
+		return err
+	}
+	cp = cp[:0]
+	heap.Init(&cp)
+	for _, ag := range toAggregate {
+		g := ag.codeD.MakeGetter()
+		if g.HasNext() {
+			key, _ := g.Next(nil)
+			val, _ := g.Next(nil)
+			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
+		}
+	}
+	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, "code", lastStart, blockTo, w.a.diffDir); err != nil {
+		return err
+	}
+	cp = cp[:0]
+	heap.Init(&cp)
+	for _, ag := range toAggregate {
+		g := ag.storageD.MakeGetter()
+		if g.HasNext() {
+			key, _ := g.Next(nil)
+			val, _ := g.Next(nil)
+			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
+		}
+	}
+	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
+		return err
+	}
 	return nil
+}
+
+func aggregateChanges(cp *CursorHeap, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
+	datName := fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock)
+	idxName := fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock)
+	var comp *compress.Compressor
+	var err error
+	if comp, err = compress.NewCompressor(AggregatorPrefix, path.Join(dir, datName), dir, 1024 /* minPatterScore */); err != nil {
+		return nil, nil, err
+	}
+	count := 0
+	for cp.Len() > 0 {
+		firstKey := common.Copy((*cp)[0].key)
+		firstVal := common.Copy((*cp)[0].val)
+		// Advance all the items that have this key (including the top)
+		for cp.Len() > 0 && bytes.Equal((*cp)[0].key, firstKey) {
+			ci1 := (*cp)[0]
+			if ci1.dg.HasNext() {
+				ci1.key, _ = ci1.dg.Next(ci1.key)
+				ci1.val, _ = ci1.dg.Next(ci1.val)
+				heap.Fix(cp, 0)
+			} else {
+				heap.Pop(cp)
+			}
+		}
+		if err = comp.AddWord(firstKey); err != nil {
+			return nil, nil, err
+		}
+		count++
+		if err = comp.AddWord(firstVal); err != nil {
+			return nil, nil, err
+		}
+		count++
+	}
+	if err = comp.Compress(); err != nil {
+		return nil, nil, err
+	}
+	var d *compress.Decompressor
+	var idx *recsplit.Index
+	if d, idx, err = buildIndex(datName, idxName, dir, count); err != nil {
+		return nil, nil, err
+	}
+	return d, idx, nil
 }
