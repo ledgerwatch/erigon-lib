@@ -989,7 +989,8 @@ func (ch CursorHeap) Len() int {
 func (ch CursorHeap) Less(i, j int) bool {
 	cmp := bytes.Compare(ch[i].key, ch[j].key)
 	if cmp == 0 {
-		return ch[i].endBlock < ch[j].endBlock
+		// when keys match, the items with later blocks are preferred
+		return ch[i].endBlock > ch[j].endBlock
 	}
 	return cmp < 0
 }
@@ -1065,10 +1066,10 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 		return true
 	})
 	for cp.Len() > 0 {
-		firstKey := common.Copy(cp[0].key)
-		firstVal := common.Copy(cp[0].val)
+		lastKey := common.Copy(cp[0].key)
+		lastVal := common.Copy(cp[0].val)
 		// Advance all the items that have this key (including the top)
-		for cp.Len() > 0 && bytes.Equal(cp[0].key, firstKey) {
+		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 			ci1 := &cp[0]
 			if ci1.file {
 				if ci1.dg.HasNext() {
@@ -1096,7 +1097,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 				}
 			}
 		}
-		if err = w.a.storageChanges.delete(firstKey, firstVal); err != nil {
+		if err = w.a.storageChanges.delete(lastKey, lastVal); err != nil {
 			return err
 		}
 	}
@@ -1245,11 +1246,15 @@ func aggregateChanges(cp *CursorHeap, basename string, startBlock, endBlock uint
 	}
 	count := 0
 	for cp.Len() > 0 {
-		firstKey := common.Copy((*cp)[0].key)
-		firstVal := common.Copy((*cp)[0].val)
+		lastKey := common.Copy((*cp)[0].key)
+		lastVal := common.Copy((*cp)[0].val)
+		var first, firstDelete, firstInsert bool
 		// Advance all the items that have this key (including the top)
-		for cp.Len() > 0 && bytes.Equal((*cp)[0].key, firstKey) {
+		for cp.Len() > 0 && bytes.Equal((*cp)[0].key, lastKey) {
 			ci1 := (*cp)[0]
+			first = true
+			firstDelete = len(ci1.val) == 0
+			firstInsert = !firstDelete && ci1.val[0] != 0
 			if ci1.dg.HasNext() {
 				ci1.key, _ = ci1.dg.Next(ci1.key)
 				ci1.val, _ = ci1.dg.Next(ci1.val)
@@ -1258,12 +1263,35 @@ func aggregateChanges(cp *CursorHeap, basename string, startBlock, endBlock uint
 				heap.Pop(cp)
 			}
 		}
-		if err = comp.AddWord(firstKey); err != nil {
+		lastDelete := len(lastVal) == 0
+		lastInsert := !lastDelete && lastVal[0] != 0
+		if err = comp.AddWord(lastKey); err != nil {
 			return nil, nil, err
 		}
 		count++
-		if err = comp.AddWord(firstVal); err != nil {
-			return nil, nil, err
+		var skip bool
+		if first {
+			if firstInsert {
+				if lastDelete {
+					// Insert => Delete
+					skip = true
+				}
+			} else if firstDelete {
+				if lastInsert {
+					// Delete => Insert equivalent to Update
+					lastVal[0] = 0
+				}
+			} else {
+				if lastInsert {
+					// Update => Insert equivalent to Update
+					lastVal[0] = 0
+				}
+			}
+		}
+		if !skip {
+			if err = comp.AddWord(lastVal); err != nil {
+				return nil, nil, err
+			}
 		}
 		count++
 	}
