@@ -256,7 +256,20 @@ func (c *Changes) openFiles(blockNum uint64, write bool) error {
 	return nil
 }
 
-func (c *Changes) addChange(key, before, after []byte) error {
+func (c *Changes) insert(key, after []byte) error {
+	if err := c.keys.add(key); err != nil {
+		return err
+	}
+	if err := c.before.add(nil); err != nil {
+		return err
+	}
+	if err := c.after.add(after); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Changes) update(key, before, after []byte) error {
 	if err := c.keys.add(key); err != nil {
 		return err
 	}
@@ -264,6 +277,19 @@ func (c *Changes) addChange(key, before, after []byte) error {
 		return err
 	}
 	if err := c.after.add(after); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Changes) delete(key, before []byte) error {
+	if err := c.keys.add(key); err != nil {
+		return err
+	}
+	if err := c.before.add(before); err != nil {
+		return err
+	}
+	if err := c.after.add(nil); err != nil {
 		return err
 	}
 	return nil
@@ -895,8 +921,14 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
-	if err = w.a.accountChanges.addChange(addr, prevV[4:], account); err != nil {
-		return err
+	if prevV == nil {
+		if err = w.a.accountChanges.insert(addr, account); err != nil {
+			return err
+		}
+	} else {
+		if err = w.a.accountChanges.update(addr, prevV[4:], account); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -916,8 +948,14 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 	if err = w.tx.Put(kv.StateCode, addr, v); err != nil {
 		return err
 	}
-	if err = w.a.codeChanges.addChange(addr, prevV[4:], code); err != nil {
-		return err
+	if prevV == nil {
+		if err = w.a.codeChanges.insert(addr, code); err != nil {
+			return err
+		}
+	} else {
+		if err = w.a.codeChanges.update(addr, prevV[4:], code); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -970,13 +1008,15 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	var prevNum uint32
 	if prevV != nil {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
+	} else {
+		return fmt.Errorf("deleteAccount no prev value for %x", addr)
 	}
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
-	if err = w.a.accountChanges.addChange(addr, prevV[4:], nil); err != nil {
+	if err = w.a.accountChanges.delete(addr, prevV[4:]); err != nil {
 		return err
 	}
 	// Find all storage items for this address
@@ -1046,7 +1086,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 				}
 			}
 		}
-		if err = w.a.storageChanges.addChange(firstKey, firstVal, nil); err != nil {
+		if err = w.a.storageChanges.delete(firstKey, firstVal); err != nil {
 			return err
 		}
 	}
@@ -1072,8 +1112,14 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	if err = w.tx.Put(kv.StateStorage, addr, v); err != nil {
 		return err
 	}
-	if err = w.a.storageChanges.addChange(dbkey, prevV[4:], v[4:]); err != nil {
-		return err
+	if prevV == nil {
+		if err = w.a.storageChanges.insert(dbkey, v[4:]); err != nil {
+			return err
+		}
+	} else {
+		if err = w.a.storageChanges.update(dbkey, prevV[4:], v[4:]); err != nil {
+			return err
+		}
 	}
 	return nil
 }
