@@ -119,6 +119,7 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 				return err
 			}
 		}
+		fmt.Printf("opened file %s\n", cf.path)
 		cf.r = bufio.NewReader(cf.file)
 	}
 	return nil
@@ -642,9 +643,9 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	if err != nil {
 		return nil, err
 	}
-	a.accountChanges.Init(diffDir, aggregationStep, "accounts")
-	a.codeChanges.Init(diffDir, aggregationStep, "code")
-	a.storageChanges.Init(diffDir, aggregationStep, "storage")
+	a.accountChanges.Init("accounts", aggregationStep, diffDir)
+	a.codeChanges.Init("code", aggregationStep, diffDir)
+	a.storageChanges.Init("storage", aggregationStep, diffDir)
 	a.changesBtree = btree.New(32)
 	re = regexp.MustCompile(`(accounts|storage|code).(keys|before|after).([0-9]+)-([0-9]+).chg`)
 	for _, f := range files {
@@ -1204,7 +1205,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.accountsD, item2.accountsIdx, err = aggregateChanges(&cp, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
+	if item2.accountsD, item2.accountsIdx, err = aggregateChanges(&cp, 0, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
 		return err
 	}
 	cp = cp[:0]
@@ -1217,7 +1218,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, "code", lastStart, blockTo, w.a.diffDir); err != nil {
+	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, 0, "code", lastStart, blockTo, w.a.diffDir); err != nil {
 		return err
 	}
 	cp = cp[:0]
@@ -1230,13 +1231,61 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
+	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
 		return err
+	}
+	// Remove all items in toAggregate and insert item2 instead
+	w.a.byEndBlock.ReplaceOrInsert(item2)
+	for _, ag := range toAggregate {
+		w.a.byEndBlock.Delete(ag)
+	}
+	// Close all the memory maps etc
+	for _, ag := range toAggregate {
+		if err = ag.accountsIdx.Close(); err != nil {
+			return err
+		}
+		if err = ag.accountsD.Close(); err != nil {
+			return err
+		}
+		if err = ag.codeIdx.Close(); err != nil {
+			return err
+		}
+		if err = ag.codeD.Close(); err != nil {
+			return err
+		}
+		if err = ag.storageIdx.Close(); err != nil {
+			return err
+		}
+		if err = ag.storageD.Close(); err != nil {
+			return err
+		}
+	}
+	// Delete files
+	// TODO: in a non-test version, this is delayed to allow other participants to roll over to the next file
+	for _, ag := range toAggregate {
+		if err = os.Remove(fmt.Sprintf("accounts.%d-%d.dat", ag.startBlock, ag.endBlock)); err != nil {
+			return err
+		}
+		if err = os.Remove(fmt.Sprintf("accounts.%d-%d.idx", ag.startBlock, ag.endBlock)); err != nil {
+			return err
+		}
+		if err = os.Remove(fmt.Sprintf("code.%d-%d.dat", ag.startBlock, ag.endBlock)); err != nil {
+			return err
+		}
+		if err = os.Remove(fmt.Sprintf("code.%d-%d.idx", ag.startBlock, ag.endBlock)); err != nil {
+			return err
+		}
+		if err = os.Remove(fmt.Sprintf("storage.%d-%d.dat", ag.startBlock, ag.endBlock)); err != nil {
+			return err
+		}
+		if err = os.Remove(fmt.Sprintf("storage.%d-%d.idx", ag.startBlock, ag.endBlock)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func aggregateChanges(cp *CursorHeap, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
+func aggregateChanges(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
 	datName := fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock)
 	idxName := fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock)
 	var comp *compress.Compressor
@@ -1245,6 +1294,7 @@ func aggregateChanges(cp *CursorHeap, basename string, startBlock, endBlock uint
 		return nil, nil, err
 	}
 	count := 0
+	var keyBuf, valBuf []byte
 	for cp.Len() > 0 {
 		lastKey := common.Copy((*cp)[0].key)
 		lastVal := common.Copy((*cp)[0].val)
@@ -1265,10 +1315,6 @@ func aggregateChanges(cp *CursorHeap, basename string, startBlock, endBlock uint
 		}
 		lastDelete := len(lastVal) == 0
 		lastInsert := !lastDelete && lastVal[0] != 0
-		if err = comp.AddWord(lastKey); err != nil {
-			return nil, nil, err
-		}
-		count++
 		var skip bool
 		if first {
 			if firstInsert {
@@ -1289,11 +1335,19 @@ func aggregateChanges(cp *CursorHeap, basename string, startBlock, endBlock uint
 			}
 		}
 		if !skip {
-			if err = comp.AddWord(lastVal); err != nil {
-				return nil, nil, err
+			if keyBuf != nil && (prefixLen == 0 || len(keyBuf) != prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
+				if err = comp.AddWord(lastKey); err != nil {
+					return nil, nil, err
+				}
+				count++
+				if err = comp.AddWord(lastVal); err != nil {
+					return nil, nil, err
+				}
+				count++
 			}
+			keyBuf = append(keyBuf[:0], lastKey...)
+			valBuf = append(valBuf[:0], lastVal...)
 		}
-		count++
 	}
 	if err = comp.Compress(); err != nil {
 		return nil, nil, err
