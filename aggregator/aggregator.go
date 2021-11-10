@@ -95,12 +95,13 @@ func (cf *ChangeFile) closeFile() error {
 		if err := cf.file.Close(); err != nil {
 			return err
 		}
+		fmt.Printf("closed file %s\n", cf.path)
 	}
 	return nil
 }
 
 func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
-	rem := (blockNum - 1) % cf.step
+	rem := blockNum % cf.step
 	startBlock := blockNum - rem
 	endBlock := startBlock + cf.step - 1
 	if cf.w == nil {
@@ -119,7 +120,7 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 				return err
 			}
 		}
-		fmt.Printf("opened file %s\n", cf.path)
+		fmt.Printf("opened file %s for write %t\n", cf.path, write)
 		cf.r = bufio.NewReader(cf.file)
 	}
 	return nil
@@ -204,6 +205,7 @@ func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
 }
 
 func (cf *ChangeFile) deleteFile() error {
+	fmt.Printf("deleted file %s\n", cf.path)
 	return os.Remove(cf.path)
 }
 
@@ -859,7 +861,7 @@ func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error
 }
 
 func (r *Reader) ReadAccountIncarnation(addr []byte) uint64 {
-	return r.blockNum - 1
+	return r.blockNum
 }
 
 type Writer struct {
@@ -891,7 +893,7 @@ func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, erro
 	if err := a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
 		return nil, err
 	}
-	if err := a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
+	if err := a.storageChanges.openFiles(blockNum, true /* write */); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -907,14 +909,14 @@ func (w *Writer) Finish() error {
 	if err := w.a.storageChanges.finish(w.blockNum); err != nil {
 		return err
 	}
-	if w.blockNum <= w.a.unwindLimit+w.a.aggregationStep {
+	if w.blockNum < w.a.unwindLimit+w.a.aggregationStep-1 {
 		return nil
 	}
 	diff := w.blockNum - w.a.unwindLimit
-	if diff%w.a.aggregationStep != 0 {
+	if (diff+1)%w.a.aggregationStep != 0 {
 		return nil
 	}
-	return w.aggregateUpto(diff-w.a.aggregationStep, diff)
+	return w.aggregateUpto(diff+1-w.a.aggregationStep, diff)
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {

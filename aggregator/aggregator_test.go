@@ -50,12 +50,16 @@ func TestAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rwTx.Rollback()
+
 	var w *Writer
 	if w, err = a.MakeStateWriter(rwTx, 0); err != nil {
 		t.Fatal(err)
 	}
 	var account1 = int256(1)
 	if err = w.UpdateAccountData(int160(1), account1); err != nil {
+		t.Fatal(err)
+	}
+	if err = w.Finish(); err != nil {
 		t.Fatal(err)
 	}
 	a.Close()
