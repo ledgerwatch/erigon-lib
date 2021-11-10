@@ -146,9 +146,6 @@ func (db *DictionaryBuilder) loadFunc(k, v []byte, table etl.CurrentTableReader,
 		if db.lastWord != nil {
 			db.processWord(db.lastWord, db.lastWordScore)
 		}
-		//if cap(db.lastWord) < len(k) {
-		//db.lastWord = make([]byte, 0, len(k))
-		//}
 		db.lastWord = append(db.lastWord[:0], k...)
 		db.lastWordScore = score
 	}
