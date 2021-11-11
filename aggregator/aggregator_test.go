@@ -17,6 +17,7 @@
 package aggregator
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"testing"
@@ -61,6 +62,22 @@ func TestAggregator(t *testing.T) {
 	}
 	if err = w.Finish(); err != nil {
 		t.Fatal(err)
+	}
+	if err = rwTx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var tx kv.Tx
+	if tx, err = db.BeginRo(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	r := a.MakeStateReader(tx, 2)
+	var acc []byte
+	if acc, err = r.ReadAccountData(int160(1)); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(acc, account1) {
+		t.Errorf("read account %x, expected account %x", acc, account1)
 	}
 	a.Close()
 }
