@@ -92,9 +92,11 @@ func (cf *ChangeFile) closeFile() error {
 		if err := cf.w.Flush(); err != nil {
 			return err
 		}
+		cf.w = nil
 		if err := cf.file.Close(); err != nil {
 			return err
 		}
+		cf.file = nil
 		fmt.Printf("closed file %s\n", cf.path)
 	}
 	return nil
@@ -886,37 +888,46 @@ func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, erro
 		if err := a.storageChanges.closeFiles(); err != nil {
 			return nil, err
 		}
+		a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: a.changeFileNum + 1 - a.aggregationStep, endBlock: a.changeFileNum, fileCount: 9})
 	}
-	if err := a.accountChanges.openFiles(blockNum, true /* write */); err != nil {
-		return nil, err
-	}
-	if err := a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
-		return nil, err
-	}
-	if err := a.storageChanges.openFiles(blockNum, true /* write */); err != nil {
-		return nil, err
+	if a.changeFileNum == 0 || blockNum > a.changeFileNum {
+		if err := a.accountChanges.openFiles(blockNum, true /* write */); err != nil {
+			return nil, err
+		}
+		if err := a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
+			return nil, err
+		}
+		if err := a.storageChanges.openFiles(blockNum, true /* write */); err != nil {
+			return nil, err
+		}
+		w.a.changeFileNum = blockNum - (blockNum % w.a.aggregationStep) + w.a.aggregationStep - 1
 	}
 	return w, nil
 }
 
 func (w *Writer) Finish() error {
 	if err := w.a.accountChanges.finish(w.blockNum); err != nil {
-		return err
+		return fmt.Errorf("finish accountChanges: %w", err)
 	}
 	if err := w.a.codeChanges.finish(w.blockNum); err != nil {
-		return err
+		return fmt.Errorf("finish codeChanges: %w", err)
 	}
 	if err := w.a.storageChanges.finish(w.blockNum); err != nil {
-		return err
+		return fmt.Errorf("finish storageChanges: %w", err)
 	}
 	if w.blockNum < w.a.unwindLimit+w.a.aggregationStep-1 {
+		fmt.Printf("skip aggregation because w.blockNum(%d) < w.a.unwindLimit(%d) + w.a.aggregationStep(%d) - 1\n", w.blockNum, w.a.unwindLimit, w.a.aggregationStep)
 		return nil
 	}
 	diff := w.blockNum - w.a.unwindLimit
 	if (diff+1)%w.a.aggregationStep != 0 {
+		fmt.Printf("skip aggregation because (diff(%d) + 1) %% w.a.aggregationStep(%d) != 0\n", diff, w.a.aggregationStep)
 		return nil
 	}
-	return w.aggregateUpto(diff+1-w.a.aggregationStep, diff)
+	if err := w.aggregateUpto(diff+1-w.a.aggregationStep, diff); err != nil {
+		return fmt.Errorf("aggregateUpto(%d, %d): %w", diff+1-w.a.aggregationStep, diff, err)
+	}
+	return nil
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
@@ -1141,7 +1152,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	i := w.a.changesBtree.Get(&ChangesItem{endBlock: blockTo})
 	if i == nil {
-		return fmt.Errorf("did not find change files for [%d-%d]", blockFrom, blockTo)
+		return fmt.Errorf("did not find change files for [%d-%d], w.a.changesBtree.Len() = %d", blockFrom, blockTo, w.a.changesBtree.Len())
 	}
 	item := i.(*ChangesItem)
 	if item.startBlock != blockFrom {
@@ -1154,13 +1165,13 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	var err error
 	var item1 *byEndBlockItem = &byEndBlockItem{fileCount: 6, startBlock: blockFrom, endBlock: blockTo}
 	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0); err != nil {
-		return err
+		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
 	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0); err != nil {
-		return err
+		return fmt.Errorf("aggregate codeChanges: %w", err)
 	}
 	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20); err != nil {
-		return err
+		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
 	if err = accountChanges.deleteFiles(); err != nil {
 		return err
@@ -1284,6 +1295,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			return err
 		}
 	}
+	w.a.changesBtree.Delete(i)
 	return nil
 }
 

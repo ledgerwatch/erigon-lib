@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -38,7 +39,7 @@ func int256(i uint64) []byte {
 	return b
 }
 
-func TestAggregator(t *testing.T) {
+func TestSimpleAggregator(t *testing.T) {
 	tmpDir := t.TempDir()
 	db := memdb.New()
 	defer db.Close()
@@ -78,6 +79,58 @@ func TestAggregator(t *testing.T) {
 	}
 	if !bytes.Equal(acc, account1) {
 		t.Errorf("read account %x, expected account %x", acc, account1)
+	}
+	a.Close()
+}
+
+func TestLoopAggregator(t *testing.T) {
+	tmpDir := t.TempDir()
+	db := memdb.New()
+	defer db.Close()
+	a, err := NewAggregator(tmpDir, 16, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var account1 = int256(1)
+	var rwTx kv.RwTx
+	defer func() {
+		rwTx.Rollback()
+	}()
+	var tx kv.Tx
+	defer func() {
+		tx.Rollback()
+	}()
+	for blockNum := uint64(0); blockNum < 10000; blockNum++ {
+		fmt.Printf("blockNum = %d\n", blockNum)
+		if rwTx, err = db.BeginRw(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		var w *Writer
+		if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
+			t.Fatal(err)
+		}
+		if err = w.UpdateAccountData(int160(1), account1); err != nil {
+			t.Fatal(err)
+		}
+		if err = w.Finish(); err != nil {
+			t.Fatal(err)
+		}
+		if err = rwTx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if tx, err = db.BeginRo(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		r := a.MakeStateReader(tx, blockNum+1)
+		var acc []byte
+		if acc, err = r.ReadAccountData(int160(1)); err != nil {
+			t.Fatal(err)
+		}
+		tx.Rollback()
+		if !bytes.Equal(acc, account1) {
+			t.Errorf("read account %x, expected account %x for block %d", acc, account1, blockNum)
+		}
+		account1 = int256(blockNum + 2)
 	}
 	a.Close()
 }
