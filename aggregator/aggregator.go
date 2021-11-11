@@ -118,6 +118,16 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 			if cf.file, err = os.Open(cf.path); err != nil {
 				return err
 			}
+			cf.r = bufio.NewReader(cf.file)
+			i := 0
+			for b, e := cf.r.ReadByte(); e == nil; b, e = cf.r.ReadByte() {
+				fmt.Printf("%02x", b)
+				i++
+				if i%8 == 0 {
+					fmt.Printf(" ")
+				}
+			}
+			fmt.Printf("\n")
 			if cf.blockPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
 				return err
 			}
@@ -139,11 +149,13 @@ func (cf *ChangeFile) add(word []byte) error {
 		}
 	}
 	cf.sizeCounter += uint64(n + len(word))
+	fmt.Printf("add word %x to change file %s: n=%d, len(word)=%d, sizeCounter=%d\n", word, cf.namebase, n, len(word), cf.sizeCounter)
 	return nil
 }
 
 func (cf *ChangeFile) finish(blockNum uint64) error {
 	// Write out block number and then size of changes in this block
+	fmt.Printf("finish change file %s, with blockNum %d, cf.sizeCounter=%d\n", cf.namebase, blockNum, cf.sizeCounter)
 	binary.BigEndian.PutUint64(cf.numBuf[:], blockNum)
 	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
 		return err
@@ -159,6 +171,7 @@ func (cf *ChangeFile) finish(blockNum uint64) error {
 // prevBlock positions the reader to the beginning
 // of the block
 func (cf *ChangeFile) prevBlock() (bool, error) {
+	fmt.Printf("prevBlock change file %s, cf.blockPos=%d\n", cf.namebase, cf.blockPos)
 	if cf.blockPos == 0 {
 		return false, nil
 	}
@@ -172,15 +185,18 @@ func (cf *ChangeFile) prevBlock() (bool, error) {
 		return false, err
 	}
 	cf.blockNum = binary.BigEndian.Uint64(cf.numBuf[:])
+	fmt.Printf("blockNum = %d\n", cf.blockNum)
 	if _, err = io.ReadFull(cf.r, cf.numBuf[:8]); err != nil {
 		return false, err
 	}
 	cf.blockSize = binary.BigEndian.Uint64(cf.numBuf[:])
+	fmt.Printf("blockSize = %d\n", cf.blockSize)
 	cf.blockPos = pos - int64(cf.blockSize)
-	_, err = cf.file.Seek(cf.blockPos, 0)
+	pos, err = cf.file.Seek(cf.blockPos, 0)
 	if err != nil {
 		return false, err
 	}
+	fmt.Printf("set pos to %d\n", pos)
 	cf.r.Reset(cf.file)
 	return true, nil
 }
@@ -189,20 +205,22 @@ func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
 	if cf.blockSize == 0 {
 		return wordBuf, false, nil
 	}
-	n, err := binary.ReadUvarint(cf.r)
+	ws, err := binary.ReadUvarint(cf.r)
 	if err != nil {
-		return wordBuf, false, err
+		return wordBuf, false, fmt.Errorf("word size: %w", err)
 	}
 	var buf []byte
-	if total := len(wordBuf) + int(n); cap(wordBuf) >= total {
+	if total := len(wordBuf) + int(ws); cap(wordBuf) >= total {
 		buf = wordBuf[:total] // Reuse the space in wordBuf, is it has enough capacity
 	} else {
 		buf = make([]byte, total)
 		copy(buf, wordBuf)
 	}
 	if _, err = io.ReadFull(cf.r, buf[len(wordBuf):]); err != nil {
-		return wordBuf, false, err
+		return wordBuf, false, fmt.Errorf("read word (%d %d): %w", ws, len(buf[len(wordBuf):]), err)
 	}
+	n := binary.PutUvarint(cf.numBuf[:], ws)
+	cf.blockSize -= uint64(n) + ws
 	return buf, true, nil
 }
 
@@ -334,15 +352,15 @@ func (c *Changes) prevBlock() (bool, error) {
 func (c *Changes) nextTriple(keyBuf, beforeBuf []byte, afterBuf []byte) ([]byte, []byte, []byte, bool, error) {
 	key, bkeys, err := c.keys.nextWord(keyBuf)
 	if err != nil {
-		return keyBuf, beforeBuf, afterBuf, false, err
+		return keyBuf, beforeBuf, afterBuf, false, fmt.Errorf("next key: %w", err)
 	}
 	var before, after []byte
 	var bbefore, bafter bool
 	if before, bbefore, err = c.before.nextWord(beforeBuf); err != nil {
-		return keyBuf, beforeBuf, afterBuf, false, err
+		return keyBuf, beforeBuf, afterBuf, false, fmt.Errorf("next before: %w", err)
 	}
 	if after, bafter, err = c.after.nextWord(afterBuf); err != nil {
-		return keyBuf, beforeBuf, afterBuf, false, err
+		return keyBuf, beforeBuf, afterBuf, false, fmt.Errorf("next after: %w", err)
 	}
 	if bkeys != bbefore || bkeys != bafter {
 		return keyBuf, beforeBuf, afterBuf, false, fmt.Errorf("inconsistent word iteration")
@@ -384,10 +402,11 @@ func buildIndex(datName, idxName, tmpDir string, count int) (*compress.Decompres
 		return nil, nil, err
 	}
 	word := make([]byte, 0, 256)
+	var pos uint64
 	for {
 		g := d.MakeGetter()
 		for g.HasNext() {
-			word, pos := g.Next(word[:0])
+			word, pos = g.Next(word[:0])
 			if err = rs.AddKey(word, pos); err != nil {
 				return nil, nil, err
 			}
@@ -413,21 +432,21 @@ func buildIndex(datName, idxName, tmpDir string, count int) (*compress.Decompres
 
 func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress.Decompressor, *recsplit.Index, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("open files: %w", err)
 	}
 	bt := btree.New(32)
 	if err := c.aggregateToBtree(bt, prefixLen); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("aggregateToBtree: %w", err)
 	}
 	if err := c.closeFiles(); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("close files: %w", err)
 	}
 	datName := fmt.Sprintf("%s.%d-%d.dat", c.namebase, blockFrom, blockTo)
 	idxName := fmt.Sprintf("%s.%d-%d.idx", c.namebase, blockFrom, blockTo)
 	var count int
 	var err error
 	if count, err = btreeToFile(bt, datName, c.dir); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("btreeToFile: %w", err)
 	}
 	return buildIndex(datName, idxName, c.dir, count)
 }
@@ -447,7 +466,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 	var ai AggregateItem
 	var prefix []byte
 	for b, e = c.prevBlock(); b && e == nil; b, e = c.prevBlock() {
-		for key, before, after, b, e = c.nextTriple(key, before, after); b && e == nil; key, before, after, b, e = c.nextTriple(key, before, after) {
+		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 			if prefixLen > 0 && !bytes.Equal(prefix, key[:prefixLen]) {
 				prefix = common.Copy(key[:prefixLen])
 				item := &AggregateItem{k: prefix}
@@ -476,11 +495,11 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 			}
 		}
 		if e != nil {
-			return e
+			return fmt.Errorf("nextTriple: %w", e)
 		}
 	}
 	if e != nil {
-		return e
+		return fmt.Errorf("prevBlock: %w", e)
 	}
 	return nil
 }
@@ -498,11 +517,10 @@ func btreeToFile(bt *btree.BTree, filename string, tmpdir string) (int, error) {
 		if err = comp.AddWord(item.k); err != nil {
 			return false
 		}
-		count++
+		count++ // Only counting keys, not values
 		if err = comp.AddWord(item.v); err != nil {
 			return false
 		}
-		count++
 		return true
 	})
 	if err != nil {
@@ -1353,11 +1371,10 @@ func aggregateChanges(cp *CursorHeap, prefixLen int, basename string, startBlock
 				if err = comp.AddWord(lastKey); err != nil {
 					return nil, nil, err
 				}
-				count++
+				count++ // Only counting keys, not values
 				if err = comp.AddWord(lastVal); err != nil {
 					return nil, nil, err
 				}
-				count++
 			}
 			keyBuf = append(keyBuf[:0], lastKey...)
 			valBuf = append(valBuf[:0], lastVal...)
