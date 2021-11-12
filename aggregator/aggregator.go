@@ -97,7 +97,7 @@ func (cf *ChangeFile) closeFile() error {
 			return err
 		}
 		cf.file = nil
-		fmt.Printf("closed file %s\n", cf.path)
+		//fmt.Printf("closed file %s\n", cf.path)
 	}
 	return nil
 }
@@ -118,21 +118,23 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 			if cf.file, err = os.Open(cf.path); err != nil {
 				return err
 			}
-			cf.r = bufio.NewReader(cf.file)
-			i := 0
-			for b, e := cf.r.ReadByte(); e == nil; b, e = cf.r.ReadByte() {
-				fmt.Printf("%02x", b)
-				i++
-				if i%8 == 0 {
-					fmt.Printf(" ")
+			/*
+				cf.r = bufio.NewReader(cf.file)
+				i := 0
+				for b, e := cf.r.ReadByte(); e == nil; b, e = cf.r.ReadByte() {
+					fmt.Printf("%02x", b)
+					i++
+					if i%8 == 0 {
+						fmt.Printf(" ")
+					}
 				}
-			}
-			fmt.Printf("\n")
+				fmt.Printf("\n")
+			*/
 			if cf.blockPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
 				return err
 			}
 		}
-		fmt.Printf("opened file %s for write %t\n", cf.path, write)
+		//fmt.Printf("opened file %s for write %t\n", cf.path, write)
 		cf.r = bufio.NewReader(cf.file)
 	}
 	return nil
@@ -149,13 +151,13 @@ func (cf *ChangeFile) add(word []byte) error {
 		}
 	}
 	cf.sizeCounter += uint64(n + len(word))
-	fmt.Printf("add word %x to change file %s: n=%d, len(word)=%d, sizeCounter=%d\n", word, cf.namebase, n, len(word), cf.sizeCounter)
+	//fmt.Printf("add word %x to change file %s: n=%d, len(word)=%d, sizeCounter=%d\n", word, cf.namebase, n, len(word), cf.sizeCounter)
 	return nil
 }
 
 func (cf *ChangeFile) finish(blockNum uint64) error {
 	// Write out block number and then size of changes in this block
-	fmt.Printf("finish change file %s, with blockNum %d, cf.sizeCounter=%d\n", cf.namebase, blockNum, cf.sizeCounter)
+	//fmt.Printf("finish change file %s, with blockNum %d, cf.sizeCounter=%d\n", cf.namebase, blockNum, cf.sizeCounter)
 	binary.BigEndian.PutUint64(cf.numBuf[:], blockNum)
 	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
 		return err
@@ -171,7 +173,7 @@ func (cf *ChangeFile) finish(blockNum uint64) error {
 // prevBlock positions the reader to the beginning
 // of the block
 func (cf *ChangeFile) prevBlock() (bool, error) {
-	fmt.Printf("prevBlock change file %s, cf.blockPos=%d\n", cf.namebase, cf.blockPos)
+	//fmt.Printf("prevBlock change file %s, cf.blockPos=%d\n", cf.namebase, cf.blockPos)
 	if cf.blockPos == 0 {
 		return false, nil
 	}
@@ -185,18 +187,14 @@ func (cf *ChangeFile) prevBlock() (bool, error) {
 		return false, err
 	}
 	cf.blockNum = binary.BigEndian.Uint64(cf.numBuf[:])
-	fmt.Printf("blockNum = %d\n", cf.blockNum)
 	if _, err = io.ReadFull(cf.r, cf.numBuf[:8]); err != nil {
 		return false, err
 	}
 	cf.blockSize = binary.BigEndian.Uint64(cf.numBuf[:])
-	fmt.Printf("blockSize = %d\n", cf.blockSize)
-	cf.blockPos = pos - int64(cf.blockSize)
-	pos, err = cf.file.Seek(cf.blockPos, 0)
+	cf.blockPos, err = cf.file.Seek(pos-int64(cf.blockSize), 0)
 	if err != nil {
 		return false, err
 	}
-	fmt.Printf("set pos to %d\n", pos)
 	cf.r.Reset(cf.file)
 	return true, nil
 }
@@ -225,7 +223,7 @@ func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
 }
 
 func (cf *ChangeFile) deleteFile() error {
-	fmt.Printf("deleted file %s\n", cf.path)
+	//fmt.Printf("deleted file %s\n", cf.path)
 	return os.Remove(cf.path)
 }
 
@@ -381,8 +379,8 @@ func (c *Changes) deleteFiles() error {
 	return nil
 }
 
-func buildIndex(datName, idxName, tmpDir string, count int) (*compress.Decompressor, *recsplit.Index, error) {
-	d, err := compress.NewDecompressor(datName)
+func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompressor, *recsplit.Index, error) {
+	d, err := compress.NewDecompressor(datPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -397,7 +395,7 @@ func buildIndex(datName, idxName, tmpDir string, count int) (*compress.Decompres
 		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
 			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
 			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-		IndexFile: idxName,
+		IndexFile: idxPath,
 	}); err != nil {
 		return nil, nil, err
 	}
@@ -424,7 +422,7 @@ func buildIndex(datName, idxName, tmpDir string, count int) (*compress.Decompres
 		}
 	}
 	var idx *recsplit.Index
-	if idx, err = recsplit.NewIndex(idxName); err != nil {
+	if idx, err = recsplit.NewIndex(idxPath); err != nil {
 		return nil, nil, err
 	}
 	return d, idx, nil
@@ -441,14 +439,14 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress
 	if err := c.closeFiles(); err != nil {
 		return nil, nil, fmt.Errorf("close files: %w", err)
 	}
-	datName := fmt.Sprintf("%s.%d-%d.dat", c.namebase, blockFrom, blockTo)
-	idxName := fmt.Sprintf("%s.%d-%d.idx", c.namebase, blockFrom, blockTo)
+	datPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.dat", c.namebase, blockFrom, blockTo))
+	idxPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.idx", c.namebase, blockFrom, blockTo))
 	var count int
 	var err error
-	if count, err = btreeToFile(bt, datName, c.dir); err != nil {
+	if count, err = btreeToFile(bt, datPath, c.dir); err != nil {
 		return nil, nil, fmt.Errorf("btreeToFile: %w", err)
 	}
-	return buildIndex(datName, idxName, c.dir, count)
+	return buildIndex(datPath, idxPath, c.dir, count)
 }
 
 type AggregateItem struct {
@@ -506,8 +504,8 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 
 const AggregatorPrefix = "aggretator"
 
-func btreeToFile(bt *btree.BTree, filename string, tmpdir string) (int, error) {
-	comp, err := compress.NewCompressor(AggregatorPrefix, filename, tmpdir, 1024 /* minPatterScore */)
+func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
+	comp, err := compress.NewCompressor(AggregatorPrefix, datPath, tmpdir, 1024 /* minPatterScore */)
 	if err != nil {
 		return 0, err
 	}
@@ -934,12 +932,12 @@ func (w *Writer) Finish() error {
 		return fmt.Errorf("finish storageChanges: %w", err)
 	}
 	if w.blockNum < w.a.unwindLimit+w.a.aggregationStep-1 {
-		fmt.Printf("skip aggregation because w.blockNum(%d) < w.a.unwindLimit(%d) + w.a.aggregationStep(%d) - 1\n", w.blockNum, w.a.unwindLimit, w.a.aggregationStep)
+		//fmt.Printf("skip aggregation because w.blockNum(%d) < w.a.unwindLimit(%d) + w.a.aggregationStep(%d) - 1\n", w.blockNum, w.a.unwindLimit, w.a.aggregationStep)
 		return nil
 	}
 	diff := w.blockNum - w.a.unwindLimit
 	if (diff+1)%w.a.aggregationStep != 0 {
-		fmt.Printf("skip aggregation because (diff(%d) + 1) %% w.a.aggregationStep(%d) != 0\n", diff, w.a.aggregationStep)
+		//fmt.Printf("skip aggregation because (diff(%d) + 1) %% w.a.aggregationStep(%d) != 0\n", diff, w.a.aggregationStep)
 		return nil
 	}
 	if err := w.aggregateUpto(diff+1-w.a.aggregationStep, diff); err != nil {
@@ -1168,7 +1166,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 }
 
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
-	i := w.a.changesBtree.Get(&ChangesItem{endBlock: blockTo})
+	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
 	if i == nil {
 		return fmt.Errorf("did not find change files for [%d-%d], w.a.changesBtree.Len() = %d", blockFrom, blockTo, w.a.changesBtree.Len())
 	}
@@ -1237,7 +1235,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		}
 	}
 	if item2.accountsD, item2.accountsIdx, err = aggregateChanges(&cp, 0, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
-		return err
+		return fmt.Errorf("aggregateChanges accounts [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	cp = cp[:0]
 	heap.Init(&cp)
@@ -1294,22 +1292,22 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	// Delete files
 	// TODO: in a non-test version, this is delayed to allow other participants to roll over to the next file
 	for _, ag := range toAggregate {
-		if err = os.Remove(fmt.Sprintf("accounts.%d-%d.dat", ag.startBlock, ag.endBlock)); err != nil {
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("accounts.%d-%d.dat", ag.startBlock, ag.endBlock))); err != nil {
 			return err
 		}
-		if err = os.Remove(fmt.Sprintf("accounts.%d-%d.idx", ag.startBlock, ag.endBlock)); err != nil {
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("accounts.%d-%d.idx", ag.startBlock, ag.endBlock))); err != nil {
 			return err
 		}
-		if err = os.Remove(fmt.Sprintf("code.%d-%d.dat", ag.startBlock, ag.endBlock)); err != nil {
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("code.%d-%d.dat", ag.startBlock, ag.endBlock))); err != nil {
 			return err
 		}
-		if err = os.Remove(fmt.Sprintf("code.%d-%d.idx", ag.startBlock, ag.endBlock)); err != nil {
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("code.%d-%d.idx", ag.startBlock, ag.endBlock))); err != nil {
 			return err
 		}
-		if err = os.Remove(fmt.Sprintf("storage.%d-%d.dat", ag.startBlock, ag.endBlock)); err != nil {
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("storage.%d-%d.dat", ag.startBlock, ag.endBlock))); err != nil {
 			return err
 		}
-		if err = os.Remove(fmt.Sprintf("storage.%d-%d.idx", ag.startBlock, ag.endBlock)); err != nil {
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("storage.%d-%d.idx", ag.startBlock, ag.endBlock))); err != nil {
 			return err
 		}
 	}
@@ -1318,12 +1316,13 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 }
 
 func aggregateChanges(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
-	datName := fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock)
-	idxName := fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock)
+	//fmt.Printf("aggregateChanges with dir %s\n", dir)
+	datPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock))
+	idxPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock))
 	var comp *compress.Compressor
 	var err error
-	if comp, err = compress.NewCompressor(AggregatorPrefix, path.Join(dir, datName), dir, 1024 /* minPatterScore */); err != nil {
-		return nil, nil, err
+	if comp, err = compress.NewCompressor(AggregatorPrefix, datPath, dir, 1024 /* minPatterScore */); err != nil {
+		return nil, nil, fmt.Errorf("compressor %s: %w", datPath, err)
 	}
 	count := 0
 	var keyBuf, valBuf []byte
@@ -1385,8 +1384,8 @@ func aggregateChanges(cp *CursorHeap, prefixLen int, basename string, startBlock
 	}
 	var d *compress.Decompressor
 	var idx *recsplit.Index
-	if d, idx, err = buildIndex(datName, idxName, dir, count); err != nil {
-		return nil, nil, err
+	if d, idx, err = buildIndex(datPath, idxPath, dir, count); err != nil {
+		return nil, nil, fmt.Errorf("build index: %w", err)
 	}
 	return d, idx, nil
 }

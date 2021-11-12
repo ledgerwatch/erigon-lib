@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -100,8 +99,8 @@ func TestLoopAggregator(t *testing.T) {
 	defer func() {
 		tx.Rollback()
 	}()
-	for blockNum := uint64(0); blockNum < 10000; blockNum++ {
-		fmt.Printf("blockNum = %d\n", blockNum)
+	for blockNum := uint64(0); blockNum < 1000; blockNum++ {
+		//fmt.Printf("blockNum = %d\n", blockNum)
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
