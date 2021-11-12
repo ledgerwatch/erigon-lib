@@ -404,12 +404,12 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 	for {
 		g := d.MakeGetter()
 		for g.HasNext() {
-			word, pos = g.Next(word[:0])
+			word, _ = g.Next(word[:0])
 			if err = rs.AddKey(word, pos); err != nil {
 				return nil, nil, err
 			}
 			// Skip value
-			word, _ = g.Next(word[:0])
+			word, pos = g.Next(word[:0])
 		}
 		if err = rs.Build(); err != nil {
 			return nil, nil, err
@@ -555,6 +555,7 @@ func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
 		if err = comp.AddWord(item.k); err != nil {
 			return false
 		}
+		//fmt.Printf("add key %x to %s\n", item.k, datPath)
 		count++ // Only counting keys, not values
 		if err = comp.AddWord(item.v); err != nil {
 			return false
@@ -597,6 +598,9 @@ type byEndBlockItem struct {
 }
 
 func (i *byEndBlockItem) Less(than btree.Item) bool {
+	if i.endBlock == than.(*byEndBlockItem).endBlock {
+		return i.startBlock > than.(*byEndBlockItem).startBlock
+	}
 	return i.endBlock < than.(*byEndBlockItem).endBlock
 }
 
@@ -615,7 +619,6 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		}
 	}()
 	// Scan the diff directory and create the mapping of end blocks to files
-	// TODO: Larger files preferred over the small ones that overlap with them
 	files, err := os.ReadDir(diffDir)
 	if err != nil {
 		return nil, err
@@ -642,14 +645,20 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 			continue
 		}
 		var item *byEndBlockItem = &byEndBlockItem{fileCount: 1, startBlock: startBlock, endBlock: endBlock}
-		i := byEndBlock.Get(item)
-		if i == nil {
+		var foundI *byEndBlockItem
+		byEndBlock.AscendGreaterOrEqual(&byEndBlockItem{startBlock: endBlock, endBlock: endBlock}, func(i btree.Item) bool {
+			it := i.(*byEndBlockItem)
+			if it.endBlock == endBlock {
+				foundI = it
+			}
+			return false
+		})
+		if foundI == nil {
 			byEndBlock.ReplaceOrInsert(item)
-		} else if i.(*byEndBlockItem).startBlock > startBlock {
+		} else if foundI.startBlock > startBlock {
 			byEndBlock.ReplaceOrInsert(item)
-		} else if i.(*byEndBlockItem).startBlock == startBlock {
-			item = i.(*byEndBlockItem)
-			item.fileCount++
+		} else if foundI.startBlock == startBlock {
+			foundI.fileCount++
 		}
 	}
 	// Check for overlaps and holes while moving items out of temporary btree
@@ -671,7 +680,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 				return false
 			}
 			minStart = item.startBlock
-			a.byEndBlock.ReplaceOrInsert(i)
+			a.byEndBlock.ReplaceOrInsert(item)
 		}
 		return true
 	})
@@ -837,13 +846,18 @@ func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 	}
 	// Look in the files
 	var val []byte
+	//fmt.Printf("Looking up %x, r.a.byEndBlock.Len()=%d\n", addr, r.a.byEndBlock.Len())
 	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
+		if item.accountsIdx.Empty() {
+			return true
+		}
 		offset := item.accountsIdx.Lookup(addr)
 		g := item.accountsD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
 			key, _ := g.Next(nil) // Add special function that just checks the key
+			//fmt.Printf("state file [%d-%d], offset %d, key %x\n", item.startBlock, item.endBlock, offset, key)
 			if bytes.Equal(key, addr) {
 				val, _ = g.Next(nil)
 				return false
@@ -874,6 +888,9 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 	var val []byte
 	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
+		if item.storageIdx.Empty() {
+			return false
+		}
 		offset := item.storageIdx.Lookup(filekey)
 		g := item.storageD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
@@ -903,6 +920,9 @@ func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error
 	var val []byte
 	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
+		if item.codeIdx.Empty() {
+			return false
+		}
 		offset := item.codeIdx.Lookup(addr)
 		g := item.codeD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
@@ -1238,6 +1258,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if err = storageChanges.deleteFiles(); err != nil {
 		return err
 	}
+	//fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item1.startBlock, item1.endBlock)
 	w.a.byEndBlock.ReplaceOrInsert(item1)
 	// Now aggregate state files
 	var toAggregate []*byEndBlockItem
@@ -1246,18 +1267,31 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	nextSize := blockTo - blockFrom + 1
 	nextEnd := blockFrom - 1
 	nextStart := nextEnd - nextSize + 1
-	nextI := w.a.byEndBlock.Get(&byEndBlockItem{endBlock: nextEnd})
+	var nextI *byEndBlockItem
+	w.a.byEndBlock.AscendGreaterOrEqual(&byEndBlockItem{startBlock: nextEnd, endBlock: nextEnd}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.endBlock == nextEnd {
+			nextI = item
+		}
+		return false
+	})
 	for nextI != nil {
-		nextItem := nextI.(*byEndBlockItem)
-		if nextItem.startBlock != nextStart {
+		if nextI.startBlock != nextStart {
 			break
 		}
 		lastStart = nextStart
-		toAggregate = append(toAggregate, nextItem)
+		toAggregate = append(toAggregate, nextI)
 		nextSize *= 2
 		nextEnd = nextStart - 1
 		nextStart = nextEnd - nextSize + 1
-		nextI = w.a.byEndBlock.Get(&byEndBlockItem{endBlock: nextEnd})
+		nextI = nil
+		w.a.byEndBlock.AscendGreaterOrEqual(&byEndBlockItem{startBlock: nextEnd, endBlock: nextEnd}, func(i btree.Item) bool {
+			item := i.(*byEndBlockItem)
+			if item.endBlock == nextEnd {
+				nextI = item
+			}
+			return false
+		})
 	}
 	if len(toAggregate) == 1 {
 		// Nothing to aggregate yet
@@ -1300,13 +1334,15 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.codeD, item2.codeIdx, err = mergeIntoStateFile(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
+	if item2.storageD, item2.storageIdx, err = mergeIntoStateFile(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
 		return fmt.Errorf("mergeIntoStateFile storage [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	// Remove all items in toAggregate and insert item2 instead
 	w.a.byEndBlock.ReplaceOrInsert(item2)
+	//fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item2.startBlock, item2.endBlock)
 	for _, ag := range toAggregate {
 		w.a.byEndBlock.Delete(ag)
+		//fmt.Printf("Delete from byEndBlock [%d-%d]\n", ag.startBlock, ag.endBlock)
 	}
 	// Close all the memory maps etc
 	for _, ag := range toAggregate {
@@ -1376,8 +1412,8 @@ func mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlo
 			firstDelete = len(ci1.val) == 0
 			firstInsert = !firstDelete && ci1.val[0] != 0
 			if ci1.dg.HasNext() {
-				ci1.key, _ = ci1.dg.Next(ci1.key)
-				ci1.val, _ = ci1.dg.Next(ci1.val)
+				ci1.key, _ = ci1.dg.Next(ci1.key[:0])
+				ci1.val, _ = ci1.dg.Next(ci1.val[:0])
 				heap.Fix(cp, 0)
 			} else {
 				heap.Pop(cp)
@@ -1406,16 +1442,27 @@ func mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlo
 		}
 		if !skip {
 			if keyBuf != nil && (prefixLen == 0 || len(keyBuf) != prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
-				if err = comp.AddWord(lastKey); err != nil {
+				if err = comp.AddWord(keyBuf); err != nil {
 					return nil, nil, err
 				}
+				//fmt.Printf("merge key %x into %s\n", keyBuf, datPath)
 				count++ // Only counting keys, not values
-				if err = comp.AddWord(lastVal); err != nil {
+				if err = comp.AddWord(valBuf); err != nil {
 					return nil, nil, err
 				}
 			}
 			keyBuf = append(keyBuf[:0], lastKey...)
 			valBuf = append(valBuf[:0], lastVal...)
+		}
+	}
+	if keyBuf != nil {
+		if err = comp.AddWord(keyBuf); err != nil {
+			return nil, nil, err
+		}
+		//fmt.Printf("merge key %x into %s\n", keyBuf, datPath)
+		count++ // Only counting keys, not values
+		if err = comp.AddWord(valBuf); err != nil {
+			return nil, nil, err
 		}
 	}
 	if err = comp.Compress(); err != nil {

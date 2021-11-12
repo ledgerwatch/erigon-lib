@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -132,5 +133,19 @@ func TestLoopAggregator(t *testing.T) {
 		}
 		account1 = int256(blockNum + 2)
 	}
+	if tx, err = db.BeginRo(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	blockNum := uint64(1000)
+	r := a.MakeStateReader(tx, blockNum)
+	for i := uint64(0); i < blockNum/10+1; i++ {
+		accountKey := int160(i)
+		var acc []byte
+		if acc, err = r.ReadAccountData(accountKey); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("%x => %x\n", accountKey, acc)
+	}
+	tx.Rollback()
 	a.Close()
 }
