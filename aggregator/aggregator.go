@@ -428,7 +428,7 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 	return d, idx, nil
 }
 
-func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress.Decompressor, *recsplit.Index, error) {
+func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx, table string) (*compress.Decompressor, *recsplit.Index, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
 		return nil, nil, fmt.Errorf("open files: %w", err)
 	}
@@ -438,6 +438,43 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress
 	}
 	if err := c.closeFiles(); err != nil {
 		return nil, nil, fmt.Errorf("close files: %w", err)
+	}
+	// Clean up the DB table
+	var e error
+	bt.Ascend(func(i btree.Item) bool {
+		item := i.(*AggregateItem)
+		if item.count == 0 {
+			return true
+		}
+		prevV, err := tx.GetOne(table, item.k)
+		if err != nil {
+			e = err
+			return false
+		}
+		if prevV == nil {
+			e = fmt.Errorf("record not found in db for %s key %x", table, item.k)
+			return false
+		}
+		prevNum := binary.BigEndian.Uint32(prevV[:4])
+		if prevNum < item.count {
+			e = fmt.Errorf("record count too low for %s key %s count %d, subtracting %d", table, item.k, prevNum, item.count)
+			return false
+		}
+		if prevNum == item.count {
+			if e = tx.Delete(table, item.k, nil); e != nil {
+				return false
+			}
+		} else {
+			v := common.Copy(prevV)
+			binary.BigEndian.PutUint32(v[:4], prevNum-item.count)
+			if e = tx.Put(table, item.k, v); e != nil {
+				return false
+			}
+		}
+		return true
+	})
+	if e != nil {
+		return nil, nil, fmt.Errorf("clean up table %s after aggregation: %w", table, e)
 	}
 	datPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.dat", c.namebase, blockFrom, blockTo))
 	idxPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.idx", c.namebase, blockFrom, blockTo))
@@ -450,7 +487,8 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int) (*compress
 }
 
 type AggregateItem struct {
-	k, v []byte
+	k, v  []byte
+	count uint32
 }
 
 func (i *AggregateItem) Less(than btree.Item) bool {
@@ -467,7 +505,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 			if prefixLen > 0 && !bytes.Equal(prefix, key[:prefixLen]) {
 				prefix = common.Copy(key[:prefixLen])
-				item := &AggregateItem{k: prefix}
+				item := &AggregateItem{k: prefix, count: 0}
 				if len(after) > 0 {
 					item.v = make([]byte, 1+len(after))
 					if len(before) == 0 {
@@ -481,7 +519,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 			ai.v = after
 			i := bt.Get(&ai)
 			if i == nil {
-				item := &AggregateItem{k: common.Copy(key)}
+				item := &AggregateItem{k: common.Copy(key), count: 1}
 				if len(after) > 0 {
 					item.v = make([]byte, 1+len(after))
 					if len(before) == 0 {
@@ -490,6 +528,8 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 					copy(item.v[1:], after)
 				}
 				bt.ReplaceOrInsert(item)
+			} else {
+				i.(*AggregateItem).count++
 			}
 		}
 		if e != nil {
@@ -1180,13 +1220,13 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	storageChanges.Init("storage", w.a.aggregationStep, w.a.diffDir)
 	var err error
 	var item1 *byEndBlockItem = &byEndBlockItem{fileCount: 6, startBlock: blockFrom, endBlock: blockTo}
-	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0); err != nil {
+	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts); err != nil {
 		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
-	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0); err != nil {
+	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode); err != nil {
 		return fmt.Errorf("aggregate codeChanges: %w", err)
 	}
-	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20); err != nil {
+	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
 	if err = accountChanges.deleteFiles(); err != nil {
@@ -1234,8 +1274,8 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.accountsD, item2.accountsIdx, err = aggregateChanges(&cp, 0, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
-		return fmt.Errorf("aggregateChanges accounts [%d-%d]: %w", lastStart, blockTo, err)
+	if item2.accountsD, item2.accountsIdx, err = mergeIntoStateFile(&cp, 0, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
+		return fmt.Errorf("mergeIntoStateFile accounts [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	cp = cp[:0]
 	heap.Init(&cp)
@@ -1247,8 +1287,8 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, 0, "code", lastStart, blockTo, w.a.diffDir); err != nil {
-		return err
+	if item2.codeD, item2.codeIdx, err = mergeIntoStateFile(&cp, 0, "code", lastStart, blockTo, w.a.diffDir); err != nil {
+		return fmt.Errorf("mergeIntoStateFile code [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	cp = cp[:0]
 	heap.Init(&cp)
@@ -1260,8 +1300,8 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.codeD, item2.codeIdx, err = aggregateChanges(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
-		return err
+	if item2.codeD, item2.codeIdx, err = mergeIntoStateFile(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
+		return fmt.Errorf("mergeIntoStateFile storage [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	// Remove all items in toAggregate and insert item2 instead
 	w.a.byEndBlock.ReplaceOrInsert(item2)
@@ -1315,8 +1355,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	return nil
 }
 
-func aggregateChanges(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
-	//fmt.Printf("aggregateChanges with dir %s\n", dir)
+func mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
 	datPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock))
 	idxPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock))
 	var comp *compress.Compressor

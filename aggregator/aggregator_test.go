@@ -100,6 +100,7 @@ func TestLoopAggregator(t *testing.T) {
 		tx.Rollback()
 	}()
 	for blockNum := uint64(0); blockNum < 1000; blockNum++ {
+		accountKey := int160(blockNum/10 + 1)
 		//fmt.Printf("blockNum = %d\n", blockNum)
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
@@ -108,7 +109,7 @@ func TestLoopAggregator(t *testing.T) {
 		if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
 			t.Fatal(err)
 		}
-		if err = w.UpdateAccountData(int160(1), account1); err != nil {
+		if err = w.UpdateAccountData(accountKey, account1); err != nil {
 			t.Fatal(err)
 		}
 		if err = w.Finish(); err != nil {
@@ -122,7 +123,7 @@ func TestLoopAggregator(t *testing.T) {
 		}
 		r := a.MakeStateReader(tx, blockNum+1)
 		var acc []byte
-		if acc, err = r.ReadAccountData(int160(1)); err != nil {
+		if acc, err = r.ReadAccountData(accountKey); err != nil {
 			t.Fatal(err)
 		}
 		tx.Rollback()
