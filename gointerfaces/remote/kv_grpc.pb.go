@@ -29,6 +29,9 @@ type KVClient interface {
 	// Then only client can initiate messages from server
 	Tx(ctx context.Context, opts ...grpc.CallOption) (KV_TxClient, error)
 	StateChanges(ctx context.Context, in *StateChangeRequest, opts ...grpc.CallOption) (KV_StateChangesClient, error)
+	// High-level method - can read block from db, snapshots or apply any other logic, but require
+	// databaseViewID for consistency
+	Block(ctx context.Context, in *BlockRequest, opts ...grpc.CallOption) (*BlockReply, error)
 }
 
 type kVClient struct {
@@ -111,6 +114,15 @@ func (x *kVStateChangesClient) Recv() (*StateChangeBatch, error) {
 	return m, nil
 }
 
+func (c *kVClient) Block(ctx context.Context, in *BlockRequest, opts ...grpc.CallOption) (*BlockReply, error) {
+	out := new(BlockReply)
+	err := c.cc.Invoke(ctx, "/remote.KV/Block", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KVServer is the server API for KV service.
 // All implementations must embed UnimplementedKVServer
 // for forward compatibility
@@ -124,6 +136,9 @@ type KVServer interface {
 	// Then only client can initiate messages from server
 	Tx(KV_TxServer) error
 	StateChanges(*StateChangeRequest, KV_StateChangesServer) error
+	// High-level method - can read block from db, snapshots or apply any other logic, but require
+	// databaseViewID for consistency
+	Block(context.Context, *BlockRequest) (*BlockReply, error)
 	mustEmbedUnimplementedKVServer()
 }
 
@@ -139,6 +154,9 @@ func (UnimplementedKVServer) Tx(KV_TxServer) error {
 }
 func (UnimplementedKVServer) StateChanges(*StateChangeRequest, KV_StateChangesServer) error {
 	return status.Errorf(codes.Unimplemented, "method StateChanges not implemented")
+}
+func (UnimplementedKVServer) Block(context.Context, *BlockRequest) (*BlockReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Block not implemented")
 }
 func (UnimplementedKVServer) mustEmbedUnimplementedKVServer() {}
 
@@ -218,6 +236,24 @@ func (x *kVStateChangesServer) Send(m *StateChangeBatch) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _KV_Block_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BlockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVServer).Block(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/remote.KV/Block",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVServer).Block(ctx, req.(*BlockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KV_ServiceDesc is the grpc.ServiceDesc for KV service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -228,6 +264,10 @@ var KV_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Version",
 			Handler:    _KV_Version_Handler,
+		},
+		{
+			MethodName: "Block",
+			Handler:    _KV_Block_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
