@@ -865,6 +865,9 @@ func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 		}
 		return true
 	})
+	if len(val) > 0 {
+		return val[1:], nil
+	}
 	return val, nil
 }
 
@@ -903,6 +906,9 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 		}
 		return true
 	})
+	if len(val) > 0 {
+		return val[1:], nil
+	}
 	return val, nil
 }
 
@@ -935,6 +941,9 @@ func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error
 		}
 		return true
 	})
+	if len(val) > 0 {
+		return val[1:], nil
+	}
 	return val, nil
 }
 
