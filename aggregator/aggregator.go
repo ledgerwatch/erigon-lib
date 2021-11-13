@@ -1258,6 +1258,15 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
+	if err = accountChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err = codeChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err = storageChanges.closeFiles(); err != nil {
+		return err
+	}
 	if err = accountChanges.deleteFiles(); err != nil {
 		return err
 	}
