@@ -22,9 +22,6 @@ var _ KVClient = &KVClientMock{}
 //
 // 		// make and configure a mocked KVClient
 // 		mockedKVClient := &KVClientMock{
-// 			BlockFunc: func(ctx context.Context, in *BlockRequest, opts ...grpc.CallOption) (*BlockReply, error) {
-// 				panic("mock out the Block method")
-// 			},
 // 			StateChangesFunc: func(ctx context.Context, in *StateChangeRequest, opts ...grpc.CallOption) (KV_StateChangesClient, error) {
 // 				panic("mock out the StateChanges method")
 // 			},
@@ -41,9 +38,6 @@ var _ KVClient = &KVClientMock{}
 //
 // 	}
 type KVClientMock struct {
-	// BlockFunc mocks the Block method.
-	BlockFunc func(ctx context.Context, in *BlockRequest, opts ...grpc.CallOption) (*BlockReply, error)
-
 	// StateChangesFunc mocks the StateChanges method.
 	StateChangesFunc func(ctx context.Context, in *StateChangeRequest, opts ...grpc.CallOption) (KV_StateChangesClient, error)
 
@@ -55,15 +49,6 @@ type KVClientMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// Block holds details about calls to the Block method.
-		Block []struct {
-			// Ctx is the ctx argument value.
-			Ctx context.Context
-			// In is the in argument value.
-			In *BlockRequest
-			// Opts is the opts argument value.
-			Opts []grpc.CallOption
-		}
 		// StateChanges holds details about calls to the StateChanges method.
 		StateChanges []struct {
 			// Ctx is the ctx argument value.
@@ -90,53 +75,9 @@ type KVClientMock struct {
 			Opts []grpc.CallOption
 		}
 	}
-	lockBlock        sync.RWMutex
 	lockStateChanges sync.RWMutex
 	lockTx           sync.RWMutex
 	lockVersion      sync.RWMutex
-}
-
-// Block calls BlockFunc.
-func (mock *KVClientMock) Block(ctx context.Context, in *BlockRequest, opts ...grpc.CallOption) (*BlockReply, error) {
-	callInfo := struct {
-		Ctx  context.Context
-		In   *BlockRequest
-		Opts []grpc.CallOption
-	}{
-		Ctx:  ctx,
-		In:   in,
-		Opts: opts,
-	}
-	mock.lockBlock.Lock()
-	mock.calls.Block = append(mock.calls.Block, callInfo)
-	mock.lockBlock.Unlock()
-	if mock.BlockFunc == nil {
-		var (
-			blockReplyOut *BlockReply
-			errOut        error
-		)
-		return blockReplyOut, errOut
-	}
-	return mock.BlockFunc(ctx, in, opts...)
-}
-
-// BlockCalls gets all the calls that were made to Block.
-// Check the length with:
-//     len(mockedKVClient.BlockCalls())
-func (mock *KVClientMock) BlockCalls() []struct {
-	Ctx  context.Context
-	In   *BlockRequest
-	Opts []grpc.CallOption
-} {
-	var calls []struct {
-		Ctx  context.Context
-		In   *BlockRequest
-		Opts []grpc.CallOption
-	}
-	mock.lockBlock.RLock()
-	calls = mock.calls.Block
-	mock.lockBlock.RUnlock()
-	return calls
 }
 
 // StateChanges calls StateChangesFunc.
