@@ -818,6 +818,9 @@ func closeFiles(byEndBlock *btree.BTree) {
 }
 
 func (a *Aggregator) Close() {
+	a.accountChanges.closeFiles()
+	a.codeChanges.closeFiles()
+	a.storageChanges.closeFiles()
 	closeFiles(a.byEndBlock)
 }
 
