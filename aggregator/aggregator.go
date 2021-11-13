@@ -93,6 +93,8 @@ func (cf *ChangeFile) closeFile() error {
 			return err
 		}
 		cf.w = nil
+	}
+	if cf.file != nil {
 		if err := cf.file.Close(); err != nil {
 			return err
 		}
