@@ -1783,7 +1783,7 @@ func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64) {
 	s.metaTx.Tx.senderID = senderID
 	s.metaTx.Tx.nonce = 0
 
-	b.tree.DescendLessOrEqual(s, func(i btree.Item) bool {
+	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
 		mt := i.(sortByNonce).metaTx
 		if mt.Tx.senderID != senderID {
 			return false
