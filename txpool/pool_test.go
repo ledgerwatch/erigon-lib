@@ -22,7 +22,11 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
+	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/stretchr/testify/assert"
@@ -78,21 +82,80 @@ func BenchmarkName2(b *testing.B) {
 	_ = r
 }
 
-func TestNonce(t *testing.T) {
+func TestNonceFromAddress(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	ch := make(chan Hashes, 100)
-	_, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 
 	cfg := DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
 	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
 	assert.NoError(err)
 	require.True(pool != nil)
+	ctx := context.Background()
+	var txID uint64
+	_ = coreDB.View(ctx, func(tx kv.Tx) error {
+		txID = tx.ViewID()
+		return nil
+	})
+	pendingBaseFee := uint64(200000)
+	// start blocks from 0, set empty hash - then kvcache will also work on this
+	h1 := gointerfaces.ConvertHashToH256([32]byte{})
+	change := &remote.StateChangeBatch{
+		DatabaseViewID:      txID,
+		PendingBlockBaseFee: pendingBaseFee,
+		ChangeBatch: []*remote.StateChange{
+			{BlockHeight: 0, BlockHash: h1},
+		},
+	}
+	var addr [20]byte
+	addr[0] = 1
+	v := make([]byte, EncodeSenderLengthForStorage(2, *uint256.NewInt(1000)))
+	EncodeSender(2, *uint256.NewInt(1000), v)
+	change.ChangeBatch[0].Changes = append(change.ChangeBatch[0].Changes, &remote.AccountChange{
+		Action:  remote.Action_UPSERT,
+		Address: gointerfaces.ConvertAddressToH160(addr),
+		Data:    v,
+	})
+	tx, err := db.BeginRw(ctx)
+	require.NoError(err)
+	defer tx.Rollback()
+	err = pool.OnNewBlock(ctx, change, TxSlots{}, TxSlots{}, tx)
+	assert.NoError(err)
 	var txSlots TxSlots
+	txSlots.Append(&TxSlot{
+		tip:    300000,
+		feeCap: 300000,
+		gas:    100000,
+		nonce:  3,
+	}, addr[:], true)
+	/*
+		txSlots.Append(&TxSlot{
+			tip:    300000,
+			feeCap: 300000,
+			gas:    100000,
+			nonce:  6,
+		}, addr[:], true)
+	*/
 	var reasons []DiscardReason
-	reasons, err = pool.AddLocalTxs(context.Background(), txSlots)
+	reasons, err = pool.AddLocalTxs(ctx, txSlots)
 	assert.NoError(err)
 	for _, reason := range reasons {
-		assert.True(reason == NotSet)
+		assert.Equal(Success, reason)
 	}
+	txSlots = TxSlots{}
+	txSlots.Append(&TxSlot{
+		tip:    300000,
+		feeCap: 300000,
+		gas:    100000,
+		nonce:  4,
+	}, addr[:], true)
+	reasons, err = pool.AddLocalTxs(ctx, txSlots)
+	assert.NoError(err)
+	for _, reason := range reasons {
+		assert.Equal(Success, reason)
+	}
+	nonce, ok := pool.NonceFromAddress(addr)
+	assert.True(ok)
+	assert.Equal(uint64(4), nonce)
 }
