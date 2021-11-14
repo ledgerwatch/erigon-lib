@@ -1244,23 +1244,6 @@ var file_remote_ethbackend_proto_goTypes = []interface{}{
 	(*ClientVersionReply)(nil),             // 16: remote.ClientVersionReply
 	(*SubscribeRequest)(nil),               // 17: remote.SubscribeRequest
 	(*SubscribeReply)(nil),                 // 18: remote.SubscribeReply
-<<<<<<< HEAD
-	(*types.H160)(nil),                     // 19: types.H160
-	(*types.H256)(nil),                     // 20: types.H256
-	(*types.ExecutionPayload)(nil),         // 21: types.ExecutionPayload
-	(*emptypb.Empty)(nil),                  // 22: google.protobuf.Empty
-	(*types.VersionReply)(nil),             // 23: types.VersionReply
-}
-var file_remote_ethbackend_proto_depIdxs = []int32{
-	19, // 0: remote.EtherbaseReply.address:type_name -> types.H160
-	20, // 1: remote.EngineExecutePayloadReply.latestValidHash:type_name -> types.H256
-	20, // 2: remote.EnginePreparePayload.parentHash:type_name -> types.H256
-	20, // 3: remote.EnginePreparePayload.random:type_name -> types.H256
-	19, // 4: remote.EnginePreparePayload.feeRecipient:type_name -> types.H160
-	20, // 5: remote.EngineForkChoiceUpdated.headBlockHash:type_name -> types.H256
-	20, // 6: remote.EngineForkChoiceUpdated.safeBlockHash:type_name -> types.H256
-	20, // 7: remote.EngineForkChoiceUpdated.finalizedBlockHash:type_name -> types.H256
-=======
 	(*BlockRequest)(nil),                   // 19: remote.BlockRequest
 	(*BlockReply)(nil),                     // 20: remote.BlockReply
 	(*types.H160)(nil),                     // 21: types.H160
@@ -1278,38 +1261,10 @@ var file_remote_ethbackend_proto_depIdxs = []int32{
 	22, // 5: remote.EngineForkChoiceUpdated.headBlockHash:type_name -> types.H256
 	22, // 6: remote.EngineForkChoiceUpdated.safeBlockHash:type_name -> types.H256
 	22, // 7: remote.EngineForkChoiceUpdated.finalizedBlockHash:type_name -> types.H256
->>>>>>> origin/main
 	9,  // 8: remote.EngineForkChoiceUpdatedRequest.headBlockHash:type_name -> remote.EnginePreparePayload
 	10, // 9: remote.EngineForkChoiceUpdatedRequest.safeBlockHash:type_name -> remote.EngineForkChoiceUpdated
 	0,  // 10: remote.SubscribeRequest.type:type_name -> remote.Event
 	0,  // 11: remote.SubscribeReply.type:type_name -> remote.Event
-<<<<<<< HEAD
-	1,  // 12: remote.ETHBACKEND.Etherbase:input_type -> remote.EtherbaseRequest
-	3,  // 13: remote.ETHBACKEND.NetVersion:input_type -> remote.NetVersionRequest
-	5,  // 14: remote.ETHBACKEND.NetPeerCount:input_type -> remote.NetPeerCountRequest
-	7,  // 15: remote.ETHBACKEND.EngineGetPayloadV1:input_type -> remote.EngineGetPayloadRequest
-	21, // 16: remote.ETHBACKEND.EngineExecutePayloadV1:input_type -> types.ExecutionPayload
-	11, // 17: remote.ETHBACKEND.EngineForkChoiceUpdatedV1:input_type -> remote.EngineForkChoiceUpdatedRequest
-	22, // 18: remote.ETHBACKEND.Version:input_type -> google.protobuf.Empty
-	13, // 19: remote.ETHBACKEND.ProtocolVersion:input_type -> remote.ProtocolVersionRequest
-	15, // 20: remote.ETHBACKEND.ClientVersion:input_type -> remote.ClientVersionRequest
-	17, // 21: remote.ETHBACKEND.Subscribe:input_type -> remote.SubscribeRequest
-	2,  // 22: remote.ETHBACKEND.Etherbase:output_type -> remote.EtherbaseReply
-	4,  // 23: remote.ETHBACKEND.NetVersion:output_type -> remote.NetVersionReply
-	6,  // 24: remote.ETHBACKEND.NetPeerCount:output_type -> remote.NetPeerCountReply
-	21, // 25: remote.ETHBACKEND.EngineGetPayloadV1:output_type -> types.ExecutionPayload
-	8,  // 26: remote.ETHBACKEND.EngineExecutePayloadV1:output_type -> remote.EngineExecutePayloadReply
-	12, // 27: remote.ETHBACKEND.EngineForkChoiceUpdatedV1:output_type -> remote.EngineForkChoiceUpdatedReply
-	23, // 28: remote.ETHBACKEND.Version:output_type -> types.VersionReply
-	14, // 29: remote.ETHBACKEND.ProtocolVersion:output_type -> remote.ProtocolVersionReply
-	16, // 30: remote.ETHBACKEND.ClientVersion:output_type -> remote.ClientVersionReply
-	18, // 31: remote.ETHBACKEND.Subscribe:output_type -> remote.SubscribeReply
-	22, // [22:32] is the sub-list for method output_type
-	12, // [12:22] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
-=======
 	22, // 12: remote.BlockRequest.blockHash:type_name -> types.H256
 	1,  // 13: remote.ETHBACKEND.Etherbase:input_type -> remote.EtherbaseRequest
 	3,  // 14: remote.ETHBACKEND.NetVersion:input_type -> remote.NetVersionRequest
@@ -1338,7 +1293,6 @@ var file_remote_ethbackend_proto_depIdxs = []int32{
 	13, // [13:13] is the sub-list for extension type_name
 	13, // [13:13] is the sub-list for extension extendee
 	0,  // [0:13] is the sub-list for field type_name
->>>>>>> origin/main
 }
 
 func init() { file_remote_ethbackend_proto_init() }
@@ -1594,11 +1548,7 @@ func file_remote_ethbackend_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_remote_ethbackend_proto_rawDesc,
 			NumEnums:      1,
-<<<<<<< HEAD
-			NumMessages:   18,
-=======
 			NumMessages:   20,
->>>>>>> origin/main
 			NumExtensions: 0,
 			NumServices:   1,
 		},
