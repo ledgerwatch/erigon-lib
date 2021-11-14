@@ -18,8 +18,15 @@ package txpool
 
 import (
 	"container/heap"
+	"context"
 	"math/rand"
 	"testing"
+
+	"github.com/ledgerwatch/erigon-lib/common/u256"
+	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
+	"github.com/ledgerwatch/erigon-lib/kv/memdb"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func BenchmarkName(b *testing.B) {
@@ -69,4 +76,23 @@ func BenchmarkName2(b *testing.B) {
 		//}
 	}
 	_ = r
+}
+
+func TestNonce(t *testing.T) {
+	assert, require := assert.New(t), require.New(t)
+	ch := make(chan Hashes, 100)
+	_, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+
+	cfg := DefaultConfig
+	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
+	assert.NoError(err)
+	require.True(pool != nil)
+	var txSlots TxSlots
+	var reasons []DiscardReason
+	reasons, err = pool.AddLocalTxs(context.Background(), txSlots)
+	assert.NoError(err)
+	for _, reason := range reasons {
+		assert.True(reason == NotSet)
+	}
 }
