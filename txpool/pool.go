@@ -625,21 +625,29 @@ func (p *TxPool) validateTxs(txs TxSlots) (reasons []DiscardReason, goodTxs TxSl
 		return reasons, goodTxs, err
 	}
 
-	j := 0
-	for i := range txs.txs {
-		reasons[i] = p.validateTx(txs.txs[i], txs.isLocal[i])
-		if reasons[i] != Success {
-			if reasons[i] == Spammer {
-				p.punishSpammer(txs.txs[i].senderID)
-			}
+	goodCount := 0
+	for i, txn := range txs.txs {
+		reason := p.validateTx(txn, txs.isLocal[i])
+		if reason == Success {
+			goodCount++
 			continue
 		}
-		reasons[i] = NotSet
-		goodTxs.Resize(uint(j + 1))
-		goodTxs.txs[j] = txs.txs[i]
-		goodTxs.isLocal[j] = txs.isLocal[i]
-		copy(goodTxs.senders.At(j), txs.senders.At(i))
-		j++
+		if reason == Spammer {
+			p.punishSpammer(txn.senderID)
+		}
+		reasons[i] = reason
+	}
+
+	goodTxs.Resize(uint(goodCount))
+
+	j := 0
+	for i, txn := range txs.txs {
+		if reasons[i] == NotSet {
+			goodTxs.txs[j] = txn
+			goodTxs.isLocal[j] = txs.isLocal[i]
+			copy(goodTxs.senders.At(j), txs.senders.At(i))
+			j++
+		}
 	}
 
 	return reasons, goodTxs, nil
