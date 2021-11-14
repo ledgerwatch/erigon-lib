@@ -977,8 +977,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 	var prevSenderID uint64
 	var minFeeCap, minTip uint64
-	byNonce.tree.Ascend(func(i btree.Item) bool {
-		mt := i.(sortByNonce).metaTx
+	byNonce.ascendAll(func(mt *metaTx) bool {
 		if mt.Tx.senderID != prevSenderID {
 			minFeeCap, minTip = uint64(math.MaxUint64), uint64(math.MaxUint64) // min of given sender
 			prevSenderID = mt.Tx.senderID
@@ -1570,8 +1569,7 @@ func (p *TxPool) logStats() {
 func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	p.all.tree.Ascend(func(i btree.Item) bool {
-		mt := i.(sortByNonce).metaTx
+	p.all.ascendAll(func(mt *metaTx) bool {
 		slot := mt.Tx
 		slotRlp := slot.rlp
 		if slot.rlp == nil {
@@ -1798,6 +1796,12 @@ func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64, ok bool) {
 		return false
 	})
 	return nonce, ok
+}
+func (b *BySenderAndNonce) ascendAll(f func(*metaTx) bool) {
+	b.tree.Ascend(func(i btree.Item) bool {
+		mt := i.(sortByNonce).metaTx
+		return f(mt)
+	})
 }
 func (b *BySenderAndNonce) ascend(senderID uint64, f func(*metaTx) bool) {
 	s := b.search
