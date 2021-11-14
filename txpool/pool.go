@@ -915,7 +915,7 @@ func (p *TxPool) NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool) {
 	if !found {
 		return 0, false
 	}
-	return p.all.nonce(senderId), true
+	return p.all.nonce(senderId)
 }
 
 // removeMined - apply new highest block (or batch of blocks)
@@ -1777,21 +1777,20 @@ type BySenderAndNonce struct {
 	search sortByNonce
 }
 
-//nolint
-func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64) {
+func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64, ok bool) {
 	s := b.search
 	s.metaTx.Tx.senderID = senderID
-	s.metaTx.Tx.nonce = 0
+	s.metaTx.Tx.nonce = math.MaxUint64
 
-	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
+	b.tree.DescendLessOrEqual(s, func(i btree.Item) bool {
 		mt := i.(sortByNonce).metaTx
-		if mt.Tx.senderID != senderID {
-			return false
+		if mt.Tx.senderID == senderID {
+			nonce = mt.Tx.nonce
+			ok = true
 		}
-		nonce = mt.Tx.nonce
-		return true
+		return false
 	})
-	return nonce
+	return nonce, ok
 }
 func (b *BySenderAndNonce) ascend(senderID uint64, f func(*metaTx) bool) {
 	s := b.search
