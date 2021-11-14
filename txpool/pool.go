@@ -647,19 +647,17 @@ func (p *TxPool) validateTxs(txs TxSlots) (reasons []DiscardReason, goodTxs TxSl
 
 // punishSpammer by drop half of it's transactions with high nonce
 func (p *TxPool) punishSpammer(spammer uint64) {
-	var txsToDelete []*metaTx
-	count := p.all.count(spammer)
-	i := 0
-	p.all.ascend(spammer, func(tx *metaTx) bool {
-		i++
-		if i < count/2 {
-			return true
+	count := p.all.count(spammer) / 2
+	if count > 0 {
+		txsToDelete := make([]*metaTx, 0, count)
+		p.all.descend(spammer, func(mt *metaTx) bool {
+			txsToDelete = append(txsToDelete, mt)
+			count--
+			return count > 0
+		})
+		for _, mt := range txsToDelete {
+			p.discardLocked(mt, Spammer) // can't call it while iterating by all
 		}
-		txsToDelete = append(txsToDelete, tx)
-		return true
-	})
-	for j := range txsToDelete {
-		p.discardLocked(txsToDelete[j], Spammer) // can't call it while iterating by all
 	}
 }
 
