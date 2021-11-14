@@ -560,6 +560,12 @@ func (c *Compressor) Compress() error {
 	return nil
 }
 
+func (c *Compressor) Close() {
+	c.collector.Close()
+	c.wordFile.Close()
+	c.interFile.Close()
+}
+
 func (c *Compressor) findMatches() error {
 	// Build patricia tree out of the patterns in the dictionary, for further matching in individual words
 	// Allocate temporary initial codes to the patterns so that patterns with higher scores get smaller code
@@ -800,7 +806,9 @@ func (c *Compressor) optimiseCodes() error {
 	if err != nil {
 		return err
 	}
+	defer cf.Close()
 	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
+	defer cw.Flush()
 	// First, output dictionary size
 	binary.BigEndian.PutUint64(c.numBuf[:], offset) // Dictionary size
 	if _, err = cw.Write(c.numBuf[:8]); err != nil {
@@ -1034,12 +1042,6 @@ func (c *Compressor) optimiseCodes() error {
 	}
 	if e != nil && !errors.Is(e, io.EOF) {
 		return e
-	}
-	if err = cw.Flush(); err != nil {
-		return err
-	}
-	if err = cf.Close(); err != nil {
-		return err
 	}
 	return nil
 }
