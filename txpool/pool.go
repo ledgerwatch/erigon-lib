@@ -1777,19 +1777,20 @@ type BySenderAndNonce struct {
 	search sortByNonce
 }
 
-//nolint
+// nonce assumes senderID has at least one transaction
+// Changing this would require also returning found vs not-found since all values of nonce are
+// potentially valid
 func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64) {
 	s := b.search
 	s.metaTx.Tx.senderID = senderID
-	s.metaTx.Tx.nonce = 0
+	s.metaTx.Tx.nonce = math.MaxUint64
 
-	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
+	b.tree.DescendLessOrEqual(s, func(i btree.Item) bool {
+		// Assuming senderID has at least one transaction, only the first hit is needed
+		// and thus it will be senderID, by definition
 		mt := i.(sortByNonce).metaTx
-		if mt.Tx.senderID != senderID {
-			return false
-		}
 		nonce = mt.Tx.nonce
-		return true
+		return false
 	})
 	return nonce
 }
