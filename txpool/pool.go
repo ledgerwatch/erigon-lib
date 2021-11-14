@@ -297,12 +297,18 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ch
 		return nil, err
 	}
 
+	byNonce := &BySenderAndNonce{
+		tree:             btree.New(32),
+		search:           sortByNonce{&metaTx{Tx: &TxSlot{}}},
+		senderIDTxnCount: map[uint64]int{},
+	}
+
 	return &TxPool{
 		lock:                    &sync.RWMutex{},
 		byHash:                  map[string]*metaTx{},
 		isLocalLRU:              localsHistory,
 		discardReasonsLRU:       discardHistory,
-		all:                     &BySenderAndNonce{tree: btree.New(32), search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
+		all:                     byNonce,
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool, cfg.PendingSubPoolLimit),
 		baseFee:                 NewSubPool(BaseFeeSubPool, cfg.BaseFeeSubPoolLimit),
@@ -1773,8 +1779,9 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 //  - All senders stored inside 1 large BTree - because iterate over 1 BTree is faster than over map[senderId]BTree
 //  - sortByNonce used as non-pointer wrapper - because iterate over BTree of pointers is 2x slower
 type BySenderAndNonce struct {
-	tree   *btree.BTree
-	search sortByNonce
+	tree             *btree.BTree
+	search           sortByNonce
+	senderIDTxnCount map[uint64]int // count of sender's txns in the pool - may differ from nonce
 }
 
 func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64, ok bool) {
@@ -1805,19 +1812,7 @@ func (b *BySenderAndNonce) ascend(senderID uint64, f func(*metaTx) bool) {
 	})
 }
 func (b *BySenderAndNonce) count(senderID uint64) int {
-	s := b.search
-	s.metaTx.Tx.senderID = senderID
-	s.metaTx.Tx.nonce = 0
-	count := 0
-	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
-		mt := i.(sortByNonce).metaTx
-		if mt.Tx.senderID != senderID {
-			return false
-		}
-		count++
-		return true
-	})
-	return count
+	return b.senderIDTxnCount[senderID]
 }
 func (b *BySenderAndNonce) hasTxs(senderID uint64) bool {
 	has := false
@@ -1842,12 +1837,23 @@ func (b *BySenderAndNonce) has(mt *metaTx) bool {
 	found := b.tree.Get(sortByNonce{mt})
 	return found != nil
 }
-func (b *BySenderAndNonce) delete(mt *metaTx) { b.tree.Delete(sortByNonce{mt}) }
+func (b *BySenderAndNonce) delete(mt *metaTx) {
+	if b.tree.Delete(sortByNonce{mt}) != nil {
+		senderID := mt.Tx.senderID
+		count := b.senderIDTxnCount[senderID]
+		if count > 1 {
+			b.senderIDTxnCount[senderID] = count - 1
+		} else {
+			delete(b.senderIDTxnCount, senderID)
+		}
+	}
+}
 func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 	it := b.tree.ReplaceOrInsert(sortByNonce{mt})
 	if it != nil {
 		return it.(sortByNonce).metaTx
 	}
+	b.senderIDTxnCount[mt.Tx.senderID]++
 	return nil
 }
 
