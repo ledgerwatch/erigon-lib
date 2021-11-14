@@ -1815,6 +1815,18 @@ func (b *BySenderAndNonce) ascend(senderID uint64, f func(*metaTx) bool) {
 		return f(mt)
 	})
 }
+func (b *BySenderAndNonce) descend(senderID uint64, f func(*metaTx) bool) {
+	s := b.search
+	s.metaTx.Tx.senderID = senderID
+	s.metaTx.Tx.nonce = math.MaxUint64
+	b.tree.DescendLessOrEqual(s, func(i btree.Item) bool {
+		mt := i.(sortByNonce).metaTx
+		if mt.Tx.senderID != senderID {
+			return false
+		}
+		return f(mt)
+	})
+}
 func (b *BySenderAndNonce) count(senderID uint64) int {
 	return b.senderIDTxnCount[senderID]
 }
