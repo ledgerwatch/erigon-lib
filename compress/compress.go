@@ -807,6 +807,7 @@ func (c *Compressor) optimiseCodes() error {
 		return err
 	}
 	defer cf.Close()
+	defer cf.Sync()
 	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
 	defer cw.Flush()
 	// First, output dictionary size
