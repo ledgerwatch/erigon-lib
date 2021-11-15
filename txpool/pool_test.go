@@ -123,12 +123,14 @@ func TestNonceFromAddress(t *testing.T) {
 	err = pool.OnNewBlock(ctx, change, TxSlots{}, TxSlots{}, tx)
 	assert.NoError(err)
 	var txSlots TxSlots
-	txSlots.Append(&TxSlot{
+	txSlot1 := &TxSlot{
 		tip:    300000,
 		feeCap: 300000,
 		gas:    100000,
 		nonce:  3,
-	}, addr[:], true)
+	}
+	txSlot1.IdHash[0] = 1
+	txSlots.Append(txSlot1, addr[:], true)
 	/*
 		txSlots.Append(&TxSlot{
 			tip:    300000,
@@ -144,12 +146,22 @@ func TestNonceFromAddress(t *testing.T) {
 		assert.Equal(Success, reason)
 	}
 	txSlots = TxSlots{}
-	txSlots.Append(&TxSlot{
+	txSlot2 := &TxSlot{
 		tip:    300000,
 		feeCap: 300000,
 		gas:    100000,
 		nonce:  4,
-	}, addr[:], true)
+	}
+	txSlot2.IdHash[0] = 2
+	txSlot3 := &TxSlot{
+		tip:    300000,
+		feeCap: 300000,
+		gas:    100000,
+		nonce:  6,
+	}
+	txSlot3.IdHash[0] = 2
+	txSlots.Append(txSlot2, addr[:], true)
+	txSlots.Append(txSlot3, addr[:], true)
 	reasons, err = pool.AddLocalTxs(ctx, txSlots)
 	assert.NoError(err)
 	for _, reason := range reasons {
