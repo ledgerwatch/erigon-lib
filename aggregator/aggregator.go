@@ -869,19 +869,19 @@ func (a *Aggregator) readCode(blockNum uint64, addr []byte) []byte {
 	return nil
 }
 
-func (a *Aggregator) readStorage(blockNum uint64, key []byte) []byte {
+func (a *Aggregator) readStorage(blockNum uint64, filekey []byte) []byte {
 	var val []byte
 	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.storageIdx.Empty() {
 			return false
 		}
-		offset := item.storageIdx.Lookup(key)
+		offset := item.storageIdx.Lookup(filekey)
 		g := item.storageD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
 			key, _ := g.Next(nil) // Add special function that just checks the key
-			if bytes.Equal(key, key) {
+			if bytes.Equal(key, filekey) {
 				val, _ = g.Next(nil)
 				return false
 			}
