@@ -131,7 +131,6 @@ func (g *Getter) pos() uint64 {
 }
 
 func (g *Getter) nextPos(clean bool) uint64 {
-	fmt.Printf("nextPos: ")
 	if clean {
 		g.mask = 0
 	}
@@ -147,19 +146,16 @@ func (g *Getter) nextPos(clean bool) uint64 {
 		}
 		if g.b&g.mask == 0 {
 			g.mask <<= 1
-			fmt.Printf("0")
 			if g.posZero() {
 				break
 			}
 		} else {
 			g.mask <<= 1
-			fmt.Printf("1")
 			if g.posOne() {
 				break
 			}
 		}
 	}
-	fmt.Printf("\n g.pos()=%d\n", g.pos())
 	return g.pos()
 }
 

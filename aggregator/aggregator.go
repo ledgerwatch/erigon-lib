@@ -32,7 +32,6 @@ import (
 	"github.com/google/btree"
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -411,10 +410,10 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 			if err = rs.AddKey(word, pos); err != nil {
 				return nil, nil, err
 			}
-			fmt.Printf("add key %x to the index %s\n", word, idxPath)
+			//fmt.Printf("add key %x to the index %s\n", word, idxPath)
 			// Skip value
 			word, pos = g.Next(word[:0])
-			fmt.Printf("value is [%x]\n", word)
+			//fmt.Printf("value is [%x]\n", word)
 		}
 		if err = rs.Build(); err != nil {
 			return nil, nil, err
@@ -553,7 +552,7 @@ func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
 		if err = comp.AddWord(item.k); err != nil {
 			return false
 		}
-		fmt.Printf("add key %x val [%x] to %s\n", item.k, item.v, datPath)
+		//fmt.Printf("add key %x val [%x] to %s\n", item.k, item.v, datPath)
 		count++ // Only counting keys, not values
 		if err = comp.AddWord(item.v); err != nil {
 			return false
@@ -820,6 +819,81 @@ func (a *Aggregator) Close() {
 	closeFiles(a.byEndBlock)
 }
 
+func (a *Aggregator) readAccount(blockNum uint64, addr []byte) []byte {
+	var val []byte
+	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.accountsIdx.Empty() {
+			return true
+		}
+		offset := item.accountsIdx.Lookup(addr)
+		g := item.accountsD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if bytes.Equal(key, addr) {
+				val, _ = g.Next(nil)
+				return false
+			}
+		}
+		return true
+	})
+	if len(val) > 0 {
+		return val[1:]
+	}
+	return nil
+}
+
+func (a *Aggregator) readCode(blockNum uint64, addr []byte) []byte {
+	var val []byte
+	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.codeIdx.Empty() {
+			return false
+		}
+		offset := item.codeIdx.Lookup(addr)
+		g := item.codeD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if bytes.Equal(key, addr) {
+				val, _ = g.Next(nil)
+				return false
+			}
+		}
+		return true
+	})
+	if len(val) > 0 {
+		return val[1:]
+	}
+	return nil
+}
+
+func (a *Aggregator) readStorage(blockNum uint64, key []byte) []byte {
+	var val []byte
+	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.storageIdx.Empty() {
+			return false
+		}
+		offset := item.storageIdx.Lookup(key)
+		g := item.storageD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if bytes.Equal(key, key) {
+				val, _ = g.Next(nil)
+				return false
+			}
+		}
+		return true
+	})
+	if len(val) > 0 {
+		return val[1:]
+	}
+	return nil
+}
+
 func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
 	r := &Reader{
 		a:        a,
@@ -846,29 +920,7 @@ func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	var val []byte
-	//fmt.Printf("Looking up %x, r.a.byEndBlock.Len()=%d\n", addr, r.a.byEndBlock.Len())
-	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
-		item := i.(*byEndBlockItem)
-		if item.accountsIdx.Empty() {
-			return true
-		}
-		offset := item.accountsIdx.Lookup(addr)
-		g := item.accountsD.MakeGetter() // TODO Cache in the reader
-		g.Reset(offset)
-		if g.HasNext() {
-			key, _ := g.Next(nil) // Add special function that just checks the key
-			//fmt.Printf("state file [%d-%d], offset %d, key %x\n", item.startBlock, item.endBlock, offset, key)
-			if bytes.Equal(key, addr) {
-				val, _ = g.Next(nil)
-				return false
-			}
-		}
-		return true
-	})
-	if len(val) > 0 {
-		return val[1:], nil
-	}
+	val := r.a.readAccount(r.blockNum, addr)
 	return val, nil
 }
 
@@ -882,35 +934,18 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 		return nil, err
 	}
 	if v != nil {
+		if len(v) == 4 {
+			return nil, nil
+		}
 		// First 4 bytes is the number of 1-block state diffs containing the key
 		return new(uint256.Int).SetBytes(v[4:]), nil
 	}
 	// Look in the files
-	filekey := make([]byte, len(addr)+len(loc))
-	copy(filekey[0:], addr)
-	copy(filekey[len(addr):], loc)
-	var val []byte
-	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
-		item := i.(*byEndBlockItem)
-		if item.storageIdx.Empty() {
-			return false
-		}
-		offset := item.storageIdx.Lookup(filekey)
-		g := item.storageD.MakeGetter() // TODO Cache in the reader
-		g.Reset(offset)
-		if g.HasNext() {
-			key, _ := g.Next(nil) // Add special function that just checks the key
-			if bytes.Equal(key, filekey) {
-				val, _ = g.Next(nil)
-				return false
-			}
-		}
-		return true
-	})
-	if len(val) > 0 {
-		return new(uint256.Int).SetBytes(val[1:]), nil
+	val := r.a.readStorage(r.blockNum, dbkey)
+	if val != nil {
+		return new(uint256.Int).SetBytes(val), nil
 	}
-	return u256.N0, nil
+	return nil, nil
 }
 
 func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error) {
@@ -924,27 +959,7 @@ func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error
 		return v[4:], nil
 	}
 	// Look in the files
-	var val []byte
-	r.a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: r.blockNum}, func(i btree.Item) bool {
-		item := i.(*byEndBlockItem)
-		if item.codeIdx.Empty() {
-			return false
-		}
-		offset := item.codeIdx.Lookup(addr)
-		g := item.codeD.MakeGetter() // TODO Cache in the reader
-		g.Reset(offset)
-		if g.HasNext() {
-			key, _ := g.Next(nil) // Add special function that just checks the key
-			if bytes.Equal(key, addr) {
-				val, _ = g.Next(nil)
-				return false
-			}
-		}
-		return true
-	})
-	if len(val) > 0 {
-		return val[1:], nil
-	}
+	val := r.a.readCode(r.blockNum, addr)
 	return val, nil
 }
 
@@ -1022,7 +1037,10 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 		return err
 	}
 	var prevNum uint32
-	if prevV != nil {
+	var original []byte
+	if prevV == nil {
+		original = w.a.readAccount(w.blockNum, addr)
+	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
 	v := make([]byte, 4+len(account))
@@ -1031,12 +1049,15 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte) error {
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
-	if prevV == nil {
+	if prevV == nil && original == nil {
 		if err = w.a.accountChanges.insert(addr, account); err != nil {
 			return err
 		}
 	} else {
-		if err = w.a.accountChanges.update(addr, prevV[4:], account); err != nil {
+		if original == nil {
+			original = prevV[4:]
+		}
+		if err = w.a.accountChanges.update(addr, original, account); err != nil {
 			return err
 		}
 	}
@@ -1049,7 +1070,10 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 		return err
 	}
 	var prevNum uint32
-	if prevV != nil {
+	var original []byte
+	if prevV == nil {
+		original = w.a.readCode(w.blockNum, addr)
+	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
 	v := make([]byte, 4+len(code))
@@ -1058,12 +1082,15 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte) error {
 	if err = w.tx.Put(kv.StateCode, addr, v); err != nil {
 		return err
 	}
-	if prevV == nil {
+	if prevV == nil && original == nil {
 		if err = w.a.codeChanges.insert(addr, code); err != nil {
 			return err
 		}
 	} else {
-		if err = w.a.codeChanges.update(addr, prevV[4:], code); err != nil {
+		if original == nil {
+			original = prevV[4:]
+		}
+		if err = w.a.codeChanges.update(addr, original, code); err != nil {
 			return err
 		}
 	}
@@ -1117,17 +1144,23 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 		return err
 	}
 	var prevNum uint32
-	if prevV != nil {
-		prevNum = binary.BigEndian.Uint32(prevV[:4])
+	var original []byte
+	if prevV == nil {
+		original = w.a.readAccount(w.blockNum, addr)
 	} else {
-		return fmt.Errorf("deleteAccount no prev value for %x", addr)
+		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
-	if err = w.a.accountChanges.delete(addr, prevV[4:]); err != nil {
+	if prevV == nil && original == nil {
+		return fmt.Errorf("previous value expected for DeleteAccount")
+	} else if original == nil {
+		original = prevV[4:]
+	}
+	if err = w.a.accountChanges.delete(addr, original); err != nil {
 		return err
 	}
 	// Find all storage items for this address
@@ -1144,10 +1177,8 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	if k != nil && bytes.HasPrefix(k, addr) {
 		heap.Push(&cp, CursorItem{file: false, key: common.Copy(k), val: common.Copy(v), c: c, endBlock: w.blockNum})
 	}
-	fmt.Printf("DeleteAccount byEndBlock.Len()=%d\n", w.a.byEndBlock.Len())
 	w.a.byEndBlock.Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
-		fmt.Printf("DeleteAccount for file [%d-%d]\n", item.startBlock, item.endBlock)
 		offset := item.storageIdx.Lookup(addr)
 		g := item.storageD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
@@ -1156,7 +1187,6 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 			if !bytes.Equal(key, addr) {
 				return true
 			}
-			fmt.Printf("Found special record in the state file")
 			g.Next(nil)
 		}
 		if g.HasNext() {
@@ -1176,9 +1206,9 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 			ci1 := &cp[0]
 			if ci1.file {
 				if ci1.dg.HasNext() {
-					ci1.key, _ = ci1.dg.Next(ci1.key)
+					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
 					if bytes.HasPrefix(ci1.key, addr) {
-						ci1.val, _ = ci1.dg.Next(ci1.val)
+						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
 						heap.Fix(&cp, 0)
 					} else {
 						heap.Pop(&cp)
@@ -1220,7 +1250,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	return nil
 }
 
-func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte, original, value *uint256.Int) error {
+func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte, _, value *uint256.Int) error {
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
 	copy(dbkey[len(addr):], loc)
@@ -1229,7 +1259,10 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 		return err
 	}
 	var prevNum uint32
-	if prevV != nil {
+	var original []byte
+	if prevV == nil {
+		original = w.a.readStorage(w.blockNum, dbkey)
+	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
 	vLen := value.ByteLen()
@@ -1244,7 +1277,10 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 			return err
 		}
 	} else {
-		if err = w.a.storageChanges.update(dbkey, prevV[4:], v[4:]); err != nil {
+		if original == nil {
+			original = prevV[4:]
+		}
+		if err = w.a.storageChanges.update(dbkey, original, v[4:]); err != nil {
 			return err
 		}
 	}
@@ -1293,7 +1329,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if err = storageChanges.deleteFiles(); err != nil {
 		return err
 	}
-	fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item1.startBlock, item1.endBlock)
+	//fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item1.startBlock, item1.endBlock)
 	w.a.byEndBlock.ReplaceOrInsert(item1)
 	// Now aggregate state files
 	var toAggregate []*byEndBlockItem
