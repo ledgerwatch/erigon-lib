@@ -411,8 +411,10 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 			if err = rs.AddKey(word, pos); err != nil {
 				return nil, nil, err
 			}
+			fmt.Printf("add key %x to the index %s\n", word, idxPath)
 			// Skip value
 			word, pos = g.Next(word[:0])
+			fmt.Printf("value is [%x]\n", word)
 		}
 		if err = rs.Build(); err != nil {
 			return nil, nil, err
@@ -509,13 +511,6 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 			if prefixLen > 0 && !bytes.Equal(prefix, key[:prefixLen]) {
 				prefix = common.Copy(key[:prefixLen])
 				item := &AggregateItem{k: prefix, count: 0}
-				if len(after) > 0 {
-					item.v = make([]byte, 1+len(after))
-					if len(before) == 0 {
-						item.v[0] = 1
-					}
-					copy(item.v[1:], after)
-				}
 				bt.ReplaceOrInsert(item)
 			}
 			ai.k = key
@@ -558,7 +553,7 @@ func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
 		if err = comp.AddWord(item.k); err != nil {
 			return false
 		}
-		//fmt.Printf("add key %x to %s\n", item.k, datPath)
+		fmt.Printf("add key %x val [%x] to %s\n", item.k, item.v, datPath)
 		count++ // Only counting keys, not values
 		if err = comp.AddWord(item.v); err != nil {
 			return false
@@ -1147,10 +1142,12 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 		return err
 	}
 	if k != nil && bytes.HasPrefix(k, addr) {
-		heap.Push(&cp, CursorItem{file: false, key: k, val: v, c: c, endBlock: w.blockNum})
+		heap.Push(&cp, CursorItem{file: false, key: common.Copy(k), val: common.Copy(v), c: c, endBlock: w.blockNum})
 	}
+	fmt.Printf("DeleteAccount byEndBlock.Len()=%d\n", w.a.byEndBlock.Len())
 	w.a.byEndBlock.Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
+		fmt.Printf("DeleteAccount for file [%d-%d]\n", item.startBlock, item.endBlock)
 		offset := item.storageIdx.Lookup(addr)
 		g := item.storageD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
@@ -1159,6 +1156,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 			if !bytes.Equal(key, addr) {
 				return true
 			}
+			fmt.Printf("Found special record in the state file")
 			g.Next(nil)
 		}
 		if g.HasNext() {
@@ -1194,13 +1192,26 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 					return err
 				}
 				if k != nil && bytes.HasPrefix(k, addr) {
-					ci1.key = k
-					ci1.val = v
+					ci1.key = common.Copy(k)
+					ci1.val = common.Copy(v)
 					heap.Fix(&cp, 0)
 				} else {
 					heap.Pop(&cp)
 				}
 			}
+		}
+		prevV, err = w.tx.GetOne(kv.StateStorage, lastKey)
+		if err != nil {
+			return err
+		}
+		prevNum = 0
+		if prevV != nil {
+			prevNum = binary.BigEndian.Uint32(prevV[:4])
+		}
+		v = make([]byte, 4)
+		binary.BigEndian.PutUint32(v[:4], prevNum+1)
+		if err = w.tx.Put(kv.StateStorage, lastKey, v); err != nil {
+			return err
 		}
 		if err = w.a.storageChanges.delete(lastKey, lastVal); err != nil {
 			return err
@@ -1282,7 +1293,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if err = storageChanges.deleteFiles(); err != nil {
 		return err
 	}
-	//fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item1.startBlock, item1.endBlock)
+	fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item1.startBlock, item1.endBlock)
 	w.a.byEndBlock.ReplaceOrInsert(item1)
 	// Now aggregate state files
 	var toAggregate []*byEndBlockItem

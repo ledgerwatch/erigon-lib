@@ -530,6 +530,9 @@ func (c *Compressor) AddWord(word []byte) error {
 		c.superstring = append(c.superstring, 1, b)
 	}
 	c.superstring = append(c.superstring, 0, 0)
+	if len(word) == 0 {
+		fmt.Printf("AddWord for empty word\n")
+	}
 	n := binary.PutUvarint(c.numBuf[:], uint64(len(word)))
 	if _, err := c.wordW.Write(c.numBuf[:n]); err != nil {
 		return err
@@ -980,11 +983,19 @@ func (c *Compressor) optimiseCodes() error {
 	hc.w = cw
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
+		if l == 0 {
+			fmt.Printf("Compress with empty word\n")
+		}
 		posCode := pos2code[l+1]
 		if posCode != nil {
+			//if l == 0 {
+			fmt.Printf("l=%d posCode.code = %b, posCode.codeBits = %d\n", l, posCode.code, posCode.codeBits)
+			//}
 			if e = hc.encode(posCode.code, posCode.codeBits); e != nil {
 				return e
 			}
+		} else {
+			fmt.Printf("posCode == nil\n")
 		}
 		if l > 0 {
 			var pNum uint64 // Number of patterns
