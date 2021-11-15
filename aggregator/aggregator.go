@@ -32,6 +32,7 @@ import (
 	"github.com/google/btree"
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -876,7 +877,7 @@ func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 	return val, nil
 }
 
-func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte) ([]byte, error) {
+func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte) (*uint256.Int, error) {
 	// Look in the summary table first
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
@@ -887,7 +888,7 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 	}
 	if v != nil {
 		// First 4 bytes is the number of 1-block state diffs containing the key
-		return v[4:], nil
+		return new(uint256.Int).SetBytes(v[4:]), nil
 	}
 	// Look in the files
 	filekey := make([]byte, len(addr)+len(loc))
@@ -912,9 +913,9 @@ func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte)
 		return true
 	})
 	if len(val) > 0 {
-		return val[1:], nil
+		return new(uint256.Int).SetBytes(val[1:]), nil
 	}
-	return val, nil
+	return u256.N0, nil
 }
 
 func (r *Reader) ReadAccountCode(addr []byte, incarnation uint64) ([]byte, error) {
@@ -1224,7 +1225,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte
 	v := make([]byte, 4+vLen)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	value.WriteToSlice(v[4:])
-	if err = w.tx.Put(kv.StateStorage, addr, v); err != nil {
+	if err = w.tx.Put(kv.StateStorage, dbkey, v); err != nil {
 		return err
 	}
 	if prevV == nil {
