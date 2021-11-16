@@ -13,7 +13,7 @@ service ETHBACKEND {
   rpc NetVersion(NetVersionRequest) returns (NetVersionReply);
   
   rpc NetPeerCount(NetPeerCountRequest) returns (NetPeerCountReply);
-
+  
   // Version returns the service version number
   rpc Version(google.protobuf.Empty) returns (types.VersionReply);
 
@@ -60,4 +60,3 @@ message SubscribeReply {
   Event type = 1;
   bytes data = 2;  //  serialized data
 }
-
