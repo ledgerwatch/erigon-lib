@@ -278,8 +278,6 @@ const (
 	StateAccounts = "StateAccounts"
 	StateStorage  = "StateStorage"
 	StateCode     = "StateCode"
-	// Transition tracks the last proof-of-work block
-	TransitionBlock = "Transition"
 )
 
 // Keys
@@ -345,7 +343,6 @@ var ChaindataTables = []string{
 	Log,
 	Sequence,
 	EthTx,
-	TransitionBlock,
 	TransitionBlockKey,
 	TrieOfAccounts,
 	TrieOfStorage,
