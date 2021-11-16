@@ -924,7 +924,7 @@ func (r *Reader) ReadAccountData(addr []byte) ([]byte, error) {
 	return val, nil
 }
 
-func (r *Reader) ReadAccountStorage(addr []byte, incarnation uint64, loc []byte) (*uint256.Int, error) {
+func (r *Reader) ReadAccountStorage(addr []byte, loc []byte) (*uint256.Int, error) {
 	// Look in the summary table first
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
@@ -1250,7 +1250,7 @@ func (w *Writer) DeleteAccount(addr []byte) error {
 	return nil
 }
 
-func (w *Writer) WriteAccountStorage(addr []byte, incarnation uint64, loc []byte, _, value *uint256.Int) error {
+func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, _, value *uint256.Int) error {
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
 	copy(dbkey[len(addr):], loc)
