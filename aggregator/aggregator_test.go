@@ -191,7 +191,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 				t.Fatal(err)
 			}
 			for s := uint64(0); s < 100; s++ {
-				if err = w.WriteAccountStorage(accountKey, int256(s), nil, uint256.NewInt(s+1)); err != nil {
+				if err = w.WriteAccountStorage(accountKey, int256(s), uint256.NewInt(s+1)); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -204,7 +204,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 				t.Fatal(err)
 			}
 			for s := uint64(50); s < 150; s++ {
-				if err = w.WriteAccountStorage(accountKey, int256(s), nil, uint256.NewInt(2*s+1)); err != nil {
+				if err = w.WriteAccountStorage(accountKey, int256(s), uint256.NewInt(2*s+1)); err != nil {
 					t.Fatal(err)
 				}
 			}
