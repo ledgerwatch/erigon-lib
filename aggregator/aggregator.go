@@ -1180,7 +1180,8 @@ func (w *Writer) deleteCode(addr []byte) error {
 		return err
 	}
 	if prevV == nil && original == nil {
-		return fmt.Errorf("previous value expected for deleteCode")
+		// Nothing to do
+		return nil
 	} else if original == nil {
 		original = prevV[4:]
 	}
