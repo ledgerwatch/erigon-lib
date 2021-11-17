@@ -18,7 +18,6 @@ package txpool
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
@@ -91,16 +90,18 @@ func (ms *MockSentry) Peers(req *sentry.PeersRequest, stream sentry.Sentry_Peers
 	}
 }
 
-func toHashes(h ...[32]byte) (out Hashes) {
+func toHashes(h ...byte) (out Hashes) {
 	for i := range h {
-		out = append(out, h[i][:]...)
+		hash := [32]byte{h[i]}
+		out = append(out, hash[:]...)
 	}
 	return out
 }
 
-func toPeerIDs(h ...int) (out []PeerID) {
+func toPeerIDs(h ...byte) (out []PeerID) {
 	for i := range h {
-		out = append(out, gointerfaces.ConvertBytesToH512([]byte(fmt.Sprintf("%x", h[i]))))
+		hash := [32]byte{h[i]}
+		out = append(out, gointerfaces.ConvertBytesToH512(hash[:]))
 	}
 	return out
 }
