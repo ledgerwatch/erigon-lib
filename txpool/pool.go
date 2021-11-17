@@ -619,6 +619,8 @@ func (p *TxPool) ValidateSerializedTxn(serializedTxn []byte) error {
 	return nil
 }
 func (p *TxPool) validateTxs(txs TxSlots) (reasons []DiscardReason, goodTxs TxSlots, err error) {
+	// reasons is pre-sized for direct indexing, with the default zero
+	// value DiscardReason of NotSet
 	reasons = make([]DiscardReason, len(txs.txs))
 
 	if err := txs.Valid(); err != nil {
@@ -630,6 +632,7 @@ func (p *TxPool) validateTxs(txs TxSlots) (reasons []DiscardReason, goodTxs TxSl
 		reason := p.validateTx(txn, txs.isLocal[i])
 		if reason == Success {
 			goodCount++
+			// Success here means no DiscardReason yet, so leave it NotSet
 			continue
 		}
 		if reason == Spammer {
