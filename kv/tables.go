@@ -350,6 +350,7 @@ var ChaindataTables = []string{
 	Log,
 	Sequence,
 	EthTx,
+	NonCanonicalTxs,
 	TransitionBlockKey,
 	TrieOfAccounts,
 	TrieOfStorage,
