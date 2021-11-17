@@ -372,13 +372,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	if ASSERT {
-		for i := range unwindTxs.txs {
-			if unwindTxs.txs[i].senderID == 0 {
+		for _, txn := range unwindTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero"))
 			}
 		}
-		for i := range minedTxs.txs {
-			if minedTxs.txs[i].senderID == 0 {
+		for _, txn := range minedTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("onNewBlock.minedTxs: senderID can't be zero"))
 			}
 		}
@@ -573,12 +573,12 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	defer addRemoteTxsTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	for i := range newTxs.txs {
-		_, ok := p.unprocessedRemoteByHash[string(newTxs.txs[i].IdHash[:])]
+	for i, txn := range newTxs.txs {
+		_, ok := p.unprocessedRemoteByHash[string(txn.IdHash[:])]
 		if ok {
 			continue
 		}
-		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), false)
+		p.unprocessedRemoteTxs.Append(txn, newTxs.senders.At(i), false)
 	}
 }
 
@@ -719,8 +719,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	p.pending.added = nil
 
 	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
-	for i := range reasons {
-		if reasons[i] == Success {
+	for i, reason := range reasons {
+		if reason == Success {
 			p.promoted = append(p.promoted, newTxs.txs[i].IdHash[:]...)
 		}
 	}
@@ -750,8 +750,8 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
-		for i := range newTxs.txs {
-			if newTxs.txs[i].senderID == 0 {
+		for _, txn := range newTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
 			}
 		}
@@ -800,8 +800,8 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) bool, discard func(*metaTx, DiscardReason)) error {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
-		for i := range newTxs.txs {
-			if newTxs.txs[i].senderID == 0 {
+		for _, txn := range newTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
 			}
 		}
@@ -972,8 +972,8 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 			return true
 		})
 
-		for i := range toDel {
-			discard(toDel[i], Mined)
+		for _, mt := range toDel {
+			discard(mt, Mined)
 		}
 		toDel = toDel[:0]
 	}
@@ -1335,9 +1335,9 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	if err := tx.ClearBucket(kv.RecentLocalTransaction); err != nil {
 		return err
 	}
-	for i := range txHashes {
+	for i, txHash := range txHashes {
 		binary.BigEndian.PutUint64(encID, uint64(i))
-		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHashes[i].(string))); err != nil {
+		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHash.(string))); err != nil {
 			return err
 		}
 	}
