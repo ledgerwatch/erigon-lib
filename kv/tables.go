@@ -260,6 +260,10 @@ const (
 	CliqueSnapshot     = "CliqueSnapshot"
 	CliqueLastSnapshot = "CliqueLastSnapshot"
 
+	// AuRa Buckets
+	// PendingTransitions takes track of approved transitions yet to be finalized {parenthash => valitorlist}
+	PendingTransitions = "PendingTransitions"
+	ValidatorSet       = "ValidatorSet" // List of currently active validators
 	// this bucket stored in separated database
 	Inodes = "Inode"
 
@@ -333,6 +337,8 @@ var ChaindataTables = []string{
 	CliqueSeparate,
 	CliqueLastSnapshot,
 	CliqueSnapshot,
+	PendingTransitions,
+	ValidatorSet,
 	SyncStageProgress,
 	PlainState,
 	PlainContractCode,
