@@ -309,12 +309,18 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ch
 		return nil, err
 	}
 
+	byNonce := &BySenderAndNonce{
+		tree:             btree.New(32),
+		search:           sortByNonce{&metaTx{Tx: &TxSlot{}}},
+		senderIDTxnCount: map[uint64]int{},
+	}
+
 	return &TxPool{
 		lock:                    &sync.RWMutex{},
 		byHash:                  map[string]*metaTx{},
 		isLocalLRU:              localsHistory,
 		discardReasonsLRU:       discardHistory,
-		all:                     &BySenderAndNonce{tree: btree.New(32), search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
+		all:                     byNonce,
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool, cfg.PendingSubPoolLimit),
 		baseFee:                 NewSubPool(BaseFeeSubPool, cfg.BaseFeeSubPoolLimit),
@@ -378,13 +384,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	if ASSERT {
-		for i := range unwindTxs.txs {
-			if unwindTxs.txs[i].senderID == 0 {
+		for _, txn := range unwindTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero"))
 			}
 		}
-		for i := range minedTxs.txs {
-			if minedTxs.txs[i].senderID == 0 {
+		for _, txn := range minedTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("onNewBlock.minedTxs: senderID can't be zero"))
 			}
 		}
@@ -580,12 +586,12 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	defer addRemoteTxsTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	for i := range newTxs.txs {
-		_, ok := p.unprocessedRemoteByHash[string(newTxs.txs[i].IdHash[:])]
+	for i, txn := range newTxs.txs {
+		_, ok := p.unprocessedRemoteByHash[string(txn.IdHash[:])]
 		if ok {
 			continue
 		}
-		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), false)
+		p.unprocessedRemoteTxs.Append(txn, newTxs.senders.At(i), false)
 	}
 }
 
@@ -779,8 +785,8 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) ([]DiscardReason, error) {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
-		for i := range newTxs.txs {
-			if newTxs.txs[i].senderID == 0 {
+		for _, txn := range newTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
 			}
 		}
@@ -833,8 +839,8 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) error {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
-		for i := range newTxs.txs {
-			if newTxs.txs[i].senderID == 0 {
+		for _, txn := range newTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
 			}
 		}
@@ -1009,8 +1015,8 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 			return true
 		})
 
-		for i := range toDel {
-			discard(toDel[i], Mined)
+		for _, mt := range toDel {
+			discard(mt, Mined)
 		}
 		toDel = toDel[:0]
 	}
@@ -1372,9 +1378,9 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	if err := tx.ClearBucket(kv.RecentLocalTransaction); err != nil {
 		return err
 	}
-	for i := range txHashes {
+	for i, txHash := range txHashes {
 		binary.BigEndian.PutUint64(encID, uint64(i))
-		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHashes[i].(string))); err != nil {
+		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHash.(string))); err != nil {
 			return err
 		}
 	}
@@ -1820,8 +1826,9 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 //  - All senders stored inside 1 large BTree - because iterate over 1 BTree is faster than over map[senderId]BTree
 //  - sortByNonce used as non-pointer wrapper - because iterate over BTree of pointers is 2x slower
 type BySenderAndNonce struct {
-	tree   *btree.BTree
-	search sortByNonce
+	tree             *btree.BTree
+	search           sortByNonce
+	senderIDTxnCount map[uint64]int // count of sender's txns in the pool - may differ from nonce
 }
 
 func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64, ok bool) {
@@ -1870,19 +1877,7 @@ func (b *BySenderAndNonce) descend(senderID uint64, f func(*metaTx) bool) {
 	})
 }
 func (b *BySenderAndNonce) count(senderID uint64) int {
-	s := b.search
-	s.metaTx.Tx.senderID = senderID
-	s.metaTx.Tx.nonce = 0
-	count := 0
-	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
-		mt := i.(sortByNonce).metaTx
-		if mt.Tx.senderID != senderID {
-			return false
-		}
-		count++
-		return true
-	})
-	return count
+	return b.senderIDTxnCount[senderID]
 }
 func (b *BySenderAndNonce) hasTxs(senderID uint64) bool {
 	has := false
@@ -1907,12 +1902,23 @@ func (b *BySenderAndNonce) has(mt *metaTx) bool {
 	found := b.tree.Get(sortByNonce{mt})
 	return found != nil
 }
-func (b *BySenderAndNonce) delete(mt *metaTx) { b.tree.Delete(sortByNonce{mt}) }
+func (b *BySenderAndNonce) delete(mt *metaTx) {
+	if b.tree.Delete(sortByNonce{mt}) != nil {
+		senderID := mt.Tx.senderID
+		count := b.senderIDTxnCount[senderID]
+		if count > 1 {
+			b.senderIDTxnCount[senderID] = count - 1
+		} else {
+			delete(b.senderIDTxnCount, senderID)
+		}
+	}
+}
 func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 	it := b.tree.ReplaceOrInsert(sortByNonce{mt})
 	if it != nil {
 		return it.(sortByNonce).metaTx
 	}
+	b.senderIDTxnCount[mt.Tx.senderID]++
 	return nil
 }
 
