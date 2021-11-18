@@ -24,7 +24,8 @@ import (
 )
 
 // DBSchemaVersion
-var DBSchemaVersion = types.VersionReply{Major: 3, Minor: 0, Patch: 0}
+// 5.0 - BlockTransaction table now has canonical ids (txs of non-canonical blocks moving to NonCanonicalTransaction table)
+var DBSchemaVersion = types.VersionReply{Major: 5, Minor: 0, Patch: 0}
 
 // ChaindataTables
 
