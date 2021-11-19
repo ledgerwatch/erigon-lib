@@ -1231,3 +1231,19 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 	sort.Sort(db)
 	return db, nil
 }
+
+func (db *DictionaryBuilder) Persist(fileName string) error {
+	df, err := os.Create(fileName + ".dictionary.txt")
+	if err != nil {
+		return err
+	}
+	w := bufio.NewWriterSize(df, etl.BufIOSize)
+	db.ForEach(func(score uint64, word []byte) { fmt.Fprintf(w, "%d %x\n", score, word) })
+	if err = w.Flush(); err != nil {
+		return err
+	}
+	if err := df.Sync(); err != nil {
+		return err
+	}
+	return df.Close()
+}
