@@ -1236,7 +1236,7 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 }
 
 func PersistDictrionary(fileName string, db *DictionaryBuilder) error {
-	df, err := os.Create(fileName + ".dictionary.txt")
+	df, err := os.Create(fileName)
 	if err != nil {
 		return err
 	}
@@ -1252,7 +1252,7 @@ func PersistDictrionary(fileName string, db *DictionaryBuilder) error {
 }
 
 func ReadDictrionary(fileName string, walker func(score uint64, word []byte) error) error {
-	df, err := os.Open(fileName + ".dictionary.txt")
+	df, err := os.Open(fileName)
 	if err != nil {
 		return err
 	}
@@ -1279,7 +1279,7 @@ func ReadDictrionary(fileName string, walker func(score uint64, word []byte) err
 func ReadDatFile(fileName string, walker func(v []byte) error) error {
 	// Read keys from the file and generate superstring (with extra byte 0x1 prepended to each character, and with 0x0 0x0 pair inserted between keys and values)
 	// We only consider values with length > 2, because smaller values are not compressible without going into bits
-	f, err := os.Open(fileName + ".dat")
+	f, err := os.Open(fileName)
 	if err != nil {
 		return err
 	}
