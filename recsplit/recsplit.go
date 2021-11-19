@@ -500,8 +500,10 @@ func (rs *RecSplit) Build() error {
 	if rs.indexF, err = os.Create(rs.indexFile); err != nil {
 		return fmt.Errorf("create index file %s: %w", rs.indexFile, err)
 	}
+	defer rs.indexF.Sync()
 	defer rs.indexF.Close()
 	rs.indexW = bufio.NewWriterSize(rs.indexF, etl.BufIOSize)
+	defer rs.indexW.Flush()
 	// Write number of keys
 	binary.BigEndian.PutUint64(rs.numBuf[:], rs.keysAdded)
 	if _, err = rs.indexW.Write(rs.numBuf[:]); err != nil {
@@ -599,9 +601,6 @@ func (rs *RecSplit) Build() error {
 	// Write out elias fano
 	if err := rs.ef.Write(rs.indexW); err != nil {
 		return fmt.Errorf("writing elias fano: %w", err)
-	}
-	if err := rs.indexW.Flush(); err != nil {
-		return err
 	}
 	return nil
 }
