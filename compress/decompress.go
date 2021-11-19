@@ -186,7 +186,7 @@ func (g *Getter) nextPattern() []byte {
 }
 
 func (d *Decompressor) Count() int {
-	//TODO: likely it can be optimized by don't decompress values
+	//TODO: likely it can be optimized by don't decompress values, or even by storing count in file
 	counterGetter := d.MakeGetter()
 	word := make([]byte, 0, 64)
 	count := 0
