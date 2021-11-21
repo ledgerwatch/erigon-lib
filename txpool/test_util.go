@@ -40,7 +40,7 @@ func NewMockSentry(ctx context.Context) *MockSentry {
 	return &MockSentry{ctx: ctx, SentryServerMock: &sentry.SentryServerMock{}}
 }
 
-var PeerId PeerID = gointerfaces.ConvertBytesToH512([]byte("12345"))
+var PeerId PeerID = gointerfaces.ConvertHashToH256([32]byte{0x12, 0x34, 0x50}) // "12345"
 
 func (ms *MockSentry) Send(req *sentry.InboundMessage) (errs []error) {
 	ms.lock.RLock()
@@ -101,7 +101,7 @@ func toHashes(h ...byte) (out Hashes) {
 func toPeerIDs(h ...byte) (out []PeerID) {
 	for i := range h {
 		hash := [32]byte{h[i]}
-		out = append(out, gointerfaces.ConvertBytesToH512(hash[:]))
+		out = append(out, gointerfaces.ConvertHashToH256(hash))
 	}
 	return out
 }
