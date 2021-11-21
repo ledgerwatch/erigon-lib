@@ -42,6 +42,7 @@ type Index struct {
 	ef                 eliasfano16.DoubleEliasFano
 	enums              bool
 	offsetEf           *eliasfano32.EliasFano
+	baseDataID         uint64
 	bucketCount        uint64          // Number of buckets
 	hasher             murmur3.Hash128 // Salted hash function to use for splitting into initial buckets and mapping to 64-bit fingerprints
 	bucketSize         int
@@ -83,8 +84,10 @@ func OpenIndex(indexFile string) (*Index, error) {
 	idx.keyCount = binary.BigEndian.Uint64(idx.data[:8])
 	idx.bytesPerRec = int(idx.data[8])
 	idx.recMask = (uint64(1) << (8 * idx.bytesPerRec)) - 1
-	offset := 9 + int(idx.keyCount)*idx.bytesPerRec
+	offset := 8 + 1 + int(idx.keyCount)*idx.bytesPerRec
 	// Bucket count, bucketSize, leafSize
+	idx.baseDataID = binary.BigEndian.Uint64(idx.data[offset:])
+	offset += 8
 	idx.bucketCount = binary.BigEndian.Uint64(idx.data[offset:])
 	offset += 8
 	idx.bucketSize = int(binary.BigEndian.Uint16(idx.data[offset:]))
@@ -137,6 +140,8 @@ func OpenIndex(indexFile string) (*Index, error) {
 	idx.ef.Read(idx.data[offset:])
 	return idx, nil
 }
+
+func (idx *Index) BaseDataID() uint64 { return idx.baseDataID }
 
 func (idx *Index) Close() error {
 	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
