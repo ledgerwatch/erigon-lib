@@ -507,6 +507,12 @@ func (rs *RecSplit) Build() error {
 	defer rs.indexF.Close()
 	rs.indexW = bufio.NewWriterSize(rs.indexF, etl.BufIOSize)
 	defer rs.indexW.Flush()
+	// Write minimal app-specific dataID in this index file
+	binary.BigEndian.PutUint64(rs.numBuf[:], rs.baseDataID)
+	if _, err = rs.indexW.Write(rs.numBuf[:]); err != nil {
+		return fmt.Errorf("write number of keys: %w", err)
+	}
+
 	// Write number of keys
 	binary.BigEndian.PutUint64(rs.numBuf[:], rs.keysAdded)
 	if _, err = rs.indexW.Write(rs.numBuf[:]); err != nil {
@@ -516,12 +522,6 @@ func (rs *RecSplit) Build() error {
 	rs.bytesPerRec = (bits.Len64(rs.maxOffset) + 7) / 8
 	if err = rs.indexW.WriteByte(byte(rs.bytesPerRec)); err != nil {
 		return fmt.Errorf("write bytes per record: %w", err)
-	}
-
-	// Write minimal app-specific dataID in this index file
-	binary.BigEndian.PutUint64(rs.numBuf[:], rs.baseDataID)
-	if _, err = rs.indexW.Write(rs.numBuf[:]); err != nil {
-		return fmt.Errorf("write number of keys: %w", err)
 	}
 
 	rs.currentBucketIdx = math.MaxUint64 // To make sure 0 bucket is detected

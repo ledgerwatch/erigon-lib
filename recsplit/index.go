@@ -81,13 +81,13 @@ func OpenIndex(indexFile string) (*Index, error) {
 	}
 	idx.data = idx.mmapHandle1[:size]
 	// Read number of keys and bytes per record
-	idx.keyCount = binary.BigEndian.Uint64(idx.data[:8])
-	idx.bytesPerRec = int(idx.data[8])
+	idx.baseDataID = binary.BigEndian.Uint64(idx.data[:])
+	idx.keyCount = binary.BigEndian.Uint64(idx.data[8:16])
+	idx.bytesPerRec = int(idx.data[16])
 	idx.recMask = (uint64(1) << (8 * idx.bytesPerRec)) - 1
-	offset := 8 + 1 + int(idx.keyCount)*idx.bytesPerRec
+	offset := 16 + 1 + int(idx.keyCount)*idx.bytesPerRec
+
 	// Bucket count, bucketSize, leafSize
-	idx.baseDataID = binary.BigEndian.Uint64(idx.data[offset:])
-	offset += 8
 	idx.bucketCount = binary.BigEndian.Uint64(idx.data[offset:])
 	offset += 8
 	idx.bucketSize = int(binary.BigEndian.Uint16(idx.data[offset:]))
