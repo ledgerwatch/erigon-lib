@@ -442,12 +442,13 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if l == 0 {
 		return nil
 	}
-	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs, cacheView)
+
+	err = p.senders.registerNewSenders(*p.unprocessedRemoteTxs)
 	if err != nil {
 		return err
 	}
 
-	err = p.senders.onNewTxs(newTxs)
+	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs, cacheView)
 	if err != nil {
 		return err
 	}
@@ -672,7 +673,6 @@ func (p *TxPool) validateTxs(txs TxSlots, stateCache kvcache.CacheView) (reasons
 			j++
 		}
 	}
-
 	return reasons, goodTxs, nil
 }
 
@@ -726,12 +726,12 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	reasons, newTxs, err := p.validateTxs(newTransactions, cacheView)
-	if err != nil {
+	if err = p.senders.registerNewSenders(newTransactions); err != nil {
 		return nil, err
 	}
 
-	if err = p.senders.onNewTxs(newTxs); err != nil {
+	reasons, newTxs, err := p.validateTxs(newTransactions, cacheView)
+	if err != nil {
 		return nil, err
 	}
 
@@ -1477,7 +1477,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			pendingBaseFee = binary.BigEndian.Uint64(v)
 		}
 	}
-	err = p.senders.onNewTxs(txs)
+	err = p.senders.registerNewSenders(txs)
 	if err != nil {
 		return err
 	}
@@ -1739,7 +1739,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 	return nonce, balance, nil
 }
 
-func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
+func (sc *sendersBatch) registerNewSenders(newTxs TxSlots) (err error) {
 	for i := 0; i < len(newTxs.txs); i++ {
 		addr := newTxs.senders.At(i)
 		addrS := string(addr)
