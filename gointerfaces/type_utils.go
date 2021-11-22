@@ -29,7 +29,7 @@ func ConvertH2048ToBloom(h2048 *types.H2048) [256]byte {
 	return bloom
 }
 
-func ConvertBloomToH2048(data [256]byte) *types.H2048 {
+func ConvertBytesToH2048(data []byte) *types.H2048 {
 	return &types.H2048{
 		Lo: &types.H1024{
 			Lo: ConvertBytesToH512(data[:]),
