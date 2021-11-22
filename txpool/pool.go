@@ -146,6 +146,9 @@ const (
 	QueuedPoolOverflow  DiscardReason = 14
 	GasUintOverflow     DiscardReason = 15
 	IntrinsicGas        DiscardReason = 16
+	RLPTooLong          DiscardReason = 17
+	NonceTooLow         DiscardReason = 18
+	InsufficientFunds   DiscardReason = 19
 )
 
 func (r DiscardReason) String() string {
@@ -178,6 +181,16 @@ func (r DiscardReason) String() string {
 		return "baseFee sub-pool is full"
 	case QueuedPoolOverflow:
 		return "queued sub-pool is full"
+	case GasUintOverflow:
+		return "GasUintOverflow"
+	case IntrinsicGas:
+		return "IntrinsicGas"
+	case RLPTooLong:
+		return "RLPTooLong"
+	case NonceTooLow:
+		return "nonce too low"
+	case InsufficientFunds:
+		return "insufficient funds"
 	default:
 		panic(fmt.Sprintf("discard reason: %d", r))
 	}
@@ -342,7 +355,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	_, unwindTxs, err = p.validateTxs(unwindTxs)
+	_, unwindTxs, err = p.validateTxs(unwindTxs, cacheView)
 	if err != nil {
 		return err
 	}
@@ -421,12 +434,13 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if l == 0 {
 		return nil
 	}
-	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs)
+
+	err = p.senders.registerNewSenders(*p.unprocessedRemoteTxs)
 	if err != nil {
 		return err
 	}
 
-	err = p.senders.onNewTxs(newTxs)
+	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs, cacheView)
 	if err != nil {
 		return err
 	}
@@ -567,7 +581,7 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	}
 }
 
-func (p *TxPool) validateTx(txn *TxSlot, isLocal bool) DiscardReason {
+func (p *TxPool) validateTx(txn *TxSlot, isLocal bool, stateCache kvcache.CacheView) DiscardReason {
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !isLocal && txn.feeCap < p.cfg.MinFeeCap {
 		return UnderPriced
@@ -582,51 +596,91 @@ func (p *TxPool) validateTx(txn *TxSlot, isLocal bool) DiscardReason {
 	if uint64(p.all.count(txn.senderID)) > p.cfg.AccountSlots {
 		return Spammer
 	}
+
+	// check nonce and balance
+	senderNonce, senderBalance, _ := p.senders.info(stateCache, txn.senderID)
+	if senderNonce > txn.nonce {
+		return NonceTooLow
+	}
+	// Transactor should have enough funds to cover the costs
+	total := uint256.NewInt(txn.gas)
+	total.Mul(total, uint256.NewInt(txn.tip))
+	total.Add(total, &txn.value)
+	if senderBalance.Cmp(total) < 0 {
+		return InsufficientFunds
+	}
 	return Success
 }
 
-func (p *TxPool) validateTxs(txs TxSlots) (reasons []DiscardReason, goodTxs TxSlots, err error) {
+func (p *TxPool) ValidateSerializedTxn(serializedTxn []byte) error {
+	const (
+		// txSlotSize is used to calculate how many data slots a single transaction
+		// takes up based on its size. The slots are used as DoS protection, ensuring
+		// that validating a new transaction remains a constant operation (in reality
+		// O(maxslots), where max slots are 4 currently).
+		txSlotSize = 32 * 1024
+
+		// txMaxSize is the maximum size a single transaction can have. This field has
+		// non-trivial consequences: larger transactions are significantly harder and
+		// more expensive to propagate; larger transactions also take more resources
+		// to validate whether they fit into the pool or not.
+		txMaxSize = 4 * txSlotSize // 128KB
+	)
+	if len(serializedTxn) > txMaxSize {
+		return fmt.Errorf(RLPTooLong.String())
+	}
+	return nil
+}
+func (p *TxPool) validateTxs(txs TxSlots, stateCache kvcache.CacheView) (reasons []DiscardReason, goodTxs TxSlots, err error) {
+	// reasons is pre-sized for direct indexing, with the default zero
+	// value DiscardReason of NotSet
 	reasons = make([]DiscardReason, len(txs.txs))
 
 	if err := txs.Valid(); err != nil {
 		return reasons, goodTxs, err
 	}
 
-	j := 0
-	for i := range txs.txs {
-		reasons[i] = p.validateTx(txs.txs[i], txs.isLocal[i])
-		if reasons[i] != Success {
-			if reasons[i] == Spammer {
-				p.punishSpammer(txs.txs[i].senderID)
-			}
+	goodCount := 0
+	for i, txn := range txs.txs {
+		reason := p.validateTx(txn, txs.isLocal[i], stateCache)
+		if reason == Success {
+			goodCount++
+			// Success here means no DiscardReason yet, so leave it NotSet
 			continue
 		}
-		reasons[i] = NotSet
-		goodTxs.Resize(uint(j + 1))
-		goodTxs.txs[j] = txs.txs[i]
-		goodTxs.isLocal[j] = txs.isLocal[i]
-		copy(goodTxs.senders.At(j), txs.senders.At(i))
-		j++
+		if reason == Spammer {
+			p.punishSpammer(txn.senderID)
+		}
+		reasons[i] = reason
 	}
 
+	goodTxs.Resize(uint(goodCount))
+
+	j := 0
+	for i, txn := range txs.txs {
+		if reasons[i] == NotSet {
+			goodTxs.txs[j] = txn
+			goodTxs.isLocal[j] = txs.isLocal[i]
+			copy(goodTxs.senders.At(j), txs.senders.At(i))
+			j++
+		}
+	}
 	return reasons, goodTxs, nil
 }
 
 // punishSpammer by drop half of it's transactions with high nonce
 func (p *TxPool) punishSpammer(spammer uint64) {
-	var txsToDelete []*metaTx
-	count := p.all.count(spammer)
-	i := 0
-	p.all.ascend(spammer, func(tx *metaTx) bool {
-		i++
-		if i < count/2 {
-			return true
+	count := p.all.count(spammer) / 2
+	if count > 0 {
+		txsToDelete := make([]*metaTx, 0, count)
+		p.all.descend(spammer, func(mt *metaTx) bool {
+			txsToDelete = append(txsToDelete, mt)
+			count--
+			return count > 0
+		})
+		for _, mt := range txsToDelete {
+			p.discardLocked(mt, Spammer) // can't call it while iterating by all
 		}
-		txsToDelete = append(txsToDelete, tx)
-		return true
-	})
-	for j := range txsToDelete {
-		p.discardLocked(txsToDelete[j], Spammer) // can't call it while iterating by all
 	}
 }
 
@@ -646,11 +700,6 @@ func fillDiscardReasons(reasons []DiscardReason, newTxs TxSlots, discardReasonsL
 }
 
 func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]DiscardReason, error) {
-	reasons, newTxs, err := p.validateTxs(newTransactions)
-	if err != nil {
-		return nil, err
-	}
-
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return nil, err
@@ -669,7 +718,12 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if err = p.senders.onNewTxs(newTxs); err != nil {
+	if err = p.senders.registerNewSenders(newTransactions); err != nil {
+		return nil, err
+	}
+
+	reasons, newTxs, err := p.validateTxs(newTransactions, cacheView)
+	if err != nil {
 		return nil, err
 	}
 
@@ -680,8 +734,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	p.pending.added = nil
 
 	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
-	for i := range reasons {
-		if reasons[i] == Success {
+	for i, reason := range reasons {
+		if reason == Success {
 			p.promoted = append(p.promoted, newTxs.txs[i].IdHash[:]...)
 		}
 	}
@@ -944,8 +998,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 	var prevSenderID uint64
 	var minFeeCap, minTip uint64
-	byNonce.tree.Ascend(func(i btree.Item) bool {
-		mt := i.(sortByNonce).metaTx
+	byNonce.ascendAll(func(mt *metaTx) bool {
 		if mt.Tx.senderID != prevSenderID {
 			minFeeCap, minTip = uint64(math.MaxUint64), uint64(math.MaxUint64) // min of given sender
 			prevSenderID = mt.Tx.senderID
@@ -1393,7 +1446,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
 
-		if reason := p.validateTx(txn, isLocalTx); reason != NotSet && reason != Success {
+		if reason := p.validateTx(txn, isLocalTx, cacheView); reason != NotSet && reason != Success {
 			return nil
 		}
 		txs.Resize(uint(i + 1))
@@ -1416,7 +1469,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			pendingBaseFee = binary.BigEndian.Uint64(v)
 		}
 	}
-	err = p.senders.onNewTxs(txs)
+	err = p.senders.registerNewSenders(txs)
 	if err != nil {
 		return err
 	}
@@ -1537,8 +1590,7 @@ func (p *TxPool) logStats() {
 func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	p.all.tree.Ascend(func(i btree.Item) bool {
-		mt := i.(sortByNonce).metaTx
+	p.all.ascendAll(func(mt *metaTx) bool {
 		slot := mt.Tx
 		slotRlp := slot.rlp
 		if slot.rlp == nil {
@@ -1679,7 +1731,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 	return nonce, balance, nil
 }
 
-func (sc *sendersBatch) onNewTxs(newTxs TxSlots) (err error) {
+func (sc *sendersBatch) registerNewSenders(newTxs TxSlots) (err error) {
 	for i := 0; i < len(newTxs.txs); i++ {
 		addr := newTxs.senders.At(i)
 		addrS := string(addr)
@@ -1765,11 +1817,29 @@ func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64, ok bool) {
 	})
 	return nonce, ok
 }
+func (b *BySenderAndNonce) ascendAll(f func(*metaTx) bool) {
+	b.tree.Ascend(func(i btree.Item) bool {
+		mt := i.(sortByNonce).metaTx
+		return f(mt)
+	})
+}
 func (b *BySenderAndNonce) ascend(senderID uint64, f func(*metaTx) bool) {
 	s := b.search
 	s.metaTx.Tx.senderID = senderID
 	s.metaTx.Tx.nonce = 0
 	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
+		mt := i.(sortByNonce).metaTx
+		if mt.Tx.senderID != senderID {
+			return false
+		}
+		return f(mt)
+	})
+}
+func (b *BySenderAndNonce) descend(senderID uint64, f func(*metaTx) bool) {
+	s := b.search
+	s.metaTx.Tx.senderID = senderID
+	s.metaTx.Tx.nonce = math.MaxUint64
+	b.tree.DescendLessOrEqual(s, func(i btree.Item) bool {
 		mt := i.(sortByNonce).metaTx
 		if mt.Tx.senderID != senderID {
 			return false
