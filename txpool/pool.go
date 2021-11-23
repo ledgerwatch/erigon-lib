@@ -355,10 +355,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	_, unwindTxs, err = p.validateTxs(unwindTxs, cacheView)
-	if err != nil {
-		return err
-	}
 	if err := minedTxs.Valid(); err != nil {
 		return err
 	}
@@ -366,6 +362,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	pendingBaseFee, baseFeeChanged := p.setBaseFee(baseFee)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
+		return err
+	}
+	_, unwindTxs, err = p.validateTxs(unwindTxs, cacheView)
+	if err != nil {
 		return err
 	}
 
