@@ -87,14 +87,14 @@ func (f *Fetch) SetWaitGroup(wg *sync.WaitGroup) {
 // parsePooledTxn - thread-safe access to `pooledTxsParseCtx` field Sdfsd
 func (f *Fetch) parsePooledTxn(cb func(*TxParseContext) error) error {
 	f.pooledTxsParseCtxLock.Lock()
-	defer f.pooledTxsParseCtxLock.Lock()
+	defer f.pooledTxsParseCtxLock.Unlock()
 	return cb(f.pooledTxsParseCtx)
 }
 
 // parseStateChangeTxn - thread-safe access to `stateChangesParseCtxLock` field Sdfsd
 func (f *Fetch) parseStateChangeTxn(cb func(*TxParseContext) error) error {
 	f.stateChangesParseCtxLock.Lock()
-	defer f.stateChangesParseCtxLock.Lock()
+	defer f.stateChangesParseCtxLock.Unlock()
 	return cb(f.stateChangesParseCtx)
 }
 
