@@ -260,6 +260,8 @@ const (
 	CliqueSnapshot     = "CliqueSnapshot"
 	CliqueLastSnapshot = "CliqueLastSnapshot"
 
+	ParliaSnapshot = "ParliaSnapshot"
+
 	// Proof-of-stake
 	// Beacon chain head that is been executed at the current time
 	CurrentExecutionPayload = "CurrentExecutionPayload"
@@ -337,6 +339,7 @@ var ChaindataTables = []string{
 	CliqueSeparate,
 	CliqueLastSnapshot,
 	CliqueSnapshot,
+	ParliaSnapshot,
 	SyncStageProgress,
 	PlainState,
 	PlainContractCode,
