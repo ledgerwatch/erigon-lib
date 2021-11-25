@@ -216,6 +216,7 @@ func (g *Getter) HasNext() bool {
 // and appends it to the given buf, returning the result of appending
 // After extracting next word, it moves to the beginning of the next one
 func (g *Getter) Next(buf []byte) ([]byte, uint64) {
+	startPos := g.dataP // copy current position, to return at the end
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
 	if l == 0 {
@@ -247,5 +248,5 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		g.dataP += uint64(g.uncovered[i+1] - g.uncovered[i])
 	}
 	buf = append(buf, g.word[:l]...)
-	return buf, g.dataP
+	return buf, startPos
 }
