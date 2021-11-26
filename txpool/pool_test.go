@@ -157,7 +157,7 @@ func TestNonceFromAddress(t *testing.T) {
 			gas:    100000,
 			nonce:  6,
 		}
-		txSlot3.IdHash[0] = 2
+		txSlot3.IdHash[0] = 3
 		txSlots.Append(txSlot2, addr[:], true)
 		txSlots.Append(txSlot3, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots)
@@ -167,7 +167,7 @@ func TestNonceFromAddress(t *testing.T) {
 		}
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
-		assert.Equal(uint64(4), nonce)
+		assert.Equal(uint64(6), nonce)
 	}
 	// test too expencive tx
 	{
@@ -178,7 +178,7 @@ func TestNonceFromAddress(t *testing.T) {
 			gas:    100000,
 			nonce:  3,
 		}
-		txSlot1.IdHash[0] = 1
+		txSlot1.IdHash[0] = 4
 		txSlots.Append(txSlot1, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots)
 		assert.NoError(err)
@@ -196,7 +196,7 @@ func TestNonceFromAddress(t *testing.T) {
 			gas:    100000,
 			nonce:  1,
 		}
-		txSlot1.IdHash[0] = 1
+		txSlot1.IdHash[0] = 5
 		txSlots.Append(txSlot1, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots)
 		assert.NoError(err)
