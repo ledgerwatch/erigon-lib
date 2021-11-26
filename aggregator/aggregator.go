@@ -1571,17 +1571,17 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 		// Advance all the items that have this key (including the top)
 		for cp.Len() > 0 && bytes.Equal((*cp)[0].key, lastKey) {
 			ci1 := (*cp)[0]
+			if a.trace {
+				if _, ok := a.tracedKeys[string(ci1.key)]; ok {
+					fmt.Printf("skipping same key %x val [%x] endBlock %d to merge into [%d-%d]\n", ci1.key, ci1.val, ci1.endBlock, startBlock, endBlock)
+				}
+			}
 			first = true
 			firstDelete = len(ci1.val) == 0
 			firstInsert = !firstDelete && ci1.val[0] != 0
 			if ci1.dg.HasNext() {
 				ci1.key, _ = ci1.dg.Next(ci1.key[:0])
 				ci1.val, _ = ci1.dg.Next(ci1.val[:0])
-				if a.trace {
-					if _, ok := a.tracedKeys[string(ci1.key)]; ok {
-						fmt.Printf("skipping same key %x val [%x] endBlock %d to merge into [%d-%d]\n", ci1.key, ci1.val, ci1.endBlock, startBlock, endBlock)
-					}
-				}
 				heap.Fix(cp, 0)
 			} else {
 				heap.Pop(cp)
