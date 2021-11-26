@@ -1180,7 +1180,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) error {
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = w.a.readAccount(w.blockNum, addr, true)
+		original = w.a.readAccount(w.blockNum, addr, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
