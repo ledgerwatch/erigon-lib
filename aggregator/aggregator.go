@@ -1464,7 +1464,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, &CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.accountsD, item2.accountsIdx, err = mergeIntoStateFile(&cp, 0, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
+	if item2.accountsD, item2.accountsIdx, err = w.a.mergeIntoStateFile(&cp, 0, "accounts", lastStart, blockTo, w.a.diffDir); err != nil {
 		return fmt.Errorf("mergeIntoStateFile accounts [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	cp = cp[:0]
@@ -1477,7 +1477,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			heap.Push(&cp, &CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
 		}
 	}
-	if item2.codeD, item2.codeIdx, err = mergeIntoStateFile(&cp, 0, "code", lastStart, blockTo, w.a.diffDir); err != nil {
+	if item2.codeD, item2.codeIdx, err = w.a.mergeIntoStateFile(&cp, 0, "code", lastStart, blockTo, w.a.diffDir); err != nil {
 		return fmt.Errorf("mergeIntoStateFile code [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	cp = cp[:0]
@@ -1492,7 +1492,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			//fmt.Printf("starting with %x => %x\n", key, val)
 		}
 	}
-	if item2.storageD, item2.storageIdx, err = mergeIntoStateFile(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
+	if item2.storageD, item2.storageIdx, err = w.a.mergeIntoStateFile(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
 		return fmt.Errorf("mergeIntoStateFile storage [%d-%d]: %w", lastStart, blockTo, err)
 	}
 	// Remove all items in toAggregate and insert item2 instead
@@ -1549,7 +1549,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	return nil
 }
 
-func mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
+func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
 	datPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock))
 	idxPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock))
 	var comp *compress.Compressor
@@ -1604,7 +1604,11 @@ func mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlo
 				if err = comp.AddWord(keyBuf); err != nil {
 					return nil, nil, err
 				}
-				//fmt.Printf("merge key %x into [%d-%d]\n", keyBuf, startBlock, endBlock)
+				if a.trace {
+					if _, ok := a.tracedKeys[string(keyBuf)]; ok {
+						fmt.Printf("merge key %x into [%d-%d]\n", keyBuf, startBlock, endBlock)
+					}
+				}
 				count++ // Only counting keys, not values
 				if err = comp.AddWord(valBuf); err != nil {
 					return nil, nil, err
@@ -1612,15 +1616,21 @@ func mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlo
 			}
 			keyBuf = append(keyBuf[:0], lastKey...)
 			valBuf = append(valBuf[:0], lastVal...)
-			//} else {
-			//	fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
+		} else if a.trace {
+			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
+				fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
+			}
 		}
 	}
 	if keyBuf != nil {
 		if err = comp.AddWord(keyBuf); err != nil {
 			return nil, nil, err
 		}
-		//fmt.Printf("merge key %x into [%d-%d]\n", keyBuf, startBlock, endBlock)
+		if a.trace {
+			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
+				fmt.Printf("merge key %x into [%d-%d]\n", keyBuf, startBlock, endBlock)
+			}
+		}
 		count++ // Only counting keys, not values
 		if err = comp.AddWord(valBuf); err != nil {
 			return nil, nil, err
