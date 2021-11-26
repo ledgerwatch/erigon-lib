@@ -1606,7 +1606,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 				}
 				if a.trace {
 					if _, ok := a.tracedKeys[string(keyBuf)]; ok {
-						fmt.Printf("merge key %x into [%d-%d]\n", keyBuf, startBlock, endBlock)
+						fmt.Printf("merge key %x val [%x] into [%d-%d]\n", keyBuf, valBuf, startBlock, endBlock)
 					}
 				}
 				count++ // Only counting keys, not values
@@ -1628,7 +1628,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 		}
 		if a.trace {
 			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
-				fmt.Printf("merge key %x into [%d-%d]\n", keyBuf, startBlock, endBlock)
+				fmt.Printf("merge key %x val [%x] into [%d-%d]\n", keyBuf, valBuf, startBlock, endBlock)
 			}
 		}
 		count++ // Only counting keys, not values
