@@ -1563,7 +1563,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 		lastKey := common.Copy((*cp)[0].key)
 		lastVal := common.Copy((*cp)[0].val)
 		if a.trace {
-			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
+			if _, ok := a.tracedKeys[string(lastKey)]; ok {
 				fmt.Printf("looking at key %x val [%x] endBlock %d to merge into [%d-%d]\n", lastKey, lastVal, (*cp)[0].endBlock, startBlock, endBlock)
 			}
 		}
@@ -1578,8 +1578,8 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 				ci1.key, _ = ci1.dg.Next(ci1.key[:0])
 				ci1.val, _ = ci1.dg.Next(ci1.val[:0])
 				if a.trace {
-					if _, ok := a.tracedKeys[string(keyBuf)]; ok {
-						fmt.Printf("skipping same key %x val [%x] endBlock %d to merge into [%d-%d]\n", lastKey, lastVal, ci1.endBlock, startBlock, endBlock)
+					if _, ok := a.tracedKeys[string(ci1.key)]; ok {
+						fmt.Printf("skipping same key %x val [%x] endBlock %d to merge into [%d-%d]\n", ci1.key, ci1.val, ci1.endBlock, startBlock, endBlock)
 					}
 				}
 				heap.Fix(cp, 0)
