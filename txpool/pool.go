@@ -1464,14 +1464,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		}
 		txn.rlp = nil // means that we don't need store it in db anymore
 
-		id, ok := p.senders.senderIDs[string(addr)]
-		if !ok {
-			p.senders.senderID++
-			id = p.senders.senderID
-			p.senders.senderIDs[string(addr)] = id
-			p.senders.senderID2Addr[id] = string(addr)
-		}
-		txn.senderID = id
+		txn.senderID = p.senders.getOrCreateID(addr)
 		binary.BigEndian.Uint64(v)
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
@@ -1742,6 +1735,17 @@ func (sc *sendersBatch) id(addr string) (uint64, bool) {
 	id, ok := sc.senderIDs[addr]
 	return id, ok
 }
+func (sc *sendersBatch) getOrCreateID(addr []byte) uint64 {
+	addrS := string(addr)
+	id, ok := sc.senderIDs[addrS]
+	if !ok {
+		sc.senderID++
+		id = sc.senderID
+		sc.senderIDs[addrS] = id
+		sc.senderID2Addr[id] = addrS
+	}
+	return id
+}
 func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint64, balance uint256.Int, err error) {
 	addr, ok := sc.senderID2Addr[id]
 	if !ok {
@@ -1763,18 +1767,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 
 func (sc *sendersBatch) registerNewSenders(newTxs TxSlots) (err error) {
 	for i := 0; i < len(newTxs.txs); i++ {
-		addr := newTxs.senders.At(i)
-		addrS := string(addr)
-		id, ok := sc.id(addrS)
-		if ok {
-			newTxs.txs[i].senderID = id
-			continue
-		}
-		sc.senderID++
-		sc.senderIDs[string(newTxs.senders.At(i))] = sc.senderID
-		sc.senderID2Addr[sc.senderID] = addrS
-
-		newTxs.txs[i].senderID = sc.senderID
+		newTxs.txs[i].senderID = sc.getOrCreateID(newTxs.senders.At(i))
 	}
 	return nil
 }
@@ -1782,39 +1775,15 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 	for _, diff := range stateChanges.ChangeBatch {
 		for _, change := range diff.Changes { // merge state changes
 			addrB := gointerfaces.ConvertH160toAddress(change.Address)
-			addr := string(addrB[:])
-			_, ok := sc.id(addr)
-			if !ok {
-				sc.senderID++
-				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addr
-			}
+			sc.getOrCreateID(addrB[:])
 		}
 
 		for i := 0; i < unwindTxs.senders.Len(); i++ {
-			addr := unwindTxs.senders.At(i)
-			addrS := string(addr)
-			id, ok := sc.id(addrS)
-			if !ok {
-				sc.senderID++
-				id = sc.senderID
-				sc.senderIDs[addrS] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addrS
-			}
-			unwindTxs.txs[i].senderID = id
+			unwindTxs.txs[i].senderID = sc.getOrCreateID(unwindTxs.senders.At(i))
 		}
 
 		for i := 0; i < len(minedTxs.txs); i++ {
-			addr := minedTxs.senders.At(i)
-			addrS := string(addr)
-			id, ok := sc.id(addrS)
-			if !ok {
-				sc.senderID++
-				id = sc.senderID
-				sc.senderIDs[addrS] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addrS
-			}
-			minedTxs.txs[i].senderID = id
+			minedTxs.txs[i].senderID = sc.getOrCreateID(minedTxs.senders.At(i))
 		}
 	}
 	return nil
