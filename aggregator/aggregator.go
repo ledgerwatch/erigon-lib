@@ -63,12 +63,13 @@ import (
 type Aggregator struct {
 	diffDir         string // Directory where the state diff files are stored
 	byEndBlock      *btree.BTree
-	unwindLimit     uint64 // How far the chain may unwind
-	aggregationStep uint64 // How many items (block, but later perhaps txs or changes) are required to form one state diff file
-	changeFileNum   uint64 // Block number associated with the current change files. It is the last block number whose changes will go into that file
-	accountChanges  Changes
-	codeChanges     Changes
-	storageChanges  Changes
+	unwindLimit     uint64              // How far the chain may unwind
+	aggregationStep uint64              // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	changeFileNum   uint64              // Block number associated with the current change files. It is the last block number whose changes will go into that file
+	accountChanges  Changes             // Change files for accounts
+	codeChanges     Changes             // Change files for contract code
+	storageChanges  Changes             // Change files for contract storage
+	commChanges     Changes             // Change files for commitment
 	changesBtree    *btree.BTree        // btree of ChangesItem
 	trace           bool                // Turns on tracing for specific accounts and locations
 	tracedKeys      map[string]struct{} // Set of keys being traced during aggregations
@@ -101,7 +102,6 @@ func (cf *ChangeFile) closeFile() error {
 			return err
 		}
 		cf.file = nil
-		//fmt.Printf("closed file %s\n", cf.path)
 	}
 	return nil
 }
@@ -122,23 +122,10 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 			if cf.file, err = os.Open(cf.path); err != nil {
 				return err
 			}
-			/*
-				cf.r = bufio.NewReader(cf.file)
-				i := 0
-				for b, e := cf.r.ReadByte(); e == nil; b, e = cf.r.ReadByte() {
-					fmt.Printf("%02x", b)
-					i++
-					if i%8 == 0 {
-						fmt.Printf(" ")
-					}
-				}
-				fmt.Printf("\n")
-			*/
 			if cf.blockPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
 				return err
 			}
 		}
-		//fmt.Printf("opened file %s for write %t\n", cf.path, write)
 		cf.r = bufio.NewReader(cf.file)
 	}
 	return nil
@@ -155,13 +142,11 @@ func (cf *ChangeFile) add(word []byte) error {
 		}
 	}
 	cf.sizeCounter += uint64(n + len(word))
-	//fmt.Printf("add word %x to change file %s: n=%d, len(word)=%d, sizeCounter=%d\n", word, cf.namebase, n, len(word), cf.sizeCounter)
 	return nil
 }
 
 func (cf *ChangeFile) finish(blockNum uint64) error {
 	// Write out block number and then size of changes in this block
-	//fmt.Printf("finish change file %s, with blockNum %d, cf.sizeCounter=%d\n", cf.namebase, blockNum, cf.sizeCounter)
 	binary.BigEndian.PutUint64(cf.numBuf[:], blockNum)
 	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
 		return err
@@ -177,7 +162,6 @@ func (cf *ChangeFile) finish(blockNum uint64) error {
 // prevBlock positions the reader to the beginning
 // of the block
 func (cf *ChangeFile) prevBlock() (bool, error) {
-	//fmt.Printf("prevBlock change file %s, cf.blockPos=%d\n", cf.namebase, cf.blockPos)
 	if cf.blockPos == 0 {
 		return false, nil
 	}
@@ -227,7 +211,6 @@ func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
 }
 
 func (cf *ChangeFile) deleteFile() error {
-	//fmt.Printf("deleted file %s\n", cf.path)
 	return os.Remove(cf.path)
 }
 
@@ -412,10 +395,8 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 			if err = rs.AddKey(word, pos); err != nil {
 				return nil, nil, err
 			}
-			//fmt.Printf("add key %x to the index %s\n", word, idxPath)
 			// Skip value
 			word, pos = g.Next(word[:0])
-			//fmt.Printf("value is [%x]\n", word)
 		}
 		if err = rs.Build(); err != nil {
 			return nil, nil, err
@@ -541,7 +522,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 	return nil
 }
 
-const AggregatorPrefix = "aggretator"
+const AggregatorPrefix = "aggregator"
 
 func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
 	comp, err := compress.NewCompressor(AggregatorPrefix, datPath, tmpdir, 1024 /* minPatterScore */)
@@ -554,7 +535,6 @@ func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
 		if err = comp.AddWord(item.k); err != nil {
 			return false
 		}
-		//fmt.Printf("add key %x val [%x] to %s\n", item.k, item.v, datPath)
 		count++ // Only counting keys, not values
 		if err = comp.AddWord(item.v); err != nil {
 			return false
@@ -585,15 +565,17 @@ func (i *ChangesItem) Less(than btree.Item) bool {
 }
 
 type byEndBlockItem struct {
-	startBlock  uint64
-	endBlock    uint64
-	fileCount   int
-	accountsD   *compress.Decompressor
-	accountsIdx *recsplit.Index
-	storageD    *compress.Decompressor
-	storageIdx  *recsplit.Index
-	codeD       *compress.Decompressor
-	codeIdx     *recsplit.Index
+	startBlock    uint64
+	endBlock      uint64
+	fileCount     int
+	accountsD     *compress.Decompressor
+	accountsIdx   *recsplit.Index
+	storageD      *compress.Decompressor
+	storageIdx    *recsplit.Index
+	codeD         *compress.Decompressor
+	codeIdx       *recsplit.Index
+	commitmentD   *compress.Decompressor
+	commitmentIdx *recsplit.Index
 }
 
 func (i *byEndBlockItem) Less(than btree.Item) bool {
@@ -623,7 +605,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	if err != nil {
 		return nil, err
 	}
-	re := regexp.MustCompile(`(accounts|storage|code).([0-9]+)-([0-9]+).(dat|idx)`)
+	re := regexp.MustCompile(`(accounts|storage|code|commitment).([0-9]+)-([0-9]+).(dat|idx)`)
 	for _, f := range files {
 		name := f.Name()
 		subs := re.FindStringSubmatch(name)
@@ -675,7 +657,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 				err = fmt.Errorf("hole in state files [%d-%d]", item.endBlock, minStart)
 				return false
 			}
-			if item.fileCount != 6 {
+			if item.fileCount != 8 {
 				err = fmt.Errorf("missing state files for interval [%d-%d]", item.startBlock, item.endBlock)
 				return false
 			}
@@ -707,6 +689,12 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		if item.storageIdx, err = recsplit.OpenIndex(path.Join(diffDir, fmt.Sprintf("storage.%d-%d.idx", item.startBlock, item.endBlock))); err != nil {
 			return false
 		}
+		if item.commitmentD, err = compress.NewDecompressor(path.Join(diffDir, fmt.Sprintf("commitment.%d-%d.dat", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		if item.commitmentIdx, err = recsplit.OpenIndex(path.Join(diffDir, fmt.Sprintf("commitment.%d-%d.idx", item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
 		return true
 	})
 	if err != nil {
@@ -715,8 +703,9 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	a.accountChanges.Init("accounts", aggregationStep, diffDir)
 	a.codeChanges.Init("code", aggregationStep, diffDir)
 	a.storageChanges.Init("storage", aggregationStep, diffDir)
+	a.commChanges.Init("commitment", aggregationStep, diffDir)
 	a.changesBtree = btree.New(32)
-	re = regexp.MustCompile(`(accounts|storage|code).(keys|before|after).([0-9]+)-([0-9]+).chg`)
+	re = regexp.MustCompile(`(accounts|storage|code|commitment).(keys|before|after).([0-9]+)-([0-9]+).chg`)
 	for _, f := range files {
 		name := f.Name()
 		subs := re.FindStringSubmatch(name)
@@ -767,7 +756,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 				err = fmt.Errorf("whole in change files [%d-%d]", item.endBlock, minStart)
 				return false
 			}
-			if item.fileCount != 9 {
+			if item.fileCount != 12 {
 				err = fmt.Errorf("missing change files for interval [%d-%d]", item.startBlock, item.endBlock)
 				return false
 			}
@@ -811,6 +800,12 @@ func closeFiles(byEndBlock *btree.BTree) {
 		if item.codeIdx != nil {
 			item.codeIdx.Close()
 		}
+		if item.commitmentD != nil {
+			item.commitmentD.Close()
+		}
+		if item.commitmentIdx != nil {
+			item.commitmentIdx.Close()
+		}
 		return true
 	})
 }
@@ -819,6 +814,7 @@ func (a *Aggregator) Close() {
 	a.accountChanges.closeFiles()
 	a.codeChanges.closeFiles()
 	a.storageChanges.closeFiles()
+	a.commChanges.closeFiles()
 	closeFiles(a.byEndBlock)
 }
 
@@ -1015,6 +1011,9 @@ func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, erro
 		if err := a.storageChanges.closeFiles(); err != nil {
 			return nil, err
 		}
+		if err := a.commChanges.closeFiles(); err != nil {
+			return nil, err
+		}
 		a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: a.changeFileNum + 1 - a.aggregationStep, endBlock: a.changeFileNum, fileCount: 9})
 	}
 	if a.changeFileNum == 0 || blockNum > a.changeFileNum {
@@ -1025,6 +1024,9 @@ func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, erro
 			return nil, err
 		}
 		if err := a.storageChanges.openFiles(blockNum, true /* write */); err != nil {
+			return nil, err
+		}
+		if err := a.commChanges.openFiles(blockNum, true /* write */); err != nil {
 			return nil, err
 		}
 		w.a.changeFileNum = blockNum - (blockNum % w.a.aggregationStep) + w.a.aggregationStep - 1
@@ -1381,12 +1383,13 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if item.startBlock != blockFrom {
 		return fmt.Errorf("expected change files[%d-%d], got [%d-%d]", blockFrom, blockTo, item.startBlock, item.endBlock)
 	}
-	var accountChanges, codeChanges, storageChanges Changes
+	var accountChanges, codeChanges, storageChanges, commChanges Changes
 	accountChanges.Init("accounts", w.a.aggregationStep, w.a.diffDir)
 	codeChanges.Init("code", w.a.aggregationStep, w.a.diffDir)
 	storageChanges.Init("storage", w.a.aggregationStep, w.a.diffDir)
+	commChanges.Init("commitment", w.a.aggregationStep, w.a.diffDir)
 	var err error
-	var item1 *byEndBlockItem = &byEndBlockItem{fileCount: 6, startBlock: blockFrom, endBlock: blockTo}
+	var item1 *byEndBlockItem = &byEndBlockItem{fileCount: 8, startBlock: blockFrom, endBlock: blockTo}
 	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts); err != nil {
 		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
@@ -1394,6 +1397,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		return fmt.Errorf("aggregate codeChanges: %w", err)
 	}
 	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage); err != nil {
+		return fmt.Errorf("aggregate storageChanges: %w", err)
+	}
+	if item1.commitmentD, item1.commitmentIdx, err = commChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateCommitment); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
 	if err = accountChanges.closeFiles(); err != nil {
@@ -1405,6 +1411,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if err = storageChanges.closeFiles(); err != nil {
 		return err
 	}
+	if err = commChanges.closeFiles(); err != nil {
+		return err
+	}
 	if err = accountChanges.deleteFiles(); err != nil {
 		return err
 	}
@@ -1414,7 +1423,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if err = storageChanges.deleteFiles(); err != nil {
 		return err
 	}
-	//fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item1.startBlock, item1.endBlock)
+	if err = commChanges.deleteFiles(); err != nil {
+		return err
+	}
 	w.a.byEndBlock.ReplaceOrInsert(item1)
 	// Now aggregate state files
 	var toAggregate []*byEndBlockItem
@@ -1483,24 +1494,33 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	cp = cp[:0]
 	heap.Init(&cp)
 	for _, ag := range toAggregate {
-		//fmt.Printf("merging [%d-%d] into [%d-%d]\n", ag.startBlock, ag.endBlock, lastStart, blockTo)
 		g := ag.storageD.MakeGetter()
 		if g.HasNext() {
 			key, _ := g.Next(nil)
 			val, _ := g.Next(nil)
 			heap.Push(&cp, &CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
-			//fmt.Printf("starting with %x => %x\n", key, val)
 		}
 	}
 	if item2.storageD, item2.storageIdx, err = w.a.mergeIntoStateFile(&cp, 20, "storage", lastStart, blockTo, w.a.diffDir); err != nil {
 		return fmt.Errorf("mergeIntoStateFile storage [%d-%d]: %w", lastStart, blockTo, err)
 	}
+	cp = cp[:0]
+	heap.Init(&cp)
+	for _, ag := range toAggregate {
+		g := ag.commitmentD.MakeGetter()
+		if g.HasNext() {
+			key, _ := g.Next(nil)
+			val, _ := g.Next(nil)
+			heap.Push(&cp, &CursorItem{file: true, dg: g, key: key, val: val, endBlock: ag.endBlock})
+		}
+	}
+	if item2.commitmentD, item2.commitmentIdx, err = w.a.mergeIntoStateFile(&cp, 20, "commitment", lastStart, blockTo, w.a.diffDir); err != nil {
+		return fmt.Errorf("mergeIntoStateFile commitment [%d-%d]: %w", lastStart, blockTo, err)
+	}
 	// Remove all items in toAggregate and insert item2 instead
 	w.a.byEndBlock.ReplaceOrInsert(item2)
-	//fmt.Printf("Inserting into byEndBlock [%d-%d]\n", item2.startBlock, item2.endBlock)
 	for _, ag := range toAggregate {
 		w.a.byEndBlock.Delete(ag)
-		//fmt.Printf("Delete from byEndBlock [%d-%d]\n", ag.startBlock, ag.endBlock)
 	}
 	// Close all the memory maps etc
 	for _, ag := range toAggregate {
@@ -1520,6 +1540,12 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			return err
 		}
 		if err = ag.storageD.Close(); err != nil {
+			return err
+		}
+		if err = ag.commitmentIdx.Close(); err != nil {
+			return err
+		}
+		if err = ag.commitmentD.Close(); err != nil {
 			return err
 		}
 	}
@@ -1542,6 +1568,12 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			return err
 		}
 		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("storage.%d-%d.idx", ag.startBlock, ag.endBlock))); err != nil {
+			return err
+		}
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("commitment.%d-%d.dat", ag.startBlock, ag.endBlock))); err != nil {
+			return err
+		}
+		if err = os.Remove(path.Join(w.a.diffDir, fmt.Sprintf("commitment.%d-%d.idx", ag.startBlock, ag.endBlock))); err != nil {
 			return err
 		}
 	}
