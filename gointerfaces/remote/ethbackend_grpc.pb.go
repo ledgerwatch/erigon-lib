@@ -30,6 +30,8 @@ type ETHBACKENDClient interface {
 	// ClientVersion returns the Ethereum client version string using node name convention (e.g. TurboGeth/v2021.03.2-alpha/Linux).
 	ClientVersion(ctx context.Context, in *ClientVersionRequest, opts ...grpc.CallOption) (*ClientVersionReply, error)
 	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (ETHBACKEND_SubscribeClient, error)
+	// NodeInfo collects and returns NodeInfo from all running celery instances.
+	NodeInfo(ctx context.Context, in *NodesInfoRequest, opts ...grpc.CallOption) (*NodesInfoReply, error)
 }
 
 type eTHBACKENDClient struct {
@@ -126,6 +128,15 @@ func (x *eTHBACKENDSubscribeClient) Recv() (*SubscribeReply, error) {
 	return m, nil
 }
 
+func (c *eTHBACKENDClient) NodeInfo(ctx context.Context, in *NodesInfoRequest, opts ...grpc.CallOption) (*NodesInfoReply, error) {
+	out := new(NodesInfoReply)
+	err := c.cc.Invoke(ctx, "/remote.ETHBACKEND/NodeInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ETHBACKENDServer is the server API for ETHBACKEND service.
 // All implementations must embed UnimplementedETHBACKENDServer
 // for forward compatibility
@@ -140,6 +151,8 @@ type ETHBACKENDServer interface {
 	// ClientVersion returns the Ethereum client version string using node name convention (e.g. TurboGeth/v2021.03.2-alpha/Linux).
 	ClientVersion(context.Context, *ClientVersionRequest) (*ClientVersionReply, error)
 	Subscribe(*SubscribeRequest, ETHBACKEND_SubscribeServer) error
+	// NodeInfo collects and returns NodeInfo from all running celery instances.
+	NodeInfo(context.Context, *NodesInfoRequest) (*NodesInfoReply, error)
 	mustEmbedUnimplementedETHBACKENDServer()
 }
 
@@ -167,6 +180,9 @@ func (UnimplementedETHBACKENDServer) ClientVersion(context.Context, *ClientVersi
 }
 func (UnimplementedETHBACKENDServer) Subscribe(*SubscribeRequest, ETHBACKEND_SubscribeServer) error {
 	return status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
+}
+func (UnimplementedETHBACKENDServer) NodeInfo(context.Context, *NodesInfoRequest) (*NodesInfoReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NodeInfo not implemented")
 }
 func (UnimplementedETHBACKENDServer) mustEmbedUnimplementedETHBACKENDServer() {}
 
@@ -310,6 +326,24 @@ func (x *eTHBACKENDSubscribeServer) Send(m *SubscribeReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _ETHBACKEND_NodeInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodesInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ETHBACKENDServer).NodeInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/remote.ETHBACKEND/NodeInfo",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ETHBACKENDServer).NodeInfo(ctx, req.(*NodesInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ETHBACKEND_ServiceDesc is the grpc.ServiceDesc for ETHBACKEND service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -340,6 +374,10 @@ var ETHBACKEND_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ClientVersion",
 			Handler:    _ETHBACKEND_ClientVersion_Handler,
+		},
+		{
+			MethodName: "NodeInfo",
+			Handler:    _ETHBACKEND_NodeInfo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

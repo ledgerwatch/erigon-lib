@@ -598,6 +598,100 @@ func (x *SubscribeReply) GetData() []byte {
 	return nil
 }
 
+type NodesInfoRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Limit uint32 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+}
+
+func (x *NodesInfoRequest) Reset() {
+	*x = NodesInfoRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_remote_ethbackend_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NodesInfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodesInfoRequest) ProtoMessage() {}
+
+func (x *NodesInfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_remote_ethbackend_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodesInfoRequest.ProtoReflect.Descriptor instead.
+func (*NodesInfoRequest) Descriptor() ([]byte, []int) {
+	return file_remote_ethbackend_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *NodesInfoRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type NodesInfoReply struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	NodesInfo []*types.NodeInfoReply `protobuf:"bytes,1,rep,name=nodesInfo,proto3" json:"nodesInfo,omitempty"`
+}
+
+func (x *NodesInfoReply) Reset() {
+	*x = NodesInfoReply{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_remote_ethbackend_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NodesInfoReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodesInfoReply) ProtoMessage() {}
+
+func (x *NodesInfoReply) ProtoReflect() protoreflect.Message {
+	mi := &file_remote_ethbackend_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodesInfoReply.ProtoReflect.Descriptor instead.
+func (*NodesInfoReply) Descriptor() ([]byte, []int) {
+	return file_remote_ethbackend_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *NodesInfoReply) GetNodesInfo() []*types.NodeInfoReply {
+	if x != nil {
+		return x.NodesInfo
+	}
+	return nil
+}
+
 var File_remote_ethbackend_proto protoreflect.FileDescriptor
 
 var file_remote_ethbackend_proto_rawDesc = []byte{
@@ -635,11 +729,18 @@ var file_remote_ethbackend_proto_rawDesc = []byte{
 	0x04, 0x74, 0x79, 0x70, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x0d, 0x2e, 0x72, 0x65,
 	0x6d, 0x6f, 0x74, 0x65, 0x2e, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x52, 0x04, 0x74, 0x79, 0x70, 0x65,
 	0x12, 0x12, 0x0a, 0x04, 0x64, 0x61, 0x74, 0x61, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x04,
-	0x64, 0x61, 0x74, 0x61, 0x2a, 0x38, 0x0a, 0x05, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x12, 0x0a, 0x0a,
+	0x64, 0x61, 0x74, 0x61, 0x22, 0x28, 0x0a, 0x10, 0x4e, 0x6f, 0x64, 0x65, 0x73, 0x49, 0x6e, 0x66,
+	0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x6c, 0x69, 0x6d, 0x69,
+	0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x05, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x22, 0x44,
+	0x0a, 0x0e, 0x4e, 0x6f, 0x64, 0x65, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x70, 0x6c, 0x79,
+	0x12, 0x32, 0x0a, 0x09, 0x6e, 0x6f, 0x64, 0x65, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x18, 0x01, 0x20,
+	0x03, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x4e, 0x6f, 0x64, 0x65,
+	0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x52, 0x09, 0x6e, 0x6f, 0x64, 0x65, 0x73,
+	0x49, 0x6e, 0x66, 0x6f, 0x2a, 0x38, 0x0a, 0x05, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x12, 0x0a, 0x0a,
 	0x06, 0x48, 0x45, 0x41, 0x44, 0x45, 0x52, 0x10, 0x00, 0x12, 0x10, 0x0a, 0x0c, 0x50, 0x45, 0x4e,
 	0x44, 0x49, 0x4e, 0x47, 0x5f, 0x4c, 0x4f, 0x47, 0x53, 0x10, 0x01, 0x12, 0x11, 0x0a, 0x0d, 0x50,
-	0x45, 0x4e, 0x44, 0x49, 0x4e, 0x47, 0x5f, 0x42, 0x4c, 0x4f, 0x43, 0x4b, 0x10, 0x02, 0x32, 0xea,
-	0x03, 0x0a, 0x0a, 0x45, 0x54, 0x48, 0x42, 0x41, 0x43, 0x4b, 0x45, 0x4e, 0x44, 0x12, 0x3d, 0x0a,
+	0x45, 0x4e, 0x44, 0x49, 0x4e, 0x47, 0x5f, 0x42, 0x4c, 0x4f, 0x43, 0x4b, 0x10, 0x02, 0x32, 0xa8,
+	0x04, 0x0a, 0x0a, 0x45, 0x54, 0x48, 0x42, 0x41, 0x43, 0x4b, 0x45, 0x4e, 0x44, 0x12, 0x3d, 0x0a,
 	0x09, 0x45, 0x74, 0x68, 0x65, 0x72, 0x62, 0x61, 0x73, 0x65, 0x12, 0x18, 0x2e, 0x72, 0x65, 0x6d,
 	0x6f, 0x74, 0x65, 0x2e, 0x45, 0x74, 0x68, 0x65, 0x72, 0x62, 0x61, 0x73, 0x65, 0x52, 0x65, 0x71,
 	0x75, 0x65, 0x73, 0x74, 0x1a, 0x16, 0x2e, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65, 0x2e, 0x45, 0x74,
@@ -669,9 +770,13 @@ var file_remote_ethbackend_proto_rawDesc = []byte{
 	0x62, 0x73, 0x63, 0x72, 0x69, 0x62, 0x65, 0x12, 0x18, 0x2e, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65,
 	0x2e, 0x53, 0x75, 0x62, 0x73, 0x63, 0x72, 0x69, 0x62, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
 	0x74, 0x1a, 0x16, 0x2e, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65, 0x2e, 0x53, 0x75, 0x62, 0x73, 0x63,
-	0x72, 0x69, 0x62, 0x65, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x30, 0x01, 0x42, 0x11, 0x5a, 0x0f, 0x2e,
-	0x2f, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65, 0x3b, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65, 0x62, 0x06,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x72, 0x69, 0x62, 0x65, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x30, 0x01, 0x12, 0x3c, 0x0a, 0x08, 0x4e,
+	0x6f, 0x64, 0x65, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x18, 0x2e, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65,
+	0x2e, 0x4e, 0x6f, 0x64, 0x65, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x16, 0x2e, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65, 0x2e, 0x4e, 0x6f, 0x64, 0x65, 0x73,
+	0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x42, 0x11, 0x5a, 0x0f, 0x2e, 0x2f, 0x72,
+	0x65, 0x6d, 0x6f, 0x74, 0x65, 0x3b, 0x72, 0x65, 0x6d, 0x6f, 0x74, 0x65, 0x62, 0x06, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -687,7 +792,7 @@ func file_remote_ethbackend_proto_rawDescGZIP() []byte {
 }
 
 var file_remote_ethbackend_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_remote_ethbackend_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_remote_ethbackend_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_remote_ethbackend_proto_goTypes = []interface{}{
 	(Event)(0),                     // 0: remote.Event
 	(*EtherbaseRequest)(nil),       // 1: remote.EtherbaseRequest
@@ -702,33 +807,39 @@ var file_remote_ethbackend_proto_goTypes = []interface{}{
 	(*ClientVersionReply)(nil),     // 10: remote.ClientVersionReply
 	(*SubscribeRequest)(nil),       // 11: remote.SubscribeRequest
 	(*SubscribeReply)(nil),         // 12: remote.SubscribeReply
-	(*types.H160)(nil),             // 13: types.H160
-	(*emptypb.Empty)(nil),          // 14: google.protobuf.Empty
-	(*types.VersionReply)(nil),     // 15: types.VersionReply
+	(*NodesInfoRequest)(nil),       // 13: remote.NodesInfoRequest
+	(*NodesInfoReply)(nil),         // 14: remote.NodesInfoReply
+	(*types.H160)(nil),             // 15: types.H160
+	(*types.NodeInfoReply)(nil),    // 16: types.NodeInfoReply
+	(*emptypb.Empty)(nil),          // 17: google.protobuf.Empty
+	(*types.VersionReply)(nil),     // 18: types.VersionReply
 }
 var file_remote_ethbackend_proto_depIdxs = []int32{
-	13, // 0: remote.EtherbaseReply.address:type_name -> types.H160
+	15, // 0: remote.EtherbaseReply.address:type_name -> types.H160
 	0,  // 1: remote.SubscribeRequest.type:type_name -> remote.Event
 	0,  // 2: remote.SubscribeReply.type:type_name -> remote.Event
-	1,  // 3: remote.ETHBACKEND.Etherbase:input_type -> remote.EtherbaseRequest
-	3,  // 4: remote.ETHBACKEND.NetVersion:input_type -> remote.NetVersionRequest
-	5,  // 5: remote.ETHBACKEND.NetPeerCount:input_type -> remote.NetPeerCountRequest
-	14, // 6: remote.ETHBACKEND.Version:input_type -> google.protobuf.Empty
-	7,  // 7: remote.ETHBACKEND.ProtocolVersion:input_type -> remote.ProtocolVersionRequest
-	9,  // 8: remote.ETHBACKEND.ClientVersion:input_type -> remote.ClientVersionRequest
-	11, // 9: remote.ETHBACKEND.Subscribe:input_type -> remote.SubscribeRequest
-	2,  // 10: remote.ETHBACKEND.Etherbase:output_type -> remote.EtherbaseReply
-	4,  // 11: remote.ETHBACKEND.NetVersion:output_type -> remote.NetVersionReply
-	6,  // 12: remote.ETHBACKEND.NetPeerCount:output_type -> remote.NetPeerCountReply
-	15, // 13: remote.ETHBACKEND.Version:output_type -> types.VersionReply
-	8,  // 14: remote.ETHBACKEND.ProtocolVersion:output_type -> remote.ProtocolVersionReply
-	10, // 15: remote.ETHBACKEND.ClientVersion:output_type -> remote.ClientVersionReply
-	12, // 16: remote.ETHBACKEND.Subscribe:output_type -> remote.SubscribeReply
-	10, // [10:17] is the sub-list for method output_type
-	3,  // [3:10] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	16, // 3: remote.NodesInfoReply.nodesInfo:type_name -> types.NodeInfoReply
+	1,  // 4: remote.ETHBACKEND.Etherbase:input_type -> remote.EtherbaseRequest
+	3,  // 5: remote.ETHBACKEND.NetVersion:input_type -> remote.NetVersionRequest
+	5,  // 6: remote.ETHBACKEND.NetPeerCount:input_type -> remote.NetPeerCountRequest
+	17, // 7: remote.ETHBACKEND.Version:input_type -> google.protobuf.Empty
+	7,  // 8: remote.ETHBACKEND.ProtocolVersion:input_type -> remote.ProtocolVersionRequest
+	9,  // 9: remote.ETHBACKEND.ClientVersion:input_type -> remote.ClientVersionRequest
+	11, // 10: remote.ETHBACKEND.Subscribe:input_type -> remote.SubscribeRequest
+	13, // 11: remote.ETHBACKEND.NodeInfo:input_type -> remote.NodesInfoRequest
+	2,  // 12: remote.ETHBACKEND.Etherbase:output_type -> remote.EtherbaseReply
+	4,  // 13: remote.ETHBACKEND.NetVersion:output_type -> remote.NetVersionReply
+	6,  // 14: remote.ETHBACKEND.NetPeerCount:output_type -> remote.NetPeerCountReply
+	18, // 15: remote.ETHBACKEND.Version:output_type -> types.VersionReply
+	8,  // 16: remote.ETHBACKEND.ProtocolVersion:output_type -> remote.ProtocolVersionReply
+	10, // 17: remote.ETHBACKEND.ClientVersion:output_type -> remote.ClientVersionReply
+	12, // 18: remote.ETHBACKEND.Subscribe:output_type -> remote.SubscribeReply
+	14, // 19: remote.ETHBACKEND.NodeInfo:output_type -> remote.NodesInfoReply
+	12, // [12:20] is the sub-list for method output_type
+	4,  // [4:12] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_remote_ethbackend_proto_init() }
@@ -881,6 +992,30 @@ func file_remote_ethbackend_proto_init() {
 				return nil
 			}
 		}
+		file_remote_ethbackend_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*NodesInfoRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_remote_ethbackend_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*NodesInfoReply); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -888,7 +1023,7 @@ func file_remote_ethbackend_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_remote_ethbackend_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
