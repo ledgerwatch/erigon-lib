@@ -1044,13 +1044,14 @@ func (w *Writer) Finish() error {
 	if err := w.a.storageChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish storageChanges: %w", err)
 	}
+	if err := w.a.commChanges.finish(w.blockNum); err != nil {
+		return fmt.Errorf("finish commChanges: %w", err)
+	}
 	if w.blockNum < w.a.unwindLimit+w.a.aggregationStep-1 {
-		//fmt.Printf("skip aggregation because w.blockNum(%d) < w.a.unwindLimit(%d) + w.a.aggregationStep(%d) - 1\n", w.blockNum, w.a.unwindLimit, w.a.aggregationStep)
 		return nil
 	}
 	diff := w.blockNum - w.a.unwindLimit
 	if (diff+1)%w.a.aggregationStep != 0 {
-		//fmt.Printf("skip aggregation because (diff(%d) + 1) %% w.a.aggregationStep(%d) != 0\n", diff, w.a.aggregationStep)
 		return nil
 	}
 	if err := w.aggregateUpto(diff+1-w.a.aggregationStep, diff); err != nil {
