@@ -101,15 +101,19 @@ func TestLoopAggregator(t *testing.T) {
 	defer func() {
 		tx.Rollback()
 	}()
+	var w *Writer
 	for blockNum := uint64(0); blockNum < 1000; blockNum++ {
 		accountKey := int160(blockNum/10 + 1)
 		//fmt.Printf("blockNum = %d\n", blockNum)
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		var w *Writer
-		if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
-			t.Fatal(err)
+		if w == nil {
+			if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			w.Reset(rwTx, blockNum)
 		}
 		if err = w.UpdateAccountData(accountKey, account1, false /* trace */); err != nil {
 			t.Fatal(err)
@@ -177,13 +181,19 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 	defer func() {
 		tx.Rollback()
 	}()
+	var w *Writer
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		var w *Writer
-		if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
-			t.Fatal(err)
+		if w == nil {
+			if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if err = w.Reset(rwTx, blockNum); err != nil {
+				t.Fatal(err)
+			}
 		}
 		switch blockNum {
 		case 1:
@@ -303,13 +313,17 @@ func TestChangeCode(t *testing.T) {
 			tx.Rollback()
 		}
 	}()
+	var w *Writer
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		var w *Writer
-		if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
-			t.Fatal(err)
+		if w == nil {
+			if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			w.Reset(rwTx, blockNum)
 		}
 		switch blockNum {
 		case 1:

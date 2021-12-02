@@ -88,9 +88,14 @@ type ChangeFile struct {
 	blockPos    int64 // Position of the last block iterated upon
 	blockNum    uint64
 	blockSize   uint64
+	words       []byte // Words pending for the next block record, in the same slice
+	wordOffsets []int  // Offsets of words in the `words` slice
 }
 
 func (cf *ChangeFile) closeFile() error {
+	if len(cf.wordOffsets) > 0 {
+		return fmt.Errorf("closeFile without finish")
+	}
 	if cf.w != nil {
 		if err := cf.w.Flush(); err != nil {
 			return err
@@ -107,6 +112,9 @@ func (cf *ChangeFile) closeFile() error {
 }
 
 func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
+	if len(cf.wordOffsets) > 0 {
+		return fmt.Errorf("openFile without finish")
+	}
 	rem := blockNum % cf.step
 	startBlock := blockNum - rem
 	endBlock := startBlock + cf.step - 1
@@ -131,21 +139,30 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 	return nil
 }
 
-func (cf *ChangeFile) add(word []byte) error {
-	n := binary.PutUvarint(cf.numBuf[:], uint64(len(word)))
-	if _, err := cf.w.Write(cf.numBuf[:n]); err != nil {
-		return err
-	}
-	if len(word) > 0 {
-		if _, err := cf.w.Write(word); err != nil {
-			return err
-		}
-	}
-	cf.sizeCounter += uint64(n + len(word))
-	return nil
+func (cf *ChangeFile) add(word []byte) {
+	cf.words = append(cf.words, word...)
+	cf.wordOffsets = append(cf.wordOffsets, len(cf.words))
 }
 
 func (cf *ChangeFile) finish(blockNum uint64) error {
+	// Write out words
+	lastOffset := 0
+	for _, offset := range cf.wordOffsets {
+		word := cf.words[lastOffset:offset]
+		n := binary.PutUvarint(cf.numBuf[:], uint64(len(word)))
+		if _, err := cf.w.Write(cf.numBuf[:n]); err != nil {
+			return err
+		}
+		if len(word) > 0 {
+			if _, err := cf.w.Write(word); err != nil {
+				return err
+			}
+		}
+		cf.sizeCounter += uint64(n + len(word))
+		lastOffset = offset
+	}
+	cf.words = cf.words[:0]
+	cf.wordOffsets = cf.wordOffsets[:0]
 	// Write out block number and then size of changes in this block
 	binary.BigEndian.PutUint64(cf.numBuf[:], blockNum)
 	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
@@ -264,43 +281,22 @@ func (c *Changes) openFiles(blockNum uint64, write bool) error {
 	return nil
 }
 
-func (c *Changes) insert(key, after []byte) error {
-	if err := c.keys.add(key); err != nil {
-		return err
-	}
-	if err := c.before.add(nil); err != nil {
-		return err
-	}
-	if err := c.after.add(after); err != nil {
-		return err
-	}
-	return nil
+func (c *Changes) insert(key, after []byte) {
+	c.keys.add(key)
+	c.before.add(nil)
+	c.after.add(after)
 }
 
-func (c *Changes) update(key, before, after []byte) error {
-	if err := c.keys.add(key); err != nil {
-		return err
-	}
-	if err := c.before.add(before); err != nil {
-		return err
-	}
-	if err := c.after.add(after); err != nil {
-		return err
-	}
-	return nil
+func (c *Changes) update(key, before, after []byte) {
+	c.keys.add(key)
+	c.before.add(before)
+	c.after.add(after)
 }
 
-func (c *Changes) delete(key, before []byte) error {
-	if err := c.keys.add(key); err != nil {
-		return err
-	}
-	if err := c.before.add(before); err != nil {
-		return err
-	}
-	if err := c.after.add(nil); err != nil {
-		return err
-	}
-	return nil
+func (c *Changes) delete(key, before []byte) {
+	c.keys.add(key)
+	c.before.add(before)
+	c.after.add(nil)
 }
 
 func (c *Changes) finish(blockNum uint64) error {
@@ -997,41 +993,48 @@ type Writer struct {
 
 func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, error) {
 	w := &Writer{
-		a:        a,
-		tx:       tx,
-		blockNum: blockNum,
+		a: a,
 	}
-	if blockNum > a.changeFileNum {
-		if err := a.accountChanges.closeFiles(); err != nil {
-			return nil, err
-		}
-		if err := a.codeChanges.closeFiles(); err != nil {
-			return nil, err
-		}
-		if err := a.storageChanges.closeFiles(); err != nil {
-			return nil, err
-		}
-		if err := a.commChanges.closeFiles(); err != nil {
-			return nil, err
-		}
-		a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: a.changeFileNum + 1 - a.aggregationStep, endBlock: a.changeFileNum, fileCount: 9})
+	if err := w.Reset(tx, blockNum); err != nil {
+		return nil, err
 	}
-	if a.changeFileNum == 0 || blockNum > a.changeFileNum {
-		if err := a.accountChanges.openFiles(blockNum, true /* write */); err != nil {
-			return nil, err
+	return w, nil
+}
+
+func (w *Writer) Reset(tx kv.RwTx, blockNum uint64) error {
+	w.tx = tx
+	w.blockNum = blockNum
+	if blockNum > w.a.changeFileNum {
+		if err := w.a.accountChanges.closeFiles(); err != nil {
+			return err
 		}
-		if err := a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
-			return nil, err
+		if err := w.a.codeChanges.closeFiles(); err != nil {
+			return err
 		}
-		if err := a.storageChanges.openFiles(blockNum, true /* write */); err != nil {
-			return nil, err
+		if err := w.a.storageChanges.closeFiles(); err != nil {
+			return err
 		}
-		if err := a.commChanges.openFiles(blockNum, true /* write */); err != nil {
-			return nil, err
+		if err := w.a.commChanges.closeFiles(); err != nil {
+			return err
+		}
+		w.a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: w.a.changeFileNum + 1 - w.a.aggregationStep, endBlock: w.a.changeFileNum, fileCount: 12})
+	}
+	if w.a.changeFileNum == 0 || blockNum > w.a.changeFileNum {
+		if err := w.a.accountChanges.openFiles(blockNum, true /* write */); err != nil {
+			return err
+		}
+		if err := w.a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
+			return err
+		}
+		if err := w.a.storageChanges.openFiles(blockNum, true /* write */); err != nil {
+			return err
+		}
+		if err := w.a.commChanges.openFiles(blockNum, true /* write */); err != nil {
+			return err
 		}
 		w.a.changeFileNum = blockNum - (blockNum % w.a.aggregationStep) + w.a.aggregationStep - 1
 	}
-	return w, nil
+	return nil
 }
 
 func (w *Writer) Finish() error {
@@ -1079,16 +1082,12 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 		return err
 	}
 	if prevV == nil && original == nil {
-		if err = w.a.accountChanges.insert(addr, account); err != nil {
-			return err
-		}
+		w.a.accountChanges.insert(addr, account)
 	} else {
 		if original == nil {
 			original = prevV[4:]
 		}
-		if err = w.a.accountChanges.update(addr, original, account); err != nil {
-			return err
-		}
+		w.a.accountChanges.update(addr, original, account)
 	}
 	if trace {
 		w.a.trace = true
@@ -1116,16 +1115,12 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 		return err
 	}
 	if prevV == nil && original == nil {
-		if err = w.a.codeChanges.insert(addr, code); err != nil {
-			return err
-		}
+		w.a.codeChanges.insert(addr, code)
 	} else {
 		if original == nil {
 			original = prevV[4:]
 		}
-		if err = w.a.codeChanges.update(addr, original, code); err != nil {
-			return err
-		}
+		w.a.codeChanges.update(addr, original, code)
 	}
 	if trace {
 		w.a.trace = true
@@ -1197,9 +1192,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) error {
 	} else if original == nil {
 		original = prevV[4:]
 	}
-	if err = w.a.accountChanges.delete(addr, original); err != nil {
-		return err
-	}
+	w.a.accountChanges.delete(addr, original)
 	return nil
 }
 
@@ -1226,9 +1219,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	} else if original == nil {
 		original = prevV[4:]
 	}
-	if err = w.a.codeChanges.delete(addr, original); err != nil {
-		return err
-	}
+	w.a.codeChanges.delete(addr, original)
 	return nil
 }
 
@@ -1323,9 +1314,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		if err = w.tx.Put(kv.StateStorage, lastKey, v); err != nil {
 			return err
 		}
-		if err = w.a.storageChanges.delete(lastKey, lastVal); err != nil {
-			return err
-		}
+		w.a.storageChanges.delete(lastKey, lastVal)
 	}
 	if trace {
 		w.a.trace = true
@@ -1357,16 +1346,12 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 		return err
 	}
 	if prevV == nil {
-		if err = w.a.storageChanges.insert(dbkey, v[4:]); err != nil {
-			return err
-		}
+		w.a.storageChanges.insert(dbkey, v[4:])
 	} else {
 		if original == nil {
 			original = prevV[4:]
 		}
-		if err = w.a.storageChanges.update(dbkey, original, v[4:]); err != nil {
-			return err
-		}
+		w.a.storageChanges.update(dbkey, original, v[4:])
 	}
 	if trace {
 		w.a.trace = true
