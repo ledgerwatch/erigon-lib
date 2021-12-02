@@ -65,11 +65,6 @@ type Aggregator struct {
 	byEndBlock      *btree.BTree
 	unwindLimit     uint64              // How far the chain may unwind
 	aggregationStep uint64              // How many items (block, but later perhaps txs or changes) are required to form one state diff file
-	changeFileNum   uint64              // Block number associated with the current change files. It is the last block number whose changes will go into that file
-	accountChanges  Changes             // Change files for accounts
-	codeChanges     Changes             // Change files for contract code
-	storageChanges  Changes             // Change files for contract storage
-	commChanges     Changes             // Change files for commitment
 	changesBtree    *btree.BTree        // btree of ChangesItem
 	trace           bool                // Turns on tracing for specific accounts and locations
 	tracedKeys      map[string]struct{} // Set of keys being traced during aggregations
@@ -359,6 +354,17 @@ func (c *Changes) deleteFiles() error {
 	if err := c.after.deleteFile(); err != nil {
 		return err
 	}
+	return nil
+}
+
+// computeCommitment is computing the commitment to the state after
+// the change would have been applied.
+// It assumes that the state accessible via the aggregator has already been
+// modified with the new values
+// At the moment, it is specific version for hex merkle patricia tree commitment
+// but it will be extended to support other types of commitments
+func ComputeCommitment(a *Aggregator, c *Changes) error {
+	// Hash the keys
 	return nil
 }
 
@@ -696,10 +702,6 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	if err != nil {
 		return nil, err
 	}
-	a.accountChanges.Init("accounts", aggregationStep, diffDir)
-	a.codeChanges.Init("code", aggregationStep, diffDir)
-	a.storageChanges.Init("storage", aggregationStep, diffDir)
-	a.commChanges.Init("commitment", aggregationStep, diffDir)
 	a.changesBtree = btree.New(32)
 	re = regexp.MustCompile(`(accounts|storage|code|commitment).(keys|before|after).([0-9]+)-([0-9]+).chg`)
 	for _, f := range files {
@@ -807,10 +809,6 @@ func closeFiles(byEndBlock *btree.BTree) {
 }
 
 func (a *Aggregator) Close() {
-	a.accountChanges.closeFiles()
-	a.codeChanges.closeFiles()
-	a.storageChanges.closeFiles()
-	a.commChanges.closeFiles()
 	closeFiles(a.byEndBlock)
 }
 
@@ -986,68 +984,81 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 }
 
 type Writer struct {
-	a        *Aggregator
-	tx       kv.RwTx
-	blockNum uint64
+	a              *Aggregator
+	tx             kv.RwTx
+	blockNum       uint64
+	changeFileNum  uint64  // Block number associated with the current change files. It is the last block number whose changes will go into that file
+	accountChanges Changes // Change files for accounts
+	codeChanges    Changes // Change files for contract code
+	storageChanges Changes // Change files for contract storage
+	commChanges    Changes // Change files for commitment
 }
 
-func (a *Aggregator) MakeStateWriter(tx kv.RwTx, blockNum uint64) (*Writer, error) {
+func (a *Aggregator) MakeStateWriter() *Writer {
 	w := &Writer{
 		a: a,
 	}
-	if err := w.Reset(tx, blockNum); err != nil {
-		return nil, err
-	}
-	return w, nil
+	w.accountChanges.Init("accounts", a.aggregationStep, a.diffDir)
+	w.codeChanges.Init("code", a.aggregationStep, a.diffDir)
+	w.storageChanges.Init("storage", a.aggregationStep, a.diffDir)
+	w.commChanges.Init("commitment", a.aggregationStep, a.diffDir)
+	return w
+}
+
+func (w *Writer) Close() {
+	w.accountChanges.closeFiles()
+	w.codeChanges.closeFiles()
+	w.storageChanges.closeFiles()
+	w.commChanges.closeFiles()
 }
 
 func (w *Writer) Reset(tx kv.RwTx, blockNum uint64) error {
 	w.tx = tx
 	w.blockNum = blockNum
-	if blockNum > w.a.changeFileNum {
-		if err := w.a.accountChanges.closeFiles(); err != nil {
+	if blockNum > w.changeFileNum {
+		if err := w.accountChanges.closeFiles(); err != nil {
 			return err
 		}
-		if err := w.a.codeChanges.closeFiles(); err != nil {
+		if err := w.codeChanges.closeFiles(); err != nil {
 			return err
 		}
-		if err := w.a.storageChanges.closeFiles(); err != nil {
+		if err := w.storageChanges.closeFiles(); err != nil {
 			return err
 		}
-		if err := w.a.commChanges.closeFiles(); err != nil {
+		if err := w.commChanges.closeFiles(); err != nil {
 			return err
 		}
-		w.a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: w.a.changeFileNum + 1 - w.a.aggregationStep, endBlock: w.a.changeFileNum, fileCount: 12})
+		w.a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: w.changeFileNum + 1 - w.a.aggregationStep, endBlock: w.changeFileNum, fileCount: 12})
 	}
-	if w.a.changeFileNum == 0 || blockNum > w.a.changeFileNum {
-		if err := w.a.accountChanges.openFiles(blockNum, true /* write */); err != nil {
+	if w.changeFileNum == 0 || blockNum > w.changeFileNum {
+		if err := w.accountChanges.openFiles(blockNum, true /* write */); err != nil {
 			return err
 		}
-		if err := w.a.codeChanges.openFiles(blockNum, true /* write */); err != nil {
+		if err := w.codeChanges.openFiles(blockNum, true /* write */); err != nil {
 			return err
 		}
-		if err := w.a.storageChanges.openFiles(blockNum, true /* write */); err != nil {
+		if err := w.storageChanges.openFiles(blockNum, true /* write */); err != nil {
 			return err
 		}
-		if err := w.a.commChanges.openFiles(blockNum, true /* write */); err != nil {
+		if err := w.commChanges.openFiles(blockNum, true /* write */); err != nil {
 			return err
 		}
-		w.a.changeFileNum = blockNum - (blockNum % w.a.aggregationStep) + w.a.aggregationStep - 1
+		w.changeFileNum = blockNum - (blockNum % w.a.aggregationStep) + w.a.aggregationStep - 1
 	}
 	return nil
 }
 
 func (w *Writer) Finish() error {
-	if err := w.a.accountChanges.finish(w.blockNum); err != nil {
+	if err := w.accountChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish accountChanges: %w", err)
 	}
-	if err := w.a.codeChanges.finish(w.blockNum); err != nil {
+	if err := w.codeChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish codeChanges: %w", err)
 	}
-	if err := w.a.storageChanges.finish(w.blockNum); err != nil {
+	if err := w.storageChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish storageChanges: %w", err)
 	}
-	if err := w.a.commChanges.finish(w.blockNum); err != nil {
+	if err := w.commChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish commChanges: %w", err)
 	}
 	if w.blockNum < w.a.unwindLimit+w.a.aggregationStep-1 {
@@ -1082,12 +1093,12 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 		return err
 	}
 	if prevV == nil && original == nil {
-		w.a.accountChanges.insert(addr, account)
+		w.accountChanges.insert(addr, account)
 	} else {
 		if original == nil {
 			original = prevV[4:]
 		}
-		w.a.accountChanges.update(addr, original, account)
+		w.accountChanges.update(addr, original, account)
 	}
 	if trace {
 		w.a.trace = true
@@ -1115,12 +1126,12 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 		return err
 	}
 	if prevV == nil && original == nil {
-		w.a.codeChanges.insert(addr, code)
+		w.codeChanges.insert(addr, code)
 	} else {
 		if original == nil {
 			original = prevV[4:]
 		}
-		w.a.codeChanges.update(addr, original, code)
+		w.codeChanges.update(addr, original, code)
 	}
 	if trace {
 		w.a.trace = true
@@ -1192,7 +1203,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) error {
 	} else if original == nil {
 		original = prevV[4:]
 	}
-	w.a.accountChanges.delete(addr, original)
+	w.accountChanges.delete(addr, original)
 	return nil
 }
 
@@ -1219,7 +1230,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	} else if original == nil {
 		original = prevV[4:]
 	}
-	w.a.codeChanges.delete(addr, original)
+	w.codeChanges.delete(addr, original)
 	return nil
 }
 
@@ -1314,7 +1325,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		if err = w.tx.Put(kv.StateStorage, lastKey, v); err != nil {
 			return err
 		}
-		w.a.storageChanges.delete(lastKey, lastVal)
+		w.storageChanges.delete(lastKey, lastVal)
 	}
 	if trace {
 		w.a.trace = true
@@ -1346,12 +1357,12 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 		return err
 	}
 	if prevV == nil {
-		w.a.storageChanges.insert(dbkey, v[4:])
+		w.storageChanges.insert(dbkey, v[4:])
 	} else {
 		if original == nil {
 			original = prevV[4:]
 		}
-		w.a.storageChanges.update(dbkey, original, v[4:])
+		w.storageChanges.update(dbkey, original, v[4:])
 	}
 	if trace {
 		w.a.trace = true

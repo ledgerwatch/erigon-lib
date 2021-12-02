@@ -53,10 +53,11 @@ func TestSimpleAggregator(t *testing.T) {
 	}
 	defer rwTx.Rollback()
 
-	var w *Writer
-	if w, err = a.MakeStateWriter(rwTx, 0); err != nil {
+	w := a.MakeStateWriter()
+	if err = w.Reset(rwTx, 0); err != nil {
 		t.Fatal(err)
 	}
+	defer w.Close()
 	var account1 = int256(1)
 	if err = w.UpdateAccountData(int160(1), account1, false /* trace */); err != nil {
 		t.Fatal(err)
@@ -101,20 +102,15 @@ func TestLoopAggregator(t *testing.T) {
 	defer func() {
 		tx.Rollback()
 	}()
-	var w *Writer
+	w := a.MakeStateWriter()
+	defer w.Close()
 	for blockNum := uint64(0); blockNum < 1000; blockNum++ {
 		accountKey := int160(blockNum/10 + 1)
 		//fmt.Printf("blockNum = %d\n", blockNum)
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if w == nil {
-			if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			w.Reset(rwTx, blockNum)
-		}
+		w.Reset(rwTx, blockNum)
 		if err = w.UpdateAccountData(accountKey, account1, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
@@ -181,19 +177,14 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 	defer func() {
 		tx.Rollback()
 	}()
-	var w *Writer
+	w := a.MakeStateWriter()
+	defer w.Close()
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if w == nil {
-			if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			if err = w.Reset(rwTx, blockNum); err != nil {
-				t.Fatal(err)
-			}
+		if err = w.Reset(rwTx, blockNum); err != nil {
+			t.Fatal(err)
 		}
 		switch blockNum {
 		case 1:
@@ -313,17 +304,14 @@ func TestChangeCode(t *testing.T) {
 			tx.Rollback()
 		}
 	}()
-	var w *Writer
+	w := a.MakeStateWriter()
+	defer w.Close()
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if w == nil {
-			if w, err = a.MakeStateWriter(rwTx, blockNum); err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			w.Reset(rwTx, blockNum)
+		if err = w.Reset(rwTx, blockNum); err != nil {
+			t.Fatal(err)
 		}
 		switch blockNum {
 		case 1:
