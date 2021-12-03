@@ -36,6 +36,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/crypto/sha3"
 )
 
 // Aggregator of multiple state files to support state reader and state writer
@@ -354,17 +355,6 @@ func (c *Changes) deleteFiles() error {
 	if err := c.after.deleteFile(); err != nil {
 		return err
 	}
-	return nil
-}
-
-// computeCommitment is computing the commitment to the state after
-// the change would have been applied.
-// It assumes that the state accessible via the aggregator has already been
-// modified with the new values
-// At the moment, it is specific version for hex merkle patricia tree commitment
-// but it will be extended to support other types of commitments
-func ComputeCommitment(a *Aggregator, c *Changes) error {
-	// Hash the keys
 	return nil
 }
 
@@ -1048,7 +1038,63 @@ func (w *Writer) Reset(tx kv.RwTx, blockNum uint64) error {
 	return nil
 }
 
+// computeCommitment is computing the commitment to the state after
+// the change would have been applied.
+// It assumes that the state accessible via the aggregator has already been
+// modified with the new values
+// At the moment, it is specific version for hex merkle patricia tree commitment
+// but it will be extended to support other types of commitments
+func (w *Writer) computeCommitment() error {
+	// Hash the keys from the buffers
+	keccak := sha3.NewLegacyKeccak256()
+	hashed := btree.New(32)
+	lastOffsetKey := 0
+	lastOffsetVal := 0
+	for i, offsetKey := range w.accountChanges.keys.wordOffsets {
+		offsetVal := w.accountChanges.after.wordOffsets[i]
+		key := w.accountChanges.keys.words[lastOffsetKey:offsetKey]
+		val := w.accountChanges.after.words[lastOffsetVal:offsetVal]
+		keccak.Reset()
+		keccak.Write(key)
+		hashedKey := keccak.Sum(nil)
+		hashed.ReplaceOrInsert(&AggregateItem{k: hashedKey, v: val})
+	}
+	lastOffsetKey = 0
+	lastOffsetVal = 0
+	for i, offsetKey := range w.storageChanges.keys.wordOffsets {
+		offsetVal := w.storageChanges.after.wordOffsets[i]
+		key := w.storageChanges.keys.words[lastOffsetKey:offsetKey]
+		val := w.storageChanges.after.words[lastOffsetVal:offsetVal]
+		hashedKey := make([]byte, 32+32)
+		keccak.Reset()
+		keccak.Write(key[:20])
+		keccak.(io.Reader).Read(hashedKey[:32])
+		keccak.Reset()
+		keccak.Write(key[20:])
+		keccak.(io.Reader).Read(hashedKey[32:])
+		hashed.ReplaceOrInsert(&AggregateItem{k: hashedKey, v: val})
+	}
+	lastOffsetKey = 0
+	lastOffsetVal = 0
+	for i, offsetKey := range w.codeChanges.keys.wordOffsets {
+		offsetVal := w.codeChanges.after.wordOffsets[i]
+		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
+		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
+		keccak.Reset()
+		keccak.Write(key)
+		hashedKey := keccak.Sum(nil)
+		keccak.Reset()
+		keccak.Write(val)
+		hashedVal := keccak.Sum(nil)
+		hashed.ReplaceOrInsert(&AggregateItem{k: hashedKey, v: hashedVal})
+	}
+	return nil
+}
+
 func (w *Writer) Finish() error {
+	if err := w.computeCommitment(); err != nil {
+		return fmt.Errorf("compute commitment: %w", err)
+	}
 	if err := w.accountChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish accountChanges: %w", err)
 	}
