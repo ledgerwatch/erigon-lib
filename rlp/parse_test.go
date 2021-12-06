@@ -63,7 +63,7 @@ var parseU256Tests = []struct {
 	{payload: decodeHex("B8020004"), expectErr: errors.New("rlp: non-canonical size information")},
 	{payload: decodeHex("C0"), expectErr: errors.New("must be a string, instead of a list")},
 	{payload: decodeHex("00"), expectErr: errors.New("integer encoding for RLP must not have leading zeros: 00")},
-	{payload: decodeHex("A101000000000000000000000000000000000000008B000000000000000000000000"), expectErr: errors.New("uint256 must not be more than 8 bytes long, got 33")},
+	{payload: decodeHex("A101000000000000000000000000000000000000008B000000000000000000000000"), expectErr: errors.New("uint256 must not be more than 32 bytes long, got 33")},
 }
 
 func TestPrimitives(t *testing.T) {

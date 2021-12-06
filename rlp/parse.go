@@ -194,7 +194,7 @@ func U256(payload []byte, pos int, x *uint256.Int) (int, error) {
 		return 0, err
 	}
 	if dataLen > 32 {
-		return 0, fmt.Errorf("uint256 must not be more than 8 bytes long, got %d", dataLen)
+		return 0, fmt.Errorf("uint256 must not be more than 32 bytes long, got %d", dataLen)
 	}
 	if dataLen > 0 && payload[dataPos] == 0 {
 		return 0, fmt.Errorf("integer encoding for RLP must not have leading zeros: %x", payload[dataPos:dataPos+dataLen])
