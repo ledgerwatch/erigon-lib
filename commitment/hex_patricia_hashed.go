@@ -26,9 +26,9 @@ type HexPatriciaHashed struct {
 	root Cell // Root cell of the tree
 	// Rows of the grid correspond to the level of depth in the patricia tree
 	// Columns of the grid correspond to pointers to the nodes further from the root
-	grid     [128][16]Cell   // First 64 rows of this grid are for account trie, and next 64 rows are for storage trie
-	accounts [16]AccountCell // Account cells that augument non-account cells in given column
-	storages [16][32]byte    // Storage cells that augument non-storage cells in given column
+	grid     [128][16]Cell        // First 64 rows of this grid are for account trie, and next 64 rows are for storage trie
+	accounts [16]AccountDecorator // Account decorator that augument non-account cells in given column
+	storages [16][32]byte         // Storage cells that augument non-storage cells in given column
 	// How many rows (starting from row 0) are currently active and have corresponding selected columns
 	// Last active row does not have selected column
 	activeRows     int
@@ -40,9 +40,9 @@ type HexPatriciaHashed struct {
 	// and for the extension, account, and leaf type, the `l` and `k`
 	branchFn func(prefix []byte, row []Cell) error
 	// Function used to fetch account with given plain key. It loads
-	accountFn func(plainKey []byte, accountCell *AccountCell) error
+	accountFn func(plainKey []byte, account *AccountDecorator) error
 	// Function used to fetch account with given plain key
-	storageFn func(plainKey []byte, storageCell []byte) error
+	storageFn func(plainKey []byte, storage []byte) error
 }
 
 type CellType byte
@@ -78,7 +78,7 @@ type Cell struct {
 	m  CellMode  // mode - whether cell is modified or deleted or new
 }
 
-type AccountCell struct {
+type AccountDecorator struct {
 	Nonce      uint64
 	Balance    uint256.Int
 	hasStorage bool     // Whether this account has storage items
