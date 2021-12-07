@@ -27,8 +27,8 @@ type HexPatriciaHashed struct {
 	// Rows of the grid correspond to the level of depth in the patricia tree
 	// Columns of the grid correspond to pointers to the nodes further from the root
 	grid     [128][16]Cell        // First 64 rows of this grid are for account trie, and next 64 rows are for storage trie
-	accounts [16]AccountDecorator // Account decorator that augument non-account cells in given column
-	storages [16][32]byte         // Storage cells that augument non-storage cells in given column
+	accounts [16]AccountDecorator // Account decorators that augument non-account cells in given column
+	storages [16][32]byte         // Storage decorators that augument non-storage cells in given column
 	// How many rows (starting from row 0) are currently active and have corresponding selected columns
 	// Last active row does not have selected column
 	activeRows     int
@@ -79,10 +79,9 @@ type Cell struct {
 }
 
 type AccountDecorator struct {
-	Nonce      uint64
-	Balance    uint256.Int
-	hasStorage bool     // Whether this account has storage items
-	CodeHash   [32]byte // hash of the bytecode
+	Nonce    uint64
+	Balance  uint256.Int
+	CodeHash [32]byte // hash of the bytecode
 }
 
 func (hph *HexPatriciaHashed) unfoldCell(c *Cell, row int) error {
