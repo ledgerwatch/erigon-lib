@@ -166,3 +166,5 @@ func (hph *HexPatriciaHashed) unfoldCell(c *Cell, row int) error {
 func (hph *HexPatriciaHashed) fold(row int) error {
 	return nil
 }
+
+func (hph *HexPatriciaHashes) Apply(k, v []byte)
