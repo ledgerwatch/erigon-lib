@@ -167,4 +167,6 @@ func (hph *HexPatriciaHashed) fold(row int) error {
 	return nil
 }
 
-func (hph *HexPatriciaHashes) Apply(k, v []byte)
+func (hph *HexPatriciaHashed) Apply(k, v []byte) {
+
+}

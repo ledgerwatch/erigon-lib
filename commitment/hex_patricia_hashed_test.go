@@ -17,6 +17,7 @@
 package commitment
 
 import (
+	"encoding/hex"
 	"sort"
 	"testing"
 
@@ -38,6 +39,14 @@ func (ms MockState) accountFn(plainKey []byte, account *AccountDecorator) error 
 
 func (ms MockState) storageFn(plainKey []byte, storage []byte) error {
 	return nil
+}
+
+func decodeHex(in string) []byte {
+	payload, err := hex.DecodeString(in)
+	if err != nil {
+		panic(err)
+	}
+	return payload
 }
 
 // UpdateBuilder collects updates to the state
@@ -62,36 +71,36 @@ func NewUpdateBuilder() *UpdateBuilder {
 	}
 }
 
-func (ub *UpdateBuilder) Balance(addr []byte, balance *uint256.Int) {
-	sk := string(common.Copy(addr))
+func (ub *UpdateBuilder) Balance(addr string, balance *uint256.Int) {
+	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
 	ub.balances[sk] = balance.Clone()
 	ub.keyset[sk] = struct{}{}
 }
 
-func (ub *UpdateBuilder) Nonce(addr []byte, nonce uint64) {
-	sk := string(common.Copy(addr))
+func (ub *UpdateBuilder) Nonce(addr string, nonce uint64) {
+	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
 	ub.nonces[sk] = nonce
 	ub.keyset[sk] = struct{}{}
 }
 
-func (ub *UpdateBuilder) CodeHash(addr []byte, hash [32]byte) {
-	sk := string(common.Copy(addr))
+func (ub *UpdateBuilder) CodeHash(addr string, hash [32]byte) {
+	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
 	ub.codeHashes[sk] = hash
 	ub.keyset[sk] = struct{}{}
 }
 
-func (ub *UpdateBuilder) Storage(key []byte, value []byte) {
-	sk := string(common.Copy(key))
+func (ub *UpdateBuilder) Storage(key string, value []byte) {
+	sk := string(decodeHex(key))
 	delete(ub.deletes, sk)
 	ub.storages[sk] = common.Copy(value)
 	ub.keyset[sk] = struct{}{}
 }
 
-func (ub *UpdateBuilder) Delete(key []byte) {
-	sk := string(common.Copy(key))
+func (ub *UpdateBuilder) Delete(key string) {
+	sk := string(decodeHex(key))
 	delete(ub.balances, sk)
 	delete(ub.nonces, sk)
 	delete(ub.codeHashes, sk)
