@@ -73,9 +73,10 @@ type Config struct {
 	BaseFeeSubPoolLimit int
 	QueuedSubPoolLimit  int
 
-	MinFeeCap    uint64
-	AccountSlots uint64 // Number of executable transaction slots guaranteed per account
-	PriceBump    uint64 // Price bump percentage to replace an already existing transaction
+	MinFeeCap     uint64
+	AccountSlots  uint64   // Number of executable transaction slots guaranteed per account
+	PriceBump     uint64   // Price bump percentage to replace an already existing transaction
+	TracedSenders []string // List of senders for which tx pool should print out debugging info
 }
 
 var DefaultConfig = Config{
@@ -316,7 +317,10 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ch
 		search:           sortByNonce{&metaTx{Tx: &TxSlot{}}},
 		senderIDTxnCount: map[uint64]int{},
 	}
-
+	tracedSenders := make(map[string]struct{})
+	for _, sender := range cfg.TracedSenders {
+		tracedSenders[sender] = struct{}{}
+	}
 	return &TxPool{
 		lock:                    &sync.RWMutex{},
 		byHash:                  map[string]*metaTx{},
@@ -329,7 +333,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ch
 		queued:                  NewSubPool(QueuedSubPool, cfg.QueuedSubPoolLimit),
 		newPendingTxs:           newTxs,
 		_stateCache:             cache,
-		senders:                 newSendersCache(),
+		senders:                 newSendersCache(tracedSenders),
 		_chainDB:                coreDB,
 		cfg:                     cfg,
 		chainID:                 chainID,
@@ -1466,7 +1470,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		}
 		txn.rlp = nil // means that we don't need store it in db anymore
 
-		txn.senderID = p.senders.getOrCreateID(addr)
+		txn.senderID, txn.traced = p.senders.getOrCreateID(addr)
 		binary.BigEndian.Uint64(v)
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
@@ -1727,26 +1731,31 @@ type sendersBatch struct {
 	senderID      uint64
 	senderIDs     map[string]uint64
 	senderID2Addr map[uint64]string
+	tracedSenders map[string]struct{}
 }
 
-func newSendersCache() *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}}
+func newSendersCache(tracedSenders map[string]struct{}) *sendersBatch {
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}, tracedSenders: tracedSenders}
 }
 
 func (sc *sendersBatch) getID(addr []byte) (uint64, bool) {
 	id, ok := sc.senderIDs[string(addr)]
 	return id, ok
 }
-func (sc *sendersBatch) getOrCreateID(addr []byte) uint64 {
+func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
 	addrS := string(addr)
+	_, traced := sc.tracedSenders[addrS]
 	id, ok := sc.senderIDs[addrS]
 	if !ok {
 		sc.senderID++
 		id = sc.senderID
 		sc.senderIDs[addrS] = id
 		sc.senderID2Addr[id] = addrS
+		if traced {
+			log.Info(fmt.Sprintf("TX TRACING: allocated senderID %d to sender %x", id, addr))
+		}
 	}
-	return id
+	return id, traced
 }
 func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint64, balance uint256.Int, err error) {
 	addr, ok := sc.senderID2Addr[id]
@@ -1769,7 +1778,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 
 func (sc *sendersBatch) registerNewSenders(newTxs TxSlots) (err error) {
 	for i, txn := range newTxs.txs {
-		txn.senderID = sc.getOrCreateID(newTxs.senders.At(i))
+		txn.senderID, txn.traced = sc.getOrCreateID(newTxs.senders.At(i))
 	}
 	return nil
 }
@@ -1781,11 +1790,11 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 		}
 
 		for i, txn := range unwindTxs.txs {
-			txn.senderID = sc.getOrCreateID(unwindTxs.senders.At(i))
+			txn.senderID, txn.traced = sc.getOrCreateID(unwindTxs.senders.At(i))
 		}
 
 		for i, txn := range minedTxs.txs {
-			txn.senderID = sc.getOrCreateID(minedTxs.senders.At(i))
+			txn.senderID, txn.traced = sc.getOrCreateID(minedTxs.senders.At(i))
 		}
 	}
 	return nil
