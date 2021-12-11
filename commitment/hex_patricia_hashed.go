@@ -31,8 +31,8 @@ type HexPatriciaHashed struct {
 	storages [16][32]byte         // Storage decorators that augument non-storage cells in given column
 	// How many rows (starting from row 0) are currently active and have corresponding selected columns
 	// Last active row does not have selected column
-	activeRows     int
-	selectedCols   [128]byte   // For each row indicates which column is currently selected
+	currentKeyLen  int
+	currentKey     [128]byte   // For each row indicates which column is currently selected
 	nonEmptyCols   [128]uint16 // For each row, bitmap of non-empty columns
 	selectedPrefix []byte      // Key used to load the last active row
 	// Function used to load branch node and fill up the cells

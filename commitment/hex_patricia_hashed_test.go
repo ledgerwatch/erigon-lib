@@ -18,7 +18,9 @@ package commitment
 
 import (
 	"encoding/hex"
+	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -71,35 +73,39 @@ func NewUpdateBuilder() *UpdateBuilder {
 	}
 }
 
-func (ub *UpdateBuilder) Balance(addr string, balance *uint256.Int) {
-	sk := string(decodeHex(addr))
+func (ub *UpdateBuilder) Balance(addrHash string, balance uint64) *UpdateBuilder {
+	sk := string(decodeHex(addrHash))
 	delete(ub.deletes, sk)
-	ub.balances[sk] = balance.Clone()
+	ub.balances[sk] = uint256.NewInt(balance)
 	ub.keyset[sk] = struct{}{}
+	return ub
 }
 
-func (ub *UpdateBuilder) Nonce(addr string, nonce uint64) {
-	sk := string(decodeHex(addr))
+func (ub *UpdateBuilder) Nonce(addrHash string, nonce uint64) *UpdateBuilder {
+	sk := string(decodeHex(addrHash))
 	delete(ub.deletes, sk)
 	ub.nonces[sk] = nonce
 	ub.keyset[sk] = struct{}{}
+	return ub
 }
 
-func (ub *UpdateBuilder) CodeHash(addr string, hash [32]byte) {
-	sk := string(decodeHex(addr))
+func (ub *UpdateBuilder) CodeHash(addrHash string, hash [32]byte) *UpdateBuilder {
+	sk := string(decodeHex(addrHash))
 	delete(ub.deletes, sk)
 	ub.codeHashes[sk] = hash
 	ub.keyset[sk] = struct{}{}
+	return ub
 }
 
-func (ub *UpdateBuilder) Storage(key string, value []byte) {
+func (ub *UpdateBuilder) Storage(key string, value []byte) *UpdateBuilder {
 	sk := string(decodeHex(key))
 	delete(ub.deletes, sk)
 	ub.storages[sk] = common.Copy(value)
 	ub.keyset[sk] = struct{}{}
+	return ub
 }
 
-func (ub *UpdateBuilder) Delete(key string) {
+func (ub *UpdateBuilder) Delete(key string) *UpdateBuilder {
 	sk := string(decodeHex(key))
 	delete(ub.balances, sk)
 	delete(ub.nonces, sk)
@@ -107,6 +113,7 @@ func (ub *UpdateBuilder) Delete(key string) {
 	delete(ub.storages, sk)
 	ub.deletes[sk] = struct{}{}
 	ub.keyset[sk] = struct{}{}
+	return ub
 }
 
 type UpdateFlags uint8
@@ -118,11 +125,46 @@ const (
 	STORAGE_UPDATE UpdateFlags = 8
 )
 
+func (uf UpdateFlags) String() string {
+	var sb strings.Builder
+	if uf&BALANCE_UPDATE != 0 {
+		sb.WriteString("+Balance")
+	}
+	if uf&NONCE_UPDATE != 0 {
+		sb.WriteString("+Nonce")
+	}
+	if uf&CODE_UPDATE != 0 {
+		sb.WriteString("+Code")
+	}
+	if uf&STORAGE_UPDATE != 0 {
+		sb.WriteString("+Storage")
+	}
+	return sb.String()
+}
+
 type Update struct {
 	flags             UpdateFlags
 	balance           uint256.Int
 	nonce             uint64
 	codeHashOrStorage [32]byte
+}
+
+func (u Update) String() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Flags: [%s]", u.flags))
+	if u.flags&BALANCE_UPDATE != 0 {
+		sb.WriteString(fmt.Sprintf(", Balance: [%d]", &u.balance))
+	}
+	if u.flags&NONCE_UPDATE != 0 {
+		sb.WriteString(fmt.Sprintf(", Nonce: [%d]", u.nonce))
+	}
+	if u.flags&CODE_UPDATE != 0 {
+		sb.WriteString(fmt.Sprintf(", CodeHash: [%x]", u.codeHashOrStorage))
+	}
+	if u.flags&STORAGE_UPDATE != 0 {
+		sb.WriteString(fmt.Sprintf(", Storage: [%x]", u.codeHashOrStorage))
+	}
+	return sb.String()
 }
 
 // Build
@@ -164,6 +206,14 @@ func TestEmptyState(t *testing.T) {
 		branchFn:  ms.branchFn,
 		accountFn: ms.accountFn,
 		storageFn: ms.storageFn,
+	}
+	// addrHashes are 4 digits long
+	keys, updates := NewUpdateBuilder().
+		Balance("00000000", 4).
+		Build()
+	for i, key := range keys {
+		update := updates[i]
+		fmt.Printf("key = [%x], update = %s\n", key, update)
 	}
 	if err := hph.unfoldCell(&hph.root, 0); err != nil {
 		t.Error(err)
