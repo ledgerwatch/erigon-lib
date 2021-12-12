@@ -20,7 +20,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DownloaderClient interface {
 	Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	Snapshots(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsInfoReply, error)
+	Snapshots(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error)
 }
 
 type downloaderClient struct {
@@ -40,8 +40,8 @@ func (c *downloaderClient) Download(ctx context.Context, in *DownloadRequest, op
 	return out, nil
 }
 
-func (c *downloaderClient) Snapshots(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsInfoReply, error) {
-	out := new(SnapshotsInfoReply)
+func (c *downloaderClient) Snapshots(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error) {
+	out := new(SnapshotsReply)
 	err := c.cc.Invoke(ctx, "/downloader.Downloader/Snapshots", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func (c *downloaderClient) Snapshots(ctx context.Context, in *SnapshotsRequest, 
 // for forward compatibility
 type DownloaderServer interface {
 	Download(context.Context, *DownloadRequest) (*emptypb.Empty, error)
-	Snapshots(context.Context, *SnapshotsRequest) (*SnapshotsInfoReply, error)
+	Snapshots(context.Context, *SnapshotsRequest) (*SnapshotsReply, error)
 	mustEmbedUnimplementedDownloaderServer()
 }
 
@@ -65,7 +65,7 @@ type UnimplementedDownloaderServer struct {
 func (UnimplementedDownloaderServer) Download(context.Context, *DownloadRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Download not implemented")
 }
-func (UnimplementedDownloaderServer) Snapshots(context.Context, *SnapshotsRequest) (*SnapshotsInfoReply, error) {
+func (UnimplementedDownloaderServer) Snapshots(context.Context, *SnapshotsRequest) (*SnapshotsReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Snapshots not implemented")
 }
 func (UnimplementedDownloaderServer) mustEmbedUnimplementedDownloaderServer() {}

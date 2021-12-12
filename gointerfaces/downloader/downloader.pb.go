@@ -22,18 +22,73 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type DownloadItem struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Path        string      `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	TorrentHash *types.H160 `protobuf:"bytes,2,opt,name=torrent_hash,json=torrentHash,proto3" json:"torrent_hash,omitempty"` // single hash will be resolved as magnet link
+}
+
+func (x *DownloadItem) Reset() {
+	*x = DownloadItem{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_downloader_downloader_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *DownloadItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DownloadItem) ProtoMessage() {}
+
+func (x *DownloadItem) ProtoReflect() protoreflect.Message {
+	mi := &file_downloader_downloader_proto_msgTypes[0]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DownloadItem.ProtoReflect.Descriptor instead.
+func (*DownloadItem) Descriptor() ([]byte, []int) {
+	return file_downloader_downloader_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *DownloadItem) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *DownloadItem) GetTorrentHash() *types.H160 {
+	if x != nil {
+		return x.TorrentHash
+	}
+	return nil
+}
+
 type DownloadRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	TorrentHashes []*types.H160 `protobuf:"bytes,1,rep,name=torrent_hashes,json=torrentHashes,proto3" json:"torrent_hashes,omitempty"` // single hash will be resolved as magnet link
+	Items []*DownloadItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"` // single hash will be resolved as magnet link
 }
 
 func (x *DownloadRequest) Reset() {
 	*x = DownloadRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_downloader_downloader_proto_msgTypes[0]
+		mi := &file_downloader_downloader_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -46,7 +101,7 @@ func (x *DownloadRequest) String() string {
 func (*DownloadRequest) ProtoMessage() {}
 
 func (x *DownloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_downloader_downloader_proto_msgTypes[0]
+	mi := &file_downloader_downloader_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,12 +114,12 @@ func (x *DownloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadRequest.ProtoReflect.Descriptor instead.
 func (*DownloadRequest) Descriptor() ([]byte, []int) {
-	return file_downloader_downloader_proto_rawDescGZIP(), []int{0}
+	return file_downloader_downloader_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *DownloadRequest) GetTorrentHashes() []*types.H160 {
+func (x *DownloadRequest) GetItems() []*DownloadItem {
 	if x != nil {
-		return x.TorrentHashes
+		return x.Items
 	}
 	return nil
 }
@@ -78,7 +133,7 @@ type SnapshotsRequest struct {
 func (x *SnapshotsRequest) Reset() {
 	*x = SnapshotsRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_downloader_downloader_proto_msgTypes[1]
+		mi := &file_downloader_downloader_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -91,7 +146,7 @@ func (x *SnapshotsRequest) String() string {
 func (*SnapshotsRequest) ProtoMessage() {}
 
 func (x *SnapshotsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_downloader_downloader_proto_msgTypes[1]
+	mi := &file_downloader_downloader_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -104,74 +159,20 @@ func (x *SnapshotsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotsRequest.ProtoReflect.Descriptor instead.
 func (*SnapshotsRequest) Descriptor() ([]byte, []int) {
-	return file_downloader_downloader_proto_rawDescGZIP(), []int{1}
-}
-
-type SnapshotsInfo struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Readiness int32  `protobuf:"varint,1,opt,name=readiness,proto3" json:"readiness,omitempty"`
-	Path      string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-}
-
-func (x *SnapshotsInfo) Reset() {
-	*x = SnapshotsInfo{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_downloader_downloader_proto_msgTypes[2]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *SnapshotsInfo) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SnapshotsInfo) ProtoMessage() {}
-
-func (x *SnapshotsInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_downloader_downloader_proto_msgTypes[2]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SnapshotsInfo.ProtoReflect.Descriptor instead.
-func (*SnapshotsInfo) Descriptor() ([]byte, []int) {
 	return file_downloader_downloader_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *SnapshotsInfo) GetReadiness() int32 {
-	if x != nil {
-		return x.Readiness
-	}
-	return 0
-}
-
-func (x *SnapshotsInfo) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
-type SnapshotsInfoReply struct {
+type SnapshotInfo struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Info []*SnapshotsInfo `protobuf:"bytes,1,rep,name=info,proto3" json:"info,omitempty"`
+	Path      string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Readiness int32  `protobuf:"varint,2,opt,name=readiness,proto3" json:"readiness,omitempty"`
 }
 
-func (x *SnapshotsInfoReply) Reset() {
-	*x = SnapshotsInfoReply{}
+func (x *SnapshotInfo) Reset() {
+	*x = SnapshotInfo{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_downloader_downloader_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -179,13 +180,13 @@ func (x *SnapshotsInfoReply) Reset() {
 	}
 }
 
-func (x *SnapshotsInfoReply) String() string {
+func (x *SnapshotInfo) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SnapshotsInfoReply) ProtoMessage() {}
+func (*SnapshotInfo) ProtoMessage() {}
 
-func (x *SnapshotsInfoReply) ProtoReflect() protoreflect.Message {
+func (x *SnapshotInfo) ProtoReflect() protoreflect.Message {
 	mi := &file_downloader_downloader_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -197,12 +198,66 @@ func (x *SnapshotsInfoReply) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SnapshotsInfoReply.ProtoReflect.Descriptor instead.
-func (*SnapshotsInfoReply) Descriptor() ([]byte, []int) {
+// Deprecated: Use SnapshotInfo.ProtoReflect.Descriptor instead.
+func (*SnapshotInfo) Descriptor() ([]byte, []int) {
 	return file_downloader_downloader_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *SnapshotsInfoReply) GetInfo() []*SnapshotsInfo {
+func (x *SnapshotInfo) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SnapshotInfo) GetReadiness() int32 {
+	if x != nil {
+		return x.Readiness
+	}
+	return 0
+}
+
+type SnapshotsReply struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Info []*SnapshotInfo `protobuf:"bytes,1,rep,name=info,proto3" json:"info,omitempty"`
+}
+
+func (x *SnapshotsReply) Reset() {
+	*x = SnapshotsReply{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_downloader_downloader_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SnapshotsReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotsReply) ProtoMessage() {}
+
+func (x *SnapshotsReply) ProtoReflect() protoreflect.Message {
+	mi := &file_downloader_downloader_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotsReply.ProtoReflect.Descriptor instead.
+func (*SnapshotsReply) Descriptor() ([]byte, []int) {
+	return file_downloader_downloader_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SnapshotsReply) GetInfo() []*SnapshotInfo {
 	if x != nil {
 		return x.Info
 	}
@@ -217,33 +272,38 @@ var file_downloader_downloader_proto_rawDesc = []byte{
 	0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x1a, 0x1b, 0x67, 0x6f, 0x6f, 0x67, 0x6c,
 	0x65, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x65, 0x6d, 0x70, 0x74, 0x79,
 	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x11, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79,
-	0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x45, 0x0a, 0x0f, 0x44, 0x6f, 0x77,
-	0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x32, 0x0a, 0x0e,
-	0x74, 0x6f, 0x72, 0x72, 0x65, 0x6e, 0x74, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x65, 0x73, 0x18, 0x01,
-	0x20, 0x03, 0x28, 0x0b, 0x32, 0x0b, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x48, 0x31, 0x36,
-	0x30, 0x52, 0x0d, 0x74, 0x6f, 0x72, 0x72, 0x65, 0x6e, 0x74, 0x48, 0x61, 0x73, 0x68, 0x65, 0x73,
+	0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x52, 0x0a, 0x0c, 0x44, 0x6f, 0x77,
+	0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x49, 0x74, 0x65, 0x6d, 0x12, 0x12, 0x0a, 0x04, 0x70, 0x61, 0x74,
+	0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x70, 0x61, 0x74, 0x68, 0x12, 0x2e, 0x0a,
+	0x0c, 0x74, 0x6f, 0x72, 0x72, 0x65, 0x6e, 0x74, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x0b, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x48, 0x31, 0x36, 0x30,
+	0x52, 0x0b, 0x74, 0x6f, 0x72, 0x72, 0x65, 0x6e, 0x74, 0x48, 0x61, 0x73, 0x68, 0x22, 0x41, 0x0a,
+	0x0f, 0x44, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x12, 0x2e, 0x0a, 0x05, 0x69, 0x74, 0x65, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32,
+	0x18, 0x2e, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2e, 0x44, 0x6f, 0x77,
+	0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x49, 0x74, 0x65, 0x6d, 0x52, 0x05, 0x69, 0x74, 0x65, 0x6d, 0x73,
 	0x22, 0x12, 0x0a, 0x10, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x73, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x22, 0x41, 0x0a, 0x0d, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74,
-	0x73, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x1c, 0x0a, 0x09, 0x72, 0x65, 0x61, 0x64, 0x69, 0x6e, 0x65,
-	0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x05, 0x52, 0x09, 0x72, 0x65, 0x61, 0x64, 0x69, 0x6e,
-	0x65, 0x73, 0x73, 0x12, 0x12, 0x0a, 0x04, 0x70, 0x61, 0x74, 0x68, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x04, 0x70, 0x61, 0x74, 0x68, 0x22, 0x43, 0x0a, 0x12, 0x53, 0x6e, 0x61, 0x70, 0x73,
-	0x68, 0x6f, 0x74, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x12, 0x2d, 0x0a,
-	0x04, 0x69, 0x6e, 0x66, 0x6f, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x64, 0x6f,
-	0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f,
-	0x74, 0x73, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x04, 0x69, 0x6e, 0x66, 0x6f, 0x32, 0x9c, 0x01, 0x0a,
-	0x0a, 0x44, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x12, 0x41, 0x0a, 0x08, 0x44,
-	0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x12, 0x1b, 0x2e, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f,
-	0x61, 0x64, 0x65, 0x72, 0x2e, 0x44, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x1a, 0x16, 0x2e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x45, 0x6d, 0x70, 0x74, 0x79, 0x22, 0x00, 0x12, 0x4b,
-	0x0a, 0x09, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x73, 0x12, 0x1c, 0x2e, 0x64, 0x6f,
-	0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f,
-	0x74, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x64, 0x6f, 0x77, 0x6e,
-	0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x73,
-	0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x22, 0x00, 0x42, 0x19, 0x5a, 0x17, 0x2e,
-	0x2f, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x3b, 0x64, 0x6f, 0x77, 0x6e,
-	0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x75, 0x65, 0x73, 0x74, 0x22, 0x40, 0x0a, 0x0c, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74,
+	0x49, 0x6e, 0x66, 0x6f, 0x12, 0x12, 0x0a, 0x04, 0x70, 0x61, 0x74, 0x68, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x04, 0x70, 0x61, 0x74, 0x68, 0x12, 0x1c, 0x0a, 0x09, 0x72, 0x65, 0x61, 0x64,
+	0x69, 0x6e, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x05, 0x52, 0x09, 0x72, 0x65, 0x61,
+	0x64, 0x69, 0x6e, 0x65, 0x73, 0x73, 0x22, 0x3e, 0x0a, 0x0e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68,
+	0x6f, 0x74, 0x73, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x12, 0x2c, 0x0a, 0x04, 0x69, 0x6e, 0x66, 0x6f,
+	0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61,
+	0x64, 0x65, 0x72, 0x2e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x49, 0x6e, 0x66, 0x6f,
+	0x52, 0x04, 0x69, 0x6e, 0x66, 0x6f, 0x32, 0x98, 0x01, 0x0a, 0x0a, 0x44, 0x6f, 0x77, 0x6e, 0x6c,
+	0x6f, 0x61, 0x64, 0x65, 0x72, 0x12, 0x41, 0x0a, 0x08, 0x44, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61,
+	0x64, 0x12, 0x1b, 0x2e, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2e, 0x44,
+	0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x16,
+	0x2e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66,
+	0x2e, 0x45, 0x6d, 0x70, 0x74, 0x79, 0x22, 0x00, 0x12, 0x47, 0x0a, 0x09, 0x53, 0x6e, 0x61, 0x70,
+	0x73, 0x68, 0x6f, 0x74, 0x73, 0x12, 0x1c, 0x2e, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64,
+	0x65, 0x72, 0x2e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x73, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x1a, 0x1a, 0x2e, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72,
+	0x2e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x73, 0x52, 0x65, 0x70, 0x6c, 0x79, 0x22,
+	0x00, 0x42, 0x19, 0x5a, 0x17, 0x2e, 0x2f, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65,
+	0x72, 0x3b, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x62, 0x06, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -258,27 +318,29 @@ func file_downloader_downloader_proto_rawDescGZIP() []byte {
 	return file_downloader_downloader_proto_rawDescData
 }
 
-var file_downloader_downloader_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_downloader_downloader_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_downloader_downloader_proto_goTypes = []interface{}{
-	(*DownloadRequest)(nil),    // 0: downloader.DownloadRequest
-	(*SnapshotsRequest)(nil),   // 1: downloader.SnapshotsRequest
-	(*SnapshotsInfo)(nil),      // 2: downloader.SnapshotsInfo
-	(*SnapshotsInfoReply)(nil), // 3: downloader.SnapshotsInfoReply
-	(*types.H160)(nil),         // 4: types.H160
-	(*emptypb.Empty)(nil),      // 5: google.protobuf.Empty
+	(*DownloadItem)(nil),     // 0: downloader.DownloadItem
+	(*DownloadRequest)(nil),  // 1: downloader.DownloadRequest
+	(*SnapshotsRequest)(nil), // 2: downloader.SnapshotsRequest
+	(*SnapshotInfo)(nil),     // 3: downloader.SnapshotInfo
+	(*SnapshotsReply)(nil),   // 4: downloader.SnapshotsReply
+	(*types.H160)(nil),       // 5: types.H160
+	(*emptypb.Empty)(nil),    // 6: google.protobuf.Empty
 }
 var file_downloader_downloader_proto_depIdxs = []int32{
-	4, // 0: downloader.DownloadRequest.torrent_hashes:type_name -> types.H160
-	2, // 1: downloader.SnapshotsInfoReply.info:type_name -> downloader.SnapshotsInfo
-	0, // 2: downloader.Downloader.Download:input_type -> downloader.DownloadRequest
-	1, // 3: downloader.Downloader.Snapshots:input_type -> downloader.SnapshotsRequest
-	5, // 4: downloader.Downloader.Download:output_type -> google.protobuf.Empty
-	3, // 5: downloader.Downloader.Snapshots:output_type -> downloader.SnapshotsInfoReply
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	5, // 0: downloader.DownloadItem.torrent_hash:type_name -> types.H160
+	0, // 1: downloader.DownloadRequest.items:type_name -> downloader.DownloadItem
+	3, // 2: downloader.SnapshotsReply.info:type_name -> downloader.SnapshotInfo
+	1, // 3: downloader.Downloader.Download:input_type -> downloader.DownloadRequest
+	2, // 4: downloader.Downloader.Snapshots:input_type -> downloader.SnapshotsRequest
+	6, // 5: downloader.Downloader.Download:output_type -> google.protobuf.Empty
+	4, // 6: downloader.Downloader.Snapshots:output_type -> downloader.SnapshotsReply
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_downloader_downloader_proto_init() }
@@ -288,7 +350,7 @@ func file_downloader_downloader_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_downloader_downloader_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*DownloadRequest); i {
+			switch v := v.(*DownloadItem); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -300,7 +362,7 @@ func file_downloader_downloader_proto_init() {
 			}
 		}
 		file_downloader_downloader_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SnapshotsRequest); i {
+			switch v := v.(*DownloadRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -312,7 +374,7 @@ func file_downloader_downloader_proto_init() {
 			}
 		}
 		file_downloader_downloader_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SnapshotsInfo); i {
+			switch v := v.(*SnapshotsRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -324,7 +386,19 @@ func file_downloader_downloader_proto_init() {
 			}
 		}
 		file_downloader_downloader_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SnapshotsInfoReply); i {
+			switch v := v.(*SnapshotInfo); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_downloader_downloader_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SnapshotsReply); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -342,7 +416,7 @@ func file_downloader_downloader_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_downloader_downloader_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
