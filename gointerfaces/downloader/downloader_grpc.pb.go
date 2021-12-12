@@ -20,7 +20,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DownloaderClient interface {
 	Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	Snapshots(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error)
+	Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsReply, error)
 }
 
 type downloaderClient struct {
@@ -40,9 +40,9 @@ func (c *downloaderClient) Download(ctx context.Context, in *DownloadRequest, op
 	return out, nil
 }
 
-func (c *downloaderClient) Snapshots(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error) {
-	out := new(SnapshotsReply)
-	err := c.cc.Invoke(ctx, "/downloader.Downloader/Snapshots", in, out, opts...)
+func (c *downloaderClient) Stats(ctx context.Context, in *StatsRequest, opts ...grpc.CallOption) (*StatsReply, error) {
+	out := new(StatsReply)
+	err := c.cc.Invoke(ctx, "/downloader.Downloader/Stats", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (c *downloaderClient) Snapshots(ctx context.Context, in *SnapshotsRequest, 
 // for forward compatibility
 type DownloaderServer interface {
 	Download(context.Context, *DownloadRequest) (*emptypb.Empty, error)
-	Snapshots(context.Context, *SnapshotsRequest) (*SnapshotsReply, error)
+	Stats(context.Context, *StatsRequest) (*StatsReply, error)
 	mustEmbedUnimplementedDownloaderServer()
 }
 
@@ -65,8 +65,8 @@ type UnimplementedDownloaderServer struct {
 func (UnimplementedDownloaderServer) Download(context.Context, *DownloadRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Download not implemented")
 }
-func (UnimplementedDownloaderServer) Snapshots(context.Context, *SnapshotsRequest) (*SnapshotsReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Snapshots not implemented")
+func (UnimplementedDownloaderServer) Stats(context.Context, *StatsRequest) (*StatsReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Stats not implemented")
 }
 func (UnimplementedDownloaderServer) mustEmbedUnimplementedDownloaderServer() {}
 
@@ -99,20 +99,20 @@ func _Downloader_Download_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Downloader_Snapshots_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SnapshotsRequest)
+func _Downloader_Stats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DownloaderServer).Snapshots(ctx, in)
+		return srv.(DownloaderServer).Stats(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/downloader.Downloader/Snapshots",
+		FullMethod: "/downloader.Downloader/Stats",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DownloaderServer).Snapshots(ctx, req.(*SnapshotsRequest))
+		return srv.(DownloaderServer).Stats(ctx, req.(*StatsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -129,8 +129,8 @@ var Downloader_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Downloader_Download_Handler,
 		},
 		{
-			MethodName: "Snapshots",
-			Handler:    _Downloader_Snapshots_Handler,
+			MethodName: "Stats",
+			Handler:    _Downloader_Stats_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
