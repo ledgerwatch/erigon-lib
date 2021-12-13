@@ -90,6 +90,7 @@ type AccountDecorator struct {
 }
 
 func (hph *HexPatriciaHashed) unfoldCell(c *Cell) error {
+	fmt.Printf("unfoldCell: activeRows: %d\n", hph.activeRows)
 	row := hph.activeRows
 	var err error
 	switch c.t {
@@ -100,7 +101,7 @@ func (hph *HexPatriciaHashed) unfoldCell(c *Cell) error {
 			c1.m = NONE_MODE
 		}
 	case BRANCH_CELL:
-		if err = hph.branchFn(hph.selectedPrefix, hph.grid[row][:]); err != nil {
+		if err = hph.branchFn(hph.selectedPrefix[:row], hph.grid[row][:]); err != nil {
 			return err
 		}
 	case ACCOUNT_CELL, ACC_INTER_CELL:
@@ -171,6 +172,7 @@ func (hph *HexPatriciaHashed) unfoldCell(c *Cell) error {
 }
 
 func (hph *HexPatriciaHashed) fold() error {
+	fmt.Printf("fold: activeRows: %d\n", hph.activeRows)
 	if hph.activeRows == 0 {
 		return fmt.Errorf("cannot fold - no active rows")
 	}
@@ -178,6 +180,10 @@ func (hph *HexPatriciaHashed) fold() error {
 }
 
 func (hph HexPatriciaHashed) emptyTip() bool {
+	fmt.Printf("emptyTip: activeRows %d, currentKeyLen %d\n", hph.activeRows, hph.currentKeyLen)
+	if hph.activeRows == 0 {
+		return hph.root.t == EMPTY_CELL
+	}
 	return hph.grid[hph.activeRows-1][hph.currentKey[hph.currentKeyLen-1]].t == EMPTY_CELL
 }
 
