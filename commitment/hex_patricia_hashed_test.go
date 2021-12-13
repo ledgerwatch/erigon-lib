@@ -17,6 +17,7 @@
 package commitment
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -211,11 +212,31 @@ func TestEmptyState(t *testing.T) {
 	keys, updates := NewUpdateBuilder().
 		Balance("00000000", 4).
 		Build()
+	// Unfold the root onto the row 0 if it is not empty
+	if hph.root.t != EMPTY_CELL {
+		if err := hph.unfoldCell(&hph.root); err != nil {
+			t.Error(err)
+		}
+	}
 	for i, key := range keys {
 		update := updates[i]
 		fmt.Printf("key = [%x], update = %s\n", key, update)
+		// Keep folding until the currentKey is the prefix of the key we modify
+		for hph.currentKeyLen > 0 && !bytes.HasPrefix(key, hph.currentKey[:hph.currentKeyLen]) {
+			if err := hph.fold(); err != nil {
+				t.Error(err)
+			}
+		}
+		// Now unfold until we step on an empty cell
+		for !hph.emptyTip() && hph.currentKeyLen < len(key) {
+			if err := hph.unfoldCell(&hph.grid[hph.activeRows-1][key[hph.currentKeyLen]]); err != nil {
+				t.Error(err)
+			}
+		}
 	}
-	if err := hph.unfoldCell(&hph.root, 0); err != nil {
-		t.Error(err)
+	for hph.activeRows > 0 {
+		if err := hph.fold(); err != nil {
+			t.Error(err)
+		}
 	}
 }

@@ -17,6 +17,8 @@
 package commitment
 
 import (
+	"fmt"
+
 	"github.com/holiman/uint256"
 )
 
@@ -31,10 +33,13 @@ type HexPatriciaHashed struct {
 	storages [16][32]byte         // Storage decorators that augument non-storage cells in given column
 	// How many rows (starting from row 0) are currently active and have corresponding selected columns
 	// Last active row does not have selected column
-	currentKeyLen  int
-	currentKey     [128]byte   // For each row indicates which column is currently selected
-	nonEmptyCols   [128]uint16 // For each row, bitmap of non-empty columns
-	selectedPrefix []byte      // Key used to load the last active row
+	activeRows     int
+	selectedPrefix [128]byte // Key used to load the last active row
+	// Length of the key that reflects current positioning of the grid. It maybe larger than number of active rows,
+	// if a account leaf cell represents multiple nibbles in the key
+	currentKeyLen int
+	currentKey    [128]byte   // For each row indicates which column is currently selected
+	nonEmptyCols  [128]uint16 // For each row, bitmap of non-empty columns
 	// Function used to load branch node and fill up the cells
 	// For each cell, it sets the cell type, clears the modified flag, fills the hash,
 	// and for the extension, account, and leaf type, the `l` and `k`
@@ -84,7 +89,8 @@ type AccountDecorator struct {
 	CodeHash [32]byte // hash of the bytecode
 }
 
-func (hph *HexPatriciaHashed) unfoldCell(c *Cell, row int) error {
+func (hph *HexPatriciaHashed) unfoldCell(c *Cell) error {
+	row := hph.activeRows
 	var err error
 	switch c.t {
 	case EMPTY_CELL:
@@ -160,11 +166,19 @@ func (hph *HexPatriciaHashed) unfoldCell(c *Cell, row int) error {
 			}
 		}
 	}
+	hph.activeRows++
 	return nil
 }
 
-func (hph *HexPatriciaHashed) fold(row int) error {
+func (hph *HexPatriciaHashed) fold() error {
+	if hph.activeRows == 0 {
+		return fmt.Errorf("cannot fold - no active rows")
+	}
 	return nil
+}
+
+func (hph HexPatriciaHashed) emptyTip() bool {
+	return hph.grid[hph.activeRows-1][hph.currentKey[hph.currentKeyLen-1]].t == EMPTY_CELL
 }
 
 func (hph *HexPatriciaHashed) Apply(k, v []byte) {
