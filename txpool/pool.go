@@ -73,9 +73,10 @@ type Config struct {
 	BaseFeeSubPoolLimit int
 	QueuedSubPoolLimit  int
 
-	MinFeeCap    uint64
-	AccountSlots uint64 // Number of executable transaction slots guaranteed per account
-	PriceBump    uint64 // Price bump percentage to replace an already existing transaction
+	MinFeeCap     uint64
+	AccountSlots  uint64   // Number of executable transaction slots guaranteed per account
+	PriceBump     uint64   // Price bump percentage to replace an already existing transaction
+	TracedSenders []string // List of senders for which tx pool should print out debugging info
 }
 
 var DefaultConfig = Config{
@@ -309,19 +310,28 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ch
 		return nil, err
 	}
 
+	byNonce := &BySenderAndNonce{
+		tree:             btree.New(32),
+		search:           sortByNonce{&metaTx{Tx: &TxSlot{}}},
+		senderIDTxnCount: map[uint64]int{},
+	}
+	tracedSenders := make(map[string]struct{})
+	for _, sender := range cfg.TracedSenders {
+		tracedSenders[sender] = struct{}{}
+	}
 	return &TxPool{
 		lock:                    &sync.RWMutex{},
 		byHash:                  map[string]*metaTx{},
 		isLocalLRU:              localsHistory,
 		discardReasonsLRU:       discardHistory,
-		all:                     &BySenderAndNonce{tree: btree.New(32), search: sortByNonce{&metaTx{Tx: &TxSlot{}}}},
+		all:                     byNonce,
 		recentlyConnectedPeers:  &recentlyConnectedPeers{},
 		pending:                 NewPendingSubPool(PendingSubPool, cfg.PendingSubPoolLimit),
 		baseFee:                 NewSubPool(BaseFeeSubPool, cfg.BaseFeeSubPoolLimit),
 		queued:                  NewSubPool(QueuedSubPool, cfg.QueuedSubPoolLimit),
 		newPendingTxs:           newTxs,
 		_stateCache:             cache,
-		senders:                 newSendersCache(),
+		senders:                 newSendersCache(tracedSenders),
 		_chainDB:                coreDB,
 		cfg:                     cfg,
 		chainID:                 chainID,
@@ -378,13 +388,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	}
 
 	if ASSERT {
-		for i := range unwindTxs.txs {
-			if unwindTxs.txs[i].senderID == 0 {
+		for _, txn := range unwindTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero"))
 			}
 		}
-		for i := range minedTxs.txs {
-			if minedTxs.txs[i].senderID == 0 {
+		for _, txn := range minedTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("onNewBlock.minedTxs: senderID can't be zero"))
 			}
 		}
@@ -580,34 +590,52 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 	defer addRemoteTxsTimer.UpdateDuration(time.Now())
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	for i := range newTxs.txs {
-		_, ok := p.unprocessedRemoteByHash[string(newTxs.txs[i].IdHash[:])]
+	for i, txn := range newTxs.txs {
+		_, ok := p.unprocessedRemoteByHash[string(txn.IdHash[:])]
 		if ok {
 			continue
 		}
-		p.unprocessedRemoteTxs.Append(newTxs.txs[i], newTxs.senders.At(i), false)
+		p.unprocessedRemoteTxs.Append(txn, newTxs.senders.At(i), false)
 	}
 }
 
 func (p *TxPool) validateTx(txn *TxSlot, isLocal bool, stateCache kvcache.CacheView) DiscardReason {
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !isLocal && txn.feeCap < p.cfg.MinFeeCap {
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx underpriced idHash=%x local=%t, feeCap=%d, cfg.MinFeeCap=%d", txn.IdHash, isLocal, txn.feeCap, p.cfg.MinFeeCap))
+		}
 		return UnderPriced
 	}
 	gas, reason := CalcIntrinsicGas(uint64(txn.dataLen), uint64(txn.dataNonZeroLen), nil, txn.creation, true, true)
+	if txn.traced {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas idHash=%x gas=%d", txn.IdHash, gas))
+	}
 	if reason != Success {
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas calculated failed idHash=%x reason=%s", txn.IdHash, reason))
+		}
 		return reason
 	}
 	if gas > txn.gas {
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas > txn.gas idHash=%x gas=%d, txn.gas=%d", txn.IdHash, gas, txn.gas))
+		}
 		return IntrinsicGas
 	}
 	if uint64(p.all.count(txn.senderID)) > p.cfg.AccountSlots {
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx marked as spamming idHash=%x slots=%d, limit=%d", txn.IdHash, p.all.count(txn.senderID), p.cfg.AccountSlots))
+		}
 		return Spammer
 	}
 
 	// check nonce and balance
 	senderNonce, senderBalance, _ := p.senders.info(stateCache, txn.senderID)
 	if senderNonce > txn.nonce {
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IdHash, senderNonce, txn.nonce))
+		}
 		return NonceTooLow
 	}
 	// Transactor should have enough funds to cover the costs
@@ -615,6 +643,9 @@ func (p *TxPool) validateTx(txn *TxSlot, isLocal bool, stateCache kvcache.CacheV
 	total.Mul(total, uint256.NewInt(txn.tip))
 	total.Add(total, &txn.value)
 	if senderBalance.Cmp(total) < 0 {
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx insufficient funds idHash=%x balance in state=%d, txn.gas*txn.tip=%d", txn.IdHash, senderBalance, total))
+		}
 		return InsufficientFunds
 	}
 	return Success
@@ -750,7 +781,11 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
 	for i, reason := range reasons {
 		if reason == Success {
-			p.promoted = append(p.promoted, newTxs.txs[i].IdHash[:]...)
+			txn := newTxs.txs[i]
+			if txn.traced {
+				log.Info(fmt.Sprintf("TX TRACING: AddLocalTxs promotes idHash=%x, senderId=%d", txn.IdHash, txn.senderID))
+			}
+			p.promoted = append(p.promoted, txn.IdHash[:]...)
 		}
 	}
 	if p.promoted.Len() > 0 {
@@ -779,8 +814,8 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) ([]DiscardReason, error) {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
-		for i := range newTxs.txs {
-			if newTxs.txs[i].senderID == 0 {
+		for _, txn := range newTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
 			}
 		}
@@ -807,6 +842,9 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			continue
 		}
 		discardReasons[i] = NotSet
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: schedule sendersWithChangedState idHash=%x senderId=%d", txn.IdHash, mt.Tx.senderID))
+		}
 		sendersWithChangedState[mt.Tx.senderID] = struct{}{}
 	}
 
@@ -833,8 +871,8 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) error {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
 	if ASSERT {
-		for i := range newTxs.txs {
-			if newTxs.txs[i].senderID == 0 {
+		for _, txn := range newTxs.txs {
+			if txn.senderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
 			}
 		}
@@ -869,7 +907,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 					continue
 				}
 				addr := gointerfaces.ConvertH160toAddress(change.Address)
-				id, ok := senders.id(string(addr[:]))
+				id, ok := senders.getID(addr[:])
 				if !ok {
 					continue
 				}
@@ -960,7 +998,7 @@ func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 func (p *TxPool) NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	senderId, found := p.senders.id(string(addr[:]))
+	senderId, found := p.senders.getID(addr[:])
 	if !found {
 		return 0, false
 	}
@@ -1009,8 +1047,8 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 			return true
 		})
 
-		for i := range toDel {
-			discard(toDel[i], Mined)
+		for _, mt := range toDel {
+			discard(mt, Mined)
 		}
 		toDel = toDel[:0]
 	}
@@ -1050,6 +1088,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 	minFeeCap := uint64(math.MaxUint64)
 	minTip := uint64(math.MaxUint64)
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
+		if mt.Tx.traced {
+			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%b", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
+		}
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		mt.minFeeCap = minFeeCap
 		minTip = min(minTip, mt.Tx.tip)
@@ -1112,6 +1153,10 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		mt.subPool &^= EnoughFeeCapBlock
 		if mt.minFeeCap >= pendingBaseFee {
 			mt.subPool |= EnoughFeeCapBlock
+		}
+
+		if mt.Tx.traced {
+			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderId=%d subPool=%b", mt.Tx.IdHash, mt.Tx.senderID, mt.subPool))
 		}
 
 		// 5. Local transaction. Set to 1 if transaction is local.
@@ -1346,21 +1391,23 @@ func (p *TxPool) flush(db kv.RwDB) (written uint64, err error) {
 	return written, nil
 }
 func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
-	for i := 0; i < len(p.deletedTxs); i++ {
-		if !p.all.hasTxs(p.deletedTxs[i].Tx.senderID) {
-			addr, ok := p.senders.senderID2Addr[p.deletedTxs[i].Tx.senderID]
+	for i, mt := range p.deletedTxs {
+		id := mt.Tx.senderID
+		idHash := mt.Tx.IdHash[:]
+		if !p.all.hasTxs(id) {
+			addr, ok := p.senders.senderID2Addr[id]
 			if ok {
-				delete(p.senders.senderID2Addr, p.deletedTxs[i].Tx.senderID)
-				delete(p.senders.senderIDs, string(addr))
+				delete(p.senders.senderID2Addr, id)
+				delete(p.senders.senderIDs, addr)
 			}
 		}
-		//fmt.Printf("del:%d,%d,%d\n", p.deletedTxs[i].Tx.senderID, p.deletedTxs[i].Tx.nonce, p.deletedTxs[i].Tx.tip)
-		has, err := tx.Has(kv.PoolTransaction, p.deletedTxs[i].Tx.IdHash[:])
+		//fmt.Printf("del:%d,%d,%d\n", mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip)
+		has, err := tx.Has(kv.PoolTransaction, idHash)
 		if err != nil {
 			return err
 		}
 		if has {
-			if err := tx.Delete(kv.PoolTransaction, p.deletedTxs[i].Tx.IdHash[:], nil); err != nil {
+			if err := tx.Delete(kv.PoolTransaction, idHash, nil); err != nil {
 				return err
 			}
 		}
@@ -1372,9 +1419,9 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	if err := tx.ClearBucket(kv.RecentLocalTransaction); err != nil {
 		return err
 	}
-	for i := range txHashes {
+	for i, txHash := range txHashes {
 		binary.BigEndian.PutUint64(encID, uint64(i))
-		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHashes[i].(string))); err != nil {
+		if err := tx.Append(kv.RecentLocalTransaction, encID, []byte(txHash.(string))); err != nil {
 			return err
 		}
 	}
@@ -1456,14 +1503,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		}
 		txn.rlp = nil // means that we don't need store it in db anymore
 
-		id, ok := p.senders.senderIDs[string(addr)]
-		if !ok {
-			p.senders.senderID++
-			id = p.senders.senderID
-			p.senders.senderIDs[string(addr)] = id
-			p.senders.senderID2Addr[id] = string(addr)
-		}
-		txn.senderID = id
+		txn.senderID, txn.traced = p.senders.getOrCreateID(addr)
 		binary.BigEndian.Uint64(v)
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
@@ -1724,15 +1764,31 @@ type sendersBatch struct {
 	senderID      uint64
 	senderIDs     map[string]uint64
 	senderID2Addr map[uint64]string
+	tracedSenders map[string]struct{}
 }
 
-func newSendersCache() *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}}
+func newSendersCache(tracedSenders map[string]struct{}) *sendersBatch {
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}, tracedSenders: tracedSenders}
 }
 
-func (sc *sendersBatch) id(addr string) (uint64, bool) {
-	id, ok := sc.senderIDs[addr]
+func (sc *sendersBatch) getID(addr []byte) (uint64, bool) {
+	id, ok := sc.senderIDs[string(addr)]
 	return id, ok
+}
+func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
+	addrS := string(addr)
+	_, traced := sc.tracedSenders[addrS]
+	id, ok := sc.senderIDs[addrS]
+	if !ok {
+		sc.senderID++
+		id = sc.senderID
+		sc.senderIDs[addrS] = id
+		sc.senderID2Addr[id] = addrS
+		if traced {
+			log.Info(fmt.Sprintf("TX TRACING: allocated senderID %d to sender %x", id, addr))
+		}
+	}
+	return id, traced
 }
 func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint64, balance uint256.Int, err error) {
 	addr, ok := sc.senderID2Addr[id]
@@ -1754,19 +1810,8 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 }
 
 func (sc *sendersBatch) registerNewSenders(newTxs TxSlots) (err error) {
-	for i := 0; i < len(newTxs.txs); i++ {
-		addr := newTxs.senders.At(i)
-		addrS := string(addr)
-		id, ok := sc.id(addrS)
-		if ok {
-			newTxs.txs[i].senderID = id
-			continue
-		}
-		sc.senderID++
-		sc.senderIDs[string(newTxs.senders.At(i))] = sc.senderID
-		sc.senderID2Addr[sc.senderID] = addrS
-
-		newTxs.txs[i].senderID = sc.senderID
+	for i, txn := range newTxs.txs {
+		txn.senderID, txn.traced = sc.getOrCreateID(newTxs.senders.At(i))
 	}
 	return nil
 }
@@ -1774,39 +1819,15 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 	for _, diff := range stateChanges.ChangeBatch {
 		for _, change := range diff.Changes { // merge state changes
 			addrB := gointerfaces.ConvertH160toAddress(change.Address)
-			addr := string(addrB[:])
-			_, ok := sc.id(addr)
-			if !ok {
-				sc.senderID++
-				sc.senderIDs[addr] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addr
-			}
+			sc.getOrCreateID(addrB[:])
 		}
 
-		for i := 0; i < unwindTxs.senders.Len(); i++ {
-			addr := unwindTxs.senders.At(i)
-			addrS := string(addr)
-			id, ok := sc.id(addrS)
-			if !ok {
-				sc.senderID++
-				id = sc.senderID
-				sc.senderIDs[addrS] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addrS
-			}
-			unwindTxs.txs[i].senderID = id
+		for i, txn := range unwindTxs.txs {
+			txn.senderID, txn.traced = sc.getOrCreateID(unwindTxs.senders.At(i))
 		}
 
-		for i := 0; i < len(minedTxs.txs); i++ {
-			addr := minedTxs.senders.At(i)
-			addrS := string(addr)
-			id, ok := sc.id(addrS)
-			if !ok {
-				sc.senderID++
-				id = sc.senderID
-				sc.senderIDs[addrS] = sc.senderID
-				sc.senderID2Addr[sc.senderID] = addrS
-			}
-			minedTxs.txs[i].senderID = id
+		for i, txn := range minedTxs.txs {
+			txn.senderID, txn.traced = sc.getOrCreateID(minedTxs.senders.At(i))
 		}
 	}
 	return nil
@@ -1820,8 +1841,9 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 //  - All senders stored inside 1 large BTree - because iterate over 1 BTree is faster than over map[senderId]BTree
 //  - sortByNonce used as non-pointer wrapper - because iterate over BTree of pointers is 2x slower
 type BySenderAndNonce struct {
-	tree   *btree.BTree
-	search sortByNonce
+	tree             *btree.BTree
+	search           sortByNonce
+	senderIDTxnCount map[uint64]int // count of sender's txns in the pool - may differ from nonce
 }
 
 func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64, ok bool) {
@@ -1870,19 +1892,7 @@ func (b *BySenderAndNonce) descend(senderID uint64, f func(*metaTx) bool) {
 	})
 }
 func (b *BySenderAndNonce) count(senderID uint64) int {
-	s := b.search
-	s.metaTx.Tx.senderID = senderID
-	s.metaTx.Tx.nonce = 0
-	count := 0
-	b.tree.AscendGreaterOrEqual(s, func(i btree.Item) bool {
-		mt := i.(sortByNonce).metaTx
-		if mt.Tx.senderID != senderID {
-			return false
-		}
-		count++
-		return true
-	})
-	return count
+	return b.senderIDTxnCount[senderID]
 }
 func (b *BySenderAndNonce) hasTxs(senderID uint64) bool {
 	has := false
@@ -1907,12 +1917,23 @@ func (b *BySenderAndNonce) has(mt *metaTx) bool {
 	found := b.tree.Get(sortByNonce{mt})
 	return found != nil
 }
-func (b *BySenderAndNonce) delete(mt *metaTx) { b.tree.Delete(sortByNonce{mt}) }
+func (b *BySenderAndNonce) delete(mt *metaTx) {
+	if b.tree.Delete(sortByNonce{mt}) != nil {
+		senderID := mt.Tx.senderID
+		count := b.senderIDTxnCount[senderID]
+		if count > 1 {
+			b.senderIDTxnCount[senderID] = count - 1
+		} else {
+			delete(b.senderIDTxnCount, senderID)
+		}
+	}
+}
 func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 	it := b.tree.ReplaceOrInsert(sortByNonce{mt})
 	if it != nil {
 		return it.(sortByNonce).metaTx
 	}
+	b.senderIDTxnCount[mt.Tx.senderID]++
 	return nil
 }
 
