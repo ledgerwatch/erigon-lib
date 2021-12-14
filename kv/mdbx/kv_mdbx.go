@@ -139,7 +139,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 	if opts.verbosity != -1 {
 		if opts.label == kv.ChainDB {
-			err = env.SetDebug(mdbx.LogLvlDebug, mdbx.DbgDoNotChange, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
+			err = env.SetDebug(mdbx.LogLvlNotice, mdbx.DbgDoNotChange, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
 			if err != nil {
 				return nil, fmt.Errorf("db verbosity set: %w", err)
 			}
