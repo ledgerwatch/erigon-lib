@@ -120,6 +120,7 @@ func (ub *UpdateBuilder) Delete(key string) *UpdateBuilder {
 type UpdateFlags uint8
 
 const (
+	DELETE_UPDATE  UpdateFlags = 0
 	BALANCE_UPDATE UpdateFlags = 1
 	NONCE_UPDATE   UpdateFlags = 2
 	CODE_UPDATE    UpdateFlags = 4
@@ -128,17 +129,21 @@ const (
 
 func (uf UpdateFlags) String() string {
 	var sb strings.Builder
-	if uf&BALANCE_UPDATE != 0 {
-		sb.WriteString("+Balance")
-	}
-	if uf&NONCE_UPDATE != 0 {
-		sb.WriteString("+Nonce")
-	}
-	if uf&CODE_UPDATE != 0 {
-		sb.WriteString("+Code")
-	}
-	if uf&STORAGE_UPDATE != 0 {
-		sb.WriteString("+Storage")
+	if uf == DELETE_UPDATE {
+		sb.WriteString("Delete")
+	} else {
+		if uf&BALANCE_UPDATE != 0 {
+			sb.WriteString("+Balance")
+		}
+		if uf&NONCE_UPDATE != 0 {
+			sb.WriteString("+Nonce")
+		}
+		if uf&CODE_UPDATE != 0 {
+			sb.WriteString("+Code")
+		}
+		if uf&STORAGE_UPDATE != 0 {
+			sb.WriteString("+Storage")
+		}
 	}
 	return sb.String()
 }
@@ -218,25 +223,48 @@ func TestEmptyState(t *testing.T) {
 			t.Error(err)
 		}
 	}
+	var branchNodeUpdates []*BranchNodeUpdate
 	for i, key := range keys {
 		update := updates[i]
 		fmt.Printf("key = [%x], update = %s\n", key, update)
 		// Keep folding until the currentKey is the prefix of the key we modify
 		for hph.currentKeyLen > 0 && !bytes.HasPrefix(key, hph.currentKey[:hph.currentKeyLen]) {
-			if err := hph.fold(); err != nil {
+			if branchNodeUpdate, err := hph.fold(); err != nil {
 				t.Error(err)
+			} else if branchNodeUpdate != nil {
+				branchNodeUpdates = append(branchNodeUpdates, branchNodeUpdate)
 			}
 		}
 		// Now unfold until we step on an empty cell
-		for !hph.emptyTip() && hph.currentKeyLen < len(key) {
+		for !hph.emptyTip(key) && hph.currentKeyLen < len(key) {
 			if err := hph.unfoldCell(&hph.grid[hph.activeRows-1][key[hph.currentKeyLen]]); err != nil {
 				t.Error(err)
 			}
 		}
+		// Update the cell
+		if update.flags == DELETE_UPDATE {
+			hph.deleteCell(key)
+		} else {
+			if update.flags&BALANCE_UPDATE != 0 {
+				hph.updateBalance(key, &update.balance)
+			}
+			if update.flags&NONCE_UPDATE != 0 {
+				hph.updateNonce(key, update.nonce)
+			}
+			if update.flags&CODE_UPDATE != 0 {
+				hph.updateCode(key, update.codeHashOrStorage[:])
+			}
+			if update.flags&STORAGE_UPDATE != 0 {
+				hph.updateStorage(key, update.codeHashOrStorage[:])
+			}
+		}
 	}
+	// Folding everything up to the root
 	for hph.activeRows > 0 {
-		if err := hph.fold(); err != nil {
+		if branchNodeUpdate, err := hph.fold(); err != nil {
 			t.Error(err)
+		} else {
+			branchNodeUpdates = append(branchNodeUpdates, branchNodeUpdate)
 		}
 	}
 }
