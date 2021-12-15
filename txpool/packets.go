@@ -184,7 +184,7 @@ func EncodeTransactions(txsRlp [][]byte, encodeBuf []byte) []byte {
 	return encodeBuf
 }
 
-func ParsePooledTransactions65(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots) (newPos int, err error) {
+func ParseTransactions(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots) (newPos int, err error) {
 	pos, _, err = rlp.List(payload, pos)
 	if err != nil {
 		return 0, err
