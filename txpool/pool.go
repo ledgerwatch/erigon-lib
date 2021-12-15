@@ -1352,7 +1352,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			}
 
 			// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
-			sentTo := send.BroadcastLocalPooledTxs(localTxRlps, localTxHashes)
+			sentTo := send.BroadcastPooledTxs(localTxRlps, localTxHashes)
 			if len(localTxHashes)/32 > 0 {
 				if len(localTxHashes)/32 == 1 {
 					log.Info("local tx propagated", "to_peers_amount", sentTo, "tx_hash", fmt.Sprintf("%x", localTxHashes), "baseFee", p.pendingBaseFee.Load())
@@ -1360,7 +1360,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 					log.Info("local txs propagated", "to_peers_amount", sentTo, "txs_amount", len(localTxHashes)/32, "baseFee", p.pendingBaseFee.Load())
 				}
 			}
-			send.BroadcastRemotePooledTxs(remoteTxRlps, remoteTxHashes)
+			send.BroadcastPooledTxs(remoteTxRlps, remoteTxHashes)
 			propagateNewTxsTimer.UpdateDuration(t)
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()

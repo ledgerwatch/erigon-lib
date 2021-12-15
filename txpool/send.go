@@ -65,7 +65,7 @@ func (f *Send) notifyTests() {
 	}
 }
 
-func (f *Send) BroadcastLocalPooledTxs(rlps [][]byte, hashes Hashes) (sentToPeers int) {
+func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (sentToPeers int) {
 	defer f.notifyTests()
 	if len(hashes) == 0 {
 		return
@@ -120,49 +120,6 @@ func (f *Send) BroadcastLocalPooledTxs(rlps [][]byte, hashes Hashes) (sentToPeer
 	}
 	// TODO deduplicate peers to compute correct average
 	return avgPeersPerSent66
-}
-
-func (f *Send) BroadcastRemotePooledTxs(rlps [][]byte, hashes Hashes) {
-	defer f.notifyTests()
-
-	if len(hashes) == 0 {
-		return
-	}
-
-	for len(hashes) > 0 {
-		var pending Hashes
-		if len(hashes) > p2pTxPacketLimit {
-			pending = hashes[:p2pTxPacketLimit]
-			hashes = hashes[p2pTxPacketLimit:]
-		} else {
-			pending = hashes[:]
-			hashes = hashes[:0]
-		}
-
-		data := EncodeHashes(pending, nil)
-		var req66 *sentry.SendMessageToRandomPeersRequest
-		for _, sentryClient := range f.sentryClients {
-			if !sentryClient.Ready() {
-				continue
-			}
-
-			switch sentryClient.Protocol() {
-			case direct.ETH66:
-				if req66 == nil {
-					req66 = &sentry.SendMessageToRandomPeersRequest{
-						MaxPeers: 1024,
-						Data: &sentry.OutboundMessageData{
-							Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
-							Data: data,
-						},
-					}
-				}
-				if _, err := sentryClient.SendMessageToRandomPeers(f.ctx, req66, &grpc.EmptyCallOption{}); err != nil {
-					log.Warn("[txpool.send] BroadcastRemotePooledTxs", "err", err)
-				}
-			}
-		}
-	}
 }
 
 func (f *Send) PropagatePooledTxsToPeersList(peers []PeerID, txs []byte) {
