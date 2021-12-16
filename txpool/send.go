@@ -75,7 +75,7 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (hashSentTo, txS
 	for i, l := 0, len(rlps); i < len(rlps); i++ {
 		size += len(rlps[i])
 		if i == l-1 || size >= p2pTxPacketLimit {
-			txsData := EncodeTransactions(rlps[prev:i], nil)
+			txsData := EncodeTransactions(rlps[prev:i+1], nil)
 			var txs66 *sentry.SendMessageToRandomPeersRequest
 			for _, sentryClient := range f.sentryClients {
 				if !sentryClient.Ready() {
@@ -95,13 +95,13 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (hashSentTo, txS
 					if peers, err := sentryClient.SendMessageToRandomPeers(f.ctx, txs66); err != nil {
 						log.Warn("[txpool.send] BroadcastLocalTxs", "err", err)
 					} else if peers != nil {
-						for j := prev; j < i; j++ {
+						for j := prev; j <= i; j++ {
 							txSentTo[j] = len(peers.Peers)
 						}
 					}
 				}
 			}
-			prev = i
+			prev = i + 1
 			size = 0
 		}
 	}

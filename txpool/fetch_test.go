@@ -79,7 +79,7 @@ func TestSendTxPropagate(t *testing.T) {
 		require.Equal(t, 1, len(calls2))
 		first := calls1[0].SendMessageToRandomPeersRequest.Data
 		assert.Equal(t, sentry.MessageId_TRANSACTIONS_66, first.Id)
-		assert.Equal(t, 3, len(first.Data))
+		assert.Equal(t, 5, len(first.Data))
 		second := calls2[0].OutboundMessageData
 		assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66, second.Id)
 		assert.Equal(t, 68, len(second.Data))
