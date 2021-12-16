@@ -420,13 +420,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
-	p.pending.captureAddedHashes(&p.promoted)
-	p.baseFee.captureAddedHashes(&p.promoted)
+	p.pending.resetAddedHashes()
+	p.baseFee.resetAddedHashes()
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs, pendingBaseFee, baseFeeChanged, p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
-	p.pending.added = nil
-	p.baseFee.added = nil
+	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
+	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
 
 	if p.started.CAS(false, true) {
 		log.Info("[txpool] Started")
@@ -479,13 +479,13 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	p.pending.captureAddedHashes(&p.promoted)
-	p.baseFee.captureAddedHashes(&p.promoted)
+	p.pending.resetAddedHashes()
+	p.baseFee.resetAddedHashes()
 	if _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
-	p.pending.added = nil
-	p.baseFee.added = nil
+	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
+	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
 
 	if p.promoted.Len() > 0 {
 		select {
@@ -784,8 +784,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 		return nil, err
 	}
 
-	p.pending.captureAddedHashes(&p.promoted)
-	p.baseFee.captureAddedHashes(&p.promoted)
+	p.pending.resetAddedHashes()
+	p.baseFee.resetAddedHashes()
 	if addReasons, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err == nil {
 		for i, reason := range addReasons {
 			if reason != NotSet {
@@ -795,8 +795,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	} else {
 		return nil, err
 	}
-	p.pending.added = nil
-	p.baseFee.added = nil
+	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
+	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
 
 	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
 	for i, reason := range reasons {
@@ -1960,20 +1960,26 @@ func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 // It's more expensive to maintain "slice sort" invariant, but it allow do cheap copy of
 // pending.best slice for mining (because we consider txs and metaTx are immutable)
 type PendingPool struct {
-	limit int
-	t     SubPoolType
-	best  bestSlice
-	worst *WorstQueue
-	added *Hashes
+	limit  int
+	t      SubPoolType
+	best   bestSlice
+	worst  *WorstQueue
+	adding bool
+	added  Hashes
 }
 
 func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
 	return &PendingPool{limit: limit, t: t, best: []*metaTx{}, worst: &WorstQueue{}}
 }
 
-func (p *PendingPool) captureAddedHashes(to *Hashes) {
-	p.added = to
-	*p.added = (*p.added)[:0]
+func (p *PendingPool) resetAddedHashes() {
+	p.added = p.added[:0]
+	p.adding = true
+}
+func (p *PendingPool) appendAddedHashes(h Hashes) Hashes {
+	h = append(h, p.added...)
+	p.adding = false
+	return h
 }
 
 // bestSlice - is similar to best queue, but with O(n log n) complexity and
@@ -2046,8 +2052,8 @@ func (p *PendingPool) UnsafeRemove(i *metaTx) {
 	p.best = p.best.UnsafeRemove(i)
 }
 func (p *PendingPool) UnsafeAdd(i *metaTx) {
-	if p.added != nil {
-		*p.added = append(*p.added, i.Tx.IdHash[:]...)
+	if p.adding {
+		p.added = append(p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
@@ -2057,8 +2063,8 @@ func (p *PendingPool) UnsafeAdd(i *metaTx) {
 	p.best = p.best.UnsafeAdd(i)
 }
 func (p *PendingPool) Add(i *metaTx) {
-	if p.added != nil {
-		*p.added = append(*p.added, i.Tx.IdHash[:]...)
+	if p.adding {
+		p.added = append(p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
@@ -2077,20 +2083,26 @@ func (p *PendingPool) DebugPrint(prefix string) {
 }
 
 type SubPool struct {
-	limit int
-	t     SubPoolType
-	best  *BestQueue
-	worst *WorstQueue
-	added *Hashes
+	limit  int
+	t      SubPoolType
+	best   *BestQueue
+	worst  *WorstQueue
+	adding bool
+	added  Hashes
 }
 
 func NewSubPool(t SubPoolType, limit int) *SubPool {
 	return &SubPool{limit: limit, t: t, best: &BestQueue{}, worst: &WorstQueue{}}
 }
 
-func (p *SubPool) captureAddedHashes(to *Hashes) {
-	p.added = to
-	*p.added = (*p.added)[:0]
+func (p *SubPool) resetAddedHashes() {
+	p.added = p.added[:0]
+	p.adding = true
+}
+func (p *SubPool) appendAddedHashes(h Hashes) Hashes {
+	h = append(h, p.added...)
+	p.adding = false
+	return h
 }
 
 func (p *SubPool) EnforceInvariants() {
@@ -2121,8 +2133,8 @@ func (p *SubPool) PopWorst() *metaTx {
 }
 func (p *SubPool) Len() int { return p.best.Len() }
 func (p *SubPool) Add(i *metaTx) {
-	if p.added != nil {
-		*p.added = append(*p.added, i.Tx.IdHash[:]...)
+	if p.adding {
+		p.added = append(p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
@@ -2161,8 +2173,8 @@ func (p *SubPool) UnsafeRemove(i *metaTx) {
 	p.best.Pop()
 }
 func (p *SubPool) UnsafeAdd(i *metaTx) {
-	if p.added != nil {
-		*p.added = append(*p.added, i.Tx.IdHash[:]...)
+	if p.adding {
+		p.added = append(p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
