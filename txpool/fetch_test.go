@@ -79,7 +79,7 @@ func TestSendTxPropagate(t *testing.T) {
 		require.Equal(t, 1, len(calls2))
 		first := calls1[0].SendMessageToRandomPeersRequest.Data
 		assert.Equal(t, sentry.MessageId_TRANSACTIONS_66, first.Id)
-		assert.Equal(t, 5, len(first.Data))
+		assert.Equal(t, 3, len(first.Data))
 		second := calls2[0].OutboundMessageData
 		assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66, second.Id)
 		assert.Equal(t, 68, len(second.Data))
@@ -94,13 +94,13 @@ func TestSendTxPropagate(t *testing.T) {
 		}
 		send.BroadcastPooledTxs(testRlps(len(list)/32), list)
 		calls1 := m.SendMessageToRandomPeersCalls()
-		require.Equal(t, 3, len(calls1))
+		require.Equal(t, 1, len(calls1))
 		calls2 := m.SendMessageToAllCalls()
 		require.Equal(t, 3, len(calls2))
+		call1 := calls1[0].SendMessageToRandomPeersRequest.Data
+		require.Equal(t, sentry.MessageId_TRANSACTIONS_66, call1.Id)
+		require.True(t, len(call1.Data) > 0)
 		for i := 0; i < 3; i++ {
-			call1 := calls1[i].SendMessageToRandomPeersRequest.Data
-			require.Equal(t, sentry.MessageId_TRANSACTIONS_66, call1.Id)
-			require.True(t, len(call1.Data) > 0)
 			call2 := calls2[i].OutboundMessageData
 			require.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66, call2.Id)
 			require.True(t, len(call2.Data) > 0)

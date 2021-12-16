@@ -65,13 +65,48 @@ func (f *Send) notifyTests() {
 	}
 }
 
-func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (sentToPeers int) {
+func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (hashSentTo, txSentTo []int) {
 	defer f.notifyTests()
 	if len(hashes) == 0 {
 		return
 	}
-
-	avgPeersPerSent66 := 0
+	txSentTo = make([]int, len(rlps))
+	var prev, size int
+	for i, l := 0, len(rlps); i < len(rlps); i++ {
+		size += len(rlps[i])
+		if i == l-1 || size >= p2pTxPacketLimit {
+			txsData := EncodeTransactions(rlps[prev:i], nil)
+			var txs66 *sentry.SendMessageToRandomPeersRequest
+			for _, sentryClient := range f.sentryClients {
+				if !sentryClient.Ready() {
+					continue
+				}
+				switch sentryClient.Protocol() {
+				case direct.ETH66:
+					if txs66 == nil {
+						txs66 = &sentry.SendMessageToRandomPeersRequest{
+							Data: &sentry.OutboundMessageData{
+								Id:   sentry.MessageId_TRANSACTIONS_66,
+								Data: txsData,
+							},
+							MaxPeers: 100,
+						}
+					}
+					if peers, err := sentryClient.SendMessageToRandomPeers(f.ctx, txs66); err != nil {
+						log.Warn("[txpool.send] BroadcastLocalTxs", "err", err)
+					} else if peers != nil {
+						for j := prev; j < i; j++ {
+							txSentTo[j] = len(peers.Peers)
+						}
+					}
+				}
+			}
+			prev = i
+			size = 0
+		}
+	}
+	hashSentTo = make([]int, len(hashes)/32)
+	prev = 0
 	for len(hashes) > 0 {
 		var pending Hashes
 		if len(hashes) > p2pTxPacketLimit {
@@ -83,27 +118,13 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (sentToPeers int
 		}
 
 		hashesData := EncodeHashes(pending, nil)
-		txsData := EncodeTransactions(rlps, nil)
 		var hashes66 *sentry.OutboundMessageData
-		var txs66 *sentry.SendMessageToRandomPeersRequest
 		for _, sentryClient := range f.sentryClients {
 			if !sentryClient.Ready() {
 				continue
 			}
 			switch sentryClient.Protocol() {
 			case direct.ETH66:
-				if txs66 == nil {
-					txs66 = &sentry.SendMessageToRandomPeersRequest{
-						Data: &sentry.OutboundMessageData{
-							Id:   sentry.MessageId_TRANSACTIONS_66,
-							Data: txsData,
-						},
-						MaxPeers: 100,
-					}
-				}
-				if _, err := sentryClient.SendMessageToRandomPeers(f.ctx, txs66); err != nil {
-					log.Warn("[txpool.send] BroadcastLocalTxs", "err", err)
-				}
 				if hashes66 == nil {
 					hashes66 = &sentry.OutboundMessageData{
 						Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
@@ -113,13 +134,15 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (sentToPeers int
 				if peers, err := sentryClient.SendMessageToAll(f.ctx, hashes66, &grpc.EmptyCallOption{}); err != nil {
 					log.Warn("[txpool.send] BroadcastLocalPooledTxs", "err", err)
 				} else if peers != nil {
-					avgPeersPerSent66 += len(peers.Peers)
+					for j, l := prev, pending.Len(); j < prev+l; j++ {
+						hashSentTo[j] = len(peers.Peers)
+					}
 				}
 			}
 		}
+		prev += pending.Len()
 	}
-	// TODO deduplicate peers to compute correct average
-	return avgPeersPerSent66
+	return
 }
 
 func (f *Send) PropagatePooledTxsToPeersList(peers []PeerID, txs []byte) {
