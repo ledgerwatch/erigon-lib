@@ -94,7 +94,7 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte) (txSentTo []int) {
 					}
 					peers, err := sentryClient.SendMessageToRandomPeers(f.ctx, txs66)
 					if err != nil {
-						log.Debug("[txpool.send] BroadcastTxs", "err", err)
+						log.Debug("[txpool.send] BroadcastPooledTxs", "err", err)
 					}
 					if peers != nil {
 						for j := prev; j <= i; j++ {
