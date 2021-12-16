@@ -92,9 +92,11 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (hashSentTo, txS
 							MaxPeers: 100,
 						}
 					}
-					if peers, err := sentryClient.SendMessageToRandomPeers(f.ctx, txs66); err != nil {
+					peers, err := sentryClient.SendMessageToRandomPeers(f.ctx, txs66)
+					if err != nil {
 						log.Warn("[txpool.send] BroadcastLocalTxs", "err", err)
-					} else if peers != nil {
+					}
+					if peers != nil {
 						for j := prev; j <= i; j++ {
 							txSentTo[j] = len(peers.Peers)
 						}
@@ -131,9 +133,11 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte, hashes Hashes) (hashSentTo, txS
 						Data: hashesData,
 					}
 				}
-				if peers, err := sentryClient.SendMessageToAll(f.ctx, hashes66, &grpc.EmptyCallOption{}); err != nil {
+				peers, err := sentryClient.SendMessageToAll(f.ctx, hashes66, &grpc.EmptyCallOption{})
+				if err != nil {
 					log.Warn("[txpool.send] BroadcastLocalPooledTxs", "err", err)
-				} else if peers != nil {
+				}
+				if peers != nil {
 					for j, l := prev, pending.Len(); j < prev+l; j++ {
 						hashSentTo[j] = len(peers.Peers)
 					}
