@@ -98,6 +98,13 @@ func toHashes(h ...[32]byte) (out Hashes) {
 	return out
 }
 
+func testRlps(num int) [][]byte {
+	rlps := make([][]byte, num)
+	for i := 0; i < num; i++ {
+		rlps[i] = []byte{1}
+	}
+	return rlps
+}
 func toPeerIDs(h ...int) (out []PeerID) {
 	for i := range h {
 		out = append(out, gointerfaces.ConvertBytesToH512([]byte(fmt.Sprintf("%x", h[i]))))

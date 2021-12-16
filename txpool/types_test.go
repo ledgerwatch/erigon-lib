@@ -152,3 +152,11 @@ func TestTxSlotsGrowth(t *testing.T) {
 	assert.Equal(2, len(s.txs))
 	assert.Equal(2, s.senders.Len())
 }
+
+func TestDedupHashes(t *testing.T) {
+	assert := assert.New(t)
+	h := toHashes([32]byte{2}, [32]byte{6}, [32]byte{2}, [32]byte{5}, [32]byte{2}, [32]byte{4})
+	c := h.DedupCopy()
+	assert.Equal(4, c.Len())
+	assert.Equal(toHashes([32]byte{2}, [32]byte{4}, [32]byte{5}, [32]byte{6}), c)
+}
