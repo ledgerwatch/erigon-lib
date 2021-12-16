@@ -434,7 +434,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.DedupCopy():
 		default:
 		}
 	}
@@ -491,7 +491,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.DedupCopy():
 		default:
 		}
 	}
@@ -810,7 +810,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	}
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.DedupCopy():
 		default:
 		}
 	}
@@ -1091,7 +1091,7 @@ func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 		// baseFee of the currently pending block. Set to 0 otherwise.
 		mt.subPool &^= EnoughFeeCapBlock
-		if mt.Tx.feeCap >= pendingBaseFee {
+		if mt.minFeeCap >= pendingBaseFee {
 			mt.subPool |= EnoughFeeCapBlock
 		}
 		return true
@@ -1129,7 +1129,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		// parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means
 		// this transaction will never be included into this particular chain.
 		mt.subPool &^= EnoughFeeCapProtocol
-		if mt.Tx.feeCap >= protocolBaseFee {
+		if mt.minFeeCap >= protocolBaseFee {
 			mt.subPool |= EnoughFeeCapProtocol
 		} else {
 			mt.subPool = 0 // TODO: we immediately drop all transactions if they have no first bit - then maybe we don't need this bit at all? And don't add such transactions to queue?
@@ -2050,7 +2050,7 @@ func (p *PendingPool) UnsafeAdd(i *metaTx) {
 		*p.added = append(*p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: moved from %s to %s, IdHash=%x, sender=%d", i.currentSubPool, p.t, i.Tx.IdHash, i.Tx.senderID))
+		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
 	}
 	i.currentSubPool = p.t
 	p.worst.Push(i)
@@ -2061,7 +2061,7 @@ func (p *PendingPool) Add(i *metaTx) {
 		*p.added = append(*p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: moved from %s to %s, IdHash=%x, sender=%d", i.currentSubPool, p.t, i.Tx.IdHash, i.Tx.senderID))
+		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
 	}
 	i.currentSubPool = p.t
 	heap.Push(p.worst, i)
@@ -2125,7 +2125,7 @@ func (p *SubPool) Add(i *metaTx) {
 		*p.added = append(*p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: moved from %s to %s, IdHash=%x, sender=%d", i.currentSubPool, p.t, i.Tx.IdHash, i.Tx.senderID))
+		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
 	}
 	i.currentSubPool = p.t
 	heap.Push(p.best, i)
@@ -2165,7 +2165,7 @@ func (p *SubPool) UnsafeAdd(i *metaTx) {
 		*p.added = append(*p.added, i.Tx.IdHash[:]...)
 	}
 	if i.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: moved from %s to %s, IdHash=%x, sender=%d", i.currentSubPool, p.t, i.Tx.IdHash, i.Tx.senderID))
+		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
 	}
 	i.currentSubPool = p.t
 	p.worst.Push(i)
