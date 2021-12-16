@@ -1355,7 +1355,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			hashSentTo, txSentTo := send.BroadcastPooledTxs(localTxRlps, localTxHashes)
 			for i := 0; i < localTxHashes.Len(); i++ {
 				hash := localTxHashes.At(i)
-				log.Info("local tx propagated", "tx_hash", fmt.Sprintf("%x", hash), "as hash to peers", hashSentTo[i], "as payload to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
+				log.Info("local tx propagated", "tx_hash", fmt.Sprintf("%x", hash), "announced to peers", hashSentTo[i], "broadcast to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
 			}
 			send.BroadcastPooledTxs(remoteTxRlps, remoteTxHashes)
 			propagateNewTxsTimer.UpdateDuration(t)
