@@ -1278,9 +1278,9 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	logEvery := time.NewTicker(p.cfg.LogEvery)
 	defer logEvery.Stop()
 
-	localTxHashes := make([]byte, 0, 128)
+	localTxHashes := make(Hashes, 0, 128)
 	localTxRlps := make([][]byte, 0, 4)
-	remoteTxHashes := make([]byte, 0, 128)
+	remoteTxHashes := make(Hashes, 0, 128)
 	remoteTxRlps := make([][]byte, 0, 4)
 
 	for {
@@ -1353,8 +1353,8 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 
 			// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
 			hashSentTo, txSentTo := send.BroadcastPooledTxs(localTxRlps, localTxHashes)
-			for i := 0; i < h.Len(); i++ {
-				hash := h.At(i)
+			for i := 0; i < localTxHashes.Len(); i++ {
+				hash := localTxHashes.At(i)
 				log.Info("local tx propagated", "tx_hash", fmt.Sprintf("%x", hash), "as hash to peers", hashSentTo[i], "as payload to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
 			}
 			send.BroadcastPooledTxs(remoteTxRlps, remoteTxHashes)
