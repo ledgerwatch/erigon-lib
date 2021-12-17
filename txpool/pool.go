@@ -1110,9 +1110,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		if mt.Tx.traced {
 			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
 		}
-		if senderNonce >= mt.Tx.nonce {
+		if senderNonce > mt.Tx.nonce {
 			if mt.Tx.traced {
-				log.Info(fmt.Sprintf("TX TRACING: removing due to senderNonce >= txn.nonce for idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
+				log.Info(fmt.Sprintf("TX TRACING: removing due to low nonce for idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
 			}
 			// del from sub-pool
 			switch mt.currentSubPool {
