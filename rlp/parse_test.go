@@ -22,15 +22,15 @@ var parseU64Tests = []struct {
 	payload   []byte
 	expectPos int
 	expectRes uint64
-	expectErr error
+	expectErr string
 }{
 	{payload: decodeHex("820400"), expectPos: 3, expectRes: 1024},
 	{payload: decodeHex("07"), expectPos: 1, expectRes: 7},
-	{payload: decodeHex("8107"), expectErr: errors.New("rlp: non-canonical size information")},
-	{payload: decodeHex("B8020004"), expectErr: errors.New("rlp: non-canonical size information")},
-	{payload: decodeHex("C0"), expectErr: errors.New("uint64 must be a string, not isList")},
-	{payload: decodeHex("00"), expectErr: errors.New("integer encoding for RLP must not have leading zeros: 00")},
-	{payload: decodeHex("8AFFFFFFFFFFFFFFFFFF7C"), expectErr: errors.New("uint64 must not be more than 8 bytes long, got 10")},
+	{payload: decodeHex("8107"), expectErr: "rlp parse: non-canonical size information"},
+	{payload: decodeHex("B8020004"), expectErr: "rlp parse: non-canonical size information"},
+	{payload: decodeHex("C0"), expectErr: "rlp parse: uint64 must be a string, not isList"},
+	{payload: decodeHex("00"), expectErr: "rlp parse: integer encoding for RLP must not have leading zeros: 00"},
+	{payload: decodeHex("8AFFFFFFFFFFFFFFFFFF7C"), expectErr: "rlp parse: uint64 must not be more than 8 bytes long, got 10"},
 }
 
 var parseU32Tests = []struct {
@@ -71,7 +71,7 @@ func TestPrimitives(t *testing.T) {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			assert := assert.New(t)
 			pos, res, err := U64(tt.payload, 0)
-			assert.Equal(tt.expectErr, err)
+			assert.EqualError(err, tt.expectErr)
 			assert.Equal(tt.expectPos, pos)
 			assert.Equal(tt.expectRes, res)
 		})
