@@ -28,7 +28,7 @@ type ETHBACKENDClient interface {
 	// Execute the payload.
 	EngineExecutePayloadV1(ctx context.Context, in *types.ExecutionPayload, opts ...grpc.CallOption) (*EngineExecutePayloadReply, error)
 	// Update fork choice
-	EngineForkChoiceUpdatedV1(ctx context.Context, in *EnginePreparePayload, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedReply, error)
+	EngineForkChoiceUpdatedV1(ctx context.Context, in *EngineForkChoiceUpdatedRequest, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedReply, error)
 	// Version returns the service version number
 	Version(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*types.VersionReply, error)
 	// ProtocolVersion returns the Ethereum protocol version number (e.g. 66 for ETH66).
@@ -96,7 +96,7 @@ func (c *eTHBACKENDClient) EngineExecutePayloadV1(ctx context.Context, in *types
 	return out, nil
 }
 
-func (c *eTHBACKENDClient) EngineForkChoiceUpdatedV1(ctx context.Context, in *EnginePreparePayload, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedReply, error) {
+func (c *eTHBACKENDClient) EngineForkChoiceUpdatedV1(ctx context.Context, in *EngineForkChoiceUpdatedRequest, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedReply, error) {
 	out := new(EngineForkChoiceUpdatedReply)
 	err := c.cc.Invoke(ctx, "/remote.ETHBACKEND/EngineForkChoiceUpdatedV1", in, out, opts...)
 	if err != nil {
@@ -194,7 +194,7 @@ type ETHBACKENDServer interface {
 	// Execute the payload.
 	EngineExecutePayloadV1(context.Context, *types.ExecutionPayload) (*EngineExecutePayloadReply, error)
 	// Update fork choice
-	EngineForkChoiceUpdatedV1(context.Context, *EnginePreparePayload) (*EngineForkChoiceUpdatedReply, error)
+	EngineForkChoiceUpdatedV1(context.Context, *EngineForkChoiceUpdatedRequest) (*EngineForkChoiceUpdatedReply, error)
 	// Version returns the service version number
 	Version(context.Context, *emptypb.Empty) (*types.VersionReply, error)
 	// ProtocolVersion returns the Ethereum protocol version number (e.g. 66 for ETH66).
@@ -229,7 +229,7 @@ func (UnimplementedETHBACKENDServer) EngineGetPayloadV1(context.Context, *Engine
 func (UnimplementedETHBACKENDServer) EngineExecutePayloadV1(context.Context, *types.ExecutionPayload) (*EngineExecutePayloadReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EngineExecutePayloadV1 not implemented")
 }
-func (UnimplementedETHBACKENDServer) EngineForkChoiceUpdatedV1(context.Context, *EnginePreparePayload) (*EngineForkChoiceUpdatedReply, error) {
+func (UnimplementedETHBACKENDServer) EngineForkChoiceUpdatedV1(context.Context, *EngineForkChoiceUpdatedRequest) (*EngineForkChoiceUpdatedReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EngineForkChoiceUpdatedV1 not implemented")
 }
 func (UnimplementedETHBACKENDServer) Version(context.Context, *emptypb.Empty) (*types.VersionReply, error) {
@@ -354,7 +354,7 @@ func _ETHBACKEND_EngineExecutePayloadV1_Handler(srv interface{}, ctx context.Con
 }
 
 func _ETHBACKEND_EngineForkChoiceUpdatedV1_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EnginePreparePayload)
+	in := new(EngineForkChoiceUpdatedRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -366,7 +366,7 @@ func _ETHBACKEND_EngineForkChoiceUpdatedV1_Handler(srv interface{}, ctx context.
 		FullMethod: "/remote.ETHBACKEND/EngineForkChoiceUpdatedV1",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ETHBACKENDServer).EngineForkChoiceUpdatedV1(ctx, req.(*EnginePreparePayload))
+		return srv.(ETHBACKENDServer).EngineForkChoiceUpdatedV1(ctx, req.(*EngineForkChoiceUpdatedRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
