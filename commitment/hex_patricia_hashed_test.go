@@ -17,23 +17,22 @@
 package commitment
 
 import (
-	"bytes"
 	"encoding/hex"
 	"fmt"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"golang.org/x/crypto/sha3"
 )
 
 // In memory commitment and state to use with the tests
 type MockState struct {
 }
 
-func (ms MockState) branchFn(prefix []byte, row []Cell) error {
-	return nil
+func (ms MockState) branchFn(prefix []byte) (*BranchNodeUpdate, error) {
+	return nil, nil
 }
 
 func (ms MockState) accountFn(plainKey []byte, account *AccountDecorator) error {
@@ -58,9 +57,11 @@ type UpdateBuilder struct {
 	balances   map[string]*uint256.Int
 	nonces     map[string]uint64
 	codeHashes map[string][32]byte
-	storages   map[string][]byte
+	storages   map[string]map[string][]byte
 	deletes    map[string]struct{}
+	deletes2   map[string]map[string]struct{}
 	keyset     map[string]struct{}
+	keyset2    map[string]map[string]struct{}
 }
 
 func NewUpdateBuilder() *UpdateBuilder {
@@ -68,46 +69,65 @@ func NewUpdateBuilder() *UpdateBuilder {
 		balances:   make(map[string]*uint256.Int),
 		nonces:     make(map[string]uint64),
 		codeHashes: make(map[string][32]byte),
-		storages:   make(map[string][]byte),
+		storages:   make(map[string]map[string][]byte),
 		deletes:    make(map[string]struct{}),
+		deletes2:   make(map[string]map[string]struct{}),
 		keyset:     make(map[string]struct{}),
+		keyset2:    make(map[string]map[string]struct{}),
 	}
 }
 
-func (ub *UpdateBuilder) Balance(addrHash string, balance uint64) *UpdateBuilder {
-	sk := string(decodeHex(addrHash))
+func (ub *UpdateBuilder) Balance(addr string, balance uint64) *UpdateBuilder {
+	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
 	ub.balances[sk] = uint256.NewInt(balance)
 	ub.keyset[sk] = struct{}{}
 	return ub
 }
 
-func (ub *UpdateBuilder) Nonce(addrHash string, nonce uint64) *UpdateBuilder {
-	sk := string(decodeHex(addrHash))
+func (ub *UpdateBuilder) Nonce(addr string, nonce uint64) *UpdateBuilder {
+	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
 	ub.nonces[sk] = nonce
 	ub.keyset[sk] = struct{}{}
 	return ub
 }
 
-func (ub *UpdateBuilder) CodeHash(addrHash string, hash [32]byte) *UpdateBuilder {
-	sk := string(decodeHex(addrHash))
+func (ub *UpdateBuilder) CodeHash(addr string, hash [32]byte) *UpdateBuilder {
+	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
 	ub.codeHashes[sk] = hash
 	ub.keyset[sk] = struct{}{}
 	return ub
 }
 
-func (ub *UpdateBuilder) Storage(key string, value []byte) *UpdateBuilder {
-	sk := string(decodeHex(key))
-	delete(ub.deletes, sk)
-	ub.storages[sk] = common.Copy(value)
-	ub.keyset[sk] = struct{}{}
+func (ub *UpdateBuilder) Storage(addr string, loc string, value string) *UpdateBuilder {
+	sk1 := string(decodeHex(addr))
+	sk2 := string(decodeHex(loc))
+	v := decodeHex(value)
+	if d, ok := ub.deletes2[sk1]; ok {
+		delete(d, sk2)
+		if len(d) == 0 {
+			delete(ub.deletes2, sk1)
+		}
+	}
+	if k, ok := ub.keyset2[sk1]; ok {
+		k[sk2] = struct{}{}
+	} else {
+		ub.keyset2[sk1] = make(map[string]struct{})
+		ub.keyset2[sk1][sk2] = struct{}{}
+	}
+	if s, ok := ub.storages[sk1]; ok {
+		s[sk2] = v
+	} else {
+		ub.storages[sk1] = make(map[string][]byte)
+		ub.storages[sk1][sk2] = v
+	}
 	return ub
 }
 
-func (ub *UpdateBuilder) Delete(key string) *UpdateBuilder {
-	sk := string(decodeHex(key))
+func (ub *UpdateBuilder) Delete(addr string) *UpdateBuilder {
+	sk := string(decodeHex(addr))
 	delete(ub.balances, sk)
 	delete(ub.nonces, sk)
 	delete(ub.codeHashes, sk)
@@ -117,93 +137,114 @@ func (ub *UpdateBuilder) Delete(key string) *UpdateBuilder {
 	return ub
 }
 
-type UpdateFlags uint8
-
-const (
-	DELETE_UPDATE  UpdateFlags = 0
-	BALANCE_UPDATE UpdateFlags = 1
-	NONCE_UPDATE   UpdateFlags = 2
-	CODE_UPDATE    UpdateFlags = 4
-	STORAGE_UPDATE UpdateFlags = 8
-)
-
-func (uf UpdateFlags) String() string {
-	var sb strings.Builder
-	if uf == DELETE_UPDATE {
-		sb.WriteString("Delete")
+func (ub *UpdateBuilder) DeleteStorage(addr string, loc string) *UpdateBuilder {
+	sk1 := string(decodeHex(addr))
+	sk2 := string(decodeHex(loc))
+	if s, ok := ub.storages[sk1]; ok {
+		delete(s, sk2)
+		if len(s) == 0 {
+			delete(ub.storages, sk1)
+		}
+	}
+	if k, ok := ub.keyset2[sk1]; ok {
+		k[sk2] = struct{}{}
 	} else {
-		if uf&BALANCE_UPDATE != 0 {
-			sb.WriteString("+Balance")
-		}
-		if uf&NONCE_UPDATE != 0 {
-			sb.WriteString("+Nonce")
-		}
-		if uf&CODE_UPDATE != 0 {
-			sb.WriteString("+Code")
-		}
-		if uf&STORAGE_UPDATE != 0 {
-			sb.WriteString("+Storage")
-		}
+		ub.keyset2[sk1] = make(map[string]struct{})
+		ub.keyset2[sk1][sk2] = struct{}{}
 	}
-	return sb.String()
+	if d, ok := ub.deletes2[sk1]; ok {
+		d[sk2] = struct{}{}
+	} else {
+		ub.deletes2[sk1] = make(map[string]struct{})
+		ub.deletes2[sk1][sk2] = struct{}{}
+	}
+	return ub
 }
 
-type Update struct {
-	flags             UpdateFlags
-	balance           uint256.Int
-	nonce             uint64
-	codeHashOrStorage [32]byte
-}
-
-func (u Update) String() string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Flags: [%s]", u.flags))
-	if u.flags&BALANCE_UPDATE != 0 {
-		sb.WriteString(fmt.Sprintf(", Balance: [%d]", &u.balance))
-	}
-	if u.flags&NONCE_UPDATE != 0 {
-		sb.WriteString(fmt.Sprintf(", Nonce: [%d]", u.nonce))
-	}
-	if u.flags&CODE_UPDATE != 0 {
-		sb.WriteString(fmt.Sprintf(", CodeHash: [%x]", u.codeHashOrStorage))
-	}
-	if u.flags&STORAGE_UPDATE != 0 {
-		sb.WriteString(fmt.Sprintf(", Storage: [%x]", u.codeHashOrStorage))
-	}
-	return sb.String()
-}
-
-// Build
-func (ub *UpdateBuilder) Build() ([][]byte, []Update) {
-	var keys []string
+// Build returns three slices (in the order sorted by the hashed keys)
+// 1. Plain keys
+// 2. Corresponding hashed keys
+// 3. Corresponding updates
+func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Update) {
+	var hashed []string
+	preimages := make(map[string][]byte)
+	preimages2 := make(map[string][]byte)
+	keccak := sha3.NewLegacyKeccak256()
 	for key := range ub.keyset {
-		keys = append(keys, key)
+		keccak.Reset()
+		keccak.Write([]byte(key))
+		h := keccak.Sum(nil)
+		hashedKey := make([]byte, len(h)*2)
+		for i, c := range h {
+			hashedKey[i*2] = (c >> 4) & 0xf
+			hashedKey[i*2+1] = c & 0xf
+		}
+		hashed = append(hashed, string(hashedKey))
+		preimages[string(hashedKey)] = []byte(key)
 	}
-	sort.Strings(keys)
-	returnKeys := make([][]byte, len(keys))
-	returnUpdates := make([]Update, len(keys))
-	for i, key := range keys {
-		returnKeys[i] = []byte(key)
-		u := &returnUpdates[i]
-		if balance, ok := ub.balances[key]; ok {
-			u.flags |= BALANCE_UPDATE
-			u.balance.Set(balance)
+	hashedKey := make([]byte, 128)
+	for sk1, k := range ub.keyset2 {
+		keccak.Reset()
+		keccak.Write([]byte(sk1))
+		h := keccak.Sum(nil)
+		for i, c := range h {
+			hashedKey[i*2] = (c >> 4) & 0xf
+			hashedKey[i*2+1] = c & 0xf
 		}
-		if nonce, ok := ub.nonces[key]; ok {
-			u.flags |= NONCE_UPDATE
-			u.nonce = nonce
+		for sk2 := range k {
+			keccak.Reset()
+			keccak.Write([]byte(sk2))
+			h2 := keccak.Sum(nil)
+			for i, c := range h2 {
+				hashedKey[64+i*2] = (c >> 4) & 0xf
+				hashedKey[64+i*2+1] = c & 0xf
+			}
+			hs := string(common.Copy(hashedKey))
+			hashed = append(hashed, hs)
+			preimages[hs] = []byte(sk1)
+			preimages2[hs] = []byte(sk2)
 		}
-		if codeHash, ok := ub.codeHashes[key]; ok {
-			u.flags |= CODE_UPDATE
-			copy(u.codeHashOrStorage[:], codeHash[:])
+
+	}
+	sort.Strings(hashed)
+	plainKeys = make([][]byte, len(hashed))
+	hashedKeys = make([][]byte, len(hashed))
+	updates = make([]Update, len(hashed))
+	for i, hashedKey := range hashed {
+		hashedKeys[i] = []byte(hashedKey)
+		key := preimages[hashedKey]
+		key2 := preimages2[hashedKey]
+		plainKey := make([]byte, len(key)+len(key2))
+		copy(plainKey[:], []byte(key))
+		if key2 != nil {
+			copy(plainKey[len(key):], []byte(key2))
 		}
-		if storage, ok := ub.storages[key]; ok {
-			u.flags |= STORAGE_UPDATE
-			u.codeHashOrStorage = [32]byte{}
-			copy(u.codeHashOrStorage[32-len(storage):], storage)
+		plainKeys[i] = plainKey
+		u := &updates[i]
+		if key2 == nil {
+			if balance, ok := ub.balances[string(key)]; ok {
+				u.flags |= BALANCE_UPDATE
+				u.balance.Set(balance)
+			}
+			if nonce, ok := ub.nonces[string(key)]; ok {
+				u.flags |= NONCE_UPDATE
+				u.nonce = nonce
+			}
+			if codeHash, ok := ub.codeHashes[string(key)]; ok {
+				u.flags |= CODE_UPDATE
+				copy(u.codeHashOrStorage[:], codeHash[:])
+			}
+		} else {
+			if sm, ok1 := ub.storages[string(key)]; ok1 {
+				if storage, ok2 := sm[string(key2)]; ok2 {
+					u.flags |= STORAGE_UPDATE
+					u.codeHashOrStorage = [32]byte{}
+					copy(u.codeHashOrStorage[32-len(storage):], storage)
+				}
+			}
 		}
 	}
-	return returnKeys, returnUpdates
+	return
 }
 
 func TestEmptyState(t *testing.T) {
@@ -212,59 +253,29 @@ func TestEmptyState(t *testing.T) {
 		branchFn:  ms.branchFn,
 		accountFn: ms.accountFn,
 		storageFn: ms.storageFn,
+		empty:     true,
+		keccak:    sha3.NewLegacyKeccak256(),
 	}
-	// addrHashes are 4 digits long
-	keys, updates := NewUpdateBuilder().
-		Balance("00000000", 4).
+	plainKeys, hashedKeys, updates := NewUpdateBuilder().
+		Balance("00", 4).
+		Balance("01", 5).
+		Balance("02", 6).
+		Balance("03", 7).
+		Balance("04", 8).
+		Storage("04", "01", "0401").
 		Build()
-	// Unfold the root onto the row 0 if it is not empty
-	if hph.root.t != EMPTY_CELL {
-		if err := hph.unfoldCell(&hph.root); err != nil {
-			t.Error(err)
-		}
+	branchNodeUpdates, err := hph.processUpdates(plainKeys, hashedKeys, updates, 1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var branchNodeUpdates []*BranchNodeUpdate
-	for i, key := range keys {
-		update := updates[i]
-		fmt.Printf("key = [%x], update = %s\n", key, update)
-		// Keep folding until the currentKey is the prefix of the key we modify
-		for hph.currentKeyLen > 0 && !bytes.HasPrefix(key, hph.currentKey[:hph.currentKeyLen]) {
-			if branchNodeUpdate, err := hph.fold(); err != nil {
-				t.Error(err)
-			} else if branchNodeUpdate != nil {
-				branchNodeUpdates = append(branchNodeUpdates, branchNodeUpdate)
-			}
-		}
-		// Now unfold until we step on an empty cell
-		for !hph.emptyTip(key) && hph.currentKeyLen < len(key) {
-			if err := hph.unfoldCell(&hph.grid[hph.activeRows-1][key[hph.currentKeyLen]]); err != nil {
-				t.Error(err)
-			}
-		}
-		// Update the cell
-		if update.flags == DELETE_UPDATE {
-			hph.deleteCell(key)
-		} else {
-			if update.flags&BALANCE_UPDATE != 0 {
-				hph.updateBalance(key, &update.balance)
-			}
-			if update.flags&NONCE_UPDATE != 0 {
-				hph.updateNonce(key, update.nonce)
-			}
-			if update.flags&CODE_UPDATE != 0 {
-				hph.updateCode(key, update.codeHashOrStorage[:])
-			}
-			if update.flags&STORAGE_UPDATE != 0 {
-				hph.updateStorage(key, update.codeHashOrStorage[:])
-			}
-		}
+	fmt.Printf("Generated updates\n")
+	var keys []string
+	for key := range branchNodeUpdates {
+		keys = append(keys, key)
 	}
-	// Folding everything up to the root
-	for hph.activeRows > 0 {
-		if branchNodeUpdate, err := hph.fold(); err != nil {
-			t.Error(err)
-		} else {
-			branchNodeUpdates = append(branchNodeUpdates, branchNodeUpdate)
-		}
+	sort.Strings(keys)
+	for _, key := range keys {
+		branchNodeUpdate := branchNodeUpdates[key]
+		fmt.Printf("%x => %+v\n", key, branchNodeUpdate)
 	}
 }
