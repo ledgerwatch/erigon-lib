@@ -1099,8 +1099,14 @@ func (c *MdbxCursor) Seek(seek []byte) (k, v []byte, err error) {
 
 	if len(seek) == 0 {
 		k, v, err = c.first()
+		if err != nil {
+			panic(err)
+		}
 	} else {
 		k, v, err = c.setRange(seek)
+		if err != nil {
+			panic(err)
+		}
 	}
 	if err != nil {
 		if mdbx.IsNotFound(err) {
