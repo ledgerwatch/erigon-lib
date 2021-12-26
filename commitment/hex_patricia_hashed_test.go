@@ -43,6 +43,10 @@ func (ms MockState) storageFn(plainKey []byte, storage []byte) error {
 	return nil
 }
 
+func (ms *MockState) applyUpdates(updates map[string]*BranchNodeUpdate) {
+
+}
+
 func decodeHex(in string) []byte {
 	payload, err := hex.DecodeString(in)
 	if err != nil {
@@ -250,11 +254,11 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 func TestEmptyState(t *testing.T) {
 	var ms MockState
 	hph := &HexPatriciaHashed{
-		branchFn:  ms.branchFn,
-		accountFn: ms.accountFn,
-		storageFn: ms.storageFn,
-		empty:     true,
-		keccak:    sha3.NewLegacyKeccak256(),
+		branchFn:   ms.branchFn,
+		accountFn:  ms.accountFn,
+		storageFn:  ms.storageFn,
+		rootBefore: false, // Start from empty root
+		keccak:     sha3.NewLegacyKeccak256(),
 	}
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).

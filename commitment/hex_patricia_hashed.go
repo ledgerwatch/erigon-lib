@@ -18,6 +18,7 @@ package commitment
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"hash"
 	"math/bits"
@@ -31,8 +32,7 @@ import (
 // HexPatriciaHashed implements commitment based on patricia merkle tree with radix 16,
 // with keys pre-hashed by keccak256
 type HexPatriciaHashed struct {
-	empty bool
-	root  Cell // Root cell of the tree
+	root Cell // Root cell of the tree
 	// Rows of the grid correspond to the level of depth in the patricia tree
 	// Columns of the grid correspond to pointers to the nodes further from the root
 	grid     [128][16]Cell        // First 64 rows of this grid are for account trie, and next 64 rows are for storage trie
@@ -44,9 +44,13 @@ type HexPatriciaHashed struct {
 	// Length of the key that reflects current positioning of the grid. It maybe larger than number of active rows,
 	// if a account leaf cell represents multiple nibbles in the key
 	currentKeyLen int
-	currentKey    [128]byte   // For each row indicates which column is currently selected
-	record        [128]bool   // For each row, whether there was a persistent record correspondng to this row
-	afterBitmap   [128]uint16 // For each row, bitmap of cells that are filled (not deleted) after the changes
+	currentKey    [128]byte // For each row indicates which column is currently selected
+	rootBefore    bool
+	rootMod       bool
+	rootDel       bool
+	beforeBitmap  [128]uint16 // For each row, bitmap of cells that were present before modification
+	modBitmap     [128]uint16 // For each row, bitmap of cells that were modified (not deleted)
+	delBitmap     [128]uint16 // For each row, bitmap of cells that were deleted
 	// Function used to load branch node and fill up the cells
 	// For each cell, it sets the cell type, clears the modified flag, fills the hash,
 	// and for the extension, account, and leaf type, the `l` and `k`
@@ -243,77 +247,124 @@ func (bnp BranchNodePart) String() string {
 	return sb.String()
 }
 
+func (bnu BranchNodePart) encode(buf []byte, numBuf []byte) []byte {
+	return buf
+}
+
+func (bnp *BranchNodePart) decode(buf []byte, pos int) (int, error) {
+	return pos, nil
+}
+
 // BranchNodeUpdate describes an update to branch node (or root node, which can thought as a degenerate case of a branch node)
 type BranchNodeUpdate struct {
-	partMask uint16 // Zero if this is a deletion, otherwise contains bit 1 for every part
-	parts    []BranchNodePart
+	modMask uint16           // Mask of modifications
+	delMask uint16           // Mask of deletions
+	mods    []BranchNodePart // Modifications
 }
 
 func (bnu BranchNodeUpdate) String() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "update %16b:\n", bnu.partMask)
-	colMask := uint16(1)
-	j := 0
-	for i := 0; i < 16; i++ {
-		if bnu.partMask&colMask != 0 {
-			fmt.Fprintf(&sb, "   %x => %s\n", i, bnu.parts[j])
-			j++
-		}
-		colMask <<= 1
+	fmt.Fprintf(&sb, "modMask %016b, delMask %016b\n", bnu.modMask, bnu.delMask)
+	for bitset, j := bnu.modMask, 0; bitset != 0; j++ {
+		bit := bitset & -bitset
+		nibble := bits.TrailingZeros16(bit)
+		fmt.Fprintf(&sb, "   %x => %s\n", nibble, bnu.mods[j])
+		bitset ^= bit
 	}
 	return sb.String()
+}
+
+func (bnu BranchNodeUpdate) encode(buf []byte, numBuf []byte) []byte {
+	binary.BigEndian.PutUint16(numBuf, bnu.modMask)
+	buf = append(buf, numBuf...)
+	binary.BigEndian.PutUint16(numBuf, bnu.delMask)
+	buf = append(buf, numBuf...)
+	// Loop iterating over the set bits of modMask
+	for bitset, j := bnu.modMask, 0; bitset != 0; j++ {
+		bit := bitset & -bitset
+		buf = bnu.mods[j].encode(buf, numBuf)
+		bitset ^= bit
+	}
+	return buf
+}
+
+func (bnu *BranchNodeUpdate) decode(buf []byte, pos int) (int, error) {
+	bnu.modMask = binary.BigEndian.Uint16(buf[pos:])
+	pos += 2
+	bnu.delMask = binary.BigEndian.Uint16(buf[pos:])
+	pos += 2
+	bnu.mods = make([]BranchNodePart, bits.OnesCount16(bnu.modMask))
+	// Loop iterating over the set bits of partMask
+	for bitset, j := bnu.modMask, 0; bitset != 0; j++ {
+		bit := bitset & -bitset
+		var err error
+		if pos, err = bnu.mods[j].decode(buf, pos); err != nil {
+			return 0, fmt.Errorf("decode BranchNodeUpdate: part %d: %w", j, err)
+		}
+		bitset ^= bit
+	}
+	return pos, nil
 }
 
 func (hph *HexPatriciaHashed) unfold(hashedKey []byte) error {
 	fmt.Printf("unfold: activeRows: %d\n", hph.activeRows)
 	var upCell *Cell
 	row := hph.activeRows
+	var before, modified bool
 	if hph.activeRows == 0 {
-		if hph.empty {
+		if hph.root.hl == 0 && hph.root.hkl == 0 {
 			// No unfolding for empty root
 			return nil
 		}
 		upCell = &hph.root
+		before = hph.rootBefore
+		modified = hph.rootMod
 	} else {
-		upCell = &hph.grid[hph.activeRows-1][hashedKey[hph.currentKeyLen]]
+		col := hashedKey[hph.currentKeyLen]
+		upCell = &hph.grid[hph.activeRows-1][col]
+		before = hph.beforeBitmap[hph.activeRows-1]&(uint16(1)<<col) != 0
+		modified = hph.modBitmap[hph.activeRows-1]&(uint16(1)<<col) != 0
 	}
 	for i := 0; i < 16; i++ {
 		hph.grid[row][i].fillEmpty()
 	}
-	hph.record[row] = false
-	hph.afterBitmap[row] = 0
+	hph.beforeBitmap[row] = 0
+	hph.modBitmap[row] = 0
+	hph.delBitmap[row] = 0
 	var err error
 	var branchNodeUpdate *BranchNodeUpdate
 	if upCell.hkl == 0 {
 		if branchNodeUpdate, err = hph.branchFn(hph.currentKey[:row]); err != nil {
 			return err
 		}
-		hph.record[row] = true
-		hph.afterBitmap[row] = branchNodeUpdate.partMask
-		j := 0
-		colMask := uint16(1)
-		for i := 0; i < 16; i++ {
-			if branchNodeUpdate.partMask&colMask != 0 {
-				cell := &hph.grid[row][i]
-				part := &branchNodeUpdate.parts[j]
-				cell.fillFromPart(row, hph.keccak, part)
-				if cell.apl > 0 && cell.hkl == 0 {
-					if err = hph.accountFn(cell.apk[:cell.apl], &hph.accounts[i]); err != nil {
-						return nil
-					}
+		hph.beforeBitmap[row] = branchNodeUpdate.modMask
+		// Loop iterating over the set bits of modMask
+		for bitset, j := branchNodeUpdate.modMask, 0; bitset != 0; j++ {
+			bit := bitset & -bitset
+			nibble := bits.TrailingZeros16(bit)
+			cell := &hph.grid[row][nibble]
+			part := &branchNodeUpdate.mods[j]
+			cell.fillFromPart(row, hph.keccak, part)
+			if cell.apl > 0 && cell.hkl == 0 {
+				if err = hph.accountFn(cell.apk[:cell.apl], &hph.accounts[nibble]); err != nil {
+					return nil
 				}
-				if cell.spl > 0 && cell.hkl == 0 {
-					if err = hph.storageFn(cell.spk[:cell.spl], hph.storages[i][:]); err != nil {
-						return nil
-					}
-				}
-				j++
 			}
-			colMask <<= 1
+			if cell.spl > 0 && cell.hkl == 0 {
+				if err = hph.storageFn(cell.spk[:cell.spl], hph.storages[nibble][:]); err != nil {
+					return nil
+				}
+			}
+			bitset ^= bit
 		}
 	} else {
 		nibble := upCell.hk[0]
-		hph.afterBitmap[row] |= uint16(1) << nibble
+		if before {
+			hph.beforeBitmap[row] = uint16(1) << nibble
+		}
+		if modified {
+			hph.modBitmap[row] = uint16(1) << nibble
+		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell)
 		if cell.apl > 0 && cell.hkl == 0 {
@@ -344,9 +395,9 @@ func (hph *HexPatriciaHashed) foldRoot() (*BranchNodeUpdate, error) {
 	if hph.root.hkl == 0 {
 		return nil, nil
 	}
-	branchNodeUpdate.partMask = uint16(1)
-	branchNodeUpdate.parts = append(branchNodeUpdate.parts, BranchNodePart{})
-	branchNodeUpdate.parts[0].fillFromCell(&hph.root)
+	branchNodeUpdate.modMask = uint16(1)
+	branchNodeUpdate.mods = append(branchNodeUpdate.mods, BranchNodePart{})
+	branchNodeUpdate.mods[0].fillFromCell(&hph.root)
 	return &branchNodeUpdate, nil
 }
 
@@ -355,7 +406,7 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 	if hph.activeRows == 0 {
 		return nil, nil, fmt.Errorf("cannot fold - no active rows")
 	}
-	fmt.Printf("fold: activeRows: %d, bitmap: %016b\n", hph.activeRows, hph.afterBitmap[hph.activeRows-1])
+	fmt.Printf("fold: activeRows: %d, modBitmap: %016b, delBitmap: %016b\n", hph.activeRows, hph.modBitmap[hph.activeRows-1], hph.delBitmap[hph.activeRows-1])
 	// Move information to the row above
 	row := hph.activeRows - 1
 	var upCell *Cell
@@ -369,48 +420,62 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 		upCell = &hph.grid[row-1][col]
 	}
 	branchNodeUpdate := &BranchNodeUpdate{}
-	switch bits.OnesCount16(hph.afterBitmap[row]) {
+	bitmap := hph.beforeBitmap[row] | hph.modBitmap[row] ^ hph.delBitmap[row]
+	switch bits.OnesCount16(bitmap) {
 	case 0:
 		// Everything deleted
-		if row > 0 {
-			hph.afterBitmap[row-1] &^= (uint16(1) << col)
+		if hph.delBitmap[row] != 0 {
+			if row == 0 {
+				hph.rootDel = true
+			} else {
+				hph.delBitmap[row-1] |= (uint16(1) << col)
+			}
 		}
 		upCell.apl = 0
 		upCell.spl = 0
 		upCell.hkl = 0
-		if !hph.record[row] {
+		if bits.OnesCount16(hph.beforeBitmap[row]) <= 1 {
 			// No update
 			branchNodeUpdate = nil
 		}
 	case 1:
 		// Leaf or extension node
-		if row > 0 {
-			hph.afterBitmap[row-1] |= (uint16(1) << col)
+		if hph.modBitmap[row] != 0 || hph.delBitmap[row] != 0 {
+			// any modifications
+			if row == 0 {
+				hph.rootMod = true
+			} else {
+				hph.modBitmap[row-1] |= (uint16(1) << col)
+			}
 		}
-		i := bits.TrailingZeros16(hph.afterBitmap[row])
-		cell := &hph.grid[row][i]
-		upCell.fillFromLowerCell(cell, i)
-		if !hph.record[row] {
+		nibble := bits.TrailingZeros16(bitmap)
+		cell := &hph.grid[row][nibble]
+		upCell.fillFromLowerCell(cell, nibble)
+		if bits.OnesCount16(hph.beforeBitmap[row]) <= 1 {
 			// No update
 			branchNodeUpdate = nil
 		}
 	default:
 		// Branch node
-		if row > 0 {
-			hph.afterBitmap[row-1] |= (uint16(1) << col)
+		if hph.modBitmap[row] != 0 || hph.delBitmap[row] != 0 {
+			// any modifications
+			if row == 0 {
+				hph.rootMod = true
+			} else {
+				hph.modBitmap[row-1] |= (uint16(1) << col)
+			}
 		}
 		upCell.hkl = 0
-		colMask := uint16(1)
-		for i := 0; i < 16; i++ {
-			if hph.afterBitmap[row]&colMask != 0 {
-				n := len(branchNodeUpdate.parts)
-				branchNodeUpdate.parts = append(branchNodeUpdate.parts, BranchNodePart{})
-				cell := &hph.grid[row][i]
-				cell.computeHash(hph.keccak, nil)
-				branchNodeUpdate.parts[n].fillFromCell(cell)
-				branchNodeUpdate.partMask |= colMask
-			}
-			colMask <<= 1
+		branchNodeUpdate.delMask = hph.delBitmap[row]
+		branchNodeUpdate.modMask = hph.modBitmap[row]
+		branchNodeUpdate.mods = make([]BranchNodePart, branchNodeUpdate.modMask)
+		for bitset, j := hph.modBitmap[row], 0; bitset != 0; j++ {
+			bit := bitset & -bitset
+			nibble := bits.TrailingZeros16(bit)
+			cell := &hph.grid[row][nibble]
+			cell.computeHash(hph.keccak, nil)
+			branchNodeUpdate.mods[j].fillFromCell(cell)
+			bitset ^= bit
 		}
 		upCell.hkl = 0
 		upCell.apl = 0
@@ -433,12 +498,10 @@ func (hph HexPatriciaHashed) emptyTip(key []byte) bool {
 	var cell *Cell
 	if hph.activeRows == 0 {
 		cell = &hph.root
-		fmt.Printf("emptyTip: activeRows %d, currentKeyLen %d\n", hph.activeRows, hph.currentKeyLen)
-		//return hph.empty
 	} else {
 		cell = &hph.grid[hph.activeRows-1][key[hph.activeRows-1]]
 	}
-	fmt.Printf("emptyTip: activeRows %d, currentKeyLen %d\n", hph.activeRows, hph.currentKeyLen)
+	fmt.Printf("emptyTip %t: activeRows %d, currentKeyLen %d\n", cell.hkl == 0 && cell.hl == 0, hph.activeRows, hph.currentKeyLen)
 	return cell.hkl == 0 && cell.hl == 0
 }
 
@@ -453,12 +516,12 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Account
 		// Update the root
 		row = -1
 		cell = &hph.root
-		hph.empty = false
+		hph.rootMod = true
 	} else {
 		row = hph.activeRows - 1
 		col = int(hashedKey[row])
 		cell = &hph.grid[row][col]
-		hph.afterBitmap[row] |= (uint16(1) << col)
+		hph.modBitmap[row] |= (uint16(1) << col)
 		fmt.Printf("updateAccount setting (%d, %x)\n", row, col)
 	}
 	copy(cell.hk[:], hashedKey[row+1:])
@@ -499,7 +562,7 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, hashedKey []byte, a
 		row = hph.activeRows - 1
 		col = int(hashedKey[row])
 		cell = &hph.grid[row][col]
-		hph.afterBitmap[row] |= (uint16(1) << col)
+		hph.modBitmap[row] |= (uint16(1) << col)
 		fmt.Printf("updateStorage setting (%d, %x)\n", row, col)
 	}
 	copy(cell.hk[:], hashedKey[row+1:])
