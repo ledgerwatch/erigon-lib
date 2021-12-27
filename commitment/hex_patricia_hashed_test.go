@@ -17,8 +17,10 @@
 package commitment
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/bits"
 	"sort"
 	"testing"
 
@@ -29,22 +31,184 @@ import (
 
 // In memory commitment and state to use with the tests
 type MockState struct {
+	numBuf [binary.MaxVarintLen64]byte
+	sm     map[string][]byte // backbone of the state
+	cm     map[string][]byte // backbone of the commitments
+}
+
+func NewMockState() *MockState {
+	return &MockState{
+		sm: make(map[string][]byte),
+		cm: make(map[string][]byte),
+	}
 }
 
 func (ms MockState) branchFn(prefix []byte) (*BranchNodeUpdate, error) {
+	if exBytes, ok := ms.cm[string(prefix)]; ok {
+		var ex BranchNodeUpdate
+		pos, err := ex.decode(exBytes, 0)
+		if err != nil {
+			return nil, fmt.Errorf("branchFn decode existing [%x], bytes: [%x]: %w", prefix, exBytes, err)
+		}
+		if pos != len(exBytes) {
+			return nil, fmt.Errorf("branchFn key [%x] leftover bytes in [%x], comsumed %x", prefix, exBytes, pos)
+		}
+		return &ex, nil
+	}
 	return nil, nil
 }
 
 func (ms MockState) accountFn(plainKey []byte, account *AccountDecorator) error {
+	exBytes, ok := ms.sm[string(plainKey)]
+	if !ok {
+		return fmt.Errorf("accountFn not found key [%x]", plainKey)
+	}
+	var ex Update
+	pos, err := ex.decode(exBytes, 0)
+	if err != nil {
+		return fmt.Errorf("accountFn decode existing [%x], bytes: [%x]: %w", plainKey, exBytes, err)
+	}
+	if pos != len(exBytes) {
+		return fmt.Errorf("accountFn key [%x] leftover bytes in [%x], comsumed %x", plainKey, exBytes, pos)
+	}
+	if ex.flags&STORAGE_UPDATE != 0 {
+		return fmt.Errorf("accountFn reading storage item for key [%x]", plainKey)
+	}
+	if ex.flags&DELETE_UPDATE != 0 {
+		return fmt.Errorf("accountFn reading deleted account for key [%x]", plainKey)
+	}
+	if ex.flags&BALANCE_UPDATE != 0 {
+		account.Balance.Set(&ex.balance)
+	} else {
+		account.Balance.Clear()
+	}
+	if ex.flags&NONCE_UPDATE != 0 {
+		account.Nonce = ex.nonce
+	} else {
+		account.Nonce = 0
+	}
+	if ex.flags&CODE_UPDATE != 0 {
+		copy(account.CodeHash[:], ex.codeHashOrStorage[:])
+	} else {
+		account.CodeHash = [32]byte{}
+	}
 	return nil
 }
 
 func (ms MockState) storageFn(plainKey []byte, storage []byte) error {
+	exBytes, ok := ms.sm[string(plainKey)]
+	if !ok {
+		return fmt.Errorf("storageFn not found key [%x]", plainKey)
+	}
+	var ex Update
+	pos, err := ex.decode(exBytes, 0)
+	if err != nil {
+		return fmt.Errorf("storageFn decode existing [%x], bytes: [%x]: %w", plainKey, exBytes, err)
+	}
+	if pos != len(exBytes) {
+		return fmt.Errorf("storageFn key [%x] leftover bytes in [%x], comsumed %x", plainKey, exBytes, pos)
+	}
+	if ex.flags&BALANCE_UPDATE != 0 {
+		return fmt.Errorf("storageFn reading balance for key [%x]", plainKey)
+	}
+	if ex.flags&NONCE_UPDATE != 0 {
+		return fmt.Errorf("storageFn reading nonce for key [%x]", plainKey)
+	}
+	if ex.flags&CODE_UPDATE != 0 {
+		return fmt.Errorf("storageFn reading codeHash for key [%x]", plainKey)
+	}
+	if ex.flags&DELETE_UPDATE != 0 {
+		return fmt.Errorf("storageFn reading deleted item for key [%x]", plainKey)
+	}
+	if ex.flags&STORAGE_UPDATE != 0 {
+		copy(storage, ex.codeHashOrStorage[:])
+	} else {
+		for i := 0; i < 32; i++ {
+			storage[i] = 0
+		}
+	}
 	return nil
 }
 
-func (ms *MockState) applyUpdates(updates map[string]*BranchNodeUpdate) {
+func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) error {
+	for i, key := range plainKeys {
+		update := updates[i]
+		if update.flags&DELETE_UPDATE != 0 {
+			delete(ms.sm, string(key))
+		} else {
+			if exBytes, ok := ms.sm[string(key)]; ok {
+				var ex Update
+				pos, err := ex.decode(exBytes, 0)
+				if err != nil {
+					return fmt.Errorf("applyPlainUpdates decode existing [%x], bytes: [%x]: %w", key, exBytes, err)
+				}
+				if pos != len(exBytes) {
+					return fmt.Errorf("applyPlainUpdates key [%x] leftover bytes in [%x], comsumed %x", key, exBytes, pos)
+				}
+				if update.flags&BALANCE_UPDATE != 0 {
+					ex.flags |= BALANCE_UPDATE
+					ex.balance.Set(&update.balance)
+				}
+				if update.flags&NONCE_UPDATE != 0 {
+					ex.flags |= NONCE_UPDATE
+					ex.nonce = update.nonce
+				}
+				if update.flags&CODE_UPDATE != 0 {
+					ex.flags |= CODE_UPDATE
+					copy(ex.codeHashOrStorage[:], update.codeHashOrStorage[:])
+				}
+				if update.flags&STORAGE_UPDATE != 0 {
+					ex.flags |= STORAGE_UPDATE
+					copy(ex.codeHashOrStorage[:], update.codeHashOrStorage[:])
+				}
+				ms.sm[string(key)] = ex.encode(nil, ms.numBuf[:])
+			} else {
+				ms.sm[string(key)] = update.encode(nil, ms.numBuf[:])
+			}
+		}
+	}
+	return nil
+}
 
+func (ms *MockState) applyBranchNodeUpdates(updates map[string]*BranchNodeUpdate) error {
+	for key, update := range updates {
+		if exBytes, ok := ms.cm[key]; ok {
+			var ex BranchNodeUpdate
+			pos, err := ex.decode(exBytes, 0)
+			if err != nil {
+				return fmt.Errorf("applyBranchNodeUpdates decode existing [%x], bytes: [%x]: %w", key, exBytes, err)
+			}
+			if pos != len(exBytes) {
+				return fmt.Errorf("applyBranchNodeUpdates key [%x] leftover bytes in [%x], comsumed %x", key, exBytes, pos)
+			}
+			bitmap := (ex.modMask | update.modMask) ^ update.delMask
+			if bitmap == 0 {
+				delete(ms.cm, key)
+			} else {
+				var new BranchNodeUpdate
+				new.modMask = bitmap
+				new.mods = make([]BranchNodePart, bits.OnesCount16(bitmap))
+				var exJ, upJ int
+				for bitset, j := bitmap, 0; bitset != 0; j++ {
+					bit := bitset & -bitset
+					if update.modMask&bit == 0 {
+						new.mods[j] = ex.mods[exJ]
+					} else {
+						new.mods[j] = update.mods[upJ]
+						upJ++
+					}
+					if ex.modMask&bit != 0 {
+						exJ++
+					}
+					bitset ^= bit
+				}
+				ms.cm[key] = new.encode(nil, ms.numBuf[:])
+			}
+		} else {
+			ms.cm[key] = update.encode(nil, ms.numBuf[:])
+		}
+	}
+	return nil
 }
 
 func decodeHex(in string) []byte {
@@ -252,7 +416,7 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 }
 
 func TestEmptyState(t *testing.T) {
-	var ms MockState
+	ms := NewMockState()
 	hph := &HexPatriciaHashed{
 		branchFn:   ms.branchFn,
 		accountFn:  ms.accountFn,
@@ -268,8 +432,14 @@ func TestEmptyState(t *testing.T) {
 		Balance("04", 8).
 		Storage("04", "01", "0401").
 		Build()
+	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
+		t.Fatal(err)
+	}
 	branchNodeUpdates, err := hph.processUpdates(plainKeys, hashedKeys, updates, 1)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ms.applyBranchNodeUpdates(branchNodeUpdates); err != nil {
 		t.Fatal(err)
 	}
 	fmt.Printf("Generated updates\n")

@@ -247,11 +247,96 @@ func (bnp BranchNodePart) String() string {
 	return sb.String()
 }
 
-func (bnu BranchNodePart) encode(buf []byte, numBuf []byte) []byte {
+func (bnp BranchNodePart) encode(buf []byte, numBuf []byte) []byte {
+	n := binary.PutUvarint(numBuf, uint64(len(bnp.hashedKey)))
+	buf = append(buf, numBuf[:n]...)
+	if len(bnp.hashedKey) > 0 {
+		buf = append(buf, bnp.hashedKey...)
+	}
+	n = binary.PutUvarint(numBuf, uint64(len(bnp.accountPlainKey)))
+	buf = append(buf, numBuf[:n]...)
+	if len(bnp.accountPlainKey) > 0 {
+		buf = append(buf, bnp.accountPlainKey...)
+	}
+	n = binary.PutUvarint(numBuf, uint64(len(bnp.storagePlainKey)))
+	buf = append(buf, numBuf[:n]...)
+	if len(bnp.storagePlainKey) > 0 {
+		buf = append(buf, bnp.storagePlainKey...)
+		n = binary.PutUvarint(numBuf, uint64(bnp.accountKeyLen))
+		buf = append(buf, numBuf[:n]...)
+	}
+	n = binary.PutUvarint(numBuf, uint64(len(bnp.hash)))
+	buf = append(buf, numBuf[:n]...)
+	if len(bnp.hash) > 0 {
+		buf = append(buf, bnp.hash...)
+	}
 	return buf
 }
 
 func (bnp *BranchNodePart) decode(buf []byte, pos int) (int, error) {
+	l, n := binary.Uvarint(buf[pos:])
+	if n == 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for hashedKey len")
+	} else if n < 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: val overlow for hashedKey len")
+	}
+	pos += n
+	if len(buf) < pos+int(l) {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for hashedKey")
+	}
+	if l > 0 {
+		bnp.hashedKey = common.Copy(buf[pos : pos+int(l)])
+		pos += int(l)
+	}
+	l, n = binary.Uvarint(buf[pos:])
+	if n == 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for accountPlainKey len")
+	} else if n < 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: val overlow for accountPlainKey len")
+	}
+	pos += n
+	if len(buf) < pos+int(l) {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for accountPlainKey")
+	}
+	if l > 0 {
+		bnp.accountPlainKey = common.Copy(buf[pos : pos+int(l)])
+		pos += int(l)
+	}
+	l, n = binary.Uvarint(buf[pos:])
+	if n == 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for storagePlainKey len")
+	} else if n < 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: val overlow for storagePlainKey len")
+	}
+	pos += n
+	if len(buf) < pos+int(l) {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for storagePlainKey")
+	}
+	if l > 0 {
+		bnp.storagePlainKey = common.Copy(buf[pos : pos+int(l)])
+		pos += int(l)
+		l, n = binary.Uvarint(buf[pos:])
+		if n == 0 {
+			return 0, fmt.Errorf("decode BranchNodePart: buffer too small for accountKeyLen")
+		} else if n < 0 {
+			return 0, fmt.Errorf("decode BranchNodePart: val overlow for accountKeyLen")
+		}
+		bnp.accountKeyLen = int(l)
+	}
+	l, n = binary.Uvarint(buf[pos:])
+	if n == 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for hash len")
+	} else if n < 0 {
+		return 0, fmt.Errorf("decode BranchNodePart: val overlow for hash len")
+	}
+	pos += n
+	if len(buf) < pos+int(l) {
+		return 0, fmt.Errorf("decode BranchNodePart: buffer too small for hash")
+	}
+	if l > 0 {
+		bnp.hash = common.Copy(buf[pos : pos+int(l)])
+		pos += int(l)
+	}
 	return pos, nil
 }
 
@@ -289,8 +374,14 @@ func (bnu BranchNodeUpdate) encode(buf []byte, numBuf []byte) []byte {
 }
 
 func (bnu *BranchNodeUpdate) decode(buf []byte, pos int) (int, error) {
+	if len(buf) < pos+2 {
+		return 0, fmt.Errorf("decode BranchNodeUpdate: buffer too small for modMask")
+	}
 	bnu.modMask = binary.BigEndian.Uint16(buf[pos:])
 	pos += 2
+	if len(buf) < pos+2 {
+		return 0, fmt.Errorf("decode BranchNodeUpdate: buffer too small for delMask")
+	}
 	bnu.delMask = binary.BigEndian.Uint16(buf[pos:])
 	pos += 2
 	bnu.mods = make([]BranchNodePart, bits.OnesCount16(bnu.modMask))
@@ -420,7 +511,7 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 		upCell = &hph.grid[row-1][col]
 	}
 	branchNodeUpdate := &BranchNodeUpdate{}
-	bitmap := hph.beforeBitmap[row] | hph.modBitmap[row] ^ hph.delBitmap[row]
+	bitmap := (hph.beforeBitmap[row] | hph.modBitmap[row]) ^ hph.delBitmap[row]
 	switch bits.OnesCount16(bitmap) {
 	case 0:
 		// Everything deleted
@@ -505,8 +596,22 @@ func (hph HexPatriciaHashed) emptyTip(key []byte) bool {
 	return cell.hkl == 0 && cell.hl == 0
 }
 
-func (hph *HexPatriciaHashed) deleteCell(k []byte) error {
-	return nil
+func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
+	fmt.Printf("deleteCell, activeRows = %d\n", hph.activeRows)
+	var row, col int
+	var cell *Cell
+	if hph.activeRows == 0 {
+		// Remove the root
+		cell = &hph.root
+		hph.rootDel = true
+	} else {
+		row = hph.activeRows - 1
+		col = int(hashedKey[row])
+		cell = &hph.grid[row][col]
+		hph.delBitmap[row] |= (uint16(1) << col)
+		fmt.Printf("deleteCell setting (%d, %x)\n", row, col)
+	}
+	cell.fillEmpty()
 }
 
 func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *AccountDecorator {
@@ -611,6 +716,71 @@ type Update struct {
 	codeHashOrStorage [32]byte
 }
 
+func (u Update) encode(buf []byte, numBuf []byte) []byte {
+	buf = append(buf, byte(u.flags))
+	if u.flags&BALANCE_UPDATE != 0 {
+		buf = append(buf, byte(u.balance.ByteLen()))
+		buf = append(buf, u.balance.Bytes()...)
+	}
+	if u.flags&NONCE_UPDATE != 0 {
+		n := binary.PutUvarint(numBuf, u.nonce)
+		buf = append(buf, numBuf[:n]...)
+	}
+	if u.flags&CODE_UPDATE != 0 {
+		buf = append(buf, u.codeHashOrStorage[:]...)
+	}
+	if u.flags&STORAGE_UPDATE != 0 {
+		buf = append(buf, u.codeHashOrStorage[:]...)
+	}
+	return buf
+}
+
+func (u *Update) decode(buf []byte, pos int) (int, error) {
+	if len(buf) < pos+1 {
+		return 0, fmt.Errorf("decode Update: buffer too small for flags")
+	}
+	u.flags = UpdateFlags(buf[pos])
+	pos++
+	if u.flags&BALANCE_UPDATE != 0 {
+		if len(buf) < pos+1 {
+			return 0, fmt.Errorf("decode Update: buffer too small for balance len")
+		}
+		balanceLen := int(buf[pos])
+		pos++
+		if len(buf) < pos+balanceLen {
+			return 0, fmt.Errorf("decode Update: buffer too small for balance")
+		}
+		u.balance.SetBytes(buf[pos : pos+balanceLen])
+		pos += balanceLen
+	}
+	if u.flags&NONCE_UPDATE != 0 {
+		var n int
+		u.nonce, n = binary.Uvarint(buf[pos:])
+		if n == 0 {
+			return 0, fmt.Errorf("decode Update: buffer too small for nonce")
+		}
+		if n < 0 {
+			return 0, fmt.Errorf("decode Update: nonce overflow")
+		}
+		pos += n
+	}
+	if u.flags&CODE_UPDATE != 0 {
+		if len(buf) < pos+32 {
+			return 0, fmt.Errorf("decode Update: buffer too small for codeHash")
+		}
+		copy(u.codeHashOrStorage[:], buf[pos:pos+32])
+		pos += 32
+	}
+	if u.flags&STORAGE_UPDATE != 0 {
+		if len(buf) < pos+32 {
+			return 0, fmt.Errorf("decode Update: buffer too small for storage")
+		}
+		copy(u.codeHashOrStorage[:], buf[pos:pos+32])
+		pos += 32
+	}
+	return pos, nil
+}
+
 func (u Update) String() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Flags: [%s]", u.flags))
@@ -652,9 +822,7 @@ func (hph *HexPatriciaHashed) processUpdates(plainKeys, hashedKeys [][]byte, upd
 		}
 		// Update the cell
 		if update.flags == DELETE_UPDATE {
-			if err := hph.deleteCell(hashedKey); err != nil {
-				return nil, fmt.Errorf("deleteCell: %w", err)
-			}
+			hph.deleteCell(hashedKey)
 		} else {
 			if update.flags&BALANCE_UPDATE != 0 {
 				hph.updateBalance(plainKey, hashedKey, &update.balance)
