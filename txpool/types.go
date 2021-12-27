@@ -141,10 +141,10 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// therefore we assign the first returned value of Prefix function (list) to legacy variable
 	dataPos, dataLen, legacy, err := rlp.Prefix(payload, pos)
 	if err != nil {
-		return 0, fmt.Errorf("%s: size Prefix: %w", ErrParseTxn, err)
+		return 0, fmt.Errorf("%w: size Prefix: %s", ErrParseTxn, err)
 	}
 	if dataLen > txMaxSize {
-		return 0, fmt.Errorf("%s: too large tx.size=%dKb", ParseTransactionErrorPrefix, len(payload)/1024)
+		return 0, fmt.Errorf("%w: too large tx.size=%dKb", ErrParseTxn, len(payload)/1024)
 	}
 
 	if dataLen == 0 {
