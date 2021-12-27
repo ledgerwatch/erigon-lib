@@ -1223,6 +1223,7 @@ func (c *MdbxCursor) Current() ([]byte, []byte, error) {
 		if mdbx.IsNotFound(err) {
 			return nil, nil, nil
 		}
+		panic(err)
 		return []byte{}, nil, err
 	}
 
