@@ -1098,7 +1098,7 @@ func (c *MdbxCursor) Seek(seek []byte) (k, v []byte, err error) {
 	}
 
 	if len(seek) == 0 {
-		k, v, err = c.first()
+		k, v, err = c.setRange(seek)
 		if err != nil {
 			panic(err)
 		}
@@ -1123,7 +1123,7 @@ func (c *MdbxCursor) seekDupSort(seek []byte) (k, v []byte, err error) {
 	b := c.bucketCfg
 	from, to := b.DupFromLen, b.DupToLen
 	if len(seek) == 0 {
-		k, v, err = c.first()
+		k, v, err = c.setRange(seek)
 		if err != nil {
 			if mdbx.IsNotFound(err) {
 				return nil, nil, nil
