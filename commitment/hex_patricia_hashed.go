@@ -596,6 +596,21 @@ func (hph HexPatriciaHashed) emptyTip(key []byte) bool {
 	return cell.hkl == 0 && cell.hl == 0
 }
 
+func (hph HexPatriciaHashed) matchingTip(key []byte) bool {
+	var mt bool
+	if hph.activeRows == 0 {
+		mt = bytes.HasPrefix(key, hph.root.hk[:hph.root.hkl])
+	} else {
+		fmt.Printf("matching tip cell (%d, %x)\n", hph.activeRows-1, key[hph.activeRows-1])
+		cell := &hph.grid[hph.activeRows-1][key[hph.activeRows-1]]
+		mt = bytes.HasPrefix(key, hph.currentKey[:hph.currentKeyLen]) &&
+			len(key) >= hph.activeRows &&
+			bytes.HasPrefix(key[hph.activeRows:], cell.hk[:cell.hkl])
+	}
+	fmt.Printf("matchingTip %t: activeRows %d\n", mt, hph.activeRows)
+	return mt
+}
+
 func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 	fmt.Printf("deleteCell, activeRows = %d\n", hph.activeRows)
 	var row, col int
@@ -815,7 +830,7 @@ func (hph *HexPatriciaHashed) processUpdates(plainKeys, hashedKeys [][]byte, upd
 			}
 		}
 		// Now unfold until we step on an empty cell
-		for !hph.emptyTip(hashedKey) && hph.currentKeyLen < len(hashedKey)-1 {
+		for !hph.emptyTip(hashedKey) && !hph.matchingTip(hashedKey) {
 			if err := hph.unfold(hashedKey); err != nil {
 				return nil, fmt.Errorf("unfold: %w", err)
 			}
