@@ -95,6 +95,8 @@ github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5Cc
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/torquem-ch/mdbx-go v0.22.3-0.20211228020432-42bbcd724b41 h1:rifxoAwalMuj+fCEsrJrB9CXlbU/xq5CtGgN1IaUszY=
 github.com/torquem-ch/mdbx-go v0.22.3-0.20211228020432-42bbcd724b41/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
+github.com/torquem-ch/mdbx-go v0.22.3-0.20211228021911-87d3d0f58b32 h1:ilu/HpIxvwQMJpf1VGxNfiDsX/TjD9YwGA1VgbTC64I=
+github.com/torquem-ch/mdbx-go v0.22.3-0.20211228021911-87d3d0f58b32/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
 github.com/ugorji/go v1.1.13 h1:nB3O5kBSQGjEQAcfe1aLUYuxmXdFKmYgBZhY32rQb6Q=
 github.com/ugorji/go v1.1.13/go.mod h1:jxau1n+/wyTGLQoCkjok9r5zFa/FxT6eI5HiHKQszjc=
 github.com/ugorji/go/codec v1.1.13 h1:013LbFhocBoIqgHeIHKlV4JWYhqogATYWZhIcH0WHn4=
