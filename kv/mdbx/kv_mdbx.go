@@ -170,7 +170,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 
 		if opts.augumentLimit == 0 {
-			opts.augumentLimit = 32 * 256 * 1024 // mdbx's default 256 * 1024
+			opts.augumentLimit = 128 * 256 * 1024 // mdbx's default 256 * 1024
 		}
 		if err = env.SetOption(mdbx.OptRpAugmentLimit, opts.augumentLimit); err != nil {
 			return nil, err
@@ -1094,7 +1094,7 @@ func (c *MdbxCursor) Seek(seek []byte) (k, v []byte, err error) {
 	}
 
 	if len(seek) == 0 {
-		k, v, err = c.setRange(seek)
+		k, v, err = c.first()
 	} else {
 		k, v, err = c.setRange(seek)
 	}
@@ -1103,7 +1103,6 @@ func (c *MdbxCursor) Seek(seek []byte) (k, v []byte, err error) {
 			return nil, nil, nil
 		}
 		err = fmt.Errorf("failed MdbxKV cursor.Seek(): %w, bucket: %s,  key: %x", err, c.bucketName, seek)
-		panic(err)
 		return []byte{}, nil, err
 	}
 
@@ -1114,12 +1113,11 @@ func (c *MdbxCursor) seekDupSort(seek []byte) (k, v []byte, err error) {
 	b := c.bucketCfg
 	from, to := b.DupFromLen, b.DupToLen
 	if len(seek) == 0 {
-		k, v, err = c.setRange(seek)
+		k, v, err = c.first()
 		if err != nil {
 			if mdbx.IsNotFound(err) {
 				return nil, nil, nil
 			}
-			panic(err)
 			return []byte{}, nil, err
 		}
 
