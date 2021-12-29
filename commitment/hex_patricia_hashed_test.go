@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -332,7 +333,7 @@ func (ub *UpdateBuilder) DeleteStorage(addr string, loc string) *UpdateBuilder {
 // 1. Plain keys
 // 2. Corresponding hashed keys
 // 3. Corresponding updates
-func (ub *UpdateBuilder) Build() (plainKeys, accountHashedKeys [][]byte, storageHashedKeys [][]byte, updates []Update) {
+func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Update) {
 	var hashed []string
 	preimages := make(map[string][]byte)
 	preimages2 := make(map[string][]byte)
@@ -349,25 +350,24 @@ func (ub *UpdateBuilder) Build() (plainKeys, accountHashedKeys [][]byte, storage
 		hashed = append(hashed, string(hashedKey))
 		preimages[string(hashedKey)] = []byte(key)
 	}
-	accountHashedKey := make([]byte, 64)
-	storageHashedKey := make([]byte, 64)
+	hashedKey := make([]byte, 128)
 	for sk1, k := range ub.keyset2 {
 		keccak.Reset()
 		keccak.Write([]byte(sk1))
 		h := keccak.Sum(nil)
 		for i, c := range h {
-			accountHashedKey[i*2] = (c >> 4) & 0xf
-			accountHashedKey[i*2+1] = c & 0xf
+			hashedKey[i*2] = (c >> 4) & 0xf
+			hashedKey[i*2+1] = c & 0xf
 		}
 		for sk2 := range k {
 			keccak.Reset()
 			keccak.Write([]byte(sk2))
 			h2 := keccak.Sum(nil)
 			for i, c := range h2 {
-				storageHashedKey[i*2] = (c >> 4) & 0xf
-				storageHashedKey[i*2+1] = c & 0xf
+				hashedKey[64+i*2] = (c >> 4) & 0xf
+				hashedKey[64+i*2+1] = c & 0xf
 			}
-			hs := string(accountHashedKey) + string(storageHashedKey)
+			hs := string(common.Copy(hashedKey))
 			hashed = append(hashed, hs)
 			preimages[hs] = []byte(sk1)
 			preimages2[hs] = []byte(sk2)
@@ -376,14 +376,10 @@ func (ub *UpdateBuilder) Build() (plainKeys, accountHashedKeys [][]byte, storage
 	}
 	sort.Strings(hashed)
 	plainKeys = make([][]byte, len(hashed))
-	accountHashedKeys = make([][]byte, len(hashed))
-	storageHashedKeys = make([][]byte, len(hashed))
+	hashedKeys = make([][]byte, len(hashed))
 	updates = make([]Update, len(hashed))
 	for i, hashedKey := range hashed {
-		accountHashedKeys[i] = []byte(hashedKey)[:64]
-		if len(hashedKey) > 64 {
-			storageHashedKeys[i] = []byte(hashedKey)[64:]
-		}
+		hashedKeys[i] = []byte(hashedKey)
 		key := preimages[hashedKey]
 		key2 := preimages2[hashedKey]
 		plainKey := make([]byte, len(key)+len(key2))
@@ -428,7 +424,7 @@ func TestEmptyState(t *testing.T) {
 		rootBefore: false, // Start from empty root
 		keccak:     sha3.NewLegacyKeccak256(),
 	}
-	plainKeys, accountHaahedKeys, storageHashedKeys, updates := NewUpdateBuilder().
+	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
 		Balance("01", 5).
 		Balance("02", 6).
@@ -441,7 +437,7 @@ func TestEmptyState(t *testing.T) {
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
 	}
-	branchNodeUpdates, err := hph.processUpdates(plainKeys, accountHaahedKeys, storageHashedKeys, updates, 1)
+	branchNodeUpdates, err := hph.processUpdates(plainKeys, hashedKeys, updates, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
