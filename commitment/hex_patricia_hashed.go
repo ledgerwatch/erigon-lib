@@ -43,14 +43,16 @@ type HexPatriciaHashed struct {
 	activeRows int
 	// Length of the key that reflects current positioning of the grid. It maybe larger than number of active rows,
 	// if a account leaf cell represents multiple nibbles in the key
-	currentKeyLen int
-	currentKey    [128]byte // For each row indicates which column is currently selected
-	rootBefore    bool
-	rootMod       bool
-	rootDel       bool
-	beforeBitmap  [128]uint16 // For each row, bitmap of cells that were present before modification
-	modBitmap     [128]uint16 // For each row, bitmap of cells that were modified (not deleted)
-	delBitmap     [128]uint16 // For each row, bitmap of cells that were deleted
+	currentAccountKeyLen int
+	currentAccountKey    [64]byte // For each row indicates which column is currently selected
+	currentStorageKeyLen int
+	currentStorageKey    [64]byte
+	rootBefore           bool
+	rootMod              bool
+	rootDel              bool
+	beforeBitmap         [128]uint16 // For each row, bitmap of cells that were present before modification
+	modBitmap            [128]uint16 // For each row, bitmap of cells that were modified (not deleted)
+	delBitmap            [128]uint16 // For each row, bitmap of cells that were deleted
 	// Function used to load branch node and fill up the cells
 	// For each cell, it sets the cell type, clears the modified flag, fills the hash,
 	// and for the extension, account, and leaf type, the `l` and `k`
@@ -69,55 +71,83 @@ func NewHexPatriciaHashed() *HexPatriciaHashed {
 }
 
 type Cell struct {
-	h             [32]byte  // cell hash
-	hl            int       // Length of the hash (or embedded)
-	hk            [128]byte // part of the hashed key (for the extension and leaf nodes), one byte contains one nibble (hex digit 0-15)
-	hkl           int       // length (for the hashed key part)
-	apk           [20]byte  // account plain key
-	apl           int       // length of account plain key
-	spk           [52]byte  // storage plain key
-	spl           int       // length of the storage plain key
+	h             [32]byte // cell hash
+	hl            int      // Length of the hash (or embedded)
+	apk           [20]byte // account plain key
+	apl           int      // length of account plain key
+	ahk           [64]byte // part of the hashed key (for the extension and leaf nodes), one byte contains one nibble (hex digit 0-15)
+	ahl           int      // length (for the hashed key part)
+	spk           [52]byte // storage plain key
+	spl           int      // length of the storage plain key
+	shk           [64]byte
+	shl           int
 	accountKeyLen int
 }
 
 func (cell *Cell) fillEmpty() {
 	cell.apl = 0
 	cell.spl = 0
-	cell.hkl = 0
+	cell.ahl = 0
+	cell.shl = 0
 	cell.hl = 0
 }
 
 func (cell *Cell) fillFromUpperCell(upCell *Cell) {
-	cell.hkl = upCell.hkl - 1
-	copy(cell.hk[:], upCell.hk[1:upCell.hkl])
-	cell.apl = upCell.apl
+	if upCell.ahl == 0 {
+		if upCell.shl > 1 {
+			cell.shl = upCell.shl - 1
+			copy(cell.shk[:], upCell.shk[1:upCell.shl])
+		}
+	} else {
+		cell.shl = upCell.shl
+		copy(cell.shk[:], upCell.shk[:cell.shl])
+	}
+	if upCell.ahl > 1 {
+		cell.ahl = upCell.ahl - 1
+		copy(cell.ahk[:], upCell.ahk[1:upCell.ahl])
+	} else {
+		cell.ahl = 0
+	}
 	if upCell.apl > 0 {
+		cell.apl = upCell.apl
 		copy(cell.apk[:], upCell.apk[:cell.apl])
 	}
-	cell.spl = upCell.spl
 	if upCell.spl > 0 {
+		cell.spl = upCell.spl
 		copy(cell.spk[:], upCell.spk[:upCell.spl])
 	}
-	cell.hl = upCell.hl
 	if upCell.hl > 0 {
+		cell.hl = upCell.hl
 		copy(cell.h[:], upCell.h[:upCell.hl])
 	}
+	cell.accountKeyLen = upCell.accountKeyLen
 }
 
-func (cell *Cell) fillFromLowerCell(lowCell *Cell, nibble int) {
-	cell.apl = lowCell.apl
+func (cell *Cell) fillFromLowerCell(lowCell *Cell, nibble int, a bool) {
 	if lowCell.apl > 0 {
+		cell.apl = lowCell.apl
 		copy(cell.apk[:], lowCell.apk[:cell.apl])
 	}
 	cell.spl = lowCell.spl
 	if lowCell.spl > 0 {
 		copy(cell.spk[:], lowCell.spk[:cell.spl])
 	}
-	cell.hkl = lowCell.hkl + 1
-	cell.hk[0] = byte(nibble)
-	copy(cell.hk[1:], lowCell.hk[:lowCell.hkl])
-	cell.hl = lowCell.hl
+	if a {
+		cell.ahl = lowCell.ahl + 1
+		cell.ahk[0] = byte(nibble)
+		if lowCell.ahl > 0 {
+			copy(cell.ahk[1:], lowCell.ahk[:lowCell.ahl])
+		}
+		cell.shl = 0
+	} else {
+		cell.shl = lowCell.shl + 1
+		cell.shk[0] = byte(nibble)
+		if lowCell.shl > 0 {
+			copy(cell.shk[1:], lowCell.shk[:lowCell.shl])
+		}
+	}
 	if lowCell.hl > 0 {
+		cell.hl = lowCell.hl
 		copy(cell.h[:], lowCell.h[:lowCell.hl])
 	}
 	cell.accountKeyLen = lowCell.accountKeyLen
@@ -128,18 +158,18 @@ func (cell *Cell) fillFromPart(row int, keccak hash.Hash, part *BranchNodePart) 
 		if row >= 64 {
 			panic("")
 		}
-		cell.hkl = 64 - row
+		cell.ahl = 64 - row
 		keccak.Reset()
 		keccak.Write([]byte(part.accountPlainKey))
 		h := keccak.Sum(nil)
 		k := 0
 		for _, c := range h {
 			if k >= row {
-				cell.hk[k-row] = (c >> 4) & 0xf
+				cell.ahk[k-row] = (c >> 4) & 0xf
 			}
 			k++
 			if k >= row {
-				cell.hk[k-row] = c & 0xf
+				cell.ahk[k-row] = c & 0xf
 			}
 			k++
 		}
@@ -148,9 +178,7 @@ func (cell *Cell) fillFromPart(row int, keccak hash.Hash, part *BranchNodePart) 
 	}
 	if len(part.storagePlainKey) > 0 {
 		if row >= 64 {
-			cell.hkl = 128 - row
-		} else {
-			cell.hkl += 64
+			cell.shl = 128 - row
 		}
 		keccak.Reset()
 		keccak.Write([]byte(part.storagePlainKey[part.accountKeyLen:]))
@@ -158,11 +186,11 @@ func (cell *Cell) fillFromPart(row int, keccak hash.Hash, part *BranchNodePart) 
 		k := 64
 		for _, c := range h {
 			if k >= row {
-				cell.hk[k-row] = (c >> 4) & 0xf
+				cell.shk[k-row] = (c >> 4) & 0xf
 			}
 			k++
 			if k >= row {
-				cell.hk[k-row] = c & 0xf
+				cell.shk[k-row] = c & 0xf
 			}
 			k++
 		}
@@ -170,8 +198,13 @@ func (cell *Cell) fillFromPart(row int, keccak hash.Hash, part *BranchNodePart) 
 		copy(cell.spk[:], part.storagePlainKey)
 	}
 	if len(part.hashedKey) > 0 {
-		cell.hkl += len(part.hashedKey)
-		copy(cell.hk[cell.hkl:], part.hashedKey)
+		if row < 64 {
+			cell.ahl += len(part.hashedKey)
+			copy(cell.ahk[cell.ahl:], part.hashedKey)
+		} else {
+			cell.shl += len(part.hashedKey)
+			copy(cell.shk[cell.shl:], part.hashedKey)
+		}
 	}
 	if len(part.hash) > 0 {
 		cell.hl = len(part.hash)
@@ -203,20 +236,32 @@ type BranchNodePart struct {
 	hash []byte
 }
 
-func (bnp *BranchNodePart) fillFromCell(cell *Cell) {
+func (bnp *BranchNodePart) fillFromCell(cell *Cell, a bool) {
 	if cell.apl > 0 {
 		bnp.accountPlainKey = common.Copy(cell.apk[:cell.apl])
+		if a && cell.hl > 0 {
+			if cell.shl > 0 {
+				bnp.hashedKey = common.Copy(cell.shk[:cell.shl])
+			}
+		}
+	} else {
+		if a && cell.hl > 0 {
+			if cell.ahl > 0 {
+				bnp.hashedKey = common.Copy(cell.ahk[:cell.ahl])
+			}
+		}
 	}
 	if cell.spl > 0 {
 		bnp.storagePlainKey = common.Copy(cell.spk[:cell.spl])
+	} else {
+		if !a && cell.hl > 0 {
+			if cell.shl > 0 {
+				bnp.hashedKey = common.Copy(cell.shk[:cell.shl])
+			}
+		}
 	}
 	if cell.hl > 0 {
 		bnp.hash = common.Copy(cell.h[:cell.hl])
-	}
-	if cell.hkl > 0 {
-		if cell.hl > 0 {
-			bnp.hashedKey = common.Copy(cell.hk[:cell.hkl])
-		}
 	}
 	bnp.accountKeyLen = cell.accountKeyLen
 }
@@ -397,13 +442,13 @@ func (bnu *BranchNodeUpdate) decode(buf []byte, pos int) (int, error) {
 	return pos, nil
 }
 
-func (hph *HexPatriciaHashed) unfold(hashedKey []byte) error {
+func (hph *HexPatriciaHashed) unfold(accountHashedKey, storageHashedKey []byte) error {
 	fmt.Printf("unfold: activeRows: %d\n", hph.activeRows)
 	var upCell *Cell
 	row := hph.activeRows
 	var before, modified bool
 	if hph.activeRows == 0 {
-		if hph.root.hl == 0 && hph.root.hkl == 0 {
+		if hph.root.hl == 0 && hph.root.ahl == 0 {
 			// No unfolding for empty root
 			return nil
 		}
@@ -411,10 +456,16 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte) error {
 		before = hph.rootBefore
 		modified = hph.rootMod
 	} else {
-		col := hashedKey[hph.currentKeyLen]
+		var col int
+		if hph.activeRows <= 64 {
+			col = int(accountHashedKey[hph.activeRows-1])
+		} else {
+			col = int(storageHashedKey[hph.activeRows-64-1])
+		}
 		upCell = &hph.grid[hph.activeRows-1][col]
 		before = hph.beforeBitmap[hph.activeRows-1]&(uint16(1)<<col) != 0
 		modified = hph.modBitmap[hph.activeRows-1]&(uint16(1)<<col) != 0
+		fmt.Printf("upCell (%d, %x), before %t, modified %t\n", hph.activeRows-1, col, before, modified)
 	}
 	for i := 0; i < 16; i++ {
 		hph.grid[row][i].fillEmpty()
@@ -424,8 +475,15 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte) error {
 	hph.delBitmap[row] = 0
 	var err error
 	var branchNodeUpdate *BranchNodeUpdate
-	if upCell.hkl == 0 {
-		if branchNodeUpdate, err = hph.branchFn(hph.currentKey[:row]); err != nil {
+	if (row < 64 && upCell.ahl == 0) || (row >= 64 && upCell.shl == 0) {
+		prefix := make([]byte, hph.currentAccountKeyLen+hph.currentStorageKeyLen)
+		if hph.currentAccountKeyLen > 0 {
+			copy(prefix, hph.currentAccountKey[:hph.currentAccountKeyLen])
+		}
+		if hph.currentStorageKeyLen > 0 {
+			copy(prefix[hph.currentAccountKeyLen:], hph.currentStorageKey[:hph.currentStorageKeyLen])
+		}
+		if branchNodeUpdate, err = hph.branchFn(prefix); err != nil {
 			return err
 		}
 		hph.beforeBitmap[row] = branchNodeUpdate.modMask
@@ -436,12 +494,12 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte) error {
 			cell := &hph.grid[row][nibble]
 			part := &branchNodeUpdate.mods[j]
 			cell.fillFromPart(row, hph.keccak, part)
-			if cell.apl > 0 && cell.hkl == 0 {
+			if cell.apl > 0 && cell.ahl == 0 {
 				if err = hph.accountFn(cell.apk[:cell.apl], &hph.accounts[nibble]); err != nil {
 					return nil
 				}
 			}
-			if cell.spl > 0 && cell.hkl == 0 {
+			if cell.spl > 0 && cell.shl == 0 {
 				if err = hph.storageFn(cell.spk[:cell.spl], hph.storages[nibble][:]); err != nil {
 					return nil
 				}
@@ -449,29 +507,45 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte) error {
 			bitset ^= bit
 		}
 	} else {
-		nibble := upCell.hk[0]
+		var nibble byte
+		if hph.activeRows < 64 {
+			nibble = upCell.ahk[0]
+		} else {
+			fmt.Printf("upCell.shk = [%x]\n", upCell.shk[:upCell.shl])
+			nibble = upCell.shk[0]
+		}
 		if before {
 			hph.beforeBitmap[row] = uint16(1) << nibble
 		}
 		if modified {
 			hph.modBitmap[row] = uint16(1) << nibble
+			fmt.Printf("modBitmap[%d]=%016b\n", row, hph.modBitmap[row])
 		}
 		cell := &hph.grid[row][nibble]
+		fmt.Printf("cell (%d, %x)\n", row, nibble)
 		cell.fillFromUpperCell(upCell)
-		if cell.apl > 0 && cell.hkl == 0 {
+		if row >= 64 {
+			cell.apl = 0
+		}
+		if cell.apl > 0 && cell.ahl == 0 {
 			if err = hph.accountFn(cell.apk[:cell.apl], &hph.accounts[nibble]); err != nil {
 				return nil
 			}
 		}
-		if cell.spl > 0 && cell.hkl == 0 {
+		if cell.spl > 0 && cell.shl == 0 {
 			if err = hph.storageFn(cell.spk[:cell.spl], hph.storages[nibble][:]); err != nil {
 				return nil
 			}
 		}
 	}
-	if hph.activeRows > 0 {
-		hph.currentKey[hph.currentKeyLen] = hashedKey[hph.currentKeyLen]
-		hph.currentKeyLen++
+	if hph.activeRows >= 65 {
+		hph.currentStorageKey[hph.currentStorageKeyLen] = storageHashedKey[hph.currentStorageKeyLen]
+		hph.currentStorageKeyLen++
+		fmt.Printf("currentStorageKey=[%x]\n", hph.currentStorageKey[:hph.currentStorageKeyLen])
+	} else if hph.activeRows > 0 {
+		hph.currentAccountKey[hph.currentAccountKeyLen] = accountHashedKey[hph.currentAccountKeyLen]
+		hph.currentAccountKeyLen++
+		fmt.Printf("currentAccountKey=[%x]\n", hph.currentAccountKey[:hph.currentAccountKeyLen])
 	}
 	hph.activeRows++
 	return nil
@@ -483,17 +557,21 @@ func (hph *HexPatriciaHashed) foldRoot() (*BranchNodeUpdate, error) {
 		return nil, fmt.Errorf("cannot fold root - there are still active rows: %d", hph.activeRows)
 	}
 	var branchNodeUpdate BranchNodeUpdate
-	if hph.root.hkl == 0 {
+	if hph.root.ahl == 0 {
 		return nil, nil
 	}
 	branchNodeUpdate.modMask = uint16(1)
 	branchNodeUpdate.mods = append(branchNodeUpdate.mods, BranchNodePart{})
-	branchNodeUpdate.mods[0].fillFromCell(&hph.root)
+	branchNodeUpdate.mods[0].fillFromCell(&hph.root, true)
 	return &branchNodeUpdate, nil
 }
 
 func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
-	updateKey := common.Copy(hph.currentKey[:hph.currentKeyLen])
+	updateKey := make([]byte, hph.currentAccountKeyLen+hph.currentStorageKeyLen)
+	copy(updateKey, hph.currentAccountKey[:hph.currentAccountKeyLen])
+	if hph.currentStorageKeyLen > 0 {
+		copy(updateKey[hph.currentAccountKeyLen:], hph.currentStorageKey[:hph.currentStorageKeyLen])
+	}
 	if hph.activeRows == 0 {
 		return nil, nil, fmt.Errorf("cannot fold - no active rows")
 	}
@@ -502,15 +580,20 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 	row := hph.activeRows - 1
 	var upCell *Cell
 	var col int
-	if row == 0 {
+	if hph.activeRows == 1 {
 		fmt.Printf("upcell is root\n")
 		upCell = &hph.root
 	} else {
-		col = int(hph.currentKey[row-1])
+		if hph.activeRows <= 65 {
+			col = int(hph.currentAccountKey[hph.activeRows-2])
+		} else {
+			col = int(hph.currentStorageKey[hph.activeRows-64-2])
+		}
 		fmt.Printf("upcell is (%d x %x)\n", row-1, col)
 		upCell = &hph.grid[row-1][col]
 	}
 	branchNodeUpdate := &BranchNodeUpdate{}
+	fmt.Printf("beforeBitmap[%d]=%016b, modBitmap[%d]=%016b, delBitmap[%d]=%016b\n", row, hph.beforeBitmap[row], row, hph.modBitmap[row], row, hph.delBitmap[row])
 	bitmap := (hph.beforeBitmap[row] | hph.modBitmap[row]) ^ hph.delBitmap[row]
 	switch bits.OnesCount16(bitmap) {
 	case 0:
@@ -524,7 +607,8 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 		}
 		upCell.apl = 0
 		upCell.spl = 0
-		upCell.hkl = 0
+		upCell.ahl = 0
+		upCell.shl = 0
 		if bits.OnesCount16(hph.beforeBitmap[row]) <= 1 {
 			// No update
 			branchNodeUpdate = nil
@@ -537,11 +621,12 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 				hph.rootMod = true
 			} else {
 				hph.modBitmap[row-1] |= (uint16(1) << col)
+				fmt.Printf("leaf/ext modBitmap[%d]=%016b\n", row-1, hph.modBitmap[row-1])
 			}
 		}
 		nibble := bits.TrailingZeros16(bitmap)
 		cell := &hph.grid[row][nibble]
-		upCell.fillFromLowerCell(cell, nibble)
+		upCell.fillFromLowerCell(cell, nibble, row < 64)
 		if bits.OnesCount16(hph.beforeBitmap[row]) <= 1 {
 			// No update
 			branchNodeUpdate = nil
@@ -554,9 +639,9 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 				hph.rootMod = true
 			} else {
 				hph.modBitmap[row-1] |= (uint16(1) << col)
+				fmt.Printf("branch modBitmap[%d]=%016b\n", row-1, hph.modBitmap[row-1])
 			}
 		}
-		upCell.hkl = 0
 		branchNodeUpdate.delMask = hph.delBitmap[row]
 		branchNodeUpdate.modMask = hph.modBitmap[row]
 		branchNodeUpdate.mods = make([]BranchNodePart, branchNodeUpdate.modMask)
@@ -565,18 +650,21 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 			nibble := bits.TrailingZeros16(bit)
 			cell := &hph.grid[row][nibble]
 			cell.computeHash(hph.keccak, nil)
-			branchNodeUpdate.mods[j].fillFromCell(cell)
+			branchNodeUpdate.mods[j].fillFromCell(cell, row < 64)
 			bitset ^= bit
 		}
-		upCell.hkl = 0
+		upCell.ahl = 0
+		upCell.shl = 0
 		upCell.apl = 0
 		upCell.spl = 0
 		upCell.hl = 32
 		// TODO insert proper hash calculation
 	}
 	hph.activeRows--
-	if hph.currentKeyLen > 0 {
-		hph.currentKeyLen--
+	if hph.currentStorageKeyLen > 0 {
+		hph.currentStorageKeyLen--
+	} else if hph.currentAccountKeyLen > 0 {
+		hph.currentAccountKeyLen--
 	}
 	if branchNodeUpdate != nil {
 		fmt.Printf("fold: update key: %x\n", updateKey)
@@ -584,34 +672,7 @@ func (hph *HexPatriciaHashed) fold() (*BranchNodeUpdate, []byte, error) {
 	return branchNodeUpdate, updateKey, nil
 }
 
-// emptyTip return true if the next nibble of the key is "pointing" to an empty cell
-func (hph HexPatriciaHashed) emptyTip(key []byte) bool {
-	var cell *Cell
-	if hph.activeRows == 0 {
-		cell = &hph.root
-	} else {
-		cell = &hph.grid[hph.activeRows-1][key[hph.activeRows-1]]
-	}
-	fmt.Printf("emptyTip %t: activeRows %d, currentKeyLen %d\n", cell.hkl == 0 && cell.hl == 0, hph.activeRows, hph.currentKeyLen)
-	return cell.hkl == 0 && cell.hl == 0
-}
-
-func (hph HexPatriciaHashed) matchingTip(key []byte) bool {
-	var mt bool
-	if hph.activeRows == 0 {
-		mt = bytes.HasPrefix(key, hph.root.hk[:hph.root.hkl])
-	} else {
-		fmt.Printf("matching tip cell (%d, %x)\n", hph.activeRows-1, key[hph.activeRows-1])
-		cell := &hph.grid[hph.activeRows-1][key[hph.activeRows-1]]
-		mt = bytes.HasPrefix(key, hph.currentKey[:hph.currentKeyLen]) &&
-			len(key) >= hph.activeRows &&
-			bytes.HasPrefix(key[hph.activeRows:], cell.hk[:cell.hkl])
-	}
-	fmt.Printf("matchingTip %t: activeRows %d\n", mt, hph.activeRows)
-	return mt
-}
-
-func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
+func (hph *HexPatriciaHashed) deleteCell(accountHashedKey, storageHashedKey []byte) {
 	fmt.Printf("deleteCell, activeRows = %d\n", hph.activeRows)
 	var row, col int
 	var cell *Cell
@@ -621,7 +682,11 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 		hph.rootDel = true
 	} else {
 		row = hph.activeRows - 1
-		col = int(hashedKey[row])
+		if row < 64 {
+			col = int(accountHashedKey[row])
+		} else {
+			col = int(storageHashedKey[row])
+		}
 		cell = &hph.grid[row][col]
 		hph.delBitmap[row] |= (uint16(1) << col)
 		fmt.Printf("deleteCell setting (%d, %x)\n", row, col)
@@ -644,8 +709,8 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Account
 		hph.modBitmap[row] |= (uint16(1) << col)
 		fmt.Printf("updateAccount setting (%d, %x)\n", row, col)
 	}
-	copy(cell.hk[:], hashedKey[row+1:])
-	cell.hkl = len(hashedKey) - row - 1
+	copy(cell.ahk[:], hashedKey[row+1:])
+	cell.ahl = len(hashedKey) - row - 1
 	cell.apl = len(plainKey)
 	copy(cell.apk[:], plainKey)
 	return &hph.accounts[col]
@@ -670,23 +735,34 @@ func (hph *HexPatriciaHashed) updateNonce(plainKey, hashedKey []byte, nonce uint
 }
 
 // updateStorage assumes that value is 32 byte slice
-func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, hashedKey []byte, accountKeyLen int, value []byte) {
+func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, accountKeyLen int, accountHashedKey, storageHashedKey []byte, value []byte) {
 	fmt.Printf("updateStorage, activeRows = %d\n", hph.activeRows)
-	var row, col int
+	var col int
 	var cell *Cell
 	if hph.activeRows == 0 {
 		// Update the root
-		row = -1
 		cell = &hph.root
 	} else {
-		row = hph.activeRows - 1
-		col = int(hashedKey[row])
-		cell = &hph.grid[row][col]
-		hph.modBitmap[row] |= (uint16(1) << col)
-		fmt.Printf("updateStorage setting (%d, %x)\n", row, col)
+		if hph.activeRows <= 64 {
+			col = int(accountHashedKey[hph.activeRows-1])
+		} else {
+			col = int(storageHashedKey[hph.activeRows-64-1])
+		}
+		cell = &hph.grid[hph.activeRows-1][col]
+		hph.modBitmap[hph.activeRows-1] |= (uint16(1) << col)
+		fmt.Printf("updateStorage setting (%d, %x), modBitmap[%d]=%016b\n", hph.activeRows-1, col, hph.activeRows-1, hph.modBitmap[hph.activeRows-1])
 	}
-	copy(cell.hk[:], hashedKey[row+1:])
-	cell.hkl = len(hashedKey) - row - 1
+	if hph.activeRows <= 64 {
+		copy(cell.ahk[:], accountHashedKey[hph.activeRows:])
+		cell.ahl = len(accountHashedKey) - hph.activeRows
+		cell.shl = len(storageHashedKey)
+		copy(cell.shk[:], storageHashedKey)
+	} else {
+		copy(cell.shk[:], storageHashedKey[hph.activeRows-64:])
+		cell.shl = len(storageHashedKey) + 64 - hph.activeRows
+		cell.ahl = 0
+	}
+	fmt.Printf("set ahk=[%x], shk=[%x]\n", cell.ahk[:cell.ahl], cell.shk[:cell.shl])
 	copy(cell.spk[:], plainKey)
 	cell.spl = len(plainKey)
 	copy(hph.storages[col][:], value)
@@ -814,15 +890,48 @@ func (u Update) String() string {
 	return sb.String()
 }
 
-func (hph *HexPatriciaHashed) processUpdates(plainKeys, hashedKeys [][]byte, updates []Update, accountKeyLen int) (map[string]*BranchNodeUpdate, error) {
+func (hph *HexPatriciaHashed) needFolding(accountHashedKey, storageHashedKey []byte) bool {
+	return !bytes.HasPrefix(accountHashedKey, hph.currentAccountKey[:hph.currentAccountKeyLen]) ||
+		!bytes.HasPrefix(storageHashedKey, hph.currentStorageKey[:hph.currentStorageKeyLen])
+
+}
+
+func (hph *HexPatriciaHashed) needUnfolding(accountHashedKey, storageHashedKey []byte) bool {
+	var cell *Cell
+	if hph.activeRows == 0 {
+		cell = &hph.root
+	} else {
+		var col int
+		row := hph.activeRows - 1
+		if row < 64 {
+			col = int(accountHashedKey[row])
+		} else {
+			col = int(storageHashedKey[row-64])
+		}
+		cell = &hph.grid[row][col]
+	}
+	if len(storageHashedKey) == 0 {
+		if hph.activeRows > 64 {
+			return true
+		}
+		return !bytes.HasPrefix(accountHashedKey[hph.activeRows:], cell.ahk[:cell.ahl])
+	}
+	if hph.activeRows > 64 {
+		return !bytes.HasPrefix(storageHashedKey[hph.activeRows-64:], cell.shk[:cell.shl])
+	}
+	return !bytes.HasPrefix(storageHashedKey, cell.shk[:cell.shl]) || !bytes.HasPrefix(accountHashedKey[hph.activeRows:], cell.ahk[:cell.ahl])
+}
+
+func (hph *HexPatriciaHashed) processUpdates(plainKeys, accountHashedKeys [][]byte, storageHashedKeys [][]byte, updates []Update, accountKeyLen int) (map[string]*BranchNodeUpdate, error) {
 	branchNodeUpdates := make(map[string]*BranchNodeUpdate)
-	for i, hashedKey := range hashedKeys {
+	for i, accountHashedKey := range accountHashedKeys {
+		storageHashedKey := storageHashedKeys[i]
 		plainKey := plainKeys[i]
 		update := updates[i]
-		fmt.Printf("plainKey=[%x], hashedKey=[%x], update=%s\n", plainKey, hashedKey, update)
+		fmt.Printf("plainKey=[%x], accountHashedKey=[%x], storageHashedKey=[%x] currentAccountKey=[%x], currentStorageKey=[%x], update=%s\n",
+			plainKey, accountHashedKey, storageHashedKey, hph.currentAccountKey[:hph.currentAccountKeyLen], hph.currentStorageKey[:hph.currentStorageKeyLen], update)
 		// Keep folding until the currentKey is the prefix of the key we modify
-		fmt.Printf("currentKey=[%x]\n", hph.currentKey[:hph.currentKeyLen])
-		for hph.currentKeyLen > 0 && !bytes.HasPrefix(hashedKey, hph.currentKey[:hph.currentKeyLen]) {
+		for hph.needFolding(accountHashedKey, storageHashedKey) {
 			if branchNodeUpdate, updateKey, err := hph.fold(); err != nil {
 				return nil, fmt.Errorf("fold: %w", err)
 			} else if branchNodeUpdate != nil {
@@ -830,26 +939,26 @@ func (hph *HexPatriciaHashed) processUpdates(plainKeys, hashedKeys [][]byte, upd
 			}
 		}
 		// Now unfold until we step on an empty cell
-		for !hph.emptyTip(hashedKey) && !hph.matchingTip(hashedKey) {
-			if err := hph.unfold(hashedKey); err != nil {
+		for hph.needUnfolding(accountHashedKey, storageHashedKey) {
+			if err := hph.unfold(accountHashedKey, storageHashedKey); err != nil {
 				return nil, fmt.Errorf("unfold: %w", err)
 			}
 		}
 		// Update the cell
 		if update.flags == DELETE_UPDATE {
-			hph.deleteCell(hashedKey)
+			hph.deleteCell(accountHashedKey, storageHashedKey)
 		} else {
 			if update.flags&BALANCE_UPDATE != 0 {
-				hph.updateBalance(plainKey, hashedKey, &update.balance)
+				hph.updateBalance(plainKey, accountHashedKey, &update.balance)
 			}
 			if update.flags&NONCE_UPDATE != 0 {
-				hph.updateNonce(plainKey, hashedKey, update.nonce)
+				hph.updateNonce(plainKey, accountHashedKey, update.nonce)
 			}
 			if update.flags&CODE_UPDATE != 0 {
-				hph.updateCode(plainKey, hashedKey, update.codeHashOrStorage[:])
+				hph.updateCode(plainKey, accountHashedKey, update.codeHashOrStorage[:])
 			}
 			if update.flags&STORAGE_UPDATE != 0 {
-				hph.updateStorage(plainKey, hashedKey, accountKeyLen, update.codeHashOrStorage[:])
+				hph.updateStorage(plainKey, accountKeyLen, accountHashedKey, storageHashedKey, update.codeHashOrStorage[:])
 			}
 		}
 	}
