@@ -127,10 +127,13 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, nibble int, row int) {
 	if lowCell.spl > 0 {
 		copy(cell.spk[:], lowCell.spk[:cell.spl])
 	}
-	if row == 63 {
-		cell.upHashedLen = 0
-	} else if lowCell.hl > 0 {
-		if (row < 63 && lowCell.apl == 0) || (row > 63 && lowCell.spl == 0) {
+	if lowCell.hl > 0 {
+		if lowCell.apl > 0 && row < 63 {
+			cell.upHashedLen = lowCell.upHashedLen
+			if lowCell.upHashedLen > 0 {
+				copy(cell.upHashedKey[:], lowCell.upHashedKey[:lowCell.upHashedLen])
+			}
+		} else if (lowCell.apl == 0 && row < 63) || (lowCell.spl == 0 && row >= 63) {
 			cell.upHashedLen = lowCell.upHashedLen + 1
 			cell.upHashedKey[0] = byte(nibble)
 			if lowCell.upHashedLen > 0 {

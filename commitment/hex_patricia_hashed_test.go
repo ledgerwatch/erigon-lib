@@ -433,6 +433,9 @@ func TestEmptyState(t *testing.T) {
 		Storage("04", "01", "0401").
 		Storage("03", "56", "050505").
 		Storage("03", "57", "060606").
+		Balance("05", 9).
+		Storage("05", "02", "8989").
+		Storage("05", "04", "9898").
 		Build()
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
