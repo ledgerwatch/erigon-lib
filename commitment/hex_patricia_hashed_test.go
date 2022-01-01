@@ -58,7 +58,7 @@ func (ms MockState) branchFn(prefix []byte) (*BranchNodeUpdate, error) {
 	return nil, nil
 }
 
-func (ms MockState) accountFn(plainKey []byte, account *AccountDecorator) error {
+func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
 	exBytes, ok := ms.sm[string(plainKey)]
 	if !ok {
 		return fmt.Errorf("accountFn not found key [%x]", plainKey)
@@ -78,24 +78,24 @@ func (ms MockState) accountFn(plainKey []byte, account *AccountDecorator) error 
 		return fmt.Errorf("accountFn reading deleted account for key [%x]", plainKey)
 	}
 	if ex.flags&BALANCE_UPDATE != 0 {
-		account.Balance.Set(&ex.balance)
+		cell.Balance.Set(&ex.balance)
 	} else {
-		account.Balance.Clear()
+		cell.Balance.Clear()
 	}
 	if ex.flags&NONCE_UPDATE != 0 {
-		account.Nonce = ex.nonce
+		cell.Nonce = ex.nonce
 	} else {
-		account.Nonce = 0
+		cell.Nonce = 0
 	}
 	if ex.flags&CODE_UPDATE != 0 {
-		copy(account.CodeHash[:], ex.codeHashOrStorage[:])
+		copy(cell.CodeHash[:], ex.codeHashOrStorage[:])
 	} else {
-		account.CodeHash = [32]byte{}
+		cell.CodeHash = [32]byte{}
 	}
 	return nil
 }
 
-func (ms MockState) storageFn(plainKey []byte, storage []byte) error {
+func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
 	exBytes, ok := ms.sm[string(plainKey)]
 	if !ok {
 		return fmt.Errorf("storageFn not found key [%x]", plainKey)
@@ -121,11 +121,9 @@ func (ms MockState) storageFn(plainKey []byte, storage []byte) error {
 		return fmt.Errorf("storageFn reading deleted item for key [%x]", plainKey)
 	}
 	if ex.flags&STORAGE_UPDATE != 0 {
-		copy(storage, ex.codeHashOrStorage[:])
+		copy(cell.Storage[:], ex.codeHashOrStorage[:])
 	} else {
-		for i := 0; i < 32; i++ {
-			storage[i] = 0
-		}
+		cell.Storage = [32]byte{}
 	}
 	return nil
 }

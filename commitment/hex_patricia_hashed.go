@@ -35,9 +35,7 @@ type HexPatriciaHashed struct {
 	root Cell // Root cell of the tree
 	// Rows of the grid correspond to the level of depth in the patricia tree
 	// Columns of the grid correspond to pointers to the nodes further from the root
-	grid     [128][16]Cell        // First 64 rows of this grid are for account trie, and next 64 rows are for storage trie
-	accounts [16]AccountDecorator // Account decorators that augument non-account cells in given column
-	storages [16][32]byte         // Storage decorators that augument non-storage cells in given column
+	grid [128][16]Cell // First 64 rows of this grid are for account trie, and next 64 rows are for storage trie
 	// How many rows (starting from row 0) are currently active and have corresponding selected columns
 	// Last active row does not have selected column
 	activeRows int
@@ -57,9 +55,9 @@ type HexPatriciaHashed struct {
 	// and for the extension, account, and leaf type, the `l` and `k`
 	branchFn func(prefix []byte) (*BranchNodeUpdate, error)
 	// Function used to fetch account with given plain key. It loads
-	accountFn func(plainKey []byte, account *AccountDecorator) error
+	accountFn func(plainKey []byte, cell *Cell) error
 	// Function used to fetch account with given plain key
-	storageFn func(plainKey []byte, storage []byte) error
+	storageFn func(plainKey []byte, cell *Cell) error
 	keccak    hash.Hash
 	trace     bool
 }
@@ -82,6 +80,10 @@ type Cell struct {
 	upHashedKey   [64]byte
 	upHashedLen   int
 	accountKeyLen int
+	Nonce         uint64
+	Balance       uint256.Int
+	CodeHash      [32]byte // hash of the bytecode
+	Storage       [32]byte
 }
 
 func (cell *Cell) fillEmpty() {
@@ -105,6 +107,9 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 		cell.apl = upCell.apl
 		if upCell.apl > 0 {
 			copy(cell.apk[:], upCell.apk[:cell.apl])
+			cell.Balance.Set(&upCell.Balance)
+			cell.Nonce = upCell.Nonce
+			copy(cell.CodeHash[:], upCell.CodeHash[:])
 		}
 	} else {
 		cell.apl = 0
@@ -112,6 +117,7 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 	cell.spl = upCell.spl
 	if upCell.spl > 0 {
 		copy(cell.spk[:], upCell.spk[:upCell.spl])
+		copy(cell.Storage[:], upCell.Storage[:])
 	}
 	cell.hl = upCell.hl
 	if upCell.hl > 0 {
@@ -124,10 +130,14 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, 
 	if lowCell.apl > 0 {
 		cell.apl = lowCell.apl
 		copy(cell.apk[:], lowCell.apk[:cell.apl])
+		cell.Balance.Set(&lowCell.Balance)
+		cell.Nonce = lowCell.Nonce
+		copy(cell.CodeHash[:], lowCell.CodeHash[:])
 	}
 	cell.spl = lowCell.spl
 	if lowCell.spl > 0 {
 		copy(cell.spk[:], lowCell.spk[:cell.spl])
+		copy(cell.Storage[:], lowCell.Storage[:])
 	}
 	if lowCell.hl > 0 {
 		if lowCell.apl > 0 && lowDepth == 64 {
@@ -215,12 +225,6 @@ func (cell *Cell) computeHash(keccak hash.Hash, buffer []byte) []byte {
 	// TODO implement proper hash calculation
 	buffer = append(buffer, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
 	return buffer
-}
-
-type AccountDecorator struct {
-	Nonce    uint64
-	Balance  uint256.Int
-	CodeHash [32]byte // hash of the bytecode
 }
 
 type BranchNodePart struct {
@@ -538,12 +542,12 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 				fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
 			}
 			if cell.apl > 0 && cell.downHashedLen == 0 {
-				if err = hph.accountFn(cell.apk[:cell.apl], &hph.accounts[nibble]); err != nil {
+				if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
 					return nil
 				}
 			}
 			if cell.spl > 0 && cell.downHashedLen == 0 {
-				if err = hph.storageFn(cell.spk[:cell.spl], hph.storages[nibble][:]); err != nil {
+				if err = hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
 					return nil
 				}
 			}
@@ -595,12 +599,12 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 			cell.apl = 0
 		}
 		if cell.apl > 0 && cell.downHashedLen == 0 {
-			if err = hph.accountFn(cell.apk[:cell.apl], &hph.accounts[nibble]); err != nil {
+			if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
 				return nil
 			}
 		}
 		if cell.spl > 0 && cell.downHashedLen == 0 {
-			if err = hph.storageFn(cell.spk[:cell.spl], hph.storages[nibble][:]); err != nil {
+			if err = hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
 				return nil
 			}
 		}
@@ -782,7 +786,7 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 	cell.fillEmpty()
 }
 
-func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *AccountDecorator {
+func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
 	var cell *Cell
 	var col int
 	var depth int
@@ -804,31 +808,31 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Account
 	cell.downHashedLen = len(hashedKey) - depth
 	cell.apl = len(plainKey)
 	copy(cell.apk[:], plainKey)
-	return &hph.accounts[col]
+	return cell
 }
 
 func (hph *HexPatriciaHashed) updateBalance(plainKey, hashedKey []byte, balance *uint256.Int) {
 	if hph.trace {
 		fmt.Printf("updateBalance, activeRows = %d\n", hph.activeRows)
 	}
-	account := hph.updateAccount(plainKey, hashedKey)
-	account.Balance.Set(balance)
+	cell := hph.updateAccount(plainKey, hashedKey)
+	cell.Balance.Set(balance)
 }
 
 func (hph *HexPatriciaHashed) updateCode(plainKey, hashedKey []byte, codeHash []byte) {
 	if hph.trace {
 		fmt.Printf("updateCode, activeRows = %d\n", hph.activeRows)
 	}
-	account := hph.updateAccount(plainKey, hashedKey)
-	copy(account.CodeHash[:], codeHash)
+	cell := hph.updateAccount(plainKey, hashedKey)
+	copy(cell.CodeHash[:], codeHash)
 }
 
 func (hph *HexPatriciaHashed) updateNonce(plainKey, hashedKey []byte, nonce uint64) {
 	if hph.trace {
 		fmt.Printf("updateNonce, activeRows = %d\n", hph.activeRows)
 	}
-	account := hph.updateAccount(plainKey, hashedKey)
-	account.Nonce = nonce
+	cell := hph.updateAccount(plainKey, hashedKey)
+	cell.Nonce = nonce
 }
 
 // updateStorage assumes that value is 32 byte slice
@@ -858,7 +862,7 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, accountKeyLen int, 
 	}
 	copy(cell.spk[:], plainKey)
 	cell.spl = len(plainKey)
-	copy(hph.storages[col][:], value)
+	copy(cell.Storage[:], value)
 	cell.accountKeyLen = accountKeyLen
 }
 
