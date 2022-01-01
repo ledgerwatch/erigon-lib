@@ -20,7 +20,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"math/bits"
 	"sort"
 	"testing"
 
@@ -43,18 +42,12 @@ func NewMockState() *MockState {
 	}
 }
 
-func (ms MockState) branchFn(prefix []byte) (*BranchNodeUpdate, error) {
+func (ms MockState) branchFn(prefix []byte) ([]byte, error) {
 	if exBytes, ok := ms.cm[string(prefix)]; ok {
-		var ex BranchNodeUpdate
-		pos, err := ex.decode(exBytes, 0)
-		if err != nil {
-			return nil, fmt.Errorf("branchFn decode existing [%x], bytes: [%x]: %w", prefix, exBytes, err)
-		}
-		if pos != len(exBytes) {
-			return nil, fmt.Errorf("branchFn key [%x] leftover bytes in [%x], comsumed %x", prefix, exBytes, pos)
-		}
-		return &ex, nil
+		fmt.Printf("branchFn returns [%x] for [%x]\n", exBytes, prefix)
+		return exBytes, nil
 	}
+	fmt.Printf("branchFn returns nil for [%x]\n", prefix)
 	return nil, nil
 }
 
@@ -168,45 +161,11 @@ func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) err
 	return nil
 }
 
-func (ms *MockState) applyBranchNodeUpdates(updates map[string]*BranchNodeUpdate) error {
+func (ms *MockState) applyBranchNodeUpdates(updates map[string][]byte) {
 	for key, update := range updates {
-		if exBytes, ok := ms.cm[key]; ok {
-			var ex BranchNodeUpdate
-			pos, err := ex.decode(exBytes, 0)
-			if err != nil {
-				return fmt.Errorf("applyBranchNodeUpdates decode existing [%x], bytes: [%x]: %w", key, exBytes, err)
-			}
-			if pos != len(exBytes) {
-				return fmt.Errorf("applyBranchNodeUpdates key [%x] leftover bytes in [%x], comsumed %x", key, exBytes, pos)
-			}
-			bitmap := (ex.modMask | update.modMask) ^ update.delMask
-			if bitmap == 0 {
-				delete(ms.cm, key)
-			} else {
-				var new BranchNodeUpdate
-				new.modMask = bitmap
-				new.mods = make([]BranchNodePart, bits.OnesCount16(bitmap))
-				var exJ, upJ int
-				for bitset, j := bitmap, 0; bitset != 0; j++ {
-					bit := bitset & -bitset
-					if update.modMask&bit == 0 {
-						new.mods[j] = ex.mods[exJ]
-					} else {
-						new.mods[j] = update.mods[upJ]
-						upJ++
-					}
-					if ex.modMask&bit != 0 {
-						exJ++
-					}
-					bitset ^= bit
-				}
-				ms.cm[key] = new.encode(nil, ms.numBuf[:])
-			}
-		} else {
-			ms.cm[key] = update.encode(nil, ms.numBuf[:])
-		}
+		fmt.Printf("applyBranchNodeUpdates [%x] for [%x]\n", update, key)
+		ms.cm[key] = update
 	}
-	return nil
 }
 
 func decodeHex(in string) []byte {
@@ -443,9 +402,7 @@ func TestEmptyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = ms.applyBranchNodeUpdates(branchNodeUpdates); err != nil {
-		t.Fatal(err)
-	}
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
 	fmt.Printf("1. Generated updates\n")
 	var keys []string
 	for key := range branchNodeUpdates {
@@ -454,7 +411,7 @@ func TestEmptyState(t *testing.T) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
-		fmt.Printf("%x => %+v\n", key, branchNodeUpdate)
+		fmt.Printf("%x => %s\n", key, branchToString(branchNodeUpdate))
 	}
 	// More updates
 	hph.reset([32]byte{})
@@ -468,9 +425,7 @@ func TestEmptyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = ms.applyBranchNodeUpdates(branchNodeUpdates); err != nil {
-		t.Fatal(err)
-	}
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
 	fmt.Printf("2. Generated updates\n")
 	keys = keys[:0]
 	for key := range branchNodeUpdates {
@@ -479,7 +434,7 @@ func TestEmptyState(t *testing.T) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
-		fmt.Printf("%x => %+v\n", key, branchNodeUpdate)
+		fmt.Printf("%x => %s\n", key, branchToString(branchNodeUpdate))
 	}
 	// More updates
 	hph.reset([32]byte{})
@@ -493,9 +448,7 @@ func TestEmptyState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = ms.applyBranchNodeUpdates(branchNodeUpdates); err != nil {
-		t.Fatal(err)
-	}
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
 	fmt.Printf("3. Generated updates\n")
 	keys = keys[:0]
 	for key := range branchNodeUpdates {
@@ -504,6 +457,6 @@ func TestEmptyState(t *testing.T) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
-		fmt.Printf("%x => %+v\n", key, branchNodeUpdate)
+		fmt.Printf("%x => %s\n", key, branchToString(branchNodeUpdate))
 	}
 }
