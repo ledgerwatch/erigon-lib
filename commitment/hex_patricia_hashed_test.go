@@ -447,8 +447,58 @@ func TestEmptyState(t *testing.T) {
 	if err = ms.applyBranchNodeUpdates(branchNodeUpdates); err != nil {
 		t.Fatal(err)
 	}
-	fmt.Printf("Generated updates\n")
+	fmt.Printf("1. Generated updates\n")
 	var keys []string
+	for key := range branchNodeUpdates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		branchNodeUpdate := branchNodeUpdates[key]
+		fmt.Printf("%x => %+v\n", key, branchNodeUpdate)
+	}
+	// More updates
+	hph.reset([32]byte{})
+	plainKeys, hashedKeys, updates = NewUpdateBuilder().
+		Storage("03", "58", "050505").
+		Build()
+	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
+		t.Fatal(err)
+	}
+	branchNodeUpdates, err = hph.processUpdates(plainKeys, hashedKeys, updates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ms.applyBranchNodeUpdates(branchNodeUpdates); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("2. Generated updates\n")
+	keys = keys[:0]
+	for key := range branchNodeUpdates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		branchNodeUpdate := branchNodeUpdates[key]
+		fmt.Printf("%x => %+v\n", key, branchNodeUpdate)
+	}
+	// More updates
+	hph.reset([32]byte{})
+	plainKeys, hashedKeys, updates = NewUpdateBuilder().
+		Storage("03", "58", "070807").
+		Build()
+	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
+		t.Fatal(err)
+	}
+	branchNodeUpdates, err = hph.processUpdates(plainKeys, hashedKeys, updates, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ms.applyBranchNodeUpdates(branchNodeUpdates); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("3. Generated updates\n")
+	keys = keys[:0]
 	for key := range branchNodeUpdates {
 		keys = append(keys, key)
 	}
