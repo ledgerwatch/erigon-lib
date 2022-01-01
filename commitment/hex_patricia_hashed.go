@@ -57,14 +57,16 @@ type HexPatriciaHashed struct {
 	// Function used to fetch account with given plain key. It loads
 	accountFn func(plainKey []byte, cell *Cell) error
 	// Function used to fetch account with given plain key
-	storageFn func(plainKey []byte, cell *Cell) error
-	keccak    hash.Hash
-	trace     bool
+	storageFn     func(plainKey []byte, cell *Cell) error
+	keccak        hash.Hash
+	accountKeyLen int
+	trace         bool
 }
 
-func NewHexPatriciaHashed() *HexPatriciaHashed {
+func NewHexPatriciaHashed(accountKeyLen int) *HexPatriciaHashed {
 	return &HexPatriciaHashed{
-		keccak: sha3.NewLegacyKeccak256(),
+		keccak:        sha3.NewLegacyKeccak256(),
+		accountKeyLen: accountKeyLen,
 	}
 }
 
@@ -79,7 +81,6 @@ type Cell struct {
 	downHashedLen int
 	upHashedKey   [64]byte
 	upHashedLen   int
-	accountKeyLen int
 	Nonce         uint64
 	Balance       uint256.Int
 	CodeHash      [32]byte // hash of the bytecode
@@ -123,7 +124,6 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 	if upCell.hl > 0 {
 		copy(cell.h[:], upCell.h[:upCell.hl])
 	}
-	cell.accountKeyLen = upCell.accountKeyLen
 }
 
 func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, nibble int) {
@@ -160,10 +160,9 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, 
 		cell.hl = lowCell.hl
 		copy(cell.h[:], lowCell.h[:lowCell.hl])
 	}
-	cell.accountKeyLen = lowCell.accountKeyLen
 }
 
-func (cell *Cell) fillFromPart(depth int, keccak hash.Hash, part *BranchNodePart) {
+func (cell *Cell) fillFromPart(depth int, keccak hash.Hash, part *BranchNodePart, accountKeyLen int) {
 	cell.downHashedLen = 0
 	if len(part.accountPlainKey) > 0 {
 		if depth > 64 {
@@ -194,7 +193,7 @@ func (cell *Cell) fillFromPart(depth int, keccak hash.Hash, part *BranchNodePart
 			cell.downHashedLen += 64
 		}
 		keccak.Reset()
-		keccak.Write([]byte(part.storagePlainKey[part.accountKeyLen:]))
+		keccak.Write([]byte(part.storagePlainKey[accountKeyLen:]))
 		h := keccak.Sum(nil)
 		k := 64
 		for _, c := range h {
@@ -218,7 +217,6 @@ func (cell *Cell) fillFromPart(depth int, keccak hash.Hash, part *BranchNodePart
 		cell.hl = len(part.hash)
 		copy(cell.h[:], part.hash)
 	}
-	cell.accountKeyLen = part.accountKeyLen
 }
 
 func (cell *Cell) computeHash(keccak hash.Hash, buffer []byte) []byte {
@@ -227,11 +225,19 @@ func (cell *Cell) computeHash(keccak hash.Hash, buffer []byte) []byte {
 	return buffer
 }
 
+type PartFlags uint8
+
+const (
+	HASHEDKEY_PART     PartFlags = 1
+	ACCOUNT_PLAIN_PART PartFlags = 2
+	STORAGE_PLAIN_PART PartFlags = 4
+	HASH_PART          PartFlags = 8
+)
+
 type BranchNodePart struct {
 	hashedKey       []byte // Key (composed of nibbles), excluding the first nibble (except for the root node)
 	accountPlainKey []byte // Plain key to retrieve account. Alternatively, pointer to inside of a state file
 	storagePlainKey []byte // Part of the plain key to retrieve storage item. Alternatively, pointer to inside of a state file
-	accountKeyLen   int    // When storagePlainKey is present, this is the length of its first part (account)
 	// Hash of the node below if it is either:
 	//     branch node (hashKey is empty) or
 	//     extension node (hashedKey is not empty, but accountPlainKey and storagePlainKey are empty)
@@ -251,7 +257,6 @@ func (bnp *BranchNodePart) fillFromCell(cell *Cell) {
 	if cell.hl > 0 {
 		bnp.hash = common.Copy(cell.h[:cell.hl])
 	}
-	bnp.accountKeyLen = cell.accountKeyLen
 }
 
 func (bnp BranchNodePart) String() string {
@@ -268,8 +273,6 @@ func (bnp BranchNodePart) String() string {
 	}
 	if len(bnp.storagePlainKey) > 0 {
 		fmt.Fprintf(&sb, "%sstoragePlainKey=[%x]", comma, bnp.storagePlainKey)
-		comma = ","
-		fmt.Fprintf(&sb, "%saccountKeyLen=%d", comma, bnp.accountKeyLen)
 		comma = ","
 	}
 	if len(bnp.hash) > 0 {
@@ -295,8 +298,6 @@ func (bnp BranchNodePart) encode(buf []byte, numBuf []byte) []byte {
 	buf = append(buf, numBuf[:n]...)
 	if len(bnp.storagePlainKey) > 0 {
 		buf = append(buf, bnp.storagePlainKey...)
-		n = binary.PutUvarint(numBuf, uint64(bnp.accountKeyLen))
-		buf = append(buf, numBuf[:n]...)
 	}
 	n = binary.PutUvarint(numBuf, uint64(len(bnp.hash)))
 	buf = append(buf, numBuf[:n]...)
@@ -348,14 +349,6 @@ func (bnp *BranchNodePart) decode(buf []byte, pos int) (int, error) {
 	if l > 0 {
 		bnp.storagePlainKey = common.Copy(buf[pos : pos+int(l)])
 		pos += int(l)
-		l, n = binary.Uvarint(buf[pos:])
-		if n == 0 {
-			return 0, fmt.Errorf("decode BranchNodePart: buffer too small for accountKeyLen")
-		} else if n < 0 {
-			return 0, fmt.Errorf("decode BranchNodePart: val overlow for accountKeyLen")
-		}
-		bnp.accountKeyLen = int(l)
-		pos += n
 	}
 	l, n = binary.Uvarint(buf[pos:])
 	if n == 0 {
@@ -537,7 +530,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 			nibble := bits.TrailingZeros16(bit)
 			cell := &hph.grid[row][nibble]
 			part := &branchNodeUpdate.mods[j]
-			cell.fillFromPart(depth, hph.keccak, part)
+			cell.fillFromPart(depth, hph.keccak, part, hph.accountKeyLen)
 			if hph.trace {
 				fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
 			}
@@ -863,7 +856,6 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, accountKeyLen int, 
 	copy(cell.spk[:], plainKey)
 	cell.spl = len(plainKey)
 	copy(cell.Storage[:], value)
-	cell.accountKeyLen = accountKeyLen
 }
 
 type UpdateFlags uint8

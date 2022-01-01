@@ -416,11 +416,12 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 func TestEmptyState(t *testing.T) {
 	ms := NewMockState()
 	hph := &HexPatriciaHashed{
-		branchFn:   ms.branchFn,
-		accountFn:  ms.accountFn,
-		storageFn:  ms.storageFn,
-		rootBefore: false, // Start from empty root
-		keccak:     sha3.NewLegacyKeccak256(),
+		branchFn:      ms.branchFn,
+		accountFn:     ms.accountFn,
+		storageFn:     ms.storageFn,
+		rootBefore:    false, // Start from empty root
+		keccak:        sha3.NewLegacyKeccak256(),
+		accountKeyLen: 1,
 	}
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
