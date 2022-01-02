@@ -30,6 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/rlp"
 	"github.com/ledgerwatch/log/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -37,7 +38,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-// Fetch connects to sentry and implements eth/65 or eth/66 protocol regarding the transaction
+// Fetch connects to sentry and implements eth/66 protocol regarding the transaction
 // messages. It tries to "prime" the sentry with StatusData message containing given
 // genesis hash and list of forks, but with zero max block and total difficulty
 // Sentry should have a logic not to overwrite statusData with messages from tx pool
@@ -166,10 +167,6 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := sentryClient.Messages(streamCtx, &sentry.MessagesRequest{Ids: []sentry.MessageId{
-		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65,
-		sentry.MessageId_GET_POOLED_TRANSACTIONS_65,
-		sentry.MessageId_TRANSACTIONS_65,
-		sentry.MessageId_POOLED_TRANSACTIONS_65,
 		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
 		sentry.MessageId_GET_POOLED_TRANSACTIONS_66,
 		sentry.MessageId_TRANSACTIONS_66,
@@ -205,7 +202,12 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				continue
 			}
-			log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
+
+			if rlp.IsRLPError(err) {
+				log.Debug("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
+			} else {
+				log.Warn("[txpool.fetch] Handling incoming message", "msg", req.Id.String(), "err", err)
+			}
 		}
 		if f.wg != nil {
 			f.wg.Done()
@@ -230,7 +232,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 	defer tx.Rollback()
 
 	switch req.Id {
-	case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65:
+	case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66:
 		hashCount, pos, err := ParseHashesCount(req.Data, 0)
 		if err != nil {
 			return fmt.Errorf("parsing NewPooledTransactionHashes: %w", err)
@@ -259,9 +261,6 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 					return err
 				}
 				messageId = sentry.MessageId_GET_POOLED_TRANSACTIONS_66
-			case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65:
-				encodedRequest = EncodeHashes(unknownHashes, nil)
-				messageId = sentry.MessageId_GET_POOLED_TRANSACTIONS_65
 			default:
 				return fmt.Errorf("unexpected message: %s", req.Id.String())
 			}
@@ -272,7 +271,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				return err
 			}
 		}
-	case sentry.MessageId_GET_POOLED_TRANSACTIONS_66, sentry.MessageId_GET_POOLED_TRANSACTIONS_65:
+	case sentry.MessageId_GET_POOLED_TRANSACTIONS_66:
 		//TODO: handleInboundMessage is single-threaded - means it can accept as argument couple buffers (or analog of txParseContext). Protobuf encoding will copy data anyway, but DirectClient doesn't
 		var encodedRequest []byte
 		var messageId sentry.MessageId
@@ -297,24 +296,6 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			}
 
 			encodedRequest = EncodePooledTransactions66(txs, requestID, nil)
-		case sentry.MessageId_GET_POOLED_TRANSACTIONS_65:
-			messageId = sentry.MessageId_POOLED_TRANSACTIONS_65
-			hashes, _, err := ParseGetPooledTransactions65(req.Data, 0, nil)
-			if err != nil {
-				return err
-			}
-			var txs [][]byte
-			for i := 0; i < len(hashes); i += 32 {
-				txn, err := f.pool.GetRlp(tx, hashes[i:i+32])
-				if err != nil {
-					return err
-				}
-				if txn == nil {
-					continue
-				}
-				txs = append(txs, txn)
-			}
-			encodedRequest = EncodePooledTransactions65(txs, nil)
 		default:
 			return fmt.Errorf("unexpected message: %s", req.Id.String())
 		}
@@ -325,7 +306,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}, &grpc.EmptyCallOption{}); err != nil {
 			return err
 		}
-	case sentry.MessageId_POOLED_TRANSACTIONS_65, sentry.MessageId_POOLED_TRANSACTIONS_66, sentry.MessageId_TRANSACTIONS_65, sentry.MessageId_TRANSACTIONS_66:
+	case sentry.MessageId_POOLED_TRANSACTIONS_66, sentry.MessageId_TRANSACTIONS_66:
 		txs := TxSlots{}
 		if err := f.threadSafeParsePooledTxn(func(parseContext *TxParseContext) error {
 			parseContext.ValidateHash(func(hash []byte) error {
@@ -344,9 +325,9 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}
 
 		switch req.Id {
-		case sentry.MessageId_POOLED_TRANSACTIONS_65, sentry.MessageId_TRANSACTIONS_65, sentry.MessageId_TRANSACTIONS_66:
+		case sentry.MessageId_TRANSACTIONS_66:
 			if err := f.threadSafeParsePooledTxn(func(parseContext *TxParseContext) error {
-				if _, err := ParsePooledTransactions65(req.Data, 0, parseContext, &txs); err != nil {
+				if _, err := ParseTransactions(req.Data, 0, parseContext, &txs); err != nil {
 					return err
 				}
 				return nil
