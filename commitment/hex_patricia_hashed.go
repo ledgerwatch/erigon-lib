@@ -19,6 +19,7 @@ package commitment
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -41,18 +42,15 @@ type keccakState interface {
 }
 
 type ByteArrayWriter struct {
-	dest []byte
-	pos  int
+	buf []byte
 }
 
-func (w *ByteArrayWriter) Setup(dest []byte, pos int) {
-	w.dest = dest
-	w.pos = pos
+func (w *ByteArrayWriter) Setup(buf []byte) {
+	w.buf = buf
 }
 
 func (w *ByteArrayWriter) Write(data []byte) (int, error) {
-	copy(w.dest[w.pos:], data)
-	w.pos += len(data)
+	w.buf = append(w.buf, data...)
 	return len(data), nil
 }
 
@@ -86,7 +84,9 @@ type HexPatriciaHashed struct {
 	// Function used to fetch account with given plain key
 	storageFn       func(plainKey []byte, cell *Cell) error
 	keccak          keccakState
+	keccak2         keccakState
 	accountKeyLen   int
+	emptyRoot       []byte
 	trace           bool
 	numBuf          [binary.MaxVarintLen64]byte
 	byteArrayWriter ByteArrayWriter
@@ -99,9 +99,12 @@ type HexPatriciaHashed struct {
 }
 
 func NewHexPatriciaHashed(accountKeyLen int) *HexPatriciaHashed {
+	emptyRoot, _ := hex.DecodeString("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
 	return &HexPatriciaHashed{
 		keccak:        sha3.NewLegacyKeccak256().(keccakState),
+		keccak2:       sha3.NewLegacyKeccak256().(keccakState),
 		accountKeyLen: accountKeyLen,
+		emptyRoot:     emptyRoot,
 	}
 }
 
@@ -197,11 +200,33 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, 
 	}
 }
 
-func (cell *Cell) deriveHashedKeys(depth int, keccak keccakState, accountKeyLen int) {
+func hashKey(keccak keccakState, plainKey []byte, hashBuf []byte, dest []byte, hashedKeyOffset int) error {
+	keccak.Reset()
+	if _, err := keccak.Write(plainKey); err != nil {
+		return err
+	}
+	if _, err := keccak.Read(hashBuf); err != nil {
+		return err
+	}
+	var k int
+	if hashedKeyOffset%2 == 1 {
+		dest[0] = hashBuf[hashedKeyOffset/2] & 0xf
+		k = 1
+	}
+	for _, c := range hashBuf[hashedKeyOffset/2+k : length.Hash] {
+		dest[k] = (c >> 4) & 0xf
+		k++
+		dest[k] = c & 0xf
+		k++
+	}
+	return nil
+}
+
+func (cell *Cell) deriveHashedKeys(depth int, keccak keccakState, hashBuf []byte, accountKeyLen int) error {
 	extraLen := 0
 	if cell.apl > 0 {
 		if depth > 64 {
-			panic("fillFromFields accountPlainKey present at depth > 64")
+			return fmt.Errorf("deriveHashedKeys accountPlainKey present at depth > 64")
 		}
 		extraLen = 64 - depth
 	}
@@ -217,52 +242,36 @@ func (cell *Cell) deriveHashedKeys(depth int, keccak keccakState, accountKeyLen 
 			copy(cell.downHashedKey[extraLen:], cell.downHashedKey[:cell.downHashedLen])
 		}
 		cell.downHashedLen += extraLen
+		var hashedKeyOffset int
 		if cell.apl > 0 {
-			keccak.Reset()
-			keccak.Write(cell.apk[:cell.apl])
-			h := keccak.Sum(nil)
-			k := 0
-			for _, c := range h {
-				if k >= depth {
-					cell.downHashedKey[k-depth] = (c >> 4) & 0xf
-				}
-				k++
-				if k >= depth {
-					cell.downHashedKey[k-depth] = c & 0xf
-				}
-				k++
+			if err := hashKey(keccak, cell.apk[:cell.apl], hashBuf, cell.downHashedKey[:], depth); err != nil {
+				return err
 			}
+			hashedKeyOffset = 64 - depth
 		}
 		if cell.spl > 0 {
-			keccak.Reset()
-			keccak.Write(cell.spk[accountKeyLen:cell.spl])
-			h := keccak.Sum(nil)
-			k := 64
-			for _, c := range h {
-				if k >= depth {
-					cell.downHashedKey[64+k-depth] = (c >> 4) & 0xf
-				}
-				k++
-				if k >= depth {
-					cell.downHashedKey[64+k-depth] = c & 0xf
-				}
-				k++
+			if depth >= 64 {
+				hashedKeyOffset = 128 - depth
+			}
+			if err := hashKey(keccak, cell.spk[accountKeyLen:cell.spl], hashBuf, cell.downHashedKey[64:], hashedKeyOffset); err != nil {
+				return err
 			}
 		}
 	}
+	return nil
 }
 
-func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) int {
+func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) (int, error) {
 	if fieldBits&HASHEDKEY_PART != 0 {
 		l, n := binary.Uvarint(data[pos:])
 		if n == 0 {
-			panic("fillFromFields buffer too small for hashedKey len")
+			return 0, fmt.Errorf("fillFromFields buffer too small for hashedKey len")
 		} else if n < 0 {
-			panic("fillFromFields value overflow for hashedKey len")
+			return 0, fmt.Errorf("fillFromFields value overflow for hashedKey len")
 		}
 		pos += n
 		if len(data) < pos+int(l) {
-			panic("fillFromFields buffer too small for hashedKey")
+			return 0, fmt.Errorf("fillFromFields buffer too small for hashedKey")
 		}
 		cell.downHashedLen = int(l)
 		if l > 0 {
@@ -275,13 +284,13 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) int 
 	if fieldBits&ACCOUNT_PLAIN_PART != 0 {
 		l, n := binary.Uvarint(data[pos:])
 		if n == 0 {
-			panic("fillFromFields buffer too small for accountPlainKey len")
+			return 0, fmt.Errorf("fillFromFields buffer too small for accountPlainKey len")
 		} else if n < 0 {
-			panic("fillFromFields value overflow for accountPlainKey len")
+			return 0, fmt.Errorf("fillFromFields value overflow for accountPlainKey len")
 		}
 		pos += n
 		if len(data) < pos+int(l) {
-			panic("fillFromFields buffer too small for accountPlainKey")
+			return 0, fmt.Errorf("fillFromFields buffer too small for accountPlainKey")
 		}
 		cell.apl = int(l)
 		if l > 0 {
@@ -294,13 +303,13 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) int 
 	if fieldBits&STORAGE_PLAIN_PART != 0 {
 		l, n := binary.Uvarint(data[pos:])
 		if n == 0 {
-			panic("fillFromFields buffer too small for storagePlainKey len")
+			return 0, fmt.Errorf("fillFromFields buffer too small for storagePlainKey len")
 		} else if n < 0 {
-			panic("fillFromFields value overflow for storagePlainKey len")
+			return 0, fmt.Errorf("fillFromFields value overflow for storagePlainKey len")
 		}
 		pos += n
 		if len(data) < pos+int(l) {
-			panic("fillFromFields buffer too small for storagePlainKey")
+			return 0, fmt.Errorf("fillFromFields buffer too small for storagePlainKey")
 		}
 		cell.spl = int(l)
 		if l > 0 {
@@ -313,13 +322,13 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) int 
 	if fieldBits&HASH_PART != 0 {
 		l, n := binary.Uvarint(data[pos:])
 		if n == 0 {
-			panic("fillFromFields buffer too small for hash len")
+			return 0, fmt.Errorf("fillFromFields buffer too small for hash len")
 		} else if n < 0 {
-			panic("fillFromFields value overflow for hash len")
+			return 0, fmt.Errorf("fillFromFields value overflow for hash len")
 		}
 		pos += n
 		if len(data) < pos+int(l) {
-			panic("fillFromFields buffer too small for hash")
+			return 0, fmt.Errorf("fillFromFields buffer too small for hash")
 		}
 		cell.hl = int(l)
 		if l > 0 {
@@ -329,7 +338,7 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) int 
 	} else {
 		cell.hl = 0
 	}
-	return pos
+	return pos, nil
 }
 
 // hasTerm returns whether a hex key has the terminator flag.
@@ -337,61 +346,217 @@ func hasTerm(s []byte) bool {
 	return len(s) > 0 && s[len(s)-1] == 16
 }
 
-func (hph *HexPatriciaHashed) completeLeafHash(kp, kl, compactLen int, key []byte, compact0 byte, ni int, val rlp.RlpSerializableBytes) error {
+func (hph *HexPatriciaHashed) completeLeafHash(buf []byte, kp, kl, compactLen int, key []byte, compact0 byte, ni int, val rlp.RlpSerializable, singleton bool) ([]byte, error) {
 	totalLen := kp + kl + val.DoubleRLPLen()
 	pt := rlp.GenerateStructLen(hph.lenPrefix[:], totalLen)
-
+	embedded := !singleton && totalLen+pt < length.Hash
 	var writer io.Writer
-	var reader io.Reader
-
-	if totalLen+pt < length.Hash {
-		// Embedded node
-		hph.byteArrayWriter.Setup(hph.hashBuf[:], 0)
+	if embedded {
+		hph.byteArrayWriter.Setup(buf)
 		writer = &hph.byteArrayWriter
 	} else {
 		hph.keccak.Reset()
 		writer = hph.keccak
-		reader = hph.keccak
 	}
-
 	if _, err := writer.Write(hph.lenPrefix[:pt]); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := writer.Write(hph.keyPrefix[:kp]); err != nil {
-		return err
+		return nil, err
 	}
 	hph.b[0] = compact0
 	if _, err := writer.Write(hph.b[:]); err != nil {
-		return err
+		return nil, err
 	}
 	for i := 1; i < compactLen; i++ {
 		hph.b[0] = key[ni]*16 + key[ni+1]
 		if _, err := writer.Write(hph.b[:]); err != nil {
-			return err
+			return nil, err
 		}
 		ni += 2
 	}
-
 	if err := val.ToDoubleRLP(writer, hph.prefixBuf[:]); err != nil {
-		return err
+		return nil, err
 	}
-
-	if reader != nil {
+	if embedded {
+		buf = hph.byteArrayWriter.buf
+	} else {
 		hph.hashBuf[0] = 0x80 + length.Hash
-		if _, err := reader.Read(hph.hashBuf[1:]); err != nil {
-			return err
+		if _, err := hph.keccak.Read(hph.hashBuf[1:]); err != nil {
+			return nil, err
 		}
+		buf = append(buf, hph.hashBuf[:]...)
 	}
-	return nil
+	return buf, nil
 }
 
-func (hph *HexPatriciaHashed) leafHashWithKeyVal(key []byte, val rlp.RlpSerializableBytes) error {
+func (hph *HexPatriciaHashed) leafHashWithKeyVal(buf []byte, key []byte, val rlp.RlpSerializableBytes, singleton bool) ([]byte, error) {
 	// Compute the total length of binary representation
 	var kp, kl int
 	// Write key
 	var compactLen int
 	var ni int
 	var compact0 byte
+	compactLen = (len(key)-1)/2 + 1
+	if len(key)&1 == 0 {
+		compact0 = 0x30 + key[0] // Odd: (3<<4) + first nibble
+		ni = 1
+	} else {
+		compact0 = 0x20
+	}
+	if compactLen > 1 {
+		hph.keyPrefix[0] = 0x80 + byte(compactLen)
+		kp = 1
+		kl = compactLen
+	} else {
+		kl = 1
+	}
+	buf, err := hph.completeLeafHash(buf, kp, kl, compactLen, key, compact0, ni, val, singleton)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (cell *Cell) accountLengthForHashing() uint {
+	var structLength uint
+
+	balanceBytes := 0
+	if !cell.Balance.LtUint64(128) {
+		balanceBytes = cell.Balance.ByteLen()
+	}
+
+	var nonceBytes int
+	if cell.Nonce < 128 && cell.Nonce != 0 {
+		nonceBytes = 0
+	} else {
+		nonceBytes = (bits.Len64(cell.Nonce) + 7) / 8
+	}
+
+	structLength += uint(balanceBytes + nonceBytes + 2)
+
+	structLength += 66 // Two 32-byte arrays + 2 prefixes
+
+	if structLength < 56 {
+		return 1 + structLength
+	}
+
+	lengthBytes := (bits.Len(structLength) + 7) / 8
+
+	return uint(1+lengthBytes) + structLength
+}
+
+func (cell *Cell) accountForHashing(buffer []byte, storageRootHash []byte) {
+	balanceBytes := 0
+	if !cell.Balance.LtUint64(128) {
+		balanceBytes = cell.Balance.ByteLen()
+	}
+
+	var nonceBytes int
+	if cell.Nonce < 128 && cell.Nonce != 0 {
+		nonceBytes = 0
+	} else {
+		nonceBytes = (bits.Len64(cell.Nonce) + 7) / 8
+	}
+
+	var structLength = uint(balanceBytes + nonceBytes + 2)
+	structLength += 66 // Two 32-byte arrays + 2 prefixes
+
+	var pos int
+	if structLength < 56 {
+		buffer[0] = byte(192 + structLength)
+		pos = 1
+	} else {
+		lengthBytes := (bits.Len(structLength) + 7) / 8
+		buffer[0] = byte(247 + lengthBytes)
+
+		for i := lengthBytes; i > 0; i-- {
+			buffer[i] = byte(structLength)
+			structLength >>= 8
+		}
+
+		pos = lengthBytes + 1
+	}
+
+	// Encoding nonce
+	if cell.Nonce < 128 && cell.Nonce != 0 {
+		buffer[pos] = byte(cell.Nonce)
+	} else {
+		buffer[pos] = byte(128 + nonceBytes)
+		var nonce = cell.Nonce
+		for i := nonceBytes; i > 0; i-- {
+			buffer[pos+i] = byte(nonce)
+			nonce >>= 8
+		}
+	}
+	pos += 1 + nonceBytes
+
+	// Encoding balance
+	if cell.Balance.LtUint64(128) && !cell.Balance.IsZero() {
+		buffer[pos] = byte(cell.Balance.Uint64())
+		pos++
+	} else {
+		buffer[pos] = byte(128 + balanceBytes)
+		pos++
+		cell.Balance.WriteToSlice(buffer[pos : pos+balanceBytes])
+		pos += balanceBytes
+	}
+
+	// Encoding Root and CodeHash
+	buffer[pos] = 128 + 32
+	pos++
+	copy(buffer[pos:], storageRootHash[:length.Hash])
+	pos += 32
+	buffer[pos] = 128 + 32
+	pos++
+	copy(buffer[pos:], cell.CodeHash[:])
+	//pos += 32
+}
+
+func (hph *HexPatriciaHashed) accountLeafHashWithKey(buf []byte, key []byte, val rlp.RlpSerializable) ([]byte, error) {
+	// Compute the total length of binary representation
+	var kp, kl int
+	// Write key
+	var compactLen int
+	var ni int
+	var compact0 byte
+	if hasTerm(key) {
+		compactLen = (len(key)-1)/2 + 1
+		if len(key)&1 == 0 {
+			compact0 = 48 + key[0] // Odd (1<<4) + first nibble
+			ni = 1
+		} else {
+			compact0 = 32
+		}
+	} else {
+		compactLen = len(key)/2 + 1
+		if len(key)&1 == 1 {
+			compact0 = 16 + key[0] // Odd (1<<4) + first nibble
+			ni = 1
+		}
+	}
+	if compactLen > 1 {
+		hph.keyPrefix[0] = byte(128 + compactLen)
+		kp = 1
+		kl = compactLen
+	} else {
+		kl = 1
+	}
+	var err error
+	if buf, err = hph.completeLeafHash(buf, kp, kl, compactLen, key, compact0, ni, val, true); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (hph *HexPatriciaHashed) extensionHash(buf []byte, key []byte, hash []byte) ([]byte, error) {
+	// Compute the total length of binary representation
+	var kp, kl int
+	// Write key
+	var compactLen int
+	var ni int
+	var compact0 byte
+	// https://github.com/ethereum/wiki/wiki/Patricia-Tree#specification-compact-encoding-of-hex-sequence-with-optional-terminator
 	if hasTerm(key) {
 		compactLen = (len(key)-1)/2 + 1
 		if len(key)&1 == 0 {
@@ -414,19 +579,133 @@ func (hph *HexPatriciaHashed) leafHashWithKeyVal(key []byte, val rlp.RlpSerializ
 	} else {
 		kl = 1
 	}
-
-	err := hph.completeLeafHash(kp, kl, compactLen, key, compact0, ni, val)
-	if err != nil {
-		return err
+	totalLen := kp + kl + 33
+	pt := rlp.GenerateStructLen(hph.lenPrefix[:], totalLen)
+	hph.keccak.Reset()
+	if _, err := hph.keccak.Write(hph.lenPrefix[:pt]); err != nil {
+		return nil, err
 	}
-
-	return nil
+	if _, err := hph.keccak.Write(hph.keyPrefix[:kp]); err != nil {
+		return nil, err
+	}
+	hph.b[0] = compact0
+	if _, err := hph.keccak.Write(hph.b[:]); err != nil {
+		return nil, err
+	}
+	for i := 1; i < compactLen; i++ {
+		hph.b[0] = key[ni]*16 + key[ni+1]
+		if _, err := hph.keccak.Write(hph.b[:]); err != nil {
+			return nil, err
+		}
+		ni += 2
+	}
+	hph.b[0] = 0x80
+	if _, err := hph.keccak.Write(hph.b[:]); err != nil {
+		return nil, err
+	}
+	if _, err := hph.keccak.Write(hash); err != nil {
+		return nil, err
+	}
+	// Replace previous hash with the new one
+	if _, err := hph.keccak.Read(hph.hashBuf[:]); err != nil {
+		return nil, err
+	}
+	if buf == nil {
+		return hph.hashBuf[:], nil
+	}
+	buf = append(buf, hph.hashBuf[:]...)
+	return buf, nil
 }
 
-func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, keccak hash.Hash, buffer []byte) ([]byte, error) {
-	// TODO implement proper hash calculation
-	buffer = append(buffer, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
-	return buffer, nil
+func (hph *HexPatriciaHashed) computeCellHashLen(cell *Cell, depth int) int {
+	if cell.spl > 0 && depth >= 64 {
+		keyLen := depth - 64 + 1 // Length of hex key with terminator character
+		var kp, kl int
+		compactLen := (keyLen-1)/2 + 1
+		if compactLen > 1 {
+			kp = 1
+			kl = compactLen
+		} else {
+			kl = 1
+		}
+		val := rlp.RlpSerializableBytes(bytes.TrimLeft(cell.Storage[:], "\000"))
+		totalLen := kp + kl + val.DoubleRLPLen()
+		pt := rlp.GenerateStructLen(hph.lenPrefix[:], totalLen)
+		if totalLen+pt < length.Hash {
+			return totalLen + pt
+		}
+	}
+	return length.Hash + 1
+}
+
+func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte) ([]byte, error) {
+	var err error
+	var storageRootHash []byte
+	if cell.spl > 0 {
+		var hashedKeyOffset int
+		if depth >= 64 {
+			hashedKeyOffset = 128 - depth
+		}
+		singleton := depth <= 64
+		if err := hashKey(hph.keccak, cell.spk[hph.accountKeyLen:cell.spl], hph.hashBuf[:], cell.downHashedKey[:], hashedKeyOffset); err != nil {
+			return nil, err
+		}
+		cell.downHashedKey[64-hashedKeyOffset] = 16 // Add terminator
+		if singleton {
+			if storageRootHash, err = hph.leafHashWithKeyVal(nil, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(bytes.TrimLeft(cell.Storage[:], "\000")), true); err != nil {
+				return nil, err
+			}
+		} else {
+			if buf, err = hph.leafHashWithKeyVal(buf, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(bytes.TrimLeft(cell.Storage[:], "\000")), false); err != nil {
+				return nil, err
+			}
+			return buf, nil
+		}
+	}
+	if cell.apl > 0 {
+		if err := hashKey(hph.keccak, cell.apk[:cell.apl], hph.hashBuf[:], cell.downHashedKey[:], depth); err != nil {
+			return nil, err
+		}
+		cell.downHashedKey[64-depth] = 16 // Add terminator
+		valLen := cell.accountLengthForHashing()
+		if storageRootHash == nil {
+			if cell.upHashedLen > 0 {
+				// Extension
+				if cell.hl > 0 {
+					if storageRootHash, err = hph.extensionHash(nil, cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl]); err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("computeCellHash extension without hash")
+				}
+			} else if cell.hl > 0 {
+				storageRootHash = cell.h[:cell.hl]
+			} else {
+				storageRootHash = hph.emptyRoot
+			}
+		}
+		cell.accountForHashing(hph.valBuf[:valLen], storageRootHash[:])
+		if buf, err = hph.accountLeafHashWithKey(buf, cell.downHashedKey[:65-depth], rlp.RlpEncodedBytes(hph.valBuf[:valLen])); err != nil {
+			return nil, err
+		}
+		return buf, nil
+	}
+	buf = append(buf, 0x80+32)
+	if cell.upHashedLen > 0 {
+		// Extension
+		if cell.hl > 0 {
+			if buf, err = hph.extensionHash(buf, cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl]); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, fmt.Errorf("computeCellHash extension without hash")
+		}
+	} else if cell.hl > 0 {
+		buf = append(buf, cell.h[:cell.hl]...)
+	} else {
+		buf = append(buf, hph.emptyRoot...)
+	}
+	return buf, nil
 }
 
 type PartFlags uint8
@@ -457,7 +736,11 @@ func branchToString(branchData []byte) string {
 		} else {
 			fieldBits &= 0xf
 		}
-		pos = cell.fillFromFields(branchData, pos, PartFlags(fieldBits))
+		var err error
+		if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
+			// This is used for test output, so ok to panic
+			panic(err)
+		}
 		fmt.Fprintf(&sb, "   %x => ", nibble)
 		sb.WriteString("{")
 		var comma string
@@ -598,8 +881,12 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 			if j%2 == 1 {
 				fieldBits >>= 4
 			}
-			pos = cell.fillFromFields(branchData, pos, PartFlags(fieldBits))
-			cell.deriveHashedKeys(depth, hph.keccak, hph.accountKeyLen)
+			if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
+				return err
+			}
+			if err = cell.deriveHashedKeys(depth, hph.keccak, hph.hashBuf[:], hph.accountKeyLen); err != nil {
+				return err
+			}
 			if hph.trace {
 				fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
 			}
@@ -825,6 +1112,15 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				}
 			}
 		}
+		// Calculate total length of all hashes
+		totalBranchLen := 17 - partsCount // For every empty cell, one byte
+		for bitset, j := bitmap, 0; bitset != 0; j++ {
+			bit := bitset & -bitset
+			nibble := bits.TrailingZeros16(bit)
+			cell := &hph.grid[row][nibble]
+			totalBranchLen += hph.computeCellHashLen(cell, depth)
+			bitset ^= bit
+		}
 		// Parts bitmap
 		binary.BigEndian.PutUint16(hph.numBuf[:], bitmap)
 		branchData = append(branchData, hph.numBuf[:2]...)
@@ -832,11 +1128,28 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		// Add field flags
 		binary.BigEndian.PutUint64(hph.numBuf[:], 0) // Fill numBuf with zeros
 		branchData = append(branchData, hph.numBuf[:(partsCount+1)/2]...)
+		hph.keccak2.Reset()
+		pt := rlp.GenerateStructLen(hph.lenPrefix[:], totalBranchLen)
+		if _, err := hph.keccak2.Write(hph.lenPrefix[:pt]); err != nil {
+			return nil, nil, err
+		}
+		hph.b[0] = 0x80
+		var lastNibble int
 		for bitset, j := bitmap, 0; bitset != 0; j++ {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
+			for i := lastNibble; i < nibble; i++ {
+				if _, err := hph.keccak2.Write(hph.b[:]); err != nil {
+					return nil, nil, err
+				}
+			}
+			lastNibble = nibble
 			cell := &hph.grid[row][nibble]
-			if _, err := hph.computeCellHash(cell, hph.keccak, nil); err != nil {
+			cellHash, err := hph.computeCellHash(cell, depth, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			if _, err := hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
 			}
 			var fieldBits PartFlags
@@ -870,11 +1183,18 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			branchData[fieldsPos+(j/2)] |= byte(fieldBits)
 			bitset ^= bit
 		}
+		for i := lastNibble; i < 17; i++ {
+			if _, err := hph.keccak2.Write(hph.b[:]); err != nil {
+				return nil, nil, err
+			}
+		}
 		upCell.upHashedLen = 0
 		upCell.apl = 0
 		upCell.spl = 0
 		upCell.hl = 32
-		// TODO insert proper hash calculation
+		if _, err := hph.keccak2.Read(upCell.h[:]); err != nil {
+			return nil, nil, err
+		}
 		hph.activeRows--
 		if upDepth > 0 {
 			hph.currentKeyLen = upDepth - 1
