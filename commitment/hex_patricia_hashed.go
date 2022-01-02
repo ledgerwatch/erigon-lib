@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2022 Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -21,13 +21,40 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"io"
 	"math/bits"
 	"strings"
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/length"
+	"github.com/ledgerwatch/erigon-lib/rlp"
 	"golang.org/x/crypto/sha3"
 )
+
+// keccakState wraps sha3.state. In addition to the usual hash methods, it also supports
+// Read to get a variable amount of data from the hash state. Read is faster than Sum
+// because it doesn't copy the internal state, but also modifies the internal state.
+type keccakState interface {
+	hash.Hash
+	Read([]byte) (int, error)
+}
+
+type ByteArrayWriter struct {
+	dest []byte
+	pos  int
+}
+
+func (w *ByteArrayWriter) Setup(dest []byte, pos int) {
+	w.dest = dest
+	w.pos = pos
+}
+
+func (w *ByteArrayWriter) Write(data []byte) (int, error) {
+	copy(w.dest[w.pos:], data)
+	w.pos += len(data)
+	return len(data), nil
+}
 
 // HexPatriciaHashed implements commitment based on patricia merkle tree with radix 16,
 // with keys pre-hashed by keccak256
@@ -57,16 +84,23 @@ type HexPatriciaHashed struct {
 	// Function used to fetch account with given plain key. It loads
 	accountFn func(plainKey []byte, cell *Cell) error
 	// Function used to fetch account with given plain key
-	storageFn     func(plainKey []byte, cell *Cell) error
-	keccak        hash.Hash
-	accountKeyLen int
-	trace         bool
-	numBuf        [binary.MaxVarintLen64]byte
+	storageFn       func(plainKey []byte, cell *Cell) error
+	keccak          keccakState
+	accountKeyLen   int
+	trace           bool
+	numBuf          [binary.MaxVarintLen64]byte
+	byteArrayWriter ByteArrayWriter
+	hashBuf         [33]byte // RLP representation of hash (or un-hashes value)
+	keyPrefix       [1]byte
+	lenPrefix       [4]byte
+	valBuf          [128]byte // Enough to accommodate hash encoding of any account
+	b               [1]byte   // Buffer for single byte
+	prefixBuf       [8]byte
 }
 
 func NewHexPatriciaHashed(accountKeyLen int) *HexPatriciaHashed {
 	return &HexPatriciaHashed{
-		keccak:        sha3.NewLegacyKeccak256(),
+		keccak:        sha3.NewLegacyKeccak256().(keccakState),
 		accountKeyLen: accountKeyLen,
 	}
 }
@@ -163,7 +197,7 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, 
 	}
 }
 
-func (cell *Cell) deriveHashedKeys(depth int, keccak hash.Hash, accountKeyLen int) {
+func (cell *Cell) deriveHashedKeys(depth int, keccak keccakState, accountKeyLen int) {
 	extraLen := 0
 	if cell.apl > 0 {
 		if depth > 64 {
@@ -298,10 +332,101 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) int 
 	return pos
 }
 
-func (cell *Cell) computeHash(keccak hash.Hash, buffer []byte) []byte {
+// hasTerm returns whether a hex key has the terminator flag.
+func hasTerm(s []byte) bool {
+	return len(s) > 0 && s[len(s)-1] == 16
+}
+
+func (hph *HexPatriciaHashed) completeLeafHash(kp, kl, compactLen int, key []byte, compact0 byte, ni int, val rlp.RlpSerializableBytes) error {
+	totalLen := kp + kl + val.DoubleRLPLen()
+	pt := rlp.GenerateStructLen(hph.lenPrefix[:], totalLen)
+
+	var writer io.Writer
+	var reader io.Reader
+
+	if totalLen+pt < length.Hash {
+		// Embedded node
+		hph.byteArrayWriter.Setup(hph.hashBuf[:], 0)
+		writer = &hph.byteArrayWriter
+	} else {
+		hph.keccak.Reset()
+		writer = hph.keccak
+		reader = hph.keccak
+	}
+
+	if _, err := writer.Write(hph.lenPrefix[:pt]); err != nil {
+		return err
+	}
+	if _, err := writer.Write(hph.keyPrefix[:kp]); err != nil {
+		return err
+	}
+	hph.b[0] = compact0
+	if _, err := writer.Write(hph.b[:]); err != nil {
+		return err
+	}
+	for i := 1; i < compactLen; i++ {
+		hph.b[0] = key[ni]*16 + key[ni+1]
+		if _, err := writer.Write(hph.b[:]); err != nil {
+			return err
+		}
+		ni += 2
+	}
+
+	if err := val.ToDoubleRLP(writer, hph.prefixBuf[:]); err != nil {
+		return err
+	}
+
+	if reader != nil {
+		hph.hashBuf[0] = 0x80 + length.Hash
+		if _, err := reader.Read(hph.hashBuf[1:]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (hph *HexPatriciaHashed) leafHashWithKeyVal(key []byte, val rlp.RlpSerializableBytes) error {
+	// Compute the total length of binary representation
+	var kp, kl int
+	// Write key
+	var compactLen int
+	var ni int
+	var compact0 byte
+	if hasTerm(key) {
+		compactLen = (len(key)-1)/2 + 1
+		if len(key)&1 == 0 {
+			compact0 = 0x30 + key[0] // Odd: (3<<4) + first nibble
+			ni = 1
+		} else {
+			compact0 = 0x20
+		}
+	} else {
+		compactLen = len(key)/2 + 1
+		if len(key)&1 == 1 {
+			compact0 = 0x10 + key[0] // Odd: (1<<4) + first nibble
+			ni = 1
+		}
+	}
+	if compactLen > 1 {
+		hph.keyPrefix[0] = 0x80 + byte(compactLen)
+		kp = 1
+		kl = compactLen
+	} else {
+		kl = 1
+	}
+
+	err := hph.completeLeafHash(kp, kl, compactLen, key, compact0, ni, val)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, keccak hash.Hash, buffer []byte) ([]byte, error) {
 	// TODO implement proper hash calculation
 	buffer = append(buffer, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...)
-	return buffer
+	return buffer, nil
 }
 
 type PartFlags uint8
@@ -711,7 +836,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
 			cell := &hph.grid[row][nibble]
-			cell.computeHash(hph.keccak, nil)
+			if _, err := hph.computeCellHash(cell, hph.keccak, nil); err != nil {
+				return nil, nil, err
+			}
 			var fieldBits PartFlags
 			if cell.upHashedLen > 0 {
 				fieldBits |= HASHEDKEY_PART

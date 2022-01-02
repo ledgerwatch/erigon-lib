@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2022 Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -374,14 +374,11 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 
 func TestEmptyState(t *testing.T) {
 	ms := NewMockState()
-	hph := &HexPatriciaHashed{
-		branchFn:      ms.branchFn,
-		accountFn:     ms.accountFn,
-		storageFn:     ms.storageFn,
-		rootBefore:    false, // Start from empty root
-		keccak:        sha3.NewLegacyKeccak256(),
-		accountKeyLen: 1,
-	}
+	hph := NewHexPatriciaHashed(1)
+	hph.branchFn = ms.branchFn
+	hph.accountFn = ms.accountFn
+	hph.storageFn = ms.storageFn
+	hph.rootBefore = false // Start from empty root
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
 		Balance("01", 5).
