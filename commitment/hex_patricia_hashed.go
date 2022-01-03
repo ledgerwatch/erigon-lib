@@ -684,7 +684,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 				storageRootHash = hph.emptyRoot
 			}
 		}
-		cell.accountForHashing(hph.valBuf[:valLen], storageRootHash[:])
+		cell.accountForHashing(hph.valBuf[:valLen], storageRootHash)
 		if buf, err = hph.accountLeafHashWithKey(buf, cell.downHashedKey[:65-depth], rlp.RlpEncodedBytes(hph.valBuf[:valLen])); err != nil {
 			return nil, err
 		}
