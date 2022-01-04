@@ -1440,12 +1440,6 @@ func (u *Update) DecodeForStorage(enc []byte) error {
 	pos++
 	if codeHashBytes > 0 {
 		copy(u.CodeHashOrStorage[:], enc[pos:pos+codeHashBytes])
-		pos += codeHashBytes
-	}
-	incBytes := int(enc[pos])
-	pos++
-	if incBytes > 0 {
-		pos += incBytes
 	}
 
 	return nil
