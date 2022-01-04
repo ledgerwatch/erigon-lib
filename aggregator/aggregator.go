@@ -22,6 +22,7 @@ import (
 	"container/heap"
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"io"
 	"math"
 	"os"
@@ -31,7 +32,9 @@ import (
 
 	"github.com/google/btree"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -69,6 +72,8 @@ type Aggregator struct {
 	changesBtree    *btree.BTree        // btree of ChangesItem
 	trace           bool                // Turns on tracing for specific accounts and locations
 	tracedKeys      map[string]struct{} // Set of keys being traced during aggregations
+	hph             *commitment.HexPatriciaHashed
+	keccak          hash.Hash
 }
 
 type ChangeFile struct {
@@ -583,6 +588,8 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		unwindLimit:     unwindLimit,
 		aggregationStep: aggregationStep,
 		tracedKeys:      make(map[string]struct{}),
+		keccak:          sha3.NewLegacyKeccak256(),
+		hph:             commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
 	}
 	byEndBlock := btree.New(32)
 	var closeBtree bool = true // It will be set to false in case of success at the end of the function
@@ -895,6 +902,31 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 	return nil
 }
 
+func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte) []byte {
+	var val []byte
+	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.commitmentIdx.Empty() {
+			return true
+		}
+		offset := item.commitmentIdx.Lookup(filekey)
+		g := item.commitmentD.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		if g.HasNext() {
+			key, _ := g.Next(nil) // Add special function that just checks the key
+			if bytes.Equal(key, filekey) {
+				val, _ = g.Next(nil)
+			}
+			return false
+		}
+		return true
+	})
+	if len(val) > 0 {
+		return val[1:]
+	}
+	return nil
+}
+
 func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
 	r := &Reader{
 		a:        a,
@@ -1038,6 +1070,116 @@ func (w *Writer) Reset(tx kv.RwTx, blockNum uint64) error {
 	return nil
 }
 
+type CommitmentItem struct {
+	plainKey  []byte
+	hashedKey []byte
+	u         commitment.Update
+}
+
+func (i *CommitmentItem) Less(than btree.Item) bool {
+	c := bytes.Compare(i.hashedKey, than.(*CommitmentItem).hashedKey)
+	if c != 0 {
+		return c < 0
+	}
+	return i.u.Flags < than.(*CommitmentItem).u.Flags
+}
+
+func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
+	// Look in the summary table first
+	v, err := w.tx.GetOne(kv.StateCommitment, prefix)
+	if err != nil {
+		return nil, err
+	}
+	if v != nil {
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		return v[4:], nil
+	}
+	// Look in the files
+	val := w.a.readBranchNode(w.blockNum, prefix)
+	return val, nil
+}
+
+func bytesToUint64(buf []byte) (x uint64) {
+	for i, b := range buf {
+		x = x<<8 + uint64(b)
+		if i == 7 {
+			return
+		}
+	}
+	return
+}
+
+func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
+	// Look in the summary table first
+	v, err := w.tx.GetOne(kv.StateAccounts, plainKey)
+	if err != nil {
+		return err
+	}
+	var enc []byte
+	if v != nil {
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		enc = v[4:]
+	} else {
+		// Look in the files
+		enc = w.a.readAccount(w.blockNum, plainKey, false /* trace */)
+	}
+	cell.Nonce = 0
+	cell.Balance.Clear()
+	copy(cell.CodeHash[:], commitment.EmptyCodeHash[:])
+
+	if len(enc) > 0 {
+		pos := 0
+		nonceBytes := int(enc[pos])
+		pos++
+		if nonceBytes > 0 {
+			cell.Nonce = bytesToUint64(enc[pos : pos+nonceBytes])
+			pos += nonceBytes
+		}
+		balanceBytes := int(enc[pos])
+		pos++
+		if balanceBytes > 0 {
+			cell.Balance.SetBytes(enc[pos : pos+balanceBytes])
+		}
+	}
+
+	v, err = w.tx.GetOne(kv.StateCode, plainKey)
+	if err != nil {
+		return err
+	}
+	if v != nil {
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		enc = v[4:]
+	} else {
+		// Look in the files
+		enc = w.a.readCode(w.blockNum, plainKey, false /* trace */)
+	}
+	if len(enc) > 0 {
+		w.a.keccak.Reset()
+		w.a.keccak.Write(enc)
+		w.a.keccak.(io.Reader).Read(cell.CodeHash[:])
+	}
+	return nil
+}
+
+func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
+	// Look in the summary table first
+	v, err := w.tx.GetOne(kv.StateStorage, plainKey)
+	if err != nil {
+		return err
+	}
+	var enc []byte
+	if v != nil {
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		enc = v[4:]
+	} else {
+		// Look in the files
+		enc = w.a.readStorage(w.blockNum, plainKey, false /* trace */)
+	}
+	cell.StorageLen = len(enc)
+	copy(cell.Storage[:], enc)
+	return nil
+}
+
 // computeCommitment is computing the commitment to the state after
 // the change would have been applied.
 // It assumes that the state accessible via the aggregator has already been
@@ -1046,7 +1188,6 @@ func (w *Writer) Reset(tx kv.RwTx, blockNum uint64) error {
 // but it will be extended to support other types of commitments
 func (w *Writer) computeCommitment() error {
 	// Hash the keys from the buffers
-	keccak := sha3.NewLegacyKeccak256()
 	hashed := btree.New(32)
 	lastOffsetKey := 0
 	lastOffsetVal := 0
@@ -1054,10 +1195,26 @@ func (w *Writer) computeCommitment() error {
 		offsetVal := w.accountChanges.after.wordOffsets[i]
 		key := w.accountChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.accountChanges.after.words[lastOffsetVal:offsetVal]
-		keccak.Reset()
-		keccak.Write(key)
-		hashedKey := keccak.Sum(nil)
-		hashed.ReplaceOrInsert(&AggregateItem{k: hashedKey, v: val})
+		w.a.keccak.Reset()
+		w.a.keccak.Write(key)
+		hashedKey := w.a.keccak.Sum(nil)
+		var c CommitmentItem
+		c.plainKey = key
+		c.hashedKey = make([]byte, len(hashedKey)*2)
+		for i, b := range hashedKey {
+			c.hashedKey[i*2] = (b >> 4) & 0xf
+			c.hashedKey[i*2+1] = b & 0xf
+		}
+		c.hashedKey = hashedKey
+		if len(val) == 0 {
+			c.u.Flags = commitment.DELETE_UPDATE
+		} else {
+			if err := c.u.DecodeForStorage(val); err != nil {
+				return err
+			}
+			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
+		}
+		hashed.ReplaceOrInsert(&c)
 	}
 	lastOffsetKey = 0
 	lastOffsetVal = 0
@@ -1065,14 +1222,28 @@ func (w *Writer) computeCommitment() error {
 		offsetVal := w.storageChanges.after.wordOffsets[i]
 		key := w.storageChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.storageChanges.after.words[lastOffsetVal:offsetVal]
-		hashedKey := make([]byte, 32+32)
-		keccak.Reset()
-		keccak.Write(key[:20])
-		keccak.(io.Reader).Read(hashedKey[:32])
-		keccak.Reset()
-		keccak.Write(key[20:])
-		keccak.(io.Reader).Read(hashedKey[32:])
-		hashed.ReplaceOrInsert(&AggregateItem{k: hashedKey, v: val})
+		hashedKey := make([]byte, 2*length.Hash)
+		w.a.keccak.Reset()
+		w.a.keccak.Write(key[:length.Addr])
+		w.a.keccak.(io.Reader).Read(hashedKey[:length.Hash])
+		w.a.keccak.Reset()
+		w.a.keccak.Write(key[length.Addr:])
+		w.a.keccak.(io.Reader).Read(hashedKey[length.Hash:])
+		var c CommitmentItem
+		c.plainKey = key
+		c.hashedKey = make([]byte, len(hashedKey)*2)
+		for i, b := range hashedKey {
+			c.hashedKey[i*2] = (b >> 4) & 0xf
+			c.hashedKey[i*2+1] = b & 0xf
+		}
+		if len(val) == 0 {
+			c.u.Flags = commitment.DELETE_UPDATE
+		} else {
+			c.u.ValLength = len(val)
+			copy(c.u.CodeHashOrStorage[:], val)
+			c.u.Flags = commitment.STORAGE_UPDATE
+		}
+		hashed.ReplaceOrInsert(&c)
 	}
 	lastOffsetKey = 0
 	lastOffsetVal = 0
@@ -1080,21 +1251,84 @@ func (w *Writer) computeCommitment() error {
 		offsetVal := w.codeChanges.after.wordOffsets[i]
 		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
-		keccak.Reset()
-		keccak.Write(key)
-		hashedKey := keccak.Sum(nil)
-		keccak.Reset()
-		keccak.Write(val)
-		hashedVal := keccak.Sum(nil)
-		hashed.ReplaceOrInsert(&AggregateItem{k: hashedKey, v: hashedVal})
+		w.a.keccak.Reset()
+		w.a.keccak.Write(key)
+		hashedKey := w.a.keccak.Sum(nil)
+		var c CommitmentItem
+		c.plainKey = key
+		c.hashedKey = make([]byte, len(hashedKey)*2)
+		for i, b := range hashedKey {
+			c.hashedKey[i*2] = (b >> 4) & 0xf
+			c.hashedKey[i*2+1] = b & 0xf
+		}
+		w.a.keccak.Reset()
+		w.a.keccak.Write(val)
+		w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+		c.u.Flags = commitment.CODE_UPDATE
+		hashed.ReplaceOrInsert(&c)
 	}
+	plainKeys := make([][]byte, hashed.Len())
+	hashedKeys := make([][]byte, hashed.Len())
+	updates := make([]commitment.Update, hashed.Len())
+	j := 0
+	hashed.Ascend(func(i btree.Item) bool {
+		item := i.(*CommitmentItem)
+		plainKeys[j] = item.plainKey
+		hashedKeys[j] = item.hashedKey
+		updates[j] = item.u
+		j++
+		return true
+	})
+	w.a.hph.Reset()
+	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn)
+	branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
+	if err != nil {
+		return err
+	}
+	for prefixStr, branchNodeUpdate := range branchNodeUpdates {
+		prefix := []byte(prefixStr)
+		prevV, err := w.tx.GetOne(kv.StateCommitment, prefix)
+		if err != nil {
+			return err
+		}
+		var prevNum uint32
+		var original []byte
+		if prevV == nil {
+			original = w.a.readBranchNode(w.blockNum, prefix)
+		} else {
+			prevNum = binary.BigEndian.Uint32(prevV[:4])
+		}
+		v := make([]byte, 4+len(branchNodeUpdate))
+		binary.BigEndian.PutUint32(v[:4], prevNum+1)
+		copy(v[4:], branchNodeUpdate)
+		if err = w.tx.Put(kv.StateCommitment, prefix, v); err != nil {
+			return err
+		}
+		if len(branchNodeUpdate) == 0 {
+			w.commChanges.delete(prefix, original)
+		} else {
+			if prevV == nil && original == nil {
+				w.commChanges.insert(prefix, branchNodeUpdate)
+			} else {
+				if original == nil {
+					original = prevV[4:]
+				}
+				w.commChanges.update(prefix, original, branchNodeUpdate)
+			}
+		}
+	}
+	var rootHash []byte
+	if rootHash, err = w.a.hph.RootHash(); err != nil {
+		return err
+	}
+	fmt.Printf("Root hash after %d: %x\n", w.blockNum, rootHash)
 	return nil
 }
 
 func (w *Writer) Finish() error {
-	if err := w.computeCommitment(); err != nil {
-		return fmt.Errorf("compute commitment: %w", err)
-	}
+	//if err := w.computeCommitment(); err != nil {
+	//	return fmt.Errorf("compute commitment: %w", err)
+	//}
 	if err := w.accountChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish accountChanges: %w", err)
 	}

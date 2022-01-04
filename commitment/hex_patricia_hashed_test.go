@@ -44,10 +44,8 @@ func NewMockState() *MockState {
 
 func (ms MockState) branchFn(prefix []byte) ([]byte, error) {
 	if exBytes, ok := ms.cm[string(prefix)]; ok {
-		fmt.Printf("branchFn returns [%x] for [%x]\n", exBytes, prefix)
 		return exBytes, nil
 	}
-	fmt.Printf("branchFn returns nil for [%x]\n", prefix)
 	return nil, nil
 }
 
@@ -64,24 +62,24 @@ func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
 	if pos != len(exBytes) {
 		return fmt.Errorf("accountFn key [%x] leftover bytes in [%x], comsumed %x", plainKey, exBytes, pos)
 	}
-	if ex.flags&STORAGE_UPDATE != 0 {
+	if ex.Flags&STORAGE_UPDATE != 0 {
 		return fmt.Errorf("accountFn reading storage item for key [%x]", plainKey)
 	}
-	if ex.flags&DELETE_UPDATE != 0 {
+	if ex.Flags&DELETE_UPDATE != 0 {
 		return fmt.Errorf("accountFn reading deleted account for key [%x]", plainKey)
 	}
-	if ex.flags&BALANCE_UPDATE != 0 {
-		cell.Balance.Set(&ex.balance)
+	if ex.Flags&BALANCE_UPDATE != 0 {
+		cell.Balance.Set(&ex.Balance)
 	} else {
 		cell.Balance.Clear()
 	}
-	if ex.flags&NONCE_UPDATE != 0 {
-		cell.Nonce = ex.nonce
+	if ex.Flags&NONCE_UPDATE != 0 {
+		cell.Nonce = ex.Nonce
 	} else {
 		cell.Nonce = 0
 	}
-	if ex.flags&CODE_UPDATE != 0 {
-		copy(cell.CodeHash[:], ex.codeHashOrStorage[:])
+	if ex.Flags&CODE_UPDATE != 0 {
+		copy(cell.CodeHash[:], ex.CodeHashOrStorage[:])
 	} else {
 		cell.CodeHash = [32]byte{}
 	}
@@ -101,20 +99,20 @@ func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
 	if pos != len(exBytes) {
 		return fmt.Errorf("storageFn key [%x] leftover bytes in [%x], comsumed %x", plainKey, exBytes, pos)
 	}
-	if ex.flags&BALANCE_UPDATE != 0 {
+	if ex.Flags&BALANCE_UPDATE != 0 {
 		return fmt.Errorf("storageFn reading balance for key [%x]", plainKey)
 	}
-	if ex.flags&NONCE_UPDATE != 0 {
+	if ex.Flags&NONCE_UPDATE != 0 {
 		return fmt.Errorf("storageFn reading nonce for key [%x]", plainKey)
 	}
-	if ex.flags&CODE_UPDATE != 0 {
+	if ex.Flags&CODE_UPDATE != 0 {
 		return fmt.Errorf("storageFn reading codeHash for key [%x]", plainKey)
 	}
-	if ex.flags&DELETE_UPDATE != 0 {
+	if ex.Flags&DELETE_UPDATE != 0 {
 		return fmt.Errorf("storageFn reading deleted item for key [%x]", plainKey)
 	}
-	if ex.flags&STORAGE_UPDATE != 0 {
-		copy(cell.Storage[:], ex.codeHashOrStorage[:])
+	if ex.Flags&STORAGE_UPDATE != 0 {
+		copy(cell.Storage[:], ex.CodeHashOrStorage[:])
 	} else {
 		cell.Storage = [32]byte{}
 	}
@@ -124,7 +122,7 @@ func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
 func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) error {
 	for i, key := range plainKeys {
 		update := updates[i]
-		if update.flags&DELETE_UPDATE != 0 {
+		if update.Flags&DELETE_UPDATE != 0 {
 			delete(ms.sm, string(key))
 		} else {
 			if exBytes, ok := ms.sm[string(key)]; ok {
@@ -136,21 +134,21 @@ func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) err
 				if pos != len(exBytes) {
 					return fmt.Errorf("applyPlainUpdates key [%x] leftover bytes in [%x], comsumed %x", key, exBytes, pos)
 				}
-				if update.flags&BALANCE_UPDATE != 0 {
-					ex.flags |= BALANCE_UPDATE
-					ex.balance.Set(&update.balance)
+				if update.Flags&BALANCE_UPDATE != 0 {
+					ex.Flags |= BALANCE_UPDATE
+					ex.Balance.Set(&update.Balance)
 				}
-				if update.flags&NONCE_UPDATE != 0 {
-					ex.flags |= NONCE_UPDATE
-					ex.nonce = update.nonce
+				if update.Flags&NONCE_UPDATE != 0 {
+					ex.Flags |= NONCE_UPDATE
+					ex.Nonce = update.Nonce
 				}
-				if update.flags&CODE_UPDATE != 0 {
-					ex.flags |= CODE_UPDATE
-					copy(ex.codeHashOrStorage[:], update.codeHashOrStorage[:])
+				if update.Flags&CODE_UPDATE != 0 {
+					ex.Flags |= CODE_UPDATE
+					copy(ex.CodeHashOrStorage[:], update.CodeHashOrStorage[:])
 				}
-				if update.flags&STORAGE_UPDATE != 0 {
-					ex.flags |= STORAGE_UPDATE
-					copy(ex.codeHashOrStorage[:], update.codeHashOrStorage[:])
+				if update.Flags&STORAGE_UPDATE != 0 {
+					ex.Flags |= STORAGE_UPDATE
+					copy(ex.CodeHashOrStorage[:], update.CodeHashOrStorage[:])
 				}
 				ms.sm[string(key)] = ex.encode(nil, ms.numBuf[:])
 			} else {
@@ -163,7 +161,6 @@ func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) err
 
 func (ms *MockState) applyBranchNodeUpdates(updates map[string][]byte) {
 	for key, update := range updates {
-		fmt.Printf("applyBranchNodeUpdates [%x] for [%x]\n", update, key)
 		ms.cm[key] = update
 	}
 }
@@ -348,23 +345,23 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 		u := &updates[i]
 		if key2 == nil {
 			if balance, ok := ub.balances[string(key)]; ok {
-				u.flags |= BALANCE_UPDATE
-				u.balance.Set(balance)
+				u.Flags |= BALANCE_UPDATE
+				u.Balance.Set(balance)
 			}
 			if nonce, ok := ub.nonces[string(key)]; ok {
-				u.flags |= NONCE_UPDATE
-				u.nonce = nonce
+				u.Flags |= NONCE_UPDATE
+				u.Nonce = nonce
 			}
 			if codeHash, ok := ub.codeHashes[string(key)]; ok {
-				u.flags |= CODE_UPDATE
-				copy(u.codeHashOrStorage[:], codeHash[:])
+				u.Flags |= CODE_UPDATE
+				copy(u.CodeHashOrStorage[:], codeHash[:])
 			}
 		} else {
 			if sm, ok1 := ub.storages[string(key)]; ok1 {
 				if storage, ok2 := sm[string(key2)]; ok2 {
-					u.flags |= STORAGE_UPDATE
-					u.codeHashOrStorage = [32]byte{}
-					copy(u.codeHashOrStorage[32-len(storage):], storage)
+					u.Flags |= STORAGE_UPDATE
+					u.CodeHashOrStorage = [32]byte{}
+					copy(u.CodeHashOrStorage[32-len(storage):], storage)
 				}
 			}
 		}
@@ -374,11 +371,7 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 
 func TestEmptyState(t *testing.T) {
 	ms := NewMockState()
-	hph := NewHexPatriciaHashed(1)
-	hph.branchFn = ms.branchFn
-	hph.accountFn = ms.accountFn
-	hph.storageFn = ms.storageFn
-	hph.rootBefore = false // Start from empty root
+	hph := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
 		Balance("01", 5).
@@ -395,7 +388,7 @@ func TestEmptyState(t *testing.T) {
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
 	}
-	branchNodeUpdates, err := hph.processUpdates(plainKeys, hashedKeys, updates, 1)
+	branchNodeUpdates, err := hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,14 +404,14 @@ func TestEmptyState(t *testing.T) {
 		fmt.Printf("%x => %s\n", key, branchToString(branchNodeUpdate))
 	}
 	// More updates
-	hph.reset([32]byte{})
+	hph.Reset()
 	plainKeys, hashedKeys, updates = NewUpdateBuilder().
 		Storage("03", "58", "050505").
 		Build()
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
 	}
-	branchNodeUpdates, err = hph.processUpdates(plainKeys, hashedKeys, updates, 1)
+	branchNodeUpdates, err = hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,14 +427,14 @@ func TestEmptyState(t *testing.T) {
 		fmt.Printf("%x => %s\n", key, branchToString(branchNodeUpdate))
 	}
 	// More updates
-	hph.reset([32]byte{})
+	hph.Reset()
 	plainKeys, hashedKeys, updates = NewUpdateBuilder().
 		Storage("03", "58", "070807").
 		Build()
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
 	}
-	branchNodeUpdates, err = hph.processUpdates(plainKeys, hashedKeys, updates, 1)
+	branchNodeUpdates, err = hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
 		t.Fatal(err)
 	}

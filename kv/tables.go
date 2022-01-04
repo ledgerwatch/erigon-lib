@@ -386,6 +386,7 @@ var ChaindataTables = []string{
 	StateAccounts,
 	StateStorage,
 	StateCode,
+	StateCommitment,
 }
 
 const (
