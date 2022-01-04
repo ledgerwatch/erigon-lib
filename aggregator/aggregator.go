@@ -1139,7 +1139,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
-	copy(cell.CodeHash[:], commitment.EmptyCodeHash[:])
+	copy(cell.CodeHash[:], commitment.EmptyCodeHash)
 
 	if len(enc) > 0 {
 		pos := 0

@@ -1421,7 +1421,7 @@ func bytesToUint64(buf []byte) (x uint64) {
 func (u *Update) DecodeForStorage(enc []byte) error {
 	u.Nonce = 0
 	u.Balance.Clear()
-	copy(u.CodeHashOrStorage[:], EmptyCodeHash[:])
+	copy(u.CodeHashOrStorage[:], EmptyCodeHash)
 
 	pos := 0
 	nonceBytes := int(enc[pos])
