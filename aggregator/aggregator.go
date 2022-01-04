@@ -430,28 +430,32 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 		if item.count == 0 {
 			return true
 		}
-		prevV, err := tx.GetOne(table, item.k)
+		dbPrefix := item.k
+		if len(dbPrefix) == 0 {
+			dbPrefix = []byte{16}
+		}
+		prevV, err := tx.GetOne(table, dbPrefix)
 		if err != nil {
 			e = err
 			return false
 		}
 		if prevV == nil {
-			e = fmt.Errorf("record not found in db for %s key %x", table, item.k)
+			e = fmt.Errorf("record not found in db for %s key %x", table, dbPrefix)
 			return false
 		}
 		prevNum := binary.BigEndian.Uint32(prevV[:4])
 		if prevNum < item.count {
-			e = fmt.Errorf("record count too low for %s key %s count %d, subtracting %d", table, item.k, prevNum, item.count)
+			e = fmt.Errorf("record count too low for %s key %s count %d, subtracting %d", table, dbPrefix, prevNum, item.count)
 			return false
 		}
 		if prevNum == item.count {
-			if e = tx.Delete(table, item.k, nil); e != nil {
+			if e = tx.Delete(table, dbPrefix, nil); e != nil {
 				return false
 			}
 		} else {
 			v := common.Copy(prevV)
 			binary.BigEndian.PutUint32(v[:4], prevNum-item.count)
-			if e = tx.Put(table, item.k, v); e != nil {
+			if e = tx.Put(table, dbPrefix, v); e != nil {
 				return false
 			}
 		}
@@ -902,10 +906,13 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 	return nil
 }
 
-func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte) []byte {
+func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte, trace bool) []byte {
 	var val []byte
 	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
+		if trace {
+			fmt.Printf("readBranchNode %x: search in file [%d-%d]\n", filekey, item.startBlock, item.endBlock)
+		}
 		if item.commitmentIdx.Empty() {
 			return true
 		}
@@ -916,8 +923,11 @@ func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte) []byte {
 			key, _ := g.Next(nil) // Add special function that just checks the key
 			if bytes.Equal(key, filekey) {
 				val, _ = g.Next(nil)
+				if trace {
+					fmt.Printf("readBranchNode %x: found [%x] in file [%d-%d]\n", filekey, val, item.startBlock, item.endBlock)
+				}
+				return false
 			}
-			return false
 		}
 		return true
 	})
@@ -1086,7 +1096,11 @@ func (i *CommitmentItem) Less(than btree.Item) bool {
 
 func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 	// Look in the summary table first
-	v, err := w.tx.GetOne(kv.StateCommitment, prefix)
+	dbPrefix := prefix
+	if len(dbPrefix) == 0 {
+		dbPrefix = []byte{16}
+	}
+	v, err := w.tx.GetOne(kv.StateCommitment, dbPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -1095,7 +1109,7 @@ func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := w.a.readBranchNode(w.blockNum, prefix)
+	val := w.a.readBranchNode(w.blockNum, prefix, false /* trace */)
 	return val, nil
 }
 
@@ -1205,7 +1219,6 @@ func (w *Writer) computeCommitment() error {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
 		}
-		c.hashedKey = hashedKey
 		if len(val) == 0 {
 			c.u.Flags = commitment.DELETE_UPDATE
 		} else {
@@ -1215,6 +1228,8 @@ func (w *Writer) computeCommitment() error {
 			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
 		}
 		hashed.ReplaceOrInsert(&c)
+		lastOffsetKey = offsetKey
+		lastOffsetVal = offsetVal
 	}
 	lastOffsetKey = 0
 	lastOffsetVal = 0
@@ -1244,6 +1259,8 @@ func (w *Writer) computeCommitment() error {
 			c.u.Flags = commitment.STORAGE_UPDATE
 		}
 		hashed.ReplaceOrInsert(&c)
+		lastOffsetKey = offsetKey
+		lastOffsetVal = offsetVal
 	}
 	lastOffsetKey = 0
 	lastOffsetVal = 0
@@ -1266,6 +1283,8 @@ func (w *Writer) computeCommitment() error {
 		w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
 		c.u.Flags = commitment.CODE_UPDATE
 		hashed.ReplaceOrInsert(&c)
+		lastOffsetKey = offsetKey
+		lastOffsetVal = offsetVal
 	}
 	plainKeys := make([][]byte, hashed.Len())
 	hashedKeys := make([][]byte, hashed.Len())
@@ -1287,21 +1306,25 @@ func (w *Writer) computeCommitment() error {
 	}
 	for prefixStr, branchNodeUpdate := range branchNodeUpdates {
 		prefix := []byte(prefixStr)
-		prevV, err := w.tx.GetOne(kv.StateCommitment, prefix)
+		dbPrefix := prefix
+		if len(dbPrefix) == 0 {
+			dbPrefix = []byte{16}
+		}
+		prevV, err := w.tx.GetOne(kv.StateCommitment, dbPrefix)
 		if err != nil {
 			return err
 		}
 		var prevNum uint32
 		var original []byte
 		if prevV == nil {
-			original = w.a.readBranchNode(w.blockNum, prefix)
+			original = w.a.readBranchNode(w.blockNum, prefix, false)
 		} else {
 			prevNum = binary.BigEndian.Uint32(prevV[:4])
 		}
 		v := make([]byte, 4+len(branchNodeUpdate))
 		binary.BigEndian.PutUint32(v[:4], prevNum+1)
 		copy(v[4:], branchNodeUpdate)
-		if err = w.tx.Put(kv.StateCommitment, prefix, v); err != nil {
+		if err = w.tx.Put(kv.StateCommitment, dbPrefix, v); err != nil {
 			return err
 		}
 		if len(branchNodeUpdate) == 0 {
@@ -1326,9 +1349,9 @@ func (w *Writer) computeCommitment() error {
 }
 
 func (w *Writer) Finish() error {
-	//if err := w.computeCommitment(); err != nil {
-	//	return fmt.Errorf("compute commitment: %w", err)
-	//}
+	if err := w.computeCommitment(); err != nil {
+		return fmt.Errorf("compute commitment: %w", err)
+	}
 	if err := w.accountChanges.finish(w.blockNum); err != nil {
 		return fmt.Errorf("finish accountChanges: %w", err)
 	}
@@ -1676,7 +1699,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
-	if item1.commitmentD, item1.commitmentIdx, err = commChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateCommitment); err != nil {
+	if item1.commitmentD, item1.commitmentIdx, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
 	if err = accountChanges.closeFiles(); err != nil {

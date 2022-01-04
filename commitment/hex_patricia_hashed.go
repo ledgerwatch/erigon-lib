@@ -833,7 +833,7 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 		cell = &hph.grid[hph.activeRows-1][col]
 		depth = hph.depths[hph.activeRows-1]
 		if hph.trace {
-			fmt.Printf("needUnfolding cell (%d, %x), currentKey=[%x], cell.depth=%d\n", hph.activeRows-1, col, hph.currentKey[:hph.currentKeyLen], depth)
+			fmt.Printf("needUnfolding cell (%d, %x), currentKey=[%x], cell.depth=%d, cell.h=[%x]\n", hph.activeRows-1, col, hph.currentKey[:hph.currentKeyLen], depth, cell.h[:cell.hl])
 		}
 	}
 	if len(hashedKey) < depth {
@@ -889,6 +889,9 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		hph.currentKeyLen++
 	}
 	row := hph.activeRows
+	for i := 0; i < 16; i++ {
+		hph.grid[row][i].fillEmpty()
+	}
 	hph.beforeBitmap[row] = 0
 	hph.modBitmap[row] = 0
 	hph.delBitmap[row] = 0
@@ -902,6 +905,9 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 			// Special case - empty or deleted root
 			hph.rootChecked = true
 			return nil
+		}
+		if len(branchData) == 0 {
+			fmt.Printf("branchData empty for [%x]\n", hph.currentKey[:hph.currentKeyLen])
 		}
 		pos := 0
 		partBitmap := binary.BigEndian.Uint16(branchData[pos:])
@@ -927,7 +933,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 				return err
 			}
 			if hph.trace {
-				fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
+				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl])
 			}
 			if cell.apl > 0 && cell.downHashedLen == 0 {
 				if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
@@ -1297,7 +1303,7 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
 
 func (hph *HexPatriciaHashed) updateBalance(plainKey, hashedKey []byte, balance *uint256.Int) {
 	if hph.trace {
-		fmt.Printf("updateBalance, activeRows = %d\n", hph.activeRows)
+		fmt.Printf("updateBalance [%x] [%x] = %d, activeRows = %d\n", plainKey, hashedKey, balance, hph.activeRows)
 	}
 	cell := hph.updateAccount(plainKey, hashedKey)
 	cell.Balance.Set(balance)
@@ -1417,71 +1423,30 @@ func (u *Update) DecodeForStorage(enc []byte) error {
 	u.Balance.Clear()
 	copy(u.CodeHashOrStorage[:], EmptyCodeHash[:])
 
-	if len(enc) == 0 {
-		return nil
+	pos := 0
+	nonceBytes := int(enc[pos])
+	pos++
+	if nonceBytes > 0 {
+		u.Nonce = bytesToUint64(enc[pos : pos+nonceBytes])
+		pos += nonceBytes
 	}
-
-	var fieldSet = enc[0]
-	var pos = 1
-
-	if fieldSet&1 > 0 {
-		decodeLength := int(enc[pos])
-
-		if len(enc) < pos+decodeLength+1 {
-			return fmt.Errorf(
-				"malformed CBOR for Account.Nonce: %s, Length %d",
-				enc[pos+1:], decodeLength)
-		}
-
-		u.Nonce = bytesToUint64(enc[pos+1 : pos+decodeLength+1])
-		pos += decodeLength + 1
+	balanceBytes := int(enc[pos])
+	pos++
+	if balanceBytes > 0 {
+		u.Balance.SetBytes(enc[pos : pos+balanceBytes])
+		pos += balanceBytes
 	}
-
-	if fieldSet&2 > 0 {
-		decodeLength := int(enc[pos])
-
-		if len(enc) < pos+decodeLength+1 {
-			return fmt.Errorf(
-				"malformed CBOR for Account.Nonce: %s, Length %d",
-				enc[pos+1:], decodeLength)
-		}
-
-		u.Balance.SetBytes(enc[pos+1 : pos+decodeLength+1])
-		pos += decodeLength + 1
+	codeHashBytes := int(enc[pos])
+	pos++
+	if codeHashBytes > 0 {
+		copy(u.CodeHashOrStorage[:], enc[pos:pos+codeHashBytes])
+		pos += codeHashBytes
 	}
-
-	if fieldSet&4 > 0 {
-		decodeLength := int(enc[pos])
-
-		if len(enc) < pos+decodeLength+1 {
-			return fmt.Errorf(
-				"malformed CBOR for Account.Incarnation: %s, Length %d",
-				enc[pos+1:], decodeLength)
-		}
-
-		pos += decodeLength + 1
+	incBytes := int(enc[pos])
+	pos++
+	if incBytes > 0 {
+		pos += incBytes
 	}
-
-	if fieldSet&8 > 0 {
-
-		decodeLength := int(enc[pos])
-
-		if decodeLength != 32 {
-			return fmt.Errorf("codehash should be 32 bytes long, got %d instead",
-				decodeLength)
-		}
-
-		if len(enc) < pos+decodeLength+1 {
-			return fmt.Errorf(
-				"malformed CBOR for Account.CodeHash: %s, Length %d",
-				enc[pos+1:], decodeLength)
-		}
-
-		copy(u.CodeHashOrStorage[:], enc[pos+1:pos+decodeLength+1])
-		pos += decodeLength + 1
-	}
-
-	_ = pos
 
 	return nil
 }

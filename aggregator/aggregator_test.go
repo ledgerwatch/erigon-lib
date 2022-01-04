@@ -39,6 +39,37 @@ func int256(i uint64) []byte {
 	return b
 }
 
+func accountWithBalance(i uint64) []byte {
+	balance := uint256.NewInt(i)
+	var l int
+	l++
+	l++
+	if i > 0 {
+		l += balance.ByteLen()
+	}
+	l++
+	l++
+	value := make([]byte, l)
+	pos := 0
+	value[pos] = 0
+	pos++
+	if balance.IsZero() {
+		value[pos] = 0
+		pos++
+	} else {
+		balanceBytes := balance.ByteLen()
+		value[pos] = byte(balanceBytes)
+		pos++
+		balance.WriteToSlice(value[pos : pos+balanceBytes])
+		pos += balanceBytes
+	}
+	value[pos] = 0
+	pos++
+	value[pos] = 0
+	pos++
+	return value
+}
+
 func TestSimpleAggregator(t *testing.T) {
 	tmpDir := t.TempDir()
 	db := memdb.New()
@@ -58,7 +89,7 @@ func TestSimpleAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	var account1 = int256(1)
+	var account1 = accountWithBalance(1)
 	if err = w.UpdateAccountData(int160(1), account1, false /* trace */); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +124,7 @@ func TestLoopAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	var account1 = int256(1)
+	var account1 = accountWithBalance(1)
 	var rwTx kv.RwTx
 	defer func() {
 		rwTx.Rollback()
@@ -104,13 +135,16 @@ func TestLoopAggregator(t *testing.T) {
 	}()
 	w := a.MakeStateWriter()
 	defer w.Close()
+	ctx := context.Background()
 	for blockNum := uint64(0); blockNum < 1000; blockNum++ {
 		accountKey := int160(blockNum/10 + 1)
 		//fmt.Printf("blockNum = %d\n", blockNum)
-		if rwTx, err = db.BeginRw(context.Background()); err != nil {
+		if rwTx, err = db.BeginRw(ctx); err != nil {
 			t.Fatal(err)
 		}
-		w.Reset(rwTx, blockNum)
+		if err = w.Reset(rwTx, blockNum); err != nil {
+			t.Fatal(err)
+		}
 		if err = w.UpdateAccountData(accountKey, account1, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
@@ -120,7 +154,7 @@ func TestLoopAggregator(t *testing.T) {
 		if err = rwTx.Commit(); err != nil {
 			t.Fatal(err)
 		}
-		if tx, err = db.BeginRo(context.Background()); err != nil {
+		if tx, err = db.BeginRo(ctx); err != nil {
 			t.Fatal(err)
 		}
 		r := a.MakeStateReader(tx, blockNum+1)
@@ -132,9 +166,9 @@ func TestLoopAggregator(t *testing.T) {
 		if !bytes.Equal(acc, account1) {
 			t.Errorf("read account %x, expected account %x for block %d", acc, account1, blockNum)
 		}
-		account1 = int256(blockNum + 2)
+		account1 = accountWithBalance(blockNum + 2)
 	}
-	if tx, err = db.BeginRo(context.Background()); err != nil {
+	if tx, err = db.BeginRo(ctx); err != nil {
 		t.Fatal(err)
 	}
 	blockNum := uint64(1000)
@@ -143,7 +177,7 @@ func TestLoopAggregator(t *testing.T) {
 		accountKey := int160(i)
 		var expected []byte
 		if i > 0 {
-			expected = int256(i * 10)
+			expected = accountWithBalance(i * 10)
 		}
 		var acc []byte
 		if acc, err = r.ReadAccountData(accountKey, false /* trace */); err != nil {
@@ -167,8 +201,8 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 	}
 	defer a.Close()
 	accountKey := int160(1)
-	var account1 = int256(1)
-	var account2 = int256(2)
+	var account1 = accountWithBalance(1)
+	var account2 = accountWithBalance(2)
 	var rwTx kv.RwTx
 	defer func() {
 		rwTx.Rollback()
@@ -179,8 +213,9 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 	}()
 	w := a.MakeStateWriter()
 	defer w.Close()
+	ctx := context.Background()
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
-		if rwTx, err = db.BeginRw(context.Background()); err != nil {
+		if rwTx, err = db.BeginRw(ctx); err != nil {
 			t.Fatal(err)
 		}
 		if err = w.Reset(rwTx, blockNum); err != nil {
@@ -216,7 +251,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 		if err = rwTx.Commit(); err != nil {
 			t.Fatal(err)
 		}
-		if tx, err = db.BeginRo(context.Background()); err != nil {
+		if tx, err = db.BeginRo(ctx); err != nil {
 			t.Fatal(err)
 		}
 		r := a.MakeStateReader(tx, blockNum+1)
@@ -291,7 +326,7 @@ func TestChangeCode(t *testing.T) {
 	}
 	defer a.Close()
 	accountKey := int160(1)
-	var account1 = int256(1)
+	var account1 = accountWithBalance(1)
 	var code1 = []byte("This is the code number 1")
 	//var code2 = []byte("This is the code number 2")
 	var rwTx kv.RwTx
