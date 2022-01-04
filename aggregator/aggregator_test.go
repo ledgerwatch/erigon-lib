@@ -66,7 +66,6 @@ func accountWithBalance(i uint64) []byte {
 	value[pos] = 0
 	pos++
 	value[pos] = 0
-	pos++
 	return value
 }
 
