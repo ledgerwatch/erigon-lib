@@ -626,7 +626,7 @@ func (hph *HexPatriciaHashed) extensionHash(buf []byte, key []byte, hash []byte)
 		}
 		ni += 2
 	}
-	hph.b[0] = 0x80
+	hph.b[0] = 0x80 + length.Hash
 	if _, err := hph.keccak.Write(hph.b[:]); err != nil {
 		return nil, err
 	}
