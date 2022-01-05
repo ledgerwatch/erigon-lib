@@ -372,6 +372,7 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 func TestEmptyState(t *testing.T) {
 	ms := NewMockState()
 	hph := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
+	hph.SetTrace(false)
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
 		Balance("01", 5).

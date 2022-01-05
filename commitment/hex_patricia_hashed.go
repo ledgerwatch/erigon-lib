@@ -1201,24 +1201,30 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		if _, err := hph.keccak2.Write(hph.lenPrefix[:pt]); err != nil {
 			return nil, nil, err
 		}
-		hph.b[0] = 0x80
+		if hph.trace {
+			fmt.Printf("branchHash [%x] {\n", updateKey)
+		}
 		var lastNibble int
 		for bitset, j := bitmap, 0; bitset != 0; j++ {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
+			hph.b[0] = 0x80
 			for i := lastNibble; i < nibble; i++ {
 				if _, err := hph.keccak2.Write(hph.b[:]); err != nil {
 					return nil, nil, err
 				}
+				if hph.trace {
+					fmt.Printf("%x: empty(%d,%x)\n", i, row, i)
+				}
 			}
-			lastNibble = nibble
+			lastNibble = nibble + 1
 			cell := &hph.grid[row][nibble]
 			cellHash, err := hph.computeCellHash(cell, depth, nil)
 			if err != nil {
 				return nil, nil, err
 			}
 			if hph.trace {
-				fmt.Printf("computeCellHash(%d,%x)=[%x]\n", row, nibble, cellHash)
+				fmt.Printf("%x: computeCellHash(%d,%x)=[%x]\n", nibble, row, nibble, cellHash)
 			}
 			if _, err := hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
@@ -1254,9 +1260,13 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			branchData[fieldsPos+(j/2)] |= byte(fieldBits)
 			bitset ^= bit
 		}
+		hph.b[0] = 0x80
 		for i := lastNibble; i < 17; i++ {
 			if _, err := hph.keccak2.Write(hph.b[:]); err != nil {
 				return nil, nil, err
+			}
+			if hph.trace {
+				fmt.Printf("%x: empty(%d,%x)\n", i, row, i)
 			}
 		}
 		upCell.upHashedLen = 0
@@ -1265,6 +1275,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		upCell.hl = 32
 		if _, err := hph.keccak2.Read(upCell.h[:]); err != nil {
 			return nil, nil, err
+		}
+		if hph.trace {
+			fmt.Printf("} [%x]\n", upCell.h[:])
 		}
 		hph.activeRows--
 		if upDepth > 0 {
