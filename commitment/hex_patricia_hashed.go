@@ -182,8 +182,10 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 }
 
 func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, nibble int) {
-	if lowCell.apl > 0 {
+	if lowCell.apl > 0 || lowDepth < 64 {
 		cell.apl = lowCell.apl
+	}
+	if lowCell.apl > 0 {
 		copy(cell.apk[:], lowCell.apk[:cell.apl])
 		cell.Balance.Set(&lowCell.Balance)
 		cell.Nonce = lowCell.Nonce
