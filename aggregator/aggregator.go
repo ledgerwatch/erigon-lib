@@ -1300,6 +1300,7 @@ func (w *Writer) computeCommitment() error {
 	})
 	w.a.hph.Reset()
 	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn)
+	w.a.hph.SetTrace(true)
 	branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
 		return err

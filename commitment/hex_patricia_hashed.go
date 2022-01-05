@@ -109,7 +109,6 @@ func NewHexPatriciaHashed(accountKeyLen int,
 		branchFn:      branchFn,
 		accountFn:     accountFn,
 		storageFn:     storageFn,
-		trace:         true,
 	}
 }
 
@@ -362,6 +361,10 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) (int
 	return pos, nil
 }
 
+func (hph *HexPatriciaHashed) SetTrace(trace bool) {
+	hph.trace = trace
+}
+
 // hasTerm returns whether a hex key has the terminator flag.
 func hasTerm(s []byte) bool {
 	return len(s) > 0 && s[len(s)-1] == 16
@@ -467,7 +470,7 @@ func (cell *Cell) accountLengthForHashing() uint {
 	return uint(1+lengthBytes) + structLength
 }
 
-func (cell *Cell) accountForHashing(buffer []byte, storageRootHash []byte) {
+func (cell *Cell) accountForHashing(buffer []byte, storageRootHash []byte) int {
 	balanceBytes := 0
 	if !cell.Balance.LtUint64(128) {
 		balanceBytes = cell.Balance.ByteLen()
@@ -531,7 +534,8 @@ func (cell *Cell) accountForHashing(buffer []byte, storageRootHash []byte) {
 	buffer[pos] = 128 + 32
 	pos++
 	copy(buffer[pos:], cell.CodeHash[:])
-	//pos += 32
+	pos += 32
+	return pos
 }
 
 func (hph *HexPatriciaHashed) accountLeafHashWithKey(buf []byte, key []byte, val rlp.RlpSerializable) ([]byte, error) {
@@ -673,10 +677,16 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		}
 		cell.downHashedKey[64-hashedKeyOffset] = 16 // Add terminator
 		if singleton {
+			if hph.trace {
+				fmt.Printf("leafHashWithKeyVal(singleton) for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
+			}
 			if storageRootHash, err = hph.leafHashWithKeyVal(nil, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), true); err != nil {
 				return nil, err
 			}
 		} else {
+			if hph.trace {
+				fmt.Printf("leafHashWithKeyVal for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
+			}
 			if buf, err = hph.leafHashWithKeyVal(buf, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), false); err != nil {
 				return nil, err
 			}
@@ -688,11 +698,13 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 			return nil, err
 		}
 		cell.downHashedKey[64-depth] = 16 // Add terminator
-		valLen := cell.accountLengthForHashing()
 		if storageRootHash == nil {
 			if cell.upHashedLen > 0 {
 				// Extension
 				if cell.hl > 0 {
+					if hph.trace {
+						fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl])
+					}
 					if storageRootHash, err = hph.extensionHash(nil, cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl]); err != nil {
 						return nil, err
 					}
@@ -705,7 +717,10 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 				storageRootHash = EmptyRootHash
 			}
 		}
-		cell.accountForHashing(hph.valBuf[:valLen], storageRootHash)
+		valLen := cell.accountForHashing(hph.valBuf[:], storageRootHash)
+		if hph.trace {
+			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.downHashedKey[:65-depth], hph.valBuf[:valLen])
+		}
 		if buf, err = hph.accountLeafHashWithKey(buf, cell.downHashedKey[:65-depth], rlp.RlpEncodedBytes(hph.valBuf[:valLen])); err != nil {
 			return nil, err
 		}
@@ -715,6 +730,9 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 	if cell.upHashedLen > 0 {
 		// Extension
 		if cell.hl > 0 {
+			if hph.trace {
+				fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl])
+			}
 			if buf, err = hph.extensionHash(buf, cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl]); err != nil {
 				return nil, err
 			}
@@ -805,6 +823,10 @@ func (hph *HexPatriciaHashed) Reset() {
 	hph.root.apl = 0
 	hph.root.spl = 0
 	hph.root.upHashedLen = 0
+	copy(hph.root.CodeHash[:], EmptyCodeHash)
+	hph.root.StorageLen = 0
+	hph.root.Balance.Clear()
+	hph.root.Nonce = 0
 }
 
 func (hph *HexPatriciaHashed) ResetFns(
@@ -1194,6 +1216,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			cellHash, err := hph.computeCellHash(cell, depth, nil)
 			if err != nil {
 				return nil, nil, err
+			}
+			if hph.trace {
+				fmt.Printf("computeCellHash(%d,%x)=[%x]\n", row, nibble, cellHash)
 			}
 			if _, err := hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
