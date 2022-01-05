@@ -757,15 +757,15 @@ func (tx *MdbxTx) Commit() error {
 	}
 
 	//if latency.Whole > slowTx {
-	//	log.Info("Commit",
-	//		"preparation", latency.Preparation,
-	//		"gc", latency.GC,
-	//		"audit", latency.Audit,
-	//		"write", latency.Write,
-	//		"fsync", latency.Sync,
-	//		"ending", latency.Ending,
-	//		"whole", latency.Whole,
-	//	)
+	log.Info("Commit",
+		"preparation", latency.Preparation,
+		"gc", latency.GC,
+		"audit", latency.Audit,
+		"write", latency.Write,
+		"fsync", latency.Sync,
+		"ending", latency.Ending,
+		"whole", latency.Whole,
+	)
 	//}
 
 	return nil
