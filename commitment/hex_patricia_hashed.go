@@ -148,13 +148,21 @@ func (cell *Cell) fillEmpty() {
 }
 
 func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
-	if upCell.downHashedLen > 0 {
+	if upCell.downHashedLen >= depthIncrement {
 		cell.downHashedLen = upCell.downHashedLen - depthIncrement
 	} else {
 		cell.downHashedLen = 0
 	}
 	if upCell.downHashedLen > depthIncrement {
 		copy(cell.downHashedKey[:], upCell.downHashedKey[depthIncrement:upCell.downHashedLen])
+	}
+	if upCell.upHashedLen >= depthIncrement {
+		cell.upHashedLen = upCell.upHashedLen - depthIncrement
+	} else {
+		cell.upHashedLen = 0
+	}
+	if upCell.upHashedLen > depthIncrement {
+		copy(cell.upHashedKey[:], upCell.upHashedKey[depthIncrement:upCell.upHashedLen])
 	}
 	if depth <= 64 {
 		cell.apl = upCell.apl
