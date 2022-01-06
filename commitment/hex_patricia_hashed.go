@@ -972,6 +972,9 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 				if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
 					return err
 				}
+				if hph.trace {
+					fmt.Printf("accountFn[%x] return balance=%d, nonce=%d\n", cell.apk[:cell.apl], &cell.Balance, cell.Nonce)
+				}
 			}
 			if cell.spl > 0 && cell.downHashedLen == 0 {
 				if err = hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
