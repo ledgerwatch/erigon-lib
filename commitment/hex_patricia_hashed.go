@@ -968,7 +968,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 			if hph.trace {
 				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl])
 			}
-			if cell.apl > 0 && cell.downHashedLen == 0 {
+			if cell.apl > 0 {
 				if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
 					return err
 				}
@@ -976,7 +976,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 					fmt.Printf("accountFn[%x] return balance=%d, nonce=%d\n", cell.apk[:cell.apl], &cell.Balance, cell.Nonce)
 				}
 			}
-			if cell.spl > 0 && cell.downHashedLen == 0 {
+			if cell.spl > 0 {
 				if err = hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
 					return err
 				}
