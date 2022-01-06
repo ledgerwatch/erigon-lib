@@ -634,13 +634,13 @@ func (hph *HexPatriciaHashed) extensionHash(buf []byte, key []byte, hash []byte)
 		return nil, err
 	}
 	// Replace previous hash with the new one
-	if _, err := hph.keccak.Read(hph.hashBuf[:]); err != nil {
+	if _, err := hph.keccak.Read(hph.hashBuf[:length.Hash]); err != nil {
 		return nil, err
 	}
 	if buf == nil {
-		return hph.hashBuf[:], nil
+		return hph.hashBuf[:length.Hash], nil
 	}
-	buf = append(buf, hph.hashBuf[:]...)
+	buf = append(buf, hph.hashBuf[:length.Hash]...)
 	return buf, nil
 }
 
@@ -674,7 +674,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 			hashedKeyOffset = 128 - depth
 		}
 		singleton := depth <= 64
-		if err := hashKey(hph.keccak, cell.spk[hph.accountKeyLen:cell.spl], hph.hashBuf[:], cell.downHashedKey[:], hashedKeyOffset); err != nil {
+		if err := hashKey(hph.keccak, cell.spk[hph.accountKeyLen:cell.spl], hph.hashBuf[:length.Hash], cell.downHashedKey[:], hashedKeyOffset); err != nil {
 			return nil, err
 		}
 		cell.downHashedKey[64-hashedKeyOffset] = 16 // Add terminator
@@ -696,7 +696,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		}
 	}
 	if cell.apl > 0 {
-		if err := hashKey(hph.keccak, cell.apk[:cell.apl], hph.hashBuf[:], cell.downHashedKey[:], depth); err != nil {
+		if err := hashKey(hph.keccak, cell.apk[:cell.apl], hph.hashBuf[:length.Hash], cell.downHashedKey[:], depth); err != nil {
 			return nil, err
 		}
 		cell.downHashedKey[64-depth] = 16 // Add terminator
@@ -954,7 +954,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 			if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
 				return err
 			}
-			if err = cell.deriveHashedKeys(depth, hph.keccak, hph.hashBuf[:], hph.accountKeyLen); err != nil {
+			if err = cell.deriveHashedKeys(depth, hph.keccak, hph.hashBuf[:length.Hash], hph.accountKeyLen); err != nil {
 				return err
 			}
 			if hph.trace {
