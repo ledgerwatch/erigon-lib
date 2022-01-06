@@ -74,13 +74,6 @@ type Compressor struct {
 	wordsCount uint64
 }
 
-type Phase int
-
-const (
-	BuildDict Phase = iota
-	Compress
-)
-
 // superstringLimit limits how large can one "superstring" get before it is processed
 // Compressor allocates 7 bytes for each uint of superstringLimit. For example,
 // superstingLimit 16m will result in 112Mb being allocated for various arrays
