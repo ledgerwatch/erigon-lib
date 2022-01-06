@@ -1028,16 +1028,18 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		if row >= 64 {
 			cell.apl = 0
 		}
-		if cell.apl > 0 && cell.downHashedLen == 0 {
-			if err := hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
-				return err
+		/*
+			if cell.apl > 0 && cell.downHashedLen == 0 {
+				if err := hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
+					return err
+				}
 			}
-		}
-		if cell.spl > 0 && cell.downHashedLen == 0 {
-			if err := hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
-				return err
+			if cell.spl > 0 && cell.downHashedLen == 0 {
+				if err := hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
+					return err
+				}
 			}
-		}
+		*/
 		if upCell.downHashedLen > 1 {
 			copy(hph.currentKey[hph.currentKeyLen:], upCell.downHashedKey[:upCell.downHashedLen-1])
 		}
