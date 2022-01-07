@@ -455,34 +455,6 @@ func (hph *HexPatriciaHashed) leafHashWithKeyVal(buf []byte, key []byte, val rlp
 	return buf, nil
 }
 
-func (cell *Cell) accountLengthForHashing() uint {
-	var structLength uint
-
-	balanceBytes := 0
-	if !cell.Balance.LtUint64(128) {
-		balanceBytes = cell.Balance.ByteLen()
-	}
-
-	var nonceBytes int
-	if cell.Nonce < 128 && cell.Nonce != 0 {
-		nonceBytes = 0
-	} else {
-		nonceBytes = (bits.Len64(cell.Nonce) + 7) / 8
-	}
-
-	structLength += uint(balanceBytes + nonceBytes + 2)
-
-	structLength += 66 // Two 32-byte arrays + 2 prefixes
-
-	if structLength < 56 {
-		return 1 + structLength
-	}
-
-	lengthBytes := (bits.Len(structLength) + 7) / 8
-
-	return uint(1+lengthBytes) + structLength
-}
-
 func (cell *Cell) accountForHashing(buffer []byte, storageRootHash []byte) int {
 	balanceBytes := 0
 	if !cell.Balance.LtUint64(128) {
@@ -657,7 +629,7 @@ func (hph *HexPatriciaHashed) extensionHash(buf []byte, key []byte, hash []byte)
 
 func (hph *HexPatriciaHashed) computeCellHashLen(cell *Cell, depth int) int {
 	if cell.spl > 0 && depth >= 64 {
-		keyLen := depth - 64 + 1 // Length of hex key with terminator character
+		keyLen := 128 - depth + 1 // Length of hex key with terminator character
 		var kp, kl int
 		compactLen := (keyLen-1)/2 + 1
 		if compactLen > 1 {
@@ -1244,7 +1216,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			if hph.trace {
 				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
 			}
-			if _, err := hph.keccak2.Write(cellHash); err != nil {
+			if _, err = hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
 			}
 			var fieldBits PartFlags
