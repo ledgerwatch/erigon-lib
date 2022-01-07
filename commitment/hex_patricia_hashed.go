@@ -422,7 +422,11 @@ func (hph *HexPatriciaHashed) completeLeafHash(buf []byte, kp, kl, compactLen in
 		if _, err := hph.keccak.Read(hph.hashBuf[1:]); err != nil {
 			return nil, err
 		}
-		buf = append(buf, hph.hashBuf[:]...)
+		if singleton {
+			buf = append(buf, hph.hashBuf[1:]...)
+		} else {
+			buf = append(buf, hph.hashBuf[:]...)
+		}
 	}
 	return buf, nil
 }
