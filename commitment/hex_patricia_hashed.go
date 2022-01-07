@@ -304,12 +304,15 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) (int
 			return 0, fmt.Errorf("fillFromFields buffer too small for hashedKey")
 		}
 		cell.downHashedLen = int(l)
+		cell.upHashedLen = int(l)
 		if l > 0 {
 			copy(cell.downHashedKey[:], data[pos:pos+int(l)])
+			copy(cell.upHashedKey[:], data[pos:pos+int(l)])
 			pos += int(l)
 		}
 	} else {
 		cell.downHashedLen = 0
+		cell.upHashedLen = 0
 	}
 	if fieldBits&ACCOUNT_PLAIN_PART != 0 {
 		l, n := binary.Uvarint(data[pos:])
@@ -966,7 +969,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 				return err
 			}
 			if hph.trace {
-				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl])
+				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], hk=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.upHashedKey[:cell.upHashedLen])
 			}
 			if cell.apl > 0 {
 				if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
