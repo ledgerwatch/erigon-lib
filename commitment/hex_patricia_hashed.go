@@ -1303,9 +1303,15 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 		row := hph.activeRows - 1
 		col := int(hashedKey[hph.currentKeyLen])
 		cell = &hph.grid[row][col]
-		hph.delBitmap[row] |= (uint16(1) << col)
-		if hph.trace {
-			fmt.Printf("deleteCell setting (%d, %x)\n", row, col)
+		if hph.beforeBitmap[row]&(uint16(1)<<col) != 0 {
+			hph.delBitmap[row] |= (uint16(1) << col)
+			if hph.trace {
+				fmt.Printf("deleteCell setting (%d, %x)\n", row, col)
+			}
+		} else {
+			if hph.trace {
+				fmt.Printf("deleteCell ignoring (%d, %x)\n", row, col)
+			}
 		}
 	}
 	cell.fillEmpty()
