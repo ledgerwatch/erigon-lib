@@ -422,11 +422,7 @@ func (hph *HexPatriciaHashed) completeLeafHash(buf []byte, kp, kl, compactLen in
 		if _, err := hph.keccak.Read(hph.hashBuf[1:]); err != nil {
 			return nil, err
 		}
-		if singleton {
-			buf = append(buf, hph.hashBuf[1:]...)
-		} else {
-			buf = append(buf, hph.hashBuf[:]...)
-		}
+		buf = append(buf, hph.hashBuf[:]...)
 	}
 	return buf, nil
 }
@@ -672,6 +668,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 			if storageRootHash, err = hph.leafHashWithKeyVal(nil, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), true); err != nil {
 				return nil, err
 			}
+			storageRootHash = storageRootHash[1:]
 		} else {
 			if hph.trace {
 				fmt.Printf("leafHashWithKeyVal for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
