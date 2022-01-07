@@ -1261,7 +1261,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			}
 		}
 		upCell.upHashedLen = 0
-		upCell.apl = 0
+		if depth < 64 {
+			upCell.apl = 0
+		}
 		upCell.spl = 0
 		upCell.hl = 32
 		if _, err := hph.keccak2.Read(upCell.h[:]); err != nil {
