@@ -1200,7 +1200,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
 // modified with the new values
 // At the moment, it is specific version for hex merkle patricia tree commitment
 // but it will be extended to support other types of commitments
-func (w *Writer) computeCommitment() error {
+func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 	// Hash the keys from the buffers
 	hashed := btree.New(32)
 	lastOffsetKey := 0
@@ -1223,7 +1223,7 @@ func (w *Writer) computeCommitment() error {
 			c.u.Flags = commitment.DELETE_UPDATE
 		} else {
 			if err := c.u.DecodeForStorage(val); err != nil {
-				return err
+				return nil, err
 			}
 			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
 		}
@@ -1300,10 +1300,10 @@ func (w *Writer) computeCommitment() error {
 	})
 	w.a.hph.Reset()
 	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn)
-	w.a.hph.SetTrace(true)
+	w.a.hph.SetTrace(trace)
 	branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for prefixStr, branchNodeUpdate := range branchNodeUpdates {
 		prefix := []byte(prefixStr)
@@ -1313,7 +1313,7 @@ func (w *Writer) computeCommitment() error {
 		}
 		prevV, err := w.tx.GetOne(kv.StateCommitment, dbPrefix)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var prevNum uint32
 		var original []byte
@@ -1326,7 +1326,7 @@ func (w *Writer) computeCommitment() error {
 		binary.BigEndian.PutUint32(v[:4], prevNum+1)
 		copy(v[4:], branchNodeUpdate)
 		if err = w.tx.Put(kv.StateCommitment, dbPrefix, v); err != nil {
-			return err
+			return nil, err
 		}
 		if len(branchNodeUpdate) == 0 {
 			w.commChanges.delete(prefix, original)
@@ -1343,39 +1343,40 @@ func (w *Writer) computeCommitment() error {
 	}
 	var rootHash []byte
 	if rootHash, err = w.a.hph.RootHash(); err != nil {
-		return err
+		return nil, err
 	}
-	fmt.Printf("Root hash after %d: %x\n", w.blockNum, rootHash)
-	return nil
+	return rootHash, nil
 }
 
-func (w *Writer) Finish() error {
-	if err := w.computeCommitment(); err != nil {
-		return fmt.Errorf("compute commitment: %w", err)
+func (w *Writer) Finish(trace bool) ([]byte, error) {
+	var comm []byte
+	var err error
+	if comm, err = w.computeCommitment(trace); err != nil {
+		return nil, fmt.Errorf("compute commitment: %w", err)
 	}
-	if err := w.accountChanges.finish(w.blockNum); err != nil {
-		return fmt.Errorf("finish accountChanges: %w", err)
+	if err = w.accountChanges.finish(w.blockNum); err != nil {
+		return nil, fmt.Errorf("finish accountChanges: %w", err)
 	}
-	if err := w.codeChanges.finish(w.blockNum); err != nil {
-		return fmt.Errorf("finish codeChanges: %w", err)
+	if err = w.codeChanges.finish(w.blockNum); err != nil {
+		return nil, fmt.Errorf("finish codeChanges: %w", err)
 	}
-	if err := w.storageChanges.finish(w.blockNum); err != nil {
-		return fmt.Errorf("finish storageChanges: %w", err)
+	if err = w.storageChanges.finish(w.blockNum); err != nil {
+		return nil, fmt.Errorf("finish storageChanges: %w", err)
 	}
-	if err := w.commChanges.finish(w.blockNum); err != nil {
-		return fmt.Errorf("finish commChanges: %w", err)
+	if err = w.commChanges.finish(w.blockNum); err != nil {
+		return nil, fmt.Errorf("finish commChanges: %w", err)
 	}
 	if w.blockNum < w.a.unwindLimit+w.a.aggregationStep-1 {
-		return nil
+		return comm, nil
 	}
 	diff := w.blockNum - w.a.unwindLimit
 	if (diff+1)%w.a.aggregationStep != 0 {
-		return nil
+		return comm, nil
 	}
 	if err := w.aggregateUpto(diff+1-w.a.aggregationStep, diff); err != nil {
-		return fmt.Errorf("aggregateUpto(%d, %d): %w", diff+1-w.a.aggregationStep, diff, err)
+		return nil, fmt.Errorf("aggregateUpto(%d, %d): %w", diff+1-w.a.aggregationStep, diff, err)
 	}
-	return nil
+	return comm, nil
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) error {

@@ -92,7 +92,7 @@ func TestSimpleAggregator(t *testing.T) {
 	if err = w.UpdateAccountData(int160(1), account1, false /* trace */); err != nil {
 		t.Fatal(err)
 	}
-	if err = w.Finish(); err != nil {
+	if _, err = w.Finish(false /* trace */); err != nil {
 		t.Fatal(err)
 	}
 	if err = rwTx.Commit(); err != nil {
@@ -147,7 +147,7 @@ func TestLoopAggregator(t *testing.T) {
 		if err = w.UpdateAccountData(accountKey, account1, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
-		if err = w.Finish(); err != nil {
+		if _, err = w.Finish(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
@@ -244,7 +244,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 				}
 			}
 		}
-		if err = w.Finish(); err != nil {
+		if _, err = w.Finish(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
@@ -360,7 +360,7 @@ func TestChangeCode(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err = w.Finish(); err != nil {
+		if _, err = w.Finish(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
