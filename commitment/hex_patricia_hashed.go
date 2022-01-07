@@ -1242,7 +1242,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				return nil, nil, err
 			}
 			if hph.trace {
-				fmt.Printf("%x: computeCellHash(%d,%x)=[%x]\n", nibble, row, nibble, cellHash)
+				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
 			}
 			if _, err := hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
