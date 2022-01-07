@@ -682,7 +682,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 	if cell.spl > 0 {
 		var hashedKeyOffset int
 		if depth >= 64 {
-			hashedKeyOffset = 128 - depth
+			hashedKeyOffset = depth - 64
 		}
 		singleton := depth <= 64
 		if err := hashKey(hph.keccak, cell.spk[hph.accountKeyLen:cell.spl], hph.hashBuf[:length.Hash], cell.downHashedKey[:], hashedKeyOffset); err != nil {
@@ -1382,7 +1382,6 @@ func (hph *HexPatriciaHashed) updateNonce(plainKey, hashedKey []byte, nonce uint
 	cell.Nonce = nonce
 }
 
-// updateStorage assumes that value is 32 byte slice
 func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, hashedKey []byte, value []byte) {
 	if hph.trace {
 		fmt.Printf("updateStorage, activeRows = %d\n", hph.activeRows)
