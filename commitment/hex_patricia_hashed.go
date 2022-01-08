@@ -1124,6 +1124,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				hph.rootDel = true
 			} else {
 				hph.delBitmap[row-1] |= (uint16(1) << col)
+				if hph.trace {
+					fmt.Printf("del delBitmap[%d]=%016b\n", row-1, hph.delBitmap[row-1])
+				}
 			}
 		}
 		upCell.apl = 0
