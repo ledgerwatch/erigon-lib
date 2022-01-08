@@ -281,7 +281,7 @@ func (cell *Cell) deriveHashedKeys(depth int, keccak keccakState, hashBuf []byte
 		}
 		if cell.spl > 0 {
 			if depth >= 64 {
-				hashedKeyOffset = 128 - depth
+				hashedKeyOffset = depth - 64
 			}
 			if err := hashKey(keccak, cell.spk[accountKeyLen:cell.spl], hashBuf, cell.downHashedKey[64:], hashedKeyOffset); err != nil {
 				return err
