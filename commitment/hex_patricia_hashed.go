@@ -846,14 +846,11 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 			fmt.Printf("needUnfolding cell (%d, %x), currentKey=[%x], depth=%d, cell.h=[%x]\n", hph.activeRows-1, col, hph.currentKey[:hph.currentKeyLen], depth, cell.h[:cell.hl])
 		}
 	}
-	if len(hashedKey) < depth {
+	if len(hashedKey) <= depth {
 		return 0
 	}
 	if cell.downHashedLen == 0 && cell.hl == 0 {
 		// cell is empty, no need to unfold further
-		return 0
-	}
-	if len(hashedKey) == depth {
 		return 0
 	}
 	cpl := commonPrefixLen(hashedKey[depth:], cell.downHashedKey[:cell.downHashedLen])
@@ -1340,8 +1337,17 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
 			fmt.Printf("updateAccount setting (%d, %x), depth=%d\n", row, col, depth)
 		}
 	}
-	copy(cell.downHashedKey[:], hashedKey[depth:])
-	cell.downHashedLen = len(hashedKey) - depth
+	if cell.downHashedLen == 0 {
+		copy(cell.downHashedKey[:], hashedKey[depth:])
+		cell.downHashedLen = len(hashedKey) - depth
+		if hph.trace {
+			fmt.Printf("set downHasheKey=[%x]\n", cell.downHashedKey[:cell.downHashedLen])
+		}
+	} else {
+		if hph.trace {
+			fmt.Printf("left downHasheKey=[%x]\n", cell.downHashedKey[:cell.downHashedLen])
+		}
+	}
 	cell.apl = len(plainKey)
 	copy(cell.apk[:], plainKey)
 	return cell
@@ -1390,10 +1396,16 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, hashedKey []byte, v
 			fmt.Printf("updateStorage setting (%d, %x), modBitmap[%d]=%016b, depth=%d\n", hph.activeRows-1, col, hph.activeRows-1, hph.modBitmap[hph.activeRows-1], depth)
 		}
 	}
-	copy(cell.downHashedKey[:], hashedKey[depth:])
-	cell.downHashedLen = len(hashedKey) - depth
-	if hph.trace {
-		fmt.Printf("set downHasheKey=[%x]\n", cell.downHashedKey[:cell.downHashedLen])
+	if cell.downHashedLen == 0 {
+		copy(cell.downHashedKey[:], hashedKey[depth:])
+		cell.downHashedLen = len(hashedKey) - depth
+		if hph.trace {
+			fmt.Printf("set downHasheKey=[%x]\n", cell.downHashedKey[:cell.downHashedLen])
+		}
+	} else {
+		if hph.trace {
+			fmt.Printf("left downHasheKey=[%x]\n", cell.downHashedKey[:cell.downHashedLen])
+		}
 	}
 	copy(cell.spk[:], plainKey)
 	cell.spl = len(plainKey)
