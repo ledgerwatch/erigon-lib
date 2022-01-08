@@ -224,8 +224,8 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, 
 			cell.upHashedLen = lowCell.upHashedLen + 1 + len(preKey)
 		}
 	}
+	cell.hl = lowCell.hl
 	if lowCell.hl > 0 {
-		cell.hl = lowCell.hl
 		copy(cell.h[:], lowCell.h[:lowCell.hl])
 	}
 }
