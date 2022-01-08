@@ -849,16 +849,18 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 	if len(hashedKey) <= depth {
 		return 0
 	}
-	if cell.downHashedLen == 0 && cell.hl == 0 {
-		// cell is empty, no need to unfold further
-		return 0
+	if cell.downHashedLen == 0 {
+		if cell.hl == 0 {
+			// cell is empty, no need to unfold further
+			return 0
+		} else {
+			// unfold branch node
+			return 1
+		}
 	}
-	cpl := commonPrefixLen(hashedKey[depth:], cell.downHashedKey[:cell.downHashedLen])
+	cpl := commonPrefixLen(hashedKey[depth:], cell.downHashedKey[:cell.downHashedLen-1])
 	if hph.trace {
 		fmt.Printf("cpl=%d, cell.downHashedKey=[%x], depth=%d, hashedKey[depth:]=[%x]\n", cpl, cell.downHashedKey[:cell.downHashedLen], depth, hashedKey[depth:])
-	}
-	if depth+cpl == len(hashedKey) {
-		return 0
 	}
 	unfolding := cpl + 1
 	if depth < 64 && depth+unfolding > 64 {
