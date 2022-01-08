@@ -238,12 +238,14 @@ func hashKey(keccak keccakState, plainKey []byte, hashBuf []byte, dest []byte, h
 	if _, err := keccak.Read(hashBuf); err != nil {
 		return err
 	}
+	hashBuf = hashBuf[hashedKeyOffset/2:]
 	var k int
 	if hashedKeyOffset%2 == 1 {
-		dest[0] = hashBuf[hashedKeyOffset/2] & 0xf
-		k = 1
+		dest[0] = hashBuf[0] & 0xf
+		k++
+		hashBuf = hashBuf[1:]
 	}
-	for _, c := range hashBuf[hashedKeyOffset/2+k : length.Hash] {
+	for _, c := range hashBuf {
 		dest[k] = (c >> 4) & 0xf
 		k++
 		dest[k] = c & 0xf
@@ -277,7 +279,6 @@ func (cell *Cell) deriveHashedKeys(depth int, keccak keccakState, hashBuf []byte
 			if err := hashKey(keccak, cell.apk[:cell.apl], hashBuf, cell.downHashedKey[:], depth); err != nil {
 				return err
 			}
-			hashedKeyOffset = 64 - depth
 			downOffset = 64 - depth
 		}
 		if cell.spl > 0 {
