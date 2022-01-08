@@ -857,17 +857,18 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 	if hph.trace {
 		fmt.Printf("cpl=%d, cell.downHashedKey=[%x], depth=%d, hashedKey[depth:]=[%x]\n", cpl, cell.downHashedKey[:cell.downHashedLen], depth, hashedKey[depth:])
 	}
-	if cpl == 0 {
-		return 1
+	if depth+cpl == len(hashedKey) {
+		return 0
 	}
-	if depth < 64 && depth+cpl > 64 {
+	unfolding := cpl + 1
+	if depth < 64 && depth+unfolding > 64 {
 		// This is to make sure that unfolding always breaks at the level where storage subtrees start
-		cpl = 64 - depth
+		unfolding = 64 - depth
 		if hph.trace {
-			fmt.Printf("adjusted cpl=%d\n", cpl)
+			fmt.Printf("adjusted unfolding=%d\n", unfolding)
 		}
 	}
-	return cpl
+	return unfolding
 }
 
 func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
