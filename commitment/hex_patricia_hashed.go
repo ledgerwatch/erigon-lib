@@ -1270,7 +1270,10 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				fmt.Printf("%x: empty(%d,%x)\n", i, row, i)
 			}
 		}
-		upCell.upHashedLen = 0
+		upCell.upHashedLen = depth - upDepth - 1
+		if upCell.upHashedLen > 0 {
+			copy(upCell.upHashedKey[:], hph.currentKey[upDepth:hph.currentKeyLen])
+		}
 		if depth < 64 {
 			upCell.apl = 0
 		}
