@@ -272,18 +272,19 @@ func (cell *Cell) deriveHashedKeys(depth int, keccak keccakState, hashBuf []byte
 			copy(cell.downHashedKey[extraLen:], cell.downHashedKey[:cell.downHashedLen])
 		}
 		cell.downHashedLen += extraLen
-		var hashedKeyOffset int
+		var hashedKeyOffset, downOffset int
 		if cell.apl > 0 {
 			if err := hashKey(keccak, cell.apk[:cell.apl], hashBuf, cell.downHashedKey[:], depth); err != nil {
 				return err
 			}
 			hashedKeyOffset = 64 - depth
+			downOffset = 64 - depth
 		}
 		if cell.spl > 0 {
 			if depth >= 64 {
 				hashedKeyOffset = depth - 64
 			}
-			if err := hashKey(keccak, cell.spk[accountKeyLen:cell.spl], hashBuf, cell.downHashedKey[64:], hashedKeyOffset); err != nil {
+			if err := hashKey(keccak, cell.spk[accountKeyLen:cell.spl], hashBuf, cell.downHashedKey[downOffset:], hashedKeyOffset); err != nil {
 				return err
 			}
 		}
