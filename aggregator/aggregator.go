@@ -1087,11 +1087,7 @@ type CommitmentItem struct {
 }
 
 func (i *CommitmentItem) Less(than btree.Item) bool {
-	c := bytes.Compare(i.hashedKey, than.(*CommitmentItem).hashedKey)
-	if c != 0 {
-		return c < 0
-	}
-	return i.u.Flags < than.(*CommitmentItem).u.Flags
+	return bytes.Compare(i.hashedKey, than.(*CommitmentItem).hashedKey) < 0
 }
 
 func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
@@ -1212,9 +1208,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
-		var c CommitmentItem
-		c.plainKey = key
-		c.hashedKey = make([]byte, len(hashedKey)*2)
+		var c = &CommitmentItem{plainKey: key, hashedKey: make([]byte, len(hashedKey)*2)}
 		for i, b := range hashedKey {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
@@ -1226,8 +1220,16 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 				return nil, err
 			}
 			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
+			item := hashed.Get(c)
+			if item != nil {
+				itemC := item.(*CommitmentItem)
+				if itemC.u.Flags&commitment.CODE_UPDATE != 0 {
+					c.u.Flags |= commitment.CODE_UPDATE
+					copy(c.u.CodeHashOrStorage[:], itemC.u.CodeHashOrStorage[:])
+				}
+			}
 		}
-		hashed.ReplaceOrInsert(&c)
+		hashed.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
 	}
@@ -1244,9 +1246,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key[length.Addr:])
 		w.a.keccak.(io.Reader).Read(hashedKey[length.Hash:])
-		var c CommitmentItem
-		c.plainKey = key
-		c.hashedKey = make([]byte, len(hashedKey)*2)
+		var c = &CommitmentItem{plainKey: key, hashedKey: make([]byte, len(hashedKey)*2)}
 		for i, b := range hashedKey {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
@@ -1254,7 +1254,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		c.u.ValLength = len(val)
 		copy(c.u.CodeHashOrStorage[:], val)
 		c.u.Flags = commitment.STORAGE_UPDATE
-		hashed.ReplaceOrInsert(&c)
+		hashed.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
 	}
@@ -1267,9 +1267,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
-		var c CommitmentItem
-		c.plainKey = key
-		c.hashedKey = make([]byte, len(hashedKey)*2)
+		var c = &CommitmentItem{plainKey: key, hashedKey: make([]byte, len(hashedKey)*2)}
 		for i, b := range hashedKey {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
@@ -1278,7 +1276,19 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		w.a.keccak.Write(val)
 		w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
 		c.u.Flags = commitment.CODE_UPDATE
-		hashed.ReplaceOrInsert(&c)
+		item := hashed.Get(c)
+		if item != nil {
+			itemC := item.(*CommitmentItem)
+			if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
+				c.u.Flags |= commitment.BALANCE_UPDATE
+				c.u.Balance.Set(&itemC.u.Balance)
+			}
+			if itemC.u.Flags&commitment.NONCE_UPDATE != 0 {
+				c.u.Flags |= commitment.NONCE_UPDATE
+				c.u.Nonce = itemC.u.Nonce
+			}
+		}
+		hashed.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
 	}
