@@ -1162,8 +1162,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				hph.rootMod = true
 			} else {
 				hph.modBitmap[row-1] |= (uint16(1) << col)
+				hph.delBitmap[row-1] &^= (uint16(1) << col)
 				if hph.trace {
-					fmt.Printf("leaf/ext modBitmap[%d]=%016b\n", row-1, hph.modBitmap[row-1])
+					fmt.Printf("leaf/ext modBitmap[%d]=%016b, delBitmap[%d]=%016b\n", row-1, hph.modBitmap[row-1], row-1, hph.delBitmap[row-1])
 				}
 			}
 		}
@@ -1188,8 +1189,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				hph.rootMod = true
 			} else {
 				hph.modBitmap[row-1] |= (uint16(1) << col)
+				hph.delBitmap[row-1] &^= (uint16(1) << col)
 				if hph.trace {
-					fmt.Printf("branch modBitmap[%d]=%016b\n", row-1, hph.modBitmap[row-1])
+					fmt.Printf("branch modBitmap[%d]=%016b, delBitmap[%d]=%016b\n", row-1, hph.modBitmap[row-1], row-1, hph.delBitmap[row-1])
 				}
 			}
 		}
