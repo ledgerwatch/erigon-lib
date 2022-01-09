@@ -1245,7 +1245,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				return nil, nil, err
 			}
 			var fieldBits PartFlags
-			if cell.upHashedLen > 0 {
+			if cell.upHashedLen > 0 && cell.spl == 0 {
 				fieldBits |= HASHEDKEY_PART
 				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.upHashedLen))
 				branchData = append(branchData, hph.numBuf[:n]...)
