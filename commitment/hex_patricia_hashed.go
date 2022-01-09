@@ -1339,7 +1339,7 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 			}
 		}
 	}
-	cell.hl = 0
+	//cell.hl = 0
 	cell.upHashedLen = 0
 	cell.Balance.Clear()
 	copy(cell.CodeHash[:], EmptyCodeHash)
