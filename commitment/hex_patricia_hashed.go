@@ -1458,10 +1458,10 @@ func (hph *HexPatriciaHashed) RootHash() ([]byte, error) {
 type UpdateFlags uint8
 
 const (
-	DELETE_UPDATE  UpdateFlags = 1
-	BALANCE_UPDATE UpdateFlags = 2
-	NONCE_UPDATE   UpdateFlags = 4
-	CODE_UPDATE    UpdateFlags = 8
+	CODE_UPDATE    UpdateFlags = 1
+	DELETE_UPDATE  UpdateFlags = 2
+	BALANCE_UPDATE UpdateFlags = 4
+	NONCE_UPDATE   UpdateFlags = 8
 	STORAGE_UPDATE UpdateFlags = 16
 )
 
