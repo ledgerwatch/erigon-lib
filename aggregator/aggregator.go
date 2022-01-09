@@ -1201,6 +1201,49 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 	hashed := btree.New(32)
 	lastOffsetKey := 0
 	lastOffsetVal := 0
+	for i, offsetKey := range w.codeChanges.keys.wordOffsets {
+		offsetVal := w.codeChanges.after.wordOffsets[i]
+		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
+		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
+		fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
+		w.a.keccak.Reset()
+		w.a.keccak.Write(key)
+		hashedKey := w.a.keccak.Sum(nil)
+		var c = &CommitmentItem{plainKey: key, hashedKey: make([]byte, len(hashedKey)*2)}
+		for i, b := range hashedKey {
+			c.hashedKey[i*2] = (b >> 4) & 0xf
+			c.hashedKey[i*2+1] = b & 0xf
+		}
+		c.u.Flags = commitment.CODE_UPDATE
+		item := hashed.Get(&CommitmentItem{hashedKey: c.hashedKey})
+		if item != nil {
+			itemC := item.(*CommitmentItem)
+			if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
+				c.u.Flags |= commitment.BALANCE_UPDATE
+				c.u.Balance.Set(&itemC.u.Balance)
+			}
+			if itemC.u.Flags&commitment.NONCE_UPDATE != 0 {
+				c.u.Flags |= commitment.NONCE_UPDATE
+				c.u.Nonce = itemC.u.Nonce
+			}
+			if itemC.u.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
+				c.u.Flags = commitment.DELETE_UPDATE
+			} else {
+				w.a.keccak.Reset()
+				w.a.keccak.Write(val)
+				w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+			}
+		} else {
+			w.a.keccak.Reset()
+			w.a.keccak.Write(val)
+			w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+		}
+		hashed.ReplaceOrInsert(c)
+		lastOffsetKey = offsetKey
+		lastOffsetVal = offsetVal
+	}
+	lastOffsetKey = 0
+	lastOffsetVal = 0
 	for i, offsetKey := range w.accountChanges.keys.wordOffsets {
 		offsetVal := w.accountChanges.after.wordOffsets[i]
 		key := w.accountChanges.keys.words[lastOffsetKey:offsetKey]
@@ -1261,49 +1304,6 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			c.u.Flags = commitment.DELETE_UPDATE
 		} else {
 			c.u.Flags = commitment.STORAGE_UPDATE
-		}
-		hashed.ReplaceOrInsert(c)
-		lastOffsetKey = offsetKey
-		lastOffsetVal = offsetVal
-	}
-	lastOffsetKey = 0
-	lastOffsetVal = 0
-	for i, offsetKey := range w.codeChanges.keys.wordOffsets {
-		offsetVal := w.codeChanges.after.wordOffsets[i]
-		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
-		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
-		fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
-		w.a.keccak.Reset()
-		w.a.keccak.Write(key)
-		hashedKey := w.a.keccak.Sum(nil)
-		var c = &CommitmentItem{plainKey: key, hashedKey: make([]byte, len(hashedKey)*2)}
-		for i, b := range hashedKey {
-			c.hashedKey[i*2] = (b >> 4) & 0xf
-			c.hashedKey[i*2+1] = b & 0xf
-		}
-		c.u.Flags = commitment.CODE_UPDATE
-		item := hashed.Get(&CommitmentItem{hashedKey: c.hashedKey})
-		if item != nil {
-			itemC := item.(*CommitmentItem)
-			if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
-				c.u.Flags |= commitment.BALANCE_UPDATE
-				c.u.Balance.Set(&itemC.u.Balance)
-			}
-			if itemC.u.Flags&commitment.NONCE_UPDATE != 0 {
-				c.u.Flags |= commitment.NONCE_UPDATE
-				c.u.Nonce = itemC.u.Nonce
-			}
-			if itemC.u.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
-				c.u.Flags = commitment.DELETE_UPDATE
-			} else {
-				w.a.keccak.Reset()
-				w.a.keccak.Write(val)
-				w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
-			}
-		} else {
-			w.a.keccak.Reset()
-			w.a.keccak.Write(val)
-			w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
 		}
 		hashed.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
