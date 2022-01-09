@@ -1136,13 +1136,14 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		if hph.delBitmap[row] != 0 {
 			if row == 0 {
 				hph.rootDel = true
-			} else {
+			} else if upDepth != 64 {
 				hph.delBitmap[row-1] |= (uint16(1) << col)
 				if hph.trace {
 					fmt.Printf("del delBitmap[%d]=%016b\n", row-1, hph.delBitmap[row-1])
 				}
 			}
 		}
+		upCell.hl = 0
 		upCell.apl = 0
 		upCell.spl = 0
 		upCell.upHashedLen = 0
@@ -1339,12 +1340,10 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 			}
 		}
 	}
-	//cell.hl = 0
 	cell.upHashedLen = 0
 	cell.Balance.Clear()
 	copy(cell.CodeHash[:], EmptyCodeHash)
 	cell.Nonce = 0
-	//cell.fillEmpty()
 }
 
 func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
