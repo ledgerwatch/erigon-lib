@@ -1220,7 +1220,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 				return nil, err
 			}
 			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
-			item := hashed.Get(c)
+			item := hashed.Get(&CommitmentItem{hashedKey: c.hashedKey})
 			if item != nil {
 				itemC := item.(*CommitmentItem)
 				if itemC.u.Flags&commitment.CODE_UPDATE != 0 {
@@ -1252,8 +1252,14 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			c.hashedKey[i*2+1] = b & 0xf
 		}
 		c.u.ValLength = len(val)
-		copy(c.u.CodeHashOrStorage[:], val)
-		c.u.Flags = commitment.STORAGE_UPDATE
+		if len(val) > 0 {
+			copy(c.u.CodeHashOrStorage[:], val)
+		}
+		if len(val) == 0 {
+			c.u.Flags = commitment.DELETE_UPDATE
+		} else {
+			c.u.Flags = commitment.STORAGE_UPDATE
+		}
 		hashed.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
@@ -1273,7 +1279,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			c.hashedKey[i*2+1] = b & 0xf
 		}
 		c.u.Flags = commitment.CODE_UPDATE
-		item := hashed.Get(c)
+		item := hashed.Get(&CommitmentItem{hashedKey: c.hashedKey})
 		if item != nil {
 			itemC := item.(*CommitmentItem)
 			if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
@@ -1309,9 +1315,6 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		plainKeys[j] = item.plainKey
 		hashedKeys[j] = item.hashedKey
 		updates[j] = item.u
-		if item.u.Flags == commitment.STORAGE_UPDATE && item.u.ValLength == 0 {
-			updates[j].Flags = commitment.DELETE_UPDATE
-		}
 		j++
 		return true
 	})
