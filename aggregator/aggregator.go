@@ -1205,6 +1205,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		offsetVal := w.accountChanges.after.wordOffsets[i]
 		key := w.accountChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.accountChanges.after.words[lastOffsetVal:offsetVal]
+		fmt.Printf("computeCommitment acc [%x]=>[%x]\n", key, val)
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
@@ -1239,6 +1240,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		offsetVal := w.storageChanges.after.wordOffsets[i]
 		key := w.storageChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.storageChanges.after.words[lastOffsetVal:offsetVal]
+		fmt.Printf("computeCommitment str [%x]=>[%x]\n", key, val)
 		hashedKey := make([]byte, 2*length.Hash)
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key[:length.Addr])
@@ -1270,6 +1272,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		offsetVal := w.codeChanges.after.wordOffsets[i]
 		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
+		fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
