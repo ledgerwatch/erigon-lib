@@ -858,10 +858,7 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 			return 1
 		}
 	}
-	cpl := commonPrefixLen(hashedKey[depth:], cell.downHashedKey[:cell.downHashedLen])
-	if depth+cpl == len(hashedKey) {
-		return 0
-	}
+	cpl := commonPrefixLen(hashedKey[depth:], cell.downHashedKey[:cell.downHashedLen-1])
 	if hph.trace {
 		fmt.Printf("cpl=%d, cell.downHashedKey=[%x], depth=%d, hashedKey[depth:]=[%x]\n", cpl, cell.downHashedKey[:cell.downHashedLen], depth, hashedKey[depth:])
 	}
