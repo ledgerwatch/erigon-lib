@@ -1251,13 +1251,9 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
 		}
-		if len(val) == 0 {
-			c.u.Flags = commitment.DELETE_UPDATE
-		} else {
-			c.u.ValLength = len(val)
-			copy(c.u.CodeHashOrStorage[:], val)
-			c.u.Flags = commitment.STORAGE_UPDATE
-		}
+		c.u.ValLength = len(val)
+		copy(c.u.CodeHashOrStorage[:], val)
+		c.u.Flags = commitment.STORAGE_UPDATE
 		hashed.ReplaceOrInsert(&c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
@@ -1295,6 +1291,9 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		plainKeys[j] = item.plainKey
 		hashedKeys[j] = item.hashedKey
 		updates[j] = item.u
+		if item.u.Flags == commitment.STORAGE_UPDATE && item.u.ValLength == 0 {
+			updates[j].Flags = commitment.DELETE_UPDATE
+		}
 		j++
 		return true
 	})
