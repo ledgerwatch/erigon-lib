@@ -19,8 +19,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/flanglet/kanzi-go/transform"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/patricia"
 	"github.com/ledgerwatch/log/v3"
@@ -322,7 +322,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 		case <-logEvery.C:
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			log.Info("Replacement preprocessing", "processed", fmt.Sprintf("%dK", wordsCount/1_000), "input", humanize.Bytes(inputSize.Load()), "output", humanize.Bytes(outputSize.Load()), "alloc", humanize.Bytes(m.Alloc), "sys", humanize.Bytes(m.Sys))
+			log.Info("Replacement preprocessing", "processed", fmt.Sprintf("%dK", wordsCount/1_000), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		}
 		return nil
 	}); err != nil {
@@ -334,7 +334,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Info("Done", "input", humanize.Bytes(inputSize.Load()), "output", humanize.Bytes(outputSize.Load()), "alloc", humanize.Bytes(m.Alloc), "sys", humanize.Bytes(m.Sys))
+	log.Info("Done", "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	posMap := make(map[uint64]uint64)
 	for _, m := range posMaps {
 		for l, c := range m {
