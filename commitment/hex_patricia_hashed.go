@@ -1339,6 +1339,7 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 		}
 	}
 	cell.hl = 0
+	cell.upHashedLen = 0
 	//cell.fillEmpty()
 }
 
