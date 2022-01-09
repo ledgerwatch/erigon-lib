@@ -1355,12 +1355,14 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
 		// Update the root
 		cell = &hph.root
 		hph.rootMod = true
+		hph.rootDel = false
 	} else {
 		row := hph.activeRows - 1
 		depth = hph.depths[hph.activeRows-1]
 		col = int(hashedKey[hph.currentKeyLen])
 		cell = &hph.grid[row][col]
 		hph.modBitmap[row] |= (uint16(1) << col)
+		hph.delBitmap[row] &^= (uint16(1) << col)
 		if hph.trace {
 			fmt.Printf("updateAccount setting (%d, %x), depth=%d\n", row, col, depth)
 		}
@@ -1457,11 +1459,11 @@ func (hph *HexPatriciaHashed) RootHash() ([]byte, error) {
 type UpdateFlags uint8
 
 const (
-	DELETE_UPDATE  UpdateFlags = 0
-	BALANCE_UPDATE UpdateFlags = 1
-	NONCE_UPDATE   UpdateFlags = 2
-	CODE_UPDATE    UpdateFlags = 4
-	STORAGE_UPDATE UpdateFlags = 8
+	DELETE_UPDATE  UpdateFlags = 1
+	BALANCE_UPDATE UpdateFlags = 2
+	NONCE_UPDATE   UpdateFlags = 4
+	CODE_UPDATE    UpdateFlags = 8
+	STORAGE_UPDATE UpdateFlags = 16
 )
 
 func (uf UpdateFlags) String() string {
