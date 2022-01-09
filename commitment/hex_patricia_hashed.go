@@ -1170,6 +1170,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		}
 		nibble := bits.TrailingZeros16(bitmap)
 		cell := &hph.grid[row][nibble]
+		upCell.upHashedLen = 0
 		upCell.fillFromLowerCell(cell, depth, hph.currentKey[upDepth:hph.currentKeyLen], nibble)
 		if bits.OnesCount16(hph.beforeBitmap[row]) > 1 {
 			// Deletion
