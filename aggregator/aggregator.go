@@ -1272,9 +1272,6 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
 		}
-		w.a.keccak.Reset()
-		w.a.keccak.Write(val)
-		w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
 		c.u.Flags = commitment.CODE_UPDATE
 		item := hashed.Get(c)
 		if item != nil {
@@ -1287,6 +1284,17 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 				c.u.Flags |= commitment.NONCE_UPDATE
 				c.u.Nonce = itemC.u.Nonce
 			}
+			if itemC.u.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
+				c.u.Flags = commitment.DELETE_UPDATE
+			} else {
+				w.a.keccak.Reset()
+				w.a.keccak.Write(val)
+				w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+			}
+		} else {
+			w.a.keccak.Reset()
+			w.a.keccak.Write(val)
+			w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
 		}
 		hashed.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
