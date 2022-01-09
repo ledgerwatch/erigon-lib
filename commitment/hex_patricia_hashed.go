@@ -878,7 +878,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		fmt.Printf("unfold %d: activeRows: %d\n", unfolding, hph.activeRows)
 	}
 	var upCell *Cell
-	var before, modified bool
+	var before, modified, deleted bool
 	var col byte
 	var upDepth, depth int
 	if hph.activeRows == 0 {
@@ -889,14 +889,16 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		upCell = &hph.root
 		before = true
 		modified = hph.rootMod
+		deleted = hph.rootDel
 	} else {
 		upDepth = hph.depths[hph.activeRows-1]
 		col = hashedKey[upDepth-1]
 		upCell = &hph.grid[hph.activeRows-1][col]
 		before = hph.beforeBitmap[hph.activeRows-1]&(uint16(1)<<col) != 0
 		modified = hph.modBitmap[hph.activeRows-1]&(uint16(1)<<col) != 0
+		deleted = hph.delBitmap[hph.activeRows-1]&(uint16(1)<<col) != 0
 		if hph.trace {
-			fmt.Printf("upCell (%d, %x), before %t, modified %t\n", hph.activeRows-1, col, before, modified)
+			fmt.Printf("upCell (%d, %x), before %t, modified %t, deleted %t\n", hph.activeRows-1, col, before, modified, deleted)
 		}
 		hph.currentKey[hph.currentKeyLen] = col
 		hph.currentKeyLen++
@@ -926,6 +928,9 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		partBitmap := binary.BigEndian.Uint16(branchData[pos:])
 		pos += 2
 		hph.beforeBitmap[row] = partBitmap
+		if deleted {
+			hph.delBitmap[row] = partBitmap
+		}
 		// Next, for each part, we have bitmap of fields
 		partCount := bits.OnesCount16(partBitmap)
 		fieldsPos := pos
@@ -969,7 +974,12 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		if before {
 			hph.beforeBitmap[row] = uint16(1) << nibble
 		}
-		if modified {
+		if deleted {
+			hph.delBitmap[row] = uint16(1) << nibble
+			if hph.trace {
+				fmt.Printf("delBitmap[%d]=%016b\n", row, hph.delBitmap[row])
+			}
+		} else if modified {
 			hph.modBitmap[row] = uint16(1) << nibble
 			if hph.trace {
 				fmt.Printf("modBitmap[%d]=%016b\n", row, hph.modBitmap[row])
@@ -994,7 +1004,12 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		if before {
 			hph.beforeBitmap[row] = uint16(1) << nibble
 		}
-		if modified {
+		if deleted {
+			hph.delBitmap[row] = uint16(1) << nibble
+			if hph.trace {
+				fmt.Printf("delBitmap[%d]=%016b\n", row, hph.delBitmap[row])
+			}
+		} else if modified {
 			hph.modBitmap[row] = uint16(1) << nibble
 			if hph.trace {
 				fmt.Printf("modBitmap[%d]=%016b\n", row, hph.modBitmap[row])
