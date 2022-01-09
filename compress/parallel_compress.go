@@ -92,7 +92,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		return err
 	}
 
-	if err := reducedict(tmpFilePath, dictPath, segmentFilePath); err != nil {
+	if err := reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath); err != nil {
 		return err
 	}
 	return nil
@@ -267,7 +267,7 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
+func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath string) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -288,7 +288,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 	}); err != nil {
 		return err
 	}
-	log.Info("dictionary file parsed", "entries", len(code2pattern))
+	log.Info(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
 	tmpDir := ""
 	ch := make(chan []byte, 10000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
@@ -322,7 +322,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 		case <-logEvery.C:
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			log.Info("Replacement preprocessing", "processed", fmt.Sprintf("%dK", wordsCount/1_000), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+			log.Info(fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", wordsCount/1_000), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		}
 		return nil
 	}); err != nil {
@@ -334,7 +334,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Info("Done", "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	log.Info(fmt.Sprintf("[%s] dictionary bild done", logPrefix), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	posMap := make(map[uint64]uint64)
 	for _, m := range posMaps {
 		for l, c := range m {
@@ -365,7 +365,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 	}
 	patternCutoff := offset // All offsets below this will be considered patterns
 	i := 0
-	log.Info("Effective dictionary", "size", patternList.Len())
+	log.Info(fmt.Sprintf("[%s] Effective dictionary", logPrefix), "size", patternList.Len())
 	// Build Huffman tree for codes
 	var codeHeap PatternHeap
 	heap.Init(&codeHeap)
@@ -475,7 +475,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 			return err
 		}
 	}
-	log.Info("Dictionary", "size", offset, "pattern cutoff", patternCutoff)
+	log.Info(fmt.Sprintf("[%s] Dictionary", logPrefix), "size", offset, "pattern cutoff", patternCutoff)
 
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)
@@ -494,7 +494,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 	}
 	positionCutoff := offset // All offsets below this will be considered positions
 	i = 0
-	log.Info("Positional dictionary", "size", positionList.Len())
+	log.Info(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", positionList.Len())
 	// Build Huffman tree for codes
 	var posHeap PositionHeap
 	heap.Init(&posHeap)
@@ -587,7 +587,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 			return err
 		}
 	}
-	log.Info("Positional dictionary", "size", offset, "position cutoff", positionCutoff)
+	log.Info(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", offset, "position cutoff", positionCutoff)
 	df, err := os.Create("huffman_codes.txt")
 	if err != nil {
 		return err
@@ -681,7 +681,7 @@ func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 		}
 		wc++
 		if wc%10_000_000 == 0 {
-			log.Info("Compressed", "millions", wc/1_000_000)
+			log.Info(fmt.Sprintf("[%s] Compressed", logPrefix), "millions", wc/1_000_000)
 		}
 		return nil
 	}, etl.TransformArgs{}); err != nil {
