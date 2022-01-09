@@ -30,7 +30,7 @@ import (
 // minPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
 const minPatternScore = 1024
 
-func Compress(logPrefix, fileName, segmentFileName string, workers int) error {
+func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -56,7 +56,7 @@ func Compress(logPrefix, fileName, segmentFileName string, workers int) error {
 		go processSuperstring(ch, collector, &wg)
 	}
 	i := 0
-	if err := ReadSimpleFile(fileName+".dat", func(v []byte) error {
+	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
 			ch <- superstring
 			superstring = nil
@@ -68,6 +68,8 @@ func Compress(logPrefix, fileName, segmentFileName string, workers int) error {
 		i++
 		select {
 		default:
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-logEvery.C:
 			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", i/1_000))
 		}
@@ -81,15 +83,16 @@ func Compress(logPrefix, fileName, segmentFileName string, workers int) error {
 	close(ch)
 	wg.Wait()
 
-	db, err := DictionaryBuilderFromCollectors(context.Background(), compressLogPrefix, tmpDir, collectors)
+	db, err := DictionaryBuilderFromCollectors(ctx, compressLogPrefix, tmpDir, collectors)
 	if err != nil {
 		panic(err)
 	}
-	if err := PersistDictrionary(fileName+".dictionary.txt", db); err != nil {
+	dictPath := tmpFilePath + ".dictionary.txt"
+	if err := PersistDictrionary(dictPath, db); err != nil {
 		return err
 	}
 
-	if err := reducedict(fileName, segmentFileName); err != nil {
+	if err := reducedict(tmpFilePath, dictPath, segmentFilePath); err != nil {
 		return err
 	}
 	return nil
@@ -264,14 +267,14 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(name string, segmentFileName string) error {
+func reducedict(tmpFilePath, dictPath, segmentFilePath string) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
 	// DictionaryBuilder is for sorting words by their freuency (to assign codes)
 	var pt patricia.PatriciaTree
 	code2pattern := make([]*Pattern, 0, 256)
-	if err := ReadDictrionary(name+".dictionary.txt", func(score uint64, word []byte) error {
+	if err := ReadDictrionary(dictPath, func(score uint64, word []byte) error {
 		p := &Pattern{
 			score:    score,
 			uses:     0,
@@ -308,7 +311,7 @@ func reducedict(name string, segmentFileName string) error {
 		go reduceDictWorker(ch, &wg, &pt, collector, inputSize, outputSize, posMap)
 	}
 	var wordsCount uint64
-	if err := ReadSimpleFile(name+".dat", func(v []byte) error {
+	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
 		input := make([]byte, 8+int(len(v)))
 		binary.BigEndian.PutUint64(input, wordsCount)
 		copy(input[8:], v)
@@ -418,7 +421,7 @@ func reducedict(name string, segmentFileName string) error {
 	}
 	var cf *os.File
 	var err error
-	if cf, err = os.Create(segmentFileName); err != nil {
+	if cf, err = os.Create(segmentFilePath); err != nil {
 		return err
 	}
 	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
