@@ -1192,14 +1192,16 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
 	return nil
 }
 
-func (w *Writer) captureCommitmentData() {
+func (w *Writer) captureCommitmentData(trace bool) {
 	lastOffsetKey := 0
 	lastOffsetVal := 0
 	for i, offsetKey := range w.codeChanges.keys.wordOffsets {
 		offsetVal := w.codeChanges.after.wordOffsets[i]
 		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
-		fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
+		if trace {
+			fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
+		}
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
@@ -1242,7 +1244,9 @@ func (w *Writer) captureCommitmentData() {
 		offsetVal := w.accountChanges.after.wordOffsets[i]
 		key := w.accountChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.accountChanges.after.words[lastOffsetVal:offsetVal]
-		fmt.Printf("computeCommitment acc [%x]=>[%x]\n", key, val)
+		if trace {
+			fmt.Printf("computeCommitment acc [%x]=>[%x]\n", key, val)
+		}
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
@@ -1275,7 +1279,9 @@ func (w *Writer) captureCommitmentData() {
 		offsetVal := w.storageChanges.after.wordOffsets[i]
 		key := w.storageChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.storageChanges.after.words[lastOffsetVal:offsetVal]
-		fmt.Printf("computeCommitment str [%x]=>[%x]\n", key, val)
+		if trace {
+			fmt.Printf("computeCommitment str [%x]=>[%x]\n", key, val)
+		}
 		hashedKey := make([]byte, 2*length.Hash)
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key[:length.Addr])
@@ -1372,8 +1378,8 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 	return rootHash, nil
 }
 
-func (w *Writer) FinishTx(txNum uint64) error {
-	w.captureCommitmentData()
+func (w *Writer) FinishTx(txNum uint64, trace bool) error {
+	w.captureCommitmentData(trace)
 	var err error
 	if err = w.accountChanges.finish(txNum); err != nil {
 		return fmt.Errorf("finish accountChanges: %w", err)
