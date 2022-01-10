@@ -148,21 +148,23 @@ func (cell *Cell) fillEmpty() {
 }
 
 func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
-	if upCell.downHashedLen >= depthIncrement {
-		cell.downHashedLen = upCell.downHashedLen - depthIncrement
-	} else {
-		cell.downHashedLen = 0
-	}
-	if upCell.downHashedLen > depthIncrement {
-		copy(cell.downHashedKey[:], upCell.downHashedKey[depthIncrement:upCell.downHashedLen])
-	}
-	if upCell.upHashedLen >= depthIncrement {
-		cell.upHashedLen = upCell.upHashedLen - depthIncrement
-	} else {
-		cell.upHashedLen = 0
-	}
-	if upCell.upHashedLen > depthIncrement {
-		copy(cell.upHashedKey[:], upCell.upHashedKey[depthIncrement:upCell.upHashedLen])
+	if (upCell.apl == 0 && depth <= 64) || (upCell.spl == 0 && depth > 64) {
+		if upCell.downHashedLen >= depthIncrement {
+			cell.downHashedLen = upCell.downHashedLen - depthIncrement
+		} else {
+			cell.downHashedLen = 0
+		}
+		if upCell.downHashedLen > depthIncrement {
+			copy(cell.downHashedKey[:], upCell.downHashedKey[depthIncrement:upCell.downHashedLen])
+		}
+		if upCell.upHashedLen >= depthIncrement {
+			cell.upHashedLen = upCell.upHashedLen - depthIncrement
+		} else {
+			cell.upHashedLen = 0
+		}
+		if upCell.upHashedLen > depthIncrement {
+			copy(cell.upHashedKey[:], upCell.upHashedKey[depthIncrement:upCell.upHashedLen])
+		}
 	}
 	if depth <= 64 {
 		cell.apl = upCell.apl
@@ -171,6 +173,10 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 			cell.Balance.Set(&upCell.Balance)
 			cell.Nonce = upCell.Nonce
 			copy(cell.CodeHash[:], upCell.CodeHash[:])
+			cell.upHashedLen = upCell.upHashedLen
+			if upCell.upHashedLen > 0 {
+				copy(cell.upHashedKey[:], upCell.upHashedKey[:upCell.upHashedLen])
+			}
 		}
 	} else {
 		cell.apl = 0
