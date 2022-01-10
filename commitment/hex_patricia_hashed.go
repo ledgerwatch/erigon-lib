@@ -212,7 +212,7 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, 
 		}
 	}
 	if lowCell.hl > 0 {
-		if lowCell.apl > 0 && lowDepth == 64 {
+		if lowCell.apl > 0 && lowDepth <= 64 {
 			cell.upHashedLen = lowCell.upHashedLen
 			if lowCell.upHashedLen > 0 {
 				copy(cell.upHashedKey[:], lowCell.upHashedKey[:lowCell.upHashedLen])
