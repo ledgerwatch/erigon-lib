@@ -1331,6 +1331,7 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 			if hph.trace {
 				fmt.Printf("deleteCell skipping spurious delete depth=%d, len(hashedKey)=%d\n", hph.depths[row], len(hashedKey))
 			}
+			return
 		}
 		col := int(hashedKey[hph.currentKeyLen])
 		cell = &hph.grid[row][col]
