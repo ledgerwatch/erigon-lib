@@ -499,18 +499,22 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 			ai.k = key
 			ai.v = after
 			i := bt.Get(&ai)
+			var item *AggregateItem
 			if i == nil {
-				item := &AggregateItem{k: common.Copy(key), count: 1}
-				if len(after) > 0 {
-					item.v = make([]byte, 1+len(after))
-					if len(before) == 0 {
-						item.v[0] = 1
-					}
-					copy(item.v[1:], after)
-				}
+				item = &AggregateItem{k: common.Copy(key), count: 1}
 				bt.ReplaceOrInsert(item)
 			} else {
-				i.(*AggregateItem).count++
+				item = i.(*AggregateItem)
+				item.count++
+			}
+			item.v = item.v[:0]
+			if len(after) > 0 {
+				if len(before) == 0 {
+					item.v = append(item.v, 1)
+				} else {
+					item.v = append(item.v, 0)
+				}
+				item.v = append(item.v, after...)
 			}
 		}
 		if e != nil {
