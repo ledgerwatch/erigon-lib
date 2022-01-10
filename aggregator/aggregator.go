@@ -1019,16 +1019,18 @@ type Writer struct {
 	a              *Aggregator
 	tx             kv.RwTx
 	blockNum       uint64
-	changeFileNum  uint64  // Block number associated with the current change files. It is the last block number whose changes will go into that file
-	accountChanges Changes // Change files for accounts
-	codeChanges    Changes // Change files for contract code
-	storageChanges Changes // Change files for contract storage
-	commChanges    Changes // Change files for commitment
+	changeFileNum  uint64       // Block number associated with the current change files. It is the last block number whose changes will go into that file
+	accountChanges Changes      // Change files for accounts
+	codeChanges    Changes      // Change files for contract code
+	storageChanges Changes      // Change files for contract storage
+	commChanges    Changes      // Change files for commitment
+	commTree       *btree.BTree // BTree used for gathering commitment data
 }
 
 func (a *Aggregator) MakeStateWriter() *Writer {
 	w := &Writer{
-		a: a,
+		a:        a,
+		commTree: btree.New(32),
 	}
 	w.accountChanges.Init("accounts", a.aggregationStep, a.diffDir)
 	w.codeChanges.Init("code", a.aggregationStep, a.diffDir)
@@ -1190,22 +1192,14 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
 	return nil
 }
 
-// computeCommitment is computing the commitment to the state after
-// the change would have been applied.
-// It assumes that the state accessible via the aggregator has already been
-// modified with the new values
-// At the moment, it is specific version for hex merkle patricia tree commitment
-// but it will be extended to support other types of commitments
-func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
-	// Hash the keys from the buffers
-	hashed := btree.New(32)
+func (w *Writer) captureCommitmentData() {
 	lastOffsetKey := 0
 	lastOffsetVal := 0
 	for i, offsetKey := range w.codeChanges.keys.wordOffsets {
 		offsetVal := w.codeChanges.after.wordOffsets[i]
 		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
-		//fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
+		fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
@@ -1215,7 +1209,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			c.hashedKey[i*2+1] = b & 0xf
 		}
 		c.u.Flags = commitment.CODE_UPDATE
-		item := hashed.Get(&CommitmentItem{hashedKey: c.hashedKey})
+		item := w.commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
 		if item != nil {
 			itemC := item.(*CommitmentItem)
 			if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
@@ -1238,7 +1232,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			w.a.keccak.Write(val)
 			w.a.keccak.(io.Reader).Read(c.u.CodeHashOrStorage[:])
 		}
-		hashed.ReplaceOrInsert(c)
+		w.commTree.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
 	}
@@ -1260,11 +1254,9 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		if len(val) == 0 {
 			c.u.Flags = commitment.DELETE_UPDATE
 		} else {
-			if err := c.u.DecodeForStorage(val); err != nil {
-				return nil, err
-			}
+			c.u.DecodeForStorage(val)
 			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
-			item := hashed.Get(&CommitmentItem{hashedKey: c.hashedKey})
+			item := w.commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
 			if item != nil {
 				itemC := item.(*CommitmentItem)
 				if itemC.u.Flags&commitment.CODE_UPDATE != 0 {
@@ -1273,7 +1265,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 				}
 			}
 		}
-		hashed.ReplaceOrInsert(c)
+		w.commTree.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
 	}
@@ -1305,15 +1297,24 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		} else {
 			c.u.Flags = commitment.STORAGE_UPDATE
 		}
-		hashed.ReplaceOrInsert(c)
+		w.commTree.ReplaceOrInsert(c)
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
 	}
-	plainKeys := make([][]byte, hashed.Len())
-	hashedKeys := make([][]byte, hashed.Len())
-	updates := make([]commitment.Update, hashed.Len())
+}
+
+// computeCommitment is computing the commitment to the state after
+// the change would have been applied.
+// It assumes that the state accessible via the aggregator has already been
+// modified with the new values
+// At the moment, it is specific version for hex merkle patricia tree commitment
+// but it will be extended to support other types of commitments
+func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
+	plainKeys := make([][]byte, w.commTree.Len())
+	hashedKeys := make([][]byte, w.commTree.Len())
+	updates := make([]commitment.Update, w.commTree.Len())
 	j := 0
-	hashed.Ascend(func(i btree.Item) bool {
+	w.commTree.Ascend(func(i btree.Item) bool {
 		item := i.(*CommitmentItem)
 		plainKeys[j] = item.plainKey
 		hashedKeys[j] = item.hashedKey
@@ -1372,6 +1373,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 }
 
 func (w *Writer) FinishTx(txNum uint64) error {
+	w.captureCommitmentData()
 	var err error
 	if err = w.accountChanges.finish(txNum); err != nil {
 		return fmt.Errorf("finish accountChanges: %w", err)
@@ -1391,6 +1393,7 @@ func (w *Writer) FinishBlock(trace bool) ([]byte, error) {
 	if comm, err = w.computeCommitment(trace); err != nil {
 		return nil, fmt.Errorf("compute commitment: %w", err)
 	}
+	w.commTree.Clear(true)
 	if err = w.commChanges.finish(w.blockNum); err != nil {
 		return nil, fmt.Errorf("finish commChanges: %w", err)
 	}
