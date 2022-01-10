@@ -498,19 +498,20 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 			}
 			ai.k = key
 			ai.v = after
-			item := &AggregateItem{k: common.Copy(key), count: 1}
 			i := bt.Get(&ai)
-			if i != nil {
-				item.count += i.(*AggregateItem).count
-			}
-			if len(after) > 0 {
-				item.v = make([]byte, 1+len(after))
-				if len(before) == 0 {
-					item.v[0] = 1
+			if i == nil {
+				item := &AggregateItem{k: common.Copy(key), count: 1}
+				if len(after) > 0 {
+					item.v = make([]byte, 1+len(after))
+					if len(before) == 0 {
+						item.v[0] = 1
+					}
+					copy(item.v[1:], after)
 				}
-				copy(item.v[1:], after)
+				bt.ReplaceOrInsert(item)
+			} else {
+				i.(*AggregateItem).count++
 			}
-			bt.ReplaceOrInsert(item)
 		}
 		if e != nil {
 			return fmt.Errorf("nextTriple: %w", e)
