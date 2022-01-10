@@ -86,9 +86,9 @@ type ChangeFile struct {
 	r           *bufio.Reader
 	numBuf      [8]byte
 	sizeCounter uint64
-	blockPos    int64 // Position of the last block iterated upon
-	blockNum    uint64
-	blockSize   uint64
+	txPos       int64 // Position of the last block iterated upon
+	txNum       uint64
+	txSize      uint64
 	words       []byte // Words pending for the next block record, in the same slice
 	wordOffsets []int  // Offsets of words in the `words` slice
 }
@@ -131,7 +131,7 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 			if cf.file, err = os.Open(cf.path); err != nil {
 				return err
 			}
-			if cf.blockPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
+			if cf.txPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
 				return err
 			}
 		}
@@ -145,7 +145,7 @@ func (cf *ChangeFile) add(word []byte) {
 	cf.wordOffsets = append(cf.wordOffsets, len(cf.words))
 }
 
-func (cf *ChangeFile) finish(blockNum uint64) error {
+func (cf *ChangeFile) finish(txNum uint64) error {
 	// Write out words
 	lastOffset := 0
 	for _, offset := range cf.wordOffsets {
@@ -164,8 +164,8 @@ func (cf *ChangeFile) finish(blockNum uint64) error {
 	}
 	cf.words = cf.words[:0]
 	cf.wordOffsets = cf.wordOffsets[:0]
-	// Write out block number and then size of changes in this block
-	binary.BigEndian.PutUint64(cf.numBuf[:], blockNum)
+	// Write out tx number and then size of changes in this block
+	binary.BigEndian.PutUint64(cf.numBuf[:], txNum)
 	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
 		return err
 	}
@@ -177,14 +177,14 @@ func (cf *ChangeFile) finish(blockNum uint64) error {
 	return nil
 }
 
-// prevBlock positions the reader to the beginning
-// of the block
-func (cf *ChangeFile) prevBlock() (bool, error) {
-	if cf.blockPos == 0 {
+// prevTx positions the reader to the beginning
+// of the transaction
+func (cf *ChangeFile) prevTx() (bool, error) {
+	if cf.txPos == 0 {
 		return false, nil
 	}
-	// Move back 16 bytes to read block number and block size
-	pos, err := cf.file.Seek(cf.blockPos-16, 0 /* relative to the beginning */)
+	// Move back 16 bytes to read tx number and tx size
+	pos, err := cf.file.Seek(cf.txPos-16, 0 /* relative to the beginning */)
 	if err != nil {
 		return false, err
 	}
@@ -192,12 +192,12 @@ func (cf *ChangeFile) prevBlock() (bool, error) {
 	if _, err = io.ReadFull(cf.r, cf.numBuf[:8]); err != nil {
 		return false, err
 	}
-	cf.blockNum = binary.BigEndian.Uint64(cf.numBuf[:])
+	cf.txNum = binary.BigEndian.Uint64(cf.numBuf[:])
 	if _, err = io.ReadFull(cf.r, cf.numBuf[:8]); err != nil {
 		return false, err
 	}
-	cf.blockSize = binary.BigEndian.Uint64(cf.numBuf[:])
-	cf.blockPos, err = cf.file.Seek(pos-int64(cf.blockSize), 0)
+	cf.txSize = binary.BigEndian.Uint64(cf.numBuf[:])
+	cf.txPos, err = cf.file.Seek(pos-int64(cf.txSize), 0)
 	if err != nil {
 		return false, err
 	}
@@ -206,7 +206,7 @@ func (cf *ChangeFile) prevBlock() (bool, error) {
 }
 
 func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
-	if cf.blockSize == 0 {
+	if cf.txSize == 0 {
 		return wordBuf, false, nil
 	}
 	ws, err := binary.ReadUvarint(cf.r)
@@ -224,7 +224,7 @@ func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
 		return wordBuf, false, fmt.Errorf("read word (%d %d): %w", ws, len(buf[len(wordBuf):]), err)
 	}
 	n := binary.PutUvarint(cf.numBuf[:], ws)
-	cf.blockSize -= uint64(n) + ws
+	cf.txSize -= uint64(n) + ws
 	return buf, true, nil
 }
 
@@ -300,29 +300,29 @@ func (c *Changes) delete(key, before []byte) {
 	c.after.add(nil)
 }
 
-func (c *Changes) finish(blockNum uint64) error {
-	if err := c.keys.finish(blockNum); err != nil {
+func (c *Changes) finish(txNum uint64) error {
+	if err := c.keys.finish(txNum); err != nil {
 		return err
 	}
-	if err := c.before.finish(blockNum); err != nil {
+	if err := c.before.finish(txNum); err != nil {
 		return err
 	}
-	if err := c.after.finish(blockNum); err != nil {
+	if err := c.after.finish(txNum); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Changes) prevBlock() (bool, error) {
-	bkeys, err := c.keys.prevBlock()
+func (c *Changes) prevTx() (bool, error) {
+	bkeys, err := c.keys.prevTx()
 	if err != nil {
 		return false, err
 	}
 	var bbefore, bafter bool
-	if bbefore, err = c.before.prevBlock(); err != nil {
+	if bbefore, err = c.before.prevTx(); err != nil {
 		return false, err
 	}
-	if bafter, err = c.after.prevBlock(); err != nil {
+	if bafter, err = c.after.prevTx(); err != nil {
 		return false, err
 	}
 	if bkeys != bbefore || bkeys != bafter {
@@ -489,7 +489,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 	var key, before, after []byte
 	var ai AggregateItem
 	var prefix []byte
-	for b, e = c.prevBlock(); b && e == nil; b, e = c.prevBlock() {
+	for b, e = c.prevTx(); b && e == nil; b, e = c.prevTx() {
 		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 			if prefixLen > 0 && !bytes.Equal(prefix, key[:prefixLen]) {
 				prefix = common.Copy(key[:prefixLen])
@@ -1205,7 +1205,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		offsetVal := w.codeChanges.after.wordOffsets[i]
 		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
-		fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
+		//fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
@@ -1371,20 +1371,25 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 	return rootHash, nil
 }
 
-func (w *Writer) Finish(trace bool) ([]byte, error) {
+func (w *Writer) FinishTx(txNum uint64) error {
+	var err error
+	if err = w.accountChanges.finish(txNum); err != nil {
+		return fmt.Errorf("finish accountChanges: %w", err)
+	}
+	if err = w.codeChanges.finish(txNum); err != nil {
+		return fmt.Errorf("finish codeChanges: %w", err)
+	}
+	if err = w.storageChanges.finish(txNum); err != nil {
+		return fmt.Errorf("finish storageChanges: %w", err)
+	}
+	return nil
+}
+
+func (w *Writer) FinishBlock(trace bool) ([]byte, error) {
 	var comm []byte
 	var err error
 	if comm, err = w.computeCommitment(trace); err != nil {
 		return nil, fmt.Errorf("compute commitment: %w", err)
-	}
-	if err = w.accountChanges.finish(w.blockNum); err != nil {
-		return nil, fmt.Errorf("finish accountChanges: %w", err)
-	}
-	if err = w.codeChanges.finish(w.blockNum); err != nil {
-		return nil, fmt.Errorf("finish codeChanges: %w", err)
-	}
-	if err = w.storageChanges.finish(w.blockNum); err != nil {
-		return nil, fmt.Errorf("finish storageChanges: %w", err)
 	}
 	if err = w.commChanges.finish(w.blockNum); err != nil {
 		return nil, fmt.Errorf("finish commChanges: %w", err)

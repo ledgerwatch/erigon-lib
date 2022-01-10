@@ -92,7 +92,10 @@ func TestSimpleAggregator(t *testing.T) {
 	if err = w.UpdateAccountData(int160(1), account1, false /* trace */); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = w.Finish(false /* trace */); err != nil {
+	if err = w.FinishTx(0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.FinishBlock(false /* trace */); err != nil {
 		t.Fatal(err)
 	}
 	if err = rwTx.Commit(); err != nil {
@@ -147,7 +150,10 @@ func TestLoopAggregator(t *testing.T) {
 		if err = w.UpdateAccountData(accountKey, account1, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = w.Finish(false /* trace */); err != nil {
+		if err = w.FinishTx(blockNum); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.FinishBlock(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
@@ -244,7 +250,10 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 				}
 			}
 		}
-		if _, err = w.Finish(false /* trace */); err != nil {
+		if err = w.FinishTx(blockNum); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.FinishBlock(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
@@ -360,7 +369,10 @@ func TestChangeCode(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if _, err = w.Finish(false /* trace */); err != nil {
+		if err = w.FinishTx(blockNum); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.FinishBlock(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
