@@ -1327,6 +1327,11 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 		hph.rootDel = true
 	} else {
 		row := hph.activeRows - 1
+		if hph.depths[row] < len(hashedKey) {
+			if hph.trace {
+				fmt.Printf("deleteCell skipping spurious delete depth=%d, len(hashedKey)=%d\n", hph.depths[row], len(hashedKey))
+			}
+		}
 		col := int(hashedKey[hph.currentKeyLen])
 		cell = &hph.grid[row][col]
 		if hph.beforeBitmap[row]&(uint16(1)<<col) != 0 {
@@ -1504,7 +1509,7 @@ func bytesToUint64(buf []byte) (x uint64) {
 	return
 }
 
-func (u *Update) DecodeForStorage(enc []byte) error {
+func (u *Update) DecodeForStorage(enc []byte) {
 	u.Nonce = 0
 	u.Balance.Clear()
 	copy(u.CodeHashOrStorage[:], EmptyCodeHash)
@@ -1527,8 +1532,6 @@ func (u *Update) DecodeForStorage(enc []byte) error {
 	if codeHashBytes > 0 {
 		copy(u.CodeHashOrStorage[:], enc[pos:pos+codeHashBytes])
 	}
-
-	return nil
 }
 
 func (u Update) encode(buf []byte, numBuf []byte) []byte {
