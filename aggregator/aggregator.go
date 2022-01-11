@@ -1540,18 +1540,17 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) error {
 	var original []byte
 	if prevV == nil {
 		original = w.a.readAccount(w.blockNum, addr, trace)
+		if original == nil {
+			log.Warn("deleteAccount without prev", "addr", fmt.Sprintf("[%x]", addr))
+		}
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
+		original = prevV[4:]
 	}
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
-	}
-	if prevV == nil && original == nil {
-		return fmt.Errorf("previous value expected for DeleteAccount")
-	} else if original == nil {
-		original = prevV[4:]
 	}
 	w.accountChanges.delete(addr, original)
 	return nil
