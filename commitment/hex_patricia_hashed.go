@@ -212,13 +212,7 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preExtension []
 		}
 	}
 	if lowCell.hl > 0 {
-		if lowCell.apl > 0 {
-			// Extension is related to a storage branch node, so we copy it upwards as is
-			cell.extLen = lowCell.extLen
-			if lowCell.extLen > 0 {
-				copy(cell.extension[:], lowCell.extension[:lowCell.extLen])
-			}
-		} else if (lowCell.apl == 0 && lowDepth < 64) || (lowCell.spl == 0 && lowDepth > 64) {
+		if (lowCell.apl == 0 && lowDepth < 64) || (lowCell.spl == 0 && lowDepth > 64) {
 			// Extension is related to either accounts branch node, or storage branch node, we prepend it by preExtension | nibble
 			if len(preExtension) > 0 {
 				copy(cell.extension[:], preExtension)
@@ -228,6 +222,12 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preExtension []
 				copy(cell.extension[1+len(preExtension):], lowCell.extension[:lowCell.extLen])
 			}
 			cell.extLen = lowCell.extLen + 1 + len(preExtension)
+		} else {
+			// Extension is related to a storage branch node, so we copy it upwards as is
+			cell.extLen = lowCell.extLen
+			if lowCell.extLen > 0 {
+				copy(cell.extension[:], lowCell.extension[:lowCell.extLen])
+			}
 		}
 	}
 	cell.hl = lowCell.hl
