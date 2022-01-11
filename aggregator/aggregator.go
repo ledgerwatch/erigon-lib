@@ -510,7 +510,15 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 				}
 				bt.ReplaceOrInsert(item)
 			} else {
-				i.(*AggregateItem).count++
+				item := i.(*AggregateItem)
+				if len(item.v) > 0 {
+					if len(before) == 0 {
+						item.v[0] = 1
+					} else {
+						item.v[0] = 0
+					}
+				}
+				item.count++
 			}
 		}
 		if e != nil {
@@ -518,7 +526,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 		}
 	}
 	if e != nil {
-		return fmt.Errorf("prevBlock: %w", e)
+		return fmt.Errorf("prevTx: %w", e)
 	}
 	return nil
 }
