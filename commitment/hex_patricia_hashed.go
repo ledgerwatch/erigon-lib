@@ -1153,6 +1153,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		upCell.apl = 0
 		upCell.spl = 0
 		upCell.upHashedLen = 0
+		upCell.downHashedLen = 0
 		if bits.OnesCount16(hph.beforeBitmap[row]) > 1 {
 			// Deletion
 			branchData = []byte{}
