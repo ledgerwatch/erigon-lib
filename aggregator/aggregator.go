@@ -1531,10 +1531,10 @@ func (ch *CursorHeap) Pop() interface{} {
 	return x
 }
 
-func (w *Writer) deleteAccount(addr []byte, trace bool) error {
+func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	prevV, err := w.tx.GetOne(kv.StateAccounts, addr)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var prevNum uint32
 	var original []byte
@@ -1542,6 +1542,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) error {
 		original = w.a.readAccount(w.blockNum, addr, trace)
 		if original == nil {
 			log.Warn("deleteAccount without prev", "addr", fmt.Sprintf("[%x]", addr))
+			return false, nil
 		}
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
@@ -1550,10 +1551,10 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) error {
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
-		return err
+		return false, err
 	}
 	w.accountChanges.delete(addr, original)
-	return nil
+	return true, nil
 }
 
 func (w *Writer) deleteCode(addr []byte, trace bool) error {
@@ -1565,27 +1566,28 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	var original []byte
 	if prevV == nil {
 		original = w.a.readCode(w.blockNum, addr, trace)
+		if original == nil {
+			// Nothing to do
+			return nil
+		}
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
+		original = prevV[4:]
 	}
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	if err = w.tx.Put(kv.StateCode, addr, v); err != nil {
 		return err
 	}
-	if prevV == nil && original == nil {
-		// Nothing to do
-		return nil
-	} else if original == nil {
-		original = prevV[4:]
-	}
 	w.codeChanges.delete(addr, original)
 	return nil
 }
 
 func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
-	if err := w.deleteAccount(addr, trace); err != nil {
+	if deleted, err := w.deleteAccount(addr, trace); err != nil {
 		return err
+	} else if !deleted {
+		return nil
 	}
 	if err := w.deleteCode(addr, trace); err != nil {
 		return err
