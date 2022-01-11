@@ -212,7 +212,7 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preExtension []
 		}
 	}
 	if lowCell.hl > 0 {
-		if lowCell.apl > 0 && lowDepth >= 64 {
+		if lowCell.apl > 0 {
 			// Extension is related to a storage branch node, so we copy it upwards as is
 			cell.extLen = lowCell.extLen
 			if lowCell.extLen > 0 {
