@@ -121,8 +121,8 @@ type Cell struct {
 	spl           int      // length of the storage plain key
 	downHashedKey [128]byte
 	downHashedLen int
-	upHashedKey   [64]byte
-	upHashedLen   int
+	extension     [64]byte
+	extLen        int
 	Nonce         uint64
 	Balance       uint256.Int
 	CodeHash      [32]byte // hash of the bytecode
@@ -139,7 +139,7 @@ func (cell *Cell) fillEmpty() {
 	cell.apl = 0
 	cell.spl = 0
 	cell.downHashedLen = 0
-	cell.upHashedLen = 0
+	cell.extLen = 0
 	cell.hl = 0
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -156,13 +156,13 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 	if upCell.downHashedLen > depthIncrement {
 		copy(cell.downHashedKey[:], upCell.downHashedKey[depthIncrement:upCell.downHashedLen])
 	}
-	if upCell.upHashedLen >= depthIncrement {
-		cell.upHashedLen = upCell.upHashedLen - depthIncrement
+	if upCell.extLen >= depthIncrement {
+		cell.extLen = upCell.extLen - depthIncrement
 	} else {
-		cell.upHashedLen = 0
+		cell.extLen = 0
 	}
-	if upCell.upHashedLen > depthIncrement {
-		copy(cell.upHashedKey[:], upCell.upHashedKey[depthIncrement:upCell.upHashedLen])
+	if upCell.extLen > depthIncrement {
+		copy(cell.extension[:], upCell.extension[depthIncrement:upCell.extLen])
 	}
 	if depth <= 64 {
 		cell.apl = upCell.apl
@@ -171,9 +171,9 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 			cell.Balance.Set(&upCell.Balance)
 			cell.Nonce = upCell.Nonce
 			copy(cell.CodeHash[:], upCell.CodeHash[:])
-			cell.upHashedLen = upCell.upHashedLen
-			if upCell.upHashedLen > 0 {
-				copy(cell.upHashedKey[:], upCell.upHashedKey[:upCell.upHashedLen])
+			cell.extLen = upCell.extLen
+			if upCell.extLen > 0 {
+				copy(cell.extension[:], upCell.extension[:upCell.extLen])
 			}
 		}
 	} else {
@@ -193,7 +193,7 @@ func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
 	}
 }
 
-func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, nibble int) {
+func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preExtension []byte, nibble int) {
 	if lowCell.apl > 0 || lowDepth < 64 {
 		cell.apl = lowCell.apl
 	}
@@ -212,20 +212,22 @@ func (cell *Cell) fillFromLowerCell(lowCell *Cell, lowDepth int, preKey []byte, 
 		}
 	}
 	if lowCell.hl > 0 {
-		if lowCell.apl > 0 && lowDepth <= 64 {
-			cell.upHashedLen = lowCell.upHashedLen
-			if lowCell.upHashedLen > 0 {
-				copy(cell.upHashedKey[:], lowCell.upHashedKey[:lowCell.upHashedLen])
+		if lowCell.apl > 0 && lowDepth >= 64 {
+			// Extension is related to a storage branch node, so we copy it upwards as is
+			cell.extLen = lowCell.extLen
+			if lowCell.extLen > 0 {
+				copy(cell.extension[:], lowCell.extension[:lowCell.extLen])
 			}
 		} else if (lowCell.apl == 0 && lowDepth < 64) || (lowCell.spl == 0 && lowDepth > 64) {
-			if len(preKey) > 0 {
-				copy(cell.upHashedKey[:], preKey)
+			// Extension is related to either accounts branch node, or storage branch node, we prepend it by preExtension | nibble
+			if len(preExtension) > 0 {
+				copy(cell.extension[:], preExtension)
 			}
-			cell.upHashedKey[len(preKey)] = byte(nibble)
-			if lowCell.upHashedLen > 0 {
-				copy(cell.upHashedKey[1+len(preKey):], lowCell.upHashedKey[:lowCell.upHashedLen])
+			cell.extension[len(preExtension)] = byte(nibble)
+			if lowCell.extLen > 0 {
+				copy(cell.extension[1+len(preExtension):], lowCell.extension[:lowCell.extLen])
 			}
-			cell.upHashedLen = lowCell.upHashedLen + 1 + len(preKey)
+			cell.extLen = lowCell.extLen + 1 + len(preExtension)
 		}
 	}
 	cell.hl = lowCell.hl
@@ -310,15 +312,15 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) (int
 			return 0, fmt.Errorf("fillFromFields buffer too small for hashedKey")
 		}
 		cell.downHashedLen = int(l)
-		cell.upHashedLen = int(l)
+		cell.extLen = int(l)
 		if l > 0 {
 			copy(cell.downHashedKey[:], data[pos:pos+int(l)])
-			copy(cell.upHashedKey[:], data[pos:pos+int(l)])
+			copy(cell.extension[:], data[pos:pos+int(l)])
 			pos += int(l)
 		}
 	} else {
 		cell.downHashedLen = 0
-		cell.upHashedLen = 0
+		cell.extLen = 0
 	}
 	if fieldBits&ACCOUNT_PLAIN_PART != 0 {
 		l, n := binary.Uvarint(data[pos:])
@@ -690,13 +692,13 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		}
 		cell.downHashedKey[64-depth] = 16 // Add terminator
 		if storageRootHash == nil {
-			if cell.upHashedLen > 0 {
+			if cell.extLen > 0 {
 				// Extension
 				if cell.hl > 0 {
 					if hph.trace {
-						fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl])
+						fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.extension[:cell.extLen], cell.h[:cell.hl])
 					}
-					if storageRootHash, err = hph.extensionHash(nil, cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl]); err != nil {
+					if storageRootHash, err = hph.extensionHash(nil, cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
 						return nil, err
 					}
 				} else {
@@ -718,13 +720,13 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		return buf, nil
 	}
 	buf = append(buf, 0x80+32)
-	if cell.upHashedLen > 0 {
+	if cell.extLen > 0 {
 		// Extension
 		if cell.hl > 0 {
 			if hph.trace {
-				fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl])
+				fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.extension[:cell.extLen], cell.h[:cell.hl])
 			}
-			if buf, err = hph.extensionHash(buf, cell.upHashedKey[:cell.upHashedLen], cell.h[:cell.hl]); err != nil {
+			if buf, err = hph.extensionHash(buf, cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
 				return nil, err
 			}
 		} else {
@@ -813,7 +815,7 @@ func (hph *HexPatriciaHashed) Reset() {
 	hph.root.downHashedLen = 0
 	hph.root.apl = 0
 	hph.root.spl = 0
-	hph.root.upHashedLen = 0
+	hph.root.extLen = 0
 	copy(hph.root.CodeHash[:], EmptyCodeHash)
 	hph.root.StorageLen = 0
 	hph.root.Balance.Clear()
@@ -955,7 +957,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 				return err
 			}
 			if hph.trace {
-				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], hk=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.upHashedKey[:cell.upHashedLen])
+				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
 			}
 			if cell.apl > 0 {
 				if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
@@ -1054,11 +1056,11 @@ func (hph *HexPatriciaHashed) foldRoot() ([]byte, error) {
 	branchData = append(branchData, 0)
 	var fieldBits PartFlags
 	cell := &hph.root
-	if cell.upHashedLen > 0 {
+	if cell.extLen > 0 {
 		fieldBits |= HASHEDKEY_PART
-		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.upHashedLen))
+		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
 		branchData = append(branchData, hph.numBuf[:n]...)
-		branchData = append(branchData, cell.upHashedKey[:cell.upHashedLen]...)
+		branchData = append(branchData, cell.extension[:cell.extLen]...)
 	}
 	if cell.apl > 0 {
 		fieldBits |= ACCOUNT_PLAIN_PART
@@ -1138,7 +1140,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		upCell.hl = 0
 		upCell.apl = 0
 		upCell.spl = 0
-		upCell.upHashedLen = 0
+		upCell.extLen = 0
 		upCell.downHashedLen = 0
 		if bits.OnesCount16(hph.beforeBitmap[row]) > 1 {
 			// Deletion
@@ -1164,7 +1166,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		}
 		nibble := bits.TrailingZeros16(bitmap)
 		cell := &hph.grid[row][nibble]
-		upCell.upHashedLen = 0
+		upCell.extLen = 0
 		upCell.fillFromLowerCell(cell, depth, hph.currentKey[upDepth:hph.currentKeyLen], nibble)
 		if bits.OnesCount16(hph.beforeBitmap[row]) > 1 {
 			// Deletion
@@ -1240,11 +1242,11 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				return nil, nil, err
 			}
 			var fieldBits PartFlags
-			if cell.upHashedLen > 0 && cell.spl == 0 {
+			if cell.extLen > 0 && cell.spl == 0 {
 				fieldBits |= HASHEDKEY_PART
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.upHashedLen))
+				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
 				branchData = append(branchData, hph.numBuf[:n]...)
-				branchData = append(branchData, cell.upHashedKey[:cell.upHashedLen]...)
+				branchData = append(branchData, cell.extension[:cell.extLen]...)
 			}
 			if cell.apl > 0 {
 				fieldBits |= ACCOUNT_PLAIN_PART
@@ -1279,9 +1281,9 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				fmt.Printf("%x: empty(%d,%x)\n", i, row, i)
 			}
 		}
-		upCell.upHashedLen = depth - upDepth - 1
-		if upCell.upHashedLen > 0 {
-			copy(upCell.upHashedKey[:], hph.currentKey[upDepth:hph.currentKeyLen])
+		upCell.extLen = depth - upDepth - 1
+		if upCell.extLen > 0 {
+			copy(upCell.extension[:], hph.currentKey[upDepth:hph.currentKeyLen])
 		}
 		if depth < 64 {
 			upCell.apl = 0
@@ -1339,7 +1341,7 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 			}
 		}
 	}
-	cell.upHashedLen = 0
+	cell.extLen = 0
 	cell.Balance.Clear()
 	copy(cell.CodeHash[:], EmptyCodeHash)
 	cell.Nonce = 0
