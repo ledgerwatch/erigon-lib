@@ -1699,20 +1699,22 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 		original = w.a.readStorage(w.blockNum, dbkey, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
+		original = prevV[4:]
 	}
 	vLen := value.ByteLen()
 	v := make([]byte, 4+vLen)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	value.WriteToSlice(v[4:])
+	if bytes.Equal(v[4:], original) {
+		// No change
+		return nil
+	}
 	if err = w.tx.Put(kv.StateStorage, dbkey, v); err != nil {
 		return err
 	}
-	if prevV == nil {
+	if prevV == nil && original == nil {
 		w.storageChanges.insert(dbkey, v[4:])
 	} else {
-		if original == nil {
-			original = prevV[4:]
-		}
 		w.storageChanges.update(dbkey, original, v[4:])
 	}
 	if trace {
