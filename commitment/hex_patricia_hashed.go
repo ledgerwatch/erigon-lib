@@ -1420,6 +1420,7 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey []byte, hashedKey []byte, v
 		col = int(hashedKey[hph.currentKeyLen])
 		cell = &hph.grid[hph.activeRows-1][col]
 		hph.modBitmap[hph.activeRows-1] |= (uint16(1) << col)
+		hph.delBitmap[hph.activeRows-1] &^= (uint16(1) << col)
 		if hph.trace {
 			fmt.Printf("updateStorage setting (%d, %x), modBitmap[%d]=%016b, depth=%d\n", hph.activeRows-1, col, hph.activeRows-1, hph.modBitmap[hph.activeRows-1], depth)
 		}
