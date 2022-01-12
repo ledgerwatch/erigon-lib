@@ -1261,7 +1261,7 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
 		hashedKey := w.a.keccak.Sum(nil)
-		var c = &CommitmentItem{plainKey: key, hashedKey: make([]byte, len(hashedKey)*2)}
+		var c = &CommitmentItem{plainKey: common.Copy(key), hashedKey: make([]byte, len(hashedKey)*2)}
 		for i, b := range hashedKey {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
