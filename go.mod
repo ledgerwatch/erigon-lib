@@ -1,6 +1,9 @@
 module github.com/ledgerwatch/erigon-lib
 
 go 1.16
+replace (
+	github.com/ledgerwatch/erigon-lib => ./../erigon-lib
+)
 
 require (
 	github.com/VictoriaMetrics/metrics v1.18.1
