@@ -1201,6 +1201,9 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
 }
 
 func (w *Writer) captureCommitmentData(trace bool) {
+	if trace {
+		fmt.Printf("captureCommitmentData start w.commTree.Len()=%d\n", w.commTree.Len())
+	}
 	lastOffsetKey := 0
 	lastOffsetVal := 0
 	for i, offsetKey := range w.codeChanges.keys.wordOffsets {
@@ -1315,6 +1318,9 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		lastOffsetKey = offsetKey
 		lastOffsetVal = offsetVal
 	}
+	if trace {
+		fmt.Printf("captureCommitmentData end w.commTree.Len()=%d\n", w.commTree.Len())
+	}
 }
 
 // computeCommitment is computing the commitment to the state after
@@ -1324,6 +1330,9 @@ func (w *Writer) captureCommitmentData(trace bool) {
 // At the moment, it is specific version for hex merkle patricia tree commitment
 // but it will be extended to support other types of commitments
 func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
+	if trace {
+		fmt.Printf("computeCommitment w.commTree.Len()=%d\n", w.commTree.Len())
+	}
 	plainKeys := make([][]byte, w.commTree.Len())
 	hashedKeys := make([][]byte, w.commTree.Len())
 	updates := make([]commitment.Update, w.commTree.Len())
