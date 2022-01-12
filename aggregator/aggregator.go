@@ -1552,7 +1552,6 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	if prevV == nil {
 		original = w.a.readAccount(w.blockNum, addr, trace)
 		if original == nil {
-			log.Warn("deleteAccount without prev", "addr", fmt.Sprintf("[%x]", addr))
 			return false, nil
 		}
 	} else {
