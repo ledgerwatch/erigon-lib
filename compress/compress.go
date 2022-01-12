@@ -77,11 +77,11 @@ const superstringLimit = 16 * 1024 * 1024
 
 // minPatternLen is minimum length of pattern we consider to be included into the dictionary
 const minPatternLen = 5
-const maxPatternLen = 32
+const maxPatternLen = 64
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 1 * 1024 * 1024
+const maxDictPatterns =  32 * 1024 // 1 * 1024 * 1024
 
 //nolint
 const compressLogPrefix = "compress"

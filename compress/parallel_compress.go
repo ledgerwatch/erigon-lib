@@ -60,10 +60,13 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		go processSuperstring(ch, collector, &wg)
 	}
 	i, j := 0, 0
+	skipped := 0
 	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
 			if j%10 == 0 {
 				ch <- superstring
+			} else {
+				skipped++
 			}
 			superstring = nil
 			j++
@@ -90,6 +93,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	close(ch)
 	wg.Wait()
 
+	fmt.Printf("skipped: %d\n", skipped)
 	db, err := DictionaryBuilderFromCollectors(ctx, compressLogPrefix, tmpDir, collectors)
 	if err != nil {
 		panic(err)
@@ -365,6 +369,15 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		//panic(err)
 		//return err
 	}
+	counters := map[int]int{}
+	for i := 0; i < maxPatternLen+1; i++ {
+		counters[i] = 0
+	}
+	for _, p := range patternList {
+		counters[len(p.word)]++
+	}
+	fmt.Printf("counters:%+v\n", counters)
+
 	// Calculate offsets of the dictionary patterns and total size
 	var offset uint64
 	numBuf := make([]byte, binary.MaxVarintLen64)
@@ -835,9 +848,10 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				//if l > 32 && repeats < 64 { // long tail of long words
-				//	continue
-				//}
+				if l > 32 && repeats < 30 { // long tail of long words
+					continue
+				}
+
 				score := uint64(repeats * l)
 				if score < minPatternScore { // long tail of short words
 					continue
@@ -956,8 +970,8 @@ func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 		return err
 	}
 	defer f.Close()
-	r := bufio.NewReaderSize(f, etl.BufIOSize)
-	var buf []byte
+	r := bufio.NewReaderSize(f, etl.BufIOSize*64)
+	buf := make([]byte, 1024)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
 		if len(buf) < int(l) {
