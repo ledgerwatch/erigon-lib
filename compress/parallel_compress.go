@@ -59,11 +59,14 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		collectors[i] = collector
 		go processSuperstring(ch, collector, &wg)
 	}
-	i := 0
+	i, j := 0, 0
 	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
-			ch <- superstring
+			if j%10 == 0 {
+				ch <- superstring
+			}
 			superstring = nil
+			j++
 		}
 		for _, a := range v {
 			superstring = append(superstring, 1, a)
@@ -833,9 +836,9 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				if l > 32 && repeats < 64 { // long tail of long words
-					continue
-				}
+				//if l > 32 && repeats < 64 { // long tail of long words
+				//	continue
+				//}
 				if l > 64 {
 					if repeats < mostOften[l] {
 						continue
