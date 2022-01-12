@@ -1706,9 +1706,11 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	value.WriteToSlice(v[4:])
 	if bytes.Equal(v[4:], original) {
-		fmt.Printf("WriteAccountStorage no change addr=[%x], loc=[%x], value=%d, original=[%x]\n", addr, loc, value, original)
+		fmt.Printf("WriteAccountStorage no change addr=[%x], loc=[%x], value=%d [%x], original=[%x]\n", addr, loc, value, v[4:], original)
 		// No change
 		return nil
+	} else {
+		fmt.Printf("WriteAccountStorage no change addr=[%x], loc=[%x], value=%d [%x], original=[%x]\n", addr, loc, value, v[4:], original)
 	}
 	if err = w.tx.Put(kv.StateStorage, dbkey, v); err != nil {
 		return err
