@@ -1444,6 +1444,11 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 		original = w.a.readAccount(w.blockNum, addr, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
+		original = prevV[4:]
+	}
+	if bytes.Equal(account, original) {
+		// No change
+		return nil
 	}
 	v := make([]byte, 4+len(account))
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
@@ -1451,12 +1456,9 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 	if err = w.tx.Put(kv.StateAccounts, addr, v); err != nil {
 		return err
 	}
-	if prevV == nil && original == nil {
+	if prevV == nil && len(original) == 0 {
 		w.accountChanges.insert(addr, account)
 	} else {
-		if original == nil {
-			original = prevV[4:]
-		}
 		w.accountChanges.update(addr, original, account)
 	}
 	if trace {
@@ -1715,11 +1717,8 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
 	value.WriteToSlice(v[4:])
 	if bytes.Equal(v[4:], original) {
-		fmt.Printf("WriteAccountStorage no change %d addr=[%x], loc=[%x], value=%d [%x], original=[%x]\n", w.blockNum, addr, loc, value, v[4:], original)
 		// No change
 		return nil
-	} else {
-		fmt.Printf("WriteAccountStorage change %d addr=[%x], loc=[%x], value=%d [%x], original=[%x]\n", w.blockNum, addr, loc, value, v[4:], original)
 	}
 	if err = w.tx.Put(kv.StateStorage, dbkey, v); err != nil {
 		return err
