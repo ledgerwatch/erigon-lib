@@ -1708,7 +1708,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	if bytes.Equal(v[4:], original) {
 		fmt.Printf("WriteAccountStorage no change %d addr=[%x], loc=[%x], value=%d [%x], original=[%x]\n", w.blockNum, addr, loc, value, v[4:], original)
 		// No change
-		return nil
+		//return nil
 	} else {
 		fmt.Printf("WriteAccountStorage change %d addr=[%x], loc=[%x], value=%d [%x], original=[%x]\n", w.blockNum, addr, loc, value, v[4:], original)
 	}
