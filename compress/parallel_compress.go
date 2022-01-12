@@ -832,14 +832,14 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				if repeats < 30 {
+				if l > 32 && repeats < 64 { // long tail of long words
 					continue
 				}
 
 				score := uint64(repeats * l)
-				//if score < minPatternScore {
-				//	continue
-				//}
+				if score < minPatternScore { // long tail of short words
+					continue
+				}
 
 				dictKey := make([]byte, l)
 				for s := 0; s < l; s++ {
