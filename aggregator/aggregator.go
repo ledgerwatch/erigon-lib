@@ -1208,7 +1208,7 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
 		if trace {
-			fmt.Printf("computeCommitment cod [%x]=>[%x]\n", key, val)
+			fmt.Printf("captureCommitmentData cod [%x]=>[%x]\n", key, val)
 		}
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
@@ -1253,7 +1253,7 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		key := w.accountChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.accountChanges.after.words[lastOffsetVal:offsetVal]
 		if trace {
-			fmt.Printf("computeCommitment acc [%x]=>[%x]\n", key, val)
+			fmt.Printf("captureCommitmentData acc [%x]=>[%x]\n", key, val)
 		}
 		w.a.keccak.Reset()
 		w.a.keccak.Write(key)
@@ -1288,7 +1288,7 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		key := w.storageChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.storageChanges.after.words[lastOffsetVal:offsetVal]
 		if trace {
-			fmt.Printf("computeCommitment str [%x]=>[%x]\n", key, val)
+			fmt.Printf("captureCommitmentData str [%x]=>[%x]\n", key, val)
 		}
 		hashedKey := make([]byte, 2*length.Hash)
 		w.a.keccak.Reset()
@@ -1715,7 +1715,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	if err = w.tx.Put(kv.StateStorage, dbkey, v); err != nil {
 		return err
 	}
-	if prevV == nil && original == nil {
+	if prevV == nil && len(original) == 0 {
 		w.storageChanges.insert(dbkey, v[4:])
 	} else {
 		w.storageChanges.update(dbkey, original, v[4:])
