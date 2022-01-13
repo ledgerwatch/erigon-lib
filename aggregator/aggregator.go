@@ -554,6 +554,7 @@ func (c *Changes) produceChangeSets(datPath, idxPath string) error {
 	if d, err = compress.NewDecompressor(datPath); err != nil {
 		return fmt.Errorf("produceChangeSets NewDecompressor: %w", err)
 	}
+	defer d.Close()
 	var rs *recsplit.RecSplit
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   totalRecords,
