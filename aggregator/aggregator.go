@@ -216,16 +216,6 @@ func (cf *ChangeFile) prevTx() (bool, error) {
 	return true, nil
 }
 
-// rewindTx allows re-reading the transaction that has just been read
-func (cf *ChangeFile) rewindTx() error {
-	if _, err := cf.file.Seek(cf.txPos, 0); err != nil {
-		return err
-	}
-	cf.txRemaining = cf.txSize
-	cf.r.Reset(cf.file)
-	return nil
-}
-
 func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
 	if cf.txRemaining == 0 {
 		return wordBuf, false, nil
@@ -357,20 +347,6 @@ func (c *Changes) prevTx() (bool, uint64, error) {
 		return false, 0, fmt.Errorf("inconsistent txNum, keys: %d, after: %d", txNum, c.before.txNum)
 	}
 	return bkeys, txNum, nil
-}
-
-// rewindTx allows re-reading the transaction that has just been read
-func (c *Changes) rewindTx() error {
-	if err := c.keys.rewindTx(); err != nil {
-		return err
-	}
-	if err := c.before.rewindTx(); err != nil {
-		return err
-	}
-	if err := c.after.rewindTx(); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (c *Changes) rewind() error {
