@@ -38,7 +38,7 @@ const ASSERT = false
 
 // Compressor is the main operating type for performing per-word compression
 // After creating a compression, one needs to add words to it, using `AddWord` function
-// After that, `Compress` function needs to be called to perform the compression
+// After that, `ParallelCompress` function needs to be called to perform the compression
 // and eventually create output file
 type Compressor struct {
 	outputFile      string // File where to output the dictionary and compressed data

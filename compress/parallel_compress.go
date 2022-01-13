@@ -28,13 +28,50 @@ import (
 	atomic2 "go.uber.org/atomic"
 )
 
-// minPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
-const minPatternScore = 1024
+// MinPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
+const MinPatternScore = 1024
 
-func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
+func Compress(ctx context.Context, logPrefix, srcFile, segmentFilePath, tmpDir string) error {
+	tmpSegmentFilePath := segmentFilePath + ".tmp"
+
+	logEvery := time.NewTicker(20 * time.Second)
+	defer logEvery.Stop()
+
+	comp, err := NewCompressor("Bodies", tmpSegmentFilePath, tmpDir, MinPatternScore /* minPatterScore */)
+	if err != nil {
+		return err
+	}
+
+	var i int
+	if err := ReadDatFile(srcFile, func(v []byte) error {
+		if err = comp.AddWord(v); err != nil {
+			return err
+		}
+		i++
+		select {
+		default:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-logEvery.C:
+			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", i/1_000))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err = comp.Compress(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpSegmentFilePath, segmentFilePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ParallelCompress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
 	tmpDir, _ := filepath.Split(tmpFilePath)
-	_, fileName := filepath.Split(segmentFilePath)
-	tmpSegmentFilePath := filepath.Join(tmpDir, fileName)
+	tmpSegmentFilePath := segmentFilePath + ".tmp"
 
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
@@ -833,7 +870,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 				score := uint64(repeats * l)
-				if score < minPatternScore {
+				if score < MinPatternScore {
 					continue
 				}
 
