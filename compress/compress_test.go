@@ -17,10 +17,51 @@
 package compress
 
 import (
+	"context"
 	"fmt"
+	"hash/crc32"
+	"io"
+	"io/ioutil"
+	"os"
 	"path"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func checksum(fileName string) uint32 {
+	h := crc32.NewIEEE()
+	f, err := os.Open(fileName)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	if _, err = io.Copy(h, f); err != nil {
+		panic(err)
+	}
+	return h.Sum32()
+}
+
+func TestA(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+	fn := filepath.Join(tmpDir, "test")
+	targetFn := filepath.Join(tmpDir, "test_target")
+	in := make([]byte, 1024)
+
+	_ = ioutil.WriteFile(fn, in, 0755)
+	err := Compress(ctx, "", fn, targetFn, tmpDir)
+	require.NoError(t, err)
+	r1 := checksum(targetFn)
+
+	err = ParallelCompress(ctx, "", fn, targetFn, tmpDir, 1)
+	require.NoError(t, err)
+	r2 := checksum(targetFn)
+
+	fmt.Printf("alex: %d, %d\n", r1, r2)
+	_ = ioutil.WriteFile(fn, []byte{1, 2, 3, 4, 5}, 0755)
+}
 
 func TestCompressEmptyDict(t *testing.T) {
 	tmpDir := t.TempDir()

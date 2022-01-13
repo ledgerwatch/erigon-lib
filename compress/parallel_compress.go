@@ -746,7 +746,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 // it notifies the waitgroup before exiting, so that the caller known when all work is done
 // No error channels for now
 func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector, completion *sync.WaitGroup) {
-	var dictVal [8]byte
+	//var dictVal [8]byte
 	for superstring := range superstringCh {
 		//log.Info("Superstring", "len", len(superstring))
 		sa := make([]int32, len(superstring))
@@ -877,6 +877,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				for s := 0; s < l; s++ {
 					dictKey[s] = superstring[(filtered[i]+s)*2+1]
 				}
+				var dictVal [8]byte
 				binary.BigEndian.PutUint64(dictVal[:], score)
 				if err = dictCollector.Collect(dictKey, dictVal[:]); err != nil {
 					log.Error("processSuperstring", "collect", err)

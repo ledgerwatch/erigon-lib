@@ -1073,10 +1073,6 @@ func (c *Compressor) buildDictionary() error {
 }
 
 func (c *Compressor) processSuperstring() error {
-	ll := map[int]int{}
-	for i := 0; i < maxPatternLen; i++ {
-		ll[i] = 0
-	}
 	c.divsufsort.ComputeSuffixArray(c.superstring, c.suffixarray[:len(c.superstring)])
 	// filter out suffixes that start with odd positions - we reuse the first half of sa.suffixarray for that
 	// because it won't be used after filtration
@@ -1162,7 +1158,6 @@ func (c *Compressor) processSuperstring() error {
 			if score < c.minPatternScore {
 				continue
 			}
-			ll[int(l)]++
 
 			// Dictionary key is the concatenation of the score and the dictionary word (to later aggregate the scores from multiple chunks)
 			c.collectBuf = c.collectBuf[:8]
@@ -1175,7 +1170,6 @@ func (c *Compressor) processSuperstring() error {
 			}
 		}
 	}
-	fmt.Printf("alex-result: %+v\n", ll)
 	c.superstring = c.superstring[:0]
 	return nil
 }
