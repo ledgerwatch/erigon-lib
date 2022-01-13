@@ -1153,17 +1153,18 @@ func (c *Compressor) processSuperstring() error {
 					lastK = k
 				}
 			}
-			score := uint64(repeats * int(l-4))
-			if score >= c.minPatternScore {
-				// Dictionary key is the concatenation of the score and the dictionary word (to later aggregate the scores from multiple chunks)
-				c.collectBuf = c.collectBuf[:8]
-				for s := int32(0); s < l; s++ {
-					c.collectBuf = append(c.collectBuf, c.superstring[(saFiltered[i]+s)*2+1])
-				}
-				binary.BigEndian.PutUint64(c.collectBuf[:8], score)
-				if err := c.collector.Collect(c.collectBuf[8:], c.collectBuf[:8]); err != nil { // key will be copied by Collect function
-					return fmt.Errorf("collecting %x with score %d: %w", c.collectBuf[8:], score, err)
-				}
+			score := uint64(repeats * int(l))
+			if score < c.minPatternScore {
+				continue
+			}
+			// Dictionary key is the concatenation of the score and the dictionary word (to later aggregate the scores from multiple chunks)
+			c.collectBuf = c.collectBuf[:8]
+			for s := int32(0); s < l; s++ {
+				c.collectBuf = append(c.collectBuf, c.superstring[(saFiltered[i]+s)*2+1])
+			}
+			binary.BigEndian.PutUint64(c.collectBuf[:8], score)
+			if err := c.collector.Collect(c.collectBuf[8:], c.collectBuf[:8]); err != nil { // key will be copied by Collect function
+				return fmt.Errorf("collecting %x with score %d: %w", c.collectBuf[8:], score, err)
 			}
 		}
 	}
