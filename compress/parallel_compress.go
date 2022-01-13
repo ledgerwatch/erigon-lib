@@ -60,7 +60,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		go processSuperstring(ch, collector, &wg)
 	}
 	i := 0
-	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
+	if err := ReadDatFile(tmpFilePath, func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
 			ch <- superstring
 			superstring = nil
@@ -317,7 +317,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		go reduceDictWorker(ch, &wg, &pt, collector, inputSize, outputSize, posMap)
 	}
 	var wordsCount uint64
-	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
+	if err := ReadDatFile(tmpFilePath, func(v []byte) error {
 		input := make([]byte, 8+int(len(v)))
 		binary.BigEndian.PutUint64(input, wordsCount)
 		copy(input[8:], v)
@@ -918,32 +918,6 @@ func ReadDictrionary(fileName string, walker func(score uint64, word []byte) err
 func ReadDatFile(fileName string, walker func(v []byte) error) error {
 	// Read keys from the file and generate superstring (with extra byte 0x1 prepended to each character, and with 0x0 0x0 pair inserted between keys and values)
 	// We only consider values with length > 2, because smaller values are not compressible without going into bits
-	f, err := os.Open(fileName)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	r := bufio.NewReaderSize(f, etl.BufIOSize)
-	var buf []byte
-	l, e := binary.ReadUvarint(r)
-	for ; e == nil; l, e = binary.ReadUvarint(r) {
-		if len(buf) < int(l) {
-			buf = make([]byte, l)
-		}
-		if _, e = io.ReadFull(r, buf[:l]); e != nil {
-			return e
-		}
-		if err := walker(buf[:l]); err != nil {
-			return err
-		}
-	}
-	if e != nil && !errors.Is(e, io.EOF) {
-		return e
-	}
-	return nil
-}
-
-func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err
