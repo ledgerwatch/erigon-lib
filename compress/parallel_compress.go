@@ -727,6 +727,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 // it notifies the waitgroup before exiting, so that the caller known when all work is done
 // No error channels for now
 func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector, completion *sync.WaitGroup) {
+	mostOften := make([]int, maxPatternLen+1)
 	for superstring := range superstringCh {
 		//log.Info("Superstring", "len", len(superstring))
 		sa := make([]int32, len(superstring))
@@ -828,6 +829,10 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				if l < minPatternLen || l > maxPatternLen {
 					continue
 				}
+				if l > 64 && (l&(l-1)) != 0 { // is power of 2
+					continue
+				}
+
 				// Go back
 				var new bool
 				for j > 0 && int(lcp[j-1]) >= l {
@@ -848,8 +853,12 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				if l > 32 && repeats < 30 { // long tail of long words
-					continue
+				if l > 64 {
+					if repeats > mostOften[l] {
+						mostOften[l] = l + 1
+					} else {
+						continue
+					}
 				}
 
 				score := uint64(repeats * l)
