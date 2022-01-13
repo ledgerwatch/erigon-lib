@@ -467,7 +467,7 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 	return d, idx, nil
 }
 
-func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx, table string) (*compress.Decompressor, *recsplit.Index, error) {
+func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx, table string, changesets bool) (*compress.Decompressor, *recsplit.Index, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
 		return nil, nil, fmt.Errorf("open files: %w", err)
 	}
@@ -476,7 +476,7 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 	if err != nil {
 		return nil, nil, fmt.Errorf("aggregateToBtree: %w", err)
 	}
-	if bt.Len() > 0 { // No need to produce changeset files if there were no changes
+	if changesets && bt.Len() > 0 { // No need to produce changeset files if there were no changes
 		chsetDatPath := path.Join(c.dir, fmt.Sprintf("chsets.%s.%d-%d.dat", c.namebase, blockFrom, blockTo))
 		chsetIdxPath := path.Join(c.dir, fmt.Sprintf("chsets.%s.%d-%d.idx", c.namebase, blockFrom, blockTo))
 		if err = c.produceChangeSets(chsetDatPath, chsetIdxPath); err != nil {
@@ -1907,16 +1907,16 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	commChanges.Init("commitment", w.a.aggregationStep, w.a.diffDir)
 	var err error
 	var item1 *byEndBlockItem = &byEndBlockItem{fileCount: 8, startBlock: blockFrom, endBlock: blockTo}
-	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts); err != nil {
+	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts, true /* changeset */); err != nil {
 		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
-	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode); err != nil {
+	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode, true /* changesets */); err != nil {
 		return fmt.Errorf("aggregate codeChanges: %w", err)
 	}
-	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage); err != nil {
+	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage, true /* changesets */); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
-	if item1.commitmentD, item1.commitmentIdx, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment); err != nil {
+	if item1.commitmentD, item1.commitmentIdx, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment, false /* changesets */); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
 	if err = accountChanges.closeFiles(); err != nil {
