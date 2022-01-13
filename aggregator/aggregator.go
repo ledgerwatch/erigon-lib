@@ -443,10 +443,16 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 		return nil, nil, fmt.Errorf("open files: %w", err)
 	}
 	bt := btree.New(32)
-	if err := c.aggregateToBtree(bt, prefixLen); err != nil {
+	totalRecords, err := c.aggregateToBtree(bt, prefixLen)
+	if err != nil {
 		return nil, nil, fmt.Errorf("aggregateToBtree: %w", err)
 	}
-	if err := c.closeFiles(); err != nil {
+	chsetDatPath := path.Join(c.dir, fmt.Sprintf("chsets.%s.%d-%d.dat", c.namebase, blockFrom, blockTo))
+	chsetIdxPath := path.Join(c.dir, fmt.Sprintf("chsets.%s.%d-%d.idx", c.namebase, blockFrom, blockTo))
+	if err = c.produceChangeSets(totalRecords, chsetDatPath, chsetIdxPath); err != nil {
+		return nil, nil, fmt.Errorf("produceChangeSets: %w", err)
+	}
+	if err = c.closeFiles(); err != nil {
 		return nil, nil, fmt.Errorf("close files: %w", err)
 	}
 	// Clean up the DB table
@@ -493,7 +499,6 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 	datPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.dat", c.namebase, blockFrom, blockTo))
 	idxPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.idx", c.namebase, blockFrom, blockTo))
 	var count int
-	var err error
 	if count, err = btreeToFile(bt, datPath, c.dir); err != nil {
 		return nil, nil, fmt.Errorf("btreeToFile: %w", err)
 	}
@@ -509,7 +514,7 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 	return bytes.Compare(i.k, than.(*AggregateItem).k) < 0
 }
 
-func (c *Changes) produceChangeSets(beforeSizes []int, indexSizes []int) ([]int, []int, error) {
+func (c *Changes) produceChangeSets(totalRecords int, datPath, idxPath string) error {
 	var b bool
 	var e error
 	var key, before, after []byte
@@ -524,16 +529,15 @@ func (c *Changes) produceChangeSets(beforeSizes []int, indexSizes []int) ([]int,
 			beforeOffset += len(before) + n // before values will be prepended by length prefix
 		}
 		if e != nil {
-			return nil, nil, fmt.Errorf("produceChangeSets nextTriple: %w", e)
+			return fmt.Errorf("produceChangeSets nextTriple: %w", e)
 		}
 		if e = c.rewindTx(); e != nil {
-			return nil, nil, fmt.Errorf("produceChangeSets rewindTx: %w", e)
+			return fmt.Errorf("produceChangeSets rewindTx: %w", e)
 		}
-		indexFile := path.Join(c.dir, "tempChangeSets")
 		var rs *recsplit.RecSplit
 		var err error
 		if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
-			KeyCount:   len(beforeOffsets) - 1,
+			KeyCount:   totalRecords,
 			Enums:      true,
 			BucketSize: 2000,
 			Salt:       0,
@@ -542,23 +546,23 @@ func (c *Changes) produceChangeSets(beforeSizes []int, indexSizes []int) ([]int,
 			StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
 				0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
 				0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-			IndexFile: indexFile,
+			IndexFile: idxPath,
 		}); err != nil {
-			return nil, nil, err
+			return err
 		}
 		for {
 			i := 0
 			for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 				if e = rs.AddKey(key, uint64(beforeOffsets[i])); e != nil {
-					return nil, nil, e
+					return e
 				}
 				i++
 			}
 			if e != nil {
-				return nil, nil, fmt.Errorf("produceChangeSets nextTriple: %w", e)
+				return fmt.Errorf("produceChangeSets nextTriple: %w", e)
 			}
 			if err = rs.Build(); err != nil {
-				return nil, nil, err
+				return err
 			}
 			if rs.Collision() {
 				log.Info("Building produceChangeSets. Collision happened. It's ok. Restarting...")
@@ -567,27 +571,32 @@ func (c *Changes) produceChangeSets(beforeSizes []int, indexSizes []int) ([]int,
 				break
 			}
 		}
-		var stat os.FileInfo
-		if stat, err = os.Stat(indexFile); err != nil {
-			return nil, nil, err
-		}
-		beforeSizes = append(beforeSizes, beforeOffset)
-		indexSizes = append(indexSizes, int(stat.Size()))
 	}
 	if e != nil {
-		return nil, nil, fmt.Errorf("produceChangeSets prevTx: %w", e)
+		return fmt.Errorf("produceChangeSets prevTx: %w", e)
 	}
-	return beforeSizes, indexSizes, nil
+	return nil
 }
 
-func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
+// aggregateToBtree iterates over all available changes in the change files covered by this instance `c`
+// (there are 3 of them, one for "keys", one for values "before" every change, and one for values "after" every change)
+// and create a B-tree where each key is only represented once, with the value corresponding to the "after" value
+// of the latest change. Also, the first byte of value in the B-tree indicates whether the change has occurred from
+// non-existent (zero) value. In such cases, the fist byte is set to 1 (insertion), otherwise it is 0 (update).
+// Returns number of change records processed in total, this is useful for buiding change index later
+func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) (int, error) {
 	var b bool
 	var e error
 	var key, before, after []byte
 	var ai AggregateItem
 	var prefix []byte
+	var totalRecords int
+	// Note that the following loop iterates over transactions backwards, therefore it does not replace entries in the B-tree,
+	// but instead just updates their "change count" and the first byte of the value (insertion vs update flag)
 	for b, e = c.prevTx(); b && e == nil; b, e = c.prevTx() {
+		// Within each transaction, keys are unique, but they can appear in any order
 		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
+			totalRecords++
 			if prefixLen > 0 && !bytes.Equal(prefix, key[:prefixLen]) {
 				prefix = common.Copy(key[:prefixLen])
 				item := &AggregateItem{k: prefix, count: 0}
@@ -619,13 +628,13 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 			}
 		}
 		if e != nil {
-			return fmt.Errorf("aggregateToBtree nextTriple: %w", e)
+			return 0, fmt.Errorf("aggregateToBtree nextTriple: %w", e)
 		}
 	}
 	if e != nil {
-		return fmt.Errorf("aggregateToBtree prevTx: %w", e)
+		return 0, fmt.Errorf("aggregateToBtree prevTx: %w", e)
 	}
-	return nil
+	return totalRecords, nil
 }
 
 const AggregatorPrefix = "aggregator"
