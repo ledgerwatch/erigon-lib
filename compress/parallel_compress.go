@@ -32,7 +32,7 @@ import (
 const MinPatternScore = 1024
 
 func Compress(ctx context.Context, logPrefix, srcFile, segmentFilePath, tmpDir string) error {
-	tmpSegmentFilePath := segmentFilePath + ".tmp"
+	tmpSegmentFilePath := segmentFilePath + ".tmp" // not in tmpDir, because tmpDir may be mount to another device
 
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
@@ -69,9 +69,8 @@ func Compress(ctx context.Context, logPrefix, srcFile, segmentFilePath, tmpDir s
 	return nil
 }
 
-func ParallelCompress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
-	tmpDir, _ := filepath.Split(tmpFilePath)
-	tmpSegmentFilePath := segmentFilePath + ".tmp"
+func ParallelCompress(ctx context.Context, logPrefix, srcFilePath, segmentFilePath, tmpDir string, workers int) error {
+	tmpSegmentFilePath := segmentFilePath + ".tmp" // not in tmpDir, because tmpDir may be mount to another device
 
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
@@ -97,7 +96,7 @@ func ParallelCompress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePa
 		go processSuperstring(ch, collector, &wg)
 	}
 	i := 0
-	if err := ReadDatFile(tmpFilePath, func(v []byte) error {
+	if err := ReadDatFile(srcFilePath, func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
 			ch <- superstring
 			superstring = nil
@@ -128,12 +127,12 @@ func ParallelCompress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePa
 	if err != nil {
 		panic(err)
 	}
-	dictPath := tmpFilePath + ".dictionary.txt"
+	dictPath := srcFilePath + ".dictionary.txt"
 	if err := PersistDictrionary(dictPath, db); err != nil {
 		return err
 	}
 
-	if err := reducedict(logPrefix, tmpFilePath, dictPath, tmpSegmentFilePath, tmpDir, workers); err != nil {
+	if err := reducedict(logPrefix, srcFilePath, dictPath, tmpSegmentFilePath, tmpDir, workers); err != nil {
 		return err
 	}
 
