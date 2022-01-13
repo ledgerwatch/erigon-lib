@@ -89,6 +89,7 @@ type ChangeFile struct {
 	txPos       int64 // Position of the last block iterated upon
 	txNum       uint64
 	txSize      uint64
+	txRemaining uint64 // Remaining number of bytes to read in the current transaction
 	words       []byte // Words pending for the next block record, in the same slice
 	wordOffsets []int  // Offsets of words in the `words` slice
 }
@@ -197,6 +198,7 @@ func (cf *ChangeFile) prevTx() (bool, error) {
 		return false, err
 	}
 	cf.txSize = binary.BigEndian.Uint64(cf.numBuf[:])
+	cf.txRemaining = cf.txSize
 	cf.txPos, err = cf.file.Seek(pos-int64(cf.txSize), 0)
 	if err != nil {
 		return false, err
@@ -205,8 +207,18 @@ func (cf *ChangeFile) prevTx() (bool, error) {
 	return true, nil
 }
 
+// rewindTx allows re-reading the transaction that has just been read
+func (cf *ChangeFile) rewindTx() error {
+	if _, err := cf.file.Seek(cf.txPos, 0); err != nil {
+		return err
+	}
+	cf.txRemaining = cf.txSize
+	cf.r.Reset(cf.file)
+	return nil
+}
+
 func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
-	if cf.txSize == 0 {
+	if cf.txRemaining == 0 {
 		return wordBuf, false, nil
 	}
 	ws, err := binary.ReadUvarint(cf.r)
@@ -224,7 +236,7 @@ func (cf *ChangeFile) nextWord(wordBuf []byte) ([]byte, bool, error) {
 		return wordBuf, false, fmt.Errorf("read word (%d %d): %w", ws, len(buf[len(wordBuf):]), err)
 	}
 	n := binary.PutUvarint(cf.numBuf[:], ws)
-	cf.txSize -= uint64(n) + ws
+	cf.txRemaining -= uint64(n) + ws
 	return buf, true, nil
 }
 
@@ -329,6 +341,20 @@ func (c *Changes) prevTx() (bool, error) {
 		return false, fmt.Errorf("inconsistent block iteration")
 	}
 	return bkeys, nil
+}
+
+// rewindTx allows re-reading the transaction that has just been read
+func (c *Changes) rewindTx() error {
+	if err := c.keys.rewindTx(); err != nil {
+		return err
+	}
+	if err := c.before.rewindTx(); err != nil {
+		return err
+	}
+	if err := c.after.rewindTx(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Changes) nextTriple(keyBuf, beforeBuf []byte, afterBuf []byte) ([]byte, []byte, []byte, bool, error) {
@@ -483,6 +509,77 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 	return bytes.Compare(i.k, than.(*AggregateItem).k) < 0
 }
 
+func (c *Changes) produceChangeSets(beforeSizes []int, indexSizes []int) ([]int, []int, error) {
+	var b bool
+	var e error
+	var key, before, after []byte
+	var beforeOffsets []int
+	for b, e = c.prevTx(); b && e == nil; b, e = c.prevTx() {
+		// Pass 1 - count number of keys and calculate "before" value offsets
+		beforeOffsets = beforeOffsets[:0]
+		var beforeOffset int
+		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
+			beforeOffsets = append(beforeOffsets, beforeOffset)
+			n := binary.PutUvarint(c.before.numBuf[:], uint64(len(before)))
+			beforeOffset += len(before) + n // before values will be prepended by length prefix
+		}
+		if e != nil {
+			return nil, nil, fmt.Errorf("produceChangeSets nextTriple: %w", e)
+		}
+		if e = c.rewindTx(); e != nil {
+			return nil, nil, fmt.Errorf("produceChangeSets rewindTx: %w", e)
+		}
+		indexFile := path.Join(c.dir, "tempChangeSets")
+		var rs *recsplit.RecSplit
+		var err error
+		if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
+			KeyCount:   len(beforeOffsets) - 1,
+			Enums:      true,
+			BucketSize: 2000,
+			Salt:       0,
+			LeafSize:   8,
+			TmpDir:     c.dir,
+			StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
+				0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
+				0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
+			IndexFile: indexFile,
+		}); err != nil {
+			return nil, nil, err
+		}
+		for {
+			i := 0
+			for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
+				if e = rs.AddKey(key, uint64(beforeOffsets[i])); e != nil {
+					return nil, nil, e
+				}
+				i++
+			}
+			if e != nil {
+				return nil, nil, fmt.Errorf("produceChangeSets nextTriple: %w", e)
+			}
+			if err = rs.Build(); err != nil {
+				return nil, nil, err
+			}
+			if rs.Collision() {
+				log.Info("Building produceChangeSets. Collision happened. It's ok. Restarting...")
+				rs.ResetNextSalt()
+			} else {
+				break
+			}
+		}
+		var stat os.FileInfo
+		if stat, err = os.Stat(indexFile); err != nil {
+			return nil, nil, err
+		}
+		beforeSizes = append(beforeSizes, beforeOffset)
+		indexSizes = append(indexSizes, int(stat.Size()))
+	}
+	if e != nil {
+		return nil, nil, fmt.Errorf("produceChangeSets prevTx: %w", e)
+	}
+	return beforeSizes, indexSizes, nil
+}
+
 func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 	var b bool
 	var e error
@@ -522,11 +619,11 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 			}
 		}
 		if e != nil {
-			return fmt.Errorf("nextTriple: %w", e)
+			return fmt.Errorf("aggregateToBtree nextTriple: %w", e)
 		}
 	}
 	if e != nil {
-		return fmt.Errorf("prevTx: %w", e)
+		return fmt.Errorf("aggregateToBtree prevTx: %w", e)
 	}
 	return nil
 }
