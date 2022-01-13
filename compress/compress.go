@@ -38,7 +38,7 @@ const ASSERT = false
 
 // Compressor is the main operating type for performing per-word compression
 // After creating a compression, one needs to add words to it, using `AddWord` function
-// After that, `ParallelCompress` function needs to be called to perform the compression
+// After that, `Compress` function needs to be called to perform the compression
 // and eventually create output file
 type Compressor struct {
 	outputFile      string // File where to output the dictionary and compressed data
@@ -67,7 +67,8 @@ type Compressor struct {
 	uncovered   []int                       // Buffer of intervals that are not covered by patterns
 	posMap      map[uint64]uint64           // Counter of use for each position within compressed word (for building huffman code for positions)
 
-	wordsCount uint64
+	wordsCount        uint64
+	suprestringsCount uint64
 }
 
 // superstringLimit limits how large can one "superstring" get before it is processed
@@ -1072,6 +1073,10 @@ func (c *Compressor) buildDictionary() error {
 }
 
 func (c *Compressor) processSuperstring() error {
+	ll := map[int]int{}
+	for i := 0; i < maxPatternLen; i++ {
+		ll[i] = 0
+	}
 	c.divsufsort.ComputeSuffixArray(c.superstring, c.suffixarray[:len(c.superstring)])
 	// filter out suffixes that start with odd positions - we reuse the first half of sa.suffixarray for that
 	// because it won't be used after filtration
@@ -1157,6 +1162,8 @@ func (c *Compressor) processSuperstring() error {
 			if score < c.minPatternScore {
 				continue
 			}
+			ll[int(l)]++
+
 			// Dictionary key is the concatenation of the score and the dictionary word (to later aggregate the scores from multiple chunks)
 			c.collectBuf = c.collectBuf[:8]
 			for s := int32(0); s < l; s++ {
@@ -1168,6 +1175,7 @@ func (c *Compressor) processSuperstring() error {
 			}
 		}
 	}
+	fmt.Printf("alex-result: %+v\n", ll)
 	c.superstring = c.superstring[:0]
 	return nil
 }
