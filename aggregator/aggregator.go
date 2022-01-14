@@ -74,6 +74,7 @@ type Aggregator struct {
 	tracedKeys      map[string]struct{} // Set of keys being traced during aggregations
 	hph             *commitment.HexPatriciaHashed
 	keccak          hash.Hash
+	changesets      bool // Whether to generate changesets (off by default)
 }
 
 type ChangeFile struct {
@@ -918,6 +919,10 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		}
 	}
 	return a, nil
+}
+
+func (a *Aggregator) GenerateChangesets(on bool) {
+	a.changesets = on
 }
 
 func closeFiles(byEndBlock *btree.BTree) {
@@ -1884,17 +1889,17 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	commChanges.Init("commitment", w.a.aggregationStep, w.a.diffDir)
 	var err error
 	var item1 *byEndBlockItem = &byEndBlockItem{fileCount: 8, startBlock: blockFrom, endBlock: blockTo}
-	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts, true /* changeset */); err != nil {
+	if item1.accountsD, item1.accountsIdx, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts, w.a.changesets); err != nil {
 		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
-	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode, true /* changesets */); err != nil {
+	if item1.codeD, item1.codeIdx, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode, w.a.changesets); err != nil {
 		return fmt.Errorf("aggregate codeChanges: %w", err)
 	}
-	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage, true /* changesets */); err != nil {
+	if item1.storageD, item1.storageIdx, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage, w.a.changesets); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
 	if item1.commitmentD, item1.commitmentIdx, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment, false /* changesets */); err != nil {
-		return fmt.Errorf("aggregate storageChanges: %w", err)
+		return fmt.Errorf("aggregate commitmentChanges: %w", err)
 	}
 	if err = accountChanges.closeFiles(); err != nil {
 		return err
