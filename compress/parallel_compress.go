@@ -65,7 +65,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	if err != nil {
 		return err
 	}
-	processEvery := int((s.Size() / superstringLimit) / 32) // process only 64 samples
+	processEvery := int((s.Size() / superstringLimit) / 16) // process only 64 samples
 	if processEvery == 0 {
 		processEvery = 1
 	}
@@ -850,8 +850,8 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 				if (l <= 8 && repeats < 1000) ||
-					(l < 32 && repeats < 30) ||
-					(l >= 32 && repeats < 30) {
+					(l <= 32 && repeats < 20) ||
+					(l > 32 && repeats < 20) {
 					continue
 				}
 
