@@ -65,7 +65,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	if err != nil {
 		return err
 	}
-	processEvery := int((s.Size() / superstringLimit) / 16) // process only 64 samples
+	processEvery := int((s.Size() / superstringLimit) / 64) // process only 64 samples
 	if processEvery == 0 {
 		processEvery = 1
 	}
