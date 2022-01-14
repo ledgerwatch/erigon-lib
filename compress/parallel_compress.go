@@ -41,7 +41,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 
 	// Read keys from the file and generate superstring (with extra byte 0x1 prepended to each character, and with 0x0 0x0 pair inserted between keys and values)
 	// We only consider values with length > 2, because smaller values are not compressible without going into bits
-	var superstring []byte
+	superstring := make([]byte, 0, superstringLimit)
 
 	// Collector for dictionary words (sorted by their score)
 	ch := make(chan []byte, workers)
@@ -850,16 +850,15 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				//if (l <= 8 && repeats < 500) ||
-				//	(l <= 32 && repeats < 20) ||
-				//	(l > 32 && repeats < 20) {
-				//	continue
-				//}
-
-				score := uint64(repeats * (l))
-				if score < minPatternScore {
+				if (l <= 8 && repeats < 500) ||
+					(l > 8 && repeats < 30) {
 					continue
 				}
+
+				score := uint64(repeats * (l))
+				//if score < minPatternScore {
+				//	continue
+				//}
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
