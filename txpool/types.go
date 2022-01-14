@@ -147,6 +147,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	var txType int
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
 	if !legacy {
+		slot.rlp = payload[dataPos : dataPos+dataLen]
 		txType = int(payload[p])
 		if _, err = ctx.keccak1.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err)
@@ -167,8 +168,9 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			return 0, fmt.Errorf("%w: computing IdHash (hashing the envelope): %s", ErrParseTxn, err)
 		}
 		p = dataPos
+	} else {
+		slot.rlp = payload[pos : dataPos+dataLen]
 	}
-	slot.rlp = payload[pos : dataPos+dataLen]
 
 	// Remember where signing hash data begins (it will need to be wrapped in an RLP list)
 	sigHashPos := p
