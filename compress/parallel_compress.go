@@ -29,7 +29,7 @@ import (
 )
 
 // minPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
-const minPatternScore = 1024
+const minPatternScore = 512
 
 func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
 	tmpDir, _ := filepath.Split(tmpFilePath)
