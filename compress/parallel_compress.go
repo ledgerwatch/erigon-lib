@@ -972,7 +972,7 @@ func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 		return err
 	}
 	defer f.Close()
-	r := bufio.NewReaderSize(f, etl.BufIOSize)
+	r := bufio.NewReaderSize(f, etl.BufIOSize*64)
 	buf := make([]byte, 4096)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
