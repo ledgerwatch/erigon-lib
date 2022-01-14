@@ -35,7 +35,7 @@ const (
 	// if first v1 was added under key K, then v2; only v1 will stay
 	SortableOldestAppearedBuffer
 
-	BufIOSize = 64 * 4096 // 64 pages | default is 1 page | increasing further doesn't show speedup on SSD
+	BufIOSize = 128 * 4096 // 64 pages | default is 1 page | increasing further doesn't show speedup on SSD
 )
 
 var BufferOptimalSize = 256 * datasize.MB /*  var because we want to sometimes change it from tests or command-line flags */

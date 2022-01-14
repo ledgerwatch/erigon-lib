@@ -29,7 +29,7 @@ import (
 )
 
 // minPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
-const minPatternScore = 256
+const minPatternScore = 1024
 
 func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
 	tmpDir, _ := filepath.Split(tmpFilePath)
@@ -65,7 +65,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	if err != nil {
 		return err
 	}
-	processEvery := int((s.Size() / superstringLimit) / 32) // process only 64 samples
+	processEvery := int((s.Size() / superstringLimit) / 16) // process only 64 samples
 	if processEvery == 0 {
 		processEvery = 1
 	}
@@ -849,20 +849,24 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				if (l <= 8 && repeats < 1000) ||
-					(l <= 32 && repeats < 20) ||
-					(l > 32 && repeats < 30) {
-					continue
-				}
 
-				score := uint64(repeats * (l))
-				//if score < minPatternScore {
+				//if (l <= 8 && repeats < 500) ||
+				//	(l <= 32 && repeats < 20) ||
+				//	(l > 32 && repeats < 20) {
 				//	continue
 				//}
+
+				score := uint64(repeats * (l))
+				if score < minPatternScore {
+					continue
+				}
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
 					dictKey[s] = superstring[(filtered[i]+s)*2+1]
+				}
+				if l == 64 {
+					fmt.Printf("%d, %x\n", repeats, dictKey)
 				}
 				binary.BigEndian.PutUint64(dictVal[:], score)
 				if err = dictCollector.Collect(dictKey, dictVal[:]); err != nil {
