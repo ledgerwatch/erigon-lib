@@ -61,9 +61,14 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	}
 	i, j := 0, 0
 	skipped := 0
+	s, _ := os.Stat(tmpFilePath)
+	processEvery := int((s.Size() / superstringLimit) / 16) // process only 16 super-strings
+	if processEvery == 0 {
+		processEvery = 1
+	}
 	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
-			if j%10 == 0 {
+			if j%processEvery == 0 {
 				ch <- superstring
 			} else {
 				skipped++
@@ -369,14 +374,6 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		//panic(err)
 		//return err
 	}
-	counters := map[int]int{}
-	for i := 0; i < maxPatternLen+1; i++ {
-		counters[i] = 0
-	}
-	for _, p := range patternList {
-		counters[len(p.word)]++
-	}
-	fmt.Printf("counters:%+v\n", counters)
 
 	// Calculate offsets of the dictionary patterns and total size
 	var offset uint64
@@ -388,6 +385,14 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	}
 	patternCutoff := offset // All offsets below this will be considered patterns
 	i := 0
+	ll := map[int]int{}
+	for _, p := range patternList {
+		if _, ok := ll[len(p.word)]; !ok {
+			ll[len(p.word)] = 0
+		}
+		ll[len(p.word)]++
+	}
+	fmt.Printf("dict: %+v\n", ll)
 	log.Info(fmt.Sprintf("[%s] Effective dictionary", logPrefix), "size", patternList.Len())
 	// Build Huffman tree for codes
 	var codeHeap PatternHeap
@@ -498,7 +503,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 			return err
 		}
 	}
-	log.Info(fmt.Sprintf("[%s] Dictionary", logPrefix), "size", offset, "pattern cutoff", patternCutoff)
+	log.Info(fmt.Sprintf("[%s] Dictionary", logPrefix), "size", common.ByteCount(offset), "pattern cutoff", patternCutoff)
 
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)
@@ -610,7 +615,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 			return err
 		}
 	}
-	log.Info(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", offset, "position cutoff", positionCutoff)
+	log.Info(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(offset), "position cutoff", positionCutoff)
 	huffmanFile := filepath.Join(tmpDir, "huffman_codes.txt")
 	defer os.Remove(huffmanFile)
 	df, err := os.Create(huffmanFile)
@@ -727,7 +732,8 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 // it notifies the waitgroup before exiting, so that the caller known when all work is done
 // No error channels for now
 func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector, completion *sync.WaitGroup) {
-	mostOften := make([]int, maxPatternLen+1)
+	var dictVal [8]byte
+	dictKey := make([]byte, superstringLimit)
 	for superstring := range superstringCh {
 		//log.Info("Superstring", "len", len(superstring))
 		sa := make([]int32, len(superstring))
@@ -829,7 +835,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				if l < minPatternLen || l > maxPatternLen {
 					continue
 				}
-				if l > 64 && (l&(l-1)) != 0 { // is power of 2
+				if l > 20 && (l&(l-1)) != 0 { // is power of 2
 					continue
 				}
 
@@ -840,8 +846,10 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					new = true
 				}
 				if !new {
+					//	fmt.Printf("!is new %d,%d\n", lcp[j-1], lcp[j])
 					break
 				}
+
 				window := i - j + 2
 				copy(b, filtered[j:i+2])
 				sort.Ints(b[:window])
@@ -853,24 +861,36 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				if l > 64 {
-					if repeats > mostOften[l] {
-						mostOften[l] = l + 1
-					} else {
-						continue
-					}
-				}
+				//dictKey = dictKey[:l]
+				//for s := 0; s < l; s++ {
+				//	dictKey[s] = superstring[(filtered[i]+s)*2+1]
+				//}
+				//fmt.Printf("%x\n", dictKey)
+				//if !new {
+				//panic(1) //break
+				//}
 
-				score := uint64(repeats * l)
-				if score < minPatternScore { // long tail of short words
+				if (l <= 8 && repeats < 500) ||
+					//(l <= 16 && repeats < 300) ||
+					(l <= 32 && repeats < 20) ||
+					(l <= 64 && repeats < 10) ||
+					(l > 64 && repeats < 40) {
 					continue
 				}
+				if !new {
+					//fmt.Printf("!is new %d,%d\n", lcp[j-1], lcp[j])
+					//break
+				}
 
-				dictKey := make([]byte, l)
+				score := uint64(repeats * (l))
+				//if score < minPatternScore { // long tail of short words
+				//	continue
+				//}
+
+				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
 					dictKey[s] = superstring[(filtered[i]+s)*2+1]
 				}
-				var dictVal [8]byte
 				binary.BigEndian.PutUint64(dictVal[:], score)
 				if err = dictCollector.Collect(dictKey, dictVal[:]); err != nil {
 					log.Error("processSuperstring", "collect", err)
@@ -884,21 +904,24 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir string, collectors []*etl.Collector) (*DictionaryBuilder, error) {
 	dictCollector := etl.NewCollector(logPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer dictCollector.Close()
-	dictAggregator := &DictAggregator{collector: dictCollector}
+	dictAggregator := &DictAggregator{collector: dictCollector, l: map[int]int{}}
 	for _, collector := range collectors {
 		if err := collector.Load(nil, "", dictAggregator.aggLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return nil, err
 		}
 		collector.Close()
 	}
+
 	if err := dictAggregator.finish(); err != nil {
 		return nil, err
 	}
+	fmt.Printf("dict raw: %dK, %+v\n", dictAggregator.count/1000, dictAggregator.l)
 	db := &DictionaryBuilder{limit: maxDictPatterns} // Only collect 1m words with highest scores
 	if err := dictCollector.Load(nil, "", db.loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return nil, err
 	}
 	db.finish()
+	fmt.Printf("dict raw2: %dK\n", len(db.items)/1000)
 
 	sort.Sort(db)
 	return db, nil
