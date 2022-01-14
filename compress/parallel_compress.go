@@ -107,7 +107,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		return err
 	}
 
-	if err := reducedict(logPrefix, tmpFilePath, dictPath, tmpSegmentFilePath, tmpDir); err != nil {
+	if err := reducedict(logPrefix, tmpFilePath, dictPath, tmpSegmentFilePath, tmpDir, workers); err != nil {
 		return err
 	}
 
@@ -269,24 +269,24 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 	numBuf := make([]byte, binary.MaxVarintLen64)
 	for input := range inputCh {
 		// First 8 bytes are idx
-		n := binary.PutUvarint(numBuf, uint64(len(input)-8))
+		n := binary.PutUvarint(numBuf, uint64(len(input)))
 		output = append(output[:0], numBuf[:n]...)
-		if len(input) > 8 {
-			output, patterns, uncovered = optimiseCluster(false, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
-			if err := collector.Collect(input[:8], output); err != nil {
+		if len(input) > 0 {
+			output, patterns, uncovered = optimiseCluster(false, numBuf, input, trie, &mf, output, uncovered, patterns, cellRing, posMap)
+			if err := collector.Collect(output, nil); err != nil {
 				log.Error("Could not collect", "error", err)
 				return
 			}
 		}
-		inputSize.Add(1 + uint64(len(input)-8))
+		inputSize.Add(1 + uint64(len(input)))
 		outputSize.Add(uint64(len(output)))
-		posMap[uint64(len(input)-8+1)]++
+		posMap[uint64(len(input)+1)]++
 		posMap[0]++
 	}
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string) error {
+func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string, workers int) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -311,7 +311,6 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	ch := make(chan []byte, 10000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
 	var wg sync.WaitGroup
-	workers := runtime.NumCPU() / 2
 	var collectors []*etl.Collector
 	defer func() {
 		for _, c := range collectors {
@@ -330,10 +329,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	}
 	var wordsCount uint64
 	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
-		input := make([]byte, 8+int(len(v)))
-		binary.BigEndian.PutUint64(input, wordsCount)
-		copy(input[8:], v)
-		ch <- input
+		ch <- v
 		wordsCount++
 		select {
 		default:
@@ -442,7 +438,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	if cf, err = os.Create(segmentFilePath); err != nil {
 		return err
 	}
-	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
+	cw := bufio.NewWriterSize(cf, etl.BufIOSize*10)
 	// 1-st, output dictionary
 	binary.BigEndian.PutUint64(numBuf, wordsCount) // Dictionary size
 	if _, err = cw.Write(numBuf[:8]); err != nil {
@@ -613,7 +609,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		return err
 	}
 	defer df.Close()
-	w := bufio.NewWriterSize(df, etl.BufIOSize)
+	w := bufio.NewWriterSize(df, etl.BufIOSize*10)
 	defer w.Flush()
 	for _, p := range positionList {
 		fmt.Fprintf(w, "%d %x %d uses %d\n", p.codeBits, p.code, p.pos, p.uses)
@@ -626,8 +622,8 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer aggregator.Close()
 	for _, collector := range collectors {
-		if err = collector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			return aggregator.Collect(k, v)
+		if err = collector.Load(nil, "", func(k, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+			return aggregator.Collect(k, nil)
 		}, etl.TransformArgs{}); err != nil {
 			return err
 		}
@@ -637,9 +633,10 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
-	if err = aggregator.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	r := bytes.NewReader(nil)
+	if err = aggregator.Load(nil, "", func(v, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+		r.Reset(v)
 		// Re-encode it
-		r := bytes.NewReader(v)
 		var l uint64
 		var e error
 		if l, err = binary.ReadUvarint(r); err != nil {
@@ -902,7 +899,7 @@ func PersistDictrionary(fileName string, db *DictionaryBuilder) error {
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriterSize(df, etl.BufIOSize)
+	w := bufio.NewWriterSize(df, etl.BufIOSize*10)
 	db.ForEach(func(score uint64, word []byte) { fmt.Fprintf(w, "%d %x\n", score, word) })
 	if err = w.Flush(); err != nil {
 		return err
@@ -938,35 +935,9 @@ func ReadDictrionary(fileName string, walker func(score uint64, word []byte) err
 	return df.Close()
 }
 
-func ReadDatFile(fileName string, walker func(v []byte) error) error {
+func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 	// Read keys from the file and generate superstring (with extra byte 0x1 prepended to each character, and with 0x0 0x0 pair inserted between keys and values)
 	// We only consider values with length > 2, because smaller values are not compressible without going into bits
-	f, err := os.Open(fileName)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	r := bufio.NewReaderSize(f, etl.BufIOSize)
-	var buf []byte
-	l, e := binary.ReadUvarint(r)
-	for ; e == nil; l, e = binary.ReadUvarint(r) {
-		if len(buf) < int(l) {
-			buf = make([]byte, l)
-		}
-		if _, e = io.ReadFull(r, buf[:l]); e != nil {
-			return e
-		}
-		if err := walker(buf[:l]); err != nil {
-			return err
-		}
-	}
-	if e != nil && !errors.Is(e, io.EOF) {
-		return e
-	}
-	return nil
-}
-
-func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err
