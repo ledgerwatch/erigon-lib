@@ -62,7 +62,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	i, j := 0, 0
 	skipped := 0
 	s, _ := os.Stat(tmpFilePath)
-	processEvery := int((s.Size() / superstringLimit) / 16) // process only 16 super-strings
+	processEvery := int((s.Size() / superstringLimit) / 64) // process only 64 samples
 	if processEvery == 0 {
 		processEvery = 1
 	}
@@ -86,7 +86,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-logEvery.C:
-			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", i/1_000))
+			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", i/1_000), "skipped_samples", skipped)
 		}
 		return nil
 	}); err != nil {
@@ -98,7 +98,6 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	close(ch)
 	wg.Wait()
 
-	fmt.Printf("skipped: %d\n", skipped)
 	db, err := DictionaryBuilderFromCollectors(ctx, compressLogPrefix, tmpDir, collectors)
 	if err != nil {
 		panic(err)
@@ -341,7 +340,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		case <-logEvery.C:
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			log.Info(fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", wordsCount/1_000), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+			log.Info(fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		}
 		return nil
 	}); err != nil {
@@ -374,7 +373,6 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		//panic(err)
 		//return err
 	}
-
 	// Calculate offsets of the dictionary patterns and total size
 	var offset uint64
 	numBuf := make([]byte, binary.MaxVarintLen64)
@@ -385,14 +383,6 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	}
 	patternCutoff := offset // All offsets below this will be considered patterns
 	i := 0
-	ll := map[int]int{}
-	for _, p := range patternList {
-		if _, ok := ll[len(p.word)]; !ok {
-			ll[len(p.word)] = 0
-		}
-		ll[len(p.word)]++
-	}
-	fmt.Printf("dict: %+v\n", ll)
 	log.Info(fmt.Sprintf("[%s] Effective dictionary", logPrefix), "size", patternList.Len())
 	// Build Huffman tree for codes
 	var codeHeap PatternHeap
@@ -733,7 +723,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 // No error channels for now
 func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector, completion *sync.WaitGroup) {
 	var dictVal [8]byte
-	dictKey := make([]byte, superstringLimit)
+	dictKey := make([]byte, maxPatternLen)
 	for superstring := range superstringCh {
 		//log.Info("Superstring", "len", len(superstring))
 		sa := make([]int32, len(superstring))
@@ -846,10 +836,8 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					new = true
 				}
 				if !new {
-					//	fmt.Printf("!is new %d,%d\n", lcp[j-1], lcp[j])
 					break
 				}
-
 				window := i - j + 2
 				copy(b, filtered[j:i+2])
 				sort.Ints(b[:window])
@@ -861,31 +849,10 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				//dictKey = dictKey[:l]
-				//for s := 0; s < l; s++ {
-				//	dictKey[s] = superstring[(filtered[i]+s)*2+1]
-				//}
-				//fmt.Printf("%x\n", dictKey)
-				//if !new {
-				//panic(1) //break
-				//}
-
-				if (l <= 8 && repeats < 500) ||
-					//(l <= 16 && repeats < 300) ||
-					(l <= 32 && repeats < 20) ||
-					(l <= 64 && repeats < 10) ||
-					(l > 64 && repeats < 40) {
+				score := uint64(repeats * (l - 4))
+				if score < minPatternScore {
 					continue
 				}
-				if !new {
-					//fmt.Printf("!is new %d,%d\n", lcp[j-1], lcp[j])
-					//break
-				}
-
-				score := uint64(repeats * (l))
-				//if score < minPatternScore { // long tail of short words
-				//	continue
-				//}
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
@@ -904,24 +871,21 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir string, collectors []*etl.Collector) (*DictionaryBuilder, error) {
 	dictCollector := etl.NewCollector(logPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer dictCollector.Close()
-	dictAggregator := &DictAggregator{collector: dictCollector, l: map[int]int{}}
+	dictAggregator := &DictAggregator{collector: dictCollector}
 	for _, collector := range collectors {
 		if err := collector.Load(nil, "", dictAggregator.aggLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return nil, err
 		}
 		collector.Close()
 	}
-
 	if err := dictAggregator.finish(); err != nil {
 		return nil, err
 	}
-	fmt.Printf("dict raw: %dK, %+v\n", dictAggregator.count/1000, dictAggregator.l)
 	db := &DictionaryBuilder{limit: maxDictPatterns} // Only collect 1m words with highest scores
 	if err := dictCollector.Load(nil, "", db.loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return nil, err
 	}
 	db.finish()
-	fmt.Printf("dict raw2: %dK\n", len(db.items)/1000)
 
 	sort.Sort(db)
 	return db, nil
@@ -1002,8 +966,8 @@ func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 		return err
 	}
 	defer f.Close()
-	r := bufio.NewReaderSize(f, etl.BufIOSize*64)
-	buf := make([]byte, 1024)
+	r := bufio.NewReaderSize(f, etl.BufIOSize)
+	buf := make([]byte, 4096)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
 		if len(buf) < int(l) {
