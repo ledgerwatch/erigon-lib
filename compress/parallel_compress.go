@@ -850,8 +850,8 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				if (l <= 8 && repeats < 500) ||
-					(l > 8 && repeats < 50) {
+				if (l <= 8 && repeats < 1000) ||
+					(l > 8 && repeats < 60) {
 					continue
 				}
 
