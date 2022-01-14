@@ -849,13 +849,13 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-				if (l <= 8 && repeats < 500) ||
-					(l > 32 && repeats < 20) ||
-					(l >= 32 && repeats < 10) {
+				if (l <= 8 && repeats < 1000) ||
+					(l < 32 && repeats < 30) ||
+					(l >= 32 && repeats < 30) {
 					continue
 				}
 
-				score := uint64(repeats * (l - 4))
+				score := uint64(repeats * (l))
 				//if score < minPatternScore {
 				//	continue
 				//}
