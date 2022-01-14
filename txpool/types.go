@@ -133,6 +133,13 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if err != nil {
 		return 0, fmt.Errorf("%w: size Prefix: %s", ErrParseTxn, err)
 	}
+	// For legacy transaction, the entire payload in expected to be in "rlp" field
+	// whereas for non-legacy, only the content of the envelope
+	if legacy {
+		slot.rlp = payload[pos : dataPos+dataLen]
+	} else {
+		slot.rlp = payload[dataPos : dataPos+dataLen]
+	}
 	if ctx.validateRlp != nil {
 		if err := ctx.validateRlp(payload[dataPos : dataPos+dataLen]); err != nil {
 			return p, err
@@ -147,7 +154,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	var txType int
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
 	if !legacy {
-		slot.rlp = payload[dataPos : dataPos+dataLen]
 		txType = int(payload[p])
 		if _, err = ctx.keccak1.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err)
@@ -168,8 +174,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			return 0, fmt.Errorf("%w: computing IdHash (hashing the envelope): %s", ErrParseTxn, err)
 		}
 		p = dataPos
-	} else {
-		slot.rlp = payload[pos : dataPos+dataLen]
 	}
 
 	// Remember where signing hash data begins (it will need to be wrapped in an RLP list)
