@@ -193,6 +193,13 @@ func ParseTransactions(payload []byte, pos int, ctx *TxParseContext, txSlots *Tx
 	for i := 0; pos < len(payload); i++ {
 		txSlots.Resize(uint(i + 1))
 		txSlots.txs[i] = &TxSlot{}
+		if payload[pos] > 0xb7 && payload[pos] < 0xF8 {
+			dataPos, _, err := rlp.String(payload, pos)
+			if err != nil {
+				return 0, err
+			}
+			pos = dataPos
+		}
 		pos, err = ctx.ParseTransaction(payload, pos, txSlots.txs[i], txSlots.senders.At(i))
 		if err != nil {
 			if errors.Is(err, ErrRejected) {
