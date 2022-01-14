@@ -29,7 +29,7 @@ import (
 )
 
 // minPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
-const minPatternScore = 512
+const minPatternScore = 256
 
 func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
 	tmpDir, _ := filepath.Split(tmpFilePath)
@@ -849,11 +849,16 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 						lastK = k
 					}
 				}
-
-				score := uint64(repeats * (l - 4))
-				if score < minPatternScore {
+				if (l <= 8 && repeats < 500) ||
+					(l < 32 && repeats < 20) ||
+					(l >= 32 && repeats < 10) {
 					continue
 				}
+
+				score := uint64(repeats * (l - 4))
+				//if score < minPatternScore {
+				//	continue
+				//}
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
