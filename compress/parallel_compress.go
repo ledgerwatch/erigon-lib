@@ -865,9 +865,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				for s := 0; s < l; s++ {
 					dictKey[s] = superstring[(filtered[i]+s)*2+1]
 				}
-				if l == 64 {
-					fmt.Printf("%d, %x\n", repeats, dictKey)
-				}
 				binary.BigEndian.PutUint64(dictVal[:], score)
 				if err = dictCollector.Collect(dictKey, dictVal[:]); err != nil {
 					log.Error("processSuperstring", "collect", err)
