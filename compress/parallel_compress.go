@@ -59,25 +59,11 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		collectors[i] = collector
 		go processSuperstring(ch, collector, &wg)
 	}
-	i, j := 0, 0
-	skipped := 0
-	s, err := os.Stat(tmpFilePath)
-	if err != nil {
-		return err
-	}
-	processEvery := int((s.Size() / superstringLimit) / 64) // process only 64 samples
-	if processEvery == 0 {
-		processEvery = 1
-	}
+	i := 0
 	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
-			if j%processEvery == 0 {
-				ch <- superstring
-			} else {
-				skipped++
-			}
+			ch <- superstring
 			superstring = nil
-			j++
 		}
 		for _, a := range v {
 			superstring = append(superstring, 1, a)
@@ -89,7 +75,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-logEvery.C:
-			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", i/1_000), "skipped_samples", skipped)
+			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", logPrefix), "processed", fmt.Sprintf("%dK", i/1_000))
 		}
 		return nil
 	}); err != nil {
@@ -441,7 +427,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 	if cf, err = os.Create(segmentFilePath); err != nil {
 		return err
 	}
-	cw := bufio.NewWriterSize(cf, etl.BufIOSize*10)
+	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
 	// 1-st, output dictionary
 	binary.BigEndian.PutUint64(numBuf, wordsCount) // Dictionary size
 	if _, err = cw.Write(numBuf[:8]); err != nil {
@@ -612,7 +598,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		return err
 	}
 	defer df.Close()
-	w := bufio.NewWriterSize(df, etl.BufIOSize*10)
+	w := bufio.NewWriterSize(df, etl.BufIOSize)
 	defer w.Flush()
 	for _, p := range positionList {
 		fmt.Fprintf(w, "%d %x %d uses %d\n", p.codeBits, p.code, p.pos, p.uses)
@@ -850,15 +836,15 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				if (l <= 8 && repeats < 1000) ||
-					(l > 8 && repeats < 60) {
-					continue
-				}
-
-				score := uint64(repeats * (l))
-				//if score < minPatternScore {
+				//if (l <= 8 && repeats < 1000) ||
+				//	(l > 8 && repeats < 60) {
 				//	continue
 				//}
+
+				score := uint64(repeats * (l - 4))
+				if score < minPatternScore {
+					continue
+				}
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
@@ -902,7 +888,7 @@ func PersistDictrionary(fileName string, db *DictionaryBuilder) error {
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriterSize(df, etl.BufIOSize*10)
+	w := bufio.NewWriterSize(df, etl.BufIOSize)
 	db.ForEach(func(score uint64, word []byte) { fmt.Fprintf(w, "%d %x\n", score, word) })
 	if err = w.Flush(); err != nil {
 		return err
@@ -946,7 +932,7 @@ func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 		return err
 	}
 	defer f.Close()
-	r := bufio.NewReaderSize(f, etl.BufIOSize*64)
+	r := bufio.NewReaderSize(f, etl.BufIOSize)
 	buf := make([]byte, 4096)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
