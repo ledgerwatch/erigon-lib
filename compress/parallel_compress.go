@@ -46,9 +46,9 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 
 	// Read keys from the file and generate superstring (with extra byte 0x1 prepended to each character, and with 0x0 0x0 pair inserted between keys and values)
 	// We only consider values with length > 2, because smaller values are not compressible without going into bits
-	superstring := make([]byte, 0, superstringLimit)
+	var superstring []byte
 
-	// Collector for dictionary superstrings (sorted by their score)
+	// Collector for dictionary words (sorted by their score)
 	ch := make(chan []byte, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
@@ -58,11 +58,12 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 			c.Close()
 		}
 	}()
+
 	for i := 0; i < workers; i++ {
 		//nolint
 		collector := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 		collectors[i] = collector
-		go processSuperstring(ch, collector, &wg)
+		go processSuperstring(ch, collector, MinPatternScore, &wg)
 	}
 	i := 0
 	if err := datFile.ForEach(func(v []byte) error {
@@ -92,11 +93,13 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	close(ch)
 	wg.Wait()
 
+	fmt.Printf("alex: %s\n", tmpDir)
 	db, err := DictionaryBuilderFromCollectors(ctx, compressLogPrefix, tmpDir, collectors)
 	if err != nil {
 		panic(err)
 	}
 	dictPath := tmpFilePath + ".dictionary.txt"
+	fmt.Printf("alex: %s\n", dictPath)
 	if err := PersistDictrionary(dictPath, db); err != nil {
 		return err
 	}
@@ -618,8 +621,8 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer aggregator.Close()
 	for _, collector := range collectors {
-		if err = collector.Load(nil, "", func(k, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			return aggregator.Collect(k, nil)
+		if err = collector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+			return aggregator.Collect(k, v)
 		}, etl.TransformArgs{}); err != nil {
 			return err
 		}
@@ -713,7 +716,8 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 // into the collector, using lock to mutual exclusion. At the end (when the input channel is closed),
 // it notifies the waitgroup before exiting, so that the caller known when all work is done
 // No error channels for now
-func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector, completion *sync.WaitGroup) {
+func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector, minPatternScore uint64, completion *sync.WaitGroup) {
+	defer completion.Done()
 	var dictVal [8]byte
 	dictKey := make([]byte, maxPatternLen)
 	for superstring := range superstringCh {
@@ -848,7 +852,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				//}
 
 				score := uint64(repeats * (l - 4))
-				if score < MinPatternScore {
+				if score < minPatternScore {
 					continue
 				}
 
@@ -863,7 +867,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			}
 		}
 	}
-	completion.Done()
 }
 
 func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir string, collectors []*etl.Collector) (*DictionaryBuilder, error) {

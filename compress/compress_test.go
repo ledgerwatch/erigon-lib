@@ -17,6 +17,7 @@
 package compress
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"testing"
@@ -58,6 +59,39 @@ func TestCompressDict1(t *testing.T) {
 	file := path.Join(tmpDir, "compressed")
 	t.Name()
 	c, err := NewCompressor(t.Name(), file, tmpDir, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = c.Compress(); err != nil {
+		t.Fatal(err)
+	}
+	var d *Decompressor
+	if d, err = NewDecompressor(file); err != nil {
+		t.Fatal(err)
+	}
+	g := d.MakeGetter()
+	i := 0
+	for g.HasNext() {
+		word, _ := g.Next(nil)
+		expected := fmt.Sprintf("longlongword %d", i)
+		if string(word) != expected {
+			t.Errorf("expected %s, got (hex) %x", expected, word)
+		}
+		i++
+	}
+	defer d.Close()
+}
+
+func TestCompress2Dict1(t *testing.T) {
+	tmpDir := t.TempDir()
+	file := path.Join(tmpDir, "compressed")
+	t.Name()
+	c, err := NewCompressor2(context.Background(), t.Name(), file, tmpDir, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

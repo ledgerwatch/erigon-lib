@@ -115,7 +115,7 @@ func (c *Compressor2) Compress() error {
 		//nolint
 		collector := etl.NewCollector(compressLogPrefix, c.tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 		suffixCollectors[i] = collector
-		go processSuperstring(superstrings, collector, wg)
+		go processSuperstring(superstrings, collector, c.minPatternScore, wg)
 	}
 	i := 0
 	if err := c.datFile.ForEach(func(word []byte) error {
@@ -138,6 +138,7 @@ func (c *Compressor2) Compress() error {
 		}
 		return nil
 	}); err != nil {
+		panic(err)
 		return err
 	}
 	if len(c.superstring) > 0 {
@@ -148,6 +149,8 @@ func (c *Compressor2) Compress() error {
 
 	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, suffixCollectors)
 	if err != nil {
+		panic(err)
+
 		return err
 	}
 	_, fileName := filepath.Split(c.outputFile)
@@ -155,14 +158,21 @@ func (c *Compressor2) Compress() error {
 	dictPath := filepath.Join(c.tmpDir, fileName) + ".dictionary.txt"
 	defer os.Remove(dictPath)
 	if err := PersistDictrionary(dictPath, db); err != nil {
+		panic(err)
+
 		return err
 	}
 
-	defer os.Remove(c.tmpOutFilePath)
+	//defer os.Remove(c.tmpOutFilePath)
+	fmt.Printf("alex: %s\n", dictPath)
+
 	if err := reducedict(c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
+		panic(err)
 		return err
 	}
 	if err := os.Rename(c.tmpOutFilePath, c.outputFile); err != nil {
+		panic(err)
+
 		return err
 	}
 
