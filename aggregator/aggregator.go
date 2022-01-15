@@ -212,6 +212,7 @@ func (cf *ChangeFile) prevTx() (bool, error) {
 	cf.txRemaining = cf.txSize
 	cf.txPos, err = cf.file.Seek(pos-int64(cf.txSize), 0)
 	if err != nil {
+		fmt.Printf("2 tried to seek to %d, pos=%d, txSize=%d\n", pos-int64(cf.txSize), pos, cf.txSize)
 		return false, err
 	}
 	cf.r.Reset(cf.file)
