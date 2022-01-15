@@ -1218,7 +1218,9 @@ func (w *Writer) Reset(tx kv.RwTx, blockNum uint64) error {
 		if err := w.commChanges.closeFiles(); err != nil {
 			return err
 		}
-		w.a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: w.changeFileNum + 1 - w.a.aggregationStep, endBlock: w.changeFileNum, fileCount: 12})
+		if w.changeFileNum != 0 {
+			w.a.changesBtree.ReplaceOrInsert(&ChangesItem{startBlock: w.changeFileNum + 1 - w.a.aggregationStep, endBlock: w.changeFileNum, fileCount: 12})
+		}
 	}
 	if w.changeFileNum == 0 || blockNum > w.changeFileNum {
 		if err := w.accountChanges.openFiles(blockNum, true /* write */); err != nil {
