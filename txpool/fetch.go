@@ -328,7 +328,14 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		case sentry.MessageId_TRANSACTIONS_66:
 			if err := f.threadSafeParsePooledTxn(func(parseContext *TxParseContext) error {
 				if _, err := ParseTransactions(req.Data, 0, parseContext, &txs); err != nil {
+					fmt.Printf("ParseTransactions error [%x]: %v\n", req.Data, err)
 					return err
+				}
+				fmt.Printf("Parsed %d Transactions\n", len(txs.txs))
+				for _, tx := range txs.txs {
+					if tx.rlp[0] >= 128 && tx.rlp[0] < 192 {
+						fmt.Printf("Wrapped tx RLP: [%x]\n", tx.rlp)
+					}
 				}
 				return nil
 			}); err != nil {
@@ -337,7 +344,14 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
 			if err := f.threadSafeParsePooledTxn(func(parseContext *TxParseContext) error {
 				if _, _, err := ParsePooledTransactions66(req.Data, 0, parseContext, &txs); err != nil {
+					fmt.Printf("ParsePooledTransactions66 error [%x]: %v\n", req.Data, err)
 					return err
+				}
+				fmt.Printf("Parsed %d PooledTransactions66\n", len(txs.txs))
+				for _, tx := range txs.txs {
+					if tx.rlp[0] >= 128 && tx.rlp[0] < 192 {
+						fmt.Printf("Wrapped tx RLP: [%x]\n", tx.rlp)
+					}
 				}
 				return nil
 			}); err != nil {
