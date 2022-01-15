@@ -837,6 +837,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		if item.storageIdx, err = recsplit.OpenIndex(path.Join(diffDir, fmt.Sprintf("storage.%d-%d.idx", item.startBlock, item.endBlock))); err != nil {
 			return false
 		}
+		fmt.Printf("storageIdx = %p for storage.%d-%d.idx\n", item.storageIdx, item.startBlock, item.endBlock)
 		if item.commitmentD, err = compress.NewDecompressor(path.Join(diffDir, fmt.Sprintf("commitment.%d-%d.dat", item.startBlock, item.endBlock))); err != nil {
 			return false
 		}
@@ -1031,7 +1032,7 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if trace {
-			fmt.Printf("readStorage %x: search in file [%d-%d]\n", filekey, item.startBlock, item.endBlock)
+			fmt.Printf("readStorage %x: search in file [%d-%d], p=%p\n", filekey, item.startBlock, item.endBlock, item.storageIdx)
 		}
 		if item.storageIdx.Empty() {
 			return true
