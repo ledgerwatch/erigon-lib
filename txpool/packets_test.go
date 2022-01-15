@@ -229,7 +229,7 @@ func TestTransactionsPacket(t *testing.T) {
 			require.Equal(tt.encoded, fmt.Sprintf("%x", encodeBuf))
 
 			ctx := NewTxParseContext(*u256.N1)
-			ctx.validateHash = func(bytes []byte) error { return ErrRejected }
+			ctx.checkHash = func(bytes []byte) error { return ErrRejected }
 			slots := &TxSlots{}
 			_, err := ParseTransactions(encodeBuf, 0, ctx, slots)
 			require.NoError(err)
