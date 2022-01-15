@@ -97,6 +97,7 @@ func (c *Compressor2) AddWord(word []byte) error {
 }
 
 func (c *Compressor2) Compress() error {
+	c.datFile.w.Flush()
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -137,6 +138,7 @@ func (c *Compressor2) Compress() error {
 		}
 		return nil
 	}); err != nil {
+		panic(err)
 		return err
 	}
 	if len(c.superstring) > 0 {
