@@ -128,14 +128,16 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 			if cf.file, err = os.OpenFile(cf.path, os.O_RDWR|os.O_CREATE, 0755); err != nil {
 				return err
 			}
-			cf.w = bufio.NewWriter(cf.file)
 		} else {
 			if cf.file, err = os.Open(cf.path); err != nil {
 				return err
 			}
-			if cf.txPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
-				return err
-			}
+		}
+		if cf.txPos, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
+			return err
+		}
+		if write {
+			cf.w = bufio.NewWriter(cf.file)
 		}
 		cf.r = bufio.NewReader(cf.file)
 	}
