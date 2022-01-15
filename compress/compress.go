@@ -153,10 +153,12 @@ func (c *Compressor2) Compress() error {
 	_, fileName := filepath.Split(c.outputFile)
 
 	dictPath := filepath.Join(c.tmpDir, fileName) + ".dictionary.txt"
+	defer os.Remove(dictPath)
 	if err := PersistDictrionary(dictPath, db); err != nil {
 		return err
 	}
 
+	defer os.Remove(c.tmpOutFilePath)
 	if err := reducedict(c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
 		return err
 	}
