@@ -166,7 +166,7 @@ func (c *Compressor2) Compress() error {
 
 	c.Ratio, err = Ratio(c.datFile.filePath, c.outputFile)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	return nil
