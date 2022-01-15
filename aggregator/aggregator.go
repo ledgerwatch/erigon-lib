@@ -923,6 +923,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 			return nil, fmt.Errorf("hole or overlap between state files and change files [%d-%d]", item.endBlock, minStart)
 		}
 	}
+	closeBtree = false
 	return a, nil
 }
 
