@@ -175,7 +175,7 @@ func (idx Index) Empty() bool {
 	return idx.keyCount == 0
 }
 
-func (idx Index) Lookup(key []byte) uint64 {
+func (idx *Index) Lookup(key []byte) uint64 {
 	if idx.keyCount == 0 {
 		panic("no Lookup should be done when keyCount==0, please use Empty function to guard")
 	}
