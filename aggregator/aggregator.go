@@ -756,7 +756,9 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		name := f.Name()
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 5 {
-			log.Warn("File ignored by aggregator, more than 4 submatches", "name", name)
+			if len(subs) != 0 {
+				log.Warn("File ignored by aggregator, more than 4 submatches", "name", name, "submatches", len(subs))
+			}
 			continue
 		}
 		var startBlock, endBlock uint64
