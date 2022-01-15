@@ -108,7 +108,6 @@ func (ef *EliasFano) deriveFields() int {
 		ef.data = ef.data[:totalWords]
 	}
 
-	fmt.Printf("wordsLowerBits=%d\n", wordsLowerBits)
 	ef.lowerBits = ef.data[:wordsLowerBits]
 	ef.upperBits = ef.data[wordsLowerBits : wordsLowerBits+wordsUpperBits]
 	ef.jump = ef.data[wordsLowerBits+wordsUpperBits:]
@@ -444,7 +443,7 @@ func (ef *DoubleEliasFano) Data() []uint64 {
 func (ef *DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 	windowCumKeys uint64, selectCumKeys int, currWordCumKeys uint64, lower uint64, cumDelta uint64) {
 	posLower := i * (ef.lCumKeys + ef.lPosition)
-	fmt.Printf("i=%d, ef.lCumKeys = %d, ef.lPosition = %d, posLower = %d, ef=%p\n", i, ef.lCumKeys, ef.lPosition, posLower, &ef)
+	fmt.Printf("i=%d, ef.lCumKeys = %d, ef.lPosition = %d, posLower = %d, ef=%p\n", i, ef.lCumKeys, ef.lPosition, posLower, ef)
 	idx64 := posLower / 64
 	shift := posLower % 64
 	lower = ef.lowerBits[idx64] >> shift
