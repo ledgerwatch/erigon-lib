@@ -197,6 +197,7 @@ func (cf *ChangeFile) prevTx() (bool, error) {
 	// Move back 16 bytes to read tx number and tx size
 	pos, err := cf.file.Seek(cf.txPos-16, 0 /* relative to the beginning */)
 	if err != nil {
+		fmt.Printf("tried to seek to %d\n", cf.txPos-16)
 		return false, err
 	}
 	cf.r.Reset(cf.file)
