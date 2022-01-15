@@ -291,6 +291,7 @@ func (ef *DoubleEliasFano) deriveFields() (int, int) {
 	} else {
 		ef.data = ef.data[:totalWords]
 	}
+	fmt.Printf("wordsLowerBits=%d\n", wordsLowerBits)
 	ef.lowerBits = ef.data[:wordsLowerBits]
 	ef.upperBitsCumKeys = ef.data[wordsLowerBits : wordsLowerBits+wordsCumKeys]
 	ef.upperBitsPosition = ef.data[wordsLowerBits+wordsCumKeys : wordsLowerBits+wordsCumKeys+wordsPosition]
