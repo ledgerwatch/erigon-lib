@@ -144,7 +144,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 	return idx, nil
 }
 
-func (idx *Index) BaseDataID() uint64 { return idx.baseDataID }
+func (idx Index) BaseDataID() uint64 { return idx.baseDataID }
 
 func (idx *Index) Close() error {
 	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
@@ -156,11 +156,11 @@ func (idx *Index) Close() error {
 	return nil
 }
 
-func (idx *Index) skipBits(m uint16) int {
+func (idx Index) skipBits(m uint16) int {
 	return int(idx.golombRice[m] & 0xffff)
 }
 
-func (idx *Index) skipNodes(m uint16) int {
+func (idx Index) skipNodes(m uint16) int {
 	return int(idx.golombRice[m]>>16) & 0x7FF
 }
 
@@ -175,6 +175,7 @@ func (idx Index) Empty() bool {
 	return idx.keyCount == 0
 }
 
+// Lookup uses pointer handle because it manipulates idx.hasher and is also not thread-safe
 func (idx *Index) Lookup(key []byte) uint64 {
 	if idx.keyCount == 0 {
 		panic("no Lookup should be done when keyCount==0, please use Empty function to guard")
