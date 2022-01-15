@@ -46,7 +46,7 @@ const ASSERT = false
 // After that, `Compress` function needs to be called to perform the compression
 // and eventually create output file
 type Compressor2 struct {
-	datFile                    *UncompressedFile
+	datFile                    *DecompressedFile
 	outputFile, tmpOutFilePath string // File where to output the dictionary and compressed data
 	tmpDir                     string // temporary directory to use for ETL when building dictionary
 	minPatternScore            uint64 //minimum score (per superstring) required to consider including pattern into the dictionary
@@ -61,6 +61,7 @@ type Compressor2 struct {
 
 	ctx       context.Context
 	logPrefix string
+	Ratio     CompressionRatio
 }
 
 func NewCompressor2(ctx context.Context, logPrefix, outputFile string, tmpDir string, minPatternScore uint64, workers int) (*Compressor2, error) {
@@ -161,6 +162,12 @@ func (c *Compressor2) Compress() error {
 	if err := os.Rename(c.tmpOutFilePath, c.outputFile); err != nil {
 		return err
 	}
+
+	c.Ratio, err = Ratio(c.datFile.filePath, c.outputFile)
+	if err != nil {
+		panic(err)
+	}
+
 	return nil
 }
 
@@ -1351,29 +1358,29 @@ func Ratio(f1, f2 string) (CompressionRatio, error) {
 	return CompressionRatio(float64(s1.Size()) / float64(s2.Size())), nil
 }
 
-// UncompressedFile - .dat file format - simple format for temporary data store
-type UncompressedFile struct {
-	name  string
-	f     *os.File
-	w     *bufio.Writer
-	count uint64
-	buf   []byte
+// DecompressedFile - .dat file format - simple format for temporary data store
+type DecompressedFile struct {
+	filePath string
+	f        *os.File
+	w        *bufio.Writer
+	count    uint64
+	buf      []byte
 }
 
-func NewUncompressedFile(name string) (*UncompressedFile, error) {
-	f, err := os.Create(name)
+func NewUncompressedFile(filePath string) (*DecompressedFile, error) {
+	f, err := os.Create(filePath)
 	if err != nil {
 		return nil, err
 	}
 	w := bufio.NewWriterSize(f, etl.BufIOSize)
-	return &UncompressedFile{name: name, f: f, w: w, buf: make([]byte, 128)}, nil
+	return &DecompressedFile{filePath: filePath, f: f, w: w, buf: make([]byte, 128)}, nil
 }
-func (f *UncompressedFile) Close() {
+func (f *DecompressedFile) Close() {
 	f.w.Flush()
 	//f.f.Sync()
 	f.f.Close()
 }
-func (f *UncompressedFile) Append(v []byte) error {
+func (f *DecompressedFile) Append(v []byte) error {
 	f.count++
 	n := binary.PutUvarint(f.buf, uint64(len(v)))
 	if _, e := f.w.Write(f.buf[:n]); e != nil {
@@ -1389,7 +1396,7 @@ func (f *UncompressedFile) Append(v []byte) error {
 
 // ForEach - Read keys from the file and generate superstring (with extra byte 0x1 prepended to each character, and with 0x0 0x0 pair inserted between keys and values)
 // We only consider values with length > 2, because smaller values are not compressible without going into bits
-func (f *UncompressedFile) ForEach(walker func(v []byte) error) error {
+func (f *DecompressedFile) ForEach(walker func(v []byte) error) error {
 	_, err := f.f.Seek(0, 0)
 	if err != nil {
 		return err

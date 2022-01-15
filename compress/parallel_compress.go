@@ -28,8 +28,8 @@ import (
 	atomic2 "go.uber.org/atomic"
 )
 
-// minPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
-const minPatternScore = 1024
+// MinPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
+const MinPatternScore = 1024
 
 func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath string, workers int) error {
 	tmpDir, _ := filepath.Split(tmpFilePath)
@@ -279,7 +279,7 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath *UncompressedFile, workers int) error {
+func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath *DecompressedFile, workers int) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -846,7 +846,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				//}
 
 				score := uint64(repeats * (l - 4))
-				if score < minPatternScore {
+				if score < MinPatternScore {
 					continue
 				}
 
