@@ -36,6 +36,11 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	_, fileName := filepath.Split(segmentFilePath)
 	tmpSegmentFilePath := filepath.Join(tmpDir, fileName)
 
+	datFile, err := NewUncompressedFile(tmpFilePath)
+	if err != nil {
+		return err
+	}
+
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -43,7 +48,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	// We only consider values with length > 2, because smaller values are not compressible without going into bits
 	superstring := make([]byte, 0, superstringLimit)
 
-	// Collector for dictionary words (sorted by their score)
+	// Collector for dictionary superstrings (sorted by their score)
 	ch := make(chan []byte, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
@@ -60,7 +65,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 		go processSuperstring(ch, collector, &wg)
 	}
 	i := 0
-	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
+	if err := datFile.ForEach(func(v []byte) error {
 		if len(superstring)+2*len(v)+2 > superstringLimit {
 			ch <- superstring
 			superstring = nil
@@ -95,8 +100,7 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	if err := PersistDictrionary(dictPath, db); err != nil {
 		return err
 	}
-
-	if err := reducedict(logPrefix, tmpFilePath, dictPath, tmpSegmentFilePath, tmpDir, workers); err != nil {
+	if err := reducedict(logPrefix, dictPath, tmpSegmentFilePath, tmpDir, datFile, workers); err != nil {
 		return err
 	}
 
@@ -275,11 +279,11 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string, workers int) error {
+func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath *UncompressedFile, workers int) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
-	// DictionaryBuilder is for sorting words by their freuency (to assign codes)
+	// DictionaryBuilder is for sorting superstrings by their freuency (to assign codes)
 	var pt patricia.PatriciaTree
 	code2pattern := make([]*Pattern, 0, 256)
 	if err := ReadDictrionary(dictPath, func(score uint64, word []byte) error {
@@ -317,7 +321,7 @@ func reducedict(logPrefix, tmpFilePath, dictPath, segmentFilePath, tmpDir string
 		go reduceDictWorker(ch, &wg, &pt, collector, inputSize, outputSize, posMap)
 	}
 	var wordsCount uint64
-	if err := ReadSimpleFile(tmpFilePath, func(v []byte) error {
+	if err := tmpFilePath.ForEach(func(v []byte) error {
 		ch <- v
 		wordsCount++
 		select {
@@ -873,7 +877,7 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 	if err := dictAggregator.finish(); err != nil {
 		return nil, err
 	}
-	db := &DictionaryBuilder{limit: maxDictPatterns} // Only collect 1m words with highest scores
+	db := &DictionaryBuilder{limit: maxDictPatterns} // Only collect 1m superstrings with highest scores
 	if err := dictCollector.Load(nil, "", db.loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return nil, err
 	}
@@ -905,7 +909,7 @@ func ReadDictrionary(fileName string, walker func(score uint64, word []byte) err
 		return err
 	}
 	defer df.Close()
-	// DictonaryBuilder is for sorting words by their freuency (to assign codes)
+	// DictonaryBuilder is for sorting superstrings by their freuency (to assign codes)
 	ds := bufio.NewScanner(df)
 	for ds.Scan() {
 		tokens := strings.Split(ds.Text(), " ")
