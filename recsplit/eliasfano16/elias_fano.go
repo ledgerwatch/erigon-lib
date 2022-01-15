@@ -428,7 +428,7 @@ func set(bits []uint64, pos uint64) {
 	bits[pos/64] |= uint64(1) << (pos % 64)
 }
 
-func (ef DoubleEliasFano) jumpSizeWords() int {
+func (ef *DoubleEliasFano) jumpSizeWords() int {
 	size := ((ef.numBuckets + 1) / superQ) * superQSize * 2 // Whole blocks
 	if (ef.numBuckets+1)%superQ != 0 {
 		size += (1 + (((ef.numBuckets+1)%superQ+q-1)/q+3)/4) * 2 // Partial block
@@ -441,7 +441,7 @@ func (ef *DoubleEliasFano) Data() []uint64 {
 	return ef.data
 }
 
-func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
+func (ef *DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 	windowCumKeys uint64, selectCumKeys int, currWordCumKeys uint64, lower uint64, cumDelta uint64) {
 	posLower := i * (ef.lCumKeys + ef.lPosition)
 	fmt.Printf("i=%d, ef.lCumKeys = %d, ef.lPosition = %d, posLower = %d, ef=%p\n", i, ef.lCumKeys, ef.lPosition, posLower, &ef)
@@ -501,12 +501,12 @@ func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 	return
 }
 
-func (ef DoubleEliasFano) Get2(i uint64) (cumKeys uint64, position uint64) {
+func (ef *DoubleEliasFano) Get2(i uint64) (cumKeys uint64, position uint64) {
 	cumKeys, position, _, _, _, _, _ = ef.get2(i)
 	return
 }
 
-func (ef DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, position uint64) {
+func (ef *DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, position uint64) {
 	var windowCumKeys uint64
 	var selectCumKeys int
 	var currWordCumKeys uint64
@@ -525,7 +525,7 @@ func (ef DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, po
 }
 
 // Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
-func (ef DoubleEliasFano) Write(w io.Writer) error {
+func (ef *DoubleEliasFano) Write(w io.Writer) error {
 	var numBuf [8]byte
 	binary.BigEndian.PutUint64(numBuf[:], ef.numBuckets)
 	if _, e := w.Write(numBuf[:]); e != nil {
