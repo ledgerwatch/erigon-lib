@@ -139,6 +139,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&idx.data[offset]))
 	idx.grData = p[:l]
 	offset += 8 * int(l)
+	fmt.Printf("Reading elias fano from offset %d\n", offset)
 	idx.ef.Read(idx.data[offset:])
 	return idx, nil
 }
