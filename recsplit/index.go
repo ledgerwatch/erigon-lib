@@ -115,6 +115,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 	}
 	idx.enums = idx.data[offset] != 0
 	offset++
+	fmt.Printf("Opening index %s, enumbs = %t\n", indexFile, idx.enums)
 	if idx.enums {
 		var size int
 		idx.offsetEf, size = eliasfano32.ReadEliasFano(idx.data[offset:])
