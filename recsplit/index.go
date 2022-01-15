@@ -18,7 +18,6 @@ package recsplit
 
 import (
 	"encoding/binary"
-	"fmt"
 	"math"
 	"os"
 	"unsafe"
@@ -115,7 +114,6 @@ func OpenIndex(indexFile string) (*Index, error) {
 	}
 	idx.enums = idx.data[offset] != 0
 	offset++
-	fmt.Printf("Opening index %s, enumbs = %t\n", indexFile, idx.enums)
 	if idx.enums {
 		var size int
 		idx.offsetEf, size = eliasfano32.ReadEliasFano(idx.data[offset:])
@@ -139,7 +137,6 @@ func OpenIndex(indexFile string) (*Index, error) {
 	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&idx.data[offset]))
 	idx.grData = p[:l]
 	offset += 8 * int(l)
-	fmt.Printf("Reading elias fano from offset %d, size %d, %p\n", offset, size-offset, &idx.ef)
 	idx.ef.Read(idx.data[offset:])
 	return idx, nil
 }
@@ -175,7 +172,7 @@ func (idx *Index) Empty() bool {
 	return idx.keyCount == 0
 }
 
-// Lookup uses pointer handle because it manipulates idx.hasher and is also not thread-safe
+// Lookup is not thread-safe because it used id.hasher
 func (idx *Index) Lookup(key []byte) uint64 {
 	if idx.keyCount == 0 {
 		panic("no Lookup should be done when keyCount==0, please use Empty function to guard")
@@ -189,7 +186,6 @@ func (idx *Index) Lookup(key []byte) uint64 {
 	idx.hasher.Write(key) //nolint:errcheck
 	bucketHash, fingerprint := idx.hasher.Sum128()
 	bucket := remap(bucketHash, idx.bucketCount)
-	fmt.Printf("bucket = %d, bucketCount = %d, ef=%p\n", bucket, idx.bucketCount, &idx.ef)
 	cumKeys, cumKeysNext, bitPos := idx.ef.Get3(bucket)
 	m := uint16(cumKeysNext - cumKeys) // Number of keys in this bucket
 	gr.ReadReset(int(bitPos), idx.skipBits(m))
