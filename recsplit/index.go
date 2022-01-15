@@ -18,6 +18,7 @@ package recsplit
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"unsafe"
@@ -185,6 +186,7 @@ func (idx Index) Lookup(key []byte) uint64 {
 	idx.hasher.Write(key) //nolint:errcheck
 	bucketHash, fingerprint := idx.hasher.Sum128()
 	bucket := remap(bucketHash, idx.bucketCount)
+	fmt.Printf("bucket = %d, bucketCount = %d\n", bucket, idx.bucketCount)
 	cumKeys, cumKeysNext, bitPos := idx.ef.Get3(bucket)
 	m := uint16(cumKeysNext - cumKeys) // Number of keys in this bucket
 	gr.ReadReset(int(bitPos), idx.skipBits(m))
