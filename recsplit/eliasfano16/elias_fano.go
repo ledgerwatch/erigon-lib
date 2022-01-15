@@ -108,6 +108,7 @@ func (ef *EliasFano) deriveFields() int {
 		ef.data = ef.data[:totalWords]
 	}
 
+	fmt.Printf("wordsLowerBits=%d\n", wordsLowerBits)
 	ef.lowerBits = ef.data[:wordsLowerBits]
 	ef.upperBits = ef.data[wordsLowerBits : wordsLowerBits+wordsUpperBits]
 	ef.jump = ef.data[wordsLowerBits+wordsUpperBits:]
