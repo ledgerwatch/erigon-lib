@@ -262,18 +262,18 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 	numBuf := make([]byte, binary.MaxVarintLen64)
 	for input := range inputCh {
 		// First 8 bytes are idx
-		n := binary.PutUvarint(numBuf, uint64(len(input)))
+		n := binary.PutUvarint(numBuf, uint64(len(input)-8))
 		output = append(output[:0], numBuf[:n]...)
-		if len(input) > 0 {
-			output, patterns, uncovered = optimiseCluster(false, numBuf, input, trie, &mf, output, uncovered, patterns, cellRing, posMap)
-			if err := collector.Collect(output, nil); err != nil {
+		if len(input) > 8 {
+			output, patterns, uncovered = optimiseCluster(false, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
+			if err := collector.Collect(input[:8], output); err != nil {
 				log.Error("Could not collect", "error", err)
 				return
 			}
 		}
-		inputSize.Add(1 + uint64(len(input)))
+		inputSize.Add(1 + uint64(len(input)-8))
 		outputSize.Add(uint64(len(output)))
-		posMap[uint64(len(input)+1)]++
+		posMap[uint64(len(input)-8+1)]++
 		posMap[0]++
 	}
 }
@@ -283,7 +283,7 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
-	// DictionaryBuilder is for sorting superstrings by their freuency (to assign codes)
+	// DictionaryBuilder is for sorting words by their freuency (to assign codes)
 	var pt patricia.PatriciaTree
 	code2pattern := make([]*Pattern, 0, 256)
 	if err := ReadDictrionary(dictPath, func(score uint64, word []byte) error {
@@ -322,7 +322,10 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	}
 	var wordsCount uint64
 	if err := tmpFilePath.ForEach(func(v []byte) error {
-		ch <- v
+		input := make([]byte, 8+int(len(v)))
+		binary.BigEndian.PutUint64(input, wordsCount)
+		copy(input[8:], v)
+		ch <- input
 		wordsCount++
 		select {
 		default:
@@ -626,10 +629,9 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
-	r := bytes.NewReader(nil)
-	if err = aggregator.Load(nil, "", func(v, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-		r.Reset(v)
+	if err = aggregator.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 		// Re-encode it
+		r := bytes.NewReader(v)
 		var l uint64
 		var e error
 		if l, err = binary.ReadUvarint(r); err != nil {
@@ -877,7 +879,7 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 	if err := dictAggregator.finish(); err != nil {
 		return nil, err
 	}
-	db := &DictionaryBuilder{limit: maxDictPatterns} // Only collect 1m superstrings with highest scores
+	db := &DictionaryBuilder{limit: maxDictPatterns} // Only collect 1m words with highest scores
 	if err := dictCollector.Load(nil, "", db.loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return nil, err
 	}
@@ -909,7 +911,7 @@ func ReadDictrionary(fileName string, walker func(score uint64, word []byte) err
 		return err
 	}
 	defer df.Close()
-	// DictonaryBuilder is for sorting superstrings by their freuency (to assign codes)
+	// DictonaryBuilder is for sorting words by their freuency (to assign codes)
 	ds := bufio.NewScanner(df)
 	for ds.Scan() {
 		tokens := strings.Split(ds.Text(), " ")
