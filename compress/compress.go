@@ -1210,3 +1210,19 @@ func (da *DictAggregator) finish() error {
 	}
 	return nil
 }
+
+type CompressionRatio float64
+
+func (r CompressionRatio) String() string { return fmt.Sprintf("%.2f\n", r) }
+
+func Ratio(f1, f2 string) (CompressionRatio, error) {
+	s1, err := os.Stat(f1)
+	if err != nil {
+		return 0, err
+	}
+	s2, err := os.Stat(f2)
+	if err != nil {
+		return 0, err
+	}
+	return CompressionRatio(float64(s1.Size()) / float64(s2.Size())), nil
+}
