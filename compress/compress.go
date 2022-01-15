@@ -138,7 +138,6 @@ func (c *Compressor2) Compress() error {
 		}
 		return nil
 	}); err != nil {
-		panic(err)
 		return err
 	}
 	if len(c.superstring) > 0 {
@@ -1346,7 +1345,7 @@ func (da *DictAggregator) finish() error {
 
 type CompressionRatio float64
 
-func (r CompressionRatio) String() string { return fmt.Sprintf("%.2f\n", r) }
+func (r CompressionRatio) String() string { return fmt.Sprintf("%.2f", r) }
 
 func Ratio(f1, f2 string) (CompressionRatio, error) {
 	s1, err := os.Stat(f1)
