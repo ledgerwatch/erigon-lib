@@ -931,6 +931,7 @@ func (a *Aggregator) GenerateChangesets(on bool) {
 }
 
 func closeFiles(byEndBlock *btree.BTree) {
+	fmt.Printf("closeFiles\n")
 	byEndBlock.Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.accountsD != nil {
