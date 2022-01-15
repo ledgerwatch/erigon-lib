@@ -106,23 +106,6 @@ func ParseGetPooledTransactions66(payload []byte, pos int, hashbuf []byte) (requ
 	return requestID, hashes, pos, nil
 }
 
-func ParseGetPooledTransactions65(payload []byte, pos int, hashbuf []byte) (hashes []byte, newPos int, err error) {
-	var hashesCount int
-	hashesCount, pos, err = ParseHashesCount(payload, pos)
-	if err != nil {
-		return hashes, 0, err
-	}
-	hashes = common.EnsureEnoughSize(hashbuf, length.Hash*hashesCount)
-
-	for i := 0; i < hashesCount; i++ {
-		pos, err = rlp.ParseHash(payload, pos, hashes[i*length.Hash:])
-		if err != nil {
-			return hashes, 0, err
-		}
-	}
-	return hashes, pos, nil
-}
-
 // == Pooled transactions ==
 
 func EncodePooledTransactions66(txsRlp [][]byte, requestId uint64, encodeBuf []byte) []byte {
