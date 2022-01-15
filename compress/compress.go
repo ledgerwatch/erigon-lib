@@ -64,7 +64,7 @@ type Compressor2 struct {
 	Ratio     CompressionRatio
 }
 
-func NewCompressor2(ctx context.Context, logPrefix, outputFile string, tmpDir string, minPatternScore uint64, workers int) (*Compressor2, error) {
+func NewCompressor2(ctx context.Context, logPrefix, outputFile, tmpDir string, minPatternScore uint64, workers int) (*Compressor2, error) {
 	dir, fileName := filepath.Split(outputFile)
 	ext := filepath.Ext(outputFile)
 	tmpOutFilePath := filepath.Join(dir, fileName) + ".tmp"
