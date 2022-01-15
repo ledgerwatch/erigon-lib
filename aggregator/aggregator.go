@@ -1032,7 +1032,7 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 	a.byEndBlock.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if trace {
-			fmt.Printf("readStorage %x: search in file [%d-%d], p=%p\n", filekey, item.startBlock, item.endBlock, item.storageIdx)
+			fmt.Printf("readStorage %x: search in file [%d-%d]\n", filekey, item.startBlock, item.endBlock)
 		}
 		if item.storageIdx.Empty() {
 			return true
