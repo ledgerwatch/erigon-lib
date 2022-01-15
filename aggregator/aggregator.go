@@ -837,7 +837,6 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		if item.storageIdx, err = recsplit.OpenIndex(path.Join(diffDir, fmt.Sprintf("storage.%d-%d.idx", item.startBlock, item.endBlock))); err != nil {
 			return false
 		}
-		fmt.Printf("storageIdx = %p for storage.%d-%d.idx\n", item.storageIdx, item.startBlock, item.endBlock)
 		if item.commitmentD, err = compress.NewDecompressor(path.Join(diffDir, fmt.Sprintf("commitment.%d-%d.dat", item.startBlock, item.endBlock))); err != nil {
 			return false
 		}
