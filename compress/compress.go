@@ -148,7 +148,7 @@ func (c *Compressor2) Compress() error {
 
 	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, suffixCollectors)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	_, fileName := filepath.Split(c.outputFile)
 
