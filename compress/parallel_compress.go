@@ -864,7 +864,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				//	continue
 				//}
 				if (l < 8 && repeats < int(minPatternScore)) ||
-					(l > 64 && repeats < 200) {
+					(l > 128 && repeats < 200) {
 					prevSkipped = true
 					continue
 				}
