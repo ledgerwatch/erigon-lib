@@ -118,6 +118,7 @@ func (c *Compressor2) Compress() error {
 		go processSuperstring(superstrings, collector, c.minPatternScore, wg)
 	}
 	i := 0
+	defer func(t time.Time) { fmt.Printf("compress.go:121: %s\n", time.Since(t)) }(time.Now())
 	if err := c.datFile.ForEach(func(word []byte) error {
 		if len(c.superstring)+2*len(word)+2 > superstringLimit {
 			superstrings <- c.superstring
@@ -217,7 +218,7 @@ type Compressor struct {
 // superstringLimit limits how large can one "superstring" get before it is processed
 // Compressor allocates 7 bytes for each uint of superstringLimit. For example,
 // superstingLimit 16m will result in 112Mb being allocated for various arrays
-const superstringLimit = 16 * 1024 * 1024
+const superstringLimit = 64 * 1024 * 1024 //16 * 1024 * 1024
 
 // minPatternLen is minimum length of pattern we consider to be included into the dictionary
 const minPatternLen = 5

@@ -742,7 +742,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		var j int
 		for i := 0; i < len(sa); i++ {
 			if sa[i]&1 == 0 {
-				filtered[j] = int32(sa[i] >> 1)
+				filtered[j] = sa[i] >> 1
 				j++
 			}
 		}
@@ -840,13 +840,8 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				}
 
 				window := i - j + 2
-				//if window > 1000 {
-				//	fmt.Printf("a: %d",filtered[j] )
-				//	fmt.Printf("alex: %d, %d, %d\n", window, i,j)
-				//}
 				copy(b, filtered[j:i+2])
 				sort.Sort(b[:window])
-
 				repeats := 1
 				lastK := 0
 				for k := 1; k < window; k++ {
@@ -864,7 +859,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				//	continue
 				//}
 				if (l < 8 && repeats < int(minPatternScore)) ||
-					(l > 128 && repeats < 200) {
+					(l > 64 && repeats < 200) {
 					prevSkipped = true
 					continue
 				}
