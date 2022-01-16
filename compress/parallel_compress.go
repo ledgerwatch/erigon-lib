@@ -263,18 +263,18 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 	numBuf := make([]byte, binary.MaxVarintLen64)
 	for input := range inputCh {
 		// First 8 bytes are idx
-		n := binary.PutUvarint(numBuf, uint64(len(input)-8))
+		n := binary.PutUvarint(numBuf, uint64(len(input)))
 		output = append(output[:0], numBuf[:n]...)
-		if len(input) > 8 {
-			output, patterns, uncovered = optimiseCluster(false, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
+		if len(input) > 0 {
+			output, patterns, uncovered = optimiseCluster(false, numBuf, input, trie, &mf, output, uncovered, patterns, cellRing, posMap)
 			if err := collector.Collect(output, nil); err != nil {
 				log.Error("Could not collect", "error", err)
 				return
 			}
 		}
-		inputSize.Add(1 + uint64(len(input)-8))
+		inputSize.Add(1 + uint64(len(input)))
 		outputSize.Add(uint64(len(output)))
-		posMap[uint64(len(input)-8+1)]++
+		posMap[uint64(len(input)+1)]++
 		posMap[0]++
 	}
 }
@@ -323,10 +323,7 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	}
 	var wordsCount uint64
 	if err := tmpFilePath.ForEach(func(v []byte) error {
-		input := make([]byte, 8+int(len(v)))
-		binary.BigEndian.PutUint64(input, wordsCount)
-		copy(input[8:], v)
-		ch <- input
+		ch <- common.Copy(v)
 		wordsCount++
 		select {
 		default:
@@ -619,8 +616,8 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer aggregator.Close()
 	for _, collector := range collectors {
-		if err = collector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			return aggregator.Collect(k, v)
+		if err = collector.Load(nil, "", func(k, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+			return aggregator.Collect(k, nil)
 		}, etl.TransformArgs{}); err != nil {
 			return err
 		}
@@ -630,9 +627,10 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
-	if err = aggregator.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	r := bytes.NewReader(nil)
+	if err = aggregator.Load(nil, "", func(v, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 		// Re-encode it
-		r := bytes.NewReader(v)
+		r.Reset(v)
 		var l uint64
 		var e error
 		if l, err = binary.ReadUvarint(r); err != nil {
@@ -859,7 +857,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					continue
 				}
 
-				score := uint64(repeats * (l-4))
+				score := uint64(repeats * (l - 4))
 				//if score < minPatternScore {
 				//	prevSkipped = true
 				//	continue
