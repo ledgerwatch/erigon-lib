@@ -280,14 +280,19 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath *DecompressedFile, workers int) error {
+func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *DecompressedFile, workers int) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
 	// DictionaryBuilder is for sorting words by their freuency (to assign codes)
 	var pt patricia.PatriciaTree
 	code2pattern := make([]*Pattern, 0, 256)
+	mm := map[int]int{}
 	if err := ReadDictrionary(dictPath, func(score uint64, word []byte) error {
+		if _, ok := mm[len(word)]; !ok {
+			mm[len(word)] = 0
+		}
+		mm[len(word)] ++
 		p := &Pattern{
 			score:    score,
 			uses:     0,
@@ -302,7 +307,8 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 		return err
 	}
 	log.Info(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
-	ch := make(chan []byte, 10000)
+	fmt.Printf("dict2: %+v\n", mm)
+	ch := make(chan []byte, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
 	var wg sync.WaitGroup
 	var collectors []*etl.Collector
@@ -322,7 +328,7 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 		go reduceDictWorker(ch, &wg, &pt, collector, inputSize, outputSize, posMap)
 	}
 	var wordsCount uint64
-	if err := tmpFilePath.ForEach(func(v []byte) error {
+	if err := datFile.ForEach(func(v []byte) error {
 		ch <- common.Copy(v)
 		wordsCount++
 		select {
@@ -330,7 +336,10 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 		case <-logEvery.C:
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			log.Info(fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+			log.Info(fmt.Sprintf("[%s] Replacement preprocessing", logPrefix),
+				"processed", fmt.Sprintf("%.2f%%", 100*float64(wordsCount)/float64(datFile.count)),
+				//"input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()),
+				"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		}
 		return nil
 	}); err != nil {
@@ -342,7 +351,7 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, tmpFilePath
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	log.Info(fmt.Sprintf("[%s] dictionary bild done", logPrefix), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	//log.Info(fmt.Sprintf("[%s] Dictionary build done", logPrefix), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	posMap := make(map[uint64]uint64)
 	for _, m := range posMaps {
 		for l, c := range m {
@@ -716,13 +725,14 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 	defer completion.Done()
 	var dictVal [8]byte
 	dictKey := make([]byte, maxPatternLen)
+	sa := make([]int32, superstringLimit)
+	divsufsort, err := transform.NewDivSufSort()
+	if err != nil {
+		log.Error("processSuperstring", "create divsufsoet", err)
+	}
 	for superstring := range superstringCh {
+		sa = sa[:len(superstring)]
 		//log.Info("Superstring", "len", len(superstring))
-		sa := make([]int32, len(superstring))
-		divsufsort, err := transform.NewDivSufSort()
-		if err != nil {
-			log.Error("processSuperstring", "create divsufsoet", err)
-		}
 		//start := time.Now()
 		divsufsort.ComputeSuffixArray(superstring, sa)
 		//log.Info("Suffix array built", "in", time.Since(start))
@@ -814,13 +824,9 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				continue
 			}
 			prevSkipped := false
-			_ = prevSkipped
 			for l := int(lcp[i]); l > int(lcp[i+1]) && l >= minPatternLen; l-- {
-				if l > maxPatternLen {
-					prevSkipped = true
-					continue
-				}
-				if l > 20 && (l&(l-1)) != 0 { // is power of 2
+				if l > maxPatternLen ||
+					l > 20 && (l&(l-1)) != 0 { // is power of 2
 					prevSkipped = true
 					continue
 				}
@@ -834,7 +840,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 
 				//if !new {
 				if !new && !prevSkipped {
-					//prevSkipped = false
+					//prevSkipped = true
 					break
 				}
 
@@ -850,19 +856,24 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				if (l <= 8 && repeats < 3000) ||
-					(l > 8 && l < 32 && repeats < 300) ||
-					(l >= 32 && repeats < 100) ||
-					(l > 64 && repeats < 1000) {
+				//if (l <= 8 && repeats < 500) ||
+				//	(l > 8 && l <= 32 && repeats < 20) ||
+				//	(l == 64 && repeats < 10) ||
+				//	(l > 64 && repeats < 30) {
+				//	prevSkipped = true
+				//	continue
+				//}
+				if (l < 8 && repeats < int(minPatternScore)) ||
+					(l > 64 && repeats < 200) {
 					prevSkipped = true
 					continue
 				}
 
-				score := uint64(repeats * (l ))
-				//if score < minPatternScore {
-				//	prevSkipped = true
-				//	continue
-				//}
+				score := uint64(repeats * (l))
+				if score < minPatternScore {
+					prevSkipped = true
+					continue
+				}
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
