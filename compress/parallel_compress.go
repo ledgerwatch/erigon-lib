@@ -731,6 +731,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		log.Error("processSuperstring", "create divsufsoet", err)
 	}
 	for superstring := range superstringCh {
+		t := time.Now()
 		sa = sa[:len(superstring)]
 		//log.Info("Superstring", "len", len(superstring))
 		//start := time.Now()
@@ -738,19 +739,19 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		//log.Info("Suffix array built", "in", time.Since(start))
 		// filter out suffixes that start with odd positions
 		n := len(sa) / 2
-		filtered := make([]int, n)
+		filtered := make([]int32, n)
 		var j int
 		for i := 0; i < len(sa); i++ {
 			if sa[i]&1 == 0 {
-				filtered[j] = int(sa[i] >> 1)
+				filtered[j] = int32(sa[i] >> 1)
 				j++
 			}
 		}
 		//log.Info("Suffix array filtered")
 		// invert suffixes
-		inv := make([]int, n)
+		inv := make([]int32, n)
 		for i := 0; i < n; i++ {
-			inv[filtered[i]] = i
+			inv[filtered[i]] = int32(i)
 		}
 		//log.Info("Inverted array done")
 		lcp := make([]int32, n)
@@ -761,7 +762,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			/* If the current suffix is at n-1, then we don’t
 			   have next substring to consider. So lcp is not
 			   defined for this substring, we put zero. */
-			if inv[i] == n-1 {
+			if inv[i] == int32(n-1) {
 				k = 0
 				continue
 			}
@@ -808,14 +809,14 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				}
 				dictKey := make([]byte, l)
 				for s := 0; s < l; s++ {
-					dictKey[s] = superstring[(filtered[i]+s)*2+1]
+					dictKey[s] = superstring[(int(filtered[i])+s)*2+1]
 				}
 				//fmt.Printf("%d %d %s\n", filtered[i], lcp[i], dictKey)
 			}
 		}
 		//log.Info("LCP array checked")
 		// Walk over LCP array and compute the scores of the strings
-		b := inv
+		var b Int32Sort = inv
 		j = 0
 		for i := 0; i < n-1; i++ {
 			// Only when there is a drop in LCP value
@@ -845,12 +846,17 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				}
 
 				window := i - j + 2
+				//if window > 1000 {
+				//	fmt.Printf("a: %d",filtered[j] )
+				//	fmt.Printf("alex: %d, %d, %d\n", window, i,j)
+				//}
 				copy(b, filtered[j:i+2])
-				sort.Ints(b[:window])
+				sort.Sort(b[:window])
+
 				repeats := 1
 				lastK := 0
 				for k := 1; k < window; k++ {
-					if b[k] >= b[lastK]+l {
+					if b[k] >= b[lastK]+int32(l) {
 						repeats++
 						lastK = k
 					}
@@ -877,7 +883,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
-					dictKey[s] = superstring[(filtered[i]+s)*2+1]
+					dictKey[s] = superstring[(int(filtered[i])+s)*2+1]
 				}
 				binary.BigEndian.PutUint64(dictVal[:], score)
 				if err = dictCollector.Collect(dictKey, dictVal[:]); err != nil {
@@ -887,6 +893,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				break
 			}
 		}
+		fmt.Printf("took: %s\n", time.Since(t))
 	}
 }
 
@@ -987,3 +994,9 @@ func hex2Bytes(str string) []byte {
 	h, _ := hex.DecodeString(str)
 	return h
 }
+
+type Int32Sort []int32
+
+func (f Int32Sort) Len() int           { return len(f) }
+func (f Int32Sort) Less(i, j int) bool { return f[i] < f[j] }
+func (f Int32Sort) Swap(i, j int)      { f[i], f[j] = f[j], f[i] }
