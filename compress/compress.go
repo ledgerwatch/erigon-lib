@@ -163,8 +163,7 @@ func (c *Compressor2) Compress() error {
 		return err
 	}
 
-	//defer os.Remove(c.tmpOutFilePath)
-	fmt.Printf("alex: %s\n", dictPath)
+	defer os.Remove(c.tmpOutFilePath)
 
 	if err := reducedict(c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
 		panic(err)

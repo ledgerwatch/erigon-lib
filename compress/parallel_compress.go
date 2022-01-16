@@ -93,13 +93,11 @@ func Compress(ctx context.Context, logPrefix, tmpFilePath, segmentFilePath strin
 	close(ch)
 	wg.Wait()
 
-	fmt.Printf("alex: %s\n", tmpDir)
 	db, err := DictionaryBuilderFromCollectors(ctx, compressLogPrefix, tmpDir, collectors)
 	if err != nil {
 		panic(err)
 	}
 	dictPath := tmpFilePath + ".dictionary.txt"
-	fmt.Printf("alex: %s\n", dictPath)
 	if err := PersistDictrionary(dictPath, db); err != nil {
 		return err
 	}

@@ -95,8 +95,8 @@ func TestCompress2Dict1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 100; i++ {
-		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
+	for i := 0; i < 100_00; i++ {
+		if err = c.AddWord([]byte(fmt.Sprintf("longlonglonglongword %d", i))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -111,9 +111,9 @@ func TestCompress2Dict1(t *testing.T) {
 	i := 0
 	for g.HasNext() {
 		word, _ := g.Next(nil)
-		expected := fmt.Sprintf("longlongword %d", i)
+		expected := fmt.Sprintf("longlonglonglongword %d", i)
 		if string(word) != expected {
-			t.Errorf("expected %s, got (hex) %x", expected, word)
+			t.Errorf("expected %s, got %s", expected, word)
 		}
 		i++
 	}
