@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2022 Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -1558,27 +1558,32 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 	return nil
 }
 
-func (w *Writer) FinishBlock(trace bool) ([]byte, error) {
-	var comm []byte
-	var err error
-	if comm, err = w.computeCommitment(trace); err != nil {
+func (w *Writer) ComputeCommitment(trace bool) ([]byte, error) {
+	comm, err := w.computeCommitment(trace)
+	if err != nil {
 		return nil, fmt.Errorf("compute commitment: %w", err)
 	}
 	w.commTree.Clear(true)
 	if err = w.commChanges.finish(w.blockNum); err != nil {
 		return nil, fmt.Errorf("finish commChanges: %w", err)
 	}
+	return comm, nil
+}
+
+// Aggegate should be called to check if the aggregation is required, and
+// if it is required, perform it
+func (w *Writer) Aggregate(trace bool) error {
 	if w.blockNum < w.a.unwindLimit+w.a.aggregationStep-1 {
-		return comm, nil
+		return nil
 	}
 	diff := w.blockNum - w.a.unwindLimit
 	if (diff+1)%w.a.aggregationStep != 0 {
-		return comm, nil
+		return nil
 	}
 	if err := w.aggregateUpto(diff+1-w.a.aggregationStep, diff); err != nil {
-		return nil, fmt.Errorf("aggregateUpto(%d, %d): %w", diff+1-w.a.aggregationStep, diff, err)
+		return fmt.Errorf("aggregateUpto(%d, %d): %w", diff+1-w.a.aggregationStep, diff, err)
 	}
-	return comm, nil
+	return nil
 }
 
 func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) error {

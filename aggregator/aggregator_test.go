@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2022 Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ func TestSimpleAggregator(t *testing.T) {
 	if err = w.FinishTx(0, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = w.FinishBlock(false /* trace */); err != nil {
+	if err = w.Aggregate(false /* trace */); err != nil {
 		t.Fatal(err)
 	}
 	if err = rwTx.Commit(); err != nil {
@@ -153,7 +153,7 @@ func TestLoopAggregator(t *testing.T) {
 		if err = w.FinishTx(blockNum, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = w.FinishBlock(false /* trace */); err != nil {
+		if err = w.Aggregate(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
@@ -253,7 +253,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 		if err = w.FinishTx(blockNum, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = w.FinishBlock(false /* trace */); err != nil {
+		if err = w.Aggregate(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
@@ -372,7 +372,7 @@ func TestChangeCode(t *testing.T) {
 		if err = w.FinishTx(blockNum, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = w.FinishBlock(false /* trace */); err != nil {
+		if err = w.Aggregate(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		if err = rwTx.Commit(); err != nil {
