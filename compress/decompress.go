@@ -226,6 +226,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
 		pattern := g.nextPattern()
+		if len(g.word) < intPos {
+			panic("likely .idx is invalid")
+		}
 		copy(g.word[intPos:], pattern)
 		if intPos > lastUncovered {
 			g.uncovered = append(g.uncovered, lastUncovered, intPos)
