@@ -157,6 +157,7 @@ func (c *Compressor2) Compress() error {
 
 	dictPath := filepath.Join(c.tmpDir, fileName) + ".dictionary.txt"
 	defer os.Remove(dictPath)
+
 	if err := PersistDictrionary(dictPath, db); err != nil {
 		panic(err)
 
@@ -220,7 +221,7 @@ const superstringLimit = 16 * 1024 * 1024
 
 // minPatternLen is minimum length of pattern we consider to be included into the dictionary
 const minPatternLen = 5
-const maxPatternLen = 64
+const maxPatternLen = 1024
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
@@ -1318,6 +1319,8 @@ type DictAggregator struct {
 	lastWord      []byte
 	lastWordScore uint64
 	collector     *etl.Collector
+
+	dist map[int]int
 }
 
 func (da *DictAggregator) processWord(word []byte, score uint64) error {
@@ -1332,6 +1335,11 @@ func (da *DictAggregator) Load(loadFunc etl.LoadFunc, args etl.TransformArgs) er
 }
 
 func (da *DictAggregator) aggLoadFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	if _, ok := da.dist[len(k)]; !ok {
+		da.dist[len(k)] = 0
+	}
+	da.dist[len(k)]++
+
 	score := binary.BigEndian.Uint64(v)
 	if bytes.Equal(k, da.lastWord) {
 		da.lastWordScore += score

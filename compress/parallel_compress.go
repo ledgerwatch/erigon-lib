@@ -267,7 +267,7 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 		output = append(output[:0], numBuf[:n]...)
 		if len(input) > 8 {
 			output, patterns, uncovered = optimiseCluster(false, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
-			if err := collector.Collect(input[:8], output); err != nil {
+			if err := collector.Collect(output, nil); err != nil {
 				log.Error("Could not collect", "error", err)
 				return
 			}
@@ -809,17 +809,21 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		// Walk over LCP array and compute the scores of the strings
 		b := inv
 		j = 0
+		prevSkipped := false
 		for i := 0; i < n-1; i++ {
 			// Only when there is a drop in LCP value
 			if lcp[i+1] >= lcp[i] {
 				j = i
 				continue
 			}
-			for l := int(lcp[i]); l > int(lcp[i+1]); l-- {
-				if l < minPatternLen || l > maxPatternLen {
+			_ = prevSkipped
+			for l := int(lcp[i]); l > int(lcp[i+1]) && l >= minPatternLen; l-- {
+				if l > maxPatternLen {
+					prevSkipped = true
 					continue
 				}
 				if l > 20 && (l&(l-1)) != 0 { // is power of 2
+					prevSkipped = true
 					continue
 				}
 
@@ -829,9 +833,12 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					j--
 					new = true
 				}
-				if !new {
+
+				//if !new {
+				if !new && !prevSkipped {
 					break
 				}
+
 				window := i - j + 2
 				copy(b, filtered[j:i+2])
 				sort.Ints(b[:window])
@@ -844,15 +851,19 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				//if (l <= 8 && repeats < 1000) ||
-				//	(l > 8 && repeats < 60) {
-				//	continue
-				//}
-
-				score := uint64(repeats * (l - 4))
-				if score < minPatternScore {
+				if (l <= 8 && repeats < 1000) ||
+					(l > 8 && l < 32 && repeats < 100) ||
+					(l >= 32 && repeats < 30) ||
+					(l > 64 && repeats < 100) {
+					prevSkipped = true
 					continue
 				}
+
+				score := uint64(repeats * (l-4))
+				//if score < minPatternScore {
+				//	prevSkipped = true
+				//	continue
+				//}
 
 				dictKey = dictKey[:l]
 				for s := 0; s < l; s++ {
@@ -862,6 +873,8 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				if err = dictCollector.Collect(dictKey, dictVal[:]); err != nil {
 					log.Error("processSuperstring", "collect", err)
 				}
+				prevSkipped = false
+				break
 			}
 		}
 	}
@@ -870,7 +883,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir string, collectors []*etl.Collector) (*DictionaryBuilder, error) {
 	dictCollector := etl.NewCollector(logPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer dictCollector.Close()
-	dictAggregator := &DictAggregator{collector: dictCollector}
+	dictAggregator := &DictAggregator{collector: dictCollector, dist: map[int]int{}}
 	for _, collector := range collectors {
 		if err := collector.Load(nil, "", dictAggregator.aggLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return nil, err
@@ -886,6 +899,7 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 	}
 	db.finish()
 
+	fmt.Printf("dict: %+v\n", dictAggregator.dist)
 	sort.Sort(db)
 	return db, nil
 }
@@ -957,4 +971,9 @@ func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 		return e
 	}
 	return nil
+}
+
+func hex2Bytes(str string) []byte {
+	h, _ := hex.DecodeString(str)
+	return h
 }
