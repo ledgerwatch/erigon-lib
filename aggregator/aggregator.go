@@ -1217,7 +1217,7 @@ func (a *Aggregator) MakeStateWriter(beforeOn bool) *Writer {
 	w.accountChanges.Init("accounts", a.aggregationStep, a.diffDir, beforeOn)
 	w.codeChanges.Init("code", a.aggregationStep, a.diffDir, beforeOn)
 	w.storageChanges.Init("storage", a.aggregationStep, a.diffDir, beforeOn)
-	w.commChanges.Init("commitment", a.aggregationStep, a.diffDir, beforeOn /* we do not unwind commitment */)
+	w.commChanges.Init("commitment", a.aggregationStep, a.diffDir, false /* we do not unwind commitment */)
 	return w
 }
 
@@ -1386,6 +1386,9 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		offsetVal := w.codeChanges.after.wordOffsets[i]
 		key := w.codeChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.codeChanges.after.words[lastOffsetVal:offsetVal]
+		if len(val) > 0 {
+			val = val[1:]
+		}
 		if trace {
 			fmt.Printf("captureCommitmentData cod [%x]=>[%x]\n", key, val)
 		}
@@ -1431,6 +1434,9 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		offsetVal := w.accountChanges.after.wordOffsets[i]
 		key := w.accountChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.accountChanges.after.words[lastOffsetVal:offsetVal]
+		if len(val) > 0 {
+			val = val[1:]
+		}
 		if trace {
 			fmt.Printf("captureCommitmentData acc [%x]=>[%x]\n", key, val)
 		}
@@ -1466,6 +1472,9 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		offsetVal := w.storageChanges.after.wordOffsets[i]
 		key := w.storageChanges.keys.words[lastOffsetKey:offsetKey]
 		val := w.storageChanges.after.words[lastOffsetVal:offsetVal]
+		if len(val) > 0 {
+			val = val[1:]
+		}
 		if trace {
 			fmt.Printf("captureCommitmentData str [%x]=>[%x]\n", key, val)
 		}
