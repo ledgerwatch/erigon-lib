@@ -858,7 +858,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					continue
 				}
 
-				score := uint64(repeats * (l - 4))
+				score := uint64(repeats * (l ))
 				//if score < minPatternScore {
 				//	prevSkipped = true
 				//	continue
