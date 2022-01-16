@@ -806,11 +806,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				if l < 2 {
 					continue
 				}
-				dictKey := make([]byte, l)
-				for s := 0; s < l; s++ {
-					dictKey[s] = superstring[(int(filtered[i])+s)*2+1]
-				}
-				//fmt.Printf("%d %d %s\n", filtered[i], lcp[i], dictKey)
 			}
 		}
 		//log.Info("LCP array checked")
