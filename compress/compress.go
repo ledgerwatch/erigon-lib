@@ -218,7 +218,7 @@ type Compressor struct {
 // superstringLimit limits how large can one "superstring" get before it is processed
 // Compressor allocates 7 bytes for each uint of superstringLimit. For example,
 // superstingLimit 16m will result in 112Mb being allocated for various arrays
-const superstringLimit = 64 * 1024 * 1024 //16 * 1024 * 1024
+const superstringLimit = 16 * 1024 * 1024
 
 // minPatternLen is minimum length of pattern we consider to be included into the dictionary
 const minPatternLen = 5
@@ -226,7 +226,7 @@ const maxPatternLen = 4096
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 256 * 1024 //1 * 1024 * 1024
+const maxDictPatterns = 1 * 1024 * 1024
 
 //nolint
 const compressLogPrefix = "compress"
