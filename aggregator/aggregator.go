@@ -378,7 +378,7 @@ func (c *Changes) prevTx() (bool, uint64, error) {
 		}
 	}
 	if txNum != c.after.txNum {
-		return false, 0, fmt.Errorf("inconsistent txNum, keys: %d, after: %d", txNum, c.before.txNum)
+		return false, 0, fmt.Errorf("inconsistent txNum, keys: %d, after: %d", txNum, c.after.txNum)
 	}
 	return bkeys, txNum, nil
 }
@@ -674,7 +674,6 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 				bt.ReplaceOrInsert(item)
 			}
 			ai.k = key
-			ai.v = after
 			i := bt.Get(&ai)
 			if i == nil {
 				item := &AggregateItem{k: common.Copy(key), count: 1, v: common.Copy(after)}
@@ -933,7 +932,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 				err = fmt.Errorf("whole in change files [%d-%d]", item.endBlock, minStart)
 				return false
 			}
-			if item.fileCount != 12 {
+			if item.fileCount != 12 && item.fileCount != 8 {
 				err = fmt.Errorf("missing change files for interval [%d-%d]", item.startBlock, item.endBlock)
 				return false
 			}
@@ -1218,7 +1217,7 @@ func (a *Aggregator) MakeStateWriter(beforeOn bool) *Writer {
 	w.accountChanges.Init("accounts", a.aggregationStep, a.diffDir, beforeOn)
 	w.codeChanges.Init("code", a.aggregationStep, a.diffDir, beforeOn)
 	w.storageChanges.Init("storage", a.aggregationStep, a.diffDir, beforeOn)
-	w.commChanges.Init("commitment", a.aggregationStep, a.diffDir, false /* we do not unwind commitment */)
+	w.commChanges.Init("commitment", a.aggregationStep, a.diffDir, beforeOn /* we do not unwind commitment */)
 	return w
 }
 
