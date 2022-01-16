@@ -807,13 +807,13 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		// Walk over LCP array and compute the scores of the strings
 		b := inv
 		j = 0
-		prevSkipped := false
 		for i := 0; i < n-1; i++ {
 			// Only when there is a drop in LCP value
 			if lcp[i+1] >= lcp[i] {
 				j = i
 				continue
 			}
+			prevSkipped := false
 			_ = prevSkipped
 			for l := int(lcp[i]); l > int(lcp[i+1]) && l >= minPatternLen; l-- {
 				if l > maxPatternLen {
@@ -834,6 +834,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 
 				//if !new {
 				if !new && !prevSkipped {
+					//prevSkipped = false
 					break
 				}
 
@@ -849,10 +850,10 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				if (l <= 8 && repeats < 2000) ||
-					(l > 8 && l < 32 && repeats < 200) ||
-					(l >= 32 && repeats < 50) ||
-					(l > 64 && repeats < 500) {
+				if (l <= 8 && repeats < 3000) ||
+					(l > 8 && l < 32 && repeats < 300) ||
+					(l >= 32 && repeats < 100) ||
+					(l > 64 && repeats < 1000) {
 					prevSkipped = true
 					continue
 				}

@@ -134,7 +134,7 @@ func (c *Compressor2) Compress() error {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		case <-logEvery.C:
-			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", c.logPrefix), "processed", fmt.Sprintf("%dK", i/1_000))
+			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", c.logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(i)/float64(c.datFile.count)))
 		}
 		return nil
 	}); err != nil {
