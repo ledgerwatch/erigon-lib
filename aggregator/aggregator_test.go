@@ -83,7 +83,7 @@ func TestSimpleAggregator(t *testing.T) {
 	}
 	defer rwTx.Rollback()
 
-	w := a.MakeStateWriter()
+	w := a.MakeStateWriter(true /* beforeOn */)
 	if err = w.Reset(rwTx, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestLoopAggregator(t *testing.T) {
 	defer func() {
 		tx.Rollback()
 	}()
-	w := a.MakeStateWriter()
+	w := a.MakeStateWriter(true /* beforeOn */)
 	defer w.Close()
 	ctx := context.Background()
 	for blockNum := uint64(0); blockNum < 1000; blockNum++ {
@@ -216,7 +216,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 	defer func() {
 		tx.Rollback()
 	}()
-	w := a.MakeStateWriter()
+	w := a.MakeStateWriter(true /* beforeOn */)
 	defer w.Close()
 	ctx := context.Background()
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
@@ -347,7 +347,7 @@ func TestChangeCode(t *testing.T) {
 			tx.Rollback()
 		}
 	}()
-	w := a.MakeStateWriter()
+	w := a.MakeStateWriter(true /* beforeOn */)
 	defer w.Close()
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
