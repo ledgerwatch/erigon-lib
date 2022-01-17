@@ -7,7 +7,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 )
 
-// BigChunks - read `table` by big chunks - restart read transaction after each 5 minutes
+// BigChunks - read `table` by big chunks - restart read transaction after each 1 minutes
 func BigChunks(db RoDB, table string, from []byte, walker func(tx Tx, k, v []byte) (bool, error)) error {
 	rollbackEvery := time.NewTicker(1 * time.Minute)
 
