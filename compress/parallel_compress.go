@@ -262,6 +262,7 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 		}
 		return nil
 	}); err != nil {
+		panic(err)
 		return err
 	}
 	close(ch)
