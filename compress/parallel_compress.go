@@ -307,7 +307,6 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 		return err
 	}
 	log.Info(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
-	fmt.Printf("dict2: %+v\n", mm)
 	ch := make(chan []byte, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
 	var wg sync.WaitGroup
@@ -904,7 +903,6 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 	}
 	db.finish()
 
-	fmt.Printf("dict: %+v\n", dictAggregator.dist)
 	sort.Sort(db)
 	return db, nil
 }

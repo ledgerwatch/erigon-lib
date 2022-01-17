@@ -118,7 +118,6 @@ func (c *Compressor2) Compress() error {
 		go processSuperstring(superstrings, collector, c.minPatternScore, wg)
 	}
 	i := 0
-	defer func(t time.Time) { fmt.Printf("compress.go:121: %s\n", time.Since(t)) }(time.Now())
 	if err := c.datFile.ForEach(func(word []byte) error {
 		if len(c.superstring)+2*len(word)+2 > superstringLimit {
 			superstrings <- c.superstring
