@@ -1418,20 +1418,23 @@ func (f *DecompressedFile) ForEach(walker func(v []byte) error) error {
 	}
 	r := bufio.NewReaderSize(f.f, etl.BufIOSize)
 	buf := make([]byte, 4096)
-	l, e := binary.ReadUvarint(r)
-	for ; e == nil; l, e = binary.ReadUvarint(r) {
+	for l, err := binary.ReadUvarint(r); ; l, err = binary.ReadUvarint(r) {
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+
 		if len(buf) < int(l) {
 			buf = make([]byte, l)
 		}
-		if _, e = io.ReadFull(r, buf[:l]); e != nil {
-			return e
+		if _, err = io.ReadFull(r, buf[:l]); err != nil {
+			return err
 		}
 		if err := walker(buf[:l]); err != nil {
 			return err
 		}
-	}
-	if e != nil && !errors.Is(e, io.EOF) {
-		return e
 	}
 	return nil
 }
