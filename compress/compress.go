@@ -1268,7 +1268,7 @@ func (c *Compressor) processSuperstring() error {
 			continue
 		}
 		for l := c.lcp[i]; l > c.lcp[i+1]; l-- {
-			if l < minPatternLen || l > maxPatternLen {
+			if l < minPatternLen {
 				continue
 			}
 			// Go back
