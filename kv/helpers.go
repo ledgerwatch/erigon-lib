@@ -27,6 +27,13 @@ func BigChunks(db RoDB, table string, from []byte, walker func(tx Tx, k, v []byt
 					return err
 				}
 
+				// break loop before walker() call, to make sure all keys are received by walker() exactly once
+				select {
+				case <-rollbackEvery.C:
+					break Loop
+				default:
+				}
+
 				ok, err := walker(tx, k, v)
 				if err != nil {
 					return err
@@ -36,11 +43,6 @@ func BigChunks(db RoDB, table string, from []byte, walker func(tx Tx, k, v []byt
 					break
 				}
 
-				select {
-				case <-rollbackEvery.C:
-					break Loop
-				default:
-				}
 			}
 
 			if k == nil {
