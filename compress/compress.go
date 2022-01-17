@@ -138,7 +138,6 @@ func (c *Compressor2) Compress() error {
 		}
 		return nil
 	}); err != nil {
-		panic(err)
 		return err
 	}
 	if len(c.superstring) > 0 {
@@ -149,7 +148,6 @@ func (c *Compressor2) Compress() error {
 
 	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, suffixCollectors)
 	if err != nil {
-		panic(err)
 
 		return err
 	}
@@ -159,20 +157,15 @@ func (c *Compressor2) Compress() error {
 	defer os.Remove(dictPath)
 
 	if err := PersistDictrionary(dictPath, db); err != nil {
-		panic(err)
-
 		return err
 	}
 
 	defer os.Remove(c.tmpOutFilePath)
 
 	if err := reducedict(c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
-		panic(err)
 		return err
 	}
 	if err := os.Rename(c.tmpOutFilePath, c.outputFile); err != nil {
-		panic(err)
-
 		return err
 	}
 

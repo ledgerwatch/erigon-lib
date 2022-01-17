@@ -976,11 +976,6 @@ func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 	return nil
 }
 
-func hex2Bytes(str string) []byte {
-	h, _ := hex.DecodeString(str)
-	return h
-}
-
 type Int32Sort []int32
 
 func (f Int32Sort) Len() int           { return len(f) }
