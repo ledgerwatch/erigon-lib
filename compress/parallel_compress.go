@@ -29,7 +29,7 @@ import (
 )
 
 // MinPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
-const MinPatternScore = 2 * 1024
+const MinPatternScore = 1024
 
 func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.PatriciaTree, mf *patricia.MatchFinder, output []byte, uncovered []int, patterns []int, cellRing *Ring, posMap map[uint64]uint64) ([]byte, []int, []int) {
 	matches := mf.FindLongestMatches(trie, input)
