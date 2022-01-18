@@ -183,18 +183,18 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 	numBuf := make([]byte, binary.MaxVarintLen64)
 	for input := range inputCh {
 		// First 8 bytes are idx
-		n := binary.PutUvarint(numBuf, uint64(len(input)))
+		n := binary.PutUvarint(numBuf, uint64(len(input)-8))
 		output = append(output[:0], numBuf[:n]...)
-		if len(input) > 0 {
-			output, patterns, uncovered = optimiseCluster(false, numBuf, input, trie, &mf, output, uncovered, patterns, cellRing, posMap)
-			if err := collector.Collect(output, nil); err != nil {
+		if len(input) > 8 {
+			output, patterns, uncovered = optimiseCluster(false, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
+			if err := collector.Collect(input[:8], output); err != nil {
 				log.Error("Could not collect", "error", err)
 				return
 			}
 		}
-		inputSize.Add(1 + uint64(len(input)))
+		inputSize.Add(1 + uint64(len(input)-8))
 		outputSize.Add(uint64(len(output)))
-		posMap[uint64(len(input)+1)]++
+		posMap[uint64(len(input)-8+1)]++
 		posMap[0]++
 	}
 }
@@ -207,12 +207,7 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 	// DictionaryBuilder is for sorting words by their freuency (to assign codes)
 	var pt patricia.PatriciaTree
 	code2pattern := make([]*Pattern, 0, 256)
-	mm := map[int]int{}
 	if err := ReadDictrionary(dictPath, func(score uint64, word []byte) error {
-		if _, ok := mm[len(word)]; !ok {
-			mm[len(word)] = 0
-		}
-		mm[len(word)]++
 		p := &Pattern{
 			score:    score,
 			uses:     0,
@@ -248,7 +243,10 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 	}
 	var wordsCount uint64
 	if err := datFile.ForEach(func(v []byte) error {
-		ch <- common.Copy(v)
+		input := make([]byte, 8+int(len(v)))
+		binary.BigEndian.PutUint64(input, wordsCount)
+		copy(input[8:], v)
+		ch <- input
 		wordsCount++
 		select {
 		default:
@@ -544,8 +542,8 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer aggregator.Close()
 	for _, collector := range collectors {
-		if err = collector.Load(nil, "", func(k, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			return aggregator.Collect(k, nil)
+		if err = collector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+			return aggregator.Collect(k, v)
 		}, etl.TransformArgs{}); err != nil {
 			return err
 		}
@@ -555,10 +553,9 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
-	r := bytes.NewReader(nil)
-	if err = aggregator.Load(nil, "", func(v, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	if err = aggregator.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 		// Re-encode it
-		r.Reset(v)
+		r := bytes.NewReader(v)
 		var l uint64
 		var e error
 		if l, err = binary.ReadUvarint(r); err != nil {

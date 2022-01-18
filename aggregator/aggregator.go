@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"container/heap"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -565,7 +566,7 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 }
 
 func (c *Changes) produceChangeSets(datPath, idxPath string) error {
-	comp, err := compress.NewCompressor(AggregatorPrefix, datPath, c.dir, 1024 /* minPatterScore */)
+	comp, err := compress.NewCompressor2(context.Background(), AggregatorPrefix, datPath, c.dir, compress.MinPatternScore, 1)
 	if err != nil {
 		return fmt.Errorf("produceChangeSets NewCompressor: %w", err)
 	}
@@ -699,7 +700,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 const AggregatorPrefix = "aggregator"
 
 func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
-	comp, err := compress.NewCompressor(AggregatorPrefix, datPath, tmpdir, 1024 /* minPatterScore */)
+	comp, err := compress.NewCompressor2(context.Background(), AggregatorPrefix, datPath, tmpdir, compress.MinPatternScore, 1)
 	if err != nil {
 		return 0, err
 	}
@@ -2134,9 +2135,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
 	datPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock))
 	idxPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock))
-	var comp *compress.Compressor
+	var comp *compress.Compressor2
 	var err error
-	if comp, err = compress.NewCompressor(AggregatorPrefix, datPath, dir, 1024 /* minPatterScore */); err != nil {
+	if comp, err = compress.NewCompressor2(context.Background(), AggregatorPrefix, datPath, dir, compress.MinPatternScore, 1); err != nil {
 		return nil, nil, fmt.Errorf("compressor %s: %w", datPath, err)
 	}
 	count := 0
