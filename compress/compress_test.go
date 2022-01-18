@@ -26,7 +26,7 @@ import (
 func TestCompressEmptyDict(t *testing.T) {
 	tmpDir := t.TempDir()
 	file := path.Join(tmpDir, "compressed")
-	c, err := NewCompressor2(context.Background(), t.Name(), file, tmpDir, 100, 1)
+	c, err := NewCompressor(context.Background(), t.Name(), file, tmpDir, 100, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestCompressDict1(t *testing.T) {
 	tmpDir := t.TempDir()
 	file := path.Join(tmpDir, "compressed")
 	t.Name()
-	c, err := NewCompressor2(context.Background(), t.Name(), file, tmpDir, 1, 2)
+	c, err := NewCompressor(context.Background(), t.Name(), file, tmpDir, 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
