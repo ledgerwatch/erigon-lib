@@ -22,14 +22,12 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
 	"math"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strconv"
 
@@ -568,7 +566,6 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 }
 
 func (c *Changes) produceChangeSets(datPath, idxPath string) error {
-	//comp, err := compress.NewCompressorSequential(AggregatorPrefix, datPath, c.dir, compress.MinPatternScore)
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, c.dir, compress.MinPatternScore, 1)
 	if err != nil {
 		return fmt.Errorf("produceChangeSets NewCompressorSequential: %w", err)
@@ -703,16 +700,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 
 const AggregatorPrefix = "aggregator"
 
-func decodeHex(in string) []byte {
-	payload, err := hex.DecodeString(in)
-	if err != nil {
-		panic(err)
-	}
-	return payload
-}
 func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
-	_, f := filepath.Split(datPath)
-	//comp, err := compress.NewCompressorSequential(AggregatorPrefix, datPath, tmpdir, compress.MinPatternScore)
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, tmpdir, compress.MinPatternScore, 1)
 	if err != nil {
 		return 0, err
@@ -736,10 +724,6 @@ func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
 	if err = comp.Compress(); err != nil {
 		return 0, err
 	}
-	if f == "storage.0-3.dat" {
-		//panic(1)
-	}
-
 	return count, nil
 }
 
