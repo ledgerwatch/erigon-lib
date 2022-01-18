@@ -1211,6 +1211,7 @@ func (c *CompressorSequential) buildDictionary() error {
 }
 
 func (c *CompressorSequential) processSuperstring() error {
+	var skipChar bool
 	for pos, char := range c.superstring {
 		if pos%2 == 0 && char == 0 && pos != 0 {
 			fmt.Printf("\n")
@@ -1219,7 +1220,13 @@ func (c *CompressorSequential) processSuperstring() error {
 			fmt.Printf("%d: ", pos/2)
 		}
 		if pos%2 == 1 {
-			fmt.Printf("%x", char)
+			if !skipChar {
+				fmt.Printf("%x", char)
+			}
+		} else if char == 0 {
+			skipChar = true
+		} else {
+			skipChar = false
 		}
 	}
 	c.divsufsort.ComputeSuffixArray(c.superstring, c.suffixarray[:len(c.superstring)])
