@@ -31,6 +31,8 @@ func TestCompressEmptyDict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer c.Close()
+
 	if err = c.AddWord([]byte("word")); err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +43,7 @@ func TestCompressEmptyDict(t *testing.T) {
 	if d, err = NewDecompressor(file); err != nil {
 		t.Fatal(err)
 	}
+	defer d.Close()
 	g := d.MakeGetter()
 	if !g.HasNext() {
 		t.Fatalf("expected a word")
@@ -52,7 +55,6 @@ func TestCompressEmptyDict(t *testing.T) {
 	if g.HasNext() {
 		t.Fatalf("not expecting anything else")
 	}
-	defer d.Close()
 }
 
 func TestCompressDict1(t *testing.T) {
@@ -63,6 +65,7 @@ func TestCompressDict1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer c.Close()
 	for i := 0; i < 100; i++ {
 		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
 			t.Fatal(err)
@@ -75,6 +78,7 @@ func TestCompressDict1(t *testing.T) {
 	if d, err = NewDecompressor(file); err != nil {
 		t.Fatal(err)
 	}
+	defer d.Close()
 	g := d.MakeGetter()
 	i := 0
 	for g.HasNext() {
@@ -85,5 +89,4 @@ func TestCompressDict1(t *testing.T) {
 		}
 		i++
 	}
-	defer d.Close()
 }
