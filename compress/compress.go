@@ -1212,10 +1212,8 @@ func (c *CompressorSequential) buildDictionary() error {
 
 func (c *CompressorSequential) processSuperstring() error {
 	for pos, char := range c.superstring {
-		if pos%2 == 0 || char == 0 {
-			if pos != 0 {
-				fmt.Printf("\n")
-			}
+		if pos%2 == 0 && char == 0 && pos != 0 {
+			fmt.Printf("\n")
 		}
 		if pos == 0 || (pos%2 == 0 && char == 0 && pos != len(c.superstring)-2) {
 			fmt.Printf("%d: ", pos/2)
