@@ -20,12 +20,13 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"path/filepath"
 	"testing"
 )
 
 func TestCompressEmptyDict(t *testing.T) {
 	tmpDir := t.TempDir()
-	file := path.Join(tmpDir, "compressed")
+	file := filepath.Join(tmpDir, "compressed")
 	c, err := NewCompressor(context.Background(), t.Name(), file, tmpDir, 100, 1)
 	if err != nil {
 		t.Fatal(err)
