@@ -478,14 +478,21 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 		heap.Push(&posHeap, h)
 		posHuffs = append(posHuffs, h)
 	}
-	posRoot := heap.Pop(&posHeap).(*PositionHuff)
+	var posRoot *PositionHuff
+	if posHeap.Len() > 0 {
+		posRoot = heap.Pop(&posHeap).(*PositionHuff)
+	}
 	// First, output dictionary
 	binary.BigEndian.PutUint64(numBuf, offset) // Dictionary size
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// Secondly, output directory root
-	binary.BigEndian.PutUint64(numBuf, posRoot.offset)
+	if posRoot == nil {
+		binary.BigEndian.PutUint64(numBuf, 0)
+	} else {
+		binary.BigEndian.PutUint64(numBuf, posRoot.offset)
+	}
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
@@ -553,17 +560,20 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
+	r := bytes.NewReader(nil)
 	if err = aggregator.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 		// Re-encode it
-		r := bytes.NewReader(v)
+		r.Reset(v)
 		var l uint64
 		var e error
 		if l, err = binary.ReadUvarint(r); err != nil {
 			return err
 		}
 		posCode := pos2code[l+1]
-		if e = hc.encode(posCode.code, posCode.codeBits); e != nil {
-			return e
+		if posCode != nil {
+			if e = hc.encode(posCode.code, posCode.codeBits); e != nil {
+				return e
+			}
 		}
 		if l > 0 {
 			var pNum uint64 // Number of patterns
@@ -581,8 +591,10 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 				}
 				posCode = pos2code[pos-lastPos+1]
 				lastPos = pos
-				if e = hc.encode(posCode.code, posCode.codeBits); e != nil {
-					return e
+				if posCode != nil {
+					if e = hc.encode(posCode.code, posCode.codeBits); e != nil {
+						return e
+					}
 				}
 				var code uint64 // Code of the pattern
 				if code, e = binary.ReadUvarint(r); e != nil {
@@ -593,8 +605,10 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 					uncoveredCount += int(pos) - lastUncovered
 				}
 				lastUncovered = int(pos) + len(patternCode.word)
-				if e = hc.encode(patternCode.code, patternCode.codeBits); e != nil {
-					return e
+				if patternCode != nil {
+					if e = hc.encode(patternCode.code, patternCode.codeBits); e != nil {
+						return e
+					}
 				}
 			}
 			if int(l) > lastUncovered {
