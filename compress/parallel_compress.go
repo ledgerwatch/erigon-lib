@@ -749,9 +749,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					new = true
 				}
 
-				//if !new {
 				if !new && !prevSkipped {
-					//prevSkipped = true
 					break
 				}
 
@@ -767,13 +765,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				//if (l <= 8 && repeats < 500) ||
-				//	(l > 8 && l <= 32 && repeats < 20) ||
-				//	(l == 64 && repeats < 10) ||
-				//	(l > 64 && repeats < 30) {
-				//	prevSkipped = true
-				//	continue
-				//}
 				if (l < 8 && repeats < int(minPatternScore)) ||
 					(l > 64 && repeats < 200) {
 					prevSkipped = true
