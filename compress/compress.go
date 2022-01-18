@@ -1211,6 +1211,7 @@ func (c *CompressorSequential) buildDictionary() error {
 }
 
 func (c *CompressorSequential) processSuperstring() error {
+	fmt.Printf("superstring: [%x]\n", c.superstring)
 	c.divsufsort.ComputeSuffixArray(c.superstring, c.suffixarray[:len(c.superstring)])
 	// filter out suffixes that start with odd positions - we reuse the first half of sa.suffixarray for that
 	// because it won't be used after filtration
