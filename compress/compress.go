@@ -873,6 +873,10 @@ func (c *CompressorSequential) optimiseCodes() error {
 		}
 	}
 	sort.Sort(&patternList)
+	//if len(patternList) == 0 {
+	//	log.Warn("dictionary is empty")
+	//}
+
 	// Calculate offsets of the dictionary patterns and total size
 	var offset uint64
 	for _, p := range patternList {

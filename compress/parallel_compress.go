@@ -283,12 +283,9 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 		}
 	}
 	sort.Sort(&patternList)
-	if len(patternList) == 0 {
-		log.Warn("dictionary is empty")
-		//err := fmt.Errorf("dictionary is empty")
-		//panic(err)
-		//return err
-	}
+	//if len(patternList) == 0 {
+	//	log.Warn("dictionary is empty")
+	//}
 	// Calculate offsets of the dictionary patterns and total size
 	var offset uint64
 	numBuf := make([]byte, binary.MaxVarintLen64)
@@ -676,8 +673,13 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				j++
 			}
 		}
-		//log.Info("Suffix array filtered")
-		// invert suffixes
+		// Now create an inverted array - we reuse the second half of suffix array for that
+		/*
+			inv := sa[:n]
+			for i := 0; i < n; i++ {
+				inv[filtered[i]] = int32(i)
+			}
+		*/
 		inv := make([]int32, n)
 		for i := 0; i < n; i++ {
 			inv[filtered[i]] = int32(i)
