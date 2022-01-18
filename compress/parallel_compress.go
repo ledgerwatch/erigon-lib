@@ -342,7 +342,7 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 		huffs = append(huffs, h)
 	}
 	root := &PatternHuff{}
-	if len(patternList) > 0 {
+	if codeHeap.Len() > 0 {
 		root = heap.Pop(&codeHeap).(*PatternHuff)
 	}
 	var cf *os.File
