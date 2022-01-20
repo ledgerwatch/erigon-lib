@@ -1,3 +1,19 @@
+/*
+   Copyright 2022 Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package bptree
 
 import (
@@ -11,9 +27,19 @@ func assertNodeEqual(t *testing.T, expected, actual *Node23) {
 }
 
 type MergeTest struct {
-	left	*Node23
-	right	*Node23
-	final	*Node23
+	left  *Node23
+	right *Node23
+	final *Node23
+}
+
+func KV(keys []Felt, values []Felt) KeyValues {
+	keyPointers := make([]*Felt, len(keys))
+	valuePointers := make([]*Felt, len(values))
+	for i := 0; i < len(keyPointers); i++ {
+		keyPointers[i] = &keys[i]
+		valuePointers[i] = &values[i]
+	}
+	return KeyValues{keyPointers, valuePointers}
 }
 
 func K2K(keys []Felt) []*Felt {
@@ -36,7 +62,7 @@ func newLeafNode(keys, values []*Felt) *Node23 {
 	return makeLeafNode(keys, values, &Stats{})
 }
 
-var mergeLeft2RightTestTable = []MergeTest {
+var mergeLeft2RightTestTable = []MergeTest{
 	{
 		newInternalNode([]*Node23{
 			newLeafNode(K2KV([]Felt{12, 127})),
@@ -81,7 +107,7 @@ var mergeLeft2RightTestTable = []MergeTest {
 	},
 }
 
-var mergeRight2LeftTestTable = []MergeTest {
+var mergeRight2LeftTestTable = []MergeTest{
 	{
 		newInternalNode([]*Node23{
 			newLeafNode(K2KV([]Felt{127, 128})),

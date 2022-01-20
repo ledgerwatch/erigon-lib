@@ -1,13 +1,28 @@
 //go:build gofuzzbeta
 // +build gofuzzbeta
 
+/*
+   Copyright 2022 Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package bptree
 
 import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
-//	"fmt"
 	"sort"
 	"testing"
 
@@ -33,132 +48,122 @@ func require23Tree(t *testing.T, tree *Tree23, expectedKeysLevelOrder []Felt, in
 }
 
 type HeightTest struct {
-	initialItems	KeyValues
-	expectedHeight	int
+	initialItems   KeyValues
+	expectedHeight int
 }
 
 type IsTree23Test struct {
-	initialItems		KeyValues
-	expectedKeysLevelOrder	[]Felt
+	initialItems           KeyValues
+	expectedKeysLevelOrder []Felt
 }
 
 type RootHashTest struct {
-	initialItems	KeyValues
-	expectedHash	string
+	initialItems KeyValues
+	expectedHash string
 }
 
 type UpsertTest struct {
-	initialItems		KeyValues
-	initialKeysLevelOrder	[]Felt
-	deltaItems		KeyValues
-	finalKeysLevelOrder	[]Felt
+	initialItems          KeyValues
+	initialKeysLevelOrder []Felt
+	deltaItems            KeyValues
+	finalKeysLevelOrder   []Felt
 }
 
 type DeleteTest struct {
-	initialItems		KeyValues
-	initialKeysLevelOrder	[]Felt
-	keysToDelete		[]Felt
-	finalKeysLevelOrder	[]Felt
+	initialItems          KeyValues
+	initialKeysLevelOrder []Felt
+	keysToDelete          []Felt
+	finalKeysLevelOrder   []Felt
 }
 
-func KV(keys []Felt, values []Felt) (KeyValues) {
-	keyPointers := make([]*Felt, len(keys))
-	valuePointers := make([]*Felt, len(values))
-	for i := 0; i < len(keyPointers); i++ {
-		keyPointers[i] = &keys[i]
-		valuePointers[i] = &values[i]
-	}
-	return KeyValues{keyPointers, valuePointers}
-}
-
-func K(keys []Felt) (KeyValues) {
+func K(keys []Felt) KeyValues {
 	values := make([]Felt, len(keys))
 	copy(values, keys)
 	return KV(keys, values)
 }
 
-var heightTestTable = []HeightTest {
-	{K([]Felt{}),				0},
-	{K([]Felt{1}),				1},
-	{K([]Felt{1, 2}),			1},
-	{K([]Felt{1, 2, 3}),			2},
-	{K([]Felt{1, 2, 3, 4}),		2},
-	{K([]Felt{1, 2, 3, 4, 5}),		2},
-	{K([]Felt{1, 2, 3, 4, 5, 6}),		2},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7}),	3},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8}),	3},
+var heightTestTable = []HeightTest{
+	{K([]Felt{}), 0},
+	{K([]Felt{1}), 1},
+	{K([]Felt{1, 2}), 1},
+	{K([]Felt{1, 2, 3}), 2},
+	{K([]Felt{1, 2, 3, 4}), 2},
+	{K([]Felt{1, 2, 3, 4, 5}), 2},
+	{K([]Felt{1, 2, 3, 4, 5, 6}), 2},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7}), 3},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8}), 3},
 }
 
-var isTree23TestTable = []IsTree23Test {
-	{K([]Felt{}),									[]Felt{}},
-	{K([]Felt{1}),									[]Felt{1}},
-	{K([]Felt{1, 2}),								[]Felt{1, 2}},
-	{K([]Felt{1, 2, 3}),								[]Felt{3, 1, 2, 3}},
-	{K([]Felt{1, 2, 3, 4}),								[]Felt{3, 1, 2, 3, 4}},
-	{K([]Felt{1, 2, 3, 4, 5}),							[]Felt{3, 5, 1, 2, 3, 4, 5}},
-	{K([]Felt{1, 2, 3, 4, 5, 6}),							[]Felt{3, 5, 1, 2, 3, 4, 5, 6}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7}),						[]Felt{5, 3, 7, 1, 2, 3, 4, 5, 6, 7}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8}),						[]Felt{5, 3, 7, 1, 2, 3, 4, 5, 6, 7, 8}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9}),						[]Felt{5, 3, 7, 9, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}),					[]Felt{5, 3, 7, 9, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}),					[]Felt{5, 9, 3, 7, 11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}),				[]Felt{5, 9, 3, 7, 11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}),		[]Felt{9, 5, 13, 3, 7, 11, 15, 17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}),	[]Felt{9, 5, 13, 3, 7, 11, 15, 17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
+var isTree23TestTable = []IsTree23Test{
+	{K([]Felt{}), []Felt{}},
+	{K([]Felt{1}), []Felt{1}},
+	{K([]Felt{1, 2}), []Felt{1, 2}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}},
+	{K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}},
+	{K([]Felt{1, 2, 3, 4, 5}), []Felt{3, 5, 1, 2, 3, 4, 5}},
+	{K([]Felt{1, 2, 3, 4, 5, 6}), []Felt{3, 5, 1, 2, 3, 4, 5, 6}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7}), []Felt{5, 3, 7, 1, 2, 3, 4, 5, 6, 7}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8}), []Felt{5, 3, 7, 1, 2, 3, 4, 5, 6, 7, 8}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9}), []Felt{5, 3, 7, 9, 1, 2, 3, 4, 5, 6, 7, 8, 9}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}), []Felt{5, 3, 7, 9, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}), []Felt{5, 9, 3, 7, 11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}), []Felt{5, 9, 3, 7, 11, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}), []Felt{9, 5, 13, 3, 7, 11, 15, 17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}), []Felt{9, 5, 13, 3, 7, 11, 15, 17, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
 }
 
-var rootHashTestTable = []RootHashTest {
-	{K([]Felt{}),		""},
-	{K([]Felt{1}),		"532deabf88729cb43995ab5a9cd49bf9b90a079904dc0645ecda9e47ce7345a9"},
-	{K([]Felt{1, 2}),	"d3782c59c224da5b6344108ef3431ba4e01d2c30b6570137a91b8b383908c361"},
+var rootHashTestTable = []RootHashTest{
+	{K([]Felt{}), ""},
+	{K([]Felt{1}), "532deabf88729cb43995ab5a9cd49bf9b90a079904dc0645ecda9e47ce7345a9"},
+	{K([]Felt{1, 2}), "d3782c59c224da5b6344108ef3431ba4e01d2c30b6570137a91b8b383908c361"},
 }
 
-var insertTestTable = []UpsertTest {
-	{K([]Felt{}),			[]Felt{},		K([]Felt{1}),				[]Felt{1}},
-	{K([]Felt{}),			[]Felt{},		K([]Felt{1, 2}),			[]Felt{1, 2}},
-	{K([]Felt{}),			[]Felt{},		K([]Felt{1, 2, 3}),		[]Felt{3, 1, 2, 3}},
-	{K([]Felt{}),			[]Felt{},		K([]Felt{1, 2, 3, 4}),	[]Felt{3, 1, 2, 3, 4}},
+var insertTestTable = []UpsertTest{
+	{K([]Felt{}), []Felt{}, K([]Felt{1}), []Felt{1}},
+	{K([]Felt{}), []Felt{}, K([]Felt{1, 2}), []Felt{1, 2}},
+	{K([]Felt{}), []Felt{}, K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}},
+	{K([]Felt{}), []Felt{}, K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}},
 
-	{K([]Felt{1}),			[]Felt{1},		K([]Felt{0}),				[]Felt{0, 1}},
-	{K([]Felt{1}),			[]Felt{1},		K([]Felt{2}),				[]Felt{1, 2}},
-	{K([]Felt{1}),			[]Felt{1},		K([]Felt{0, 2}),			[]Felt{2, 0, 1, 2}},
-	{K([]Felt{1}),			[]Felt{1},		K([]Felt{0, 2, 3}),		[]Felt{2, 0, 1, 2, 3}},
-	{K([]Felt{1}),			[]Felt{1},		K([]Felt{0, 2, 3, 4}),	[]Felt{2, 4, 0, 1, 2, 3, 4}},
-	{K([]Felt{2}),			[]Felt{2},		K([]Felt{0, 1, 3, 4}),	[]Felt{2, 4, 0, 1, 2, 3, 4}},
-	{K([]Felt{3}),			[]Felt{3},		K([]Felt{0, 1, 2, 4}),	[]Felt{2, 4, 0, 1, 2, 3, 4}},
-	{K([]Felt{4}),			[]Felt{4},		K([]Felt{0, 1, 2, 3}),	[]Felt{2, 4, 0, 1, 2, 3, 4}},
+	{K([]Felt{1}), []Felt{1}, K([]Felt{0}), []Felt{0, 1}},
+	{K([]Felt{1}), []Felt{1}, K([]Felt{2}), []Felt{1, 2}},
+	{K([]Felt{1}), []Felt{1}, K([]Felt{0, 2}), []Felt{2, 0, 1, 2}},
+	{K([]Felt{1}), []Felt{1}, K([]Felt{0, 2, 3}), []Felt{2, 0, 1, 2, 3}},
+	{K([]Felt{1}), []Felt{1}, K([]Felt{0, 2, 3, 4}), []Felt{2, 4, 0, 1, 2, 3, 4}},
+	{K([]Felt{2}), []Felt{2}, K([]Felt{0, 1, 3, 4}), []Felt{2, 4, 0, 1, 2, 3, 4}},
+	{K([]Felt{3}), []Felt{3}, K([]Felt{0, 1, 2, 4}), []Felt{2, 4, 0, 1, 2, 3, 4}},
+	{K([]Felt{4}), []Felt{4}, K([]Felt{0, 1, 2, 3}), []Felt{2, 4, 0, 1, 2, 3, 4}},
 
-	{K([]Felt{1, 2}),		[]Felt{1, 2},		K([]Felt{0}),				[]Felt{2, 0, 1, 2}},
-	{K([]Felt{1, 2}),		[]Felt{1, 2},		K([]Felt{0, 3}),			[]Felt{2, 0, 1, 2, 3}},
-	{K([]Felt{1, 2}),		[]Felt{1, 2},		K([]Felt{0, 3, 4}),		[]Felt{2, 4, 0, 1, 2, 3, 4}},
-	{K([]Felt{1, 2}),		[]Felt{1, 2},		K([]Felt{0, 3, 4, 5}),	[]Felt{2, 4, 0, 1, 2, 3, 4, 5}},
-	{K([]Felt{2, 3}),		[]Felt{2, 3},		K([]Felt{0}),				[]Felt{3, 0, 2, 3}},
-	{K([]Felt{2, 3}),		[]Felt{2, 3},		K([]Felt{0, 1}),			[]Felt{2, 0, 1, 2, 3}},
-	{K([]Felt{2, 3}),		[]Felt{2, 3},		K([]Felt{5}),				[]Felt{5, 2, 3, 5}},
-	{K([]Felt{2, 3}),		[]Felt{2, 3},		K([]Felt{4, 5}),			[]Felt{4, 2, 3, 4, 5}},
-	{K([]Felt{2, 3}),		[]Felt{2, 3},		K([]Felt{0, 4, 5}),		[]Felt{3, 5, 0, 2, 3, 4, 5}},
-	{K([]Felt{2, 3}),		[]Felt{2, 3},		K([]Felt{0, 1, 4, 5}),	[]Felt{2, 4, 0, 1, 2, 3, 4, 5}},
-	{K([]Felt{4, 5}),		[]Felt{4, 5},		K([]Felt{0}),				[]Felt{5, 0, 4, 5}},
-	{K([]Felt{4, 5}),		[]Felt{4, 5},		K([]Felt{0, 1}),			[]Felt{4, 0, 1, 4, 5}},
-	{K([]Felt{4, 5}),		[]Felt{4, 5},		K([]Felt{0, 1, 2}),		[]Felt{2, 5, 0, 1, 2, 4, 5}},
-	{K([]Felt{4, 5}),		[]Felt{4, 5},		K([]Felt{0, 1, 2, 3}),	[]Felt{2, 4, 0, 1, 2, 3, 4, 5}},
-	{K([]Felt{1, 4}),		[]Felt{1, 4},		K([]Felt{0}),				[]Felt{4, 0, 1, 4}},
-	{K([]Felt{1, 4}),		[]Felt{1, 4},		K([]Felt{0, 2}),			[]Felt{2, 0, 1, 2, 4}},
-	{K([]Felt{1, 4}),		[]Felt{1, 4},		K([]Felt{0, 2, 5}),		[]Felt{2, 5, 0, 1, 2, 4, 5}},
-	{K([]Felt{1, 4}),		[]Felt{1, 4},		K([]Felt{0, 2, 3, 5}),	[]Felt{2, 4, 0, 1, 2, 3, 4, 5}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, K([]Felt{0}), []Felt{2, 0, 1, 2}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, K([]Felt{0, 3}), []Felt{2, 0, 1, 2, 3}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, K([]Felt{0, 3, 4}), []Felt{2, 4, 0, 1, 2, 3, 4}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, K([]Felt{0, 3, 4, 5}), []Felt{2, 4, 0, 1, 2, 3, 4, 5}},
+	{K([]Felt{2, 3}), []Felt{2, 3}, K([]Felt{0}), []Felt{3, 0, 2, 3}},
+	{K([]Felt{2, 3}), []Felt{2, 3}, K([]Felt{0, 1}), []Felt{2, 0, 1, 2, 3}},
+	{K([]Felt{2, 3}), []Felt{2, 3}, K([]Felt{5}), []Felt{5, 2, 3, 5}},
+	{K([]Felt{2, 3}), []Felt{2, 3}, K([]Felt{4, 5}), []Felt{4, 2, 3, 4, 5}},
+	{K([]Felt{2, 3}), []Felt{2, 3}, K([]Felt{0, 4, 5}), []Felt{3, 5, 0, 2, 3, 4, 5}},
+	{K([]Felt{2, 3}), []Felt{2, 3}, K([]Felt{0, 1, 4, 5}), []Felt{2, 4, 0, 1, 2, 3, 4, 5}},
+	{K([]Felt{4, 5}), []Felt{4, 5}, K([]Felt{0}), []Felt{5, 0, 4, 5}},
+	{K([]Felt{4, 5}), []Felt{4, 5}, K([]Felt{0, 1}), []Felt{4, 0, 1, 4, 5}},
+	{K([]Felt{4, 5}), []Felt{4, 5}, K([]Felt{0, 1, 2}), []Felt{2, 5, 0, 1, 2, 4, 5}},
+	{K([]Felt{4, 5}), []Felt{4, 5}, K([]Felt{0, 1, 2, 3}), []Felt{2, 4, 0, 1, 2, 3, 4, 5}},
+	{K([]Felt{1, 4}), []Felt{1, 4}, K([]Felt{0}), []Felt{4, 0, 1, 4}},
+	{K([]Felt{1, 4}), []Felt{1, 4}, K([]Felt{0, 2}), []Felt{2, 0, 1, 2, 4}},
+	{K([]Felt{1, 4}), []Felt{1, 4}, K([]Felt{0, 2, 5}), []Felt{2, 5, 0, 1, 2, 4, 5}},
+	{K([]Felt{1, 4}), []Felt{1, 4}, K([]Felt{0, 2, 3, 5}), []Felt{2, 4, 0, 1, 2, 3, 4, 5}},
 
-	{K([]Felt{1, 3, 5}),		[]Felt{5, 1, 3, 5},	K([]Felt{0}),				[]Felt{3, 5, 0, 1, 3, 5}},
-	{K([]Felt{1, 3, 5}),		[]Felt{5, 1, 3, 5},	K([]Felt{0, 2, 4}),		[]Felt{4, 2, 5, 0, 1, 2, 3, 4, 5}},
-	{K([]Felt{1, 3, 5}),		[]Felt{5, 1, 3, 5},	K([]Felt{6, 7, 8}),		[]Felt{5, 7, 1, 3, 5, 6, 7, 8}},
-	{K([]Felt{1, 3, 5}),		[]Felt{5, 1, 3, 5},	K([]Felt{6, 7, 8, 9}),	[]Felt{7, 5, 9, 1, 3, 5, 6, 7, 8, 9}},
+	{K([]Felt{1, 3, 5}), []Felt{5, 1, 3, 5}, K([]Felt{0}), []Felt{3, 5, 0, 1, 3, 5}},
+	{K([]Felt{1, 3, 5}), []Felt{5, 1, 3, 5}, K([]Felt{0, 2, 4}), []Felt{4, 2, 5, 0, 1, 2, 3, 4, 5}},
+	{K([]Felt{1, 3, 5}), []Felt{5, 1, 3, 5}, K([]Felt{6, 7, 8}), []Felt{5, 7, 1, 3, 5, 6, 7, 8}},
+	{K([]Felt{1, 3, 5}), []Felt{5, 1, 3, 5}, K([]Felt{6, 7, 8, 9}), []Felt{7, 5, 9, 1, 3, 5, 6, 7, 8, 9}},
 
-	{K([]Felt{1, 2, 3, 4}),		[]Felt{3, 1, 2, 3, 4},	K([]Felt{0}),	[]Felt{2, 3, 0, 1, 2, 3, 4}},
-	{K([]Felt{1, 3, 5, 7}),		[]Felt{5, 1, 3, 5, 7},	K([]Felt{0}),	[]Felt{3, 5, 0, 1, 3, 5, 7}},
+	{K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}, K([]Felt{0}), []Felt{2, 3, 0, 1, 2, 3, 4}},
+	{K([]Felt{1, 3, 5, 7}), []Felt{5, 1, 3, 5, 7}, K([]Felt{0}), []Felt{3, 5, 0, 1, 3, 5, 7}},
 
-	{K([]Felt{1, 3, 5, 7, 9}),	[]Felt{5, 9, 1, 3, 5, 7, 9},	K([]Felt{0}),	[]Felt{5, 3, 9, 0, 1, 3, 5, 7, 9}},
+	{K([]Felt{1, 3, 5, 7, 9}), []Felt{5, 9, 1, 3, 5, 7, 9}, K([]Felt{0}), []Felt{5, 3, 9, 0, 1, 3, 5, 7, 9}},
 
 	// Debug
-	{K([]Felt{1, 2, 3, 5, 6, 7, 8}),	[]Felt{6, 3, 8, 1, 2, 3, 5, 6, 7, 8},	K([]Felt{4}),	[]Felt{6, 3, 5, 8, 1, 2, 3, 4, 5, 6, 7, 8}},
+	{K([]Felt{1, 2, 3, 5, 6, 7, 8}), []Felt{6, 3, 8, 1, 2, 3, 5, 6, 7, 8}, K([]Felt{4}), []Felt{6, 3, 5, 8, 1, 2, 3, 4, 5, 6, 7, 8}},
 
 	{
 		K([]Felt{10, 15, 20}),
@@ -182,56 +187,56 @@ var insertTestTable = []UpsertTest {
 	},
 }
 
-var updateTestTable = []UpsertTest {
-	{K([]Felt{10}),		[]Felt{10},		KV([]Felt{10}, []Felt{100}),		[]Felt{10}},
-	{K([]Felt{10, 20}),	[]Felt{10, 20},		KV([]Felt{10, 20}, []Felt{100, 200}),	[]Felt{10, 20}},
+var updateTestTable = []UpsertTest{
+	{K([]Felt{10}), []Felt{10}, KV([]Felt{10}, []Felt{100}), []Felt{10}},
+	{K([]Felt{10, 20}), []Felt{10, 20}, KV([]Felt{10, 20}, []Felt{100, 200}), []Felt{10, 20}},
 }
 
-var deleteTestTable = []DeleteTest {
+var deleteTestTable = []DeleteTest{
 	/// POSITIVE TEST CASES
-	{K([]Felt{}),				[]Felt{},				[]Felt{},		[]Felt{}},
+	{K([]Felt{}), []Felt{}, []Felt{}, []Felt{}},
 
-	{K([]Felt{1}),				[]Felt{1},				[]Felt{},		[]Felt{1}},
-	{K([]Felt{1}),				[]Felt{1},				[]Felt{1},		[]Felt{}},
+	{K([]Felt{1}), []Felt{1}, []Felt{}, []Felt{1}},
+	{K([]Felt{1}), []Felt{1}, []Felt{1}, []Felt{}},
 
-	{K([]Felt{1, 2}),			[]Felt{1, 2},				[]Felt{},		[]Felt{1, 2}},
-	{K([]Felt{1, 2}),			[]Felt{1, 2},				[]Felt{1},		[]Felt{2}},
-	{K([]Felt{1, 2}),			[]Felt{1, 2},				[]Felt{2},		[]Felt{1}},
-	{K([]Felt{1, 2}),			[]Felt{1, 2},				[]Felt{1, 2},		[]Felt{}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, []Felt{}, []Felt{1, 2}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, []Felt{1}, []Felt{2}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, []Felt{2}, []Felt{1}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, []Felt{1, 2}, []Felt{}},
 
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{},		[]Felt{3, 1, 2, 3}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{1},		[]Felt{2, 3}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{2},		[]Felt{1, 3}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{3},		[]Felt{1, 2}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{1, 2},		[]Felt{3}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{1, 3},		[]Felt{2}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{2, 3},		[]Felt{1}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},			[]Felt{1, 2, 3},	[]Felt{}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{}, []Felt{3, 1, 2, 3}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{1}, []Felt{2, 3}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{2}, []Felt{1, 3}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{3}, []Felt{1, 2}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{1, 2}, []Felt{3}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{1, 3}, []Felt{2}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{2, 3}, []Felt{1}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{1, 2, 3}, []Felt{}},
 
-	{K([]Felt{1, 2, 3, 4}),			[]Felt{3, 1, 2, 3, 4},			[]Felt{1},		[]Felt{3, 2, 3, 4}},
-	{K([]Felt{1, 2, 3, 4}),			[]Felt{3, 1, 2, 3, 4},			[]Felt{2},		[]Felt{3, 1, 3, 4}},
-	{K([]Felt{1, 2, 3, 4}),			[]Felt{3, 1, 2, 3, 4},			[]Felt{3},		[]Felt{4, 1, 2, 4}},
-	{K([]Felt{1, 2, 3, 4}),			[]Felt{3, 1, 2, 3, 4},			[]Felt{4},		[]Felt{3, 1, 2, 3}},
+	{K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}, []Felt{1}, []Felt{3, 2, 3, 4}},
+	{K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}, []Felt{2}, []Felt{3, 1, 3, 4}},
+	{K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}, []Felt{3}, []Felt{4, 1, 2, 4}},
+	{K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}, []Felt{4}, []Felt{3, 1, 2, 3}},
 
-	{K([]Felt{1, 2, 3, 4, 5}),		[]Felt{3, 5, 1, 2, 3, 4, 5},		[]Felt{1},		[]Felt{3, 5, 2, 3, 4, 5}},
-	{K([]Felt{1, 2, 3, 4, 5}),		[]Felt{3, 5, 1, 2, 3, 4, 5},		[]Felt{2},		[]Felt{3, 5, 1, 3, 4, 5}},
-	{K([]Felt{1, 2, 3, 4, 5}),		[]Felt{3, 5, 1, 2, 3, 4, 5},		[]Felt{3},		[]Felt{4, 5, 1, 2, 4, 5}},
-	{K([]Felt{1, 2, 3, 4, 5}),		[]Felt{3, 5, 1, 2, 3, 4, 5},		[]Felt{4},		[]Felt{3, 5, 1, 2, 3, 5}},
-	{K([]Felt{1, 2, 3, 4, 5}),		[]Felt{3, 5, 1, 2, 3, 4, 5},		[]Felt{5},		[]Felt{3, 1, 2, 3, 4}},
-	{K([]Felt{1, 2, 3, 4, 5, 6, 7}),	[]Felt{5, 3, 7, 1, 2, 3, 4, 5, 6, 7},	[]Felt{7},		[]Felt{3, 5, 1, 2, 3, 4, 5, 6}},
+	{K([]Felt{1, 2, 3, 4, 5}), []Felt{3, 5, 1, 2, 3, 4, 5}, []Felt{1}, []Felt{3, 5, 2, 3, 4, 5}},
+	{K([]Felt{1, 2, 3, 4, 5}), []Felt{3, 5, 1, 2, 3, 4, 5}, []Felt{2}, []Felt{3, 5, 1, 3, 4, 5}},
+	{K([]Felt{1, 2, 3, 4, 5}), []Felt{3, 5, 1, 2, 3, 4, 5}, []Felt{3}, []Felt{4, 5, 1, 2, 4, 5}},
+	{K([]Felt{1, 2, 3, 4, 5}), []Felt{3, 5, 1, 2, 3, 4, 5}, []Felt{4}, []Felt{3, 5, 1, 2, 3, 5}},
+	{K([]Felt{1, 2, 3, 4, 5}), []Felt{3, 5, 1, 2, 3, 4, 5}, []Felt{5}, []Felt{3, 1, 2, 3, 4}},
+	{K([]Felt{1, 2, 3, 4, 5, 6, 7}), []Felt{5, 3, 7, 1, 2, 3, 4, 5, 6, 7}, []Felt{7}, []Felt{3, 5, 1, 2, 3, 4, 5, 6}},
 
-	{K([]Felt{16, 25, 155, 182, 184, 210, 215}),	[]Felt{184, 155, 215, 16, 25, 155, 182, 184, 210, 215},	[]Felt{155, 182},	[]Felt{184, 215, 16, 25, 184, 210, 215}},
+	{K([]Felt{16, 25, 155, 182, 184, 210, 215}), []Felt{184, 155, 215, 16, 25, 155, 182, 184, 210, 215}, []Felt{155, 182}, []Felt{184, 215, 16, 25, 184, 210, 215}},
 
 	/// NEGATIVE TEST CASES
-	{K([]Felt{}),				[]Felt{},			[]Felt{1},	[]Felt{}},
-	{K([]Felt{1}),				[]Felt{1},			[]Felt{2},	[]Felt{1}},
-	{K([]Felt{1, 2}),			[]Felt{1, 2},			[]Felt{3},	[]Felt{1, 2}},
-	{K([]Felt{1, 2, 3}),			[]Felt{3, 1, 2, 3},		[]Felt{4},	[]Felt{3, 1, 2, 3}},
-	{K([]Felt{1, 2, 3, 4}),			[]Felt{3, 1, 2, 3, 4},		[]Felt{5},	[]Felt{3, 1, 2, 3, 4}},
-	{K([]Felt{1, 2, 3, 4, 5}),		[]Felt{3, 5, 1, 2, 3, 4, 5},	[]Felt{6},	[]Felt{3, 5, 1, 2, 3, 4, 5}},
+	{K([]Felt{}), []Felt{}, []Felt{1}, []Felt{}},
+	{K([]Felt{1}), []Felt{1}, []Felt{2}, []Felt{1}},
+	{K([]Felt{1, 2}), []Felt{1, 2}, []Felt{3}, []Felt{1, 2}},
+	{K([]Felt{1, 2, 3}), []Felt{3, 1, 2, 3}, []Felt{4}, []Felt{3, 1, 2, 3}},
+	{K([]Felt{1, 2, 3, 4}), []Felt{3, 1, 2, 3, 4}, []Felt{5}, []Felt{3, 1, 2, 3, 4}},
+	{K([]Felt{1, 2, 3, 4, 5}), []Felt{3, 5, 1, 2, 3, 4, 5}, []Felt{6}, []Felt{3, 5, 1, 2, 3, 4, 5}},
 
 	/// MIXED TEST CASES
-	{K([]Felt{0, 46, 50, 89, 134, 218}),	[]Felt{50, 134, 0, 46, 50, 89, 134, 218},	[]Felt{46, 50, 89, 134, 218},	[]Felt{0}},
+	{K([]Felt{0, 46, 50, 89, 134, 218}), []Felt{50, 134, 0, 46, 50, 89, 134, 218}, []Felt{46, 50, 89, 134, 218}, []Felt{0}},
 }
 
 func TestHeight(t *testing.T) {
@@ -318,12 +323,12 @@ func TestUpsertNextKey(t *testing.T) {
 	tn = tn.Upsert(data)
 	//tn.GraphAndPicture("tn2")
 	assertTwoThreeTree(t, tn, []Felt{4, 2, 6, 0, 1, 2, 3, 4, 5, 6, 7})
-	
+
 	data = K([]Felt{100, 101, 200, 201, 202})
 	tn = tn.Upsert(data)
 	//tn.GraphAndPicture("tn3")
 	assertTwoThreeTree(t, tn, []Felt{4, 100, 2, 6, 200, 202, 0, 1, 2, 3, 4, 5, 6, 7, 100, 101, 200, 201, 202})
-	
+
 	data = K([]Felt{10, 150, 250, 251, 252})
 	tn = tn.Upsert(data)
 	//tn.GraphAndPicture("tn4")
@@ -345,7 +350,7 @@ func TestDelete(t *testing.T) {
 }
 
 func FuzzUpsert(f *testing.F) {
-	f.Fuzz(func (t *testing.T, input1, input2 []byte) {
+	f.Fuzz(func(t *testing.T, input1, input2 []byte) {
 		//t.Parallel()
 		keyFactory := NewKeyBinaryFactory(1)
 		bytesReader1 := bytes.NewReader(input1)
@@ -365,7 +370,7 @@ func FuzzUpsert(f *testing.F) {
 }
 
 func FuzzDelete(f *testing.F) {
-	f.Fuzz(func (t *testing.T, input1, input2 []byte) {
+	f.Fuzz(func(t *testing.T, input1, input2 []byte) {
 		//t.Parallel()
 		//fmt.Printf("input1=%v input2=%v\n", input1, input2)
 		keyFactory := NewKeyBinaryFactory(1)

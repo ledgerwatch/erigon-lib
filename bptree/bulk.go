@@ -1,3 +1,19 @@
+/*
+   Copyright 2022 Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package bptree
 
 import (
@@ -52,7 +68,7 @@ func upsertLeaf(n *Node23, kvItems KeyValues, stats *Stats) (nodes []*Node23, ne
 			nodes = append(nodes, newLeaf)
 			n.keys, n.values = n.keys[2:], n.values[2:]
 		}
-		newLeaf := makeLeafNode(n.keys[:], n.values[:], stats)
+		newLeaf := makeLeafNode(n.keys, n.values, stats)
 		if n.nextKey() != nil {
 			intermediateKeys = append(intermediateKeys, n.nextKey())
 		}
@@ -86,7 +102,7 @@ func upsertInternal(n *Node23, kvItems KeyValues, stats *Stats) (nodes []*Node23
 
 	newChildren := make([]*Node23, 0)
 	newKeys := make([]*Felt, 0)
-	for i := len(n.children)-1; i >= 0; i-- {
+	for i := len(n.children) - 1; i >= 0; i-- {
 		child := n.children[i]
 		childNodes, childNewFirstKey, childIntermediateKeys := upsert(child, itemSubsets[i], stats)
 		newChildren = append(childNodes, newChildren...)
@@ -117,7 +133,7 @@ func upsertInternal(n *Node23, kvItems KeyValues, stats *Stats) (nodes []*Node23
 
 	n.children = newChildren
 	if n.childrenCount() > 3 {
-		ensure(len(newKeys) >= n.childrenCount()-1 || n.childrenCount() % 2 == 0 && n.childrenCount() % len(newKeys) == 0, "upsertInternal: inconsistent #children vs #newKeys")
+		ensure(len(newKeys) >= n.childrenCount()-1 || n.childrenCount()%2 == 0 && n.childrenCount()%len(newKeys) == 0, "upsertInternal: inconsistent #children vs #newKeys")
 		var hasIntermediateKeys bool
 		if len(newKeys) == n.childrenCount()-1 || len(newKeys) == n.childrenCount() {
 			/* Groups are: 2,2...2 or 3 */
@@ -139,11 +155,11 @@ func upsertInternal(n *Node23, kvItems KeyValues, stats *Stats) (nodes []*Node23
 		ensure(n.childrenCount() > 0 && len(newKeys) > 0, "upsertInternal: inconsistent #children vs #newKeys")
 		if n.childrenCount() == 2 {
 			ensure(len(newKeys) > 0, "upsertInternal: inconsistent #newKeys")
-			nodes = append(nodes, makeInternalNode(n.children[:], newKeys[:1], stats))
+			nodes = append(nodes, makeInternalNode(n.children, newKeys[:1], stats))
 			intermediateKeys = append(intermediateKeys, newKeys[1:]...)
 		} else if n.childrenCount() == 3 {
 			ensure(len(newKeys) > 1, "upsertInternal: inconsistent #newKeys")
-			nodes = append(nodes, makeInternalNode(n.children[:], newKeys[:2], stats))
+			nodes = append(nodes, makeInternalNode(n.children, newKeys[:2], stats))
 			intermediateKeys = append(intermediateKeys, newKeys[2:]...)
 		} else {
 			ensure(false, fmt.Sprintf("upsertInternal: inconsistent #children=%d #newKeys=%d\n", n.childrenCount(), len(newKeys)))
@@ -176,7 +192,7 @@ func addOrReplaceLeaf(n *Node23, kvItems KeyValues, stats *Stats) {
 	n.values = n.values[:len(n.values)-1]
 
 	// kvItems are ordered by key: search there using n.keys that here are 1 or 2 by design (0 just for empty tree)
-	switch (n.keyCount()) {
+	switch n.keyCount() {
 	case 0:
 		n.keys = append(n.keys, kvItems.keys...)
 		n.values = append(n.values, kvItems.values...)
@@ -418,8 +434,8 @@ func deleteInternal(n *Node23, keysToDelete []Felt, stats *Stats) (deleted *Node
 		if i > 0 {
 			previousIndex := i - 1
 			previousChild := n.children[previousIndex]
-			for previousChild.isEmpty() && previousIndex - 1 >= 0 {
-				previousChild = n.children[previousIndex - 1]
+			for previousChild.isEmpty() && previousIndex-1 >= 0 {
+				previousChild = n.children[previousIndex-1]
 				previousIndex = previousIndex - 1
 			}
 			if child == nil || childNextKey != nil {
@@ -439,19 +455,19 @@ func deleteInternal(n *Node23, keysToDelete []Felt, stats *Stats) (deleted *Node
 			if !previousChild.isEmpty() && child != nil && child.childrenCount() == 1 {
 				child.keys = child.keys[:0]
 				newLeft, newRight := mergeRight2Left(previousChild, child, stats)
-				n.children = append(n.children[:previousIndex], append([]*Node23{newLeft, newRight}, n.children[i + 1:]...)...)
+				n.children = append(n.children[:previousIndex], append([]*Node23{newLeft, newRight}, n.children[i+1:]...)...)
 			}
 		} else {
 			nextIndex := i + 1
 			nextChild := n.children[nextIndex]
-			for nextChild.isEmpty() && nextIndex + 1 < n.childrenCount() {
-				nextChild = n.children[nextIndex + 1]
+			for nextChild.isEmpty() && nextIndex+1 < n.childrenCount() {
+				nextChild = n.children[nextIndex+1]
 				nextIndex = nextIndex + 1
 			}
 			if !nextChild.isEmpty() && child != nil && child.childrenCount() == 1 {
 				child.keys = child.keys[:0]
 				newLeft, newRight := mergeLeft2Right(child, nextChild, stats)
-				n.children = append([]*Node23{newLeft, newRight}, n.children[nextIndex + 1:]...)
+				n.children = append([]*Node23{newLeft, newRight}, n.children[nextIndex+1:]...)
 			}
 			if childNextKey != nil {
 				nextKey = childNextKey

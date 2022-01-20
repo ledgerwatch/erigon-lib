@@ -1,3 +1,19 @@
+/*
+   Copyright 2022 Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package bptree
 
 import (
@@ -27,7 +43,7 @@ func (keys Keys) String() string {
 	b := strings.Builder{}
 	for i, k := range keys {
 		fmt.Fprintf(&b, "%v", k)
-		if i != len(keys) - 1 {
+		if i != len(keys)-1 {
 			fmt.Fprintf(&b, " ")
 		}
 	}
@@ -53,7 +69,7 @@ func (kv KeyValues) String() string {
 	for i, k := range kv.keys {
 		v := kv.values[i]
 		fmt.Fprintf(&b, "{%v, %v}", *k, *v)
-		if i != len(kv.keys) - 1 {
+		if i != len(kv.keys)-1 {
 			fmt.Fprintf(&b, " ")
 		}
 	}
@@ -110,7 +126,7 @@ func promote(nodes []*Node23, intermediateKeys []*Felt, stats *Stats) *Node23 {
 			promotedKeys = append(promotedKeys, intermediateKeys[1])
 			intermediateKeys = intermediateKeys[2:]
 		}
-		promotedNodes = append(promotedNodes, makeInternalNode(nodes[:], intermediateKeys[:], stats))
+		promotedNodes = append(promotedNodes, makeInternalNode(nodes, intermediateKeys, stats))
 		return promote(promotedNodes, promotedKeys, stats)
 	} else {
 		promotedRoot := makeInternalNode(nodes, intermediateKeys, stats)
@@ -198,7 +214,7 @@ func (n *Node23) isValidInternal() (bool, error) {
 			continue
 		}
 	}
-	for i := len(n.children)-1; i >= 0; i-- {
+	for i := len(n.children) - 1; i >= 0; i-- {
 		child := n.children[i]
 		// Check that each child subtree is a 2-3 tree
 		childValid, err := child.isValid()
@@ -296,7 +312,7 @@ func (n *Node23) canonicalKeys() []Felt {
 		ensure(len(n.keys) > 0, "canonicalKeys: node has no key")
 		return deref(n.keys[:len(n.keys)-1])
 	} else {
-		return deref(n.keys[:])
+		return deref(n.keys)
 	}
 }
 
@@ -306,7 +322,7 @@ func (n *Node23) hasKey(targetKey *Felt) bool {
 		ensure(len(n.keys) > 0, "hasKey: node has no key")
 		keys = n.keys[:len(n.keys)-1]
 	} else {
-		keys = n.keys[:]
+		keys = n.keys
 	}
 	for _, key := range keys {
 		if *key == *targetKey {

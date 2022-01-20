@@ -1,3 +1,19 @@
+/*
+   Copyright 2022 Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package bptree
 
 import (
@@ -31,14 +47,14 @@ type RandomBinaryReader struct {
 func (r RandomBinaryReader) Read(b []byte) (n int, err error) {
 	numKeys := len(b) / r.chunckSize
 	for i := 0; i < numKeys; i++ {
-		bytesRead, err := r.readAtRandomOffset(b[i*r.chunckSize:i*r.chunckSize+r.chunckSize])
+		bytesRead, err := r.readAtRandomOffset(b[i*r.chunckSize : i*r.chunckSize+r.chunckSize])
 		if err != nil {
 			return i*r.chunckSize + bytesRead, fmt.Errorf("cannot random read at iteration %d: %v", i, err)
 		}
 		n += bytesRead
 	}
 	remainderSize := len(b) % r.chunckSize
-	bytesRead, err := r.readAtRandomOffset(b[numKeys*r.chunckSize:numKeys*r.chunckSize+remainderSize])
+	bytesRead, err := r.readAtRandomOffset(b[numKeys*r.chunckSize : numKeys*r.chunckSize+remainderSize])
 	if err != nil {
 		return numKeys*r.chunckSize + bytesRead, fmt.Errorf("cannot random read remainder %d: %v", remainderSize, err)
 	}
@@ -47,7 +63,7 @@ func (r RandomBinaryReader) Read(b []byte) (n int, err error) {
 }
 
 func (r RandomBinaryReader) readAtRandomOffset(b []byte) (n int, err error) {
-	randomValue, err := rand.Int(rand.Reader, big.NewInt(r.sourceFile.size - int64(len(b))))
+	randomValue, err := rand.Int(rand.Reader, big.NewInt(r.sourceFile.size-int64(len(b))))
 	if err != nil {
 		return 0, fmt.Errorf("cannot generate random offset: %v", err)
 	}
@@ -72,7 +88,7 @@ func CreateBinaryFileByPRNG(path string, size int64) *BinaryFile {
 }
 
 func CreateBinaryFileFromReader(path, suffix string, size int64, reader io.Reader) *BinaryFile {
-	file, err := os.OpenFile(path + strconv.FormatInt(size, 10) + suffix, os.O_RDWR|os.O_CREATE, 0644)
+	file, err := os.OpenFile(path+strconv.FormatInt(size, 10)+suffix, os.O_RDWR|os.O_CREATE, 0644)
 	ensure(err == nil, fmt.Sprintf("CreateBinaryFileFromReader: cannot create file %s, error %s\n", file.Name(), err))
 
 	err = file.Truncate(size)
@@ -95,13 +111,7 @@ func CreateBinaryFileFromReader(path, suffix string, size int64, reader io.Reade
 	err = bufferedFile.Flush()
 	ensure(err == nil, fmt.Sprintf("CreateBinaryFileFromReader: error during flushing %s\n", err))
 
-	binaryFile := &BinaryFile{
-		path : file.Name(),
-		blockSize: BLOCKSIZE,
-		size: size,
-		file: file,
-		opened: true,
-	}
+	binaryFile := &BinaryFile{path: file.Name(), blockSize: BLOCKSIZE, size: size, file: file, opened: true}
 	binaryFile.rewind()
 	return binaryFile
 }
@@ -114,13 +124,7 @@ func OpenBinaryFile(path string) *BinaryFile {
 	ensure(err == nil, fmt.Sprintf("OpenBinaryFile: cannot stat file %s error %s\n", path, err))
 	ensure(info.Size() >= 0, fmt.Sprintf("OpenBinaryFile: negative size %d file %s\n", info.Size(), path))
 
-	binaryFile := &BinaryFile{
-		path : path,
-		blockSize: BLOCKSIZE,
-		size: info.Size(),
-		file: file,
-		opened: true,
-	}
+	binaryFile := &BinaryFile{path: path, blockSize: BLOCKSIZE, size: info.Size(), file: file, opened: true}
 	return binaryFile
 }
 
