@@ -286,6 +286,7 @@ type TxPool struct {
 	started        atomic.Bool
 	lastSeenBlock  atomic.Uint64
 	pendingBaseFee atomic.Uint64
+	blockGasLimit  atomic.Uint64
 
 	// batch processing of remote transactions
 	// handling works fast without batching, but batching allow:
@@ -393,6 +394,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	baseFee := stateChanges.PendingBlockBaseFee
 
 	pendingBaseFee, baseFeeChanged := p.setBaseFee(baseFee)
+	p.blockGasLimit.Store(stateChanges.BlockGasLimit)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
 	}
@@ -422,7 +424,9 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	p.pending.resetAddedHashes()
 	p.baseFee.resetAddedHashes()
-	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs, pendingBaseFee, baseFeeChanged, p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
+		pendingBaseFee, baseFeeChanged, stateChanges.BlockGasLimit,
+		p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
@@ -882,7 +886,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	return discardReasons, nil
 }
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges *remote.StateChangeBatch,
-	senders *sendersBatch, newTxs TxSlots, pendingBaseFee uint64, baseFeeChanged bool,
+	senders *sendersBatch, newTxs TxSlots, pendingBaseFee uint64, baseFeeChanged bool, blockGasLimit uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) error {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
