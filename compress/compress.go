@@ -86,7 +86,6 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 }
 
 func (c *Compressor) Close() {
-	c.datFile.Close()
 }
 
 func (c *Compressor) AddWord(word []byte) error {
@@ -164,6 +163,7 @@ func (c *Compressor) Compress() error {
 	if err := reducedict(c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
 		return err
 	}
+	c.datFile.Close()
 	c.Ratio, err = Ratio(c.datFile.filePath, c.tmpOutFilePath)
 	if err != nil {
 		return err
