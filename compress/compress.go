@@ -68,7 +68,7 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 	dir, fileName := filepath.Split(outputFile)
 	ext := filepath.Ext(outputFile)
 	tmpOutFilePath := filepath.Join(dir, fileName) + ".tmp"
-	datFilePath := filepath.Join(tmpDir, fileName[:len(ext)]) + ".dat"
+	datFilePath := filepath.Join(tmpDir, fileName[:len(fileName)-len(ext)]) + ".dat"
 
 	datFile, err := NewUncompressedFile(datFilePath)
 	if err != nil {

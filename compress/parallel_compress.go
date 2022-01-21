@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -521,22 +520,6 @@ func reducedict(logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *De
 		}
 	}
 	log.Debug(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(offset), "position cutoff", positionCutoff)
-	huffmanFile := filepath.Join(tmpDir, "huffman_codes.txt")
-	defer os.Remove(huffmanFile)
-	df, err := os.Create(huffmanFile)
-	if err != nil {
-		return err
-	}
-	defer df.Close()
-	w := bufio.NewWriterSize(df, etl.BufIOSize)
-	defer w.Flush()
-	for _, p := range positionList {
-		fmt.Fprintf(w, "%d %x %d uses %d\n", p.codeBits, p.code, p.pos, p.uses)
-	}
-	if err = w.Flush(); err != nil {
-		return err
-	}
-	df.Close()
 
 	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer aggregator.Close()
