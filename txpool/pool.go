@@ -131,7 +131,6 @@ const (
 	EnoughFeeCapBlock    = 0b000010
 	IsLocal              = 0b000001
 
-	PendingPoolBits = EnoughFeeCapProtocol + NoNonceGaps + EnoughBalance + NotTooMuchGas + EnoughFeeCapBlock
 	BaseFeePoolBits = EnoughFeeCapProtocol + NoNonceGaps + EnoughBalance + NotTooMuchGas
 	QueuedPoolBits  = EnoughFeeCapProtocol
 )
@@ -437,11 +436,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
-	if baseFeeChanged {
-		// TODO: add here protocolBaseFee also
-		onBaseFeeChange(p.all, pendingBaseFee) // re-calc all fields depending on pendingBaseFee
-	}
-
 	p.pending.resetAddedHashes()
 	p.baseFee.resetAddedHashes()
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
@@ -452,7 +446,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	p.pending.EnforceWorstInvariants()
 	p.baseFee.EnforceInvariants()
 	p.queued.EnforceInvariants()
-	promote(p.pending, p.baseFee, p.queued, p.discardLocked)
+	promote(p.pending, p.baseFee, p.queued, pendingBaseFee, p.discardLocked)
 	p.pending.EnforceBestInvariants()
 	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
 	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
@@ -913,7 +907,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			protocolBaseFee, pendingBaseFee, blockGasLimit, pending, baseFee, queued, false)
 	}
 
-	promote(pending, baseFee, queued, discard)
+	promote(pending, baseFee, queued, pendingBaseFee, discard)
 	pending.EnforceBestInvariants()
 
 	return discardReasons, nil
@@ -1103,18 +1097,6 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 	return nil
 }
 
-func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
-	byNonce.ascendAll(func(mt *metaTx) bool {
-		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
-		// baseFee of the currently pending block. Set to 0 otherwise.
-		mt.subPool &^= EnoughFeeCapBlock
-		if mt.minFeeCap >= pendingBaseFee {
-			mt.subPool |= EnoughFeeCapBlock
-		}
-		return true
-	})
-}
-
 // onSenderStateChange is the function that recalculates ephemeral fields of transactions and determines
 // which sub pool they will need to go to. Sice this depends on other transactions from the same sender by with lower
 // nonces, and also affect other transactions from the same sender with higher nonce, it loops through all transactions
@@ -1198,13 +1180,6 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			}
 		}
 
-		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
-		// baseFee of the currently pending block. Set to 0 otherwise.
-		mt.subPool &^= EnoughFeeCapBlock
-		if mt.minFeeCap >= pendingBaseFee {
-			mt.subPool |= EnoughFeeCapBlock
-		}
-
 		mt.subPool &^= NotTooMuchGas
 		if mt.Tx.gas < blockGasLimit {
 			mt.subPool |= NotTooMuchGas
@@ -1233,9 +1208,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 
 // promote reasserts invariants of the subpool and returns the list of transactions that ended up
 // being promoted to the pending or basefee pool, for re-broadcasting
-func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) {
+func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint64, discard func(*metaTx, DiscardReason)) {
 	// Demote worst transactions that do not qualify for pending sub pool anymore, to other sub pools, or discard
-	for worst := pending.Worst(); pending.Len() > 0 && worst.subPool < PendingPoolBits; worst = pending.Worst() {
+	for worst := pending.Worst(); pending.Len() > 0 && (worst.subPool < BaseFeePoolBits || worst.minFeeCap < pendingBaseFee); worst = pending.Worst() {
 		if worst.subPool >= BaseFeePoolBits {
 			baseFee.Add(pending.PopWorst())
 		} else if worst.subPool >= QueuedPoolBits {
@@ -1247,7 +1222,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 
 	// Promote best transactions from base fee pool to pending pool while they qualify
 	for best := baseFee.Best(); baseFee.Len() > 0; best = baseFee.Best() {
-		if best.subPool >= PendingPoolBits {
+		if best.minFeeCap >= pendingBaseFee {
 			pending.Add(baseFee.PopBest())
 		} else {
 			break
@@ -1265,7 +1240,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaT
 
 	// Promote best transactions from the queued pool to either pending or base fee pool, while they qualify
 	for best := queued.Best(); queued.Len() > 0; best = queued.Best() {
-		if best.subPool >= PendingPoolBits {
+		if best.subPool >= BaseFeePoolBits && best.minFeeCap >= pendingBaseFee {
 			pending.Add(queued.PopBest())
 		} else if best.subPool >= BaseFeePoolBits {
 			baseFee.Add(queued.PopBest())
@@ -2223,8 +2198,16 @@ type BestQueue struct {
 }
 
 func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
-	if mt.subPool != than.subPool {
-		return mt.subPool > than.subPool
+	subPool := mt.subPool
+	thanSubPool := than.subPool
+	if mt.minFeeCap >= pendingBaseFee {
+		subPool |= EnoughFeeCapBlock
+	}
+	if than.minFeeCap >= pendingBaseFee {
+		thanSubPool |= EnoughFeeCapBlock
+	}
+	if subPool != thanSubPool {
+		return subPool > thanSubPool
 	}
 
 	switch mt.currentSubPool {
