@@ -66,11 +66,9 @@ type Compressor struct {
 
 func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, minPatternScore uint64, workers int) (*Compressor, error) {
 	dir, fileName := filepath.Split(outputFile)
-	ext := filepath.Ext(outputFile)
 	tmpOutFilePath := filepath.Join(dir, fileName) + ".tmp"
-	datFilePath := filepath.Join(tmpDir, fileName[:len(fileName)-len(ext)]) + ".dat"
 
-	datFile, err := NewUncompressedFile(datFilePath)
+	datFile, err := NewUncompressedFile(outputFile)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +86,6 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 }
 
 func (c *Compressor) Close() {
-	c.datFile.Close()
 }
 
 func (c *Compressor) AddWord(word []byte) error {
@@ -166,12 +163,12 @@ func (c *Compressor) Compress() error {
 	if err := reducedict(c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
 		return err
 	}
-	if err := os.Rename(c.tmpOutFilePath, c.outputFile); err != nil {
+	c.datFile.Close()
+	c.Ratio, err = Ratio(c.datFile.filePath, c.tmpOutFilePath)
+	if err != nil {
 		return err
 	}
-
-	c.Ratio, err = Ratio(c.datFile.filePath, c.outputFile)
-	if err != nil {
+	if err := os.Rename(c.tmpOutFilePath, c.outputFile); err != nil {
 		return err
 	}
 
