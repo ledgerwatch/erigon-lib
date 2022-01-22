@@ -124,11 +124,16 @@ var _ Pool = (*TxPool)(nil) // compile-time interface check
 type SubPoolMarker uint8
 
 const (
-	EnoughFeeCapProtocol = 0b10000
-	NoNonceGaps          = 0b01000
-	EnoughBalance        = 0b00100
-	EnoughFeeCapBlock    = 0b00010
-	IsLocal              = 0b00001
+	EnoughFeeCapProtocol = 0b100000
+	NoNonceGaps          = 0b010000
+	EnoughBalance        = 0b001000
+	NotTooMuchGas        = 0b000100
+	EnoughFeeCapBlock    = 0b000010
+	IsLocal              = 0b000001
+
+	PendingPoolBits = EnoughFeeCapProtocol + NoNonceGaps + EnoughBalance + NotTooMuchGas + EnoughFeeCapBlock
+	BaseFeePoolBits = EnoughFeeCapProtocol + NoNonceGaps + EnoughBalance + NotTooMuchGas
+	QueuedPoolBits  = EnoughFeeCapProtocol
 )
 
 type DiscardReason uint8
@@ -589,6 +594,10 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 
 	best := p.pending.best
 	for i := 0; i < int(n) && i < len(best); i++ {
+		if best[i].Tx.gas >= p.blockGasLimit.Load() {
+			// Skip transactions with very large gas limit
+			continue
+		}
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best[i].Tx.IdHash[:])
 		if err != nil {
 			return err
@@ -1219,84 +1228,62 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 // promote reasserts invariants of the subpool and returns the list of transactions that ended up
 // being promoted to the pending or basefee pool, for re-broadcasting
 func promote(pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) {
-	//1. If top element in the worst green queue has subPool != 0b1111 (binary), it needs to be removed from the green pool.
-	//   If subPool < 0b1000 (not satisfying minimum fee), discard.
-	//   If subPool == 0b1110, demote to the yellow pool, otherwise demote to the red pool.
-	for worst := pending.Worst(); pending.Len() > 0; worst = pending.Worst() {
-		if worst.subPool >= 0b11110 {
-			break
-		}
-		if worst.subPool >= 0b11100 {
+	// Demote worst transactions that do not qualify for pending sub pool anymore, to other sub pools, or discard
+	for worst := pending.Worst(); pending.Len() > 0 && worst.subPool < PendingPoolBits; worst = pending.Worst() {
+		if worst.subPool >= BaseFeePoolBits {
 			baseFee.Add(pending.PopWorst())
-			continue
-		}
-		if worst.subPool >= 0b10000 {
+		} else if worst.subPool >= QueuedPoolBits {
 			queued.Add(pending.PopWorst())
-			continue
+		} else {
+			discard(pending.PopWorst(), FeeTooLow)
 		}
-		discard(pending.PopWorst(), FeeTooLow)
 	}
 
-	//2. If top element in the worst green queue has subPool == 0b1111, but there is not enough room in the pool, discard.
-	for worst := pending.Worst(); pending.Len() > pending.limit; worst = pending.Worst() {
-		if worst.subPool >= 0b11111 { // TODO: here must 'subPool == 0b1111' or 'subPool <= 0b1111' ?
-			break
-		}
-		discard(pending.PopWorst(), PendingPoolOverflow)
-	}
-
-	//3. If the top element in the best yellow queue has subPool == 0b1111, promote to the green pool.
+	// Promote best transactions from base fee pool to pending pool while they qualify
 	for best := baseFee.Best(); baseFee.Len() > 0; best = baseFee.Best() {
-		if best.subPool < 0b11110 {
+		if best.subPool >= PendingPoolBits {
+			pending.Add(baseFee.PopBest())
+		} else {
 			break
 		}
-		pending.Add(baseFee.PopBest())
 	}
 
-	//4. If the top element in the worst yellow queue has subPool != 0x1110, it needs to be removed from the yellow pool.
-	//   If subPool < 0b1000 (not satisfying minimum fee), discard. Otherwise, demote to the red pool.
-	for worst := baseFee.Worst(); baseFee.Len() > 0; worst = baseFee.Worst() {
-		if worst.subPool >= 0b11100 {
-			break
-		}
-		if worst.subPool >= 0b10000 {
+	// Demote worst transactions that do not qualify for base fee pool anymore, to queued sub pool, or discard
+	for worst := baseFee.Worst(); baseFee.Len() > 0 && worst.subPool < BaseFeePoolBits; worst = baseFee.Worst() {
+		if worst.subPool >= QueuedPoolBits {
 			queued.Add(baseFee.PopWorst())
-			continue
+		} else {
+			discard(baseFee.PopWorst(), FeeTooLow)
 		}
-		discard(baseFee.PopWorst(), FeeTooLow)
 	}
 
-	//5. If the top element in the worst yellow queue has subPool == 0x1110, but there is not enough room in the pool, discard.
-	for worst := baseFee.Worst(); baseFee.Len() > baseFee.limit; worst = baseFee.Worst() {
-		if worst.subPool >= 0b11110 {
-			break
-		}
-		discard(baseFee.PopWorst(), BaseFeePoolOverflow)
-	}
-
-	//6. If the top element in the best red queue has subPool == 0x1110, promote to the yellow pool. If subPool == 0x1111, promote to the green pool.
+	// Promote best transactions from the queued pool to either pending or base fee pool, while they qualify
 	for best := queued.Best(); queued.Len() > 0; best = queued.Best() {
-		if best.subPool < 0b11100 {
+		if best.subPool >= PendingPoolBits {
+			pending.Add(queued.PopBest())
+		} else if best.subPool >= BaseFeePoolBits {
+			baseFee.Add(queued.PopBest())
+		} else {
 			break
 		}
-		if best.subPool < 0b11110 {
-			baseFee.Add(queued.PopBest())
-			continue
-		}
-
-		pending.Add(queued.PopBest())
-
 	}
 
-	//7. If the top element in the worst red queue has subPool < 0b1000 (not satisfying minimum fee), discard.
-	for worst := queued.Worst(); queued.Len() > 0; worst = queued.Worst() {
-		if worst.subPool >= 0b10000 {
-			break
-		}
+	// Discard worst transactions from the queued sub pool if they do not qualify
+	for worst := queued.Worst(); queued.Len() > 0 && worst.subPool < QueuedPoolBits; worst = queued.Worst() {
 		discard(queued.PopWorst(), FeeTooLow)
 	}
 
-	//8. If the top element in the worst red queue has subPool >= 0b100, but there is not enough room in the pool, discard.
+	// Discard worst transactions from pending pool until it is within capacity limit
+	for pending.Len() > pending.limit {
+		discard(pending.PopWorst(), PendingPoolOverflow)
+	}
+
+	// Discard worst transactions from pending sub pool until it is within capacity limits
+	for baseFee.Len() > baseFee.limit {
+		discard(baseFee.PopWorst(), BaseFeePoolOverflow)
+	}
+
+	// Discard worst transactions from the queued sub pool until it is within its capacity limits
 	for _ = queued.Worst(); queued.Len() > queued.limit; _ = queued.Worst() {
 		discard(queued.PopWorst(), QueuedPoolOverflow)
 	}
