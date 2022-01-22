@@ -2017,7 +2017,7 @@ func (s *bestSlice) Swap(i, j int) {
 	s.ms[i], s.ms[j] = s.ms[j], s.ms[i]
 	s.ms[i].bestIndex, s.ms[j].bestIndex = i, j
 }
-func (s *bestSlice) Less(i, j int) bool { return !s.ms[i].less(s.ms[j], s.pendingBaseFee) }
+func (s *bestSlice) Less(i, j int) bool { return s.ms[i].better(s.ms[j], s.pendingBaseFee) }
 func (s *bestSlice) UnsafeRemove(i *metaTx) {
 	s.Swap(i.bestIndex, len(s.ms)-1)
 	s.ms[len(s.ms)-1].bestIndex = -1
@@ -2222,9 +2222,9 @@ type BestQueue struct {
 	pendingBastFee uint64
 }
 
-func (mt *metaTx) less(than *metaTx, pendingBaseFee uint64) bool {
+func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
 	if mt.subPool != than.subPool {
-		return mt.subPool < than.subPool
+		return mt.subPool > than.subPool
 	}
 
 	switch mt.currentSubPool {
@@ -2240,11 +2240,11 @@ func (mt *metaTx) less(than *metaTx, pendingBaseFee uint64) bool {
 			thanEffectiveTip = min(than.minFeeCap-pendingBaseFee, than.minTip)
 		}
 		if effectiveTip != thanEffectiveTip {
-			return effectiveTip < thanEffectiveTip
+			return effectiveTip > thanEffectiveTip
 		}
 	case BaseFeeSubPool:
 		if mt.minFeeCap != than.minFeeCap {
-			return mt.minFeeCap > than.minFeeCap // yes, here is greaterOrEqual to sort by revert order of minFeeCap
+			return mt.minFeeCap > than.minFeeCap // yes, here is greaterOrEqual to sort by reverse order of minFeeCap
 		}
 		if mt.nonceDistance != than.nonceDistance {
 			return mt.nonceDistance < than.nonceDistance
@@ -2261,7 +2261,7 @@ func (mt *metaTx) less(than *metaTx, pendingBaseFee uint64) bool {
 }
 
 func (p BestQueue) Len() int           { return len(p.ms) }
-func (p BestQueue) Less(i, j int) bool { return !p.ms[i].less(p.ms[j], p.pendingBastFee) } // We want Pop to give us the highest, not lowest, priority so we use !less here.
+func (p BestQueue) Less(i, j int) bool { return p.ms[i].better(p.ms[j], p.pendingBastFee) }
 func (p BestQueue) Swap(i, j int) {
 	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
 	p.ms[i].bestIndex = i
@@ -2291,7 +2291,7 @@ type WorstQueue struct {
 }
 
 func (p WorstQueue) Len() int           { return len(p.ms) }
-func (p WorstQueue) Less(i, j int) bool { return p.ms[i].less(p.ms[j], p.pendingBaseFee) }
+func (p WorstQueue) Less(i, j int) bool { return p.ms[j].better(p.ms[i], p.pendingBaseFee) } // Note reverse order of i and j here
 func (p WorstQueue) Swap(i, j int) {
 	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
 	p.ms[i].worstIndex = i
