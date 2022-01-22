@@ -96,8 +96,5 @@ func EnsureNotChangedBool(tx GetPut, bucket string, k []byte, value bool) (ok, e
 	}
 
 	enabled = bytes2bool(vBytes)
-	if value != enabled {
-		return false, enabled, fmt.Errorf("%w: '%s' has value in db: %vBytes, but got %vBytes from outside", ErrChanged, k, enabled, value)
-	}
-	return true, enabled, nil
+	return value == enabled, enabled, nil
 }
