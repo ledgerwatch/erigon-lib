@@ -904,7 +904,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			return discardReasons, err
 		}
 		onSenderStateChange(senderID, nonce, balance, byNonce,
-			protocolBaseFee, pendingBaseFee, blockGasLimit, pending, baseFee, queued, false)
+			protocolBaseFee, blockGasLimit, pending, baseFee, queued, false)
 	}
 
 	promote(pending, baseFee, queued, pendingBaseFee, discard)
@@ -969,7 +969,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 			return err
 		}
 		onSenderStateChange(senderID, nonce, balance, byNonce,
-			protocolBaseFee, pendingBaseFee, blockGasLimit, pending, baseFee, queued, true)
+			protocolBaseFee, blockGasLimit, pending, baseFee, queued, true)
 	}
 
 	return nil
@@ -1102,7 +1102,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 // nonces, and also affect other transactions from the same sender with higher nonce, it loops through all transactions
 // for a given senderID
 func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce,
-	protocolBaseFee, pendingBaseFee, blockGasLimit uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
+	protocolBaseFee, blockGasLimit uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
