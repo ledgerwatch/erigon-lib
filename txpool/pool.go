@@ -219,7 +219,7 @@ type metaTx struct {
 	nonceDistance             uint64 // how far their nonces are from the state's nonce for the sender
 	cumulativeBalanceDistance uint64 // how far their cumulativeRequiredBalance are from the state's balance for the sender
 	minFeeCap                 uint64
-	effectiveTip              uint64 // max(minTip, minFeeCap - baseFee)
+	minTip                    uint64
 	bestIndex                 int
 	worstIndex                int
 	currentSubPool            SubPoolType
@@ -399,6 +399,16 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	baseFee := stateChanges.PendingBlockBaseFee
 
 	pendingBaseFee, baseFeeChanged := p.setBaseFee(baseFee)
+	// Update pendingBase for all pool queues and slices
+	if baseFeeChanged {
+		p.pending.best.pendingBaseFee = pendingBaseFee
+		p.pending.worst.pendingBaseFee = pendingBaseFee
+		p.baseFee.best.pendingBastFee = pendingBaseFee
+		p.baseFee.worst.pendingBaseFee = pendingBaseFee
+		p.queued.best.pendingBastFee = pendingBaseFee
+		p.queued.worst.pendingBaseFee = pendingBaseFee
+	}
+
 	p.blockGasLimit.Store(stateChanges.BlockGasLimit)
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
@@ -490,7 +500,8 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 
 	p.pending.resetAddedHashes()
 	p.baseFee.resetAddedHashes()
-	if _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
+		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
@@ -590,24 +601,25 @@ func (p *TxPool) Best(n uint16, txs *TxsRlp, tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	txs.Resize(uint(min(uint64(n), uint64(len(p.pending.best)))))
+	txs.Resize(uint(min(uint64(n), uint64(len(p.pending.best.ms)))))
 
 	best := p.pending.best
-	for i := 0; i < int(n) && i < len(best); i++ {
-		if best[i].Tx.gas >= p.blockGasLimit.Load() {
+	for i, j := 0, 0; j < int(n) && i < len(best.ms); i++ {
+		if best.ms[i].Tx.gas >= p.blockGasLimit.Load() {
 			// Skip transactions with very large gas limit
 			continue
 		}
-		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best[i].Tx.IdHash[:])
+		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best.ms[i].Tx.IdHash[:])
 		if err != nil {
 			return err
 		}
 		if len(rlpTx) == 0 {
 			continue
 		}
-		txs.Txs[i] = rlpTx
-		copy(txs.Senders.At(i), sender)
-		txs.IsLocal[i] = isLocal
+		txs.Txs[j] = rlpTx
+		copy(txs.Senders.At(j), sender)
+		txs.IsLocal[j] = isLocal
+		j++
 	}
 	return nil
 }
@@ -799,7 +811,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 
 	p.pending.resetAddedHashes()
 	p.baseFee.resetAddedHashes()
-	if addReasons, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs, p.pendingBaseFee.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err == nil {
+	if addReasons, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
+		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err == nil {
 		for i, reason := range addReasons {
 			if reason != NotSet {
 				reasons[i] = reason
@@ -842,7 +855,7 @@ func (p *TxPool) cache() kvcache.Cache {
 	return p._stateCache
 }
 func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
-	newTxs TxSlots, pendingBaseFee uint64,
+	newTxs TxSlots, pendingBaseFee, blockGasLimit uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) ([]DiscardReason, error) {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
@@ -886,7 +899,8 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 		if err != nil {
 			return discardReasons, err
 		}
-		onSenderStateChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, false)
+		onSenderStateChange(senderID, nonce, balance, byNonce,
+			protocolBaseFee, pendingBaseFee, blockGasLimit, pending, baseFee, queued, false)
 	}
 
 	promote(pending, baseFee, queued, discard)
@@ -954,7 +968,8 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 		if err != nil {
 			return err
 		}
-		onSenderStateChange(senderID, nonce, balance, byNonce, protocolBaseFee, pendingBaseFee, pending, baseFee, queued, true)
+		onSenderStateChange(senderID, nonce, balance, byNonce,
+			protocolBaseFee, pendingBaseFee, blockGasLimit, pending, baseFee, queued, true)
 	}
 	pending.EnforceWorstInvariants()
 	baseFee.EnforceInvariants()
@@ -1011,6 +1026,7 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 	if mt.subPool&IsLocal != 0 {
 		p.isLocalLRU.Add(string(mt.Tx.IdHash[:]), struct{}{})
 	}
+	// All transactions are first added to the queued pool and then immediately promoted from there if required
 	p.queued.Add(mt)
 	return NotSet
 }
@@ -1088,22 +1104,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 }
 
 func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
-	var prevSenderID uint64
-	var minFeeCap, minTip uint64
 	byNonce.ascendAll(func(mt *metaTx) bool {
-		if mt.Tx.senderID != prevSenderID {
-			minFeeCap, minTip = uint64(math.MaxUint64), uint64(math.MaxUint64) // min of given sender
-			prevSenderID = mt.Tx.senderID
-		}
-		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
-		mt.minFeeCap = minFeeCap
-		minTip = min(minTip, mt.Tx.tip)
-		if pendingBaseFee <= minFeeCap {
-			mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
-		} else {
-			mt.effectiveTip = 0
-		}
-
 		// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than
 		// baseFee of the currently pending block. Set to 0 otherwise.
 		mt.subPool &^= EnoughFeeCapBlock
@@ -1114,7 +1115,12 @@ func onBaseFeeChange(byNonce *BySenderAndNonce, pendingBaseFee uint64) {
 	})
 }
 
-func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce, protocolBaseFee, pendingBaseFee uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
+// onSenderStateChange is the function that recalculates ephemeral fields of transactions and determines
+// which sub pool they will need to go to. Sice this depends on other transactions from the same sender by with lower
+// nonces, and also affect other transactions from the same sender with higher nonce, it loops through all transactions
+// for a given senderID
+func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce,
+	protocolBaseFee, pendingBaseFee, blockGasLimit uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
@@ -1142,12 +1148,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		}
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		mt.minFeeCap = minFeeCap
-		minTip = min(minTip, mt.Tx.tip)
-		if pendingBaseFee <= minFeeCap {
-			mt.effectiveTip = min(minFeeCap-pendingBaseFee, minTip)
-		} else {
-			mt.effectiveTip = minTip
-		}
+		mt.minTip = min(minTip, mt.Tx.tip)
 
 		mt.nonceDistance = 0
 		if mt.Tx.nonce > senderNonce { // no uint underflow
@@ -1202,6 +1203,11 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		mt.subPool &^= EnoughFeeCapBlock
 		if mt.minFeeCap >= pendingBaseFee {
 			mt.subPool |= EnoughFeeCapBlock
+		}
+
+		mt.subPool &^= NotTooMuchGas
+		if mt.Tx.gas < blockGasLimit {
+			mt.subPool |= NotTooMuchGas
 		}
 
 		if mt.Tx.traced {
@@ -1570,7 +1576,8 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, txs, pendingBaseFee, p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
+	if _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, txs,
+		pendingBaseFee, math.MaxUint64 /* blockGasLimit */, p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
 	p.pendingBaseFee.Store(pendingBaseFee)
@@ -1628,13 +1635,13 @@ func (p *TxPool) printDebug(prefix string) {
 		fmt.Printf("\tsenderID=%d, nonce=%d, tip=%d\n", j.Tx.senderID, j.Tx.nonce, j.Tx.tip)
 	}
 	fmt.Printf("%s.pool.queues.len: %d,%d,%d\n", prefix, p.pending.Len(), p.baseFee.Len(), p.queued.Len())
-	for _, mt := range p.pending.best {
+	for _, mt := range p.pending.best.ms {
 		mt.Tx.printDebug(fmt.Sprintf("%s.pending: %b,%d,%d,%d", prefix, mt.subPool, mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip))
 	}
-	for _, mt := range *p.baseFee.best {
+	for _, mt := range p.baseFee.best.ms {
 		mt.Tx.printDebug(fmt.Sprintf("%s.baseFee : %b,%d,%d,%d", prefix, mt.subPool, mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip))
 	}
-	for _, mt := range *p.queued.best {
+	for _, mt := range p.queued.best.ms {
 		mt.Tx.printDebug(fmt.Sprintf("%s.queued : %b,%d,%d,%d", prefix, mt.subPool, mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip))
 	}
 }
@@ -1985,7 +1992,7 @@ type PendingPool struct {
 }
 
 func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
-	return &PendingPool{limit: limit, t: t, best: []*metaTx{}, worst: &WorstQueue{}}
+	return &PendingPool{limit: limit, t: t, best: bestSlice{ms: []*metaTx{}}, worst: &WorstQueue{ms: []*metaTx{}}}
 }
 
 func (p *PendingPool) resetAddedHashes() {
@@ -2000,24 +2007,26 @@ func (p *PendingPool) appendAddedHashes(h Hashes) Hashes {
 
 // bestSlice - is similar to best queue, but with O(n log n) complexity and
 // it maintains element.bestIndex field
-type bestSlice []*metaTx
+type bestSlice struct {
+	ms             []*metaTx
+	pendingBaseFee uint64
+}
 
-func (s bestSlice) Len() int { return len(s) }
+func (s bestSlice) Len() int { return len(s.ms) }
 func (s bestSlice) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-	s[i].bestIndex, s[j].bestIndex = i, j
+	s.ms[i], s.ms[j] = s.ms[j], s.ms[i]
+	s.ms[i].bestIndex, s.ms[j].bestIndex = i, j
 }
-func (s bestSlice) Less(i, j int) bool { return !s[i].Less(s[j]) }
-func (s bestSlice) UnsafeRemove(i *metaTx) bestSlice {
-	s.Swap(i.bestIndex, len(s)-1)
-	s[len(s)-1].bestIndex = -1
-	s[len(s)-1] = nil
-	return s[:len(s)-1]
+func (s bestSlice) Less(i, j int) bool { return !s.ms[i].less(s.ms[j], s.pendingBaseFee) }
+func (s bestSlice) UnsafeRemove(i *metaTx) {
+	s.Swap(i.bestIndex, len(s.ms)-1)
+	s.ms[len(s.ms)-1].bestIndex = -1
+	s.ms[len(s.ms)-1] = nil
+	s.ms = s.ms[:len(s.ms)-1]
 }
-func (s bestSlice) UnsafeAdd(i *metaTx) bestSlice {
-	a := append(s, i)
-	i.bestIndex = len(s)
-	return a
+func (s bestSlice) UnsafeAdd(i *metaTx) {
+	s.ms = append(s.ms, i)
+	i.bestIndex = len(s.ms)
 }
 
 func (p *PendingPool) EnforceWorstInvariants() {
@@ -2028,26 +2037,26 @@ func (p *PendingPool) EnforceBestInvariants() {
 }
 
 func (p *PendingPool) Best() *metaTx {
-	if len(p.best) == 0 {
+	if len(p.best.ms) == 0 {
 		return nil
 	}
-	return p.best[0]
+	return p.best.ms[0]
 }
 func (p *PendingPool) Worst() *metaTx {
-	if len(*p.worst) == 0 {
+	if len(p.worst.ms) == 0 {
 		return nil
 	}
-	return (*p.worst)[0]
+	return (p.worst.ms)[0]
 }
 func (p *PendingPool) PopWorst() *metaTx {
 	i := heap.Pop(p.worst).(*metaTx)
-	p.best = p.best.UnsafeRemove(i)
+	p.best.UnsafeRemove(i)
 	return i
 }
 func (p *PendingPool) Updated(mt *metaTx) {
 	heap.Fix(p.worst, mt.worstIndex)
 }
-func (p *PendingPool) Len() int { return len(p.best) }
+func (p *PendingPool) Len() int { return len(p.best.ms) }
 
 // UnsafeRemove - does break Heap invariants, but it has O(1) instead of O(log(n)) complexity.
 // Must manually call heap.Init after such changes.
@@ -2058,14 +2067,14 @@ func (p *PendingPool) UnsafeRemove(i *metaTx) {
 	}
 	if p.Len() == 1 && i.bestIndex == 0 {
 		p.worst.Pop()
-		p.best = p.best.UnsafeRemove(i)
+		p.best.UnsafeRemove(i)
 		return
 	}
 	// manually call funcs instead of heap.Pop
 	p.worst.Swap(i.worstIndex, p.worst.Len()-1)
 	p.worst.Pop()
 	p.best.Swap(i.bestIndex, p.best.Len()-1)
-	p.best = p.best.UnsafeRemove(i)
+	p.best.UnsafeRemove(i)
 }
 func (p *PendingPool) UnsafeAdd(i *metaTx) {
 	if p.adding {
@@ -2076,7 +2085,7 @@ func (p *PendingPool) UnsafeAdd(i *metaTx) {
 	}
 	i.currentSubPool = p.t
 	p.worst.Push(i)
-	p.best = p.best.UnsafeAdd(i)
+	p.best.UnsafeAdd(i)
 }
 func (p *PendingPool) Add(i *metaTx) {
 	if p.adding {
@@ -2087,13 +2096,13 @@ func (p *PendingPool) Add(i *metaTx) {
 	}
 	i.currentSubPool = p.t
 	heap.Push(p.worst, i)
-	p.best = p.best.UnsafeAdd(i)
+	p.best.UnsafeAdd(i)
 }
 func (p *PendingPool) DebugPrint(prefix string) {
-	for i, it := range p.best {
+	for i, it := range p.best.ms {
 		fmt.Printf("%s.best: %d, %d, %d,%d\n", prefix, i, it.subPool, it.bestIndex, it.Tx.nonce)
 	}
-	for i, it := range *p.worst {
+	for i, it := range p.worst.ms {
 		fmt.Printf("%s.worst: %d, %d, %d,%d\n", prefix, i, it.subPool, it.worstIndex, it.Tx.nonce)
 	}
 }
@@ -2126,16 +2135,16 @@ func (p *SubPool) EnforceInvariants() {
 	heap.Init(p.best)
 }
 func (p *SubPool) Best() *metaTx {
-	if len(*p.best) == 0 {
+	if len(p.best.ms) == 0 {
 		return nil
 	}
-	return (*p.best)[0]
+	return p.best.ms[0]
 }
 func (p *SubPool) Worst() *metaTx {
-	if len(*p.worst) == 0 {
+	if len(p.worst.ms) == 0 {
 		return nil
 	}
-	return (*p.worst)[0]
+	return p.worst.ms[0]
 }
 func (p *SubPool) PopBest() *metaTx {
 	i := heap.Pop(p.best).(*metaTx)
@@ -2200,17 +2209,20 @@ func (p *SubPool) UnsafeAdd(i *metaTx) {
 	p.best.Push(i)
 }
 func (p *SubPool) DebugPrint(prefix string) {
-	for i, it := range *p.best {
+	for i, it := range p.best.ms {
 		fmt.Printf("%s.best: %d, %d, %d\n", prefix, i, it.subPool, it.bestIndex)
 	}
-	for i, it := range *p.worst {
+	for i, it := range p.worst.ms {
 		fmt.Printf("%s.worst: %d, %d, %d\n", prefix, i, it.subPool, it.worstIndex)
 	}
 }
 
-type BestQueue []*metaTx
+type BestQueue struct {
+	ms             []*metaTx
+	pendingBastFee uint64
+}
 
-func (mt *metaTx) Less(than *metaTx) bool {
+func (mt *metaTx) less(than *metaTx, pendingBaseFee uint64) bool {
 	if mt.subPool != than.subPool {
 		return mt.subPool < than.subPool
 	}
@@ -2220,8 +2232,15 @@ func (mt *metaTx) Less(than *metaTx) bool {
 		if mt.nonceDistance != than.nonceDistance {
 			return mt.nonceDistance < than.nonceDistance
 		}
-		if mt.effectiveTip != than.effectiveTip {
-			return mt.effectiveTip < than.effectiveTip
+		var effectiveTip, thanEffectiveTip uint64
+		if pendingBaseFee <= mt.minFeeCap {
+			effectiveTip = min(mt.minFeeCap-pendingBaseFee, mt.minTip)
+		}
+		if pendingBaseFee <= than.minFeeCap {
+			thanEffectiveTip = min(than.minFeeCap-pendingBaseFee, than.minTip)
+		}
+		if effectiveTip != thanEffectiveTip {
+			return effectiveTip < thanEffectiveTip
 		}
 	case BaseFeeSubPool:
 		if mt.minFeeCap != than.minFeeCap {
@@ -2241,54 +2260,57 @@ func (mt *metaTx) Less(than *metaTx) bool {
 	return mt.timestamp < than.timestamp
 }
 
-func (p BestQueue) Len() int           { return len(p) }
-func (p BestQueue) Less(i, j int) bool { return !p[i].Less(p[j]) } // We want Pop to give us the highest, not lowest, priority so we use !less here.
+func (p BestQueue) Len() int           { return len(p.ms) }
+func (p BestQueue) Less(i, j int) bool { return !p.ms[i].less(p.ms[j], p.pendingBastFee) } // We want Pop to give us the highest, not lowest, priority so we use !less here.
 func (p BestQueue) Swap(i, j int) {
-	p[i], p[j] = p[j], p[i]
-	p[i].bestIndex = i
-	p[j].bestIndex = j
+	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
+	p.ms[i].bestIndex = i
+	p.ms[j].bestIndex = j
 }
 func (p *BestQueue) Push(x interface{}) {
-	n := len(*p)
+	n := len(p.ms)
 	item := x.(*metaTx)
 	item.bestIndex = n
-	*p = append(*p, item)
+	p.ms = append(p.ms, item)
 }
 
 func (p *BestQueue) Pop() interface{} {
-	old := *p
+	old := p.ms
 	n := len(old)
 	item := old[n-1]
 	old[n-1] = nil          // avoid memory leak
 	item.bestIndex = -1     // for safety
 	item.currentSubPool = 0 // for safety
-	*p = old[0 : n-1]
+	p.ms = old[0 : n-1]
 	return item
 }
 
-type WorstQueue []*metaTx
+type WorstQueue struct {
+	ms             []*metaTx
+	pendingBaseFee uint64
+}
 
-func (p WorstQueue) Len() int           { return len(p) }
-func (p WorstQueue) Less(i, j int) bool { return p[i].Less(p[j]) }
+func (p WorstQueue) Len() int           { return len(p.ms) }
+func (p WorstQueue) Less(i, j int) bool { return p.ms[i].less(p.ms[j], p.pendingBaseFee) }
 func (p WorstQueue) Swap(i, j int) {
-	p[i], p[j] = p[j], p[i]
-	p[i].worstIndex = i
-	p[j].worstIndex = j
+	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
+	p.ms[i].worstIndex = i
+	p.ms[j].worstIndex = j
 }
 func (p *WorstQueue) Push(x interface{}) {
-	n := len(*p)
+	n := len(p.ms)
 	item := x.(*metaTx)
 	item.worstIndex = n
-	*p = append(*p, x.(*metaTx))
+	p.ms = append(p.ms, x.(*metaTx))
 }
 func (p *WorstQueue) Pop() interface{} {
-	old := *p
+	old := p.ms
 	n := len(old)
 	item := old[n-1]
 	old[n-1] = nil          // avoid memory leak
 	item.worstIndex = -1    // for safety
 	item.currentSubPool = 0 // for safety
-	*p = old[0 : n-1]
+	p.ms = old[0 : n-1]
 	return item
 }
 
