@@ -363,7 +363,7 @@ func New(newTxs chan Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, ch
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs TxSlots, tx kv.Tx) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
-	//t := time.Now()
+	t := time.Now()
 
 	cache := p.cache()
 	cache.OnNewBlock(stateChanges)
@@ -437,13 +437,23 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
+	if baseFeeChanged {
+		// TODO: add here protocolBaseFee also
+		onBaseFeeChange(p.all, pendingBaseFee) // re-calc all fields depending on pendingBaseFee
+	}
+
 	p.pending.resetAddedHashes()
 	p.baseFee.resetAddedHashes()
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
-		pendingBaseFee, baseFeeChanged, stateChanges.BlockGasLimit,
+		pendingBaseFee, stateChanges.BlockGasLimit,
 		p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
+	p.pending.EnforceWorstInvariants()
+	p.baseFee.EnforceInvariants()
+	p.queued.EnforceInvariants()
+	promote(p.pending, p.baseFee, p.queued, p.discardLocked)
+	p.pending.EnforceBestInvariants()
 	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
 	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
 
@@ -458,7 +468,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	//log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "in", time.Since(t))
+	log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "in", time.Since(t))
 	return nil
 }
 
@@ -909,7 +919,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	return discardReasons, nil
 }
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges *remote.StateChangeBatch,
-	senders *sendersBatch, newTxs TxSlots, pendingBaseFee uint64, baseFeeChanged bool, blockGasLimit uint64,
+	senders *sendersBatch, newTxs TxSlots, pendingBaseFee uint64, blockGasLimit uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) error {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
@@ -958,10 +968,6 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 			}
 		}
 	}
-	if baseFeeChanged {
-		// TODO: add here protocolBaseFee also
-		onBaseFeeChange(byNonce, pendingBaseFee) // re-calc all fields depending on pendingBaseFee
-	}
 
 	for senderID := range sendersWithChangedState {
 		nonce, balance, err := senders.info(cacheView, senderID)
@@ -971,12 +977,6 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 		onSenderStateChange(senderID, nonce, balance, byNonce,
 			protocolBaseFee, pendingBaseFee, blockGasLimit, pending, baseFee, queued, true)
 	}
-	pending.EnforceWorstInvariants()
-	baseFee.EnforceInvariants()
-	queued.EnforceInvariants()
-	promote(pending, baseFee, queued, discard)
-	pending.EnforceWorstInvariants()
-	pending.EnforceBestInvariants()
 
 	return nil
 }
