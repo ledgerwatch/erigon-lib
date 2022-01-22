@@ -48,7 +48,7 @@ func TestWriteAndReadBufferEntry(t *testing.T) {
 		entries[i].value = []byte(fmt.Sprintf("value-%d", i))
 	}
 
-	if err := writeToDisk2(encoder, entries); err != nil {
+	if err := writeToDisk(encoder, entries); err != nil {
 		t.Error(err)
 	}
 
