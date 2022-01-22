@@ -184,7 +184,7 @@ func reduceDictWorker(inputCh chan []byte, completion *sync.WaitGroup, trie *pat
 		// First 8 bytes are idx
 		n := binary.PutUvarint(numBuf, uint64(len(input)-8))
 		output = append(output[:0], numBuf[:n]...)
-		output, patterns, uncovered = optimiseCluster(false, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
+		output, patterns, uncovered = optimiseCluster(true, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
 		if err := collector.Collect(input[:8], output); err != nil {
 			log.Error("Could not collect", "error", err)
 			return
