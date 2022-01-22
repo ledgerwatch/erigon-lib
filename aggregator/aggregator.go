@@ -1928,6 +1928,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 }
 
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
+	log.Info("Aggregation", "from", blockFrom, "to", blockTo)
 	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
 	if i == nil {
 		return fmt.Errorf("did not find change files for [%d-%d], w.a.changesBtree.Len() = %d", blockFrom, blockTo, w.a.changesBtree.Len())
@@ -2131,6 +2132,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		}
 	}
 	w.a.changesBtree.Delete(i)
+	log.Info("Finished aggregation")
 	return nil
 }
 
