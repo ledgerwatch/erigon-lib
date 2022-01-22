@@ -1985,14 +1985,14 @@ func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 type PendingPool struct {
 	limit  int
 	t      SubPoolType
-	best   bestSlice
+	best   *bestSlice
 	worst  *WorstQueue
 	adding bool
 	added  Hashes
 }
 
 func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
-	return &PendingPool{limit: limit, t: t, best: bestSlice{ms: []*metaTx{}}, worst: &WorstQueue{ms: []*metaTx{}}}
+	return &PendingPool{limit: limit, t: t, best: &bestSlice{ms: []*metaTx{}}, worst: &WorstQueue{ms: []*metaTx{}}}
 }
 
 func (p *PendingPool) resetAddedHashes() {
@@ -2012,19 +2012,19 @@ type bestSlice struct {
 	pendingBaseFee uint64
 }
 
-func (s bestSlice) Len() int { return len(s.ms) }
-func (s bestSlice) Swap(i, j int) {
+func (s *bestSlice) Len() int { return len(s.ms) }
+func (s *bestSlice) Swap(i, j int) {
 	s.ms[i], s.ms[j] = s.ms[j], s.ms[i]
 	s.ms[i].bestIndex, s.ms[j].bestIndex = i, j
 }
-func (s bestSlice) Less(i, j int) bool { return !s.ms[i].less(s.ms[j], s.pendingBaseFee) }
-func (s bestSlice) UnsafeRemove(i *metaTx) {
+func (s *bestSlice) Less(i, j int) bool { return !s.ms[i].less(s.ms[j], s.pendingBaseFee) }
+func (s *bestSlice) UnsafeRemove(i *metaTx) {
 	s.Swap(i.bestIndex, len(s.ms)-1)
 	s.ms[len(s.ms)-1].bestIndex = -1
 	s.ms[len(s.ms)-1] = nil
 	s.ms = s.ms[:len(s.ms)-1]
 }
-func (s bestSlice) UnsafeAdd(i *metaTx) {
+func (s *bestSlice) UnsafeAdd(i *metaTx) {
 	s.ms = append(s.ms, i)
 	i.bestIndex = len(s.ms)
 }
