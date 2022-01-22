@@ -30,6 +30,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/google/btree"
 	"github.com/holiman/uint256"
@@ -1929,6 +1930,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	log.Info("Aggregation", "from", blockFrom, "to", blockTo)
+	t := time.Now()
 	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
 	if i == nil {
 		return fmt.Errorf("did not find change files for [%d-%d], w.a.changesBtree.Len() = %d", blockFrom, blockTo, w.a.changesBtree.Len())
@@ -2016,8 +2018,11 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	}
 	if len(toAggregate) == 1 {
 		// Nothing to aggregate yet
+		log.Info("Finished aggregation", "time", time.Since(t))
 		return nil
 	}
+	log.Info("Merging", "from", lastStart, "to", blockTo)
+	t = time.Now()
 	var item2 = &byEndBlockItem{fileCount: 6, startBlock: lastStart, endBlock: blockTo}
 	var cp CursorHeap
 	heap.Init(&cp)
@@ -2132,7 +2137,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		}
 	}
 	w.a.changesBtree.Delete(i)
-	log.Info("Finished aggregation")
+	log.Info("Finished merging", "time", time.Since(t))
 	return nil
 }
 
