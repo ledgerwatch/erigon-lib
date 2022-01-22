@@ -75,7 +75,7 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string) (dataProvider, error)
 	}()
 
 	encoder.Reset(w)
-	err = writeToDisk2(encoder, b.GetEntries())
+	err = writeToDisk(encoder, b.GetEntries())
 	if err != nil {
 		return nil, fmt.Errorf("error writing entries to disk: %w", err)
 	}
@@ -109,20 +109,15 @@ func (p *fileDataProvider) String() string {
 	return fmt.Sprintf("%T(file: %s)", p, p.file.Name())
 }
 
-func writeToDisk2(encoder Encoder, entries []sortableBufferEntry) error {
+func writeToDisk(encoder Encoder, entries []sortableBufferEntry) error {
 	pair := [2][]byte{}
-	for _, entry := range entries {
-		pair[0], pair[1] = entry.key, entry.value
+	for i := range entries {
+		pair[0], pair[1] = entries[i].key, entries[i].value
 		if err := encoder.Encode(pair); err != nil {
 			return fmt.Errorf("error writing entries to disk: %w", err)
 		}
 	}
 	return nil
-}
-
-func writeToDisk(encoder Encoder, key []byte, value []byte) error {
-	toWrite := [][]byte{key, value}
-	return encoder.Encode(toWrite)
 }
 
 func readElementFromDisk(decoder Decoder) ([]byte, []byte, error) {
