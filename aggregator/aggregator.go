@@ -2021,7 +2021,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		log.Info("Finished aggregation", "time", time.Since(t))
 		return nil
 	}
-	log.Info("Merging", "from", lastStart, "to", blockTo)
+	log.Info("Finished aggregation", "time", time.Since(t), "now merging from", lastStart, "to", blockTo)
 	t = time.Now()
 	var item2 = &byEndBlockItem{fileCount: 6, startBlock: lastStart, endBlock: blockTo}
 	var cp CursorHeap
