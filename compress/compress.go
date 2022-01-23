@@ -62,6 +62,7 @@ type Compressor struct {
 	ctx       context.Context
 	logPrefix string
 	Ratio     CompressionRatio
+	trace     bool
 }
 
 func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, minPatternScore uint64, workers int) (*Compressor, error) {
@@ -86,6 +87,10 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 }
 
 func (c *Compressor) Close() {
+}
+
+func (c *Compressor) SetTrace(trace bool) {
+	c.trace = trace
 }
 
 func (c *Compressor) AddWord(word []byte) error {
@@ -160,7 +165,7 @@ func (c *Compressor) Compress() error {
 
 	defer os.Remove(c.tmpOutFilePath)
 
-	if err := reducedict(c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
+	if err := reducedict(c.trace, c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
 		return err
 	}
 	c.datFile.Close()
