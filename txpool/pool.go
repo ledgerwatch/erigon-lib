@@ -2000,8 +2000,8 @@ func (s *bestSlice) UnsafeRemove(i *metaTx) {
 	s.ms = s.ms[:len(s.ms)-1]
 }
 func (s *bestSlice) UnsafeAdd(i *metaTx) {
-	s.ms = append(s.ms, i)
 	i.bestIndex = len(s.ms)
+	s.ms = append(s.ms, i)
 }
 
 func (p *PendingPool) EnforceWorstInvariants() {
