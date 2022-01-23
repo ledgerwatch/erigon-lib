@@ -997,11 +997,11 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 
 		switch found.currentSubPool {
 		case PendingSubPool:
-			p.pending.UnsafeRemove(found)
+			p.pending.Remove(found)
 		case BaseFeeSubPool:
-			p.baseFee.UnsafeRemove(found)
+			p.baseFee.Remove(found)
 		case QueuedSubPool:
-			p.queued.UnsafeRemove(found)
+			p.queued.Remove(found)
 		default:
 			//already removed
 		}
@@ -1078,11 +1078,11 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 			// del from sub-pool
 			switch mt.currentSubPool {
 			case PendingSubPool:
-				pending.UnsafeRemove(mt)
+				pending.Remove(mt)
 			case BaseFeeSubPool:
-				baseFee.UnsafeRemove(mt)
+				baseFee.Remove(mt)
 			case QueuedSubPool:
-				queued.UnsafeRemove(mt)
+				queued.Remove(mt)
 			default:
 				//already removed
 			}
@@ -1118,11 +1118,11 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			// del from sub-pool
 			switch mt.currentSubPool {
 			case PendingSubPool:
-				pending.UnsafeRemove(mt)
+				pending.Remove(mt)
 			case BaseFeeSubPool:
-				baseFee.UnsafeRemove(mt)
+				baseFee.Remove(mt)
 			case QueuedSubPool:
-				queued.UnsafeRemove(mt)
+				queued.Remove(mt)
 			default:
 				//already removed
 			}
@@ -2033,35 +2033,11 @@ func (p *PendingPool) Updated(mt *metaTx) {
 }
 func (p *PendingPool) Len() int { return len(p.best.ms) }
 
-// UnsafeRemove - does break Heap invariants, but it has O(1) instead of O(log(n)) complexity.
-// Must manually call heap.Init after such changes.
-// Make sense to batch unsafe changes
-func (p *PendingPool) UnsafeRemove(i *metaTx) {
-	if p.Len() == 0 {
-		return
-	}
-	if p.Len() == 1 && i.bestIndex == 0 {
-		p.worst.Pop()
-		p.best.UnsafeRemove(i)
-		return
-	}
-	// manually call funcs instead of heap.Pop
-	p.worst.Swap(i.worstIndex, p.worst.Len()-1)
-	p.worst.Pop()
-	p.best.Swap(i.bestIndex, p.best.Len()-1)
+func (p *PendingPool) Remove(i *metaTx) {
+	heap.Remove(p.worst, i.worstIndex)
 	p.best.UnsafeRemove(i)
 }
-func (p *PendingPool) UnsafeAdd(i *metaTx) {
-	if p.adding {
-		p.added = append(p.added, i.Tx.IdHash[:]...)
-	}
-	if i.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
-	}
-	i.currentSubPool = p.t
-	p.worst.Push(i)
-	p.best.UnsafeAdd(i)
-}
+
 func (p *PendingPool) Add(i *metaTx) {
 	if p.adding {
 		p.added = append(p.added, i.Tx.IdHash[:]...)
@@ -2149,40 +2125,12 @@ func (p *SubPool) Remove(i *metaTx) {
 	heap.Remove(p.worst, i.worstIndex)
 	i.currentSubPool = 0
 }
+
 func (p *SubPool) Updated(i *metaTx) {
 	heap.Fix(p.best, i.bestIndex)
 	heap.Fix(p.worst, i.worstIndex)
 }
 
-// UnsafeRemove - does break Heap invariants, but it has O(1) instead of O(log(n)) complexity.
-// Must manually call heap.Init after such changes.
-// Make sense to batch unsafe changes
-func (p *SubPool) UnsafeRemove(i *metaTx) {
-	if p.Len() == 0 {
-		return
-	}
-	if p.Len() == 1 && i.bestIndex == 0 {
-		p.worst.Pop()
-		p.best.Pop()
-		return
-	}
-	// manually call funcs instead of heap.Pop
-	p.worst.Swap(i.worstIndex, p.worst.Len()-1)
-	p.worst.Pop()
-	p.best.Swap(i.bestIndex, p.best.Len()-1)
-	p.best.Pop()
-}
-func (p *SubPool) UnsafeAdd(i *metaTx) {
-	if p.adding {
-		p.added = append(p.added, i.Tx.IdHash[:]...)
-	}
-	if i.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
-	}
-	i.currentSubPool = p.t
-	p.worst.Push(i)
-	p.best.Push(i)
-}
 func (p *SubPool) DebugPrint(prefix string) {
 	for i, it := range p.best.ms {
 		fmt.Printf("%s.best: %d, %d, %d\n", prefix, i, it.subPool, it.bestIndex)
