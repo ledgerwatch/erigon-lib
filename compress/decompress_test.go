@@ -67,7 +67,7 @@ func TestDecompressMatchOK(t *testing.T) {
 			}
 		} else {
 			word, _ := g.Next(nil)
-			expected := fmt.Sprintf("longlongword %d", i)
+			expected := fmt.Sprintf("%s %d", w, i)
 			if string(word) != expected {
 				t.Errorf("expected %s, got (hex) %s", expected, word)
 			}
