@@ -1787,10 +1787,11 @@ func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
 	_, traced := sc.tracedSenders[addrS]
 	id, ok := sc.senderIDs[addrS]
 	if !ok {
+		copyAddr := common.Copy(addr)
 		sc.senderID++
 		id = sc.senderID
-		sc.senderIDs[string(common.Copy(addr))] = id
-		sc.senderID2Addr[id] = addr
+		sc.senderIDs[string(copyAddr)] = id
+		sc.senderID2Addr[id] = copyAddr
 		if traced {
 			log.Info(fmt.Sprintf("TX TRACING: allocated senderID %d to sender %x", id, addr))
 		}
