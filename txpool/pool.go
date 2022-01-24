@@ -1414,7 +1414,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 			addr, ok := p.senders.senderID2Addr[id]
 			if ok {
 				delete(p.senders.senderID2Addr, id)
-				delete(p.senders.senderIDs, addr)
+				delete(p.senders.senderIDs, string(addr))
 			}
 		}
 		//fmt.Printf("del:%d,%d,%d\n", mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip)
@@ -1685,13 +1685,9 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 			}
 			slotRlp = common.Copy(v[20:])
 		}
-		var sender []byte
-		if senderS, found := p.senders.senderID2Addr[slot.senderID]; found {
-			sender = []byte(senderS)
-		} else {
-			return true
+		if sender, found := p.senders.senderID2Addr[slot.senderID]; found {
+			f(slotRlp, sender, mt.currentSubPool)
 		}
-		f(slotRlp, sender, mt.currentSubPool)
 		return true
 	})
 	return nil
@@ -1774,12 +1770,12 @@ func (sc *sendersBatch) printDebug(prefix string) {
 type sendersBatch struct {
 	senderID      uint64
 	senderIDs     map[string]uint64
-	senderID2Addr map[uint64]string
+	senderID2Addr map[uint64][]byte
 	tracedSenders map[string]struct{}
 }
 
 func newSendersCache(tracedSenders map[string]struct{}) *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64]string{}, tracedSenders: tracedSenders}
+	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64][]byte{}, tracedSenders: tracedSenders}
 }
 
 func (sc *sendersBatch) getID(addr []byte) (uint64, bool) {
@@ -1794,7 +1790,7 @@ func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
 		sc.senderID++
 		id = sc.senderID
 		sc.senderIDs[addrS] = id
-		sc.senderID2Addr[id] = addrS
+		sc.senderID2Addr[id] = addr
 		if traced {
 			log.Info(fmt.Sprintf("TX TRACING: allocated senderID %d to sender %x", id, addr))
 		}
@@ -1806,7 +1802,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 	if !ok {
 		panic("must not happen")
 	}
-	encoded, err := cacheView.Get([]byte(addr))
+	encoded, err := cacheView.Get(addr)
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
