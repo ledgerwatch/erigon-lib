@@ -88,6 +88,7 @@ func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_Type {
 func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpool_proto.AllReply, error) {
 	tx, err := s.db.BeginRo(ctx)
 	if err != nil {
+		fmt.Printf("All error: %v\n", err)
 		return nil, err
 	}
 	defer tx.Rollback()
@@ -100,6 +101,7 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 			RlpTx:  rlp,
 		})
 	}, tx); err != nil {
+		fmt.Printf("deprecatedForEach: %v\n", err)
 		return nil, err
 	}
 	return reply, nil
