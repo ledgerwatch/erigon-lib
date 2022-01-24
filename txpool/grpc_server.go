@@ -27,6 +27,7 @@ import (
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -98,12 +99,13 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 		reply.Txs = append(reply.Txs, &txpool_proto.AllReply_Tx{
 			Sender: sender,
 			Type:   convertSubPoolType(t),
-			RlpTx:  rlp,
+			RlpTx:  common.Copy(rlp),
 		})
 	}, tx); err != nil {
 		fmt.Printf("deprecatedForEach: %v\n", err)
 		return nil, err
 	}
+	fmt.Printf("Reply size: %d\n", len(reply.Txs))
 	return reply, nil
 }
 

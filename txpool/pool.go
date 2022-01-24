@@ -1683,7 +1683,7 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 				log.Error("[txpool] tx not found in db")
 				return false
 			}
-			slotRlp = common.Copy(v[20:])
+			slotRlp = v[20:]
 		}
 		if sender, found := p.senders.senderID2Addr[slot.senderID]; found {
 			f(slotRlp, sender, mt.currentSubPool)
