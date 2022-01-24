@@ -2156,9 +2156,6 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
 
 	switch mt.currentSubPool {
 	case PendingSubPool:
-		if mt.nonceDistance != than.nonceDistance {
-			return mt.nonceDistance < than.nonceDistance
-		}
 		var effectiveTip, thanEffectiveTip uint64
 		if pendingBaseFee <= mt.minFeeCap {
 			effectiveTip = min(mt.minFeeCap-pendingBaseFee, mt.minTip)
@@ -2172,9 +2169,6 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
 	case BaseFeeSubPool:
 		if mt.minFeeCap != than.minFeeCap {
 			return mt.minFeeCap > than.minFeeCap
-		}
-		if mt.nonceDistance != than.nonceDistance {
-			return mt.nonceDistance < than.nonceDistance
 		}
 	case QueuedSubPool:
 		if mt.nonceDistance != than.nonceDistance {
