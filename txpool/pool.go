@@ -2171,12 +2171,47 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
 		}
 	case BaseFeeSubPool:
 		if mt.minFeeCap != than.minFeeCap {
-			return mt.minFeeCap > than.minFeeCap // yes, here is greaterOrEqual to sort by reverse order of minFeeCap
+			return mt.minFeeCap > than.minFeeCap
 		}
 		if mt.nonceDistance != than.nonceDistance {
 			return mt.nonceDistance < than.nonceDistance
 		}
 	case QueuedSubPool:
+		if mt.nonceDistance != than.nonceDistance {
+			return mt.nonceDistance < than.nonceDistance
+		}
+		if mt.cumulativeBalanceDistance != than.cumulativeBalanceDistance {
+			return mt.cumulativeBalanceDistance < than.cumulativeBalanceDistance
+		}
+	}
+	return mt.timestamp < than.timestamp
+}
+
+func (mt *metaTx) worse(than *metaTx, pendingBaseFee uint64) bool {
+	subPool := mt.subPool
+	thanSubPool := than.subPool
+	if mt.minFeeCap >= pendingBaseFee {
+		subPool |= EnoughFeeCapBlock
+	}
+	if than.minFeeCap >= pendingBaseFee {
+		thanSubPool |= EnoughFeeCapBlock
+	}
+	if subPool != thanSubPool {
+		return subPool < thanSubPool
+	}
+
+	switch mt.currentSubPool {
+	case PendingSubPool:
+		if mt.minFeeCap != than.minFeeCap {
+			return mt.minFeeCap > than.minFeeCap
+		}
+		if mt.nonceDistance != than.nonceDistance {
+			return mt.nonceDistance < than.nonceDistance
+		}
+		if mt.cumulativeBalanceDistance != than.cumulativeBalanceDistance {
+			return mt.cumulativeBalanceDistance < than.cumulativeBalanceDistance
+		}
+	case BaseFeeSubPool, QueuedSubPool:
 		if mt.nonceDistance != than.nonceDistance {
 			return mt.nonceDistance < than.nonceDistance
 		}
@@ -2218,7 +2253,7 @@ type WorstQueue struct {
 }
 
 func (p WorstQueue) Len() int           { return len(p.ms) }
-func (p WorstQueue) Less(i, j int) bool { return p.ms[j].better(p.ms[i], p.pendingBaseFee) } // Note reverse order of i and j here
+func (p WorstQueue) Less(i, j int) bool { return p.ms[i].worse(p.ms[j], p.pendingBaseFee) } // Note reverse order of i and j here
 func (p WorstQueue) Swap(i, j int) {
 	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
 	p.ms[i].worstIndex = i
