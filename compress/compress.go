@@ -46,7 +46,7 @@ const ASSERT = false
 // After that, `Compress` function needs to be called to perform the compression
 // and eventually create output file
 type Compressor struct {
-	datFile                    *DecompressedFile
+	uncompressedFile           *DecompressedFile
 	outputFile, tmpOutFilePath string // File where to output the dictionary and compressed data
 	tmpDir                     string // temporary directory to use for ETL when building dictionary
 	minPatternScore            uint64 //minimum score (per superstring) required to consider including pattern into the dictionary
@@ -68,25 +68,32 @@ type Compressor struct {
 func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, minPatternScore uint64, workers int) (*Compressor, error) {
 	dir, fileName := filepath.Split(outputFile)
 	tmpOutFilePath := filepath.Join(dir, fileName) + ".tmp"
+	ext := filepath.Ext(fileName)
+	// UncompressedFile - it's intermediate .idt file, outputFile it's final .seg (or .dat) file.
+	// tmpOutFilePath - it's ".seg.tmp" ("dat.tmp") file which will be renamed to .seg file if everything succeed.
+	// It allow atomically create .seg file (downloader will not see partially ready/ non-ready .seg files).
+	// I didn't create ".seg.tmp" file in tmpDir, because I think tmpDir and snapsthoDir may be mounted to different drives
+	uncompressedPath := filepath.Join(tmpDir, fileName[:len(fileName)-len(ext)]) + ".idt"
 
-	datFile, err := NewUncompressedFile(outputFile)
+	uncompressedFile, err := NewUncompressedFile(uncompressedPath)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Compressor{
-		datFile:         datFile,
-		tmpOutFilePath:  tmpOutFilePath,
-		outputFile:      outputFile,
-		tmpDir:          tmpDir,
-		logPrefix:       logPrefix,
-		minPatternScore: minPatternScore,
-		workers:         workers,
-		ctx:             ctx,
+		uncompressedFile: uncompressedFile,
+		tmpOutFilePath:   tmpOutFilePath,
+		outputFile:       outputFile,
+		tmpDir:           tmpDir,
+		logPrefix:        logPrefix,
+		minPatternScore:  minPatternScore,
+		workers:          workers,
+		ctx:              ctx,
 	}, nil
 }
 
 func (c *Compressor) Close() {
+	c.uncompressedFile.Close()
 }
 
 func (c *Compressor) SetTrace(trace bool) {
@@ -95,11 +102,11 @@ func (c *Compressor) SetTrace(trace bool) {
 
 func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
-	return c.datFile.Append(word)
+	return c.uncompressedFile.Append(word)
 }
 
 func (c *Compressor) Compress() error {
-	c.datFile.w.Flush()
+	c.uncompressedFile.w.Flush()
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -121,7 +128,7 @@ func (c *Compressor) Compress() error {
 	}
 	i := 0
 	c.superstring = nil
-	if err := c.datFile.ForEach(func(word []byte) error {
+	if err := c.uncompressedFile.ForEach(func(word []byte) error {
 		if len(c.superstring)+2*len(word)+2 > superstringLimit {
 			superstrings <- c.superstring
 			c.superstring = nil
@@ -137,7 +144,7 @@ func (c *Compressor) Compress() error {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		case <-logEvery.C:
-			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", c.logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(i)/float64(c.datFile.count)))
+			log.Info(fmt.Sprintf("[%s] Dictionary preprocessing", c.logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(i)/float64(c.uncompressedFile.count)))
 		}
 		return nil
 	}); err != nil {
@@ -163,18 +170,20 @@ func (c *Compressor) Compress() error {
 		return err
 	}
 
-	defer os.Remove(c.tmpOutFilePath)
+	defer func() {
+		os.Remove(c.tmpOutFilePath)
+	}()
 
-	if err := reducedict(c.trace, c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.datFile, c.workers); err != nil {
+	if err := reducedict(c.trace, c.logPrefix, dictPath, c.tmpOutFilePath, c.tmpDir, c.uncompressedFile, c.workers); err != nil {
 		return err
 	}
-	c.datFile.Close()
-	c.Ratio, err = Ratio(c.datFile.filePath, c.tmpOutFilePath)
-	if err != nil {
-		return err
-	}
+
 	if err := os.Rename(c.tmpOutFilePath, c.outputFile); err != nil {
-		return err
+		return fmt.Errorf("renaming: %w", err)
+	}
+	c.Ratio, err = Ratio(c.uncompressedFile.filePath, c.outputFile)
+	if err != nil {
+		return fmt.Errorf("ratio: %w", err)
 	}
 
 	return nil
@@ -1396,6 +1405,7 @@ func (f *DecompressedFile) Close() {
 	f.w.Flush()
 	//f.f.Sync()
 	f.f.Close()
+	os.Remove(f.filePath)
 }
 func (f *DecompressedFile) Append(v []byte) error {
 	f.count++
