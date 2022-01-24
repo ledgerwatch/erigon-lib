@@ -2197,23 +2197,23 @@ func (mt *metaTx) worse(than *metaTx, pendingBaseFee uint64) bool {
 	switch mt.currentSubPool {
 	case PendingSubPool:
 		if mt.minFeeCap != than.minFeeCap {
-			return mt.minFeeCap > than.minFeeCap
+			return mt.minFeeCap < than.minFeeCap
 		}
 		if mt.nonceDistance != than.nonceDistance {
-			return mt.nonceDistance < than.nonceDistance
+			return mt.nonceDistance > than.nonceDistance
 		}
 		if mt.cumulativeBalanceDistance != than.cumulativeBalanceDistance {
-			return mt.cumulativeBalanceDistance < than.cumulativeBalanceDistance
+			return mt.cumulativeBalanceDistance > than.cumulativeBalanceDistance
 		}
 	case BaseFeeSubPool, QueuedSubPool:
 		if mt.nonceDistance != than.nonceDistance {
-			return mt.nonceDistance < than.nonceDistance
+			return mt.nonceDistance > than.nonceDistance
 		}
 		if mt.cumulativeBalanceDistance != than.cumulativeBalanceDistance {
-			return mt.cumulativeBalanceDistance < than.cumulativeBalanceDistance
+			return mt.cumulativeBalanceDistance > than.cumulativeBalanceDistance
 		}
 	}
-	return mt.timestamp < than.timestamp
+	return mt.timestamp > than.timestamp
 }
 
 func (p BestQueue) Len() int           { return len(p.ms) }
