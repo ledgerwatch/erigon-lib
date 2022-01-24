@@ -1670,9 +1670,6 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	log.Info("deprecatedForEach acquired lock")
-	count := 0
-	fromDb := 0
-	var senderIterator time.Duration
 	p.all.ascendAll(func(mt *metaTx) bool {
 		slot := mt.Tx
 		slotRlp := slot.rlp
@@ -1687,7 +1684,6 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 				return false
 			}
 			slotRlp = common.Copy(v[20:])
-			fromDb++
 		}
 		var sender []byte
 		if senderS, found := p.senders.senderID2Addr[slot.senderID]; found {
@@ -1696,10 +1692,6 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 			return true
 		}
 		f(slotRlp, sender, mt.currentSubPool)
-		count++
-		if count%10000 == 0 {
-			log.Info("Added transactions to the result", "count", count, "fromDb", fromDb, "sender iterator", senderIterator)
-		}
 		return true
 	})
 	return nil
