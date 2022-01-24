@@ -169,7 +169,7 @@ func (g *Getter) nextPattern() []byte {
 	g.offset = g.patternDict.rootOffset
 	if g.offset < g.patternDict.cutoff {
 		return g.pattern()
-	} // A nil argument is equivalent to an empty slice.
+	}
 
 	for {
 		if g.mask == 0 {
