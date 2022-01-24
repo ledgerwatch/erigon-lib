@@ -1130,7 +1130,8 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		}
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
 		mt.minFeeCap = minFeeCap
-		mt.minTip = min(minTip, mt.Tx.tip)
+		minTip = min(minTip, mt.Tx.tip)
+		mt.minTip = minTip
 
 		mt.nonceDistance = 0
 		if mt.Tx.nonce > senderNonce { // no uint underflow
