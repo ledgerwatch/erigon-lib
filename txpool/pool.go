@@ -492,12 +492,12 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return nil
 	}
 
-	err = p.senders.registerNewSenders(*p.unprocessedRemoteTxs)
+	err = p.senders.registerNewSenders(p.unprocessedRemoteTxs)
 	if err != nil {
 		return err
 	}
 
-	_, newTxs, err := p.validateTxs(*p.unprocessedRemoteTxs, cacheView)
+	_, newTxs, err := p.validateTxs(p.unprocessedRemoteTxs, cacheView)
 	if err != nil {
 		return err
 	}
@@ -529,7 +529,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {
 	txn, ok := p.byHash[string(hash)]
 	if ok && txn.Tx.rlp != nil {
-		return txn.Tx.rlp, []byte(p.senders.senderID2Addr[txn.Tx.senderID]), txn.subPool&IsLocal > 0, nil
+		return txn.Tx.rlp, p.senders.senderID2Addr[txn.Tx.senderID], txn.subPool&IsLocal > 0, nil
 	}
 	v, err := tx.GetOne(kv.PoolTransaction, hash)
 	if err != nil {
@@ -717,7 +717,7 @@ func (p *TxPool) ValidateSerializedTxn(serializedTxn []byte) error {
 	}
 	return nil
 }
-func (p *TxPool) validateTxs(txs TxSlots, stateCache kvcache.CacheView) (reasons []DiscardReason, goodTxs TxSlots, err error) {
+func (p *TxPool) validateTxs(txs *TxSlots, stateCache kvcache.CacheView) (reasons []DiscardReason, goodTxs TxSlots, err error) {
 	// reasons is pre-sized for direct indexing, with the default zero
 	// value DiscardReason of NotSet
 	reasons = make([]DiscardReason, len(txs.txs))
@@ -1789,7 +1789,7 @@ func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
 	if !ok {
 		sc.senderID++
 		id = sc.senderID
-		sc.senderIDs[addrS] = id
+		sc.senderIDs[string(common.Copy(addr))] = id
 		sc.senderID2Addr[id] = addr
 		if traced {
 			log.Info(fmt.Sprintf("TX TRACING: allocated senderID %d to sender %x", id, addr))
@@ -1816,7 +1816,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 	return nonce, balance, nil
 }
 
-func (sc *sendersBatch) registerNewSenders(newTxs TxSlots) (err error) {
+func (sc *sendersBatch) registerNewSenders(newTxs *TxSlots) (err error) {
 	for i, txn := range newTxs.txs {
 		txn.senderID, txn.traced = sc.getOrCreateID(newTxs.senders.At(i))
 	}
