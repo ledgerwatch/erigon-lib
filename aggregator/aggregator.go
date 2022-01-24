@@ -488,29 +488,6 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 	return d, idx, nil
 }
 
-func Reproduce() error {
-	blockFrom := uint64(1978368)
-	blockTo := uint64(1982463)
-	var c = &Changes{}
-	c.Init("code", 4096 /* aggregatorStep */, "/Users/alexeysharp/data1/aggregator/", false /* beforeOn */)
-	if err := c.openFiles(blockTo, false /* write */); err != nil {
-		return fmt.Errorf("open files: %w", err)
-	}
-	bt := btree.New(32)
-	err := c.aggregateToBtree(bt, 0)
-	if err != nil {
-		return fmt.Errorf("aggregateToBtree: %w", err)
-	}
-	if err = c.closeFiles(); err != nil {
-		return fmt.Errorf("close files: %w", err)
-	}
-	datPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.dat", c.namebase, blockFrom, blockTo))
-	if _, err = btreeToFile(bt, datPath, c.dir, false, 8); err != nil {
-		return fmt.Errorf("btreeToFile: %w", err)
-	}
-	return nil
-}
-
 func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx, table string, changesets bool) (*compress.Decompressor, *recsplit.Index, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
 		return nil, nil, fmt.Errorf("open files: %w", err)

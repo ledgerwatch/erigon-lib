@@ -105,14 +105,15 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 		d.compression = maxCompression
 		if maxInclude {
 			if trace {
-				fmt.Printf("[include] cell for %d: with patterns\n", f.Start)
+				fmt.Printf("[include] cell for %d: with patterns", f.Start)
 				fmt.Printf(" [%x %d-%d]", input[f.Start:f.End], f.Start, f.End)
 				patternIdx := maxCell.patternIdx
 				for patternIdx != 0 {
 					pattern := patterns[patternIdx]
-					fmt.Printf("[%x %d-%d]", input[matches[pattern].Start:matches[pattern].End], matches[pattern].Start, matches[pattern].End)
+					fmt.Printf(" [%x %d-%d]", input[matches[pattern].Start:matches[pattern].End], matches[pattern].Start, matches[pattern].End)
 					patternIdx = patterns[patternIdx+1]
 				}
+				fmt.Printf("\n\n")
 			}
 			d.coverStart = f.Start
 			d.patternIdx = len(patterns)
@@ -126,6 +127,7 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 					fmt.Printf(" [%x %d-%d]", input[matches[pattern].Start:matches[pattern].End], matches[pattern].Start, matches[pattern].End)
 					patternIdx = patterns[patternIdx+1]
 				}
+				fmt.Printf("\n\n")
 			}
 			d.coverStart = maxCell.coverStart
 			d.patternIdx = maxCell.patternIdx
