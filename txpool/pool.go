@@ -1689,18 +1689,10 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 			slotRlp = v[20:]
 			fromDb++
 		}
-		t := time.Now()
 		var sender []byte
-		found := false
-		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
-			if slot.senderID == senderID {
-				sender = []byte(addr)
-				found = true
-				break
-			}
-		}
-		senderIterator += time.Since(t)
-		if !found {
+		if senderS, found := p.senders.senderID2Addr[slot.senderID]; found {
+			sender = []byte(senderS)
+		} else {
 			return true
 		}
 		f(slotRlp, sender, mt.currentSubPool)
