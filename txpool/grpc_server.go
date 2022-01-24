@@ -79,7 +79,7 @@ func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_Type {
 	case PendingSubPool:
 		return txpool_proto.AllReply_PENDING
 	case BaseFeeSubPool:
-		return txpool_proto.AllReply_PENDING
+		return txpool_proto.AllReply_BASE_FEE
 	case QueuedSubPool:
 		return txpool_proto.AllReply_QUEUED
 	default:
