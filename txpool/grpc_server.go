@@ -95,16 +95,13 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 	defer tx.Rollback()
 	reply := &txpool_proto.AllReply{}
 	reply.Txs = make([]*txpool_proto.AllReply_Tx, 0, 32)
-	if err := s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
+	s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
 		reply.Txs = append(reply.Txs, &txpool_proto.AllReply_Tx{
 			Sender: sender,
 			Type:   convertSubPoolType(t),
 			RlpTx:  common.Copy(rlp),
 		})
-	}, tx); err != nil {
-		fmt.Printf("deprecatedForEach: %v\n", err)
-		return nil, err
-	}
+	}, tx)
 	fmt.Printf("Reply size: %d\n", len(reply.Txs))
 	return reply, nil
 }

@@ -1661,7 +1661,7 @@ func (p *TxPool) logStats() {
 }
 
 //Deprecated need switch to streaming-like
-func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error {
+func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	log.Info("deprecatedForEach acquired lock", "total", p.all.tree.Len())
@@ -1672,12 +1672,12 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 		if slot.rlp == nil {
 			v, err := tx.GetOne(kv.PoolTransaction, slot.IdHash[:])
 			if err != nil {
-				log.Error("[txpool] get tx from db", "err", err)
-				return false
+				log.Warn("[txpool] foreach: get tx from db", "err", err)
+				return true
 			}
 			if v == nil {
-				log.Error("[txpool] tx not found in db")
-				return false
+				log.Warn("[txpool] foreach: tx not found in db")
+				return true
 			}
 			slotRlp = v[20:]
 		}
@@ -1690,7 +1690,6 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 		}
 		return true
 	})
-	return nil
 }
 
 // CalcIntrinsicGas computes the 'intrinsic gas' for a message with the given data.
