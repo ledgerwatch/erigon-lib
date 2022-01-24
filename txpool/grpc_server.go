@@ -51,7 +51,7 @@ type txPool interface {
 	Best(n uint16, txs *TxsRlp, tx kv.Tx) error
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error)
-	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error
+	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx)
 	CountContent() (int, int, int)
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool)
