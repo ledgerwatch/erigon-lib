@@ -16,6 +16,18 @@ message CallResponse {
   repeated google.protobuf.Any result = 1;
 }
 
+message AddressRequest {
+  string salt = 1;
+  google.protobuf.Any constructor_definition = 2;
+  repeated uint32 constructor_calldata = 3;
+  string caller_address = 5;
+}
+
+message AddressResponse {
+  string address = 1;
+}
+
 service CAIROVM {
   rpc Call (CallRequest) returns (CallResponse) {}
+  rpc Address (AddressRequest) returns (AddressResponse) {}
 }

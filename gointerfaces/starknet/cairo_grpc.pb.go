@@ -19,6 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CAIROVMClient interface {
 	Call(ctx context.Context, in *CallRequest, opts ...grpc.CallOption) (*CallResponse, error)
+	Address(ctx context.Context, in *AddressRequest, opts ...grpc.CallOption) (*AddressResponse, error)
 }
 
 type cAIROVMClient struct {
@@ -38,11 +39,21 @@ func (c *cAIROVMClient) Call(ctx context.Context, in *CallRequest, opts ...grpc.
 	return out, nil
 }
 
+func (c *cAIROVMClient) Address(ctx context.Context, in *AddressRequest, opts ...grpc.CallOption) (*AddressResponse, error) {
+	out := new(AddressResponse)
+	err := c.cc.Invoke(ctx, "/starknet.CAIROVM/Address", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CAIROVMServer is the server API for CAIROVM service.
 // All implementations must embed UnimplementedCAIROVMServer
 // for forward compatibility
 type CAIROVMServer interface {
 	Call(context.Context, *CallRequest) (*CallResponse, error)
+	Address(context.Context, *AddressRequest) (*AddressResponse, error)
 	mustEmbedUnimplementedCAIROVMServer()
 }
 
@@ -52,6 +63,9 @@ type UnimplementedCAIROVMServer struct {
 
 func (UnimplementedCAIROVMServer) Call(context.Context, *CallRequest) (*CallResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Call not implemented")
+}
+func (UnimplementedCAIROVMServer) Address(context.Context, *AddressRequest) (*AddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Address not implemented")
 }
 func (UnimplementedCAIROVMServer) mustEmbedUnimplementedCAIROVMServer() {}
 
@@ -84,6 +98,24 @@ func _CAIROVM_Call_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CAIROVM_Address_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CAIROVMServer).Address(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/starknet.CAIROVM/Address",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CAIROVMServer).Address(ctx, req.(*AddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CAIROVM_ServiceDesc is the grpc.ServiceDesc for CAIROVM service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -95,7 +127,11 @@ var CAIROVM_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Call",
 			Handler:    _CAIROVM_Call_Handler,
 		},
+		{
+			MethodName: "Address",
+			Handler:    _CAIROVM_Address_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "starknet/cairo.proto",
+	Metadata: "cairo.proto",
 }
