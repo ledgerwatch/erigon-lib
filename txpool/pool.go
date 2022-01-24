@@ -412,7 +412,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := p.senders.onNewBlock(stateChanges, unwindTxs, minedTxs); err != nil {
 		return err
 	}
-	_, unwindTxs, err = p.validateTxs(unwindTxs, cacheView)
+	_, unwindTxs, err = p.validateTxs(&unwindTxs, cacheView)
 	if err != nil {
 		return err
 	}
@@ -804,11 +804,11 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if err = p.senders.registerNewSenders(newTransactions); err != nil {
+	if err = p.senders.registerNewSenders(&newTransactions); err != nil {
 		return nil, err
 	}
 
-	reasons, newTxs, err := p.validateTxs(newTransactions, cacheView)
+	reasons, newTxs, err := p.validateTxs(&newTransactions, cacheView)
 	if err != nil {
 		return nil, err
 	}
@@ -1547,7 +1547,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 			pendingBaseFee = binary.BigEndian.Uint64(v)
 		}
 	}
-	err = p.senders.registerNewSenders(txs)
+	err = p.senders.registerNewSenders(&txs)
 	if err != nil {
 		return err
 	}
