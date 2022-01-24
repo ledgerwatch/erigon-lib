@@ -1671,6 +1671,8 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 	defer p.lock.RUnlock()
 	log.Info("deprecatedForEach acquired lock")
 	count := 0
+	fromDb := 0
+	var senderIterator time.Duration
 	p.all.ascendAll(func(mt *metaTx) bool {
 		slot := mt.Tx
 		slotRlp := slot.rlp
@@ -1685,8 +1687,9 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 				return false
 			}
 			slotRlp = v[20:]
+			fromDb++
 		}
-
+		t := time.Now()
 		var sender []byte
 		found := false
 		for addr, senderID := range p.senders.senderIDs { // TODO: do we need inverted index here?
@@ -1696,13 +1699,14 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 				break
 			}
 		}
+		senderIterator += time.Since(t)
 		if !found {
 			return true
 		}
 		f(slotRlp, sender, mt.currentSubPool)
 		count++
-		if count%100 == 0 {
-			log.Info("Added transactions to the result", "count", count)
+		if count%10000 == 0 {
+			log.Info("Added transactions to the result", "count", count, "fromDb", fromDb, "sender iterator", senderIterator)
 		}
 		return true
 	})
