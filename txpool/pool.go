@@ -1221,12 +1221,8 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 	}
 
 	// Promote best transactions from base fee pool to pending pool while they qualify
-	for best := baseFee.Best(); baseFee.Len() > 0; best = baseFee.Best() {
-		if best.minFeeCap >= pendingBaseFee {
-			pending.Add(baseFee.PopBest())
-		} else {
-			break
-		}
+	for best := baseFee.Best(); baseFee.Len() > 0 && best.subPool >= BaseFeePoolBits && best.minFeeCap >= pendingBaseFee; best = baseFee.Best() {
+		pending.Add(baseFee.PopBest())
 	}
 
 	// Demote worst transactions that do not qualify for base fee pool anymore, to queued sub pool, or discard
@@ -1239,13 +1235,11 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 	}
 
 	// Promote best transactions from the queued pool to either pending or base fee pool, while they qualify
-	for best := queued.Best(); queued.Len() > 0; best = queued.Best() {
-		if best.subPool >= BaseFeePoolBits && best.minFeeCap >= pendingBaseFee {
+	for best := queued.Best(); queued.Len() > 0 && best.subPool >= BaseFeePoolBits; best = queued.Best() {
+		if best.minFeeCap >= pendingBaseFee {
 			pending.Add(queued.PopBest())
-		} else if best.subPool >= BaseFeePoolBits {
-			baseFee.Add(queued.PopBest())
 		} else {
-			break
+			baseFee.Add(queued.PopBest())
 		}
 	}
 
@@ -2247,7 +2241,7 @@ type WorstQueue struct {
 }
 
 func (p WorstQueue) Len() int           { return len(p.ms) }
-func (p WorstQueue) Less(i, j int) bool { return p.ms[i].worse(p.ms[j], p.pendingBaseFee) } // Note reverse order of i and j here
+func (p WorstQueue) Less(i, j int) bool { return p.ms[i].worse(p.ms[j], p.pendingBaseFee) }
 func (p WorstQueue) Swap(i, j int) {
 	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
 	p.ms[i].worstIndex = i
