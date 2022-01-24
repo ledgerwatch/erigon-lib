@@ -1669,7 +1669,8 @@ func (p *TxPool) logStats() {
 func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	log.Info("deprecatedForEach acquired lock")
+	log.Info("deprecatedForEach acquired lock, total = %d\n", p.all.tree.Len())
+	count := 0
 	p.all.ascendAll(func(mt *metaTx) bool {
 		slot := mt.Tx
 		slotRlp := slot.rlp
@@ -1687,6 +1688,10 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 		}
 		if sender, found := p.senders.senderID2Addr[slot.senderID]; found {
 			f(slotRlp, sender, mt.currentSubPool)
+		}
+		count++
+		if count%10000 == 0 {
+			fmt.Printf("Done %d\n", count)
 		}
 		return true
 	})
