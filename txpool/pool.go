@@ -1686,7 +1686,7 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 				log.Error("[txpool] tx not found in db")
 				return false
 			}
-			slotRlp = v[20:]
+			slotRlp = common.Copy(v[20:])
 			fromDb++
 		}
 		var sender []byte
