@@ -792,8 +792,7 @@ func (c *CompressorSequential) findMatches() error {
 						maxScore = score
 						maxInclude = true
 						maxCell = cell
-					}
-					if cell.optimStart > f.End {
+					} else if cell.optimStart > f.End {
 						c.ring.Truncate(e)
 						break
 					}

@@ -57,18 +57,14 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 	if trace {
 		fmt.Printf("Cluster | input = %x\n", input)
 		for _, match := range matches {
-			fmt.Printf("[%x %d-%d]\n", input[match.Start:match.End], match.Start, match.End)
+			fmt.Printf(" [%x %d-%d]", input[match.Start:match.End], match.Start, match.End)
 		}
-		fmt.Printf("---------\n\n")
 	}
-	//var sb strings.Builder
 	cellRing.Reset()
-	//fmt.Fprintf(&sb, "Reset\n")
 	patterns = append(patterns[:0], 0, 0) // Sentinel entry - no meaning
 	lastF := matches[len(matches)-1]
 	for j := lastF.Start; j < lastF.End; j++ {
 		d := cellRing.PushBack()
-		//fmt.Fprintf(&sb, "PushBack\n")
 		d.optimStart = j + 1
 		d.coverStart = len(input)
 		d.compression = 0
@@ -80,14 +76,12 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 		f := matches[i-1]
 		p := f.Val.(*Pattern)
 		firstCell := cellRing.Get(0)
-		//fmt.Fprintf(&sb, "Get %d\n", 0)
 		maxCompression := firstCell.compression
 		maxScore := firstCell.score
 		maxCell := firstCell
 		var maxInclude bool
 		for e := 0; e < cellRing.Len(); e++ {
 			cell := cellRing.Get(e)
-			//fmt.Fprintf(&sb, "Get %d out of %d\n", e, cellRing.Len())
 			comp := cell.compression - 4
 			if cell.coverStart >= f.End {
 				comp += f.End - f.Start
@@ -100,35 +94,28 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 				maxScore = score
 				maxInclude = true
 				maxCell = cell
-				//fmt.Fprintf(&sb, "maxCell becomes %p\n", maxCell)
 			} else if cell.optimStart > f.End {
 				cellRing.Truncate(e)
-				//fmt.Fprintf(&sb, "Truncate %d because %d > %d\n", e, cell.optimStart, f.End)
 				break
 			}
 		}
 		d := cellRing.PushFront()
-		//fmt.Fprintf(&sb, "PushFront %p, maxCell %p\n", d, maxCell)
 		d.optimStart = f.Start
 		d.score = maxScore
 		d.compression = maxCompression
 		if maxInclude {
 			if trace {
 				fmt.Printf("[include] cell for %d: with patterns\n", f.Start)
-				fmt.Printf("[%x %d-%d]\n", input[f.Start:f.End], f.Start, f.End)
+				fmt.Printf(" [%x %d-%d]", input[f.Start:f.End], f.Start, f.End)
 				patternIdx := maxCell.patternIdx
 				for patternIdx != 0 {
 					pattern := patterns[patternIdx]
-					fmt.Printf("[%x %d-%d]\n", input[matches[pattern].Start:matches[pattern].End], matches[pattern].Start, matches[pattern].End)
+					fmt.Printf("[%x %d-%d]", input[matches[pattern].Start:matches[pattern].End], matches[pattern].Start, matches[pattern].End)
 					patternIdx = patterns[patternIdx+1]
 				}
-				fmt.Printf("-----------\n\n")
 			}
 			d.coverStart = f.Start
 			d.patternIdx = len(patterns)
-			//if len(patterns) == maxCell.patternIdx {
-			//	fmt.Fprintf(&sb, "pattern loop %d\n", maxCell.patternIdx /* 380 */)
-			//}
 			patterns = append(patterns, i-1, maxCell.patternIdx)
 		} else {
 			if trace {
@@ -136,17 +123,15 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 				patternIdx := maxCell.patternIdx
 				for patternIdx != 0 {
 					pattern := patterns[patternIdx]
-					fmt.Printf("[%x %d-%d]\n", input[matches[pattern].Start:matches[pattern].End], matches[pattern].Start, matches[pattern].End)
+					fmt.Printf(" [%x %d-%d]", input[matches[pattern].Start:matches[pattern].End], matches[pattern].Start, matches[pattern].End)
 					patternIdx = patterns[patternIdx+1]
 				}
-				fmt.Printf("-------------\n\n")
 			}
 			d.coverStart = maxCell.coverStart
 			d.patternIdx = maxCell.patternIdx
 		}
 	}
 	optimCell := cellRing.Get(0)
-	//fmt.Fprintf(&sb, "Get %d\n", 0)
 	if trace {
 		fmt.Printf("optimal =")
 	}
@@ -156,24 +141,6 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 	for patternIdx != 0 {
 		patternCount++
 		patternIdx = patterns[patternIdx+1]
-		/*
-			if patternCount > 1_000_000 {
-				fmt.Printf("Cluster | input = %x\n", input)
-				for _, match := range matches {
-					fmt.Printf("[%x %d-%d]\n", input[match.Start:match.End], match.Start, match.End)
-				}
-				fmt.Printf("---------\n\n")
-				for i, p := range patterns {
-					fmt.Printf(" %d:%d", i, p)
-					if i%80 == 0 {
-						fmt.Printf("\n")
-					}
-				}
-				fmt.Printf("\nPatterIdx=%d\n", patternIdx)
-				fmt.Printf("Ring\n%s", sb.String())
-				panic("")
-			}
-		*/
 	}
 	p := binary.PutUvarint(numBuf, patternCount)
 	output = append(output, numBuf[:p]...)
