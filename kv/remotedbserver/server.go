@@ -38,7 +38,8 @@ const MaxTxTTL = 60 * time.Second
 // 2.0.0 - Rename all buckets
 // 3.0.0 - ??
 // 4.0.0 - Server send tx.ViewID() after open tx
-var KvServiceAPIVersion = &types.VersionReply{Major: 4, Minor: 0, Patch: 0}
+// 4.1.0 - Added blockGasLimit to the StateChangeBatch
+var KvServiceAPIVersion = &types.VersionReply{Major: 4, Minor: 1, Patch: 0}
 
 type KvServer struct {
 	remote.UnimplementedKVServer // must be embedded to have forward compatible implementations.

@@ -26,6 +26,7 @@ import (
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -44,7 +45,7 @@ var TxPoolAPIVersion = &types2.VersionReply{Major: 1, Minor: 0, Patch: 0}
 type txPool interface {
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddLocalTxs(ctx context.Context, newTxs TxSlots) ([]DiscardReason, error)
-	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) error
+	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx)
 	CountContent() (int, int, int)
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool)
@@ -72,7 +73,7 @@ func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_Type {
 	case PendingSubPool:
 		return txpool_proto.AllReply_PENDING
 	case BaseFeeSubPool:
-		return txpool_proto.AllReply_PENDING
+		return txpool_proto.AllReply_BASE_FEE
 	case QueuedSubPool:
 		return txpool_proto.AllReply_QUEUED
 	default:
@@ -87,37 +88,18 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 	defer tx.Rollback()
 	reply := &txpool_proto.AllReply{}
 	reply.Txs = make([]*txpool_proto.AllReply_Tx, 0, 32)
-	if err := s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
+	s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
 		reply.Txs = append(reply.Txs, &txpool_proto.AllReply_Tx{
 			Sender: sender,
 			Type:   convertSubPoolType(t),
-			RlpTx:  rlp,
+			RlpTx:  common.Copy(rlp),
 		})
-	}, tx); err != nil {
-		return nil, err
-	}
+	}, tx)
 	return reply, nil
 }
 
 func (s *GrpcServer) FindUnknown(ctx context.Context, in *txpool_proto.TxHashes) (*txpool_proto.TxHashes, error) {
 	return nil, fmt.Errorf("unimplemented")
-	/*
-		var underpriced int
-		for i := range in.Hashes {
-			h := gointerfaces.ConvertH256ToHash(in.Hashes[i])
-			if s.txPool.Has(h) {
-				continue
-			}
-			if s.underpriced.Contains(h) {
-				underpriced++
-				continue
-			}
-			reply.Hashes = append(reply.Hashes, in.Hashes[i])
-		}
-		txAnnounceInMeter.Mark(int64(len(in.Hashes)))
-		txAnnounceKnownMeter.Mark(int64(len(in.Hashes) - len(reply.Hashes)))
-		txAnnounceUnderpricedMeter.Mark(int64(underpriced))
-	*/
 }
 
 func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txpool_proto.AddReply, error) {
