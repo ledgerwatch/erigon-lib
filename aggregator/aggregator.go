@@ -30,6 +30,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/google/btree"
 	"github.com/holiman/uint256"
@@ -550,7 +551,7 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 	datPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.dat", c.namebase, blockFrom, blockTo))
 	idxPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.idx", c.namebase, blockFrom, blockTo))
 	var count int
-	if count, err = btreeToFile(bt, datPath, c.dir); err != nil {
+	if count, err = btreeToFile(bt, datPath, c.dir, false /* trace */, 1 /* workers */); err != nil {
 		return nil, nil, fmt.Errorf("btreeToFile: %w", err)
 	}
 	return buildIndex(datPath, idxPath, c.dir, count)
@@ -568,7 +569,7 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 func (c *Changes) produceChangeSets(datPath, idxPath string) error {
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, c.dir, compress.MinPatternScore, 1)
 	if err != nil {
-		return fmt.Errorf("produceChangeSets NewCompressorSequential: %w", err)
+		return fmt.Errorf("produceChangeSets NewCompressor: %w", err)
 	}
 	defer comp.Close()
 	var totalRecords int
@@ -700,12 +701,13 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 
 const AggregatorPrefix = "aggregator"
 
-func btreeToFile(bt *btree.BTree, datPath string, tmpdir string) (int, error) {
-	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, tmpdir, compress.MinPatternScore, 1)
+func btreeToFile(bt *btree.BTree, datPath string, tmpdir string, trace bool, workers int) (int, error) {
+	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, tmpdir, compress.MinPatternScore, workers)
 	if err != nil {
 		return 0, err
 	}
 	defer comp.Close()
+	comp.SetTrace(trace)
 	count := 0
 	bt.Ascend(func(i btree.Item) bool {
 		item := i.(*AggregateItem)
@@ -1008,7 +1010,8 @@ func (a *Aggregator) readAccount(blockNum uint64, addr []byte, trace bool) []byt
 		if item.accountsIdx.Empty() {
 			return true
 		}
-		offset := item.accountsIdx.Lookup(addr)
+		reader := recsplit.NewIndexReader(item.accountsIdx)
+		offset := reader.Lookup(addr)
 		g := item.accountsD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
@@ -1039,7 +1042,8 @@ func (a *Aggregator) readCode(blockNum uint64, addr []byte, trace bool) []byte {
 		if item.codeIdx.Empty() {
 			return true
 		}
-		offset := item.codeIdx.Lookup(addr)
+		reader := recsplit.NewIndexReader(item.codeIdx)
+		offset := reader.Lookup(addr)
 		g := item.codeD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
@@ -1070,7 +1074,8 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 		if item.storageIdx.Empty() {
 			return true
 		}
-		offset := item.storageIdx.Lookup(filekey)
+		reader := recsplit.NewIndexReader(item.storageIdx)
+		offset := reader.Lookup(filekey)
 		g := item.storageD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
@@ -1101,7 +1106,8 @@ func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte, trace bool)
 		if item.commitmentIdx.Empty() {
 			return true
 		}
-		offset := item.commitmentIdx.Lookup(filekey)
+		reader := recsplit.NewIndexReader(item.commitmentIdx)
+		offset := reader.Lookup(filekey)
 		g := item.commitmentD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
@@ -1814,7 +1820,8 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		if item.storageIdx.Empty() {
 			return true
 		}
-		offset := item.storageIdx.Lookup(addr)
+		reader := recsplit.NewIndexReader(item.storageIdx)
+		offset := reader.Lookup(addr)
 		g := item.storageD.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
@@ -1928,6 +1935,8 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 }
 
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
+	log.Info("Aggregation", "from", blockFrom, "to", blockTo)
+	t := time.Now()
 	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
 	if i == nil {
 		return fmt.Errorf("did not find change files for [%d-%d], w.a.changesBtree.Len() = %d", blockFrom, blockTo, w.a.changesBtree.Len())
@@ -2015,8 +2024,11 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	}
 	if len(toAggregate) == 1 {
 		// Nothing to aggregate yet
+		log.Info("Finished aggregation", "time", time.Since(t))
 		return nil
 	}
+	log.Info("Finished aggregation", "time", time.Since(t), "now merging from", lastStart, "to", blockTo)
+	t = time.Now()
 	var item2 = &byEndBlockItem{fileCount: 6, startBlock: lastStart, endBlock: blockTo}
 	var cp CursorHeap
 	heap.Init(&cp)
@@ -2131,6 +2143,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		}
 	}
 	w.a.changesBtree.Delete(i)
+	log.Info("Finished merging", "time", time.Since(t))
 	return nil
 }
 
