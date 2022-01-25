@@ -79,7 +79,7 @@ func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_Type {
 	case PendingSubPool:
 		return txpool_proto.AllReply_PENDING
 	case BaseFeeSubPool:
-		return txpool_proto.AllReply_BASE_FEE
+		return txpool_proto.AllReply_PENDING
 	case QueuedSubPool:
 		return txpool_proto.AllReply_QUEUED
 	default:
@@ -89,7 +89,6 @@ func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_Type {
 func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpool_proto.AllReply, error) {
 	tx, err := s.db.BeginRo(ctx)
 	if err != nil {
-		fmt.Printf("All error: %v\n", err)
 		return nil, err
 	}
 	defer tx.Rollback()
@@ -102,7 +101,6 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 			RlpTx:  common.Copy(rlp),
 		})
 	}, tx)
-	fmt.Printf("Reply size: %d\n", len(reply.Txs))
 	return reply, nil
 }
 
@@ -130,23 +128,6 @@ func (s *GrpcServer) Pending(ctx context.Context, _ *emptypb.Empty) (*txpool_pro
 
 func (s *GrpcServer) FindUnknown(ctx context.Context, in *txpool_proto.TxHashes) (*txpool_proto.TxHashes, error) {
 	return nil, fmt.Errorf("unimplemented")
-	/*
-		var underpriced int
-		for i := range in.Hashes {
-			h := gointerfaces.ConvertH256ToHash(in.Hashes[i])
-			if s.txPool.Has(h) {
-				continue
-			}
-			if s.underpriced.Contains(h) {
-				underpriced++
-				continue
-			}
-			reply.Hashes = append(reply.Hashes, in.Hashes[i])
-		}
-		txAnnounceInMeter.Mark(int64(len(in.Hashes)))
-		txAnnounceKnownMeter.Mark(int64(len(in.Hashes) - len(reply.Hashes)))
-		txAnnounceUnderpricedMeter.Mark(int64(underpriced))
-	*/
 }
 
 func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txpool_proto.AddReply, error) {

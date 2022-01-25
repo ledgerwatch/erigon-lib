@@ -1664,8 +1664,6 @@ func (p *TxPool) logStats() {
 func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	log.Info("deprecatedForEach acquired lock", "total", p.all.tree.Len())
-	count := 0
 	p.all.ascendAll(func(mt *metaTx) bool {
 		slot := mt.Tx
 		slotRlp := slot.rlp
@@ -1683,10 +1681,6 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 		}
 		if sender, found := p.senders.senderID2Addr[slot.senderID]; found {
 			f(slotRlp, sender, mt.currentSubPool)
-		}
-		count++
-		if count%10000 == 0 {
-			fmt.Printf("Done %d\n", count)
 		}
 		return true
 	})
@@ -1782,9 +1776,8 @@ func (sc *sendersBatch) getID(addr []byte) (uint64, bool) {
 	return id, ok
 }
 func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
-	addrS := string(addr)
-	_, traced := sc.tracedSenders[addrS]
-	id, ok := sc.senderIDs[addrS]
+	_, traced := sc.tracedSenders[string(addr)]
+	id, ok := sc.senderIDs[string(addr)]
 	if !ok {
 		copyAddr := common.Copy(addr)
 		sc.senderID++
