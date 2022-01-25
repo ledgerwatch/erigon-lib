@@ -1690,6 +1690,7 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 		}
 		return true
 	})
+	fmt.Printf("Processed %d\n", count)
 }
 
 // CalcIntrinsicGas computes the 'intrinsic gas' for a message with the given data.
