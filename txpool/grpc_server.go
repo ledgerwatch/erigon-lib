@@ -154,8 +154,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 		slots.Resize(uint(j + 1))
 		slots.txs[j] = &TxSlot{}
 		slots.isLocal[j] = true
-		fmt.Printf("Parsing [%x]\n", in.RlpTxs[i])
-		if pos, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[j], slots.senders.At(j)); err != nil {
+		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[j], slots.senders.At(j), false /* hasEnvelope */); err != nil {
 			switch err {
 			case ErrAlreadyKnown: // Noop, but need to handle to not count these
 				reply.Errors[i] = AlreadyKnown.String()
@@ -168,8 +167,6 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 				reply.Imported[i] = txpool_proto.ImportResult_INTERNAL_ERROR
 			}
 			continue
-		} else {
-			fmt.Printf("Parsed %d bytes\n", pos)
 		}
 		j++
 	}

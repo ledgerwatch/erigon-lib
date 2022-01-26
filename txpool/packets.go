@@ -111,8 +111,13 @@ func ParseGetPooledTransactions66(payload []byte, pos int, hashbuf []byte) (requ
 func EncodePooledTransactions66(txsRlp [][]byte, requestId uint64, encodeBuf []byte) []byte {
 	pos := 0
 	txsRlpLen := 0
-	for _, txRlp := range txsRlp {
-		txsRlpLen += len(txRlp)
+	for i := range txsRlp {
+		_, _, isLegacy, _ := rlp.Prefix(txsRlp[i], 0)
+		if isLegacy {
+			txsRlpLen += len(txsRlp[i])
+		} else {
+			txsRlpLen += rlp.StringLen(len(txsRlp[i]))
+		}
 	}
 	dataLen := rlp.U64Len(requestId) + rlp.ListPrefixLen(txsRlpLen) + txsRlpLen
 
@@ -122,9 +127,14 @@ func EncodePooledTransactions66(txsRlp [][]byte, requestId uint64, encodeBuf []b
 	pos += rlp.EncodeListPrefix(dataLen, encodeBuf[pos:])
 	pos += rlp.EncodeU64(requestId, encodeBuf[pos:])
 	pos += rlp.EncodeListPrefix(txsRlpLen, encodeBuf[pos:])
-	for _, txRlp := range txsRlp {
-		copy(encodeBuf[pos:], txRlp)
-		pos += len(txRlp)
+	for i := range txsRlp {
+		_, _, isLegacy, _ := rlp.Prefix(txsRlp[i], 0)
+		if isLegacy {
+			copy(encodeBuf[pos:], txsRlp[i])
+			pos += len(txsRlp[i])
+		} else {
+			pos += rlp.EncodeString(txsRlp[i], encodeBuf[pos:])
+		}
 	}
 	_ = pos
 	return encodeBuf
@@ -133,15 +143,25 @@ func EncodeTransactions(txsRlp [][]byte, encodeBuf []byte) []byte {
 	pos := 0
 	dataLen := 0
 	for i := range txsRlp {
-		dataLen += len(txsRlp[i])
+		_, _, isLegacy, _ := rlp.Prefix(txsRlp[i], 0)
+		if isLegacy {
+			dataLen += len(txsRlp[i])
+		} else {
+			dataLen += rlp.StringLen(len(txsRlp[i]))
+		}
 	}
 
 	encodeBuf = common.EnsureEnoughSize(encodeBuf, rlp.ListPrefixLen(dataLen)+dataLen)
 	// Length Prefix for the entire structure
 	pos += rlp.EncodeListPrefix(dataLen, encodeBuf[pos:])
-	for _, txRlp := range txsRlp {
-		copy(encodeBuf[pos:], txRlp)
-		pos += len(txRlp)
+	for i := range txsRlp {
+		_, _, isLegacy, _ := rlp.Prefix(txsRlp[i], 0)
+		if isLegacy {
+			copy(encodeBuf[pos:], txsRlp[i])
+			pos += len(txsRlp[i])
+		} else {
+			pos += rlp.EncodeString(txsRlp[i], encodeBuf[pos:])
+		}
 	}
 	_ = pos
 	return encodeBuf
@@ -156,7 +176,7 @@ func ParseTransactions(payload []byte, pos int, ctx *TxParseContext, txSlots *Tx
 	for i := 0; pos < len(payload); i++ {
 		txSlots.Resize(uint(i + 1))
 		txSlots.txs[i] = &TxSlot{}
-		pos, err = ctx.ParseTransaction(payload, pos, txSlots.txs[i], txSlots.senders.At(i))
+		pos, err = ctx.ParseTransaction(payload, pos, txSlots.txs[i], txSlots.senders.At(i), true /* hasEnvelope */)
 		if err != nil {
 			if errors.Is(err, ErrRejected) {
 				txSlots.Resize(uint(i))
@@ -186,7 +206,7 @@ func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txS
 	for i := 0; p < len(payload); i++ {
 		txSlots.Resize(uint(i + 1))
 		txSlots.txs[i] = &TxSlot{}
-		p, err = ctx.ParseTransaction(payload, p, txSlots.txs[i], txSlots.senders.At(i))
+		p, err = ctx.ParseTransaction(payload, p, txSlots.txs[i], txSlots.senders.At(i), true /* hasEnvelope */)
 		if err != nil {
 			if errors.Is(err, ErrRejected) {
 				txSlots.Resize(uint(i))
