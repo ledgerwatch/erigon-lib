@@ -134,6 +134,10 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if err != nil {
 		return 0, fmt.Errorf("%w: size Prefix: %s", ErrParseTxn, err)
 	}
+	// This handles the transactions coming from other Erigon peers of older versions, which add 0x80 (empty) transactions into packets
+	if dataLen == 0 {
+		return 0, fmt.Errorf("%w: transaction must be either 1 list or 1 string", ErrParseTxn)
+	}
 	if dataLen == 1 && !legacy {
 		if hasEnvelope {
 			return 0, fmt.Errorf("%w: expected envelope in the payload, got %x", ErrParseTxn, payload[dataPos:dataPos+dataLen])
@@ -176,10 +180,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		if err := ctx.validateRlp(slot.rlp); err != nil {
 			return p, err
 		}
-	}
-
-	if dataLen == 0 {
-		return 0, fmt.Errorf("%w: transaction must be either 1 list or 1 string", ErrParseTxn)
 	}
 
 	// Remember where signing hash data begins (it will need to be wrapped in an RLP list)
