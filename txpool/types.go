@@ -114,7 +114,7 @@ func (ctx *TxParseContext) WithSender(v bool)                { ctx.withSender = 
 
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
-func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte) (p int, err error) {
+func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool) (p int, err error) {
 	const (
 		// txSlotSize is used to calculate how many data slots a single transaction
 		// takes up based on its size. The slots are used as DoS protection, ensuring
@@ -146,17 +146,16 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if dataLen > txMaxSize {
 		return 0, fmt.Errorf("%w: too large tx.size=%dKb", ErrParseTxn, len(payload)/1024)
 	}
-
+	// This handles the transactions coming from other Erigon peers of older versions, which add 0x80 (empty) transactions into packets
 	if dataLen == 0 {
 		return 0, fmt.Errorf("%w: transaction must be either 1 list or 1 string", ErrParseTxn)
 	}
-	// For legacy transaction, the entire payload in expected to be in "rlp" field
-	// whereas for non-legacy, only the content of the envelope
-	if legacy {
-		slot.rlp = payload[pos : dataPos+dataLen]
-	} else {
-		slot.rlp = payload[dataPos : dataPos+dataLen]
+	if dataLen == 1 && !legacy {
+		if hasEnvelope {
+			return 0, fmt.Errorf("%w: expected envelope in the payload, got %x", ErrParseTxn, payload[dataPos:dataPos+dataLen])
+		}
 	}
+
 	p = dataPos
 
 	var txType int
@@ -181,7 +180,12 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		if _, err = ctx.keccak1.Write(payload[p : dataPos+dataLen]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing the envelope): %s", ErrParseTxn, err)
 		}
+		// For legacy transaction, the entire payload in expected to be in "rlp" field
+		// whereas for non-legacy, only the content of the envelope (start with position p)
+		slot.rlp = payload[p-1 : dataPos+dataLen]
 		p = dataPos
+	} else {
+		slot.rlp = payload[pos : dataPos+dataLen]
 	}
 
 	// Remember where signing hash data begins (it will need to be wrapped in an RLP list)

@@ -433,7 +433,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				minedTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
 					minedTxs.txs[i] = &TxSlot{}
-					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i)); err != nil {
+					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i), true /* hasEnvelope */); err != nil {
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}
@@ -443,7 +443,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				unwindTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
 					unwindTxs.txs[i] = &TxSlot{}
-					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i)); err != nil {
+					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i), true /* hasEnvelope */); err != nil {
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}
