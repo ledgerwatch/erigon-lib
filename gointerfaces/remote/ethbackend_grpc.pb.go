@@ -36,10 +36,8 @@ type ETHBACKENDClient interface {
 	// ClientVersion returns the Ethereum client version string using node name convention (e.g. TurboGeth/v2021.03.2-alpha/Linux).
 	ClientVersion(ctx context.Context, in *ClientVersionRequest, opts ...grpc.CallOption) (*ClientVersionReply, error)
 	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (ETHBACKEND_SubscribeClient, error)
-	// Only one subscription is needed to serve all the users
-	SubscribeLogs(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (ETHBACKEND_SubscribeLogsClient, error)
-	// Replaces current logs filter with the new version
-	UpdateLogsFilter(ctx context.Context, in *LogsFilterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Only one subscription is needed to serve all the users, LogsFilterRequest allows to dynamically modifying the subscription
+	SubscribeLogs(ctx context.Context, opts ...grpc.CallOption) (ETHBACKEND_SubscribeLogsClient, error)
 	// High-level method - can read block from db, snapshots or apply any other logic
 	// it doesn't provide consistency
 	// Request fields are optional - it's ok to request block only by hash or only by number
@@ -172,22 +170,17 @@ func (x *eTHBACKENDSubscribeClient) Recv() (*SubscribeReply, error) {
 	return m, nil
 }
 
-func (c *eTHBACKENDClient) SubscribeLogs(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (ETHBACKEND_SubscribeLogsClient, error) {
+func (c *eTHBACKENDClient) SubscribeLogs(ctx context.Context, opts ...grpc.CallOption) (ETHBACKEND_SubscribeLogsClient, error) {
 	stream, err := c.cc.NewStream(ctx, &ETHBACKEND_ServiceDesc.Streams[1], "/remote.ETHBACKEND/SubscribeLogs", opts...)
 	if err != nil {
 		return nil, err
 	}
 	x := &eTHBACKENDSubscribeLogsClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
 	return x, nil
 }
 
 type ETHBACKEND_SubscribeLogsClient interface {
+	Send(*LogsFilterRequest) error
 	Recv() (*SubscribeLogsReply, error)
 	grpc.ClientStream
 }
@@ -196,21 +189,16 @@ type eTHBACKENDSubscribeLogsClient struct {
 	grpc.ClientStream
 }
 
+func (x *eTHBACKENDSubscribeLogsClient) Send(m *LogsFilterRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
 func (x *eTHBACKENDSubscribeLogsClient) Recv() (*SubscribeLogsReply, error) {
 	m := new(SubscribeLogsReply)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
-}
-
-func (c *eTHBACKENDClient) UpdateLogsFilter(ctx context.Context, in *LogsFilterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, "/remote.ETHBACKEND/UpdateLogsFilter", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *eTHBACKENDClient) Block(ctx context.Context, in *BlockRequest, opts ...grpc.CallOption) (*BlockReply, error) {
@@ -260,10 +248,8 @@ type ETHBACKENDServer interface {
 	// ClientVersion returns the Ethereum client version string using node name convention (e.g. TurboGeth/v2021.03.2-alpha/Linux).
 	ClientVersion(context.Context, *ClientVersionRequest) (*ClientVersionReply, error)
 	Subscribe(*SubscribeRequest, ETHBACKEND_SubscribeServer) error
-	// Only one subscription is needed to serve all the users
-	SubscribeLogs(*emptypb.Empty, ETHBACKEND_SubscribeLogsServer) error
-	// Replaces current logs filter with the new version
-	UpdateLogsFilter(context.Context, *LogsFilterRequest) (*emptypb.Empty, error)
+	// Only one subscription is needed to serve all the users, LogsFilterRequest allows to dynamically modifying the subscription
+	SubscribeLogs(ETHBACKEND_SubscribeLogsServer) error
 	// High-level method - can read block from db, snapshots or apply any other logic
 	// it doesn't provide consistency
 	// Request fields are optional - it's ok to request block only by hash or only by number
@@ -310,11 +296,8 @@ func (UnimplementedETHBACKENDServer) ClientVersion(context.Context, *ClientVersi
 func (UnimplementedETHBACKENDServer) Subscribe(*SubscribeRequest, ETHBACKEND_SubscribeServer) error {
 	return status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
 }
-func (UnimplementedETHBACKENDServer) SubscribeLogs(*emptypb.Empty, ETHBACKEND_SubscribeLogsServer) error {
+func (UnimplementedETHBACKENDServer) SubscribeLogs(ETHBACKEND_SubscribeLogsServer) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeLogs not implemented")
-}
-func (UnimplementedETHBACKENDServer) UpdateLogsFilter(context.Context, *LogsFilterRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateLogsFilter not implemented")
 }
 func (UnimplementedETHBACKENDServer) Block(context.Context, *BlockRequest) (*BlockReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Block not implemented")
@@ -522,15 +505,12 @@ func (x *eTHBACKENDSubscribeServer) Send(m *SubscribeReply) error {
 }
 
 func _ETHBACKEND_SubscribeLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(emptypb.Empty)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(ETHBACKENDServer).SubscribeLogs(m, &eTHBACKENDSubscribeLogsServer{stream})
+	return srv.(ETHBACKENDServer).SubscribeLogs(&eTHBACKENDSubscribeLogsServer{stream})
 }
 
 type ETHBACKEND_SubscribeLogsServer interface {
 	Send(*SubscribeLogsReply) error
+	Recv() (*LogsFilterRequest, error)
 	grpc.ServerStream
 }
 
@@ -542,22 +522,12 @@ func (x *eTHBACKENDSubscribeLogsServer) Send(m *SubscribeLogsReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _ETHBACKEND_UpdateLogsFilter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LogsFilterRequest)
-	if err := dec(in); err != nil {
+func (x *eTHBACKENDSubscribeLogsServer) Recv() (*LogsFilterRequest, error) {
+	m := new(LogsFilterRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(ETHBACKENDServer).UpdateLogsFilter(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/remote.ETHBACKEND/UpdateLogsFilter",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ETHBACKENDServer).UpdateLogsFilter(ctx, req.(*LogsFilterRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return m, nil
 }
 
 func _ETHBACKEND_Block_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -658,10 +628,6 @@ var ETHBACKEND_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ETHBACKEND_ClientVersion_Handler,
 		},
 		{
-			MethodName: "UpdateLogsFilter",
-			Handler:    _ETHBACKEND_UpdateLogsFilter_Handler,
-		},
-		{
 			MethodName: "Block",
 			Handler:    _ETHBACKEND_Block_Handler,
 		},
@@ -684,6 +650,7 @@ var ETHBACKEND_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "SubscribeLogs",
 			Handler:       _ETHBACKEND_SubscribeLogs_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "remote/ethbackend.proto",
