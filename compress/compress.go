@@ -82,7 +82,7 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 	}
 
 	// Collector for dictionary superstrings (sorted by their score)
-	superstrings := make(chan []byte, workers)
+	superstrings := make(chan []byte, workers*2)
 	wg := &sync.WaitGroup{}
 	wg.Add(workers)
 	suffixCollectors := make([]*etl.Collector, workers)
@@ -122,7 +122,6 @@ func (c *Compressor) SetTrace(trace bool) {
 func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
 
-	i := 0
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
 		c.superstrings <- c.superstring
 		c.superstring = nil
@@ -131,7 +130,6 @@ func (c *Compressor) AddWord(word []byte) error {
 		c.superstring = append(c.superstring, 1, a)
 	}
 	c.superstring = append(c.superstring, 0, 0)
-	i++
 
 	return c.uncompressedFile.Append(word)
 }
