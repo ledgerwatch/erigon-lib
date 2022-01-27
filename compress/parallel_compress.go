@@ -209,14 +209,14 @@ func reduceDictWorker(trace bool, inputCh chan []byte, completion *sync.WaitGrou
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(trace bool, logPrefix, dictPath, segmentFilePath, tmpDir string, datFile *DecompressedFile, workers int) error {
+func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *DecompressedFile, workers int, dictBuilder *DictionaryBuilder) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
 	// DictionaryBuilder is for sorting words by their freuency (to assign codes)
 	var pt patricia.PatriciaTree
 	code2pattern := make([]*Pattern, 0, 256)
-	if err := ReadDictrionary(dictPath, func(score uint64, word []byte) error {
+	dictBuilder.ForEach(func(score uint64, word []byte) {
 		p := &Pattern{
 			score:    score,
 			uses:     0,
@@ -226,10 +226,8 @@ func reducedict(trace bool, logPrefix, dictPath, segmentFilePath, tmpDir string,
 		}
 		pt.Insert(word, p)
 		code2pattern = append(code2pattern, p)
-		return nil
-	}); err != nil {
-		return err
-	}
+	})
+	dictBuilder.Close()
 	log.Debug(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
 	ch := make(chan []byte, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
