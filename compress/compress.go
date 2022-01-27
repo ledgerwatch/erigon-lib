@@ -86,11 +86,6 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 	wg := &sync.WaitGroup{}
 	wg.Add(workers)
 	suffixCollectors := make([]*etl.Collector, workers)
-	defer func() {
-		for _, collector := range suffixCollectors {
-			collector.Close()
-		}
-	}()
 	for i := 0; i < workers; i++ {
 		//nolint
 		collector := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
@@ -114,6 +109,10 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 
 func (c *Compressor) Close() {
 	c.uncompressedFile.Close()
+	for _, collector := range c.suffixCollectors {
+		collector.Close()
+	}
+	c.suffixCollectors = nil
 }
 
 func (c *Compressor) SetTrace(trace bool) {
