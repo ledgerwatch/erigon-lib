@@ -1182,6 +1182,8 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		mt.subPool &^= NotTooMuchGas
 		if mt.Tx.gas < blockGasLimit {
 			mt.subPool |= NotTooMuchGas
+		} else {
+			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange too much gas idHash=%x senderId=%d gas=%d, blockGasLimit=%d", mt.Tx.IdHash, mt.Tx.senderID, mt.Tx.gas, blockGasLimit))
 		}
 
 		//if mt.Tx.traced {
