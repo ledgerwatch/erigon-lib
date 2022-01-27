@@ -18,10 +18,50 @@ message CallResponse {
 
 message AddressRequest {
   string salt = 1;
-  google.protobuf.Any constructor_definition = 2;
+  string contract_definition = 2;
   repeated uint32 constructor_calldata = 3;
-  string caller_address = 5;
+  string caller_address = 4;
 }
+
+//===============================ContractDefinition
+//message ContractDefinition {
+//  EntryPointsByType entry_points_by_type = 1;
+//  Program program = 2;
+//}
+//
+//message EntryPointsByType  {
+//  repeated string CONSTRUCTOR = 1;
+//  repeated External EXTERNAL = 2;
+//  repeated string L1_HANDLER = 3;
+//}
+//
+//message External {
+//  string offset = 1;
+//  string selector = 2;
+//}
+//
+//message Program {
+//  repeated string attributes = 1;
+//  repeated string builtins = 2;
+//  repeated string data = 3;
+//  map<string, Hints> hints = 4;
+//}
+//
+//message Hints {
+//  string key = 1;
+//  repeated string hint = 2;
+//}
+//
+//message Hint {
+//  repeated string data = 1;
+//  string code = 2;
+//  FlowTrackingData flow_tracking_data = 3;
+//}
+//
+//message FlowTrackingData {
+//  map<string, int32> ap_tracking = 1;
+//  map<string, int32> reference_ids = 2;
+//}
 
 message AddressResponse {
   string address = 1;
