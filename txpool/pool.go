@@ -647,40 +647,40 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs TxSlots) {
 func (p *TxPool) validateTx(txn *TxSlot, isLocal bool, stateCache kvcache.CacheView) DiscardReason {
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !isLocal && txn.feeCap < p.cfg.MinFeeCap {
-		//if txn.traced {
-		log.Info(fmt.Sprintf("TX TRACING: validateTx underpriced idHash=%x local=%t, feeCap=%d, cfg.MinFeeCap=%d", txn.IdHash, isLocal, txn.feeCap, p.cfg.MinFeeCap))
-		//}
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx underpriced idHash=%x local=%t, feeCap=%d, cfg.MinFeeCap=%d", txn.IdHash, isLocal, txn.feeCap, p.cfg.MinFeeCap))
+		}
 		return UnderPriced
 	}
 	gas, reason := CalcIntrinsicGas(uint64(txn.dataLen), uint64(txn.dataNonZeroLen), nil, txn.creation, true, true)
-	//if txn.traced {
-	log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas idHash=%x gas=%d", txn.IdHash, gas))
-	//}
+	if txn.traced {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas idHash=%x gas=%d", txn.IdHash, gas))
+	}
 	if reason != Success {
-		//if txn.traced {
-		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas calculated failed idHash=%x reason=%s", txn.IdHash, reason))
-		//}
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas calculated failed idHash=%x reason=%s", txn.IdHash, reason))
+		}
 		return reason
 	}
 	if gas > txn.gas {
-		//if txn.traced {
-		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas > txn.gas idHash=%x gas=%d, txn.gas=%d", txn.IdHash, gas, txn.gas))
-		//}
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas > txn.gas idHash=%x gas=%d, txn.gas=%d", txn.IdHash, gas, txn.gas))
+		}
 		return IntrinsicGas
 	}
 	if uint64(p.all.count(txn.senderID)) > p.cfg.AccountSlots {
-		//if txn.traced {
-		log.Info(fmt.Sprintf("TX TRACING: validateTx marked as spamming idHash=%x slots=%d, limit=%d", txn.IdHash, p.all.count(txn.senderID), p.cfg.AccountSlots))
-		//}
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx marked as spamming idHash=%x slots=%d, limit=%d", txn.IdHash, p.all.count(txn.senderID), p.cfg.AccountSlots))
+		}
 		return Spammer
 	}
 
 	// check nonce and balance
 	senderNonce, senderBalance, _ := p.senders.info(stateCache, txn.senderID)
 	if senderNonce > txn.nonce {
-		//if txn.traced {
-		log.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IdHash, senderNonce, txn.nonce))
-		//}
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IdHash, senderNonce, txn.nonce))
+		}
 		return NonceTooLow
 	}
 	// Transactor should have enough funds to cover the costs
@@ -688,9 +688,9 @@ func (p *TxPool) validateTx(txn *TxSlot, isLocal bool, stateCache kvcache.CacheV
 	total.Mul(total, uint256.NewInt(txn.tip))
 	total.Add(total, &txn.value)
 	if senderBalance.Cmp(total) < 0 {
-		//if txn.traced {
-		log.Info(fmt.Sprintf("TX TRACING: validateTx insufficient funds idHash=%x balance in state=%d, txn.gas*txn.tip=%d", txn.IdHash, senderBalance, total))
-		//}
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx insufficient funds idHash=%x balance in state=%d, txn.gas*txn.tip=%d", txn.IdHash, senderBalance, total))
+		}
 		return InsufficientFunds
 	}
 	return Success
@@ -830,9 +830,9 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	for i, reason := range reasons {
 		if reason == Success {
 			txn := newTxs.txs[i]
-			//if txn.traced {
-			log.Info(fmt.Sprintf("TX TRACING: AddLocalTxs promotes idHash=%x, senderId=%d", txn.IdHash, txn.senderID))
-			//}
+			if txn.traced {
+				log.Info(fmt.Sprintf("TX TRACING: AddLocalTxs promotes idHash=%x, senderId=%d", txn.IdHash, txn.senderID))
+			}
 			p.promoted = append(p.promoted, txn.IdHash[:]...)
 		}
 	}
@@ -890,9 +890,9 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			continue
 		}
 		discardReasons[i] = NotSet
-		//if txn.traced {
-		log.Info(fmt.Sprintf("TX TRACING: schedule sendersWithChangedState idHash=%x senderId=%d", txn.IdHash, mt.Tx.senderID))
-		//}
+		if txn.traced {
+			log.Info(fmt.Sprintf("TX TRACING: schedule sendersWithChangedState idHash=%x senderId=%d", txn.IdHash, mt.Tx.senderID))
+		}
 		sendersWithChangedState[mt.Tx.senderID] = struct{}{}
 	}
 
@@ -1069,9 +1069,9 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 			if mt.Tx.nonce > nonce {
 				return false
 			}
-			//if mt.Tx.traced {
-			log.Info(fmt.Sprintf("TX TRACING: removeMined idHash=%x senderId=%d, currentSubPool=%s", mt.Tx.IdHash, mt.Tx.senderID, mt.currentSubPool))
-			//}
+			if mt.Tx.traced {
+				log.Info(fmt.Sprintf("TX TRACING: removeMined idHash=%x senderId=%d, currentSubPool=%s", mt.Tx.IdHash, mt.Tx.senderID, mt.currentSubPool))
+			}
 			toDel = append(toDel, mt)
 			// del from sub-pool
 			switch mt.currentSubPool {
@@ -1106,13 +1106,13 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 	minFeeCap := uint64(math.MaxUint64)
 	minTip := uint64(math.MaxUint64)
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
-		//if mt.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
-		//}
+		if mt.Tx.traced {
+			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
+		}
 		if senderNonce > mt.Tx.nonce {
-			//if mt.Tx.traced {
-			log.Info(fmt.Sprintf("TX TRACING: removing due to low nonce for idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
-			//}
+			if mt.Tx.traced {
+				log.Info(fmt.Sprintf("TX TRACING: removing due to low nonce for idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
+			}
 			// del from sub-pool
 			switch mt.currentSubPool {
 			case PendingSubPool:
@@ -1182,13 +1182,13 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		mt.subPool &^= NotTooMuchGas
 		if mt.Tx.gas < blockGasLimit {
 			mt.subPool |= NotTooMuchGas
-		} else {
+		} else if mt.Tx.traced {
 			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange too much gas idHash=%x senderId=%d gas=%d, blockGasLimit=%d", mt.Tx.IdHash, mt.Tx.senderID, mt.Tx.gas, blockGasLimit))
 		}
 
-		//if mt.Tx.traced {
-		log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderId=%d subPool=%b", mt.Tx.IdHash, mt.Tx.senderID, mt.subPool))
-		//}
+		if mt.Tx.traced {
+			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderId=%d subPool=%b", mt.Tx.IdHash, mt.Tx.senderID, mt.subPool))
+		}
 
 		// 5. Local transaction. Set to 1 if transaction is local.
 		// can't change
@@ -2025,9 +2025,9 @@ func (p *PendingPool) Add(i *metaTx) {
 	if p.adding {
 		p.added = append(p.added, i.Tx.IdHash[:]...)
 	}
-	//if i.Tx.traced {
-	log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
-	//}
+	if i.Tx.traced {
+		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
+	}
 	i.currentSubPool = p.t
 	heap.Push(p.worst, i)
 	p.best.UnsafeAdd(i)
@@ -2095,9 +2095,9 @@ func (p *SubPool) Add(i *metaTx) {
 	if p.adding {
 		p.added = append(p.added, i.Tx.IdHash[:]...)
 	}
-	//if i.Tx.traced {
-	log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
-	//}
+	if i.Tx.traced {
+		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IdHash, i.Tx.senderID))
+	}
 	i.currentSubPool = p.t
 	heap.Push(p.best, i)
 	heap.Push(p.worst, i)
