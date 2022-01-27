@@ -22,15 +22,12 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -835,31 +832,6 @@ func PersistDictrionary(fileName string, db *DictionaryBuilder) error {
 	}
 	if err := df.Sync(); err != nil {
 		return err
-	}
-	return df.Close()
-}
-
-func ReadDictrionary(fileName string, walker func(score uint64, word []byte) error) error {
-	df, err := os.Open(fileName)
-	if err != nil {
-		return err
-	}
-	defer df.Close()
-	// DictonaryBuilder is for sorting words by their freuency (to assign codes)
-	ds := bufio.NewScanner(df)
-	for ds.Scan() {
-		tokens := strings.Split(ds.Text(), " ")
-		score, err := strconv.ParseInt(tokens[0], 10, 64)
-		if err != nil {
-			return err
-		}
-		word, err := hex.DecodeString(tokens[1])
-		if err != nil {
-			return err
-		}
-		if err := walker(uint64(score), word); err != nil {
-			return err
-		}
 	}
 	return df.Close()
 }
