@@ -1685,3 +1685,41 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 	}
 	return branchNodeUpdates, nil
 }
+
+func hexToCompact(key []byte) []byte {
+	zeroByte, keyPos, keyLen := makeCompactZeroByte(key)
+	buf := make([]byte, keyLen)
+	buf[0] = zeroByte
+	return decodeKey(key[keyPos:keyLen], buf)
+}
+
+func makeCompactZeroByte(key []byte) (compactZeroByte byte, keyPos, keyLen int) {
+	keyLen = len(key)
+	if hasTerm(key) {
+		keyLen--
+		compactZeroByte = 0x20
+	}
+	keyLen = len(key)/2 + 1
+	if len(key)&1 == 1 {
+		compactZeroByte |= 0x10 | key[0] // Odd: (3<<4) + first nibble
+		keyPos++
+	}
+
+	return
+}
+
+func decodeKey(key, buf []byte) []byte {
+	keyLen := len(key)
+	if hasTerm(key) {
+		keyLen--
+	}
+	for keyIndex, bufIndex := 0, 0; keyIndex < keyLen; keyIndex, bufIndex = keyIndex+2, bufIndex+1 {
+		if keyIndex == keyLen-1 {
+			buf[bufIndex] = buf[bufIndex] & 0x0f
+		} else {
+			buf[bufIndex] = key[keyIndex+1]
+		}
+		buf[bufIndex] |= key[keyIndex] << 4
+	}
+	return buf
+}
