@@ -921,7 +921,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		if err != nil {
 			return err
 		}
-		if !hph.rootChecked && hph.currentKeyLen == 0 && len(branchData) == 0 {
+		if !hph.rootChecked && hph.currentKeyLen == 0 {
 			// Special case - empty or deleted root
 			hph.rootChecked = true
 			return nil
