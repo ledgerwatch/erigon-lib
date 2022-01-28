@@ -1699,9 +1699,13 @@ func makeCompactZeroByte(key []byte) (compactZeroByte byte, keyPos, keyLen int) 
 		keyLen--
 		compactZeroByte = 0x20
 	}
-	keyLen = keyLen/2 + 1
+	keyLen = keyLen/2 + 1 // always > 0
+	var firstNibble byte
+	if len(key) > 0 {
+		firstNibble = key[0]
+	}
 	if keyLen&1 == 1 {
-		compactZeroByte |= 0x10 | key[0] // Odd: (1<<4) + first nibble
+		compactZeroByte |= 0x10 | firstNibble // Odd: (1<<4) + first nibble
 		keyPos++
 	}
 
