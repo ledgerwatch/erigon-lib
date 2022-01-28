@@ -302,26 +302,27 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	var lastPos int
 	var lastUncovered int
 	var pattern []byte
+	g.uncovered = g.uncovered[:0]
 	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
 		pattern = g.nextPattern()
 
-		if lenBuf < intPos+len(pattern) || !bytes.Equal(buf[intPos:intPos+len(pattern)], pattern) {
+		if res && (lenBuf < intPos+len(pattern) || !bytes.Equal(buf[intPos:intPos+len(pattern)], pattern)) {
 			res = false
 		}
 		if intPos > lastUncovered {
-			dif := uint64(intPos - lastUncovered)
-			if res && (lenBuf < intPos || !bytes.Equal(buf[lastUncovered:intPos], g.data[g.dataP:g.dataP+dif])) {
-				res = false
-			}
-			g.dataP += dif
+			g.uncovered = append(g.uncovered, lastUncovered, intPos)
 		}
 		lastUncovered = intPos + len(pattern)
 	}
 	if int(l) > lastUncovered {
-		dif := l - uint64(lastUncovered)
-		if res && (lenBuf < int(l) || !bytes.Equal(buf[lastUncovered:int(l)], g.data[g.dataP:g.dataP+dif])) {
+		g.uncovered = append(g.uncovered, lastUncovered, int(l))
+	}
+	// Uncovered characters
+	for i := 0; i < len(g.uncovered); i += 2 {
+		dif := uint64(g.uncovered[i+1] - g.uncovered[i])
+		if res && (lenBuf < g.uncovered[i+1] || !bytes.Equal(buf[g.uncovered[i]:g.uncovered[i+1]], g.data[g.dataP:g.dataP+dif])) {
 			res = false
 		}
 		g.dataP += dif
