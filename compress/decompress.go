@@ -289,32 +289,30 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	savePos := g.dataP
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
+	lenBuf := len(buf)
 	if l == 0 {
-		if len(buf) != 0 {
+		if lenBuf != 0 {
 			g.dataP = savePos
 		}
-		return len(buf) == 0, savePos
+		return lenBuf == 0, g.dataP
 	}
-	if len(buf) != int(l) {
-		return false, savePos
-	}
+	res := true
 
 	var pos uint64
 	var lastPos int
 	var lastUncovered int
 	var pattern []byte
-	res := true
 	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
 		pattern = g.nextPattern()
 
-		if intPos+len(buf) < len(pattern) || !bytes.Equal(buf[intPos:intPos+len(pattern)], pattern) {
+		if lenBuf < intPos+len(pattern) || !bytes.Equal(buf[intPos:intPos+len(pattern)], pattern) {
 			res = false
 		}
 		if intPos > lastUncovered {
 			dif := uint64(intPos - lastUncovered)
-			if res && !bytes.Equal(buf[lastUncovered:intPos], g.data[g.dataP:g.dataP+dif]) {
+			if res && (lenBuf < intPos || !bytes.Equal(buf[lastUncovered:intPos], g.data[g.dataP:g.dataP+dif])) {
 				res = false
 			}
 			g.dataP += dif
@@ -323,7 +321,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	}
 	if int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
-		if res && !bytes.Equal(buf[lastUncovered:int(l)], g.data[g.dataP:g.dataP+dif]) {
+		if res && (lenBuf < int(l) || !bytes.Equal(buf[lastUncovered:int(l)], g.data[g.dataP:g.dataP+dif])) {
 			res = false
 		}
 		g.dataP += dif
