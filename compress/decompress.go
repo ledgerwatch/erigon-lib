@@ -290,15 +290,15 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
 	if l == 0 {
-		return false, g.dataP
+		if len(buf) != 0 {
+			g.dataP = savePos
+		}
+		return len(buf) == 0, savePos
 	}
-	// count available space for word without actual reallocating memory
-	wordLen := len(g.word)
-	if int(l) > wordLen {
-		wordLen = int(l)
+	if len(buf) != int(l) {
+		return false, savePos
 	}
 
-	var add uint64
 	var pos uint64
 	var lastPos int
 	var lastUncovered int
@@ -307,32 +307,27 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
-		if wordLen < intPos {
-			panic("likely .idx is invalid")
-		}
 		pattern = g.nextPattern()
 
-		if len(buf) < len(pattern) || !bytes.Equal(buf[:len(pattern)], pattern) {
+		if intPos+len(buf) < len(pattern) || !bytes.Equal(buf[intPos:intPos+len(pattern)], pattern) {
 			res = false
 		}
 		if intPos > lastUncovered {
 			dif := uint64(intPos - lastUncovered)
-			add += dif
-			if res && !bytes.Equal(buf[len(pattern):], g.data[g.dataP:g.dataP+dif]) {
+			if res && !bytes.Equal(buf[lastUncovered:intPos], g.data[g.dataP:g.dataP+dif]) {
 				res = false
 			}
+			g.dataP += dif
 		}
-
 		lastUncovered = intPos + len(pattern)
 	}
 	if int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
-		add += dif
-		if res && !bytes.Equal(buf[len(pattern):], g.data[g.dataP:g.dataP+dif]) {
+		if res && !bytes.Equal(buf[lastUncovered:int(l)], g.data[g.dataP:g.dataP+dif]) {
 			res = false
 		}
+		g.dataP += dif
 	}
-	g.dataP += add
 	if !res {
 		g.dataP = savePos
 	}
