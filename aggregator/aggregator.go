@@ -1021,7 +1021,8 @@ func (a *Aggregator) readAccount(blockNum uint64, addr []byte, trace bool) []byt
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			if keyMatch, _ := g.Match(addr); keyMatch {
+			key, _ := g.Next(nil)
+			if bytes.Equal(key, addr) {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readAccount %x: found [%x] in file [%d-%d]\n", addr, val, item.startBlock, item.endBlock)
@@ -1052,7 +1053,8 @@ func (a *Aggregator) readCode(blockNum uint64, addr []byte, trace bool) []byte {
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			if keyMatch, _ := g.Match(addr); keyMatch {
+			key, _ := g.Next(nil)
+			if bytes.Equal(key, addr) {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readCode %x: found [%x] in file [%d-%d]\n", addr, val, item.startBlock, item.endBlock)
@@ -1083,7 +1085,8 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			if keyMatch, _ := g.Match(filekey); keyMatch {
+			key, _ := g.Next(nil)
+			if bytes.Equal(key, filekey) {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readStorage %x: found [%x] in file [%d-%d]\n", filekey, val, item.startBlock, item.endBlock)
@@ -1114,7 +1117,8 @@ func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte, trace bool)
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			if keyMatch, _ := g.Match(filekey); keyMatch {
+			key, _ := g.Next(nil)
+			if bytes.Equal(key, filekey) {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readBranchNode %x: found [%x] in file [%d-%d]\n", filekey, val, item.startBlock, item.endBlock)
@@ -1821,7 +1825,8 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			if keyMatch, _ := g.Match(addr); !keyMatch {
+			key, _ := g.Next(nil)
+			if !bytes.Equal(key, addr) {
 				return true
 			}
 			g.Next(nil)
