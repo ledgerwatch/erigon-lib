@@ -921,7 +921,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		if err != nil {
 			return err
 		}
-		if !hph.rootChecked && hph.currentKeyLen == 0 {
+		if !hph.rootChecked && hph.currentKeyLen == 0 && len(branchData) == 0 {
 			// Special case - empty or deleted root
 			hph.rootChecked = true
 			return nil
@@ -1688,9 +1688,10 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 
 func hexToCompact(key []byte) []byte {
 	zeroByte, keyPos, keyLen := makeCompactZeroByte(key)
-	buf := make([]byte, keyLen)
+	bufLen := keyLen/2 + 1 // always > 0
+	buf := make([]byte, bufLen)
 	buf[0] = zeroByte
-	return decodeKey(key[keyPos:keyLen], buf)
+	return decodeKey(key[keyPos:], buf)
 }
 
 func makeCompactZeroByte(key []byte) (compactZeroByte byte, keyPos, keyLen int) {
@@ -1699,7 +1700,6 @@ func makeCompactZeroByte(key []byte) (compactZeroByte byte, keyPos, keyLen int) 
 		keyLen--
 		compactZeroByte = 0x20
 	}
-	keyLen = keyLen/2 + 1 // always > 0
 	var firstNibble byte
 	if len(key) > 0 {
 		firstNibble = key[0]
@@ -1717,7 +1717,7 @@ func decodeKey(key, buf []byte) []byte {
 	if hasTerm(key) {
 		keyLen--
 	}
-	for keyIndex, bufIndex := 0, 0; keyIndex < keyLen; keyIndex, bufIndex = keyIndex+2, bufIndex+1 {
+	for keyIndex, bufIndex := 0, 1; keyIndex < keyLen; keyIndex, bufIndex = keyIndex+2, bufIndex+1 {
 		if keyIndex == keyLen-1 {
 			buf[bufIndex] = buf[bufIndex] & 0x0f
 		} else {
