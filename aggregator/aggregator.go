@@ -472,7 +472,7 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 				return nil, nil, err
 			}
 			// Skip value
-			word, pos = g.Next(word[:0])
+			pos = g.Skip()
 		}
 		if err = rs.Build(); err != nil {
 			return nil, nil, err
@@ -620,7 +620,6 @@ func (c *Changes) produceChangeSets(datPath, idxPath string) error {
 		if err = c.rewind(); err != nil {
 			return fmt.Errorf("produceChangeSets rewind2: %w", err)
 		}
-		word := make([]byte, 0, 256)
 		var txKey = make([]byte, 8, 60)
 		var pos, prevPos uint64
 		var txNum uint64
@@ -629,7 +628,7 @@ func (c *Changes) produceChangeSets(datPath, idxPath string) error {
 			binary.BigEndian.PutUint64(txKey[:8], txNum)
 			for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 				txKey = append(txKey[:8], key...)
-				_, pos = g.Next(word[:0])
+				pos = g.Skip()
 				if err = rs.AddKey(txKey, prevPos); err != nil {
 					return fmt.Errorf("produceChangeSets AddKey: %w", e)
 				}
@@ -1024,8 +1023,6 @@ func (a *Aggregator) readAccount(blockNum uint64, addr []byte, trace bool) []byt
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			//key, _ := g.Next(nil)
-			//if bytes.Equal(key, addr) {
 			if keyMatch, _ := g.Match(addr); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
@@ -1057,8 +1054,6 @@ func (a *Aggregator) readCode(blockNum uint64, addr []byte, trace bool) []byte {
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			//key, _ := g.Next(nil)
-			//if bytes.Equal(key, addr) {
 			if keyMatch, _ := g.Match(addr); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
@@ -1090,8 +1085,6 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			//key, _ := g.Next(nil)
-			//if bytes.Equal(key, filekey) {
 			if keyMatch, _ := g.Match(filekey); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
@@ -1123,8 +1116,6 @@ func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte, trace bool)
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			//key, _ := g.Next(nil)
-			//if bytes.Equal(key, filekey) {
 			if keyMatch, _ := g.Match(filekey); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
@@ -1835,7 +1826,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 			if keyMatch, _ := g.Match(addr); !keyMatch {
 				return true
 			}
-			g.Next(nil)
+			g.Skip()
 		}
 		if g.HasNext() {
 			key, _ := g.Next(nil)

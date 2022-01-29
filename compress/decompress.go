@@ -92,6 +92,8 @@ type Dictionary struct {
 	cutoff     uint64
 }
 
+// Getter represent "reader" or "interator" that can move accross the data of the decompressor
+// The full state of the getter can be captured by saving dataP, b, and mask values.
 type Getter struct {
 	data        []byte
 	dataP       uint64
