@@ -985,6 +985,9 @@ func closeFiles(tree *btree.BTree) {
 		if item.decompressor != nil {
 			item.decompressor.Close()
 		}
+		if item.index != nil {
+			item.index.Close()
+		}
 		return true
 	})
 }
@@ -1021,8 +1024,9 @@ func (a *Aggregator) readAccount(blockNum uint64, addr []byte, trace bool) []byt
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			key, _ := g.Next(nil)
-			if bytes.Equal(key, addr) {
+			//key, _ := g.Next(nil)
+			//if bytes.Equal(key, addr) {
+			if keyMatch, _ := g.Match(addr); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readAccount %x: found [%x] in file [%d-%d]\n", addr, val, item.startBlock, item.endBlock)
@@ -1053,8 +1057,9 @@ func (a *Aggregator) readCode(blockNum uint64, addr []byte, trace bool) []byte {
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			key, _ := g.Next(nil)
-			if bytes.Equal(key, addr) {
+			//key, _ := g.Next(nil)
+			//if bytes.Equal(key, addr) {
+			if keyMatch, _ := g.Match(addr); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readCode %x: found [%x] in file [%d-%d]\n", addr, val, item.startBlock, item.endBlock)
@@ -1085,8 +1090,9 @@ func (a *Aggregator) readStorage(blockNum uint64, filekey []byte, trace bool) []
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			key, _ := g.Next(nil)
-			if bytes.Equal(key, filekey) {
+			//key, _ := g.Next(nil)
+			//if bytes.Equal(key, filekey) {
+			if keyMatch, _ := g.Match(filekey); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readStorage %x: found [%x] in file [%d-%d]\n", filekey, val, item.startBlock, item.endBlock)
@@ -1117,8 +1123,9 @@ func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte, trace bool)
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			key, _ := g.Next(nil)
-			if bytes.Equal(key, filekey) {
+			//key, _ := g.Next(nil)
+			//if bytes.Equal(key, filekey) {
+			if keyMatch, _ := g.Match(filekey); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
 					fmt.Printf("readBranchNode %x: found [%x] in file [%d-%d]\n", filekey, val, item.startBlock, item.endBlock)

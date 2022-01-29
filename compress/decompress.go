@@ -327,6 +327,9 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 		}
 		g.dataP += dif
 	}
+	if res && lenBuf != int(l) {
+		res = false
+	}
 	if !res {
 		g.dataP = savePos
 	}
