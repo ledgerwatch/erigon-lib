@@ -30,6 +30,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/btree"
@@ -67,19 +68,27 @@ import (
 //    the item last changed, but it is guaranteed to find correct element in the Transient mapping of part 2
 
 type Aggregator struct {
-	diffDir         string              // Directory where the state diff files are stored
-	accountsFiles   *btree.BTree        // tree of account files, sorted by endBlock of each file
-	codeFiles       *btree.BTree        // tree of code files, sorted by endBlock of each file
-	storageFiles    *btree.BTree        // tree of storage files, sorted by endBlock of each file
-	commitmentFiles *btree.BTree        // tree of commitment files, sorted by endBlock of each file
-	unwindLimit     uint64              // How far the chain may unwind
-	aggregationStep uint64              // How many items (block, but later perhaps txs or changes) are required to form one state diff file
-	changesBtree    *btree.BTree        // btree of ChangesItem
-	trace           bool                // Turns on tracing for specific accounts and locations
-	tracedKeys      map[string]struct{} // Set of keys being traced during aggregations
-	hph             *commitment.HexPatriciaHashed
-	keccak          hash.Hash
-	changesets      bool // Whether to generate changesets (off by default)
+	diffDir           string       // Directory where the state diff files are stored
+	accountsFiles     *btree.BTree // tree of account files, sorted by endBlock of each file
+	accountsFilesLock sync.RWMutex
+	codeFiles         *btree.BTree // tree of code files, sorted by endBlock of each file
+	codeFilesLock     sync.RWMutex
+	storageFiles      *btree.BTree // tree of storage files, sorted by endBlock of each file
+	storageFilesLock  sync.RWMutex
+	commitmentFiles   *btree.BTree // tree of commitment files, sorted by endBlock of each file
+	commFilesLock     sync.RWMutex
+	unwindLimit       uint64       // How far the chain may unwind
+	aggregationStep   uint64       // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	changesBtree      *btree.BTree // btree of ChangesItem
+	changesLock       sync.RWMutex
+	trace             bool                // Turns on tracing for specific accounts and locations
+	tracedKeys        map[string]struct{} // Set of keys being traced during aggregations
+	hph               *commitment.HexPatriciaHashed
+	keccak            hash.Hash
+	changesets        bool // Whether to generate changesets (off by default)
+	aggChannel        chan AggregationTask
+	aggError          chan error
+	backgroundWg      sync.WaitGroup
 }
 
 type ChangeFile struct {
@@ -757,6 +766,8 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		codeFiles:       btree.New(32),
 		storageFiles:    btree.New(32),
 		commitmentFiles: btree.New(32),
+		aggChannel:      make(chan AggregationTask),
+		aggError:        make(chan error, 1),
 	}
 	var closeStateFiles = true // It will be set to false in case of success at the end of the function
 	defer func() {
@@ -924,7 +935,185 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		return nil, err
 	}
 	closeStateFiles = false
+	a.backgroundWg.Add(1)
+	go a.backgroundAggreation()
 	return a, nil
+}
+
+type AggregationTask struct {
+	accountChanges *Changes
+	accountsBt     *btree.BTree
+	codeChanges    *Changes
+	codeBt         *btree.BTree
+	storageChanges *Changes
+	storageBt      *btree.BTree
+	commChanges    *Changes
+	commitmentBt   *btree.BTree
+	blockFrom      uint64
+	blockTo        uint64
+}
+
+func addAndClone(tree *btree.BTree, item *byEndBlockItem, lock sync.Locker) *btree.BTree {
+	lock.Lock()
+	defer lock.Unlock()
+	tree.ReplaceOrInsert(item)
+	return tree.Clone()
+}
+
+func (a *Aggregator) switchAccountFiles(newAccountsFiles *btree.BTree) {
+	a.accountsFilesLock.Lock()
+	defer a.accountsFilesLock.Unlock()
+	a.accountsFiles = newAccountsFiles
+}
+
+func (a *Aggregator) switchCodeFiles(newCodeFiles *btree.BTree) {
+	a.codeFilesLock.Lock()
+	defer a.codeFilesLock.Unlock()
+	a.codeFiles = newCodeFiles
+}
+
+func (a *Aggregator) switchStorageFiles(newStorageFiles *btree.BTree) {
+	a.storageFilesLock.Lock()
+	defer a.storageFilesLock.Unlock()
+	a.storageFiles = newStorageFiles
+}
+
+func (a *Aggregator) switchCommFiles(newCommitmentFiles *btree.BTree) {
+	a.commFilesLock.Lock()
+	defer a.commFilesLock.Unlock()
+	a.commitmentFiles = newCommitmentFiles
+}
+
+// backgroundAggregation is the functin that runs in a background go-routine and performs creation of initial state files
+// allowing the main goroutine to proceed
+func (a *Aggregator) backgroundAggreation() {
+	defer a.backgroundWg.Done()
+	for aggTask := range a.aggChannel {
+		var err error
+		if a.changesets && aggTask.accountsBt.Len() > 0 { // No need to produce changeset files if there were no changes
+			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "accounts", aggTask.blockFrom, aggTask.blockTo))
+			chsetIdxPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "accounts", aggTask.blockFrom, aggTask.blockTo))
+			if err = aggTask.accountChanges.produceChangeSets(chsetDatPath, chsetIdxPath); err != nil {
+				a.aggError <- fmt.Errorf("produceChangeSets accounts: %w", err)
+				return
+			}
+		}
+		if err = aggTask.accountChanges.closeFiles(); err != nil {
+			a.aggError <- fmt.Errorf("close accountChanges: %w", err)
+			return
+		}
+		var accountsItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+		if accountsItem.decompressor, accountsItem.index, err = createDatAndIndex("accounts", a.diffDir, aggTask.accountsBt, aggTask.blockFrom, aggTask.blockTo); err != nil {
+			a.aggError <- fmt.Errorf("createDatAndIndex accounts: %w", err)
+			return
+		}
+		if err = aggTask.accountChanges.deleteFiles(); err != nil {
+			a.aggError <- fmt.Errorf("delete accountChanges: %w", err)
+			return
+		}
+		a.accountsFiles.ReplaceOrInsert(accountsItem) // Replace the item based on B-tree, so that memory can be recycled. TODO - recycle the actual B-tree instance
+		newAccountsFiles := addAndClone(a.accountsFiles, accountsItem, &a.accountsFilesLock)
+		if a.changesets && aggTask.codeBt.Len() > 0 { // No need to produce changeset files if there were no changes
+			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "code", aggTask.blockFrom, aggTask.blockTo))
+			chsetIdxPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "code", aggTask.blockFrom, aggTask.blockTo))
+			if err = aggTask.codeChanges.produceChangeSets(chsetDatPath, chsetIdxPath); err != nil {
+				a.aggError <- fmt.Errorf("produceChangeSets code: %w", err)
+				return
+			}
+		}
+		if err = aggTask.codeChanges.closeFiles(); err != nil {
+			a.aggError <- fmt.Errorf("close codeChanges: %w", err)
+			return
+		}
+		var codeItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+		if codeItem.decompressor, codeItem.index, err = createDatAndIndex("code", a.diffDir, aggTask.codeBt, aggTask.blockFrom, aggTask.blockTo); err != nil {
+			a.aggError <- fmt.Errorf("createDatAndIndex code: %w", err)
+			return
+		}
+		if err = aggTask.codeChanges.deleteFiles(); err != nil {
+			a.aggError <- fmt.Errorf("delete codeChanges: %w", err)
+			return
+		}
+		a.codeFiles.ReplaceOrInsert(codeItem) // Replace the item based on B-tree, so that memory can be recycled. TODO - recycle the actual B-tree instance
+		newCodeFiles := addAndClone(a.codeFiles, codeItem, &a.codeFilesLock)
+		if a.changesets && aggTask.storageBt.Len() > 0 { // No need to produce changeset files if there were no changes
+			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "storage", aggTask.blockFrom, aggTask.blockTo))
+			chsetIdxPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "storage", aggTask.blockFrom, aggTask.blockTo))
+			if err = aggTask.storageChanges.produceChangeSets(chsetDatPath, chsetIdxPath); err != nil {
+				a.aggError <- fmt.Errorf("produceChangeSets storage: %w", err)
+				return
+			}
+		}
+		if err = aggTask.storageChanges.closeFiles(); err != nil {
+			a.aggError <- fmt.Errorf("close storageChanges: %w", err)
+			return
+		}
+		var storageItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+		if storageItem.decompressor, storageItem.index, err = createDatAndIndex("storage", a.diffDir, aggTask.storageBt, aggTask.blockFrom, aggTask.blockTo); err != nil {
+			a.aggError <- fmt.Errorf("createDatAndIndex storage: %w", err)
+			return
+		}
+		if err = aggTask.storageChanges.deleteFiles(); err != nil {
+			a.aggError <- fmt.Errorf("delete storageChanges: %w", err)
+		}
+		newStorageFiles := addAndClone(a.storageFiles, storageItem, &a.storageFilesLock)
+		if err = aggTask.commChanges.closeFiles(); err != nil {
+			a.aggError <- fmt.Errorf("close commChanges: %w", err)
+			return
+		}
+		var commitmentItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+		if commitmentItem.decompressor, commitmentItem.index, err = createDatAndIndex("commitment", a.diffDir, aggTask.commitmentBt, aggTask.blockFrom, aggTask.blockTo); err != nil {
+			a.aggError <- fmt.Errorf("createDatAndIndex commitment: %w", err)
+			return
+		}
+		if err = aggTask.commChanges.deleteFiles(); err != nil {
+			a.aggError <- fmt.Errorf("delete commChanges: %w", err)
+			return
+		}
+		newCommitmentFiles := addAndClone(a.commitmentFiles, commitmentItem, &a.commFilesLock)
+		// At this point, 3 new state files (containing latest changes) has been created for accounts, code, and storage
+		// Corresponding items has been added to the registy of state files, and B-tree are not necessary anymore, change files can be removed
+		// What follows can be performed by the 2nd background goroutine
+
+		var accountsItem2 *byEndBlockItem
+		if accountsItem2, err = a.computeAggregation("accounts", newAccountsFiles, aggTask.blockFrom, aggTask.blockTo, accountsItem); err != nil {
+			a.aggError <- fmt.Errorf("computeAggreation accounts: %w", err)
+			return
+		}
+		if accountsItem2 != nil {
+			newAccountsFiles.ReplaceOrInsert(accountsItem2)
+		}
+
+		var codeItem2 *byEndBlockItem
+		if codeItem2, err = a.computeAggregation("code", newCodeFiles, aggTask.blockFrom, aggTask.blockTo, codeItem); err != nil {
+			a.aggError <- fmt.Errorf("computeAggreation code: %w", err)
+			return
+		}
+		if codeItem2 != nil {
+			newCodeFiles.ReplaceOrInsert(codeItem2)
+		}
+		var storageItem2 *byEndBlockItem
+		if storageItem2, err = a.computeAggregation("storage", newStorageFiles, aggTask.blockFrom, aggTask.blockTo, storageItem); err != nil {
+			a.aggError <- fmt.Errorf("computeAggreation storage: %w", err)
+			return
+		}
+		if storageItem2 != nil {
+			newStorageFiles.ReplaceOrInsert(storageItem2)
+		}
+		var commitmentItem2 *byEndBlockItem
+		if commitmentItem2, err = a.computeAggregation("commitment", newCommitmentFiles, aggTask.blockFrom, aggTask.blockTo, commitmentItem); err != nil {
+			a.aggError <- fmt.Errorf("computeAggreation commitment: %w", err)
+			return
+		}
+		if commitmentItem2 != nil {
+			newCommitmentFiles.ReplaceOrInsert(commitmentItem2)
+		}
+		// Switch aggregator to new state files
+		a.switchAccountFiles(newAccountsFiles)
+		a.switchCodeFiles(newCodeFiles)
+		a.switchStorageFiles(newStorageFiles)
+		a.switchCommFiles(newCommitmentFiles)
+	}
 }
 
 func (a *Aggregator) GenerateChangesets(on bool) {
@@ -967,7 +1156,9 @@ func openFiles(treeName string, diffDir string, tree *btree.BTree) error {
 	return err
 }
 
-func closeFiles(tree *btree.BTree) {
+func closeFiles(tree *btree.BTree, lock sync.Locker) {
+	lock.Lock()
+	defer lock.Unlock()
 	tree.Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.decompressor != nil {
@@ -981,12 +1172,16 @@ func closeFiles(tree *btree.BTree) {
 }
 
 func (a *Aggregator) Close() {
-	closeFiles(a.accountsFiles)
-	closeFiles(a.codeFiles)
-	closeFiles(a.storageFiles)
-	closeFiles(a.commitmentFiles)
+	close(a.aggChannel)
+	a.backgroundWg.Wait()
+	// Closing state files only after background aggregation goroutine is finished
+	closeFiles(a.accountsFiles, &a.accountsFilesLock)
+	closeFiles(a.codeFiles, &a.codeFilesLock)
+	closeFiles(a.storageFiles, &a.storageFilesLock)
+	closeFiles(a.commitmentFiles, &a.commFilesLock)
 }
 
+// checkOverlapWithMinStart does not need to lock tree lock, because it is only used in the constructor of Aggregator
 func checkOverlapWithMinStart(treeName string, tree *btree.BTree, minStart uint64) error {
 	if lastStateI := tree.Max(); lastStateI != nil {
 		item := lastStateI.(*byEndBlockItem)
@@ -997,90 +1192,14 @@ func checkOverlapWithMinStart(treeName string, tree *btree.BTree, minStart uint6
 	return nil
 }
 
-func readAccount(tree *btree.BTree, blockNum uint64, addr []byte, trace bool) []byte {
+func readFromFiles(treeName string, tree *btree.BTree, lock sync.Locker, blockNum uint64, filekey []byte, trace bool) []byte {
+	lock.Lock()
+	defer lock.Unlock()
 	var val []byte
 	tree.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if trace {
-			fmt.Printf("readAccount %x: search in file [%d-%d]\n", addr, item.startBlock, item.endBlock)
-		}
-		if item.tree != nil {
-			ai := item.tree.Get(&AggregateItem{k: addr})
-			if ai == nil {
-				return true
-			}
-			val = ai.(*AggregateItem).v
-			return false
-		}
-		if item.index.Empty() {
-			return true
-		}
-		reader := recsplit.NewIndexReader(item.index)
-		offset := reader.Lookup(addr)
-		g := item.decompressor.MakeGetter() // TODO Cache in the reader
-		g.Reset(offset)
-		if g.HasNext() {
-			if keyMatch, _ := g.Match(addr); keyMatch {
-				val, _ = g.Next(nil)
-				if trace {
-					fmt.Printf("readAccount %x: found [%x] in file [%d-%d]\n", addr, val, item.startBlock, item.endBlock)
-				}
-				return false
-			}
-		}
-		return true
-	})
-	if len(val) > 0 {
-		return val[1:]
-	}
-	return nil
-}
-
-func readCode(tree *btree.BTree, blockNum uint64, addr []byte, trace bool) []byte {
-	var val []byte
-	tree.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
-		item := i.(*byEndBlockItem)
-		if trace {
-			fmt.Printf("readCode %x: search in file [%d-%d]\n", addr, item.startBlock, item.endBlock)
-		}
-		if item.tree != nil {
-			ai := item.tree.Get(&AggregateItem{k: addr})
-			if ai == nil {
-				return true
-			}
-			val = ai.(*AggregateItem).v
-			return false
-		}
-		if item.index.Empty() {
-			return true
-		}
-		reader := recsplit.NewIndexReader(item.index)
-		offset := reader.Lookup(addr)
-		g := item.decompressor.MakeGetter() // TODO Cache in the reader
-		g.Reset(offset)
-		if g.HasNext() {
-			if keyMatch, _ := g.Match(addr); keyMatch {
-				val, _ = g.Next(nil)
-				if trace {
-					fmt.Printf("readCode %x: found [%x] in file [%d-%d]\n", addr, val, item.startBlock, item.endBlock)
-				}
-				return false
-			}
-		}
-		return true
-	})
-	if len(val) > 0 {
-		return val[1:]
-	}
-	return nil
-}
-
-func readStorage(tree *btree.BTree, blockNum uint64, filekey []byte, trace bool) []byte {
-	var val []byte
-	tree.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
-		item := i.(*byEndBlockItem)
-		if trace {
-			fmt.Printf("readStorage %x: search in file [%d-%d]\n", filekey, item.startBlock, item.endBlock)
+			fmt.Printf("read %s %x: search in file [%d-%d]\n", treeName, filekey, item.startBlock, item.endBlock)
 		}
 		if item.tree != nil {
 			ai := item.tree.Get(&AggregateItem{k: filekey})
@@ -1101,46 +1220,7 @@ func readStorage(tree *btree.BTree, blockNum uint64, filekey []byte, trace bool)
 			if keyMatch, _ := g.Match(filekey); keyMatch {
 				val, _ = g.Next(nil)
 				if trace {
-					fmt.Printf("readStorage %x: found [%x] in file [%d-%d]\n", filekey, val, item.startBlock, item.endBlock)
-				}
-				return false
-			}
-		}
-		return true
-	})
-	if len(val) > 0 {
-		return val[1:]
-	}
-	return nil
-}
-
-func (a *Aggregator) readBranchNode(blockNum uint64, filekey []byte, trace bool) []byte {
-	var val []byte
-	a.commitmentFiles.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
-		item := i.(*byEndBlockItem)
-		if trace {
-			fmt.Printf("readBranchNode %x: search in file [%d-%d]\n", filekey, item.startBlock, item.endBlock)
-		}
-		if item.tree != nil {
-			ai := item.tree.Get(&AggregateItem{k: filekey})
-			if ai == nil {
-				return true
-			}
-			val = ai.(*AggregateItem).v
-			return false
-		}
-		if item.index.Empty() {
-			return true
-		}
-		reader := recsplit.NewIndexReader(item.index)
-		offset := reader.Lookup(filekey)
-		g := item.decompressor.MakeGetter() // TODO Cache in the reader
-		g.Reset(offset)
-		if g.HasNext() {
-			if keyMatch, _ := g.Match(filekey); keyMatch {
-				val, _ = g.Next(nil)
-				if trace {
-					fmt.Printf("readBranchNode %x: found [%x] in file [%d-%d]\n", filekey, val, item.startBlock, item.endBlock)
+					fmt.Printf("read %s %x: found [%x] in file [%d-%d]\n", treeName, filekey, val, item.startBlock, item.endBlock)
 				}
 				return false
 			}
@@ -1182,7 +1262,7 @@ func (r *Reader) ReadAccountData(addr []byte, trace bool) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := readAccount(r.a.accountsFiles, r.blockNum, addr, trace)
+	val := readFromFiles("accounts", r.a.accountsFiles, r.a.accountsFilesLock.RLocker(), r.blockNum, addr, trace)
 	return val, nil
 }
 
@@ -1206,7 +1286,7 @@ func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) (*uint2
 		return new(uint256.Int).SetBytes(v[4:]), nil
 	}
 	// Look in the files
-	val := readStorage(r.a.storageFiles, r.blockNum, dbkey, trace)
+	val := readFromFiles("storage", r.a.storageFiles, r.a.storageFilesLock.RLocker(), r.blockNum, dbkey, trace)
 	if val != nil {
 		return new(uint256.Int).SetBytes(val), nil
 	}
@@ -1227,7 +1307,7 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := readCode(r.a.codeFiles, r.blockNum, addr, trace)
+	val := readFromFiles("code", r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)
 	return val, nil
 }
 
@@ -1322,7 +1402,7 @@ func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := w.a.readBranchNode(w.blockNum, prefix, false /* trace */)
+	val := readFromFiles("commitment", w.a.commitmentFiles, w.a.commFilesLock.RLocker(), w.blockNum, prefix, false /* trace */)
 	return val, nil
 }
 
@@ -1348,7 +1428,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readAccount(w.a.accountsFiles, w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("accounts", w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1378,7 +1458,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readCode(w.a.codeFiles, w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("code", w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	if len(enc) > 0 {
 		w.a.keccak.Reset()
@@ -1400,7 +1480,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readStorage(w.a.storageFiles, w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("storage", w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
@@ -1578,7 +1658,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		var prevNum uint32
 		var original []byte
 		if prevV == nil {
-			original = w.a.readBranchNode(w.blockNum, prefix, false)
+			original = readFromFiles("commitment", w.a.commitmentFiles, w.a.commFilesLock.RLocker(), w.blockNum, prefix, false)
 		} else {
 			prevNum = binary.BigEndian.Uint32(prevV[:4])
 		}
@@ -1659,7 +1739,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readAccount(w.a.accountsFiles, w.blockNum, addr, trace)
+		original = readFromFiles("accounts", w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, addr, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 		original = prevV[4:]
@@ -1694,7 +1774,7 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readCode(w.a.codeFiles, w.blockNum, addr, trace)
+		original = readFromFiles("code", w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, addr, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
@@ -1777,7 +1857,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readAccount(w.a.accountsFiles, w.blockNum, addr, trace)
+		original = readFromFiles("accounts", w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, addr, trace)
 		if original == nil {
 			return false, nil
 		}
@@ -1802,7 +1882,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readCode(w.a.codeFiles, w.blockNum, addr, trace)
+		original = readFromFiles("code", w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, addr, trace)
 		if original == nil {
 			// Nothing to do
 			return nil
@@ -1966,7 +2046,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readStorage(w.a.storageFiles, w.blockNum, dbkey, trace)
+		original = readFromFiles("storage", w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, dbkey, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 		original = prevV[4:]
@@ -2079,7 +2159,19 @@ func createDatAndIndex(treeName string, diffDir string, bt *btree.BTree, blockFr
 	return buildIndex(datPath, idxPath, diffDir, count)
 }
 
+func addLocked(tree *btree.BTree, item *byEndBlockItem, lock sync.Locker) {
+	lock.Lock()
+	defer lock.Unlock()
+	tree.ReplaceOrInsert(item)
+}
+
 func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
+	// React on any previous error of aggregation
+	select {
+	case err := <-w.a.aggError:
+		return err
+	default:
+	}
 	log.Info("Aggregation", "from", blockFrom, "to", blockTo)
 	t := time.Now()
 	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
@@ -2101,132 +2193,39 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if accountsBt, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts); err != nil {
 		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
-	w.a.accountsFiles.ReplaceOrInsert(&byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: accountsBt})
+	addLocked(w.a.accountsFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: accountsBt}, &w.a.accountsFilesLock)
 	var codeBt *btree.BTree
 	if codeBt, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode); err != nil {
 		return fmt.Errorf("aggregate codeChanges: %w", err)
 	}
-	w.a.codeFiles.ReplaceOrInsert(&byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: codeBt})
+	addLocked(w.a.codeFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: codeBt}, &w.a.codeFilesLock)
 	var storageBt *btree.BTree
 	if storageBt, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
-	w.a.storageFiles.ReplaceOrInsert(&byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: storageBt})
+	addLocked(w.a.storageFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: storageBt}, &w.a.storageFilesLock)
 	var commitmentBt *btree.BTree
 	if commitmentBt, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment); err != nil {
 		return fmt.Errorf("aggregate commitmentChanges: %w", err)
 	}
-	w.a.commitmentFiles.ReplaceOrInsert(&byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: commitmentBt})
+	addLocked(w.a.commitmentFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: commitmentBt}, &w.a.commFilesLock)
+	log.Info("Finished aggregation", "time", time.Since(t))
+	t = time.Now()
 	// At this point, all the changes are gathered in 4 B-trees (accounts, code, storage and commitment) and removed from the database
 	// What follows can be done in the 1st background goroutine (TODO)
-	if w.a.changesets && accountsBt.Len() > 0 { // No need to produce changeset files if there were no changes
-		chsetDatPath := path.Join(w.a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "accounts", blockFrom, blockTo))
-		chsetIdxPath := path.Join(w.a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "accounts", blockFrom, blockTo))
-		if err = accountChanges.produceChangeSets(chsetDatPath, chsetIdxPath); err != nil {
-			return fmt.Errorf("produceChangeSets accounts: %w", err)
-		}
+	w.a.aggChannel <- AggregationTask{
+		accountChanges: &accountChanges,
+		accountsBt:     accountsBt,
+		codeChanges:    &codeChanges,
+		codeBt:         codeBt,
+		storageChanges: &storageChanges,
+		storageBt:      storageBt,
+		commChanges:    &commChanges,
+		commitmentBt:   commitmentBt,
+		blockFrom:      blockFrom,
+		blockTo:        blockTo,
 	}
-	if err = accountChanges.closeFiles(); err != nil {
-		return fmt.Errorf("close accountChanges: %w", err)
-	}
-	var accountsItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
-	if accountsItem.decompressor, accountsItem.index, err = createDatAndIndex("accounts", w.a.diffDir, accountsBt, blockFrom, blockTo); err != nil {
-		return fmt.Errorf("createDatAndIndex accounts: %w", err)
-	}
-	if err = accountChanges.deleteFiles(); err != nil {
-		return err
-	}
-	w.a.accountsFiles.ReplaceOrInsert(accountsItem) // Replace the item based on B-tree, so that memory can be recycled. TODO - recycle the actual B-tree instance
-	newAccountsFiles := w.a.accountsFiles.Clone()
-	if w.a.changesets && codeBt.Len() > 0 { // No need to produce changeset files if there were no changes
-		chsetDatPath := path.Join(w.a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "code", blockFrom, blockTo))
-		chsetIdxPath := path.Join(w.a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "code", blockFrom, blockTo))
-		if err = codeChanges.produceChangeSets(chsetDatPath, chsetIdxPath); err != nil {
-			return fmt.Errorf("produceChangeSets code: %w", err)
-		}
-	}
-	if err = codeChanges.closeFiles(); err != nil {
-		return fmt.Errorf("close codeChanges: %w", err)
-	}
-	var codeItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
-	if codeItem.decompressor, codeItem.index, err = createDatAndIndex("code", w.a.diffDir, codeBt, blockFrom, blockTo); err != nil {
-		return fmt.Errorf("createDatAndIndex code: %w", err)
-	}
-	if err = codeChanges.deleteFiles(); err != nil {
-		return err
-	}
-	w.a.codeFiles.ReplaceOrInsert(codeItem) // Replace the item based on B-tree, so that memory can be recycled. TODO - recycle the actual B-tree instance
-	newCodeFiles := w.a.codeFiles.Clone()
-	if w.a.changesets && storageBt.Len() > 0 { // No need to produce changeset files if there were no changes
-		chsetDatPath := path.Join(w.a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "storage", blockFrom, blockTo))
-		chsetIdxPath := path.Join(w.a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "storage", blockFrom, blockTo))
-		if err = storageChanges.produceChangeSets(chsetDatPath, chsetIdxPath); err != nil {
-			return fmt.Errorf("produceChangeSets storage: %w", err)
-		}
-	}
-	if err = storageChanges.closeFiles(); err != nil {
-		return fmt.Errorf("close storageChanges: %w", err)
-	}
-	var storageItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
-	if storageItem.decompressor, storageItem.index, err = createDatAndIndex("storage", w.a.diffDir, storageBt, blockFrom, blockTo); err != nil {
-		return fmt.Errorf("createDatAndIndex storage: %w", err)
-	}
-	if err = storageChanges.deleteFiles(); err != nil {
-		return err
-	}
-	w.a.storageFiles.ReplaceOrInsert(storageItem)
-	newStorageFiles := w.a.storageFiles.Clone()
-	if err = commChanges.closeFiles(); err != nil {
-		return fmt.Errorf("close commChanges: %w", err)
-	}
-	var commitmentItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
-	if commitmentItem.decompressor, commitmentItem.index, err = createDatAndIndex("commitment", w.a.diffDir, commitmentBt, blockFrom, blockTo); err != nil {
-		return fmt.Errorf("createDatAndIndex commitment: %w", err)
-	}
-	if err = commChanges.deleteFiles(); err != nil {
-		return err
-	}
-	newCommitmentFiles := w.a.commitmentFiles.Clone()
-	newCommitmentFiles.ReplaceOrInsert(commitmentItem)
-	// At this point, 3 new state files (containing latest changes) has been created for accounts, code, and storage
-	// Corresponding items has been added to the registy of state files, and B-tree are not necessary anymore, change files can be removed
-	// What follows can be performed by the 2nd background goroutine
-
-	var accountsItem2 *byEndBlockItem
-	if accountsItem2, err = w.a.computeAggregation("accounts", newAccountsFiles, blockFrom, blockTo, accountsItem); err != nil {
-		return err
-	}
-	if accountsItem2 != nil {
-		newAccountsFiles.ReplaceOrInsert(accountsItem2)
-	}
-
-	var codeItem2 *byEndBlockItem
-	if codeItem2, err = w.a.computeAggregation("code", newCodeFiles, blockFrom, blockTo, codeItem); err != nil {
-		return err
-	}
-	if codeItem2 != nil {
-		newCodeFiles.ReplaceOrInsert(codeItem2)
-	}
-	var storageItem2 *byEndBlockItem
-	if storageItem2, err = w.a.computeAggregation("storage", newStorageFiles, blockFrom, blockTo, storageItem); err != nil {
-		return err
-	}
-	if storageItem2 != nil {
-		newStorageFiles.ReplaceOrInsert(storageItem2)
-	}
-	var commitmentItem2 *byEndBlockItem
-	if commitmentItem2, err = w.a.computeAggregation("commitment", newCommitmentFiles, blockFrom, blockTo, commitmentItem); err != nil {
-		return err
-	}
-	if commitmentItem2 != nil {
-		newCommitmentFiles.ReplaceOrInsert(commitmentItem2)
-	}
-	// Switch aggregator to new state files
-	w.a.accountsFiles = newAccountsFiles
-	w.a.codeFiles = newCodeFiles
-	w.a.storageFiles = newStorageFiles
-	w.a.commitmentFiles = newCommitmentFiles
-	log.Info("Finished aggregation", "time", time.Since(t))
+	log.Info("Waited for hand-over to background", "time", time.Since(t))
 	return nil
 }
 
