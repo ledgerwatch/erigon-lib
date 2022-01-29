@@ -1832,8 +1832,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		if g.HasNext() {
-			key, _ := g.Next(nil)
-			if !bytes.Equal(key, addr) {
+			if keyMatch, _ := g.Match(addr); !keyMatch {
 				return true
 			}
 			g.Next(nil)

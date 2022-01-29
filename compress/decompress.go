@@ -287,6 +287,8 @@ func (g *Getter) Skip() uint64 {
 // returns false and current offset otherwise.
 func (g *Getter) Match(buf []byte) (bool, uint64) {
 	savePos := g.dataP
+	saveMask := g.mask
+	saveB := g.b
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
 	lenBuf := len(buf)
@@ -300,38 +302,59 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 
 	var pos uint64
 	var lastPos int
-	var lastUncovered int
 	var pattern []byte
-	g.uncovered = g.uncovered[:0]
+	preLoopPos := g.dataP
+	preLoopMask := g.mask
+	preLoopB := g.b
+	// In the first pass, we only check patterns
 	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
 		pattern = g.nextPattern()
-
 		if res && (lenBuf < intPos+len(pattern) || !bytes.Equal(buf[intPos:intPos+len(pattern)], pattern)) {
 			res = false
 		}
+	}
+	postLoopPos := g.dataP
+	postLoopMask := g.mask
+	postLoopB := g.b
+	g.dataP = preLoopPos
+	g.mask = preLoopMask
+	g.b = preLoopB
+	// Second pass - we check spaces not covered by the patterns
+	var lastUncovered int
+	lastPos = 0
+	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
+		intPos := lastPos + int(pos) - 1
+		lastPos = intPos
+		pattern = g.nextPattern()
 		if intPos > lastUncovered {
-			g.uncovered = append(g.uncovered, lastUncovered, intPos)
+			dif := uint64(intPos - lastUncovered)
+			if res && (lenBuf < intPos || !bytes.Equal(buf[lastUncovered:intPos], g.data[postLoopPos:postLoopPos+dif])) {
+				res = false
+			}
+			postLoopPos += dif
 		}
 		lastUncovered = intPos + len(pattern)
 	}
 	if int(l) > lastUncovered {
-		g.uncovered = append(g.uncovered, lastUncovered, int(l))
-	}
-	// Uncovered characters
-	for i := 0; i < len(g.uncovered); i += 2 {
-		dif := uint64(g.uncovered[i+1] - g.uncovered[i])
-		if res && (lenBuf < g.uncovered[i+1] || !bytes.Equal(buf[g.uncovered[i]:g.uncovered[i+1]], g.data[g.dataP:g.dataP+dif])) {
+		dif := l - uint64(lastUncovered)
+		if res && (lenBuf < int(l) || !bytes.Equal(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif])) {
 			res = false
 		}
-		g.dataP += dif
+		postLoopPos += dif
 	}
 	if res && lenBuf != int(l) {
 		res = false
 	}
-	if !res {
+	if res {
+		g.dataP = postLoopPos
+		g.mask = postLoopMask
+		g.b = postLoopB
+	} else {
 		g.dataP = savePos
+		g.mask = saveMask
+		g.b = saveB
 	}
 	return res, g.dataP
 }
