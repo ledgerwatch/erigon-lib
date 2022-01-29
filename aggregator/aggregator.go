@@ -2017,6 +2017,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if item.startBlock != blockFrom {
 		return fmt.Errorf("expected change files[%d-%d], got [%d-%d]", blockFrom, blockTo, item.startBlock, item.endBlock)
 	}
+	w.a.changesBtree.Delete(i)
 	var accountChanges, codeChanges, storageChanges, commChanges Changes
 	accountChanges.Init("accounts", w.a.aggregationStep, w.a.diffDir, false /* beforeOn */)
 	codeChanges.Init("code", w.a.aggregationStep, w.a.diffDir, false /* beforeOn */)
@@ -2027,73 +2028,75 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if accountsItem.decompressor, accountsItem.index, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts, w.a.changesets); err != nil {
 		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
-	var codeItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
-	if codeItem.decompressor, codeItem.index, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode, w.a.changesets); err != nil {
-		return fmt.Errorf("aggregate codeChanges: %w", err)
-	}
-	var storageItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
-	if storageItem.decompressor, storageItem.index, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage, w.a.changesets); err != nil {
-		return fmt.Errorf("aggregate storageChanges: %w", err)
-	}
-	var commitmentItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
-	if commitmentItem.decompressor, commitmentItem.index, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment, false /* changesets */); err != nil {
-		return fmt.Errorf("aggregate commitmentChanges: %w", err)
-	}
 	if err = accountChanges.closeFiles(); err != nil {
-		return err
-	}
-	if err = codeChanges.closeFiles(); err != nil {
-		return err
-	}
-	if err = storageChanges.closeFiles(); err != nil {
-		return err
-	}
-	if err = commChanges.closeFiles(); err != nil {
 		return err
 	}
 	if err = accountChanges.deleteFiles(); err != nil {
 		return err
 	}
-	if err = codeChanges.deleteFiles(); err != nil {
-		return err
-	}
-	if err = storageChanges.deleteFiles(); err != nil {
-		return err
-	}
-	if err = commChanges.deleteFiles(); err != nil {
-		return err
-	}
 	w.a.accountsFiles.ReplaceOrInsert(accountsItem)
-	w.a.codeFiles.ReplaceOrInsert(codeItem)
-	w.a.storageFiles.ReplaceOrInsert(storageItem)
-	w.a.commitmentFiles.ReplaceOrInsert(commitmentItem)
-	// Now aggregate state files
-	var accountsItem2, codeItem2, storageItem2, commitmentItem2 *byEndBlockItem
+	var accountsItem2 *byEndBlockItem
 	if accountsItem2, err = w.a.computeAggregation("accounts", w.a.accountsFiles, blockFrom, blockTo, accountsItem); err != nil {
-		return err
-	}
-	if codeItem2, err = w.a.computeAggregation("code", w.a.codeFiles, blockFrom, blockTo, codeItem); err != nil {
-		return err
-	}
-	if storageItem2, err = w.a.computeAggregation("storage", w.a.storageFiles, blockFrom, blockTo, storageItem); err != nil {
-		return err
-	}
-	if commitmentItem2, err = w.a.computeAggregation("commitment", w.a.commitmentFiles, blockFrom, blockTo, commitmentItem); err != nil {
 		return err
 	}
 	if accountsItem2 != nil {
 		w.a.accountsFiles.ReplaceOrInsert(accountsItem2)
 	}
+	var codeItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
+	if codeItem.decompressor, codeItem.index, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode, w.a.changesets); err != nil {
+		return fmt.Errorf("aggregate codeChanges: %w", err)
+	}
+	if err = codeChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err = codeChanges.deleteFiles(); err != nil {
+		return err
+	}
+	w.a.codeFiles.ReplaceOrInsert(codeItem)
+	var codeItem2 *byEndBlockItem
+	if codeItem2, err = w.a.computeAggregation("code", w.a.codeFiles, blockFrom, blockTo, codeItem); err != nil {
+		return err
+	}
 	if codeItem2 != nil {
 		w.a.codeFiles.ReplaceOrInsert(codeItem2)
+	}
+	var storageItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
+	if storageItem.decompressor, storageItem.index, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage, w.a.changesets); err != nil {
+		return fmt.Errorf("aggregate storageChanges: %w", err)
+	}
+	if err = storageChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err = storageChanges.deleteFiles(); err != nil {
+		return err
+	}
+	w.a.storageFiles.ReplaceOrInsert(storageItem)
+	var storageItem2 *byEndBlockItem
+	if storageItem2, err = w.a.computeAggregation("storage", w.a.storageFiles, blockFrom, blockTo, storageItem); err != nil {
+		return err
 	}
 	if storageItem2 != nil {
 		w.a.storageFiles.ReplaceOrInsert(storageItem2)
 	}
+	var commitmentItem = &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo}
+	if commitmentItem.decompressor, commitmentItem.index, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment, false /* changesets */); err != nil {
+		return fmt.Errorf("aggregate commitmentChanges: %w", err)
+	}
+	if err = commChanges.closeFiles(); err != nil {
+		return err
+	}
+	if err = commChanges.deleteFiles(); err != nil {
+		return err
+	}
+	w.a.commitmentFiles.ReplaceOrInsert(commitmentItem)
+	// Now aggregate state files
+	var commitmentItem2 *byEndBlockItem
+	if commitmentItem2, err = w.a.computeAggregation("commitment", w.a.commitmentFiles, blockFrom, blockTo, commitmentItem); err != nil {
+		return err
+	}
 	if commitmentItem2 != nil {
 		w.a.commitmentFiles.ReplaceOrInsert(commitmentItem2)
 	}
-	w.a.changesBtree.Delete(i)
 	log.Info("Finished aggregation", "time", time.Since(t))
 	return nil
 }
