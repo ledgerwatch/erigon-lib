@@ -77,10 +77,9 @@ type Aggregator struct {
 	storageFilesLock  sync.RWMutex
 	commitmentFiles   *btree.BTree // tree of commitment files, sorted by endBlock of each file
 	commFilesLock     sync.RWMutex
-	unwindLimit       uint64       // How far the chain may unwind
-	aggregationStep   uint64       // How many items (block, but later perhaps txs or changes) are required to form one state diff file
-	changesBtree      *btree.BTree // btree of ChangesItem
-	changesLock       sync.RWMutex
+	unwindLimit       uint64              // How far the chain may unwind
+	aggregationStep   uint64              // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	changesBtree      *btree.BTree        // btree of ChangesItem
 	trace             bool                // Turns on tracing for specific accounts and locations
 	tracedKeys        map[string]struct{} // Set of keys being traced during aggregations
 	hph               *commitment.HexPatriciaHashed
@@ -740,12 +739,11 @@ func (i *ChangesItem) Less(than btree.Item) bool {
 }
 
 type byEndBlockItem struct {
-	startBlock       uint64
-	endBlock         uint64
-	decompressor     *compress.Decompressor
-	index            *recsplit.Index
-	tree             *btree.BTree // Substitute for decompressor+index combination
-	cumulativeOffset uint64
+	startBlock   uint64
+	endBlock     uint64
+	decompressor *compress.Decompressor
+	index        *recsplit.Index
+	tree         *btree.BTree // Substitute for decompressor+index combination
 }
 
 func (i *byEndBlockItem) Less(than btree.Item) bool {
