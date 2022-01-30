@@ -1770,14 +1770,19 @@ func extractPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlai
 	return
 }
 
-func replacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte) ([]byte, error) {
+func replacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, numBuf []byte) ([]byte, error) {
+	var newData []byte
 	pos := 0
 	partBitmap := binary.BigEndian.Uint16(branchData[pos:])
+	newData = append(newData, branchData[pos:pos+2]...)
 	pos += 2
 	// Next, for each part, we have bitmap of fields
 	partCount := bits.OnesCount16(partBitmap)
 	fieldsPos := pos
-	pos += (partCount + 1) / 2 // 1 bytes per two parts
+	newData = append(newData, branchData[pos:pos+(partCount+1)/2]...) // Copy all fieldbits
+	pos += (partCount + 1) / 2                                        // 1 bytes per two parts
+	accountI := 0                                                     // Counter for accountPlainKeys slice
+	storageI := 0                                                     // Counter for storagePlainKeys slice
 	// Loop iterating over the set bits of modMask
 	for bitset, j := partBitmap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
@@ -1792,11 +1797,13 @@ func replacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 			} else if n < 0 {
 				return nil, fmt.Errorf("replacePlainKeys value overflow for hashedKey len")
 			}
+			newData = append(newData, branchData[pos:pos+n]...)
 			pos += n
 			if len(branchData) < pos+int(l) {
 				return nil, fmt.Errorf("replacePlainKeys buffer too small for hashedKey")
 			}
 			if l > 0 {
+				newData = append(newData, branchData[pos:pos+int(l)]...)
 				pos += int(l)
 			}
 		}
@@ -1815,6 +1822,10 @@ func replacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 			if l > 0 {
 				pos += int(l)
 			}
+			n = binary.PutUvarint(numBuf[:], uint64(len(accountPlainKeys[accountI])))
+			newData = append(newData, numBuf[:n]...)
+			newData = append(newData, accountPlainKeys[accountI]...)
+			accountI++
 		}
 		if fieldBits&STORAGE_PLAIN_PART != 0 {
 			l, n := binary.Uvarint(branchData[pos:])
@@ -1831,6 +1842,10 @@ func replacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 			if l > 0 {
 				pos += int(l)
 			}
+			n = binary.PutUvarint(numBuf[:], uint64(len(storagePlainKeys[storageI])))
+			newData = append(newData, numBuf[:n]...)
+			newData = append(newData, storagePlainKeys[storageI]...)
+			storageI++
 		}
 		if fieldBits&HASH_PART != 0 {
 			l, n := binary.Uvarint(branchData[pos:])
@@ -1839,17 +1854,19 @@ func replacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 			} else if n < 0 {
 				return nil, fmt.Errorf("replacePlainKeys value overflow for hash len")
 			}
+			newData = append(newData, branchData[pos:pos+n]...)
 			pos += n
 			if len(branchData) < pos+int(l) {
 				return nil, fmt.Errorf("replacePlainKeys buffer too small for hash")
 			}
 			if l > 0 {
+				newData = append(newData, branchData[pos:pos+int(l)]...)
 				pos += int(l)
 			}
 		}
 		bitset ^= bit
 	}
-	return nil, nil
+	return newData, nil
 }
 
 func hexToCompact(key []byte) []byte {

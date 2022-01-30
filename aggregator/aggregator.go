@@ -1160,7 +1160,7 @@ func (a *Aggregator) backgroundMerge() {
 		if len(accountsToRemove) > 1 {
 			mergeTime := time.Since(t)
 			if mergeTime > time.Minute {
-				log.Info("Merged", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
+				log.Info("Long merged", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
 			}
 		}
 	}
@@ -2261,7 +2261,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	<-w.a.aggBackCh // Waiting for the B-tree based items have been added
 	handoverTime := time.Since(t)
 	if handoverTime > time.Millisecond {
-		log.Info("Aggregated", "from", blockFrom, "to", blockTo, "agg", aggTime, "handover", time.Since(t))
+		log.Info("Long handover to background aggregation", "from", blockFrom, "to", blockTo, "composition", aggTime, "handover", time.Since(t))
 	}
 	return nil
 }
