@@ -1211,11 +1211,11 @@ func checkOverlapWithMinStart(treeName string, tree *btree.BTree, minStart uint6
 	return nil
 }
 
-func readFromFiles(treeName string, tree *btree.BTree, lock sync.Locker, blockNum uint64, filekey []byte, trace bool) []byte {
+func readFromFiles(treeName string, tree **btree.BTree, lock sync.Locker, blockNum uint64, filekey []byte, trace bool) []byte {
 	lock.Lock()
 	defer lock.Unlock()
 	var val []byte
-	tree.DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
+	(*tree).DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if trace {
 			fmt.Printf("read %s %x: search in file [%d-%d]\n", treeName, filekey, item.startBlock, item.endBlock)
@@ -1281,7 +1281,7 @@ func (r *Reader) ReadAccountData(addr []byte, trace bool) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := readFromFiles("accounts", r.a.accountsFiles, r.a.accountsFilesLock.RLocker(), r.blockNum, addr, trace)
+	val := readFromFiles("accounts", &r.a.accountsFiles, r.a.accountsFilesLock.RLocker(), r.blockNum, addr, trace)
 	return val, nil
 }
 
@@ -1305,7 +1305,7 @@ func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) (*uint2
 		return new(uint256.Int).SetBytes(v[4:]), nil
 	}
 	// Look in the files
-	val := readFromFiles("storage", r.a.storageFiles, r.a.storageFilesLock.RLocker(), r.blockNum, dbkey, trace)
+	val := readFromFiles("storage", &r.a.storageFiles, r.a.storageFilesLock.RLocker(), r.blockNum, dbkey, trace)
 	if val != nil {
 		return new(uint256.Int).SetBytes(val), nil
 	}
@@ -1326,7 +1326,7 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := readFromFiles("code", r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)
+	val := readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)
 	return val, nil
 }
 
@@ -1421,7 +1421,7 @@ func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := readFromFiles("commitment", w.a.commitmentFiles, w.a.commFilesLock.RLocker(), w.blockNum, prefix, false /* trace */)
+	val := readFromFiles("commitment", &w.a.commitmentFiles, w.a.commFilesLock.RLocker(), w.blockNum, prefix, false /* trace */)
 	return val, nil
 }
 
@@ -1447,7 +1447,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readFromFiles("accounts", w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1477,7 +1477,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readFromFiles("code", w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("code", &w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	if len(enc) > 0 {
 		w.a.keccak.Reset()
@@ -1499,7 +1499,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readFromFiles("storage", w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
@@ -1677,7 +1677,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		var prevNum uint32
 		var original []byte
 		if prevV == nil {
-			original = readFromFiles("commitment", w.a.commitmentFiles, w.a.commFilesLock.RLocker(), w.blockNum, prefix, false)
+			original = readFromFiles("commitment", &w.a.commitmentFiles, w.a.commFilesLock.RLocker(), w.blockNum, prefix, false)
 		} else {
 			prevNum = binary.BigEndian.Uint32(prevV[:4])
 		}
@@ -1758,7 +1758,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readFromFiles("accounts", w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, addr, trace)
+		original = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, addr, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 		original = prevV[4:]
@@ -1793,7 +1793,7 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readFromFiles("code", w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, addr, trace)
+		original = readFromFiles("code", &w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, addr, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 	}
@@ -1876,7 +1876,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readFromFiles("accounts", w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, addr, trace)
+		original = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, addr, trace)
 		if original == nil {
 			return false, nil
 		}
@@ -1901,7 +1901,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readFromFiles("code", w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, addr, trace)
+		original = readFromFiles("code", &w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, addr, trace)
 		if original == nil {
 			// Nothing to do
 			return nil
@@ -2065,7 +2065,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	var prevNum uint32
 	var original []byte
 	if prevV == nil {
-		original = readFromFiles("storage", w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, dbkey, trace)
+		original = readFromFiles("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, dbkey, trace)
 	} else {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
 		original = prevV[4:]
