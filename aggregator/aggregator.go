@@ -2374,3 +2374,43 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 	}
 	return d, idx, nil
 }
+
+func stats(tree **btree.BTree, lock sync.Locker) (datSize, idxSize, count int) {
+	lock.Lock()
+	defer lock.Unlock()
+	(*tree).Ascend(func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.decompressor != nil {
+			count++
+			datSize += item.decompressor.Size()
+			count++
+			idxSize += item.index.Size()
+		}
+		return true
+	})
+	return
+}
+
+type FilesStats struct {
+	AccountsCount     int
+	AccountsDatSize   int
+	AccountsIdxSize   int
+	CodeCount         int
+	CodeDatSize       int
+	CodeIdxSize       int
+	StorageCount      int
+	StorageDatSize    int
+	StorageIdxSize    int
+	CommitmentCount   int
+	CommitmentDatSize int
+	CommitmentIdxSize int
+}
+
+func (a *Aggregator) Stats() FilesStats {
+	var fs FilesStats
+	fs.AccountsCount, fs.AccountsDatSize, fs.AccountsIdxSize = stats(&a.accountsFiles, a.accountsFilesLock.RLocker())
+	fs.CodeCount, fs.CodeDatSize, fs.CodeIdxSize = stats(&a.codeFiles, a.codeFilesLock.RLocker())
+	fs.StorageCount, fs.StorageDatSize, fs.StorageIdxSize = stats(&a.storageFiles, a.storageFilesLock.RLocker())
+	fs.CommitmentCount, fs.CommitmentDatSize, fs.CommitmentIdxSize = stats(&a.commitmentFiles, a.commFilesLock.RLocker())
+	return fs
+}
