@@ -1158,7 +1158,10 @@ func (a *Aggregator) backgroundMerge() {
 			removeFiles("commitment", a.diffDir, commitmentToRemove)
 		}
 		if len(accountsToRemove) > 1 {
-			log.Info("Merged", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
+			mergeTime := time.Since(t)
+			if mergeTime > time.Minute {
+				log.Info("Merged", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
+			}
 		}
 	}
 }
