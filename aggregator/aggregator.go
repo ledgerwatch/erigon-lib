@@ -88,7 +88,10 @@ type Aggregator struct {
 	aggChannel        chan AggregationTask
 	aggBackCh         chan struct{} // Channel for acknoledgement of AggregationTask
 	aggError          chan error
-	backgroundWg      sync.WaitGroup
+	aggWg             sync.WaitGroup
+	mergeChannel      chan struct{}
+	mergeError        chan error
+	mergeWg           sync.WaitGroup
 }
 
 type ChangeFile struct {
@@ -768,6 +771,8 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		aggChannel:      make(chan AggregationTask),
 		aggBackCh:       make(chan struct{}),
 		aggError:        make(chan error, 1),
+		mergeChannel:    make(chan struct{}, 1),
+		mergeError:      make(chan error, 1),
 	}
 	var closeStateFiles = true // It will be set to false in case of success at the end of the function
 	defer func() {
@@ -935,8 +940,10 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		return nil, err
 	}
 	closeStateFiles = false
-	a.backgroundWg.Add(1)
+	a.aggWg.Add(1)
 	go a.backgroundAggregation()
+	a.mergeWg.Add(1)
+	go a.backgroundMerge()
 	return a, nil
 }
 
@@ -953,10 +960,9 @@ type AggregationTask struct {
 	blockTo        uint64
 }
 
-func addAndClone(tree *btree.BTree, item *byEndBlockItem, lock sync.Locker) *btree.BTree {
+func cloneFiles(tree *btree.BTree, lock sync.Locker) *btree.BTree {
 	lock.Lock()
 	defer lock.Unlock()
-	tree.ReplaceOrInsert(item)
 	return tree.Clone()
 }
 
@@ -1010,7 +1016,7 @@ func (a *Aggregator) switchCommFiles(newCommitmentFiles *btree.BTree) {
 // backgroundAggregation is the functin that runs in a background go-routine and performs creation of initial state files
 // allowing the main goroutine to proceed
 func (a *Aggregator) backgroundAggregation() {
-	defer a.backgroundWg.Done()
+	defer a.aggWg.Done()
 	for aggTask := range a.aggChannel {
 		addLocked(a.accountsFiles, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.accountsBt}, &a.accountsFilesLock)
 		addLocked(a.codeFiles, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.codeBt}, &a.codeFilesLock)
@@ -1039,7 +1045,7 @@ func (a *Aggregator) backgroundAggregation() {
 			a.aggError <- fmt.Errorf("delete accountChanges: %w", err)
 			return
 		}
-		newAccountsFiles := addAndClone(a.accountsFiles, accountsItem, &a.accountsFilesLock)
+		addLocked(a.accountsFiles, accountsItem, &a.accountsFilesLock)
 		if a.changesets && aggTask.codeBt.Len() > 0 { // No need to produce changeset files if there were no changes
 			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "code", aggTask.blockFrom, aggTask.blockTo))
 			chsetIdxPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "code", aggTask.blockFrom, aggTask.blockTo))
@@ -1061,7 +1067,7 @@ func (a *Aggregator) backgroundAggregation() {
 			a.aggError <- fmt.Errorf("delete codeChanges: %w", err)
 			return
 		}
-		newCodeFiles := addAndClone(a.codeFiles, codeItem, &a.codeFilesLock)
+		addLocked(a.codeFiles, codeItem, &a.codeFilesLock)
 		if a.changesets && aggTask.storageBt.Len() > 0 { // No need to produce changeset files if there were no changes
 			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "storage", aggTask.blockFrom, aggTask.blockTo))
 			chsetIdxPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.idx", "storage", aggTask.blockFrom, aggTask.blockTo))
@@ -1083,7 +1089,7 @@ func (a *Aggregator) backgroundAggregation() {
 			a.aggError <- fmt.Errorf("delete storageChanges: %w", err)
 			return
 		}
-		newStorageFiles := addAndClone(a.storageFiles, storageItem, &a.storageFilesLock)
+		addLocked(a.storageFiles, storageItem, &a.storageFilesLock)
 		if err = aggTask.commChanges.closeFiles(); err != nil {
 			a.aggError <- fmt.Errorf("close commChanges: %w", err)
 			return
@@ -1097,30 +1103,43 @@ func (a *Aggregator) backgroundAggregation() {
 			a.aggError <- fmt.Errorf("delete commChanges: %w", err)
 			return
 		}
-		newCommitmentFiles := addAndClone(a.commitmentFiles, commitmentItem, &a.commFilesLock)
+		addLocked(a.commitmentFiles, commitmentItem, &a.commFilesLock)
 		// At this point, 3 new state files (containing latest changes) has been created for accounts, code, and storage
 		// Corresponding items has been added to the registy of state files, and B-tree are not necessary anymore, change files can be removed
 		// What follows can be performed by the 2nd background goroutine
+		select {
+		case a.mergeChannel <- struct{}{}:
+		default:
+		}
+	}
+}
 
-		var accountsToRemove []*byEndBlockItem
-		if accountsToRemove, err = a.computeAggregation("accounts", newAccountsFiles, aggTask.blockFrom, aggTask.blockTo, accountsItem); err != nil {
-			a.aggError <- fmt.Errorf("computeAggreation accounts: %w", err)
+func (a *Aggregator) backgroundMerge() {
+	defer a.mergeWg.Done()
+	for _ = range a.mergeChannel {
+		var err error
+		accountsToRemove, accountsFrom, accountsTo := findLargestMerge(a.accountsFiles, a.accountsFilesLock.RLocker())
+		newAccountsFiles := cloneFiles(a.accountsFiles, &a.accountsFilesLock)
+		if err = a.computeAggregation("accounts", newAccountsFiles, accountsToRemove, accountsFrom, accountsTo); err != nil {
+			a.mergeError <- fmt.Errorf("computeAggreation accounts: %w", err)
 			return
 		}
-
-		var codeToRemove []*byEndBlockItem
-		if codeToRemove, err = a.computeAggregation("code", newCodeFiles, aggTask.blockFrom, aggTask.blockTo, codeItem); err != nil {
-			a.aggError <- fmt.Errorf("computeAggreation code: %w", err)
+		codeToRemove, codeFrom, codeTo := findLargestMerge(a.codeFiles, a.codeFilesLock.RLocker())
+		newCodeFiles := cloneFiles(a.codeFiles, &a.codeFilesLock)
+		if err = a.computeAggregation("code", newCodeFiles, codeToRemove, codeFrom, codeTo); err != nil {
+			a.mergeError <- fmt.Errorf("computeAggreation code: %w", err)
 			return
 		}
-		var storageToRemove []*byEndBlockItem
-		if storageToRemove, err = a.computeAggregation("storage", newStorageFiles, aggTask.blockFrom, aggTask.blockTo, storageItem); err != nil {
-			a.aggError <- fmt.Errorf("computeAggreation storage: %w", err)
+		storageToRemove, storageFrom, storageTo := findLargestMerge(a.storageFiles, a.storageFilesLock.RLocker())
+		newStorageFiles := cloneFiles(a.storageFiles, &a.storageFilesLock)
+		if err = a.computeAggregation("storage", newStorageFiles, storageToRemove, storageFrom, storageTo); err != nil {
+			a.mergeError <- fmt.Errorf("computeAggreation storage: %w", err)
 			return
 		}
-		var commitmentToRemove []*byEndBlockItem
-		if commitmentToRemove, err = a.computeAggregation("commitment", newCommitmentFiles, aggTask.blockFrom, aggTask.blockTo, commitmentItem); err != nil {
-			a.aggError <- fmt.Errorf("computeAggreation commitment: %w", err)
+		commitmentToRemove, commFrom, commTo := findLargestMerge(a.commitmentFiles, a.commFilesLock.RLocker())
+		newCommitmentFiles := cloneFiles(a.commitmentFiles, &a.commFilesLock)
+		if err = a.computeAggregation("commitment", newCommitmentFiles, commitmentToRemove, commFrom, commTo); err != nil {
+			a.mergeError <- fmt.Errorf("computeAggreation commitment: %w", err)
 			return
 		}
 		// Switch aggregator to new state files, close and remove old files
@@ -1192,7 +1211,9 @@ func closeFiles(tree *btree.BTree, lock sync.Locker) {
 
 func (a *Aggregator) Close() {
 	close(a.aggChannel)
-	a.backgroundWg.Wait()
+	a.aggWg.Wait()
+	close(a.mergeChannel)
+	a.mergeWg.Wait()
 	// Closing state files only after background aggregation goroutine is finished
 	closeFiles(a.accountsFiles, &a.accountsFilesLock)
 	closeFiles(a.codeFiles, &a.codeFilesLock)
@@ -2093,42 +2114,41 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	return nil
 }
 
-func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, blockFrom, blockTo uint64, lastItem *byEndBlockItem) ([]*byEndBlockItem, error) {
-	toAggregate := []*byEndBlockItem{lastItem}
-	lastStart := blockFrom
-	nextSize := blockTo - blockFrom + 1
-	nextEnd := blockFrom - 1
-	nextStart := nextEnd - nextSize + 1
-	var nextI *byEndBlockItem
-	tree.AscendGreaterOrEqual(&byEndBlockItem{startBlock: nextEnd, endBlock: nextEnd}, func(i btree.Item) bool {
+func findLargestMerge(tree *btree.BTree, lock sync.Locker) ([]*byEndBlockItem, uint64, uint64) {
+	lock.Lock()
+	defer lock.Unlock()
+	lastI := tree.Max()
+	if lastI == nil {
+		return nil, 0, 0
+	}
+	toAggregate := []*byEndBlockItem{}
+	maxEndBlock := lastI.(*byEndBlockItem).endBlock
+	var aggFrom, aggTo uint64
+	tree.Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
-		if item.endBlock == nextEnd {
-			nextI = item
+		if item.decompressor == nil {
+			return true // Skip B-tree based items
 		}
-		return false
-	})
-	for nextI != nil {
-		if nextI.startBlock != nextStart {
-			break
-		}
-		lastStart = nextStart
-		toAggregate = append(toAggregate, nextI)
-		nextSize *= 2
-		nextEnd = nextStart - 1
-		nextStart = nextEnd - nextSize + 1
-		nextI = nil
-		tree.AscendGreaterOrEqual(&byEndBlockItem{startBlock: nextEnd, endBlock: nextEnd}, func(i btree.Item) bool {
-			item := i.(*byEndBlockItem)
-			if item.endBlock == nextEnd {
-				nextI = item
+		if aggTo == 0 {
+			doubleEnd := item.endBlock + (item.endBlock - item.startBlock) + 1
+			if doubleEnd <= maxEndBlock {
+				aggFrom = item.startBlock
+				aggTo = doubleEnd
+			} else {
+				return true
 			}
+		}
+		if item.endBlock > aggTo {
 			return false
-		})
-	}
-	if len(toAggregate) == 1 {
-		return nil, nil // Nothinig to aggregate
-	}
-	var item2 = &byEndBlockItem{startBlock: lastStart, endBlock: blockTo}
+		}
+		toAggregate = append(toAggregate, item)
+		return true
+	})
+	return toAggregate, aggFrom, aggTo
+}
+
+func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64) error {
+	var item2 = &byEndBlockItem{startBlock: aggFrom, endBlock: aggTo}
 	var cp CursorHeap
 	heap.Init(&cp)
 	for _, ag := range toAggregate {
@@ -2140,14 +2160,14 @@ func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, bloc
 		}
 	}
 	var err error
-	if item2.decompressor, item2.index, err = a.mergeIntoStateFile(&cp, 0, treeName, lastStart, blockTo, a.diffDir); err != nil {
-		return nil, fmt.Errorf("mergeIntoStateFile accounts [%d-%d]: %w", lastStart, blockTo, err)
+	if item2.decompressor, item2.index, err = a.mergeIntoStateFile(&cp, 0, treeName, aggFrom, aggTo, a.diffDir); err != nil {
+		return fmt.Errorf("mergeIntoStateFile accounts [%d-%d]: %w", aggFrom, aggTo, err)
 	}
 	for _, ag := range toAggregate {
 		tree.Delete(ag)
 	}
 	tree.ReplaceOrInsert(item2)
-	return toAggregate, nil
+	return nil
 }
 
 func createDatAndIndex(treeName string, diffDir string, bt *btree.BTree, blockFrom uint64, blockTo uint64) (*compress.Decompressor, *recsplit.Index, error) {
@@ -2170,6 +2190,8 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	// React on any previous error of aggregation
 	select {
 	case err := <-w.a.aggError:
+		return err
+	case err := <-w.a.mergeError:
 		return err
 	default:
 	}
@@ -2222,7 +2244,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		blockTo:        blockTo,
 	}
 	<-w.a.aggBackCh // Waiting for the B-tree based items have been added
-	log.Info("Aggregated", "from", blockFrom, "to", blockTo, "agg time", aggTime, "handover time", time.Since(t))
+	log.Info("Aggregated", "from", blockFrom, "to", blockTo, "agg", aggTime, "handover", time.Since(t))
 	return nil
 }
 
