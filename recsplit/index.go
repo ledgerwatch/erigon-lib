@@ -50,7 +50,7 @@ type Index struct {
 	salt               uint32
 	startSeed          []uint64
 	golombRice         []uint32
-	size               int
+	size               int64
 }
 
 func MustOpen(indexFile string) *Index {
@@ -74,8 +74,8 @@ func OpenIndex(indexFile string) (*Index, error) {
 	if stat, err = idx.f.Stat(); err != nil {
 		return nil, err
 	}
-	idx.size = int(stat.Size())
-	if idx.mmapHandle1, idx.mmapHandle2, err = mmap.Mmap(idx.f, idx.size); err != nil {
+	idx.size = stat.Size()
+	if idx.mmapHandle1, idx.mmapHandle2, err = mmap.Mmap(idx.f, int(idx.size)); err != nil {
 		return nil, err
 	}
 	idx.data = idx.mmapHandle1[:idx.size]
@@ -139,7 +139,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 	return idx, nil
 }
 
-func (idx *Index) Size() int {
+func (idx *Index) Size() int64 {
 	return idx.size
 }
 

@@ -2378,9 +2378,12 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 	return d, idx, nil
 }
 
-func stats(tree **btree.BTree, lock sync.Locker) (datSize, idxSize, count int) {
+func stats(tree **btree.BTree, lock sync.Locker) (count int, datSize, idxSize int64) {
 	lock.Lock()
 	defer lock.Unlock()
+	count = 0
+	datSize = 0
+	idxSize = 0
 	(*tree).Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.decompressor != nil {
@@ -2396,17 +2399,17 @@ func stats(tree **btree.BTree, lock sync.Locker) (datSize, idxSize, count int) {
 
 type FilesStats struct {
 	AccountsCount     int
-	AccountsDatSize   int
-	AccountsIdxSize   int
+	AccountsDatSize   int64
+	AccountsIdxSize   int64
 	CodeCount         int
-	CodeDatSize       int
-	CodeIdxSize       int
+	CodeDatSize       int64
+	CodeIdxSize       int64
 	StorageCount      int
-	StorageDatSize    int
-	StorageIdxSize    int
+	StorageDatSize    int64
+	StorageIdxSize    int64
 	CommitmentCount   int
-	CommitmentDatSize int
-	CommitmentIdxSize int
+	CommitmentDatSize int64
+	CommitmentIdxSize int64
 }
 
 func (a *Aggregator) Stats() FilesStats {
