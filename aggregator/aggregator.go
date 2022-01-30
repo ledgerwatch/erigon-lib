@@ -2177,7 +2177,6 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		return err
 	default:
 	}
-	log.Info("Aggregation", "from", blockFrom, "to", blockTo)
 	t := time.Now()
 	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
 	if i == nil {
@@ -2210,7 +2209,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if commitmentBt, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment); err != nil {
 		return fmt.Errorf("aggregate commitmentChanges: %w", err)
 	}
-	log.Info("Finished aggregation", "time", time.Since(t))
+	aggTime := time.Since(t)
 	t = time.Now()
 	// At this point, all the changes are gathered in 4 B-trees (accounts, code, storage and commitment) and removed from the database
 	// What follows can be done in the 1st background goroutine (TODO)
@@ -2227,7 +2226,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		blockTo:        blockTo,
 	}
 	<-w.a.aggBackCh // Waiting for the B-tree based items have been added
-	log.Info("Waited for hand-over to background", "time", time.Since(t))
+	log.Info("Aggregated", "from", blockFrom, "to", blockTo, "agg time", aggTime, "handover time", time.Since(t))
 	return nil
 }
 
