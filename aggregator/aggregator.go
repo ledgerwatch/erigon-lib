@@ -1102,11 +1102,11 @@ func (a *Aggregator) backgroundAggregation() {
 func (a *Aggregator) backgroundMerge() {
 	defer a.mergeWg.Done()
 	for range a.mergeChannel {
+		t := time.Now()
 		var err error
 		accountsToRemove, accountsFrom, accountsTo := findLargestMerge(&a.accountsFiles, a.accountsFilesLock.RLocker())
 		var newAccountsItem *byEndBlockItem
 		if len(accountsToRemove) > 1 {
-			log.Info("Merging", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove))
 			newAccountsFiles := cloneFiles(&a.accountsFiles, &a.accountsFilesLock)
 			if newAccountsItem, err = a.computeAggregation("accounts", newAccountsFiles, accountsToRemove, accountsFrom, accountsTo); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation accounts: %w", err)
@@ -1156,6 +1156,9 @@ func (a *Aggregator) backgroundMerge() {
 		if len(commitmentToRemove) > 1 {
 			removeLocked(&a.commitmentFiles, &a.commFilesLock, commitmentToRemove, newCommitmentItem)
 			removeFiles("commitment", a.diffDir, commitmentToRemove)
+		}
+		if len(accountsToRemove) > 1 {
+			log.Info("Merged", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
 		}
 	}
 }
