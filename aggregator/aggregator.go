@@ -2256,7 +2256,10 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		blockTo:        blockTo,
 	}
 	<-w.a.aggBackCh // Waiting for the B-tree based items have been added
-	log.Info("Aggregated", "from", blockFrom, "to", blockTo, "agg", aggTime, "handover", time.Since(t))
+	handoverTime := time.Since(t)
+	if handoverTime > time.Microsecond {
+		log.Info("Aggregated", "from", blockFrom, "to", blockTo, "agg", aggTime, "handover", time.Since(t))
+	}
 	return nil
 }
 
