@@ -968,6 +968,31 @@ func (a *Aggregator) switchAccountFiles(newAccountsFiles *btree.BTree) {
 	a.accountsFiles = newAccountsFiles
 }
 
+func removeFiles(treeName string, diffDir string, lock sync.Locker, toRemove []*byEndBlockItem) error {
+	lock.Lock()
+	defer lock.Unlock()
+	// Close all the memory maps etc
+	for _, ag := range toRemove {
+		if err := ag.index.Close(); err != nil {
+			return fmt.Errorf("close index: %w", err)
+		}
+		if err := ag.decompressor.Close(); err != nil {
+			return fmt.Errorf("close decompressor: %w", err)
+		}
+	}
+	// Delete files
+	// TODO: in a non-test version, this is delayed to allow other participants to roll over to the next file
+	for _, ag := range toRemove {
+		if err := os.Remove(path.Join(diffDir, fmt.Sprintf("%s.%d-%d.dat", treeName, ag.startBlock, ag.endBlock))); err != nil {
+			return fmt.Errorf("remove decompressor file %s.%d-%d.dat: %w", treeName, ag.startBlock, ag.endBlock, err)
+		}
+		if err := os.Remove(path.Join(diffDir, fmt.Sprintf("%s.%d-%d.idx", treeName, ag.startBlock, ag.endBlock))); err != nil {
+			return fmt.Errorf("remove index file %s.%d-%d.idx: %w", treeName, ag.startBlock, ag.endBlock, err)
+		}
+	}
+	return nil
+}
+
 func (a *Aggregator) switchCodeFiles(newCodeFiles *btree.BTree) {
 	a.codeFilesLock.Lock()
 	defer a.codeFilesLock.Unlock()
@@ -1080,44 +1105,37 @@ func (a *Aggregator) backgroundAggregation() {
 		// Corresponding items has been added to the registy of state files, and B-tree are not necessary anymore, change files can be removed
 		// What follows can be performed by the 2nd background goroutine
 
-		var accountsItem2 *byEndBlockItem
-		if accountsItem2, err = a.computeAggregation("accounts", newAccountsFiles, aggTask.blockFrom, aggTask.blockTo, accountsItem); err != nil {
+		var accountsToRemove []*byEndBlockItem
+		if accountsToRemove, err = a.computeAggregation("accounts", newAccountsFiles, aggTask.blockFrom, aggTask.blockTo, accountsItem); err != nil {
 			a.aggError <- fmt.Errorf("computeAggreation accounts: %w", err)
 			return
 		}
-		if accountsItem2 != nil {
-			newAccountsFiles.ReplaceOrInsert(accountsItem2)
-		}
 
-		var codeItem2 *byEndBlockItem
-		if codeItem2, err = a.computeAggregation("code", newCodeFiles, aggTask.blockFrom, aggTask.blockTo, codeItem); err != nil {
+		var codeToRemove []*byEndBlockItem
+		if codeToRemove, err = a.computeAggregation("code", newCodeFiles, aggTask.blockFrom, aggTask.blockTo, codeItem); err != nil {
 			a.aggError <- fmt.Errorf("computeAggreation code: %w", err)
 			return
 		}
-		if codeItem2 != nil {
-			newCodeFiles.ReplaceOrInsert(codeItem2)
-		}
-		var storageItem2 *byEndBlockItem
-		if storageItem2, err = a.computeAggregation("storage", newStorageFiles, aggTask.blockFrom, aggTask.blockTo, storageItem); err != nil {
+		var storageToRemove []*byEndBlockItem
+		if storageToRemove, err = a.computeAggregation("storage", newStorageFiles, aggTask.blockFrom, aggTask.blockTo, storageItem); err != nil {
 			a.aggError <- fmt.Errorf("computeAggreation storage: %w", err)
 			return
 		}
-		if storageItem2 != nil {
-			newStorageFiles.ReplaceOrInsert(storageItem2)
-		}
-		var commitmentItem2 *byEndBlockItem
-		if commitmentItem2, err = a.computeAggregation("commitment", newCommitmentFiles, aggTask.blockFrom, aggTask.blockTo, commitmentItem); err != nil {
+		var commitmentToRemove []*byEndBlockItem
+		if commitmentToRemove, err = a.computeAggregation("commitment", newCommitmentFiles, aggTask.blockFrom, aggTask.blockTo, commitmentItem); err != nil {
 			a.aggError <- fmt.Errorf("computeAggreation commitment: %w", err)
 			return
 		}
-		if commitmentItem2 != nil {
-			newCommitmentFiles.ReplaceOrInsert(commitmentItem2)
-		}
-		// Switch aggregator to new state files
+		// Switch aggregator to new state files, close and remove old files
 		a.switchAccountFiles(newAccountsFiles)
+		removeFiles("accounts", a.diffDir, &a.accountsFilesLock, accountsToRemove)
 		a.switchCodeFiles(newCodeFiles)
+		removeFiles("code", a.diffDir, &a.codeFilesLock, codeToRemove)
 		a.switchStorageFiles(newStorageFiles)
+		removeFiles("storage", a.diffDir, &a.storageFilesLock, storageToRemove)
 		a.switchCommFiles(newCommitmentFiles)
+		removeFiles("commitment", a.diffDir, &a.commFilesLock, commitmentToRemove)
+
 	}
 }
 
@@ -2079,7 +2097,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	return nil
 }
 
-func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, blockFrom, blockTo uint64, lastItem *byEndBlockItem) (*byEndBlockItem, error) {
+func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, blockFrom, blockTo uint64, lastItem *byEndBlockItem) ([]*byEndBlockItem, error) {
 	toAggregate := []*byEndBlockItem{lastItem}
 	lastStart := blockFrom
 	nextSize := blockTo - blockFrom + 1
@@ -2132,26 +2150,8 @@ func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, bloc
 	for _, ag := range toAggregate {
 		tree.Delete(ag)
 	}
-	// Close all the memory maps etc
-	for _, ag := range toAggregate {
-		if err = ag.index.Close(); err != nil {
-			return nil, err
-		}
-		if err = ag.decompressor.Close(); err != nil {
-			return nil, err
-		}
-	}
-	// Delete files
-	// TODO: in a non-test version, this is delayed to allow other participants to roll over to the next file
-	for _, ag := range toAggregate {
-		if err = os.Remove(path.Join(a.diffDir, fmt.Sprintf("%s.%d-%d.dat", treeName, ag.startBlock, ag.endBlock))); err != nil {
-			return nil, err
-		}
-		if err = os.Remove(path.Join(a.diffDir, fmt.Sprintf("%s.%d-%d.idx", treeName, ag.startBlock, ag.endBlock))); err != nil {
-			return nil, err
-		}
-	}
-	return item2, nil
+	tree.ReplaceOrInsert(item2)
+	return toAggregate, nil
 }
 
 func createDatAndIndex(treeName string, diffDir string, bt *btree.BTree, blockFrom uint64, blockTo uint64) (*compress.Decompressor, *recsplit.Index, error) {
