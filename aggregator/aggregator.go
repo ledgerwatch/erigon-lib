@@ -87,6 +87,7 @@ type Aggregator struct {
 	keccak            hash.Hash
 	changesets        bool // Whether to generate changesets (off by default)
 	aggChannel        chan AggregationTask
+	aggBackCh         chan struct{} // Channel for acknoledgement of AggregationTask
 	aggError          chan error
 	backgroundWg      sync.WaitGroup
 }
@@ -767,6 +768,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		storageFiles:    btree.New(32),
 		commitmentFiles: btree.New(32),
 		aggChannel:      make(chan AggregationTask),
+		aggBackCh:       make(chan struct{}),
 		aggError:        make(chan error, 1),
 	}
 	var closeStateFiles = true // It will be set to false in case of success at the end of the function
@@ -936,7 +938,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	}
 	closeStateFiles = false
 	a.backgroundWg.Add(1)
-	go a.backgroundAggreation()
+	go a.backgroundAggregation()
 	return a, nil
 }
 
@@ -986,9 +988,14 @@ func (a *Aggregator) switchCommFiles(newCommitmentFiles *btree.BTree) {
 
 // backgroundAggregation is the functin that runs in a background go-routine and performs creation of initial state files
 // allowing the main goroutine to proceed
-func (a *Aggregator) backgroundAggreation() {
+func (a *Aggregator) backgroundAggregation() {
 	defer a.backgroundWg.Done()
 	for aggTask := range a.aggChannel {
+		addLocked(a.accountsFiles, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.accountsBt}, &a.accountsFilesLock)
+		addLocked(a.codeFiles, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.codeBt}, &a.codeFilesLock)
+		addLocked(a.storageFiles, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.storageBt}, &a.storageFilesLock)
+		addLocked(a.commitmentFiles, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.commitmentBt}, &a.commFilesLock)
+		a.aggBackCh <- struct{}{}
 		var err error
 		if a.changesets && aggTask.accountsBt.Len() > 0 { // No need to produce changeset files if there were no changes
 			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "accounts", aggTask.blockFrom, aggTask.blockTo))
@@ -1011,7 +1018,6 @@ func (a *Aggregator) backgroundAggreation() {
 			a.aggError <- fmt.Errorf("delete accountChanges: %w", err)
 			return
 		}
-		a.accountsFiles.ReplaceOrInsert(accountsItem) // Replace the item based on B-tree, so that memory can be recycled. TODO - recycle the actual B-tree instance
 		newAccountsFiles := addAndClone(a.accountsFiles, accountsItem, &a.accountsFilesLock)
 		if a.changesets && aggTask.codeBt.Len() > 0 { // No need to produce changeset files if there were no changes
 			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "code", aggTask.blockFrom, aggTask.blockTo))
@@ -1034,7 +1040,6 @@ func (a *Aggregator) backgroundAggreation() {
 			a.aggError <- fmt.Errorf("delete codeChanges: %w", err)
 			return
 		}
-		a.codeFiles.ReplaceOrInsert(codeItem) // Replace the item based on B-tree, so that memory can be recycled. TODO - recycle the actual B-tree instance
 		newCodeFiles := addAndClone(a.codeFiles, codeItem, &a.codeFilesLock)
 		if a.changesets && aggTask.storageBt.Len() > 0 { // No need to produce changeset files if there were no changes
 			chsetDatPath := path.Join(a.diffDir, fmt.Sprintf("chsets.%s.%d-%d.dat", "storage", aggTask.blockFrom, aggTask.blockTo))
@@ -2193,22 +2198,18 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if accountsBt, err = accountChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateAccounts); err != nil {
 		return fmt.Errorf("aggregate accountsChanges: %w", err)
 	}
-	addLocked(w.a.accountsFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: accountsBt}, &w.a.accountsFilesLock)
 	var codeBt *btree.BTree
 	if codeBt, err = codeChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCode); err != nil {
 		return fmt.Errorf("aggregate codeChanges: %w", err)
 	}
-	addLocked(w.a.codeFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: codeBt}, &w.a.codeFilesLock)
 	var storageBt *btree.BTree
 	if storageBt, err = storageChanges.aggregate(blockFrom, blockTo, 20, w.tx, kv.StateStorage); err != nil {
 		return fmt.Errorf("aggregate storageChanges: %w", err)
 	}
-	addLocked(w.a.storageFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: storageBt}, &w.a.storageFilesLock)
 	var commitmentBt *btree.BTree
 	if commitmentBt, err = commChanges.aggregate(blockFrom, blockTo, 0, w.tx, kv.StateCommitment); err != nil {
 		return fmt.Errorf("aggregate commitmentChanges: %w", err)
 	}
-	addLocked(w.a.commitmentFiles, &byEndBlockItem{startBlock: blockFrom, endBlock: blockTo, tree: commitmentBt}, &w.a.commFilesLock)
 	log.Info("Finished aggregation", "time", time.Since(t))
 	t = time.Now()
 	// At this point, all the changes are gathered in 4 B-trees (accounts, code, storage and commitment) and removed from the database
@@ -2225,6 +2226,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		blockFrom:      blockFrom,
 		blockTo:        blockTo,
 	}
+	<-w.a.aggBackCh // Waiting for the B-tree based items have been added
 	log.Info("Waited for hand-over to background", "time", time.Since(t))
 	return nil
 }
