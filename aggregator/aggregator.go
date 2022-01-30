@@ -968,9 +968,7 @@ func (a *Aggregator) switchAccountFiles(newAccountsFiles *btree.BTree) {
 	a.accountsFiles = newAccountsFiles
 }
 
-func removeFiles(treeName string, diffDir string, lock sync.Locker, toRemove []*byEndBlockItem) error {
-	lock.Lock()
-	defer lock.Unlock()
+func removeFiles(treeName string, diffDir string, toRemove []*byEndBlockItem) error {
 	// Close all the memory maps etc
 	for _, ag := range toRemove {
 		if err := ag.index.Close(); err != nil {
@@ -1085,6 +1083,7 @@ func (a *Aggregator) backgroundAggregation() {
 		}
 		if err = aggTask.storageChanges.deleteFiles(); err != nil {
 			a.aggError <- fmt.Errorf("delete storageChanges: %w", err)
+			return
 		}
 		newStorageFiles := addAndClone(a.storageFiles, storageItem, &a.storageFilesLock)
 		if err = aggTask.commChanges.closeFiles(); err != nil {
@@ -1128,14 +1127,13 @@ func (a *Aggregator) backgroundAggregation() {
 		}
 		// Switch aggregator to new state files, close and remove old files
 		a.switchAccountFiles(newAccountsFiles)
-		removeFiles("accounts", a.diffDir, &a.accountsFilesLock, accountsToRemove)
+		removeFiles("accounts", a.diffDir, accountsToRemove)
 		a.switchCodeFiles(newCodeFiles)
-		removeFiles("code", a.diffDir, &a.codeFilesLock, codeToRemove)
+		removeFiles("code", a.diffDir, codeToRemove)
 		a.switchStorageFiles(newStorageFiles)
-		removeFiles("storage", a.diffDir, &a.storageFilesLock, storageToRemove)
+		removeFiles("storage", a.diffDir, storageToRemove)
 		a.switchCommFiles(newCommitmentFiles)
-		removeFiles("commitment", a.diffDir, &a.commFilesLock, commitmentToRemove)
-
+		removeFiles("commitment", a.diffDir, commitmentToRemove)
 	}
 }
 
