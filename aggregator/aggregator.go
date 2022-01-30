@@ -1106,6 +1106,7 @@ func (a *Aggregator) backgroundMerge() {
 		accountsToRemove, accountsFrom, accountsTo := findLargestMerge(&a.accountsFiles, a.accountsFilesLock.RLocker())
 		var newAccountsItem *byEndBlockItem
 		if len(accountsToRemove) > 1 {
+			log.Info("Merging", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove))
 			newAccountsFiles := cloneFiles(&a.accountsFiles, &a.accountsFilesLock)
 			if newAccountsItem, err = a.computeAggregation("accounts", newAccountsFiles, accountsToRemove, accountsFrom, accountsTo); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation accounts: %w", err)
