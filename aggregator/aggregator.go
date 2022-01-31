@@ -1138,7 +1138,7 @@ func encodeU64(i uint64, to []byte) []byte {
 // the updated references
 func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
 	if len(val) == 0 {
-		return val, nil
+		return transValBuf, nil
 	}
 	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val[1:])
 	if err != nil {
