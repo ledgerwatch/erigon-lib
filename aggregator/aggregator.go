@@ -1210,22 +1210,21 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 		}
 		transStoragePks[i] = spk
 	}
-	var transVal []byte
-	transVal = append(transVal, val[0])
-	if transVal, err = commitment.ReplacePlainKeys(val[1:], transAccountPks, transStoragePks, cvt.numBuf[:], transVal); err != nil {
+	transValBuf = append(transValBuf, val[0])
+	if transValBuf, err = commitment.ReplacePlainKeys(val[1:], transAccountPks, transStoragePks, cvt.numBuf[:], transValBuf); err != nil {
 		return nil, err
 	}
-	return transVal, nil
+	return transValBuf, nil
 }
 
 func (a *Aggregator) backgroundMerge() {
 	defer a.mergeWg.Done()
-	var cvt CommitmentValTransform
 	for range a.mergeChannel {
 		t := time.Now()
 		var err error
 		var accountsToRemove []*byEndBlockItem
 		var accountsFrom, accountsTo uint64
+		var cvt CommitmentValTransform
 		accountsToRemove, cvt.preAccounts, cvt.postAccounts, accountsFrom, accountsTo = findLargestMerge(&a.accountsFiles, a.accountsFilesLock.RLocker())
 		var newAccountsItem *byEndBlockItem
 		if len(accountsToRemove) > 1 {
@@ -1260,7 +1259,7 @@ func (a *Aggregator) backgroundMerge() {
 		commitmentToRemove, _, _, commFrom, commTo := findLargestMerge(&a.commitmentFiles, a.commFilesLock.RLocker())
 		var newCommitmentItem *byEndBlockItem
 		if len(commitmentToRemove) > 1 {
-			if newCommitmentItem, err = a.computeAggregation("commitment", commitmentToRemove, commFrom, commTo, nil /* valTransform */); err != nil {
+			if newCommitmentItem, err = a.computeAggregation("commitment", commitmentToRemove, commFrom, commTo, cvt.commitmentValTransform); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation commitment: %w", err)
 				return
 			}
