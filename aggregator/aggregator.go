@@ -1260,7 +1260,7 @@ func (a *Aggregator) backgroundMerge() {
 		commitmentToRemove, _, _, commFrom, commTo := findLargestMerge(&a.commitmentFiles, a.commFilesLock.RLocker())
 		var newCommitmentItem *byEndBlockItem
 		if len(commitmentToRemove) > 1 {
-			if newCommitmentItem, err = a.computeAggregation("commitment", commitmentToRemove, commFrom, commTo, cvt.commitmentValTransform); err != nil {
+			if newCommitmentItem, err = a.computeAggregation("commitment", commitmentToRemove, commFrom, commTo, nil /* valTransform */); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation commitment: %w", err)
 				return
 			}
