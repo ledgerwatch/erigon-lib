@@ -1634,7 +1634,9 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		offset := decodeU64(plainKey[1:])
 		//fmt.Printf("accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
 		plainKey, enc = readByOffset("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), fileI, offset)
-		//fmt.Printf("retrieved [%x]\n", plainKey)
+		if len(plainKey) != length.Addr {
+			fmt.Printf("retrieved [%x]\n", plainKey)
+		}
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
