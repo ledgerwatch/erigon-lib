@@ -1172,7 +1172,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					apk = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Printf("encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
+					fmt.Printf("encoding apkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", apkBuf, j-1, offset, apk, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1204,7 +1204,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					spk = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Printf("encoding spkBuf [%x] into fileI %d, offset %d = [%x]\n", spkBuf, j-1, offset, spk)
+					fmt.Printf("encoding spkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", spkBuf, j-1, offset, spk, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1446,6 +1446,7 @@ func readByOffset(treeName string, tree **btree.BTree, lock sync.Locker, fileI i
 			return true
 		}
 		item := i.(*byEndBlockItem)
+		fmt.Printf("found in file [%d-%d]\n", item.startBlock, item.endBlock)
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		key, _ = g.Next(nil)
