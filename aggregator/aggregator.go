@@ -1226,7 +1226,16 @@ func (a *Aggregator) backgroundMerge() {
 		var accountsToRemove []*byEndBlockItem
 		var accountsFrom, accountsTo uint64
 		var cvt CommitmentValTransform
-		accountsToRemove, cvt.preAccounts, cvt.postAccounts, accountsFrom, accountsTo = findLargestMerge(&a.accountsFiles, a.accountsFilesLock.RLocker())
+		commitmentToRemove, _, _, blockFrom, blockTo := findLargestMerge(&a.commitmentFiles, a.commFilesLock.RLocker(), uint64(math.MaxUint64))
+		accountsToRemove, cvt.preAccounts, cvt.postAccounts, accountsFrom, accountsTo = findLargestMerge(&a.accountsFiles, a.accountsFilesLock.RLocker(), blockTo)
+		if accountsFrom != blockFrom {
+			a.mergeError <- fmt.Errorf("accountsFrom %d != blockFrom %d", accountsFrom, blockFrom)
+			return
+		}
+		if accountsTo != blockTo {
+			a.mergeError <- fmt.Errorf("accountsTo %d != blockTo %d", accountsTo, blockTo)
+			return
+		}
 		var newAccountsItem *byEndBlockItem
 		if len(accountsToRemove) > 1 {
 			if newAccountsItem, err = a.computeAggregation("accounts", accountsToRemove, accountsFrom, accountsTo, nil /* valTransform */); err != nil {
@@ -1237,7 +1246,15 @@ func (a *Aggregator) backgroundMerge() {
 		}
 		var codeToRemove []*byEndBlockItem
 		var codeFrom, codeTo uint64
-		codeToRemove, cvt.preCode, cvt.postCode, codeFrom, codeTo = findLargestMerge(&a.codeFiles, a.codeFilesLock.RLocker())
+		codeToRemove, cvt.preCode, cvt.postCode, codeFrom, codeTo = findLargestMerge(&a.codeFiles, a.codeFilesLock.RLocker(), blockTo)
+		if codeFrom != blockFrom {
+			a.mergeError <- fmt.Errorf("codeFrom %d != blockFrom %d", codeFrom, blockFrom)
+			return
+		}
+		if codeTo != blockTo {
+			a.mergeError <- fmt.Errorf("codeTo %d != blockTo %d", codeTo, blockTo)
+			return
+		}
 		var newCodeItem *byEndBlockItem
 		if len(codeToRemove) > 1 {
 			if newCodeItem, err = a.computeAggregation("code", codeToRemove, codeFrom, codeTo, nil /* valTransform */); err != nil {
@@ -1248,7 +1265,15 @@ func (a *Aggregator) backgroundMerge() {
 		}
 		var storageToRemove []*byEndBlockItem
 		var storageFrom, storageTo uint64
-		storageToRemove, cvt.preStorage, cvt.postStorage, storageFrom, storageTo = findLargestMerge(&a.storageFiles, a.storageFilesLock.RLocker())
+		storageToRemove, cvt.preStorage, cvt.postStorage, storageFrom, storageTo = findLargestMerge(&a.storageFiles, a.storageFilesLock.RLocker(), blockTo)
+		if storageFrom != blockFrom {
+			a.mergeError <- fmt.Errorf("storageFrom %d != blockFrom %d", storageFrom, blockFrom)
+			return
+		}
+		if storageTo != blockTo {
+			a.mergeError <- fmt.Errorf("storageTo %d != blockTo %d", storageTo, blockTo)
+			return
+		}
 		var newStorageItem *byEndBlockItem
 		if len(storageToRemove) > 1 {
 			if newStorageItem, err = a.computeAggregation("storage", storageToRemove, storageFrom, storageTo, nil /* valTransform */); err != nil {
@@ -1257,10 +1282,9 @@ func (a *Aggregator) backgroundMerge() {
 			}
 			cvt.postStorage = append(cvt.postStorage, newStorageItem)
 		}
-		commitmentToRemove, _, _, commFrom, commTo := findLargestMerge(&a.commitmentFiles, a.commFilesLock.RLocker())
 		var newCommitmentItem *byEndBlockItem
 		if len(commitmentToRemove) > 1 {
-			if newCommitmentItem, err = a.computeAggregation("commitment", commitmentToRemove, commFrom, commTo, cvt.commitmentValTransform); err != nil {
+			if newCommitmentItem, err = a.computeAggregation("commitment", commitmentToRemove, blockFrom, blockTo, cvt.commitmentValTransform); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation commitment: %w", err)
 				return
 			}
@@ -2291,11 +2315,11 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	return nil
 }
 
-func findLargestMerge(tree **btree.BTree, lock sync.Locker) (toAggregate []*byEndBlockItem, pre []*byEndBlockItem, post []*byEndBlockItem, aggFrom uint64, aggTo uint64) {
+func findLargestMerge(tree **btree.BTree, lock sync.Locker, maxTo uint64) (toAggregate []*byEndBlockItem, pre []*byEndBlockItem, post []*byEndBlockItem, aggFrom uint64, aggTo uint64) {
 	lock.Lock()
 	defer lock.Unlock()
 	var maxEndBlock uint64
-	(*tree).Descend(func(i btree.Item) bool {
+	(*tree).DescendLessOrEqual(&byEndBlockItem{endBlock: maxTo}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.decompressor == nil {
 			return true
