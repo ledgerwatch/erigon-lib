@@ -760,7 +760,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 
 				window := i - j + 2
 				copy(b, filtered[j:i+2])
-				sort.Sort(b[:window])
+				//sort.Sort(b[:window])
 				repeats := 1
 				lastK := 0
 				for k := 1; k < window; k++ {
