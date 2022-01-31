@@ -1113,7 +1113,7 @@ func commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
 	}
 	var transVal []byte
 	transVal = append(transVal, val[0])
-	if transVal, err = commitment.ReplacePlainKeys(val, accountPlainKeys, storagePlainKeys, numBuf[:], transVal); err != nil {
+	if transVal, err = commitment.ReplacePlainKeys(val[1:], accountPlainKeys, storagePlainKeys, numBuf[:], transVal); err != nil {
 		return nil, err
 	}
 	return transVal, nil
