@@ -1172,6 +1172,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					apk = encodeU64(offset, []byte{byte(j - 1)})
+					fmt.Printf("encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
 					break
 				}
 			}
@@ -1632,7 +1633,9 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	} else {
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
+		fmt.Printf("accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
 		plainKey, enc = readByOffset("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), fileI, offset)
+		fmt.Printf("retrieved [%x]\n", plainKey)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
