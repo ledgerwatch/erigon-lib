@@ -1172,7 +1172,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					apk = encodeU64(offset, []byte{byte(j - 1)})
-					//"encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
+					fmt.Printf("encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
 					break
 				}
 			}
@@ -1204,7 +1204,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					spk = encodeU64(offset, []byte{byte(j - 1)})
-					//fmt.Printf("encoding spkBuf [%x] into fileI %d, offset %d = [%x]\n", spkBuf, j-1, offset, spk)
+					fmt.Printf("encoding spkBuf [%x] into fileI %d, offset %d = [%x]\n", spkBuf, j-1, offset, spk)
 					break
 				}
 			}
@@ -1309,7 +1309,7 @@ func (a *Aggregator) backgroundMerge() {
 		if len(accountsToRemove) > 1 {
 			mergeTime := time.Since(t)
 			if mergeTime > time.Minute {
-				log.Info("Long merge", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
+				log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", len(accountsToRemove), "time", time.Since(t))
 			}
 		}
 	}
@@ -1648,9 +1648,9 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	if len(plainKey) != length.Addr {
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		//fmt.Printf("accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
+		fmt.Printf("accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
 		plainKey, _ = readByOffset("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), fileI, offset)
-		//fmt.Printf("retrived [%x]\n", plainKey)
+		fmt.Printf("retrived [%x]\n", plainKey)
 	}
 	// Look in the summary table first
 	if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
@@ -1708,9 +1708,9 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	if len(plainKey) != length.Addr+length.Hash {
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		//fmt.Printf("storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
+		fmt.Printf("storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
 		plainKey, _ = readByOffset("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), fileI, offset)
-		//fmt.Printf("retrived [%x]\n", plainKey)
+		fmt.Printf("retrived [%x]\n", plainKey)
 	}
 	// Look in the summary table first
 	if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
