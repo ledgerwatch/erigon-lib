@@ -763,7 +763,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		aggregationStep: aggregationStep,
 		tracedKeys:      map[string]struct{}{},
 		keccak:          sha3.NewLegacyKeccak256(),
-		hph:             commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
+		hph:             commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil, nil, nil),
 		accountsFiles:   btree.New(32),
 		codeFiles:       btree.New(32),
 		storageFiles:    btree.New(32),
@@ -1172,7 +1172,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					apk = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Fprintf(os.Stderr, "encoding apkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", apkBuf, j-1, offset, apk, item.startBlock, item.endBlock)
+					//fmt.Fprintf(os.Stderr, "encoding apkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", apkBuf, j-1, offset, apk, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1204,7 +1204,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					spk = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Fprintf(os.Stderr, "encoding spkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", spkBuf, j-1, offset, spk, item.startBlock, item.endBlock)
+					//fmt.Fprintf(os.Stderr, "encoding spkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", spkBuf, j-1, offset, spk, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1395,8 +1395,10 @@ func checkOverlapWithMinStart(treeName string, tree *btree.BTree, minStart uint6
 }
 
 func readFromFiles(treeName string, tree **btree.BTree, lock sync.Locker, blockNum uint64, filekey []byte, trace bool) []byte {
-	lock.Lock()
-	defer lock.Unlock()
+	if lock != nil {
+		lock.Lock()
+		defer lock.Unlock()
+	}
 	var val []byte
 	(*tree).DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
@@ -1435,9 +1437,8 @@ func readFromFiles(treeName string, tree **btree.BTree, lock sync.Locker, blockN
 	return nil
 }
 
-func readByOffset(treeName string, tree **btree.BTree, lock sync.Locker, fileI int, offset uint64) ([]byte, []byte) {
-	lock.Lock()
-	defer lock.Unlock()
+// readByOffset is assumed to be invoked under a read lock
+func readByOffset(treeName string, tree **btree.BTree, fileI int, offset uint64) ([]byte, []byte) {
 	var key, val []byte
 	fi := 0
 	(*tree).Ascend(func(i btree.Item) bool {
@@ -1446,7 +1447,7 @@ func readByOffset(treeName string, tree **btree.BTree, lock sync.Locker, fileI i
 			return true
 		}
 		item := i.(*byEndBlockItem)
-		fmt.Fprintf(os.Stderr, "found in file [%d-%d]\n", item.startBlock, item.endBlock)
+		//fmt.Fprintf(os.Stderr, "found in file [%d-%d]\n", item.startBlock, item.endBlock)
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		key, _ = g.Next(nil)
@@ -1616,6 +1617,18 @@ func (i *CommitmentItem) Less(than btree.Item) bool {
 	return bytes.Compare(i.hashedKey, than.(*CommitmentItem).hashedKey) < 0
 }
 
+func (w *Writer) lockFn() {
+	w.a.accountsFilesLock.RLock()
+	w.a.storageFilesLock.RLock()
+	w.a.commFilesLock.RLock()
+}
+
+func (w *Writer) unlockFn() {
+	w.a.commFilesLock.RUnlock()
+	w.a.storageFilesLock.RUnlock()
+	w.a.accountsFilesLock.RUnlock()
+}
+
 func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 	// Look in the summary table first
 	dbPrefix := prefix
@@ -1628,7 +1641,7 @@ func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 		return v[4:], nil
 	}
 	// Look in the files
-	val := readFromFiles("commitment", &w.a.commitmentFiles, w.a.commFilesLock.RLocker(), w.blockNum, prefix, false /* trace */)
+	val := readFromFiles("commitment", &w.a.commitmentFiles, nil /* lock */, w.blockNum, prefix, false /* trace */)
 	return val, nil
 }
 
@@ -1649,9 +1662,9 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	if len(plainKey) != length.Addr {
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		fmt.Fprintf(os.Stderr, "accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
-		plainKey, _ = readByOffset("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), fileI, offset)
-		fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
+		//fmt.Fprintf(os.Stderr, "accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
+		plainKey, _ = readByOffset("accounts", &w.a.accountsFiles, fileI, offset)
+		//fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
 	}
 	// Look in the summary table first
 	if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
@@ -1662,7 +1675,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("accounts", &w.a.accountsFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1709,9 +1722,9 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	if len(plainKey) != length.Addr+length.Hash {
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		fmt.Fprintf(os.Stderr, "storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
-		plainKey, _ = readByOffset("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), fileI, offset)
-		fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
+		//fmt.Fprintf(os.Stderr, "storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
+		plainKey, _ = readByOffset("storage", &w.a.storageFiles, fileI, offset)
+		//fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
 	}
 	// Look in the summary table first
 	if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
@@ -1722,7 +1735,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		enc = v[4:]
 	} else {
 		// Look in the files
-		enc = readFromFiles("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		enc = readFromFiles("storage", &w.a.storageFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
@@ -1884,7 +1897,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		return true
 	})
 	w.a.hph.Reset()
-	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn)
+	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn, w.lockFn, w.unlockFn)
 	w.a.hph.SetTrace(trace)
 	branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {

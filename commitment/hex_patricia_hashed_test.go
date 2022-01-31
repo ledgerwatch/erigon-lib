@@ -42,6 +42,12 @@ func NewMockState() *MockState {
 	}
 }
 
+func (ms MockState) lockFn() {
+}
+
+func (ms MockState) unlockFn() {
+}
+
 func (ms MockState) branchFn(prefix []byte) ([]byte, error) {
 	if exBytes, ok := ms.cm[string(prefix)]; ok {
 		return exBytes, nil
@@ -371,7 +377,7 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 
 func TestEmptyState(t *testing.T) {
 	ms := NewMockState()
-	hph := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
+	hph := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn, ms.lockFn, ms.unlockFn)
 	hph.SetTrace(false)
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
