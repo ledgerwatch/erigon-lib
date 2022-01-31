@@ -731,7 +731,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		}
 		//log.Info("LCP array checked")
 		// Walk over LCP array and compute the scores of the strings
-		var b Int32Sort = inv
+		//var b Int32Sort = inv
 		j = 0
 		for i := 0; i < n-1; i++ {
 			// Only when there is a drop in LCP value
@@ -759,14 +759,41 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				}
 
 				window := i - j + 2
-				copy(b, filtered[j:i+2])
+				var b Int32Sort = filtered[j : i+2]
+				//copy(b, filtered[j:i+2])
 				//sort.Sort(b[:window])
 				repeats := 1
 				lastK := 0
 				for k := 1; k < window; k++ {
+					dictKey = dictKey[:l]
+					for s := 0; s < l; s++ {
+						dictKey[s] = superstring[(int(b[lastK])+s)*2+1]
+					}
+					fmt.Printf("a: %d, %d, %d, %s\n", b[k], b[lastK], int32(l), dictKey)
 					if b[k] >= b[lastK]+int32(l) {
 						repeats++
 						lastK = k
+					}
+				}
+				{
+					var bb Int32Sort = inv
+					copy(bb, filtered[j:i+2])
+					sort.Sort(bb[:window])
+					repeats2 := 1
+					lastK = 0
+					for k := 1; k < window; k++ {
+						if bb[k] >= bb[lastK]+int32(l) {
+							//fmt.Printf("%d,%d\n", k, lastK)
+							repeats2++
+							lastK = k
+						}
+					}
+
+					fmt.Printf("found: %d, %d\n", repeats2, repeats) //, filtered[j:i+2], bb)
+					if repeats != repeats2 {
+						msg := fmt.Sprintf("found: %d, %d, %d, %d", repeats2, repeats, filtered[j:i+2], bb)
+						fmt.Printf("%s\n", msg)
+						panic(msg)
 					}
 				}
 

@@ -83,7 +83,7 @@ func prepareDict(t *testing.T) *Decompressor {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	for i := 0; i < 100; i++ {
+	for i := 100; i > 0; i-- {
 		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
 			t.Fatal(err)
 		}
