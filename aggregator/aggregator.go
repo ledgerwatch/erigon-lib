@@ -1172,7 +1172,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					apk = encodeU64(offset, []byte{byte(j - 1)})
-					//fmt.Printf("encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
+					fmt.Printf("encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
 					break
 				}
 			}
