@@ -960,12 +960,6 @@ type AggregationTask struct {
 	blockTo        uint64
 }
 
-func cloneFiles(tree **btree.BTree, lock sync.Locker) *btree.BTree {
-	lock.Lock()
-	defer lock.Unlock()
-	return (*tree).Clone()
-}
-
 func removeLocked(tree **btree.BTree, lock sync.Locker, toRemove []*byEndBlockItem, toAdd *byEndBlockItem) {
 	lock.Lock()
 	defer lock.Unlock()
