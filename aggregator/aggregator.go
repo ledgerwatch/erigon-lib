@@ -1427,7 +1427,10 @@ func readByOffset(treeName string, tree **btree.BTree, lock sync.Locker, fileI i
 		val, _ = g.Next(nil)
 		return false
 	})
-	return key, val
+	if len(val) > 0 {
+		return key, val[1:]
+	}
+	return key, nil
 }
 
 func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
