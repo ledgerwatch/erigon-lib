@@ -1686,9 +1686,9 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 	return branchNodeUpdates, nil
 }
 
-// extractPlainKeys parses branchData and extract the plain keys for accounts and storage in the same order
+// ExtractPlainKeys parses branchData and extract the plain keys for accounts and storage in the same order
 // they appear witjin the branchData
-func extractPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlainKeys [][]byte, err error) {
+func ExtractPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlainKeys [][]byte, err error) {
 	pos := 0
 	partBitmap := binary.BigEndian.Uint16(branchData[pos:])
 	pos += 2
@@ -1770,8 +1770,7 @@ func extractPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlai
 	return
 }
 
-func replacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, numBuf []byte) ([]byte, error) {
-	var newData []byte
+func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, numBuf []byte, newData []byte) ([]byte, error) {
 	pos := 0
 	partBitmap := binary.BigEndian.Uint16(branchData[pos:])
 	newData = append(newData, branchData[pos:pos+2]...)

@@ -1099,6 +1099,22 @@ func (a *Aggregator) backgroundAggregation() {
 	}
 }
 
+// commitmentValTransform parses the value of of the commitment record to extract references
+// to accounts and storage items, then looks them up in the new, merged files, and replaces them with
+// the updated references
+func commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
+	var numBuf [binary.MaxVarintLen64]byte
+	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val)
+	if err != nil {
+		return nil, err
+	}
+	var transVal []byte
+	if transVal, err = commitment.ReplacePlainKeys(val, accountPlainKeys, storagePlainKeys, numBuf[:], transVal); err != nil {
+		return nil, err
+	}
+	return transVal, nil
+}
+
 func (a *Aggregator) backgroundMerge() {
 	defer a.mergeWg.Done()
 	for range a.mergeChannel {
@@ -1108,7 +1124,7 @@ func (a *Aggregator) backgroundMerge() {
 		var newAccountsItem *byEndBlockItem
 		if len(accountsToRemove) > 1 {
 			newAccountsFiles := cloneFiles(&a.accountsFiles, &a.accountsFilesLock)
-			if newAccountsItem, err = a.computeAggregation("accounts", newAccountsFiles, accountsToRemove, accountsFrom, accountsTo); err != nil {
+			if newAccountsItem, err = a.computeAggregation("accounts", newAccountsFiles, accountsToRemove, accountsFrom, accountsTo, nil /* valTransform */); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation accounts: %w", err)
 				return
 			}
@@ -1117,7 +1133,7 @@ func (a *Aggregator) backgroundMerge() {
 		var newCodeItem *byEndBlockItem
 		if len(codeToRemove) > 1 {
 			newCodeFiles := cloneFiles(&a.codeFiles, &a.codeFilesLock)
-			if newCodeItem, err = a.computeAggregation("code", newCodeFiles, codeToRemove, codeFrom, codeTo); err != nil {
+			if newCodeItem, err = a.computeAggregation("code", newCodeFiles, codeToRemove, codeFrom, codeTo, nil /* valTransform */); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation code: %w", err)
 				return
 			}
@@ -1126,7 +1142,7 @@ func (a *Aggregator) backgroundMerge() {
 		var newStorageItem *byEndBlockItem
 		if len(storageToRemove) > 1 {
 			newStorageFiles := cloneFiles(&a.storageFiles, &a.storageFilesLock)
-			if newStorageItem, err = a.computeAggregation("storage", newStorageFiles, storageToRemove, storageFrom, storageTo); err != nil {
+			if newStorageItem, err = a.computeAggregation("storage", newStorageFiles, storageToRemove, storageFrom, storageTo, nil /* valTransform */); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation storage: %w", err)
 				return
 			}
@@ -1135,7 +1151,7 @@ func (a *Aggregator) backgroundMerge() {
 		var newCommitmentItem *byEndBlockItem
 		if len(commitmentToRemove) > 1 {
 			newCommitmentFiles := cloneFiles(&a.commitmentFiles, &a.commFilesLock)
-			if newCommitmentItem, err = a.computeAggregation("commitment", newCommitmentFiles, commitmentToRemove, commFrom, commTo); err != nil {
+			if newCommitmentItem, err = a.computeAggregation("commitment", newCommitmentFiles, commitmentToRemove, commFrom, commTo, commitmentValTransform); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation commitment: %w", err)
 				return
 			}
@@ -1160,7 +1176,7 @@ func (a *Aggregator) backgroundMerge() {
 		if len(accountsToRemove) > 1 {
 			mergeTime := time.Since(t)
 			if mergeTime > time.Minute {
-				log.Info("Long merged", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
+				log.Info("Long merge", "from", accountsFrom, "to", accountsTo, "files", len(accountsToRemove), "time", time.Since(t))
 			}
 		}
 	}
@@ -1170,6 +1186,7 @@ func (a *Aggregator) GenerateChangesets(on bool) {
 	a.changesets = on
 }
 
+// checkOverlaps does not lock tree, because it is only called from the constructor of aggregator
 func checkOverlaps(treeName string, tree *btree.BTree) error {
 	var minStart uint64 = math.MaxUint64
 	var err error
@@ -2166,7 +2183,7 @@ func findLargestMerge(tree **btree.BTree, lock sync.Locker) ([]*byEndBlockItem, 
 	return toAggregate, aggFrom, aggTo
 }
 
-func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64) (*byEndBlockItem, error) {
+func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64, valTransform func(val []byte, transValBuf []byte) ([]byte, error)) (*byEndBlockItem, error) {
 	var item2 = &byEndBlockItem{startBlock: aggFrom, endBlock: aggTo}
 	var cp CursorHeap
 	heap.Init(&cp)
@@ -2179,7 +2196,7 @@ func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, toAg
 		}
 	}
 	var err error
-	if item2.decompressor, item2.index, err = a.mergeIntoStateFile(&cp, 0, treeName, aggFrom, aggTo, a.diffDir); err != nil {
+	if item2.decompressor, item2.index, err = a.mergeIntoStateFile(&cp, 0, treeName, aggFrom, aggTo, a.diffDir, valTransform); err != nil {
 		return nil, fmt.Errorf("mergeIntoStateFile accounts [%d-%d]: %w", aggFrom, aggTo, err)
 	}
 	return item2, nil
@@ -2267,17 +2284,16 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 }
 
 // mergeIntoStateFile assumes that all entries in the cp heap have type FILE_CURSOR
-func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string) (*compress.Decompressor, *recsplit.Index, error) {
+func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename string, startBlock, endBlock uint64, dir string, valTransform func(val []byte, transValBuf []byte) ([]byte, error)) (*compress.Decompressor, *recsplit.Index, error) {
 	datPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock))
 	idxPath := path.Join(dir, fmt.Sprintf("%s.%d-%d.idx", basename, startBlock, endBlock))
-	//comp, err := compress.NewCompressorSequential(AggregatorPrefix, datPath, dir, compress.MinPatternScore)
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, dir, compress.MinPatternScore, 1)
 	if err != nil {
 		return nil, nil, fmt.Errorf("compressor %s: %w", datPath, err)
 	}
 	defer comp.Close()
 	count := 0
-	var keyBuf, valBuf []byte
+	var keyBuf, valBuf, transValBuf []byte
 	for cp.Len() > 0 {
 		lastKey := common.Copy((*cp)[0].key)
 		lastVal := common.Copy((*cp)[0].val)
@@ -2341,7 +2357,14 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 					}
 				}
 				count++ // Only counting keys, not values
-				if err = comp.AddWord(valBuf); err != nil {
+				if valTransform != nil {
+					if transValBuf, err = valTransform(valBuf, transValBuf[:0]); err != nil {
+						return nil, nil, fmt.Errorf("mergeIntoStateFile valTransform [%x]: %w", valBuf, err)
+					}
+					if err = comp.AddWord(transValBuf); err != nil {
+						return nil, nil, err
+					}
+				} else if err = comp.AddWord(valBuf); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -2363,7 +2386,14 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int, basename 
 			}
 		}
 		count++ // Only counting keys, not values
-		if err = comp.AddWord(valBuf); err != nil {
+		if valTransform != nil {
+			if transValBuf, err = valTransform(valBuf, transValBuf[:0]); err != nil {
+				return nil, nil, fmt.Errorf("mergeIntoStateFile valTransform [%x]: %w", valBuf, err)
+			}
+			if err = comp.AddWord(transValBuf); err != nil {
+				return nil, nil, err
+			}
+		} else if err = comp.AddWord(valBuf); err != nil {
 			return nil, nil, err
 		}
 	}
