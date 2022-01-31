@@ -2341,7 +2341,7 @@ func (a *Aggregator) computeAggregation(treeName string, toAggregate []*byEndBlo
 	}
 	var err error
 	if item2.decompressor, item2.index, err = a.mergeIntoStateFile(&cp, 0, treeName, aggFrom, aggTo, a.diffDir, valTransform); err != nil {
-		return nil, fmt.Errorf("mergeIntoStateFile accounts [%d-%d]: %w", aggFrom, aggTo, err)
+		return nil, fmt.Errorf("mergeIntoStateFile %s [%d-%d]: %w", treeName, aggFrom, aggTo, err)
 	}
 	return item2, nil
 }
