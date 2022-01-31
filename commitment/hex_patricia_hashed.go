@@ -1821,7 +1821,7 @@ func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 			if l > 0 {
 				pos += int(l)
 			}
-			n = binary.PutUvarint(numBuf[:], uint64(len(accountPlainKeys[accountI])))
+			n = binary.PutUvarint(numBuf, uint64(len(accountPlainKeys[accountI])))
 			newData = append(newData, numBuf[:n]...)
 			newData = append(newData, accountPlainKeys[accountI]...)
 			accountI++
@@ -1841,7 +1841,7 @@ func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 			if l > 0 {
 				pos += int(l)
 			}
-			n = binary.PutUvarint(numBuf[:], uint64(len(storagePlainKeys[storageI])))
+			n = binary.PutUvarint(numBuf, uint64(len(storagePlainKeys[storageI])))
 			newData = append(newData, numBuf[:n]...)
 			newData = append(newData, storagePlainKeys[storageI]...)
 			storageI++
