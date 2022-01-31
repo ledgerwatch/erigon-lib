@@ -1099,21 +1099,125 @@ func (a *Aggregator) backgroundAggregation() {
 	}
 }
 
+type CommitmentValTransform struct {
+	numBuf       [binary.MaxVarintLen64]byte // Buffer for encoding varint numbers without extra allocations
+	preAccounts  []*byEndBlockItem           // List of account state files before the merge
+	preCode      []*byEndBlockItem           // List of code state files before the merge
+	preStorage   []*byEndBlockItem           // List of storage state files before the merge
+	postAccounts []*byEndBlockItem           // List of account state files after the merge
+	postCode     []*byEndBlockItem           // List of code state files after the merge
+	postStorage  []*byEndBlockItem           // List of storage state files after the merge
+}
+
+func decodeU64(from []byte) uint64 {
+	var i uint64
+	for _, b := range from[1:] {
+		i = (i << 8) | uint64(b)
+	}
+	return i
+}
+
+func encodeU64(i uint64, to []byte) []byte {
+	// writes i to b in big endian byte order, using the least number of bytes needed to represent i.
+	switch {
+	case i < (1 << 8):
+		return append(to, byte(i))
+	case i < (1 << 16):
+		return append(to, byte(i>>8), byte(i))
+	case i < (1 << 24):
+		return append(to, byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 32):
+		return append(to, byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 40):
+		return append(to, byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 48):
+		return append(to, byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 56):
+		return append(to, byte(i>>48), byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	default:
+		return append(to, byte(i>>56), byte(i>>48), byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	}
+}
+
 // commitmentValTransform parses the value of of the commitment record to extract references
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
 // the updated references
-func commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
+func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
 	if len(val) == 0 {
 		return val, nil
 	}
-	var numBuf [binary.MaxVarintLen64]byte
 	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val[1:])
 	if err != nil {
 		return nil, err
 	}
+	var transAccountPks = make([][]byte, len(accountPlainKeys))
+	var transStoragePks = make([][]byte, len(storagePlainKeys))
+	var apkBuf, spkBuf []byte
+	for i, apk := range accountPlainKeys {
+		if len(apk) == length.Addr {
+			// Non-optimised key originating from a database record
+			apkBuf = append(apkBuf[:0], apk...)
+		} else {
+			// Optimised key referencing a state file record (file number and offset within the file)
+			fileI := int(apk[0])
+			offset := decodeU64(apk[1:])
+			g := cvt.preAccounts[fileI].decompressor.MakeGetter() // TODO Cache in the reader
+			g.Reset(offset)
+			apkBuf, _ = g.Next(apkBuf[:0])
+		}
+		// Look up apkBuf in the post account files
+		for j := len(cvt.postAccounts); j > 0; j-- {
+			item := cvt.postAccounts[j-1]
+			if item.index.Empty() {
+				continue
+			}
+			reader := recsplit.NewIndexReader(item.index)
+			offset := reader.Lookup(apkBuf)
+			g := item.decompressor.MakeGetter() // TODO Cache in the reader
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(apkBuf); keyMatch {
+					apk = encodeU64(offset, []byte{byte(j - 1)})
+					break
+				}
+			}
+		}
+		transAccountPks[i] = apk
+	}
+	for i, spk := range storagePlainKeys {
+		if len(spk) == length.Addr+length.Hash {
+			// Non-optimised key originating from a database record
+			spkBuf = append(spkBuf[:0], spk...)
+		} else {
+			// Optimised key referencing a state file record (file number and offset within the file)
+			fileI := int(spk[0])
+			offset := decodeU64(spk[1:])
+			g := cvt.preStorage[fileI].decompressor.MakeGetter() // TODO Cache in the reader
+			g.Reset(offset)
+			spkBuf, _ = g.Next(spkBuf[:0])
+		}
+		// Lookup spkBuf in the post storage files
+		for j := len(cvt.postStorage); j > 0; j-- {
+			item := cvt.postStorage[j-1]
+			if item.index.Empty() {
+				continue
+			}
+			reader := recsplit.NewIndexReader(item.index)
+			offset := reader.Lookup(spkBuf)
+			g := item.decompressor.MakeGetter() // TODO Cache in the reader
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(spkBuf); keyMatch {
+					spk = encodeU64(offset, []byte{byte(j - 1)})
+					break
+				}
+			}
+		}
+		transStoragePks[i] = spk
+	}
 	var transVal []byte
 	transVal = append(transVal, val[0])
-	if transVal, err = commitment.ReplacePlainKeys(val[1:], accountPlainKeys, storagePlainKeys, numBuf[:], transVal); err != nil {
+	if transVal, err = commitment.ReplacePlainKeys(val[1:], transAccountPks, transStoragePks, cvt.numBuf[:], transVal); err != nil {
 		return nil, err
 	}
 	return transVal, nil
@@ -1121,41 +1225,47 @@ func commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
 
 func (a *Aggregator) backgroundMerge() {
 	defer a.mergeWg.Done()
+	var cvt CommitmentValTransform
 	for range a.mergeChannel {
 		t := time.Now()
 		var err error
-		accountsToRemove, accountsFrom, accountsTo := findLargestMerge(&a.accountsFiles, a.accountsFilesLock.RLocker())
+		var accountsToRemove []*byEndBlockItem
+		var accountsFrom, accountsTo uint64
+		accountsToRemove, cvt.preAccounts, cvt.postAccounts, accountsFrom, accountsTo = findLargestMerge(&a.accountsFiles, a.accountsFilesLock.RLocker())
 		var newAccountsItem *byEndBlockItem
 		if len(accountsToRemove) > 1 {
-			newAccountsFiles := cloneFiles(&a.accountsFiles, &a.accountsFilesLock)
-			if newAccountsItem, err = a.computeAggregation("accounts", newAccountsFiles, accountsToRemove, accountsFrom, accountsTo, nil /* valTransform */); err != nil {
+			if newAccountsItem, err = a.computeAggregation("accounts", accountsToRemove, accountsFrom, accountsTo, nil /* valTransform */); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation accounts: %w", err)
 				return
 			}
+			cvt.postAccounts = append(cvt.postAccounts, newAccountsItem)
 		}
-		codeToRemove, codeFrom, codeTo := findLargestMerge(&a.codeFiles, a.codeFilesLock.RLocker())
+		var codeToRemove []*byEndBlockItem
+		var codeFrom, codeTo uint64
+		codeToRemove, cvt.preCode, cvt.postCode, codeFrom, codeTo = findLargestMerge(&a.codeFiles, a.codeFilesLock.RLocker())
 		var newCodeItem *byEndBlockItem
 		if len(codeToRemove) > 1 {
-			newCodeFiles := cloneFiles(&a.codeFiles, &a.codeFilesLock)
-			if newCodeItem, err = a.computeAggregation("code", newCodeFiles, codeToRemove, codeFrom, codeTo, nil /* valTransform */); err != nil {
+			if newCodeItem, err = a.computeAggregation("code", codeToRemove, codeFrom, codeTo, nil /* valTransform */); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation code: %w", err)
 				return
 			}
+			cvt.postCode = append(cvt.postCode, newCodeItem)
 		}
-		storageToRemove, storageFrom, storageTo := findLargestMerge(&a.storageFiles, a.storageFilesLock.RLocker())
+		var storageToRemove []*byEndBlockItem
+		var storageFrom, storageTo uint64
+		storageToRemove, cvt.preStorage, cvt.postStorage, storageFrom, storageTo = findLargestMerge(&a.storageFiles, a.storageFilesLock.RLocker())
 		var newStorageItem *byEndBlockItem
 		if len(storageToRemove) > 1 {
-			newStorageFiles := cloneFiles(&a.storageFiles, &a.storageFilesLock)
-			if newStorageItem, err = a.computeAggregation("storage", newStorageFiles, storageToRemove, storageFrom, storageTo, nil /* valTransform */); err != nil {
+			if newStorageItem, err = a.computeAggregation("storage", storageToRemove, storageFrom, storageTo, nil /* valTransform */); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation storage: %w", err)
 				return
 			}
+			cvt.postStorage = append(cvt.postStorage, newStorageItem)
 		}
-		commitmentToRemove, commFrom, commTo := findLargestMerge(&a.commitmentFiles, a.commFilesLock.RLocker())
+		commitmentToRemove, _, _, commFrom, commTo := findLargestMerge(&a.commitmentFiles, a.commFilesLock.RLocker())
 		var newCommitmentItem *byEndBlockItem
 		if len(commitmentToRemove) > 1 {
-			newCommitmentFiles := cloneFiles(&a.commitmentFiles, &a.commFilesLock)
-			if newCommitmentItem, err = a.computeAggregation("commitment", newCommitmentFiles, commitmentToRemove, commFrom, commTo, commitmentValTransform); err != nil {
+			if newCommitmentItem, err = a.computeAggregation("commitment", commitmentToRemove, commFrom, commTo, cvt.commitmentValTransform); err != nil {
 				a.mergeError <- fmt.Errorf("computeAggreation commitment: %w", err)
 				return
 			}
@@ -1304,6 +1414,26 @@ func readFromFiles(treeName string, tree **btree.BTree, lock sync.Locker, blockN
 		return val[1:]
 	}
 	return nil
+}
+
+func readByOffset(treeName string, tree **btree.BTree, lock sync.Locker, fileI int, offset uint64) ([]byte, []byte) {
+	lock.Lock()
+	defer lock.Unlock()
+	var key, val []byte
+	fi := 0
+	(*tree).Ascend(func(i btree.Item) bool {
+		if fi < fileI {
+			fi++
+			return true
+		}
+		item := i.(*byEndBlockItem)
+		g := item.decompressor.MakeGetter() // TODO Cache in the reader
+		g.Reset(offset)
+		key, _ = g.Next(nil)
+		val, _ = g.Next(nil)
+		return false
+	})
+	return key, val
 }
 
 func (a *Aggregator) MakeStateReader(tx kv.Getter, blockNum uint64) *Reader {
@@ -1489,19 +1619,26 @@ func bytesToUint64(buf []byte) (x uint64) {
 	return
 }
 
-func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
-	// Look in the summary table first
-	v, err := w.tx.GetOne(kv.StateAccounts, plainKey)
-	if err != nil {
-		return err
-	}
+func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, error) {
 	var enc []byte
-	if v != nil {
-		// First 4 bytes is the number of 1-block state diffs containing the key
-		enc = v[4:]
+	var v []byte
+	var err error
+	if len(plainKey) == length.Addr {
+		// Look in the summary table first
+		if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
+			return nil, err
+		}
+		if v != nil {
+			// First 4 bytes is the number of 1-block state diffs containing the key
+			enc = v[4:]
+		} else {
+			// Look in the files
+			enc = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		}
 	} else {
-		// Look in the files
-		enc = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		fileI := int(plainKey[0])
+		offset := decodeU64(plainKey[1:])
+		plainKey, enc = readByOffset("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), fileI, offset)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1524,7 +1661,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 
 	v, err = w.tx.GetOne(kv.StateCode, plainKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if v != nil {
 		// First 4 bytes is the number of 1-block state diffs containing the key
@@ -1538,26 +1675,33 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 		w.a.keccak.Write(enc)
 		w.a.keccak.(io.Reader).Read(cell.CodeHash[:])
 	}
-	return nil
+	return plainKey, nil
 }
 
-func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
-	// Look in the summary table first
-	v, err := w.tx.GetOne(kv.StateStorage, plainKey)
-	if err != nil {
-		return err
-	}
+func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, error) {
 	var enc []byte
-	if v != nil {
-		// First 4 bytes is the number of 1-block state diffs containing the key
-		enc = v[4:]
+	var v []byte
+	var err error
+	if len(plainKey) == length.Addr+length.Hash {
+		// Look in the summary table first
+		if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
+			return nil, err
+		}
+		if v != nil {
+			// First 4 bytes is the number of 1-block state diffs containing the key
+			enc = v[4:]
+		} else {
+			// Look in the files
+			enc = readFromFiles("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		}
 	} else {
-		// Look in the files
-		enc = readFromFiles("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
+		fileI := int(plainKey[0])
+		offset := decodeU64(plainKey[1:])
+		plainKey, enc = readByOffset("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), fileI, offset)
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
-	return nil
+	return plainKey, nil
 }
 
 func (w *Writer) captureCommitmentData(trace bool) {
@@ -2147,7 +2291,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	return nil
 }
 
-func findLargestMerge(tree **btree.BTree, lock sync.Locker) ([]*byEndBlockItem, uint64, uint64) {
+func findLargestMerge(tree **btree.BTree, lock sync.Locker) (toAggregate []*byEndBlockItem, pre []*byEndBlockItem, post []*byEndBlockItem, aggFrom uint64, aggTo uint64) {
 	lock.Lock()
 	defer lock.Unlock()
 	var maxEndBlock uint64
@@ -2160,34 +2304,34 @@ func findLargestMerge(tree **btree.BTree, lock sync.Locker) ([]*byEndBlockItem, 
 		return false
 	})
 	if maxEndBlock == 0 {
-		return nil, 0, 0
+		return
 	}
-	toAggregate := []*byEndBlockItem{}
-	var aggFrom, aggTo uint64
 	(*tree).Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.decompressor == nil {
 			return true // Skip B-tree based items
 		}
+		pre = append(pre, item)
 		if aggTo == 0 {
 			doubleEnd := item.endBlock + (item.endBlock - item.startBlock) + 1
 			if doubleEnd <= maxEndBlock {
 				aggFrom = item.startBlock
 				aggTo = doubleEnd
 			} else {
+				post = append(post, item)
 				return true
 			}
 		}
-		if item.endBlock > aggTo {
+		toAggregate = append(toAggregate, item)
+		if item.endBlock >= aggTo {
 			return false
 		}
-		toAggregate = append(toAggregate, item)
 		return true
 	})
-	return toAggregate, aggFrom, aggTo
+	return
 }
 
-func (a *Aggregator) computeAggregation(treeName string, tree *btree.BTree, toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64, valTransform func(val []byte, transValBuf []byte) ([]byte, error)) (*byEndBlockItem, error) {
+func (a *Aggregator) computeAggregation(treeName string, toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64, valTransform func(val []byte, transValBuf []byte) ([]byte, error)) (*byEndBlockItem, error) {
 	var item2 = &byEndBlockItem{startBlock: aggFrom, endBlock: aggTo}
 	var cp CursorHeap
 	heap.Init(&cp)

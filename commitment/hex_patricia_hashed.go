@@ -79,9 +79,9 @@ type HexPatriciaHashed struct {
 	// and for the extension, account, and leaf type, the `l` and `k`
 	branchFn func(prefix []byte) ([]byte, error)
 	// Function used to fetch account with given plain key. It loads
-	accountFn func(plainKey []byte, cell *Cell) error
+	accountFn func(plainKey []byte, cell *Cell) ([]byte, error)
 	// Function used to fetch account with given plain key
-	storageFn       func(plainKey []byte, cell *Cell) error
+	storageFn       func(plainKey []byte, cell *Cell) ([]byte, error)
 	keccak          keccakState
 	keccak2         keccakState
 	accountKeyLen   int
@@ -98,8 +98,8 @@ type HexPatriciaHashed struct {
 
 func NewHexPatriciaHashed(accountKeyLen int,
 	branchFn func(prefix []byte) ([]byte, error),
-	accountFn func(plainKey []byte, cell *Cell) error,
-	storageFn func(plainKey []byte, cell *Cell) error,
+	accountFn func(plainKey []byte, cell *Cell) ([]byte, error),
+	storageFn func(plainKey []byte, cell *Cell) ([]byte, error),
 ) *HexPatriciaHashed {
 	return &HexPatriciaHashed{
 		keccak:        sha3.NewLegacyKeccak256().(keccakState),
@@ -823,8 +823,8 @@ func (hph *HexPatriciaHashed) Reset() {
 
 func (hph *HexPatriciaHashed) ResetFns(
 	branchFn func(prefix []byte) ([]byte, error),
-	accountFn func(plainKey []byte, cell *Cell) error,
-	storageFn func(plainKey []byte, cell *Cell) error,
+	accountFn func(plainKey []byte, cell *Cell) ([]byte, error),
+	storageFn func(plainKey []byte, cell *Cell) ([]byte, error),
 ) {
 	hph.branchFn = branchFn
 	hph.accountFn = accountFn
@@ -959,17 +959,23 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
 			}
 			if cell.apl > 0 {
-				if err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
+				var k []byte
+				if k, err = hph.accountFn(cell.apk[:cell.apl], cell); err != nil {
 					return err
 				}
+				cell.apl = len(k)
+				copy(cell.apk[:], k)
 				if hph.trace {
 					fmt.Printf("accountFn[%x] return balance=%d, nonce=%d\n", cell.apk[:cell.apl], &cell.Balance, cell.Nonce)
 				}
 			}
 			if cell.spl > 0 {
-				if err = hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
+				var k []byte
+				if k, err = hph.storageFn(cell.spk[:cell.spl], cell); err != nil {
 					return err
 				}
+				cell.spl = len(k)
+				copy(cell.spk[:], k)
 			}
 			bitset ^= bit
 		}
