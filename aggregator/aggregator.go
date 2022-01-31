@@ -2317,10 +2317,7 @@ func findLargestMerge(tree **btree.BTree, lock sync.Locker) (toAggregate []*byEn
 			}
 		}
 		toAggregate = append(toAggregate, item)
-		if item.endBlock >= aggTo {
-			return false
-		}
-		return true
+		return item.endBlock < aggTo
 	})
 	return
 }
