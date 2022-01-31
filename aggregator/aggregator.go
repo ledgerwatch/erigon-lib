@@ -1172,7 +1172,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					apk = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Printf("encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
+					//"encoding apkBuf [%x] into fileI %d, offset %d = [%x]\n", apkBuf, j-1, offset, apk)
 					break
 				}
 			}
@@ -1204,7 +1204,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					spk = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Printf("encoding spkBuf [%x] into fileI %d, offset %d = [%x]\n", spkBuf, j-1, offset, spk)
+					//fmt.Printf("encoding spkBuf [%x] into fileI %d, offset %d = [%x]\n", spkBuf, j-1, offset, spk)
 					break
 				}
 			}
@@ -1621,24 +1621,23 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	var enc []byte
 	var v []byte
 	var err error
-	if len(plainKey) == length.Addr {
-		// Look in the summary table first
-		if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
-			return nil, err
-		}
-		if v != nil {
-			// First 4 bytes is the number of 1-block state diffs containing the key
-			enc = v[4:]
-		} else {
-			// Look in the files
-			enc = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
-		}
-	} else {
+	if len(plainKey) != length.Addr {
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		fmt.Printf("accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
-		plainKey, enc = readByOffset("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), fileI, offset)
-		fmt.Printf("retrived [%x]\n", plainKey)
+		//fmt.Printf("accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
+		plainKey, _ = readByOffset("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), fileI, offset)
+		//fmt.Printf("retrived [%x]\n", plainKey)
+	}
+	// Look in the summary table first
+	if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
+		return nil, err
+	}
+	if v != nil {
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		enc = v[4:]
+	} else {
+		// Look in the files
+		enc = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1682,24 +1681,23 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	var enc []byte
 	var v []byte
 	var err error
-	if len(plainKey) == length.Addr+length.Hash {
-		// Look in the summary table first
-		if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
-			return nil, err
-		}
-		if v != nil {
-			// First 4 bytes is the number of 1-block state diffs containing the key
-			enc = v[4:]
-		} else {
-			// Look in the files
-			enc = readFromFiles("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
-		}
-	} else {
+	if len(plainKey) != length.Addr+length.Hash {
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		fmt.Printf("storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
-		plainKey, enc = readByOffset("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), fileI, offset)
-		fmt.Printf("retrived [%x]\n", plainKey)
+		//fmt.Printf("storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
+		plainKey, _ = readByOffset("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), fileI, offset)
+		//fmt.Printf("retrived [%x]\n", plainKey)
+	}
+	// Look in the summary table first
+	if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
+		return nil, err
+	}
+	if v != nil {
+		// First 4 bytes is the number of 1-block state diffs containing the key
+		enc = v[4:]
+	} else {
+		// Look in the files
+		enc = readFromFiles("storage", &w.a.storageFiles, w.a.storageFilesLock.RLocker(), w.blockNum, plainKey, false /* trace */)
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
