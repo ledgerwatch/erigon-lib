@@ -952,9 +952,6 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 			if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
 				return err
 			}
-			if err = cell.deriveHashedKeys(depth, hph.keccak, hph.hashBuf[:length.Hash], hph.accountKeyLen); err != nil {
-				return err
-			}
 			if hph.trace {
 				fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
 			}
@@ -976,6 +973,9 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 				}
 				cell.spl = len(k)
 				copy(cell.spk[:], k)
+			}
+			if err = cell.deriveHashedKeys(depth, hph.keccak, hph.hashBuf[:length.Hash], hph.accountKeyLen); err != nil {
+				return err
 			}
 			bitset ^= bit
 		}
