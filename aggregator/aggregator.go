@@ -1103,12 +1103,16 @@ func (a *Aggregator) backgroundAggregation() {
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
 // the updated references
 func commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
+	if len(val) == 0 {
+		return val, nil
+	}
 	var numBuf [binary.MaxVarintLen64]byte
-	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val)
+	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val[1:])
 	if err != nil {
 		return nil, err
 	}
 	var transVal []byte
+	transVal = append(transVal, val[0])
 	if transVal, err = commitment.ReplacePlainKeys(val, accountPlainKeys, storagePlainKeys, numBuf[:], transVal); err != nil {
 		return nil, err
 	}
