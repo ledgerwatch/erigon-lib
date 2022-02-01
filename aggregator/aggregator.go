@@ -960,13 +960,44 @@ type AggregationTask struct {
 	blockTo        uint64
 }
 
-func removeLocked(tree **btree.BTree, lock sync.Locker, toRemove []*byEndBlockItem, toAdd *byEndBlockItem) {
-	lock.Lock()
-	defer lock.Unlock()
-	for _, ag := range toRemove {
-		(*tree).Delete(ag)
+func (a *Aggregator) removeLocked(
+	accountsToRemove []*byEndBlockItem, accountsItem *byEndBlockItem,
+	codeToRemove []*byEndBlockItem, codeItem *byEndBlockItem,
+	storageToRemove []*byEndBlockItem, storageItem *byEndBlockItem,
+	commitmentToRemove []*byEndBlockItem, commitmentItem *byEndBlockItem,
+) {
+	a.accountsFilesLock.Lock()
+	defer a.accountsFilesLock.Unlock()
+	a.codeFilesLock.Lock()
+	defer a.codeFilesLock.Unlock()
+	a.storageFilesLock.Lock()
+	defer a.storageFilesLock.Unlock()
+	a.commFilesLock.Lock()
+	defer a.commFilesLock.Unlock()
+	if len(accountsToRemove) > 1 {
+		for _, ag := range accountsToRemove {
+			a.accountsFiles.Delete(ag)
+		}
+		a.accountsFiles.ReplaceOrInsert(accountsItem)
 	}
-	(*tree).ReplaceOrInsert(toAdd)
+	if len(codeToRemove) > 1 {
+		for _, ag := range codeToRemove {
+			a.codeFiles.Delete(ag)
+		}
+		a.codeFiles.ReplaceOrInsert(codeItem)
+	}
+	if len(storageToRemove) > 1 {
+		for _, ag := range storageToRemove {
+			a.storageFiles.Delete(ag)
+		}
+		a.storageFiles.ReplaceOrInsert(storageItem)
+	}
+	if len(commitmentToRemove) > 1 {
+		for _, ag := range commitmentToRemove {
+			a.commitmentFiles.Delete(ag)
+		}
+		a.commitmentFiles.ReplaceOrInsert(commitmentItem)
+	}
 }
 
 func removeFiles(treeName string, diffDir string, toRemove []*byEndBlockItem) error {
@@ -1290,27 +1321,22 @@ func (a *Aggregator) backgroundMerge() {
 			}
 		}
 		// Switch aggregator to new state files, close and remove old files
+		a.removeLocked(accountsToRemove, newAccountsItem, codeToRemove, newCodeItem, storageToRemove, newStorageItem, commitmentToRemove, newCommitmentItem)
 		if len(accountsToRemove) > 1 {
-			removeLocked(&a.accountsFiles, &a.accountsFilesLock, accountsToRemove, newAccountsItem)
 			removeFiles("accounts", a.diffDir, accountsToRemove)
 		}
 		if len(codeToRemove) > 1 {
-			removeLocked(&a.codeFiles, &a.codeFilesLock, codeToRemove, newCodeItem)
 			removeFiles("code", a.diffDir, codeToRemove)
 		}
 		if len(storageToRemove) > 1 {
-			removeLocked(&a.storageFiles, &a.storageFilesLock, storageToRemove, newStorageItem)
 			removeFiles("storage", a.diffDir, storageToRemove)
 		}
 		if len(commitmentToRemove) > 1 {
-			removeLocked(&a.commitmentFiles, &a.commFilesLock, commitmentToRemove, newCommitmentItem)
 			removeFiles("commitment", a.diffDir, commitmentToRemove)
 		}
-		if len(accountsToRemove) > 1 {
-			mergeTime := time.Since(t)
-			if mergeTime > time.Minute {
-				log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", len(accountsToRemove), "time", time.Since(t))
-			}
+		mergeTime := time.Since(t)
+		if mergeTime > time.Minute {
+			log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", len(accountsToRemove)-1+len(codeToRemove)-1+len(storageToRemove)-1+len(commitmentToRemove)-1, "time", time.Since(t))
 		}
 	}
 }
@@ -1619,6 +1645,7 @@ func (i *CommitmentItem) Less(than btree.Item) bool {
 
 func (w *Writer) lockFn() {
 	w.a.accountsFilesLock.RLock()
+	w.a.codeFilesLock.RLock()
 	w.a.storageFilesLock.RLock()
 	w.a.commFilesLock.RLock()
 }
@@ -1626,6 +1653,7 @@ func (w *Writer) lockFn() {
 func (w *Writer) unlockFn() {
 	w.a.commFilesLock.RUnlock()
 	w.a.storageFilesLock.RUnlock()
+	w.a.codeFilesLock.RUnlock()
 	w.a.accountsFilesLock.RUnlock()
 }
 
