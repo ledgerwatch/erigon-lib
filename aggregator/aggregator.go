@@ -1203,7 +1203,6 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					apk = encodeU64(offset, []byte{byte(j - 1)})
-					//fmt.Fprintf(os.Stderr, "encoding apkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", apkBuf, j-1, offset, apk, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1235,7 +1234,6 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					spk = encodeU64(offset, []byte{byte(j - 1)})
-					//fmt.Fprintf(os.Stderr, "encoding spkBuf [%x] into fileI %d, offset %d = [%x], file [%d-%d]\n", spkBuf, j-1, offset, spk, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1473,7 +1471,6 @@ func readByOffset(treeName string, tree **btree.BTree, fileI int, offset uint64)
 			return true
 		}
 		item := i.(*byEndBlockItem)
-		//fmt.Fprintf(os.Stderr, "found in file [%d-%d]\n", item.startBlock, item.endBlock)
 		g := item.decompressor.MakeGetter() // TODO Cache in the reader
 		g.Reset(offset)
 		key, _ = g.Next(nil)
@@ -1687,13 +1684,11 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	var enc []byte
 	var v []byte
 	var err error
-	if len(plainKey) != length.Addr {
+	if len(plainKey) != length.Addr { // Accessing account key and value via "thin reference" to the state file and offset
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		//fmt.Fprintf(os.Stderr, "accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
 		plainKey, enc = readByOffset("accounts", &w.a.accountsFiles, fileI, offset)
-		//fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
-	} else {
+	} else { // Full account key is provided, search as usual
 		// Look in the summary table first
 		if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
 			return nil, err
@@ -1747,13 +1742,11 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	var enc []byte
 	var v []byte
 	var err error
-	if len(plainKey) != length.Addr+length.Hash {
+	if len(plainKey) != length.Addr+length.Hash { // Accessing storage key and value via "thin reference" to the state file and offset
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
-		//fmt.Fprintf(os.Stderr, "storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
 		plainKey, enc = readByOffset("storage", &w.a.storageFiles, fileI, offset)
-		//fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
-	} else {
+	} else { // Full storage key is provided, search as usual
 		// Look in the summary table first
 		if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
 			return nil, err
