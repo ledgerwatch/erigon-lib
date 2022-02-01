@@ -1691,19 +1691,20 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
 		//fmt.Fprintf(os.Stderr, "accountFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
-		plainKey, _ = readByOffset("accounts", &w.a.accountsFiles, fileI, offset)
+		plainKey, enc = readByOffset("accounts", &w.a.accountsFiles, fileI, offset)
 		//fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
-	}
-	// Look in the summary table first
-	if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
-		return nil, err
-	}
-	if v != nil {
-		// First 4 bytes is the number of 1-block state diffs containing the key
-		enc = v[4:]
 	} else {
-		// Look in the files
-		enc = readFromFiles("accounts", &w.a.accountsFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
+		// Look in the summary table first
+		if v, err = w.tx.GetOne(kv.StateAccounts, plainKey); err != nil {
+			return nil, err
+		}
+		if v != nil {
+			// First 4 bytes is the number of 1-block state diffs containing the key
+			enc = v[4:]
+		} else {
+			// Look in the files
+			enc = readFromFiles("accounts", &w.a.accountsFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
+		}
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1723,7 +1724,6 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 			cell.Balance.SetBytes(enc[pos : pos+balanceBytes])
 		}
 	}
-
 	v, err = w.tx.GetOne(kv.StateCode, plainKey)
 	if err != nil {
 		return nil, err
@@ -1751,19 +1751,20 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
 		//fmt.Fprintf(os.Stderr, "storageFn, plainKey [%x], fileI %d, offset %d\n", plainKey, fileI, offset)
-		plainKey, _ = readByOffset("storage", &w.a.storageFiles, fileI, offset)
+		plainKey, enc = readByOffset("storage", &w.a.storageFiles, fileI, offset)
 		//fmt.Fprintf(os.Stderr, "retrived [%x]\n", plainKey)
-	}
-	// Look in the summary table first
-	if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
-		return nil, err
-	}
-	if v != nil {
-		// First 4 bytes is the number of 1-block state diffs containing the key
-		enc = v[4:]
 	} else {
-		// Look in the files
-		enc = readFromFiles("storage", &w.a.storageFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
+		// Look in the summary table first
+		if v, err = w.tx.GetOne(kv.StateStorage, plainKey); err != nil {
+			return nil, err
+		}
+		if v != nil {
+			// First 4 bytes is the number of 1-block state diffs containing the key
+			enc = v[4:]
+		} else {
+			// Look in the files
+			enc = readFromFiles("storage", &w.a.storageFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
+		}
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
