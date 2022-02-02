@@ -478,6 +478,7 @@ func buildIndex(datPath, idxPath, tmpDir string, count int) (*compress.Decompres
 	var pos uint64
 	g := d.MakeGetter()
 	for {
+		g.Reset(0)
 		for g.HasNext() {
 			word, _ = g.Next(word[:0])
 			if err = rs.AddKey(word, pos); err != nil {
