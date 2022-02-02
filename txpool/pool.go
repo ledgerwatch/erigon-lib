@@ -1319,16 +1319,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				log.Debug("[txpool] Commit", "written_kb", written/1024, "in", time.Since(t))
 			}
 		case h := <-newTxs:
-			for { // drain whole channel
-				select {
-				case a := <-newTxs:
-					h = append(h, a...)
-					continue
-				default:
-				}
-				break
-			}
-
 			go func() {
 				if h.Len() == 0 {
 					return
