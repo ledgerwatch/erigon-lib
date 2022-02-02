@@ -84,7 +84,7 @@ func TestSimpleAggregator(t *testing.T) {
 	defer rwTx.Rollback()
 
 	w := a.MakeStateWriter(true /* beforeOn */)
-	if err = w.Reset(rwTx, 0); err != nil {
+	if err = w.Reset(0); err != nil {
 		t.Fatal(err)
 	}
 	defer w.Close()
@@ -106,7 +106,7 @@ func TestSimpleAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	r := a.MakeStateReader(tx, 2)
+	r := a.MakeStateReader(2)
 	var acc []byte
 	if acc, err = r.ReadAccountData(int160(1), false /* trace */); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestLoopAggregator(t *testing.T) {
 		if rwTx, err = db.BeginRw(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if err = w.Reset(rwTx, blockNum); err != nil {
+		if err = w.Reset(blockNum); err != nil {
 			t.Fatal(err)
 		}
 		if err = w.UpdateAccountData(accountKey, account1, false /* trace */); err != nil {
@@ -162,7 +162,7 @@ func TestLoopAggregator(t *testing.T) {
 		if tx, err = db.BeginRo(ctx); err != nil {
 			t.Fatal(err)
 		}
-		r := a.MakeStateReader(tx, blockNum+1)
+		r := a.MakeStateReader(blockNum + 1)
 		var acc []byte
 		if acc, err = r.ReadAccountData(accountKey, false /* trace */); err != nil {
 			t.Fatal(err)
@@ -177,7 +177,7 @@ func TestLoopAggregator(t *testing.T) {
 		t.Fatal(err)
 	}
 	blockNum := uint64(1000)
-	r := a.MakeStateReader(tx, blockNum)
+	r := a.MakeStateReader(blockNum)
 	for i := uint64(0); i < blockNum/10+1; i++ {
 		accountKey := int160(i)
 		var expected []byte
@@ -222,7 +222,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 		if rwTx, err = db.BeginRw(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if err = w.Reset(rwTx, blockNum); err != nil {
+		if err = w.Reset(blockNum); err != nil {
 			t.Fatal(err)
 		}
 		switch blockNum {
@@ -261,7 +261,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 		if tx, err = db.BeginRo(ctx); err != nil {
 			t.Fatal(err)
 		}
-		r := a.MakeStateReader(tx, blockNum+1)
+		r := a.MakeStateReader(blockNum + 1)
 		switch blockNum {
 		case 1:
 			var acc []byte
@@ -352,7 +352,7 @@ func TestChangeCode(t *testing.T) {
 		if rwTx, err = db.BeginRw(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if err = w.Reset(rwTx, blockNum); err != nil {
+		if err = w.Reset(blockNum); err != nil {
 			t.Fatal(err)
 		}
 		switch blockNum {
@@ -380,7 +380,7 @@ func TestChangeCode(t *testing.T) {
 		if tx, err = db.BeginRo(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		r := a.MakeStateReader(tx, blockNum+1)
+		r := a.MakeStateReader(blockNum + 1)
 		switch blockNum {
 		case 22:
 			var acc []byte
