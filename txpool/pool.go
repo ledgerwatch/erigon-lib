@@ -457,7 +457,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- p.promoted.DedupCopy():
+		case p.newPendingTxs <- common.Copy(p.promoted):
 		default:
 		}
 	}
@@ -515,7 +515,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case p.newPendingTxs <- p.promoted.DedupCopy():
+		case p.newPendingTxs <- common.Copy(p.promoted):
 		default:
 		}
 	}
@@ -840,7 +840,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	}
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- p.promoted.DedupCopy():
+		case p.newPendingTxs <- common.Copy(p.promoted):
 		default:
 		}
 	}
@@ -1320,11 +1320,21 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			}
 		case h := <-newTxs:
 			go func() {
+				for i := 0; i < 16; i++ { // drain more events from channel, then merge and dedup them
+					select {
+					case a := <-newTxs:
+						h = append(h, a...)
+						continue
+					default:
+					}
+					break
+				}
 				if h.Len() == 0 {
 					return
 				}
-
 				defer propagateNewTxsTimer.UpdateDuration(time.Now())
+
+				h = h.DedupCopy()
 
 				notifyMiningAboutNewSlots()
 
