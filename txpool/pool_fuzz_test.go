@@ -35,6 +35,7 @@ func init() {
 	log.Root().SetHandler(log.LvlFilterHandler(log.LvlWarn, log.StderrHandler))
 }
 
+/*
 func FuzzTwoQueue(f *testing.F) {
 	f.Add([]uint8{0b1000, 0b0101, 0b0111})
 	f.Add([]uint8{0b0101, 0b1110, 0b1101, 0b0001})
@@ -118,7 +119,7 @@ func FuzzTwoQueue(f *testing.F) {
 		}
 	})
 }
-
+*/
 func u64Slice(in []byte) ([]uint64, bool) {
 	if len(in) < 8 {
 		return nil, false
