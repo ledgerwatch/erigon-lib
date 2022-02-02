@@ -748,8 +748,10 @@ type byEndBlockItem struct {
 	endBlock     uint64
 	decompressor *compress.Decompressor
 	getter       *compress.Getter // reader for the decompressor
+	getterMerge  *compress.Getter // reader for the decomporessor used in the background merge thread
 	index        *recsplit.Index
 	indexReader  *recsplit.IndexReader // reader for the index
+	readerMerge  *recsplit.IndexReader // index reader for the background merge thread
 	tree         *btree.BTree          // Substitute for decompressor+index combination
 }
 
@@ -1056,7 +1058,9 @@ func (a *Aggregator) backgroundAggregation() {
 			return
 		}
 		accountsItem.getter = accountsItem.decompressor.MakeGetter()
+		accountsItem.getterMerge = accountsItem.decompressor.MakeGetter()
 		accountsItem.indexReader = recsplit.NewIndexReader(accountsItem.index)
+		accountsItem.readerMerge = recsplit.NewIndexReader(accountsItem.index)
 		if err = aggTask.accountChanges.deleteFiles(); err != nil {
 			a.aggError <- fmt.Errorf("delete accountChanges: %w", err)
 			return
@@ -1080,7 +1084,9 @@ func (a *Aggregator) backgroundAggregation() {
 			return
 		}
 		codeItem.getter = codeItem.decompressor.MakeGetter()
+		codeItem.getterMerge = codeItem.decompressor.MakeGetter()
 		codeItem.indexReader = recsplit.NewIndexReader(codeItem.index)
+		codeItem.readerMerge = recsplit.NewIndexReader(codeItem.index)
 		if err = aggTask.codeChanges.deleteFiles(); err != nil {
 			a.aggError <- fmt.Errorf("delete codeChanges: %w", err)
 			return
@@ -1104,7 +1110,9 @@ func (a *Aggregator) backgroundAggregation() {
 			return
 		}
 		storageItem.getter = storageItem.decompressor.MakeGetter()
+		storageItem.getterMerge = storageItem.decompressor.MakeGetter()
 		storageItem.indexReader = recsplit.NewIndexReader(storageItem.index)
+		storageItem.readerMerge = recsplit.NewIndexReader(storageItem.index)
 		if err = aggTask.storageChanges.deleteFiles(); err != nil {
 			a.aggError <- fmt.Errorf("delete storageChanges: %w", err)
 			return
@@ -1120,7 +1128,9 @@ func (a *Aggregator) backgroundAggregation() {
 			return
 		}
 		commitmentItem.getter = commitmentItem.decompressor.MakeGetter()
+		commitmentItem.getterMerge = commitmentItem.decompressor.MakeGetter()
 		commitmentItem.indexReader = recsplit.NewIndexReader(commitmentItem.index)
+		commitmentItem.readerMerge = recsplit.NewIndexReader(commitmentItem.index)
 		if err = aggTask.commChanges.deleteFiles(); err != nil {
 			a.aggError <- fmt.Errorf("delete commChanges: %w", err)
 			return
@@ -1198,7 +1208,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			// Optimised key referencing a state file record (file number and offset within the file)
 			fileI := int(apk[0])
 			offset := decodeU64(apk[1:])
-			g := cvt.preAccounts[fileI].getter
+			g := cvt.preAccounts[fileI].getterMerge
 			g.Reset(offset)
 			apkBuf, _ = g.Next(apkBuf[:0])
 		}
@@ -1208,8 +1218,8 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if item.index.Empty() {
 				continue
 			}
-			offset := item.indexReader.Lookup(apkBuf)
-			g := item.getter
+			offset := item.readerMerge.Lookup(apkBuf)
+			g := item.getterMerge
 			g.Reset(offset)
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
@@ -1228,7 +1238,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			// Optimised key referencing a state file record (file number and offset within the file)
 			fileI := int(spk[0])
 			offset := decodeU64(spk[1:])
-			g := cvt.preStorage[fileI].getter
+			g := cvt.preStorage[fileI].getterMerge
 			g.Reset(offset)
 			spkBuf, _ = g.Next(spkBuf[:0])
 		}
@@ -1238,8 +1248,8 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if item.index.Empty() {
 				continue
 			}
-			offset := item.indexReader.Lookup(spkBuf)
-			g := item.getter
+			offset := item.readerMerge.Lookup(spkBuf)
+			g := item.getterMerge
 			g.Reset(offset)
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
@@ -1386,7 +1396,9 @@ func openFiles(treeName string, diffDir string, tree *btree.BTree) error {
 			return false
 		}
 		item.getter = item.decompressor.MakeGetter()
+		item.getterMerge = item.decompressor.MakeGetter()
 		item.indexReader = recsplit.NewIndexReader(item.index)
+		item.readerMerge = recsplit.NewIndexReader(item.index)
 		return true
 	})
 	return err
@@ -2416,7 +2428,9 @@ func (a *Aggregator) computeAggregation(treeName string, toAggregate []*byEndBlo
 		return nil, fmt.Errorf("mergeIntoStateFile %s [%d-%d]: %w", treeName, aggFrom, aggTo, err)
 	}
 	item2.getter = item2.decompressor.MakeGetter()
+	item2.getterMerge = item2.decompressor.MakeGetter()
 	item2.indexReader = recsplit.NewIndexReader(item2.index)
+	item2.readerMerge = recsplit.NewIndexReader(item2.index)
 	return item2, nil
 }
 
