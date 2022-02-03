@@ -647,6 +647,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		log.Error("processSuperstring", "create divsufsoet", err)
 	}
 	for superstring := range superstringCh {
+		t := time.Now()
 		sa = sa[:len(superstring)]
 		//log.Info("Superstring", "len", len(superstring))
 		//start := time.Now()
@@ -794,6 +795,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				break
 			}
 		}
+		fmt.Printf("took: %s\n", time.Since(t))
 	}
 }
 
