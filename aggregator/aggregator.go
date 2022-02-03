@@ -39,7 +39,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/compress"
-	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/crypto/sha3"
@@ -658,6 +657,7 @@ func (c *Changes) produceChangeSets(datPath, idxPath string) error {
 // of the latest change. Also, the first byte of value in the B-tree indicates whether the change has occurred from
 // non-existent (zero) value. In such cases, the fist byte is set to 1 (insertion), otherwise it is 0 (update).
 func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, insertFlag bool) error {
+	fmt.Printf("aggregateToBtree %s\n", c.keys.path)
 	var b bool
 	var e error
 	var key, before, after []byte
@@ -931,9 +931,6 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		}
 		return true
 	})
-	if err = a.rebuildRecentState(); err != nil {
-		return nil, fmt.Errorf("rebuilding recent state from change files: %w", err)
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -948,6 +945,9 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	}
 	if err = checkOverlapWithMinStart("commitment", a.commitmentFiles, minStart); err != nil {
 		return nil, err
+	}
+	if err = a.rebuildRecentState(); err != nil {
+		return nil, fmt.Errorf("rebuilding recent state from change files: %w", err)
 	}
 	closeStateFiles = false
 	a.aggWg.Add(1)
@@ -2131,7 +2131,6 @@ type CursorItem struct {
 	endBlock uint64
 	key, val []byte
 	dg       *compress.Getter
-	c        kv.Cursor
 	tree     *btree.BTree
 }
 
