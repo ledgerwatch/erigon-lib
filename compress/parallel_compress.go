@@ -655,11 +655,11 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		//log.Info("Suffix array built", "in", time.Since(start))
 		// filter out suffixes that start with odd positions
 		n := len(sa) / 2
-		filtered := make([]int32, n)
+		filtered := make([]int, n)
 		var j int
 		for i := 0; i < len(sa); i++ {
 			if sa[i]&1 == 0 {
-				filtered[j] = sa[i] >> 1
+				filtered[j] = int(sa[i] >> 1)
 				j++
 			}
 		}
@@ -670,9 +670,9 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				inv[filtered[i]] = int32(i)
 			}
 		*/
-		inv := make([]int32, n)
+		inv := make([]int, n)
 		for i := 0; i < n; i++ {
-			inv[filtered[i]] = int32(i)
+			inv[filtered[i]] = int(i)
 		}
 		//log.Info("Inverted array done")
 		lcp := make([]int32, n)
@@ -683,7 +683,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			/* If the current suffix is at n-1, then we don’t
 			   have next substring to consider. So lcp is not
 			   defined for this substring, we put zero. */
-			if inv[i] == int32(n-1) {
+			if inv[i] == int(n-1) {
 				k = 0
 				continue
 			}
@@ -732,7 +732,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		}
 		//log.Info("LCP array checked")
 		// Walk over LCP array and compute the scores of the strings
-		var b Int32Sort = inv
+		var b = inv
 		j = 0
 		for i := 0; i < n-1; i++ {
 			// Only when there is a drop in LCP value
@@ -761,11 +761,11 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 
 				window := i - j + 2
 				copy(b, filtered[j:i+2])
-				sort.Sort(b[:window])
+				sort.Ints(b[:window])
 				repeats := 1
 				lastK := 0
 				for k := 1; k < window; k++ {
-					if b[k] >= b[lastK]+int32(l) {
+					if b[k] >= b[lastK]+int(l) {
 						repeats++
 						lastK = k
 					}
