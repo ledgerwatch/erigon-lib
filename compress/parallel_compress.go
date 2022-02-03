@@ -796,7 +796,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			}
 		}
 		took := time.Since(t)
-		if took > 10*time.Millisecond {
+		if took > 10*time.Millisecond && len(superstring) > superstringLimit/2 {
 			fmt.Printf("took: %s\n", time.Since(t))
 		}
 	}
