@@ -1107,6 +1107,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
 	minTip := uint64(math.MaxUint64)
+	var toDel []*metaTx // can't delete items while iterate them
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
 		if mt.Tx.traced {
 			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
@@ -1126,7 +1127,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			default:
 				//already removed
 			}
-			discard(mt, NonceTooLow)
+			toDel = append(toDel, mt)
 			return true
 		}
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
@@ -1206,6 +1207,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		}
 		return true
 	})
+	for _, mt := range toDel {
+		discard(mt, NonceTooLow)
+	}
 }
 
 // promote reasserts invariants of the subpool and returns the list of transactions that ended up
