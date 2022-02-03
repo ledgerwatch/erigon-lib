@@ -17,8 +17,31 @@
 package compress
 
 import (
+	"context"
+	"fmt"
+	"path"
 	"testing"
 )
+
+func BenchmarkName(b *testing.B) {
+	tmpDir := b.TempDir()
+	file := path.Join(tmpDir, "compressed")
+	//defer c.Close()
+	a := string(make([]byte, 5000))
+
+	for i := 0; i < b.N; i++ {
+		c, err := NewCompressor(context.Background(), b.Name(), file, tmpDir, 1, 1)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		for i := 0; i < 100; i++ {
+			if err = c.AddWord([]byte(a + fmt.Sprintf("longlongword %d", i))); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
 
 func BenchmarkDecompressNext(b *testing.B) {
 	t := new(testing.T)
