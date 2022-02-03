@@ -1587,16 +1587,16 @@ type Reader struct {
 	blockNum uint64
 }
 
-func (r *Reader) ReadAccountData(addr []byte, trace bool) ([]byte, error) {
+func (r *Reader) ReadAccountData(addr []byte, trace bool) []byte {
 	// Look in the summary table first
 	r.search.k = addr
 	if vi := r.a.accountsTree.Get(&r.search); vi != nil {
-		return vi.(*AggregateItem).v, nil
+		return vi.(*AggregateItem).v
 	}
-	return readFromFiles("accounts", &r.a.accountsFiles, r.a.accountsFilesLock.RLocker(), r.blockNum, addr, trace), nil
+	return readFromFiles("accounts", &r.a.accountsFiles, r.a.accountsFilesLock.RLocker(), r.blockNum, addr, trace)
 }
 
-func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) (*uint256.Int, error) {
+func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) *uint256.Int {
 	// Look in the summary table first
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
@@ -1609,29 +1609,29 @@ func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) (*uint2
 		v = readFromFiles("storage", &r.a.storageFiles, r.a.storageFilesLock.RLocker(), r.blockNum, dbkey, trace)
 	}
 	if v != nil {
-		return new(uint256.Int).SetBytes(v), nil
+		return new(uint256.Int).SetBytes(v)
 	}
-	return nil, nil
+	return nil
 }
 
-func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
+func (r *Reader) ReadAccountCode(addr []byte, trace bool) []byte {
 	// Look in the summary table first
 	r.search.k = addr
 	if vi := r.a.codeTree.Get(&r.search); vi != nil {
-		return vi.(*AggregateItem).v, nil
+		return vi.(*AggregateItem).v
 	}
 	// Look in the files
-	return readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace), nil
+	return readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)
 }
 
-func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) (int, error) {
+func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) int {
 	// Look in the summary table first
 	r.search.k = addr
 	if vi := r.a.codeTree.Get(&r.search); vi != nil {
-		return len(vi.(*AggregateItem).v), nil
+		return len(vi.(*AggregateItem).v)
 	}
-	// Look in the files
-	return len(readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)), nil
+	// Look in the files. TODO - use specialised function to only lookup size
+	return len(readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace))
 }
 
 type Writer struct {
@@ -2059,7 +2059,7 @@ func (w *Writer) Aggregate(trace bool) error {
 	return nil
 }
 
-func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) error {
+func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) {
 	var prevV *AggregateItem
 	w.search.k = addr
 	if prevVI := w.a.accountsTree.Get(&w.search); prevVI != nil {
@@ -2073,7 +2073,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 	}
 	if bytes.Equal(account, original) {
 		// No change
-		return nil
+		return
 	}
 	if prevV == nil {
 		w.a.accountsTree.ReplaceOrInsert(&AggregateItem{k: addr, v: account, count: 1})
@@ -2090,10 +2090,9 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 		w.a.trace = true
 		w.a.tracedKeys[string(addr)] = struct{}{}
 	}
-	return nil
 }
 
-func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
+func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) {
 	var prevV *AggregateItem
 	w.search.k = addr
 	if prevVI := w.a.codeTree.Get(&w.search); prevVI != nil {
@@ -2120,14 +2119,12 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 		w.a.trace = true
 		w.a.tracedKeys[string(addr)] = struct{}{}
 	}
-	return nil
 }
 
 type CursorType uint8
 
 const (
 	FILE_CURSOR CursorType = iota
-	DB_CURSOR
 	TREE_CURSOR
 )
 
@@ -2172,7 +2169,7 @@ func (ch *CursorHeap) Pop() interface{} {
 	return x
 }
 
-func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
+func (w *Writer) deleteAccount(addr []byte, trace bool) bool {
 	var prevV *AggregateItem
 	w.search.k = addr
 	if prevVI := w.a.accountsTree.Get(&w.search); prevVI != nil {
@@ -2182,7 +2179,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	if prevV == nil {
 		original = readFromFiles("accounts", &w.a.accountsFiles, w.a.accountsFilesLock.RLocker(), w.blockNum, addr, trace)
 		if original == nil {
-			return false, nil
+			return false
 		}
 	} else {
 		original = prevV.v
@@ -2194,10 +2191,10 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 		prevV.count++
 	}
 	w.accountChanges.delete(addr, original)
-	return true, nil
+	return true
 }
 
-func (w *Writer) deleteCode(addr []byte, trace bool) error {
+func (w *Writer) deleteCode(addr []byte, trace bool) {
 	var prevV *AggregateItem
 	w.search.k = addr
 	if prevVI := w.a.codeTree.Get(&w.search); prevVI != nil {
@@ -2208,7 +2205,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 		original = readFromFiles("code", &w.a.codeFiles, w.a.codeFilesLock.RLocker(), w.blockNum, addr, trace)
 		if original == nil {
 			// Nothing to do
-			return nil
+			return
 		}
 	} else {
 		original = prevV.v
@@ -2220,18 +2217,13 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 		prevV.count++
 	}
 	w.codeChanges.delete(addr, original)
-	return nil
 }
 
-func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
-	if deleted, err := w.deleteAccount(addr, trace); err != nil {
-		return err
-	} else if !deleted {
-		return nil
+func (w *Writer) DeleteAccount(addr []byte, trace bool) {
+	if deleted := w.deleteAccount(addr, trace); !deleted {
+		return
 	}
-	if err := w.deleteCode(addr, trace); err != nil {
-		return err
-	}
+	w.deleteCode(addr, trace)
 	// Find all storage items for this address
 	var cp CursorHeap
 	heap.Init(&cp)
@@ -2343,10 +2335,9 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		w.a.trace = true
 		w.a.tracedKeys[string(addr)] = struct{}{}
 	}
-	return nil
 }
 
-func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int, trace bool) error {
+func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int, trace bool) {
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
 	copy(dbkey[len(addr):], loc)
@@ -2366,7 +2357,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	value.WriteToSlice(v)
 	if bytes.Equal(v, original) {
 		// No change
-		return nil
+		return
 	}
 	if prevV == nil {
 		w.a.storageTree.ReplaceOrInsert(&AggregateItem{k: dbkey, v: v, count: 1})
@@ -2383,7 +2374,6 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 		w.a.trace = true
 		w.a.tracedKeys[string(dbkey)] = struct{}{}
 	}
-	return nil
 }
 
 func findLargestMerge(tree **btree.BTree, lock sync.Locker, maxTo uint64) (toAggregate []*byEndBlockItem, pre []*byEndBlockItem, post []*byEndBlockItem, aggFrom uint64, aggTo uint64) {
