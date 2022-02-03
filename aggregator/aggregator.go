@@ -657,7 +657,6 @@ func (c *Changes) produceChangeSets(datPath, idxPath string) error {
 // of the latest change. Also, the first byte of value in the B-tree indicates whether the change has occurred from
 // non-existent (zero) value. In such cases, the fist byte is set to 1 (insertion), otherwise it is 0 (update).
 func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, insertFlag bool) error {
-	fmt.Printf("aggregateToBtree %s\n", c.keys.path)
 	var b bool
 	var e error
 	var key, before, after []byte
@@ -676,7 +675,15 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, insertFlag bo
 			ai.k = key
 			i := bt.Get(&ai)
 			if i == nil {
-				item := &AggregateItem{k: common.Copy(key), count: 1, v: common.Copy(after)}
+				var v []byte
+				if len(after) > 0 {
+					if insertFlag {
+						v = common.Copy(after)
+					} else {
+						v = common.Copy(after[1:])
+					}
+				}
+				item := &AggregateItem{k: common.Copy(key), v: v, count: 1}
 				bt.ReplaceOrInsert(item)
 			} else {
 				item := i.(*AggregateItem)
