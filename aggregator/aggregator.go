@@ -566,6 +566,7 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 }
 
 func (c *Changes) produceChangeSets(datPath, idxPath string) error {
+	defer func(t time.Time) { fmt.Printf("aggregator.go:569 produceChangeSets: %s\n", time.Since(t)) }(time.Now())
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, c.dir, compress.MinPatternScore, 1)
 	if err != nil {
 		return fmt.Errorf("produceChangeSets NewCompressor: %w", err)
