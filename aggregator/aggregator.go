@@ -516,7 +516,7 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, dbTree *bt
 		return nil, fmt.Errorf("open files: %w", err)
 	}
 	bt := btree.New(32)
-	err := c.aggregateToBtree(bt, prefixLen)
+	err := c.aggregateToBtree(bt, prefixLen, true)
 	if err != nil {
 		return nil, fmt.Errorf("aggregateToBtree: %w", err)
 	}
@@ -657,7 +657,7 @@ func (c *Changes) produceChangeSets(datPath, idxPath string) error {
 // and create a B-tree where each key is only represented once, with the value corresponding to the "after" value
 // of the latest change. Also, the first byte of value in the B-tree indicates whether the change has occurred from
 // non-existent (zero) value. In such cases, the fist byte is set to 1 (insertion), otherwise it is 0 (update).
-func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
+func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, insertFlag bool) error {
 	var b bool
 	var e error
 	var key, before, after []byte
@@ -680,7 +680,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 				bt.ReplaceOrInsert(item)
 			} else {
 				item := i.(*AggregateItem)
-				if len(item.v) > 0 && len(after) > 0 {
+				if insertFlag && len(item.v) > 0 && len(after) > 0 {
 					item.v[0] = after[0]
 				}
 				item.count++
@@ -968,7 +968,7 @@ func (a *Aggregator) rebuildRecentState() error {
 		if accountChanges.openFiles(item.startBlock, false /* write */); err != nil {
 			return false
 		}
-		if err = accountChanges.aggregateToBtree(a.accountsTree, 0); err != nil {
+		if err = accountChanges.aggregateToBtree(a.accountsTree, 0, false); err != nil {
 			return false
 		}
 		if err = accountChanges.closeFiles(); err != nil {
@@ -978,7 +978,7 @@ func (a *Aggregator) rebuildRecentState() error {
 		if codeChanges.openFiles(item.startBlock, false /* write */); err != nil {
 			return false
 		}
-		if err = codeChanges.aggregateToBtree(a.codeTree, 0); err != nil {
+		if err = codeChanges.aggregateToBtree(a.codeTree, 0, false); err != nil {
 			return false
 		}
 		if err = codeChanges.closeFiles(); err != nil {
@@ -988,7 +988,7 @@ func (a *Aggregator) rebuildRecentState() error {
 		if storageChanges.openFiles(item.startBlock, false /* write */); err != nil {
 			return false
 		}
-		if err = storageChanges.aggregateToBtree(a.storageTree, 0); err != nil {
+		if err = storageChanges.aggregateToBtree(a.storageTree, 0, false); err != nil {
 			return false
 		}
 		if err = storageChanges.closeFiles(); err != nil {
@@ -998,7 +998,7 @@ func (a *Aggregator) rebuildRecentState() error {
 		if commChanges.openFiles(item.startBlock, false /* write */); err != nil {
 			return false
 		}
-		if err = commChanges.aggregateToBtree(a.commTree, 0); err != nil {
+		if err = commChanges.aggregateToBtree(a.commTree, 0, false); err != nil {
 			return false
 		}
 		if err = commChanges.closeFiles(); err != nil {
@@ -1585,11 +1585,8 @@ func (r *Reader) ReadAccountData(addr []byte, trace bool) ([]byte, error) {
 	r.search.k = addr
 	if vi := r.a.accountsTree.Get(&r.search); vi != nil {
 		return vi.(*AggregateItem).v, nil
-
 	}
-	// Look in the files
-	val := readFromFiles("accounts", &r.a.accountsFiles, r.a.accountsFilesLock.RLocker(), r.blockNum, addr, trace)
-	return val, nil
+	return readFromFiles("accounts", &r.a.accountsFiles, r.a.accountsFilesLock.RLocker(), r.blockNum, addr, trace), nil
 }
 
 func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) (*uint256.Int, error) {
@@ -1601,23 +1598,11 @@ func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) (*uint2
 	var v []byte
 	if vi := r.a.storageTree.Get(&r.search); vi != nil {
 		v = vi.(*AggregateItem).v
-		if len(v) == 0 {
-			return nil, nil
-		}
+	} else {
+		v = readFromFiles("storage", &r.a.storageFiles, r.a.storageFilesLock.RLocker(), r.blockNum, dbkey, trace)
 	}
 	if v != nil {
-		if trace {
-			fmt.Printf("ReadAccountStorage %x %x, found in DB: %x\n", addr, loc, v)
-		}
-		if len(v) == 0 {
-			return nil, nil
-		}
 		return new(uint256.Int).SetBytes(v), nil
-	}
-	// Look in the files
-	val := readFromFiles("storage", &r.a.storageFiles, r.a.storageFilesLock.RLocker(), r.blockNum, dbkey, trace)
-	if val != nil {
-		return new(uint256.Int).SetBytes(val), nil
 	}
 	return nil, nil
 }
@@ -1629,8 +1614,7 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 		return vi.(*AggregateItem).v, nil
 	}
 	// Look in the files
-	val := readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)
-	return val, nil
+	return readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace), nil
 }
 
 func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) (int, error) {
@@ -1640,8 +1624,7 @@ func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) (int, error) {
 		return len(vi.(*AggregateItem).v), nil
 	}
 	// Look in the files
-	val := readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)
-	return len(val), nil
+	return len(readFromFiles("code", &r.a.codeFiles, r.a.codeFilesLock.RLocker(), r.blockNum, addr, trace)), nil
 }
 
 type Writer struct {
@@ -1741,10 +1724,7 @@ func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 	w.search.k = prefix
 	var v []byte
 	if vi := w.a.commTree.Get(&w.search); vi != nil {
-		v = vi.(*AggregateItem).v
-	}
-	if v != nil {
-		return v, nil
+		return vi.(*AggregateItem).v, nil
 	}
 	// Look in the files
 	v = readFromFiles("commitment", &w.a.commitmentFiles, nil /* lock */, w.blockNum, prefix, false /* trace */)
@@ -1772,8 +1752,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		w.search.k = plainKey
 		if encI := w.a.accountsTree.Get(&w.search); encI != nil {
 			enc = encI.(*AggregateItem).v
-		}
-		if enc == nil {
+		} else {
 			// Look in the files
 			enc = readFromFiles("accounts", &w.a.accountsFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
 		}
@@ -1799,8 +1778,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	w.search.k = plainKey
 	if encI := w.a.codeTree.Get(&w.search); encI != nil {
 		enc = encI.(*AggregateItem).v
-	}
-	if enc == nil {
+	} else {
 		// Look in the files
 		enc = readFromFiles("code", &w.a.codeFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
@@ -1823,8 +1801,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		w.search.k = plainKey
 		if encI := w.a.storageTree.Get(&w.search); encI != nil {
 			enc = encI.(*AggregateItem).v
-		}
-		if enc == nil {
+		} else {
 			// Look in the files
 			enc = readFromFiles("storage", &w.a.storageFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
 		}
