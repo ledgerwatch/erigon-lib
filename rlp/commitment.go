@@ -251,14 +251,6 @@ func encodeBytesAsRlpToWriter(source []byte, w io.Writer, prefixGenFunc func([]b
 	return err
 }
 
-func EncodeByteArrayAsRlp(raw []byte, w io.Writer, prefixBuf []byte) (int, error) {
-	err := encodeBytesAsRlpToWriter(raw, w, generateByteArrayLen, prefixBuf)
-	if err != nil {
-		return 0, err
-	}
-	return generateRlpPrefixLen(len(raw)) + len(raw), nil
-}
-
 func GenerateStructLen(buffer []byte, l int) int {
 	if l < 56 {
 		buffer[0] = byte(192 + l)
