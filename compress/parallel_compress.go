@@ -227,7 +227,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	log.Debug(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
 	ch := make(chan []byte, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
-	var wg sync.WaitGroup
+
 	var collectors []*etl.Collector
 	defer func() {
 		for _, c := range collectors {
@@ -238,37 +238,20 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 
 	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer aggregator.Close()
+	var wgAggregator sync.WaitGroup
+	wgAggregator.Add(1)
 	go func() {
-		var h PairHeap
-		heap.Init(&h)
-
-		i := uint64(0)
+		defer wgAggregator.Done()
+		// collect to aggregator, but ensure order (paralel workers can produce a bit wrong order, but not total mess)
+		// so, we using heap to pre-sort, but this heap must be small
 		for a := range out {
-			n := binary.BigEndian.Uint64(a.k)
-			if i == n {
-				if err := aggregator.Collect(a.k, a.v); err != nil {
-					panic(err)
-				}
-				i++
-			} else {
-				heap.Push(&h, a)
-			}
-
-			for h.Len() > 0 {
-				a1 := heap.Pop(&h).(*pair)
-				n := binary.BigEndian.Uint64(a1.k)
-				if i != n {
-					heap.Push(&h, a1)
-					break
-				}
-				if err := aggregator.Collect(a1.k, a1.v); err != nil {
-					panic(err)
-				}
-				i++
+			if err := aggregator.Collect(a.k, a.v); err != nil {
+				panic(err)
 			}
 		}
 	}()
 	var posMaps []map[uint64]uint64
+	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		//nolint
 		posMap := make(map[uint64]uint64)
@@ -299,10 +282,11 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	}
 	close(ch)
 	wg.Wait()
+	close(out)
+	wgAggregator.Wait()
 
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
+	//var m runtime.MemStats
+	//runtime.ReadMemStats(&m)
 	//log.Info(fmt.Sprintf("[%s] Dictionary build done", logPrefix), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	posMap := make(map[uint64]uint64)
 	for _, m := range posMaps {
@@ -563,7 +547,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	var hc HuffmanCoder
 	hc.w = cw
 	r := bytes.NewReader(nil)
-	if err = aggregator.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	if err = aggregator.Load(nil, "", func(_, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 		// Re-encode it
 		r.Reset(v)
 		var l uint64
