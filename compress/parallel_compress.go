@@ -181,7 +181,7 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 	return output, patterns, uncovered
 }
 
-func reduceDictWorker(trace bool, inputCh chan []byte, completion *sync.WaitGroup, trie *patricia.PatriciaTree, collector *etl.Collector, inputSize, outputSize *atomic2.Uint64, posMap map[uint64]uint64) {
+func reduceDictWorker(trace bool, inputCh chan []byte, outCh chan *pair, completion *sync.WaitGroup, trie *patricia.PatriciaTree, inputSize, outputSize *atomic2.Uint64, posMap map[uint64]uint64) {
 	defer completion.Done()
 	var output = make([]byte, 0, 256)
 	var uncovered = make([]int, 256)
@@ -194,16 +194,15 @@ func reduceDictWorker(trace bool, inputCh chan []byte, completion *sync.WaitGrou
 		n := binary.PutUvarint(numBuf, uint64(len(input)-8))
 		output = append(output[:0], numBuf[:n]...)
 		output, patterns, uncovered = optimiseCluster(trace, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
-		if err := collector.Collect(input[:8], output); err != nil {
-			log.Error("Could not collect", "error", err)
-			return
-		}
+		outCh <- &pair{k: input[:8], v: common.Copy(output)}
 		inputSize.Add(1 + uint64(len(input)-8))
 		outputSize.Add(uint64(len(output)))
 		posMap[uint64(len(input)-8+1)]++
 		posMap[0]++
 	}
 }
+
+type pair struct{ k, v []byte }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
 func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *DecompressedFile, workers int, dictBuilder *DictionaryBuilder) error {
@@ -235,15 +234,47 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			c.Close()
 		}
 	}()
+	out := make(chan *pair, 1024)
+
+	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+	defer aggregator.Close()
+	go func() {
+		var h PairHeap
+		heap.Init(&h)
+
+		i := uint64(0)
+		for a := range out {
+			n := binary.BigEndian.Uint64(a.k)
+			if i == n {
+				if err := aggregator.Collect(a.k, a.v); err != nil {
+					panic(err)
+				}
+				i++
+			} else {
+				heap.Push(&h, a)
+			}
+
+			for h.Len() > 0 {
+				a1 := heap.Pop(&h).(*pair)
+				n := binary.BigEndian.Uint64(a1.k)
+				if i != n {
+					heap.Push(&h, a1)
+					break
+				}
+				if err := aggregator.Collect(a1.k, a1.v); err != nil {
+					panic(err)
+				}
+				i++
+			}
+		}
+	}()
 	var posMaps []map[uint64]uint64
 	for i := 0; i < workers; i++ {
 		//nolint
-		collector := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
-		collectors = append(collectors, collector)
 		posMap := make(map[uint64]uint64)
 		posMaps = append(posMaps, posMap)
 		wg.Add(1)
-		go reduceDictWorker(trace, ch, &wg, &pt, collector, inputSize, outputSize, posMap)
+		go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
 	}
 	var wordsCount uint64
 	if err := datFile.ForEach(func(v []byte) error {
@@ -527,17 +558,6 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		}
 	}
 	log.Debug(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(offset), "position cutoff", positionCutoff)
-
-	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
-	defer aggregator.Close()
-	for _, collector := range collectors {
-		if err = collector.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-			return aggregator.Collect(k, v)
-		}, etl.TransformArgs{}); err != nil {
-			return err
-		}
-		collector.Close()
-	}
 
 	wc := 0
 	var hc HuffmanCoder
