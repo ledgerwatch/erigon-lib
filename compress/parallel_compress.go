@@ -242,8 +242,6 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	wgAggregator.Add(1)
 	go func() {
 		defer wgAggregator.Done()
-		// collect to aggregator, but ensure order (paralel workers can produce a bit wrong order, but not total mess)
-		// so, we using heap to pre-sort, but this heap must be small
 		for a := range out {
 			if err := aggregator.Collect(a.k, a.v); err != nil {
 				panic(err)
