@@ -372,32 +372,6 @@ func (h *PatternHuff) AddOne() {
 	}
 }
 
-type PairHeap []*pair
-
-func (ph PairHeap) Len() int {
-	return len(ph)
-}
-func (ph PairHeap) Less(i, j int) bool {
-	cmp := bytes.Compare(ph[i].k, ph[j].k)
-	return cmp < 0
-}
-
-func (ph *PairHeap) Swap(i, j int) {
-	(*ph)[i], (*ph)[j] = (*ph)[j], (*ph)[i]
-}
-
-func (ph *PairHeap) Push(x interface{}) {
-	*ph = append(*ph, x.(*pair))
-}
-
-func (ph *PairHeap) Pop() interface{} {
-	old := *ph
-	n := len(old)
-	x := old[n-1]
-	*ph = old[0 : n-1]
-	return x
-}
-
 // PatternHeap is priority queue of pattern for the purpose of building
 // Huffman tree to determine efficient coding. Patterns with least usage
 // have highest priority. We use a tie-breaker to make sure

@@ -17,9 +17,7 @@
 package compress
 
 import (
-	"container/heap"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"path"
 	"strings"
@@ -155,42 +153,3 @@ consequat Duis aute irure dolor in reprehenderit in voluptate velit esse cillum 
 Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum`
 
 var loremStrings = strings.Split(lorem, " ")
-
-func TestExampleStreamSort(t *testing.T) {
-	out := make(chan *pair, 1024)
-	p := func(k uint64) *pair {
-		kk := make([]byte, 8)
-		binary.BigEndian.PutUint64(kk, k)
-		return &pair{k: kk}
-	}
-	out <- p(3)
-	out <- p(0)
-	out <- p(1)
-	out <- p(2)
-	close(out)
-
-	var h PairHeap
-	heap.Init(&h)
-
-	i := uint64(0)
-	for a := range out {
-		n := binary.BigEndian.Uint64(a.k)
-		if i == n {
-			fmt.Printf("a: %d\n", binary.BigEndian.Uint64(a.k))
-			i++
-		} else {
-			heap.Push(&h, a)
-		}
-
-		for h.Len() > 0 {
-			a1 := heap.Pop(&h).(*pair)
-			n := binary.BigEndian.Uint64(a1.k)
-			if i != n {
-				heap.Push(&h, a1)
-				break
-			}
-			fmt.Printf("b: %d\n", binary.BigEndian.Uint64(a1.k))
-			i++
-		}
-	}
-}
