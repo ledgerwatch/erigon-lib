@@ -1754,15 +1754,15 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
 		plainKey, enc = readByOffset("accounts", &w.a.accountsFiles, fileI, offset)
-	} else { // Full account key is provided, search as usual
-		// Look in the summary table first
-		w.search.k = plainKey
-		if encI := w.a.accountsTree.Get(&w.search); encI != nil {
-			enc = encI.(*AggregateItem).v
-		} else {
-			// Look in the files
-			enc = readFromFiles("accounts", &w.a.accountsFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
-		}
+		//	} else { // Full account key is provided, search as usual
+		//		// Look in the summary table first
+		//		w.search.k = plainKey
+		//		if encI := w.a.accountsTree.Get(&w.search); encI != nil {
+		//			enc = encI.(*AggregateItem).v
+		//		} else {
+		//			// Look in the files
+		//			enc = readFromFiles("accounts", &w.a.accountsFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
+		//		}
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1803,15 +1803,15 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		fileI := int(plainKey[0])
 		offset := decodeU64(plainKey[1:])
 		plainKey, enc = readByOffset("storage", &w.a.storageFiles, fileI, offset)
-	} else { // Full storage key is provided, search as usual
-		// Look in the summary table first
-		w.search.k = plainKey
-		if encI := w.a.storageTree.Get(&w.search); encI != nil {
-			enc = encI.(*AggregateItem).v
-		} else {
-			// Look in the files
-			enc = readFromFiles("storage", &w.a.storageFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
-		}
+		// } else { // Full storage key is provided, search as usual
+		// 	// Look in the summary table first
+		// 	w.search.k = plainKey
+		// 	if encI := w.a.storageTree.Get(&w.search); encI != nil {
+		// 		enc = encI.(*AggregateItem).v
+		// 	} else {
+		// 		// Look in the files
+		// 		enc = readFromFiles("storage", &w.a.storageFiles, nil /* lock */, w.blockNum, plainKey, false /* trace */)
+		// 	}
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
