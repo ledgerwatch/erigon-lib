@@ -244,7 +244,7 @@ func TestChangeCode(t *testing.T) {
 		if err = w.FinishTx(blockNum, false /* trace */); err != nil {
 			t.Fatal(err)
 		}
-		if err = w.Aggregate(true /* trace */); err != nil {
+		if err = w.Aggregate(false /* trace */); err != nil {
 			t.Fatal(err)
 		}
 		r := a.MakeStateReader(blockNum + 1)
