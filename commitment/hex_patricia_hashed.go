@@ -790,7 +790,6 @@ func branchToString(branchData []byte) string {
 	}
 	if cell.hl > 0 {
 		fmt.Fprintf(&sb, "%shash=[%x]", comma, cell.h[:cell.hl])
-		comma = ","
 	}
 	sb.WriteString("}")
 	return sb.String()
@@ -904,14 +903,10 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 	if len(branchData) == 0 {
 		fmt.Printf("branchData empty for [%x]\n", hph.currentKey[:hph.currentKeyLen])
 	}
-	pos := 0
 	hph.beforeBitmap[row] = partBitmap
 	if deleted {
 		hph.delBitmap[row] = partBitmap
 	}
-	// Next, for each part, we have bitmap of fields
-	partCount := bits.OnesCount16(partBitmap)
-	pos += (partCount + 1) / 2 // 1 bytes per two parts
 	// Loop iterating over the set bits of modMask
 	for bitset, j := partBitmap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
@@ -920,7 +915,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		fieldBits := branchData[nibble][0]
 		pos := 1
 		var err error
-		if pos, err = cell.fillFromFields(branchData[nibble], pos, PartFlags(fieldBits)); err != nil {
+		if _, err = cell.fillFromFields(branchData[nibble], pos, PartFlags(fieldBits)); err != nil {
 			return err
 		}
 		if hph.trace {
