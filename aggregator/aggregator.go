@@ -1213,9 +1213,8 @@ func (a *Aggregator) backgroundAggregation() {
 }
 
 type CommitmentValTransform struct {
-	numBuf [binary.MaxVarintLen64]byte                    // Buffer for encoding varint numbers without extra allocations
-	pre    [NumberOfAccountStorageTypes][]*byEndBlockItem // List of state files before the merge
-	post   [NumberOfAccountStorageTypes][]*byEndBlockItem // List of state files aftee the merge
+	pre  [NumberOfAccountStorageTypes][]*byEndBlockItem // List of state files before the merge
+	post [NumberOfAccountStorageTypes][]*byEndBlockItem // List of state files aftee the merge
 }
 
 func decodeU64(from []byte) uint64 {
@@ -1255,21 +1254,21 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 	if len(val) == 0 {
 		return transValBuf, nil
 	}
-	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val[1:])
+	accountPlainKey, storagePlainKey, err := commitment.ExtractPlainKeys(val[1:])
 	if err != nil {
 		return nil, err
 	}
-	var transAccountPks = make([][]byte, len(accountPlainKeys))
-	var transStoragePks = make([][]byte, len(storagePlainKeys))
+	var transAccountPk []byte
+	var transStoragePk []byte
 	var apkBuf, spkBuf []byte
-	for i, apk := range accountPlainKeys {
-		if len(apk) == length.Addr {
+	if accountPlainKey != nil {
+		if len(accountPlainKey) == length.Addr {
 			// Non-optimised key originating from a database record
-			apkBuf = append(apkBuf[:0], apk...)
+			apkBuf = append(apkBuf[:0], accountPlainKey...)
 		} else {
 			// Optimised key referencing a state file record (file number and offset within the file)
-			fileI := int(apk[0])
-			offset := decodeU64(apk[1:])
+			fileI := int(accountPlainKey[0])
+			offset := decodeU64(accountPlainKey[1:])
 			g := cvt.pre[Account][fileI].getterMerge
 			g.Reset(offset)
 			apkBuf, _ = g.Next(apkBuf[:0])
@@ -1285,21 +1284,21 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			g.Reset(offset)
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
-					apk = encodeU64(offset, []byte{byte(j - 1)})
+					accountPlainKey = encodeU64(offset, []byte{byte(j - 1)})
 					break
 				}
 			}
 		}
-		transAccountPks[i] = apk
+		transAccountPk = accountPlainKey
 	}
-	for i, spk := range storagePlainKeys {
-		if len(spk) == length.Addr+length.Hash {
+	if storagePlainKey != nil {
+		if len(storagePlainKey) == length.Addr+length.Hash {
 			// Non-optimised key originating from a database record
-			spkBuf = append(spkBuf[:0], spk...)
+			spkBuf = append(spkBuf[:0], storagePlainKey...)
 		} else {
 			// Optimised key referencing a state file record (file number and offset within the file)
-			fileI := int(spk[0])
-			offset := decodeU64(spk[1:])
+			fileI := int(storagePlainKey[0])
+			offset := decodeU64(storagePlainKey[1:])
 			g := cvt.pre[Storage][fileI].getterMerge
 			g.Reset(offset)
 			spkBuf, _ = g.Next(spkBuf[:0])
@@ -1315,15 +1314,15 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			g.Reset(offset)
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
-					spk = encodeU64(offset, []byte{byte(j - 1)})
+					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
 					break
 				}
 			}
 		}
-		transStoragePks[i] = spk
+		transStoragePk = storagePlainKey
 	}
 	transValBuf = append(transValBuf, val[0])
-	if transValBuf, err = commitment.ReplacePlainKeys(val[1:], transAccountPks, transStoragePks, cvt.numBuf[:], transValBuf); err != nil {
+	if transValBuf, err = commitment.ReplacePlainKeys(val[1:], transAccountPk, transStoragePk, transValBuf); err != nil {
 		return nil, err
 	}
 	return transValBuf, nil
@@ -1671,7 +1670,6 @@ func (w *Writer) unlockFn() {
 func (w *Writer) branchFn(prefix []byte) []byte {
 	// Look in the summary table first
 	w.search.k = prefix
-	var v []byte
 	if vi := w.a.trees[Commitment].Get(&w.search); vi != nil {
 		return vi.(*AggregateItem).v
 	}
