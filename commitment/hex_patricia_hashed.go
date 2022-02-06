@@ -1129,6 +1129,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 	}
 	bitmap := (hph.beforeBitmap[row] | hph.modBitmap[row]) &^ hph.delBitmap[row]
 	partsCount := bits.OnesCount16(bitmap)
+	branchNodeExisted := bits.OnesCount16(hph.beforeBitmap[row]) > 1
 	switch partsCount {
 	case 0:
 		// Everything deleted
@@ -1147,7 +1148,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 		upCell.spl = 0
 		upCell.extLen = 0
 		upCell.downHashedLen = 0
-		if bits.OnesCount16(hph.beforeBitmap[row]) > 1 {
+		if branchNodeExisted {
 			for bitset, j := hph.beforeBitmap[row], 0; bitset != 0; j++ {
 				bit := bitset & -bitset
 				n := bits.TrailingZeros16(bit)
@@ -1182,7 +1183,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 		upCell.extLen = 0
 		upCell.fillFromLowerCell(cell, depth, hph.currentKey[upDepth:hph.currentKeyLen], nibble)
 		// Delete if it existed
-		if bits.OnesCount16(hph.beforeBitmap[row]) > 1 {
+		if branchNodeExisted {
 			for bitset, j := hph.beforeBitmap[row], 0; bitset != 0; j++ {
 				bit := bitset & -bitset
 				n := bits.TrailingZeros16(bit)
@@ -1295,11 +1296,11 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 				bd = append(bd, cell.h[:cell.hl]...)
 			}
 			bd[0] = byte(fieldBits)
-			//if hph.modBitmap[row]&bit != 0 {
-			branchData = append(branchData, bd)
-			hph.currentKey[updateKeyLen] = byte(nibble)
-			updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
-			//}
+			if !branchNodeExisted || (hph.modBitmap[row]&bit != 0) {
+				branchData = append(branchData, bd)
+				hph.currentKey[updateKeyLen] = byte(nibble)
+				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
+			}
 			bitset ^= bit
 		}
 		b[0] = 0x80
@@ -1672,7 +1673,7 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 				return nil, fmt.Errorf("fold: %w", err)
 			} else {
 				for i, updateKey := range updateKeys {
-					fmt.Printf("UPDATE [%x]\n", compactToHex(updateKey))
+					//fmt.Printf("UPDATE [%x]\n", compactToHex(updateKey))
 					branchNodeUpdates[string(updateKey)] = updates[i]
 				}
 			}
@@ -1707,7 +1708,7 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 			return nil, fmt.Errorf("final fold: %w", err)
 		} else {
 			for i, updateKey := range updateKeys {
-				fmt.Printf("UPDATE R [%x]\n", compactToHex(updateKey))
+				//fmt.Printf("UPDATE R [%x]\n", compactToHex(updateKey))
 				branchNodeUpdates[string(updateKey)] = updates[i]
 			}
 		}
