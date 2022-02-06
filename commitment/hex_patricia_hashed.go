@@ -1155,7 +1155,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 				// Deletion
 				branchData = append(branchData, nil)
 				hph.currentKey[updateKeyLen] = byte(n)
-				fmt.Printf("case 0: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
+				//fmt.Printf("case 0: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
 				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
 				bitset ^= bit
 			}
@@ -1190,7 +1190,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 				// Deletion
 				branchData = append(branchData, nil)
 				hph.currentKey[updateKeyLen] = byte(n)
-				fmt.Printf("case 1: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
+				//fmt.Printf("case 1: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
 				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
 				bitset ^= bit
 			}
@@ -1225,14 +1225,14 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 			bitset ^= bit
 		}
 		// Delete if it existed
-		if bits.OnesCount16(hph.beforeBitmap[row]) > 1 {
+		if branchNodeExisted {
 			for bitset, j := hph.beforeBitmap[row]&^bitmap, 0; bitset != 0; j++ {
 				bit := bitset & -bitset
 				n := bits.TrailingZeros16(bit)
 				// Deletion
 				branchData = append(branchData, nil)
 				hph.currentKey[updateKeyLen] = byte(n)
-				fmt.Printf("case X: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
+				//fmt.Printf("case X: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
 				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
 				bitset ^= bit
 			}
