@@ -1295,11 +1295,11 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 				bd = append(bd, cell.h[:cell.hl]...)
 			}
 			bd[0] = byte(fieldBits)
-			if hph.modBitmap[row]&bit != 0 {
-				branchData = append(branchData, bd)
-				hph.currentKey[updateKeyLen] = byte(nibble)
-				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
-			}
+			//if hph.modBitmap[row]&bit != 0 {
+			branchData = append(branchData, bd)
+			hph.currentKey[updateKeyLen] = byte(nibble)
+			updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
+			//}
 			bitset ^= bit
 		}
 		b[0] = 0x80
