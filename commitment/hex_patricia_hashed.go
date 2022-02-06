@@ -1226,7 +1226,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 		}
 		// Delete if it existed
 		if branchNodeExisted {
-			for bitset, j := hph.beforeBitmap[row]&^bitmap, 0; bitset != 0; j++ {
+			for bitset, j := hph.delBitmap[row], 0; bitset != 0; j++ {
 				bit := bitset & -bitset
 				n := bits.TrailingZeros16(bit)
 				// Deletion
