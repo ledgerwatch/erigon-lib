@@ -242,7 +242,7 @@ func hashKey(keccak keccakState, plainKey []byte, dest []byte, hashedKeyOffset i
 	if _, err := keccak.Write(plainKey); err != nil {
 		return err
 	}
-	if _, err := keccak.Read(hashBuf[:]); err != nil {
+	if _, err := keccak.Read(hashBuf); err != nil {
 		return err
 	}
 	hashBuf = hashBuf[hashedKeyOffset/2:]
