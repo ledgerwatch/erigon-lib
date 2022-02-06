@@ -889,7 +889,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 	for nibble := byte(0); nibble < byte(16); nibble++ {
 		hph.currentKey[hph.currentKeyLen] = nibble
 		bd := hph.branchFn(hexToCompact(hph.currentKey[:hph.currentKeyLen+1]))
-		if bd != nil {
+		if len(bd) > 0 {
 			branchData[nibble] = bd
 			partBitmap |= bit
 		}
@@ -899,9 +899,6 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		// Special case - empty or deleted root
 		hph.rootChecked = true
 		return nil
-	}
-	if len(branchData) == 0 {
-		fmt.Printf("branchData empty for [%x]\n", hph.currentKey[:hph.currentKeyLen])
 	}
 	hph.beforeBitmap[row] = partBitmap
 	if deleted {
@@ -1130,7 +1127,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 	if hph.trace {
 		fmt.Printf("beforeBitmap[%d]=%016b, modBitmap[%d]=%016b, delBitmap[%d]=%016b\n", row, hph.beforeBitmap[row], row, hph.modBitmap[row], row, hph.delBitmap[row])
 	}
-	bitmap := (hph.beforeBitmap[row] | hph.modBitmap[row]) ^ hph.delBitmap[row]
+	bitmap := (hph.beforeBitmap[row] | hph.modBitmap[row]) &^ hph.delBitmap[row]
 	partsCount := bits.OnesCount16(bitmap)
 	switch partsCount {
 	case 0:
