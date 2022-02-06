@@ -1668,16 +1668,15 @@ func (w *Writer) unlockFn() {
 	}
 }
 
-func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
+func (w *Writer) branchFn(prefix []byte) []byte {
 	// Look in the summary table first
 	w.search.k = prefix
 	var v []byte
 	if vi := w.a.trees[Commitment].Get(&w.search); vi != nil {
-		return vi.(*AggregateItem).v, nil
+		return vi.(*AggregateItem).v
 	}
 	// Look in the files
-	v = w.a.readFromFiles(Commitment, false /* lock */, w.blockNum, prefix, false /* trace */)
-	return v, nil
+	return w.a.readFromFiles(Commitment, false /* lock */, w.blockNum, prefix, false /* trace */)
 }
 
 func bytesToUint64(buf []byte) (x uint64) {
@@ -1690,7 +1689,7 @@ func bytesToUint64(buf []byte) (x uint64) {
 	return
 }
 
-func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, error) {
+func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) []byte {
 	var enc []byte
 	if len(plainKey) != length.Addr { // Accessing account key and value via "thin reference" to the state file and offset
 		fileI := int(plainKey[0])
@@ -1736,10 +1735,10 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 		w.a.keccak.Write(enc)
 		w.a.keccak.(io.Reader).Read(cell.CodeHash[:])
 	}
-	return plainKey, nil
+	return plainKey
 }
 
-func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, error) {
+func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) []byte {
 	var enc []byte
 	if len(plainKey) != length.Addr+length.Hash { // Accessing storage key and value via "thin reference" to the state file and offset
 		fileI := int(plainKey[0])
@@ -1757,7 +1756,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) ([]byte, erro
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
-	return plainKey, nil
+	return plainKey
 }
 
 func (w *Writer) captureCommitmentType(fType FileType, trace bool, f func(commTree *btree.BTree, h hash.Hash, key, val []byte)) {
