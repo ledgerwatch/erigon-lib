@@ -457,7 +457,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- p.promoted.DedupCopy():
+		case p.newPendingTxs <- common.Copy(p.promoted):
 		default:
 		}
 	}
@@ -515,7 +515,7 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case p.newPendingTxs <- p.promoted.DedupCopy():
+		case p.newPendingTxs <- common.Copy(p.promoted):
 		default:
 		}
 	}
@@ -840,7 +840,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions TxSlots) ([]Di
 	}
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- p.promoted.DedupCopy():
+		case p.newPendingTxs <- common.Copy(p.promoted):
 		default:
 		}
 	}
@@ -904,7 +904,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			return discardReasons, err
 		}
 		onSenderStateChange(senderID, nonce, balance, byNonce,
-			protocolBaseFee, blockGasLimit, pending, baseFee, queued, false)
+			protocolBaseFee, blockGasLimit, pending, baseFee, queued, false, discard)
 	}
 
 	promote(pending, baseFee, queued, pendingBaseFee, discard)
@@ -969,7 +969,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 			return err
 		}
 		onSenderStateChange(senderID, nonce, balance, byNonce,
-			protocolBaseFee, blockGasLimit, pending, baseFee, queued, true)
+			protocolBaseFee, blockGasLimit, pending, baseFee, queued, true, discard)
 	}
 
 	return nil
@@ -1102,11 +1102,12 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*TxSlot, pending *Pending
 // nonces, and also affect other transactions from the same sender with higher nonce, it loops through all transactions
 // for a given senderID
 func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce,
-	protocolBaseFee, blockGasLimit uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool) {
+	protocolBaseFee, blockGasLimit uint64, pending *PendingPool, baseFee, queued *SubPool, unsafe bool, discard func(*metaTx, DiscardReason)) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
 	minFeeCap := uint64(math.MaxUint64)
 	minTip := uint64(math.MaxUint64)
+	var toDel []*metaTx // can't delete items while iterate them
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
 		if mt.Tx.traced {
 			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IdHash, senderID, senderNonce, mt.Tx.nonce, mt.currentSubPool))
@@ -1126,6 +1127,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			default:
 				//already removed
 			}
+			toDel = append(toDel, mt)
 			return true
 		}
 		minFeeCap = min(minFeeCap, mt.Tx.feeCap)
@@ -1205,6 +1207,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		}
 		return true
 	})
+	for _, mt := range toDel {
+		discard(mt, NonceTooLow)
+	}
 }
 
 // promote reasserts invariants of the subpool and returns the list of transactions that ended up
@@ -1282,11 +1287,6 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 	logEvery := time.NewTicker(p.cfg.LogEvery)
 	defer logEvery.Stop()
 
-	localTxHashes := make(Hashes, 0, 128)
-	localTxRlps := make([][]byte, 0, 4)
-	remoteTxHashes := make(Hashes, 0, 128)
-	remoteTxRlps := make([][]byte, 0, 4)
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -1324,58 +1324,78 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				log.Debug("[txpool] Commit", "written_kb", written/1024, "in", time.Since(t))
 			}
 		case h := <-newTxs:
-			t := time.Now()
-			notifyMiningAboutNewSlots()
-			localTxHashes = localTxHashes[:0]
-			localTxRlps = localTxRlps[:0]
-			remoteTxHashes = remoteTxHashes[:0]
-			remoteTxRlps = remoteTxRlps[:0]
-			if h.Len() > 0 {
+			go func() {
+				for i := 0; i < 16; i++ { // drain more events from channel, then merge and dedup them
+					select {
+					case a := <-newTxs:
+						h = append(h, a...)
+						continue
+					default:
+					}
+					break
+				}
+				if h.Len() == 0 {
+					return
+				}
+				defer propagateNewTxsTimer.UpdateDuration(time.Now())
+
+				h = h.DedupCopy()
+
+				notifyMiningAboutNewSlots()
+
+				var localTxHashes Hashes
+				var localTxRlps [][]byte
+				var remoteTxHashes Hashes
+				var remoteTxRlps [][]byte
+				slotsRlp := make([][]byte, 0, h.Len())
+
 				if err := db.View(ctx, func(tx kv.Tx) error {
-					slotsRlp := make([][]byte, 0, h.Len())
 					for i := 0; i < h.Len(); i++ {
 						hash := h.At(i)
 						slotRlp, err := p.GetRlp(tx, hash)
 						if err != nil {
 							return err
 						}
-						if len(slotRlp) > 0 {
-							// Empty rlp can happen if a transaction we want to broadcase has just been mined, for example
-							slotsRlp = append(slotsRlp, slotRlp)
-							if p.IsLocal(h.At(i)) {
-								localTxHashes = append(localTxHashes, hash...)
-								localTxRlps = append(localTxRlps, slotRlp)
-							} else {
-								remoteTxHashes = append(localTxHashes, hash...)
-								remoteTxRlps = append(remoteTxRlps, slotRlp)
-							}
+						if len(slotRlp) == 0 {
+							continue
+						}
+
+						// Empty rlp can happen if a transaction we want to broadcase has just been mined, for example
+						slotsRlp = append(slotsRlp, slotRlp)
+						if p.IsLocal(hash) {
+							localTxHashes = append(localTxHashes, hash...)
+							localTxRlps = append(localTxRlps, slotRlp)
+						} else {
+							remoteTxHashes = append(localTxHashes, hash...)
+							remoteTxRlps = append(remoteTxRlps, slotRlp)
 						}
 					}
-					newSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp})
 					return nil
 				}); err != nil {
-					log.Error("[txpool] send new slots by grpc", "err", err)
+					log.Error("[txpool] collect info to propagate", "err", err)
+					return
 				}
-			}
+				newSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp})
 
-			// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
-			txSentTo := send.BroadcastPooledTxs(localTxRlps)
-			hashSentTo := send.AnnouncePooledTxs(localTxHashes)
-			for i := 0; i < localTxHashes.Len(); i++ {
-				hash := localTxHashes.At(i)
-				log.Info("local tx propagated", "tx_hash", fmt.Sprintf("%x", hash), "announced to peers", hashSentTo[i], "broadcast to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
-			}
-			send.BroadcastPooledTxs(remoteTxRlps)
-			send.AnnouncePooledTxs(remoteTxHashes)
-			propagateNewTxsTimer.UpdateDuration(t)
+				// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
+				txSentTo := send.BroadcastPooledTxs(localTxRlps)
+				hashSentTo := send.AnnouncePooledTxs(localTxHashes)
+				for i := 0; i < localTxHashes.Len(); i++ {
+					hash := localTxHashes.At(i)
+					log.Info("local tx propagated", "tx_hash", fmt.Sprintf("%x", hash), "announced to peers", hashSentTo[i], "broadcast to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
+				}
+				send.BroadcastPooledTxs(remoteTxRlps)
+				send.AnnouncePooledTxs(remoteTxHashes)
+			}()
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()
 			if len(newPeers) == 0 {
 				continue
 			}
 			t := time.Now()
-			remoteTxHashes = p.AppendAllHashes(remoteTxHashes[:0])
-			send.PropagatePooledTxsToPeersList(newPeers, remoteTxHashes)
+			var hashes Hashes
+			hashes = p.AppendAllHashes(hashes[:0])
+			go send.PropagatePooledTxsToPeersList(newPeers, hashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
 		}
 	}
