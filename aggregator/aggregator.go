@@ -1612,7 +1612,7 @@ func (a *Aggregator) MakeStateWriter(beforeOn bool) *Writer {
 		commTree: btree.New(32),
 	}
 	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
-		w.changes[fType].Init(fType.String(), a.aggregationStep, a.diffDir, fType != Commitment /* we do not unwind commitment ? */)
+		w.changes[fType].Init(fType.String(), a.aggregationStep, a.diffDir, w.a.changesets && fType != Commitment /* we do not unwind commitment ? */)
 	}
 	return w
 }
