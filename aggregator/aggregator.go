@@ -2313,8 +2313,13 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64) (toAggregate
 		}
 		pre = append(pre, item)
 		if aggTo == 0 {
-			doubleEnd := item.endBlock + (item.endBlock - item.startBlock) + 1
-			if doubleEnd <= maxEndBlock {
+			var doubleEnd uint64
+			nextDouble := item.endBlock
+			for nextDouble <= maxEndBlock {
+				doubleEnd = nextDouble
+				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
+			}
+			if doubleEnd != item.endBlock {
 				aggFrom = item.startBlock
 				aggTo = doubleEnd
 			} else {

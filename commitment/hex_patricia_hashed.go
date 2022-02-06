@@ -1784,9 +1784,6 @@ func ExtractPlainKeys(branchData []byte) (accountPlainKey []byte, storagePlainKe
 		if len(branchData) < pos+int(l) {
 			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hash")
 		}
-		if l > 0 {
-			pos += int(l)
-		}
 	}
 	return
 }
@@ -1863,7 +1860,6 @@ func ReplacePlainKeys(branchData []byte, accountPlainKey []byte, storagePlainKey
 		}
 		if l > 0 {
 			newData = append(newData, branchData[pos:pos+int(l)]...)
-			pos += int(l)
 		}
 	}
 	return newData, nil
