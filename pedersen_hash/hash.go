@@ -5,8 +5,6 @@ package hash
 #include <stdlib.h>
 #include "hash.h"
 */
-
-//nolint
 import "C"
 
 import (
