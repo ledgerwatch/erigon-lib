@@ -1205,10 +1205,10 @@ func (a *Aggregator) backgroundAggregation() {
 		// At this point, 3 new state files (containing latest changes) has been created for accounts, code, and storage
 		// Corresponding items has been added to the registy of state files, and B-tree are not necessary anymore, change files can be removed
 		// What follows can be performed by the 2nd background goroutine
-		select {
-		case a.mergeChannel <- struct{}{}:
-		default:
-		}
+		//select {
+		//case a.mergeChannel <- struct{}{}:
+		//default:
+		//}
 	}
 }
 
