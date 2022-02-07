@@ -638,9 +638,6 @@ func (hph *HexPatriciaHashed) extensionHash(buf []byte, key []byte, hash []byte)
 	if _, err := hph.keccak.Read(hashBuf[:length.Hash]); err != nil {
 		return nil, err
 	}
-	if buf == nil {
-		return hashBuf[:length.Hash], nil
-	}
 	buf = append(buf, hashBuf[:length.Hash]...)
 	return buf, nil
 }
@@ -1251,6 +1248,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 		}
 		var lastNibble int
 		var b [1]byte
+		var cellHashBuf [33]byte
 		for bitset, j := bitmap, 0; bitset != 0; j++ {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
@@ -1265,7 +1263,7 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 			}
 			lastNibble = nibble + 1
 			cell := &hph.grid[row][nibble]
-			cellHash, err := hph.computeCellHash(cell, depth, nil)
+			cellHash, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
 			if err != nil {
 				return nil, nil, err
 			}
