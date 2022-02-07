@@ -1,9 +1,11 @@
 package hash
 
+//nolint
 /*
 #include <stdlib.h>
 #include "hash.h"
 */
+
 //nolint
 import "C"
 
