@@ -1141,6 +1141,12 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 				if hph.trace {
 					fmt.Printf("del delBitmap[%d]=%016b\n", row-1, hph.delBitmap[row-1])
 				}
+			} else {
+				// If all storage items were removed, we need the account record to be updated
+				hph.modBitmap[row-1] |= (uint16(1) << col)
+				if hph.trace {
+					fmt.Printf("del modBitmap[%d]=%016b\n", row-1, hph.modBitmap[row-1])
+				}
 			}
 		}
 		upCell.hl = 0
