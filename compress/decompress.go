@@ -37,6 +37,7 @@ type Decompressor struct {
 	posDict        Dictionary
 	wordsStart     uint64 // Offset of whether the superstrings actually start
 	count          uint64
+	size           int64
 }
 
 func NewDecompressor(compressedFile string) (*Decompressor, error) {
@@ -52,14 +53,14 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	if stat, err = d.f.Stat(); err != nil {
 		return nil, err
 	}
-	size := int(stat.Size())
-	if size < 24 {
+	d.size = stat.Size()
+	if d.size < 24 {
 		return nil, fmt.Errorf("compressed file is too short")
 	}
-	if d.mmapHandle1, d.mmapHandle2, err = mmap.Mmap(d.f, size); err != nil {
+	if d.mmapHandle1, d.mmapHandle2, err = mmap.Mmap(d.f, int(d.size)); err != nil {
 		return nil, err
 	}
-	d.data = d.mmapHandle1[:size]
+	d.data = d.mmapHandle1[:d.size]
 	d.count = binary.BigEndian.Uint64(d.data[:8])
 	dictSize := binary.BigEndian.Uint64(d.data[8:16])
 	d.dict.rootOffset = binary.BigEndian.Uint64(d.data[16:24])
@@ -74,6 +75,10 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	return d, nil
 }
 
+func (d *Decompressor) Size() int64 {
+	return d.size
+}
+
 func (d *Decompressor) Close() error {
 	if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
 		return err
@@ -86,12 +91,21 @@ func (d *Decompressor) Close() error {
 
 func (d *Decompressor) FilePath() string { return d.compressedFile }
 
+//WithReadAhead - Expect read in sequential order. (Hence, pages in the given range can be aggressively read ahead, and may be freed soon after they are accessed.)
+func (d *Decompressor) WithReadAhead(f func() error) error {
+	_ = mmap.MadviseSequential(d.mmapHandle1)
+	defer mmap.MadviseRandom(d.mmapHandle1)
+	return f()
+}
+
 type Dictionary struct {
 	data       []byte
 	rootOffset uint64
 	cutoff     uint64
 }
 
+// Getter represent "reader" or "interator" that can move accross the data of the decompressor
+// The full state of the getter can be captured by saving dataP, b, and mask values.
 type Getter struct {
 	data        []byte
 	dataP       uint64
@@ -203,6 +217,9 @@ func (d *Decompressor) MakeGetter() *Getter {
 
 func (g *Getter) Reset(offset uint64) {
 	g.dataP = offset
+	g.offset = 0
+	g.mask = 0
+	g.b = 0
 }
 
 func (g *Getter) HasNext() bool {
@@ -287,54 +304,74 @@ func (g *Getter) Skip() uint64 {
 // returns false and current offset otherwise.
 func (g *Getter) Match(buf []byte) (bool, uint64) {
 	savePos := g.dataP
+	saveMask := g.mask
+	saveB := g.b
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
+	lenBuf := len(buf)
 	if l == 0 {
-		return false, g.dataP
+		if lenBuf != 0 {
+			g.dataP = savePos
+		}
+		return lenBuf == 0, g.dataP
 	}
-	// count available space for word without actual reallocating memory
-	wordLen := len(g.word)
-	if int(l) > wordLen {
-		wordLen = int(l)
-	}
+	res := true
 
-	var add uint64
 	var pos uint64
 	var lastPos int
-	var lastUncovered int
 	var pattern []byte
-	res := true
+	preLoopPos := g.dataP
+	preLoopMask := g.mask
+	preLoopB := g.b
+	// In the first pass, we only check patterns
 	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
-		if wordLen < intPos {
-			panic("likely .idx is invalid")
-		}
 		pattern = g.nextPattern()
-
-		if len(buf) < len(pattern) || !bytes.Equal(buf[:len(pattern)], pattern) {
+		if res && (lenBuf < intPos+len(pattern) || !bytes.Equal(buf[intPos:intPos+len(pattern)], pattern)) {
 			res = false
 		}
+	}
+	postLoopPos := g.dataP
+	postLoopMask := g.mask
+	postLoopB := g.b
+	g.dataP = preLoopPos
+	g.mask = preLoopMask
+	g.b = preLoopB
+	// Second pass - we check spaces not covered by the patterns
+	var lastUncovered int
+	lastPos = 0
+	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
+		intPos := lastPos + int(pos) - 1
+		lastPos = intPos
+		pattern = g.nextPattern()
 		if intPos > lastUncovered {
 			dif := uint64(intPos - lastUncovered)
-			add += dif
-			if res && !bytes.Equal(buf[len(pattern):], g.data[g.dataP:g.dataP+dif]) {
+			if res && (lenBuf < intPos || !bytes.Equal(buf[lastUncovered:intPos], g.data[postLoopPos:postLoopPos+dif])) {
 				res = false
 			}
+			postLoopPos += dif
 		}
-
 		lastUncovered = intPos + len(pattern)
 	}
 	if int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
-		add += dif
-		if res && !bytes.Equal(buf[len(pattern):], g.data[g.dataP:g.dataP+dif]) {
+		if res && (lenBuf < int(l) || !bytes.Equal(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif])) {
 			res = false
 		}
+		postLoopPos += dif
 	}
-	g.dataP += add
-	if !res {
+	if res && lenBuf != int(l) {
+		res = false
+	}
+	if res {
+		g.dataP = postLoopPos
+		g.mask = postLoopMask
+		g.b = postLoopB
+	} else {
 		g.dataP = savePos
+		g.mask = saveMask
+		g.b = saveB
 	}
 	return res, g.dataP
 }
