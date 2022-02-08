@@ -633,32 +633,43 @@ func (i *AggregateItem) Less(than btree.Item) bool {
 	return bytes.Compare(i.k, than.(*AggregateItem).k) < 0
 }
 
-func (c *Changes) produceChangeSets(basename string, blockFrom, blockTo uint64) error {
-	chsetDatPath := path.Join(c.dir, fmt.Sprintf("chsets.%s.%d-%d.dat", basename, blockFrom, blockTo))
-	chsetIdxPath := path.Join(c.dir, fmt.Sprintf("chsets.%s.%d-%d.idx", basename, blockFrom, blockTo))
-	bitmapDatPath := path.Join(c.dir, fmt.Sprintf("bitmap.%s.%d-%d.dat", basename, blockFrom, blockTo))
-	bitmapIdxPath := path.Join(c.dir, fmt.Sprintf("bitmap.%s.%d-%d.idx", basename, blockFrom, blockTo))
+func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitmapType FileType) (*compress.Decompressor, *recsplit.Index, *compress.Decompressor, *recsplit.Index, error) {
+	chsetDatPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.dat", historyType.String(), blockFrom, blockTo))
+	chsetIdxPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.idx", historyType.String(), blockFrom, blockTo))
+	bitmapDatPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.dat", bitmapType.String(), blockFrom, blockTo))
+	bitmapIdxPath := path.Join(c.dir, fmt.Sprintf("%s.%d-%d.idx", bitmapType.String(), blockFrom, blockTo))
 	var blockSuffix [8]byte
 	binary.BigEndian.PutUint64(blockSuffix[:], blockTo)
 	bitmaps := map[string]*roaring64.Bitmap{}
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, chsetDatPath, c.dir, compress.MinPatternScore, 1)
 	if err != nil {
-		return fmt.Errorf("produceChangeSets NewCompressor: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets NewCompressor: %w", err)
 	}
-	defer comp.Close()
+	defer func() {
+		if comp != nil {
+			comp.Close()
+		}
+	}()
 	var totalRecords int
 	var b bool
 	var e error
 	var txNum uint64
 	var key, before, after []byte
 	if err = c.rewind(); err != nil {
-		return fmt.Errorf("produceChangeSets rewind: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets rewind: %w", err)
 	}
+	var txKey = make([]byte, 8, 60)
 	for b, txNum, e = c.prevTx(); b && e == nil; b, _, e = c.prevTx() {
+		binary.BigEndian.PutUint64(txKey[:8], txNum)
 		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 			totalRecords++
+			txKey = append(txKey[:8], key...)
+			// In the inital files and most merged file, the txKey is added to the file, but it gets removed in the final merge
+			if err = comp.AddWord(txKey); err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("produceChangeSets AddWord key: %w", err)
+			}
 			if err = comp.AddWord(before); err != nil {
-				return fmt.Errorf("produceChangeSets AddWord: %w", err)
+				return nil, nil, nil, nil, fmt.Errorf("produceChangeSets AddWord before: %w", err)
 			}
 			var bitmap *roaring64.Bitmap
 			bitmap = bitmaps[string(before)]
@@ -669,75 +680,26 @@ func (c *Changes) produceChangeSets(basename string, blockFrom, blockTo uint64) 
 			bitmap.Add(txNum)
 		}
 		if e != nil {
-			return fmt.Errorf("produceChangeSets nextTriple: %w", e)
+			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets nextTriple: %w", e)
 		}
 	}
 	if e != nil {
-		return fmt.Errorf("produceChangeSets prevTx: %w", e)
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets prevTx: %w", e)
 	}
 	if err = comp.Compress(); err != nil {
-		return fmt.Errorf("produceChangeSets Compress: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets Compress: %w", err)
 	}
+	comp.Close()
+	comp = nil
 	var d *compress.Decompressor
-	if d, err = compress.NewDecompressor(chsetDatPath); err != nil {
-		return fmt.Errorf("produceChangeSets NewDecompressor: %w", err)
-	}
-	defer d.Close()
-	var rs *recsplit.RecSplit
-	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
-		KeyCount:   totalRecords,
-		Enums:      true,
-		BucketSize: 2000,
-		Salt:       0,
-		LeafSize:   8,
-		TmpDir:     c.dir,
-		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
-			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
-			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-		IndexFile: chsetIdxPath,
-	}); err != nil {
-		return fmt.Errorf("produceChangeSets NewRecSplit: %w", err)
-	}
-	g := d.MakeGetter()
-	for {
-		if err = c.rewind(); err != nil {
-			return fmt.Errorf("produceChangeSets rewind2: %w", err)
-		}
-		var txKey = make([]byte, 8, 60)
-		var pos, prevPos uint64
-		var txNum uint64
-		g.Reset(0)
-		for b, txNum, e = c.prevTx(); b && e == nil; b, txNum, e = c.prevTx() {
-			binary.BigEndian.PutUint64(txKey[:8], txNum)
-			for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
-				txKey = append(txKey[:8], key...)
-				pos = g.Skip()
-				if err = rs.AddKey(txKey, prevPos); err != nil {
-					return fmt.Errorf("produceChangeSets AddKey: %w", e)
-				}
-				prevPos = pos
-			}
-			if e != nil {
-				return fmt.Errorf("produceChangeSets nextTriple2: %w", e)
-			}
-		}
-		if e != nil {
-			return fmt.Errorf("produceChangeSets prevTx2: %w", e)
-		}
-		if err = rs.Build(); err != nil {
-			return fmt.Errorf("produceChangeSets Build: %w", err)
-		}
-		if rs.Collision() {
-			log.Info("Building produceChangeSets. Collision happened. It's ok. Restarting...")
-			rs.ResetNextSalt()
-		} else {
-			break
-		}
+	var index *recsplit.Index
+	if d, index, err = buildIndex(chsetDatPath, chsetIdxPath, c.dir, totalRecords); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets changeset buildIndex: %w", err)
 	}
 	// Create bitmap files
 	bitmapC, err := compress.NewCompressor(context.Background(), AggregatorPrefix, bitmapDatPath, c.dir, compress.MinPatternScore, 1)
 	if err != nil {
-		return fmt.Errorf("produceChangeSets bitmap NewCompressor: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap NewCompressor: %w", err)
 	}
 	defer func() {
 		if bitmapC != nil {
@@ -757,27 +719,26 @@ func (c *Changes) produceChangeSets(basename string, blockFrom, blockTo uint64) 
 		bitmapKey = append(bitmapKey[:0], []byte(key)...)
 		bitmapKey = append(bitmapKey, blockSuffix[:]...)
 		if err = bitmapC.AddWord(bitmapKey); err != nil {
-			return fmt.Errorf("produceChangeSets bitmap add key: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap add key: %w", err)
 		}
 		if bitmapVal, err = bitmaps[key].ToBytes(); err != nil {
-			return fmt.Errorf("produceChangeSets bitmapVal production: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmapVal production: %w", err)
 		}
 		if err = bitmapC.AddWord(bitmapVal); err != nil {
-			return fmt.Errorf("produceChangeSets bitmap add val: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap add val: %w", err)
 		}
 	}
 	if err = bitmapC.Compress(); err != nil {
-		return fmt.Errorf("produceChangeSets bitmap Compress: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap Compress: %w", err)
 	}
 	bitmapC.Close()
+	bitmapC = nil
 	var bitmapD *compress.Decompressor
 	var bitmapI *recsplit.Index
 	if bitmapD, bitmapI, err = buildIndex(bitmapDatPath, bitmapIdxPath, c.dir, len(bitmapKeys)); err != nil {
-		return fmt.Errorf("produceChangeSets bitmap buildIndex: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap buildIndex: %w", err)
 	}
-	bitmapD.Close()
-	bitmapI.Close()
-	return nil
+	return d, index, bitmapD, bitmapI, nil
 }
 
 // aggregateToBtree iterates over all available changes in the change files covered by this instance `c`
@@ -1175,14 +1136,73 @@ func (a *Aggregator) backgroundAggregation() {
 			a.addLocked(fType, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.bt[fType]})
 		}
 		a.aggBackCh <- struct{}{}
+		if a.changesets {
+			if historyD, historyI, bitmapD, bitmapI, err := aggTask.changes[Account].produceChangeSets(aggTask.blockFrom, aggTask.blockTo, AccountHistory, AccountBitmap); err == nil {
+				var historyItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+				historyItem.decompressor = historyD
+				historyItem.index = historyI
+				historyItem.getter = historyItem.decompressor.MakeGetter()
+				historyItem.getterMerge = historyItem.decompressor.MakeGetter()
+				historyItem.indexReader = recsplit.NewIndexReader(historyItem.index)
+				historyItem.readerMerge = recsplit.NewIndexReader(historyItem.index)
+				a.addLocked(AccountHistory, historyItem)
+				var bitmapItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+				bitmapItem.decompressor = bitmapD
+				bitmapItem.index = bitmapI
+				bitmapItem.getter = bitmapItem.decompressor.MakeGetter()
+				bitmapItem.getterMerge = bitmapItem.decompressor.MakeGetter()
+				bitmapItem.indexReader = recsplit.NewIndexReader(bitmapItem.index)
+				bitmapItem.readerMerge = recsplit.NewIndexReader(bitmapItem.index)
+				a.addLocked(AccountBitmap, bitmapItem)
+			} else {
+				a.aggError <- fmt.Errorf("produceChangeSets %s: %w", Account.String(), err)
+				return
+			}
+			if historyD, historyI, bitmapD, bitmapI, err := aggTask.changes[Storage].produceChangeSets(aggTask.blockFrom, aggTask.blockTo, StorageHistory, StorageBitmap); err == nil {
+				var historyItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+				historyItem.decompressor = historyD
+				historyItem.index = historyI
+				historyItem.getter = historyItem.decompressor.MakeGetter()
+				historyItem.getterMerge = historyItem.decompressor.MakeGetter()
+				historyItem.indexReader = recsplit.NewIndexReader(historyItem.index)
+				historyItem.readerMerge = recsplit.NewIndexReader(historyItem.index)
+				a.addLocked(StorageHistory, historyItem)
+				var bitmapItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+				bitmapItem.decompressor = bitmapD
+				bitmapItem.index = bitmapI
+				bitmapItem.getter = bitmapItem.decompressor.MakeGetter()
+				bitmapItem.getterMerge = bitmapItem.decompressor.MakeGetter()
+				bitmapItem.indexReader = recsplit.NewIndexReader(bitmapItem.index)
+				bitmapItem.readerMerge = recsplit.NewIndexReader(bitmapItem.index)
+				a.addLocked(StorageBitmap, bitmapItem)
+			} else {
+				a.aggError <- fmt.Errorf("produceChangeSets %s: %w", Storage.String(), err)
+				return
+			}
+			if historyD, historyI, bitmapD, bitmapI, err := aggTask.changes[Code].produceChangeSets(aggTask.blockFrom, aggTask.blockTo, CodeHistory, CodeBitmap); err == nil {
+				var historyItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+				historyItem.decompressor = historyD
+				historyItem.index = historyI
+				historyItem.getter = historyItem.decompressor.MakeGetter()
+				historyItem.getterMerge = historyItem.decompressor.MakeGetter()
+				historyItem.indexReader = recsplit.NewIndexReader(historyItem.index)
+				historyItem.readerMerge = recsplit.NewIndexReader(historyItem.index)
+				a.addLocked(CodeHistory, historyItem)
+				var bitmapItem = &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo}
+				bitmapItem.decompressor = bitmapD
+				bitmapItem.index = bitmapI
+				bitmapItem.getter = bitmapItem.decompressor.MakeGetter()
+				bitmapItem.getterMerge = bitmapItem.decompressor.MakeGetter()
+				bitmapItem.indexReader = recsplit.NewIndexReader(bitmapItem.index)
+				bitmapItem.readerMerge = recsplit.NewIndexReader(bitmapItem.index)
+				a.addLocked(CodeBitmap, bitmapItem)
+			} else {
+				a.aggError <- fmt.Errorf("produceChangeSets %s: %w", Account.String(), err)
+				return
+			}
+		}
 		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
 			var err error
-			if fType != Commitment && a.changesets && aggTask.bt[fType].Len() > 0 { // No need to produce changeset files if there were no changes
-				if err = aggTask.changes[fType].produceChangeSets(fType.String(), aggTask.blockFrom, aggTask.blockTo); err != nil {
-					a.aggError <- fmt.Errorf("produceChangeSets %s: %w", fType.String(), err)
-					return
-				}
-			}
 			if err = aggTask.changes[fType].closeFiles(); err != nil {
 				a.aggError <- fmt.Errorf("close %sChanges: %w", fType.String(), err)
 				return
