@@ -97,6 +97,7 @@ type RecSplit struct {
 	indexW             *bufio.Writer
 	bytesPerRec        int
 	numBuf             [8]byte
+	bucketKeyBuf       [16]byte
 	trace              bool
 	prevOffset         uint64 // Previously added offset (for calculating minDelta for Elias Fano encoding of "enum -> offset" index)
 	minDelta           uint64 // minDelta for Elias Fano encoding of "enum -> offset" index
@@ -281,11 +282,9 @@ func (rs *RecSplit) AddKey(key []byte, offset uint64) error {
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
 	hi, lo := rs.hasher.Sum128()
-	var bucketKey [16]byte
-	binary.BigEndian.PutUint64(bucketKey[:], remap(hi, rs.bucketCount))
-	binary.BigEndian.PutUint64(bucketKey[8:], lo)
-	var offsetVal [8]byte
-	binary.BigEndian.PutUint64(offsetVal[:], offset)
+	binary.BigEndian.PutUint64(rs.bucketKeyBuf[:], remap(hi, rs.bucketCount))
+	binary.BigEndian.PutUint64(rs.bucketKeyBuf[8:], lo)
+	binary.BigEndian.PutUint64(rs.numBuf[:], offset)
 	if offset > rs.maxOffset {
 		rs.maxOffset = offset
 	}
@@ -297,16 +296,15 @@ func (rs *RecSplit) AddKey(key []byte, offset uint64) error {
 	}
 
 	if rs.enums {
-		if err := rs.offsetCollector.Collect(offsetVal[:], nil); err != nil {
+		if err := rs.offsetCollector.Collect(rs.numBuf[:], nil); err != nil {
 			return err
 		}
-		var keyIdx [8]byte
-		binary.BigEndian.PutUint64(keyIdx[:], rs.keysAdded)
-		if err := rs.bucketCollector.Collect(bucketKey[:], keyIdx[:]); err != nil {
+		binary.BigEndian.PutUint64(rs.numBuf[:], rs.keysAdded)
+		if err := rs.bucketCollector.Collect(rs.bucketKeyBuf[:], rs.numBuf[:]); err != nil {
 			return err
 		}
 	} else {
-		if err := rs.bucketCollector.Collect(bucketKey[:], offsetVal[:]); err != nil {
+		if err := rs.bucketCollector.Collect(rs.bucketKeyBuf[:], rs.numBuf[:]); err != nil {
 			return err
 		}
 	}
