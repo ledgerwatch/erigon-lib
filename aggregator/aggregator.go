@@ -1361,7 +1361,7 @@ func (a *Aggregator) backgroundMerge() {
 		// Lock the set of commitment files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
 		toRemove[Commitment], _, _, blockFrom, blockTo = a.findLargestMerge(Commitment, uint64(math.MaxUint64))
 
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		for fType := FirstType; fType < NumberOfTypes; fType++ {
 			var pre, post []*byEndBlockItem
 			var from, to uint64
 			if fType == Commitment {
@@ -2336,7 +2336,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64) (toAggregate
 		if aggTo == 0 {
 			var doubleEnd uint64
 			nextDouble := item.endBlock
-			for nextDouble <= maxEndBlock {
+			for nextDouble <= maxEndBlock && nextDouble-item.startBlock < 499_999 {
 				doubleEnd = nextDouble
 				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
 			}
