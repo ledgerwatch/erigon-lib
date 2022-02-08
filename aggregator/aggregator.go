@@ -1444,7 +1444,7 @@ func (a *Aggregator) backgroundHistoryMerge() {
 		var blockFrom, blockTo uint64
 		// Lock the set of commitment files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
 		toRemove[CodeBitmap], _, _, blockFrom, blockTo = a.findLargestMerge(CodeBitmap, uint64(math.MaxUint64) /* maxBlockTo */, 500_000 /* maxSpan */)
-		fmt.Printf("History merge [%d-%d]\n")
+		fmt.Printf("History merge [%d-%d]\n", blockFrom, blockTo)
 
 		for fType := AccountHistory; fType < NumberOfStateTypes; fType++ {
 			var from, to uint64
@@ -1488,6 +1488,10 @@ func (a *Aggregator) backgroundHistoryMerge() {
 }
 
 func (a *Aggregator) GenerateChangesets(on bool) {
+	if !a.changesets && on {
+		a.historyWg.Add(1)
+		go a.backgroundHistoryMerge()
+	}
 	a.changesets = on
 }
 
