@@ -664,6 +664,7 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 			totalRecords++
 			txKey = append(txKey[:8], key...)
+			fmt.Printf("%s txKey = '[%d]%x\n", txNum, key)
 			// In the inital files and most merged file, the txKey is added to the file, but it gets removed in the final merge
 			if err = comp.AddWord(txKey); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("produceChangeSets AddWord key: %w", err)
