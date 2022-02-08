@@ -78,11 +78,11 @@ const (
 	Code
 	Commitment
 	AccountHistory
-	CodeHistory
 	StorageHistory
+	CodeHistory
 	AccountBitmap
-	CodeBitmap
 	StorageBitmap
+	CodeBitmap
 	NumberOfTypes
 )
 
@@ -165,6 +165,9 @@ type Aggregator struct {
 	mergeChannel    chan struct{}
 	mergeError      chan error
 	mergeWg         sync.WaitGroup
+	historyChannel  chan struct{}
+	historyError    chan error
+	historyWg       sync.WaitGroup
 	trees           [NumberOfStateTypes]*btree.BTree
 }
 
@@ -918,6 +921,8 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		aggError:        make(chan error, 1),
 		mergeChannel:    make(chan struct{}, 1),
 		mergeError:      make(chan error, 1),
+		historyChannel:  make(chan struct{}, 1),
+		historyError:    make(chan error, 1),
 	}
 	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		a.files[fType] = btree.New(32)
@@ -1031,6 +1036,10 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	go a.backgroundAggregation()
 	a.mergeWg.Add(1)
 	go a.backgroundMerge()
+	if a.changesets {
+		a.historyWg.Add(1)
+		go a.backgroundHistoryMerge()
+	}
 	return a, nil
 }
 
@@ -1241,6 +1250,10 @@ func (a *Aggregator) backgroundAggregation() {
 		case a.mergeChannel <- struct{}{}:
 		default:
 		}
+		select {
+		case a.historyChannel <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -1366,20 +1379,20 @@ func (a *Aggregator) backgroundMerge() {
 		t := time.Now()
 		var err error
 		var cvt CommitmentValTransform
-		var toRemove [NumberOfTypes][]*byEndBlockItem
-		var newItems [NumberOfTypes]*byEndBlockItem
+		var toRemove [NumberOfStateTypes][]*byEndBlockItem
+		var newItems [NumberOfStateTypes]*byEndBlockItem
 		var blockFrom, blockTo uint64
 		// Lock the set of commitment files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
-		toRemove[Commitment], _, _, blockFrom, blockTo = a.findLargestMerge(Commitment, uint64(math.MaxUint64))
+		toRemove[Commitment], _, _, blockFrom, blockTo = a.findLargestMerge(Commitment, uint64(math.MaxUint64) /* maxBlockTo */, uint64(math.MaxUint64) /* maxSpan */)
 
-		for fType := FirstType; fType < NumberOfTypes; fType++ {
+		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
 			var pre, post []*byEndBlockItem
 			var from, to uint64
 			if fType == Commitment {
 				from = blockFrom
 				to = blockTo
 			} else {
-				toRemove[fType], pre, post, from, to = a.findLargestMerge(fType, blockTo)
+				toRemove[fType], pre, post, from, to = a.findLargestMerge(fType, blockTo, uint64(math.MaxUint64) /* maxSpan */)
 				if from != blockFrom {
 					a.mergeError <- fmt.Errorf("%sFrom %d != blockFrom %d", fType.String(), from, blockFrom)
 					return
@@ -1407,11 +1420,8 @@ func (a *Aggregator) backgroundMerge() {
 		}
 		// Switch aggregator to new state files, close and remove old files
 		a.removeLockedState(toRemove[Account], newItems[Account], toRemove[Code], newItems[Code], toRemove[Storage], newItems[Storage], toRemove[Commitment], newItems[Commitment])
-		for fType := AccountHistory; fType < NumberOfTypes; fType++ {
-			a.removeLocked(fType, toRemove[fType], newItems[fType])
-		}
 		removed := 0
-		for fType := FirstType; fType < NumberOfTypes; fType++ {
+		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
 			if len(toRemove[fType]) > 1 {
 				removeFiles(fType, a.diffDir, toRemove[fType])
 				removed += len(toRemove[fType]) - 1
@@ -1420,6 +1430,58 @@ func (a *Aggregator) backgroundMerge() {
 		mergeTime := time.Since(t)
 		if mergeTime > time.Minute {
 			log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", removed, "time", time.Since(t))
+		}
+	}
+}
+
+func (a *Aggregator) backgroundHistoryMerge() {
+	defer a.historyWg.Done()
+	for range a.historyChannel {
+		t := time.Now()
+		var err error
+		var toRemove [NumberOfTypes][]*byEndBlockItem
+		var newItems [NumberOfTypes]*byEndBlockItem
+		var blockFrom, blockTo uint64
+		// Lock the set of commitment files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
+		toRemove[CodeBitmap], _, _, blockFrom, blockTo = a.findLargestMerge(CodeBitmap, uint64(math.MaxUint64) /* maxBlockTo */, 500_000 /* maxSpan */)
+
+		for fType := AccountHistory; fType < NumberOfStateTypes; fType++ {
+			var from, to uint64
+			if fType == CodeBitmap {
+				from = blockFrom
+				to = blockTo
+			} else {
+				toRemove[fType], _, _, from, to = a.findLargestMerge(fType, blockTo, 500_000 /* maxSpan */)
+				if from != blockFrom {
+					a.mergeError <- fmt.Errorf("%sFrom %d != blockFrom %d", fType.String(), from, blockFrom)
+					return
+				}
+				if to != blockTo {
+					a.mergeError <- fmt.Errorf("%sTo %d != blockTo %d", fType.String(), to, blockTo)
+					return
+				}
+			}
+			if len(toRemove[fType]) > 1 {
+				// TODO: Special aggregation for blockTo - blockFrom + 1 == 500_000
+				if newItems[fType], err = a.computeAggregation(fType.String(), toRemove[fType], from, to, nil /* valTransform */); err != nil {
+					a.mergeError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
+					return
+				}
+			}
+		}
+		for fType := AccountHistory; fType < NumberOfTypes; fType++ {
+			a.removeLocked(fType, toRemove[fType], newItems[fType])
+		}
+		removed := 0
+		for fType := AccountHistory; fType < NumberOfTypes; fType++ {
+			if len(toRemove[fType]) > 1 {
+				removeFiles(fType, a.diffDir, toRemove[fType])
+				removed += len(toRemove[fType]) - 1
+			}
+		}
+		mergeTime := time.Since(t)
+		if mergeTime > time.Minute {
+			log.Info("Long history merge", "from", blockFrom, "to", blockTo, "files", removed, "time", time.Since(t))
 		}
 	}
 }
@@ -1489,8 +1551,11 @@ func (a *Aggregator) Close() {
 	a.aggWg.Wait()
 	close(a.mergeChannel)
 	a.mergeWg.Wait()
+	if a.changesets {
+		a.historyWg.Wait()
+	}
 	// Closing state files only after background aggregation goroutine is finished
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		a.closeFiles(fType)
 	}
 }
@@ -2326,7 +2391,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	}
 }
 
-func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64) (toAggregate []*byEndBlockItem, pre []*byEndBlockItem, post []*byEndBlockItem, aggFrom uint64, aggTo uint64) {
+func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint64) (toAggregate []*byEndBlockItem, pre []*byEndBlockItem, post []*byEndBlockItem, aggFrom uint64, aggTo uint64) {
 	a.fileLocks[fType].RLock()
 	defer a.fileLocks[fType].RUnlock()
 	var maxEndBlock uint64
@@ -2350,7 +2415,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64) (toAggregate
 		if aggTo == 0 {
 			var doubleEnd uint64
 			nextDouble := item.endBlock
-			for nextDouble <= maxEndBlock && nextDouble-item.startBlock < 500_000 {
+			for nextDouble <= maxEndBlock && nextDouble-item.startBlock < maxSpan {
 				doubleEnd = nextDouble
 				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
 			}
