@@ -1069,7 +1069,18 @@ type AggregationTask struct {
 	blockTo   uint64
 }
 
-func (a *Aggregator) removeLocked(
+func (a *Aggregator) removeLocked(fType FileType, toRemove []*byEndBlockItem, item *byEndBlockItem) {
+	a.fileLocks[fType].Lock()
+	defer a.fileLocks[fType].Unlock()
+	if len(toRemove) > 1 {
+		for _, ag := range toRemove {
+			a.files[fType].Delete(ag)
+		}
+		a.files[fType].ReplaceOrInsert(item)
+	}
+}
+
+func (a *Aggregator) removeLockedState(
 	accountsToRemove []*byEndBlockItem, accountsItem *byEndBlockItem,
 	codeToRemove []*byEndBlockItem, codeItem *byEndBlockItem,
 	storageToRemove []*byEndBlockItem, storageItem *byEndBlockItem,
@@ -1355,8 +1366,8 @@ func (a *Aggregator) backgroundMerge() {
 		t := time.Now()
 		var err error
 		var cvt CommitmentValTransform
-		var toRemove [NumberOfStateTypes][]*byEndBlockItem
-		var newItems [NumberOfStateTypes]*byEndBlockItem
+		var toRemove [NumberOfTypes][]*byEndBlockItem
+		var newItems [NumberOfTypes]*byEndBlockItem
 		var blockFrom, blockTo uint64
 		// Lock the set of commitment files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
 		toRemove[Commitment], _, _, blockFrom, blockTo = a.findLargestMerge(Commitment, uint64(math.MaxUint64))
@@ -1395,7 +1406,10 @@ func (a *Aggregator) backgroundMerge() {
 			}
 		}
 		// Switch aggregator to new state files, close and remove old files
-		a.removeLocked(toRemove[Account], newItems[Account], toRemove[Code], newItems[Code], toRemove[Storage], newItems[Storage], toRemove[Commitment], newItems[Commitment])
+		a.removeLockedState(toRemove[Account], newItems[Account], toRemove[Code], newItems[Code], toRemove[Storage], newItems[Storage], toRemove[Commitment], newItems[Commitment])
+		for fType := AccountHistory; fType < NumberOfTypes; fType++ {
+			a.removeLocked(fType, toRemove[fType], newItems[fType])
+		}
 		removed := 0
 		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
 			if len(toRemove[fType]) > 1 {
