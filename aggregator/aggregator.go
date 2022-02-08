@@ -262,14 +262,8 @@ func (cf *ChangeFile) insert(word []byte) {
 func (cf *ChangeFile) finish(txNum uint64) error {
 	// Write out words
 	lastOffset := 0
-	if txNum > 0 {
-		fmt.Printf("finish %s txNum %d\n", cf.namebase, txNum)
-	}
 	for _, offset := range cf.wordOffsets {
 		word := cf.words[lastOffset:offset]
-		if txNum > 0 {
-			fmt.Printf("%x ", word)
-		}
 		n := binary.PutUvarint(cf.numBuf[:], uint64(len(word)))
 		if _, err := cf.w.Write(cf.numBuf[:n]); err != nil {
 			return err
@@ -281,9 +275,6 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 		}
 		cf.sizeCounter += uint64(n + len(word))
 		lastOffset = offset
-	}
-	if txNum > 0 {
-		fmt.Printf("\n------------------\n")
 	}
 	cf.words = cf.words[:0]
 	cf.wordOffsets = cf.wordOffsets[:0]
@@ -668,12 +659,12 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets rewind: %w", err)
 	}
 	var txKey = make([]byte, 8, 60)
-	for b, txNum, e = c.prevTx(); b && e == nil; b, _, e = c.prevTx() {
+	for b, txNum, e = c.prevTx(); b && e == nil; b, txNum, e = c.prevTx() {
 		binary.BigEndian.PutUint64(txKey[:8], txNum)
 		for key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]); b && e == nil; key, before, after, b, e = c.nextTriple(key[:0], before[:0], after[:0]) {
 			totalRecords++
 			txKey = append(txKey[:8], key...)
-			fmt.Printf("%s txKey = '[%d]%x\n", historyType.String(), txNum, key)
+			//fmt.Printf("%s txKey = [%d]%x\n", historyType.String(), txNum, key)
 			// In the inital files and most merged file, the txKey is added to the file, but it gets removed in the final merge
 			if err = comp.AddWord(txKey); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("produceChangeSets AddWord key: %w", err)
@@ -1207,7 +1198,7 @@ func (a *Aggregator) backgroundAggregation() {
 				bitmapItem.readerMerge = recsplit.NewIndexReader(bitmapItem.index)
 				a.addLocked(CodeBitmap, bitmapItem)
 			} else {
-				a.aggError <- fmt.Errorf("produceChangeSets %s: %w", Account.String(), err)
+				a.aggError <- fmt.Errorf("produceChangeSets %s: %w", Code.String(), err)
 				return
 			}
 		}
