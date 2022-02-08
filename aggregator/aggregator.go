@@ -262,8 +262,10 @@ func (cf *ChangeFile) insert(word []byte) {
 func (cf *ChangeFile) finish(txNum uint64) error {
 	// Write out words
 	lastOffset := 0
+	fmt.Printf("finish %s txNum %d\n", cf.namebase, txNum)
 	for _, offset := range cf.wordOffsets {
 		word := cf.words[lastOffset:offset]
+		fmt.Printf("%x ", word)
 		n := binary.PutUvarint(cf.numBuf[:], uint64(len(word)))
 		if _, err := cf.w.Write(cf.numBuf[:n]); err != nil {
 			return err
@@ -276,6 +278,7 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 		cf.sizeCounter += uint64(n + len(word))
 		lastOffset = offset
 	}
+	fmt.Printf("\n------------------\n")
 	cf.words = cf.words[:0]
 	cf.wordOffsets = cf.wordOffsets[:0]
 	// Write out tx number and then size of changes in this block
