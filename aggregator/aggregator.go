@@ -2336,7 +2336,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64) (toAggregate
 		if aggTo == 0 {
 			var doubleEnd uint64
 			nextDouble := item.endBlock
-			for nextDouble <= maxEndBlock && nextDouble-item.startBlock < 499_999 {
+			for nextDouble <= maxEndBlock && nextDouble-item.startBlock < 500_000 {
 				doubleEnd = nextDouble
 				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
 			}
