@@ -1444,6 +1444,7 @@ func (a *Aggregator) backgroundHistoryMerge() {
 		var blockFrom, blockTo uint64
 		// Lock the set of commitment files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
 		toRemove[CodeBitmap], _, _, blockFrom, blockTo = a.findLargestMerge(CodeBitmap, uint64(math.MaxUint64) /* maxBlockTo */, 500_000 /* maxSpan */)
+		fmt.Printf("History merge [%d-%d]\n")
 
 		for fType := AccountHistory; fType < NumberOfStateTypes; fType++ {
 			var from, to uint64
@@ -1453,18 +1454,18 @@ func (a *Aggregator) backgroundHistoryMerge() {
 			} else {
 				toRemove[fType], _, _, from, to = a.findLargestMerge(fType, blockTo, 500_000 /* maxSpan */)
 				if from != blockFrom {
-					a.mergeError <- fmt.Errorf("%sFrom %d != blockFrom %d", fType.String(), from, blockFrom)
+					a.historyError <- fmt.Errorf("%sFrom %d != blockFrom %d", fType.String(), from, blockFrom)
 					return
 				}
 				if to != blockTo {
-					a.mergeError <- fmt.Errorf("%sTo %d != blockTo %d", fType.String(), to, blockTo)
+					a.historyError <- fmt.Errorf("%sTo %d != blockTo %d", fType.String(), to, blockTo)
 					return
 				}
 			}
 			if len(toRemove[fType]) > 1 {
 				// TODO: Special aggregation for blockTo - blockFrom + 1 == 500_000
 				if newItems[fType], err = a.computeAggregation(fType.String(), toRemove[fType], from, to, nil /* valTransform */); err != nil {
-					a.mergeError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
+					a.historyError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
 					return
 				}
 			}
@@ -2479,6 +2480,8 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	case err := <-w.a.aggError:
 		return err
 	case err := <-w.a.mergeError:
+		return err
+	case err := <-w.a.historyError:
 		return err
 	default:
 	}
