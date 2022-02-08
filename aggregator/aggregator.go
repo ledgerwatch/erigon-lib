@@ -1411,7 +1411,7 @@ func (a *Aggregator) backgroundMerge() {
 			a.removeLocked(fType, toRemove[fType], newItems[fType])
 		}
 		removed := 0
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		for fType := FirstType; fType < NumberOfTypes; fType++ {
 			if len(toRemove[fType]) > 1 {
 				removeFiles(fType, a.diffDir, toRemove[fType])
 				removed += len(toRemove[fType]) - 1
