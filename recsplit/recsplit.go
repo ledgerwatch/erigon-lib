@@ -24,9 +24,7 @@ import (
 	"math"
 	"math/bits"
 	"os"
-	"path/filepath"
 
-	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
@@ -493,9 +491,7 @@ func (rs *RecSplit) loadFuncOffset(k, _ []byte, _ etl.CurrentTableReader, _ etl.
 // Build has to be called after all the keys have been added, and it initiates the process
 // of building the perfect hash function and writing index into a file
 func (rs *RecSplit) Build() error {
-	_, fileName := filepath.Split(rs.indexFile)
-	tmpIdxFilePath := filepath.Join(rs.tmpDir, fileName)
-	common.MustExist(rs.tmpDir)
+	tmpIdxFilePath := rs.indexFile + ".tmp"
 
 	if rs.built {
 		return fmt.Errorf("already built")
@@ -620,8 +616,6 @@ func (rs *RecSplit) Build() error {
 	_ = rs.indexW.Flush()
 	_ = rs.indexF.Sync()
 	_ = rs.indexF.Close()
-	dir, _ := filepath.Split(rs.indexFile)
-	common.MustExist(dir)
 	if err := os.Rename(tmpIdxFilePath, rs.indexFile); err != nil {
 		return err
 	}
