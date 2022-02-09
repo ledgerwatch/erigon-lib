@@ -1487,6 +1487,7 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 		var key []byte
 		for g.HasNext() {
 			key, _ = g.Next(key[:0])
+			g.Skip()
 			pos := g1.Skip()
 			if err = rs.AddKey(key, lastOffset); err != nil {
 				return fmt.Errorf("reduceHistoryFiles AddKey: %w", err)
