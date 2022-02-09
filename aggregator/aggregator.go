@@ -1491,6 +1491,10 @@ func (a *Aggregator) GenerateChangesets(on bool) {
 		a.historyWg.Add(1)
 		go a.backgroundHistoryMerge()
 	}
+	if a.changesets && !on {
+		close(a.historyChannel)
+		a.historyWg.Wait()
+	}
 	a.changesets = on
 }
 
@@ -1556,6 +1560,7 @@ func (a *Aggregator) Close() {
 	close(a.mergeChannel)
 	a.mergeWg.Wait()
 	if a.changesets {
+		close(a.historyChannel)
 		a.historyWg.Wait()
 	}
 	// Closing state files only after background aggregation goroutine is finished
