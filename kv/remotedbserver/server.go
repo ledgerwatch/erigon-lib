@@ -45,7 +45,7 @@ type KvServer struct {
 	remote.UnimplementedKVServer // must be embedded to have forward compatible implementations.
 
 	kv                 kv.RwDB
-	stateChangeStreams *StateChangeStreams
+	stateChangeStreams *StateChangePubSub
 	ctx                context.Context
 }
 
@@ -259,12 +259,12 @@ func bytesCopy(b []byte) []byte {
 }
 
 func (s *KvServer) StateChanges(req *remote.StateChangeRequest, server remote.KV_StateChangesServer) error {
-	ch, remove := s.stateChangeStreams.Subscribe()
+	ch, remove := s.stateChangeStreams.Sub()
 	defer remove()
 	for {
 		select {
-		case req := <-ch:
-			if err := server.Send(req); err != nil {
+		case reply := <-ch:
+			if err := server.Send(reply); err != nil {
 				return err
 			}
 		case <-s.ctx.Done():
@@ -272,26 +272,24 @@ func (s *KvServer) StateChanges(req *remote.StateChangeRequest, server remote.KV
 		case <-server.Context().Done():
 			return nil
 		}
-
 	}
 }
 
 func (s *KvServer) SendStateChanges(ctx context.Context, sc *remote.StateChangeBatch) {
-	s.stateChangeStreams.Broadcast(sc)
+	s.stateChangeStreams.Pub(sc)
 }
 
-type StateChangeStreams struct {
-	mu sync.RWMutex
-	id uint
-	//streams map[uint]remote.KV_StateChangesServer
+type StateChangePubSub struct {
+	mu    sync.RWMutex
+	id    uint
 	chans map[uint]chan *remote.StateChangeBatch
 }
 
-func newStateChangeStreams() *StateChangeStreams {
-	return &StateChangeStreams{}
+func newStateChangeStreams() *StateChangePubSub {
+	return &StateChangePubSub{}
 }
 
-func (s *StateChangeStreams) Subscribe() (ch chan *remote.StateChangeBatch, remove func()) {
+func (s *StateChangePubSub) Sub() (ch chan *remote.StateChangeBatch, remove func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.chans == nil {
@@ -299,30 +297,36 @@ func (s *StateChangeStreams) Subscribe() (ch chan *remote.StateChangeBatch, remo
 	}
 	s.id++
 	id := s.id
-	ch = make(chan *remote.StateChangeBatch)
+	ch = make(chan *remote.StateChangeBatch, 8)
 	s.chans[id] = ch
 	return ch, func() { s.remove(id) }
 }
 
-func (s *StateChangeStreams) Broadcast(reply *remote.StateChangeBatch) {
+func (s *StateChangePubSub) Pub(reply *remote.StateChangeBatch) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ch := range s.chans {
 		select {
 		case ch <- reply:
-		default:
+		default: //if channel is full (slow consumer), drop some old messages
+			for i := 0; i < 4; i++ {
+				select {
+				case <-ch:
+				default:
+				}
+			}
+			ch <- reply
 		}
 	}
-	return
 }
 
-func (s *StateChangeStreams) Len() int {
+func (s *StateChangePubSub) Len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.chans)
 }
 
-func (s *StateChangeStreams) remove(id uint) {
+func (s *StateChangePubSub) remove(id uint) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.chans[id]
