@@ -673,9 +673,9 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 			}
 			var bitmap *roaring64.Bitmap
 			var ok bool
-			if bitmap, ok = bitmaps[string(before)]; !ok {
+			if bitmap, ok = bitmaps[string(key)]; !ok {
 				bitmap = roaring64.New()
-				bitmaps[string(before)] = bitmap
+				bitmaps[string(key)] = bitmap
 			}
 			bitmap.Add(txNum)
 		}
