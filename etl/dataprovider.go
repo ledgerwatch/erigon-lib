@@ -45,7 +45,7 @@ type Encoder interface {
 }
 
 // FlushToDisk - `doFsync` is true only for 'critical' collectors (which should not loose).
-func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataProvider, error) {
+func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync, noLogs bool) (dataProvider, error) {
 	if b.Len() == 0 {
 		return nil, nil
 	}
@@ -70,12 +70,14 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataPr
 
 	defer func() {
 		b.Reset() // run it after buf.flush and file.sync
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-		log.Info(
-			"Flushed buffer file",
-			"name", bufferFile.Name(),
-			"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+		if !noLogs {
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			log.Info(
+				"Flushed buffer file",
+				"name", bufferFile.Name(),
+				"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+		}
 	}()
 
 	encoder.Reset(w)

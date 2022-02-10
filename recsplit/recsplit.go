@@ -311,6 +311,15 @@ func (rs *RecSplit) AddKey(key []byte, offset uint64) error {
 	return nil
 }
 
+func (rs *RecSplit) NoLogs(v bool) {
+	if rs.bucketCollector != nil {
+		rs.bucketCollector.NoLogs(v)
+	}
+	if rs.offsetCollector != nil {
+		rs.offsetCollector.NoLogs(v)
+	}
+}
+
 func (rs *RecSplit) recsplitCurrentBucket() error {
 	// Extend rs.bucketSizeAcc to accomodate current bucket index + 1
 	for len(rs.bucketSizeAcc) <= int(rs.currentBucketIdx)+1 {
