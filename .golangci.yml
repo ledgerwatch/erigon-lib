@@ -120,3 +120,6 @@ issues:
       linters:
         - gosec
         - gocritic
+    - path: pedersen_hash
+      linters:
+        - staticcheck
