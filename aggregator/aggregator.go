@@ -947,7 +947,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 	}
 	a.scanStateFiles(files)
 	// Check for overlaps and holes
-	for fType := FirstType; fType < NumberOfTypes; fType++ {
+	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
 		if err := checkOverlaps(fType.String(), a.files[fType]); err != nil {
 			return nil, err
 		}
