@@ -10,7 +10,6 @@ linters:
     - gosimple
     - govet
     - ineffassign
-    - staticcheck
     - structcheck
     - unused
     - varcheck
@@ -120,6 +119,3 @@ issues:
       linters:
         - gosec
         - gocritic
-    - path: pedersen_hash
-      linters:
-        - staticcheck
