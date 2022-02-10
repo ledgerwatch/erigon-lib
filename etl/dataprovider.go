@@ -23,7 +23,6 @@ import (
 	"io/ioutil"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/log/v3"
@@ -47,7 +46,6 @@ type Encoder interface {
 
 // FlushToDisk - `doFsync` is true only for 'critical' collectors (which should not loose).
 func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataProvider, error) {
-	defer func(t time.Time) { fmt.Printf("dataprovider.go:50: %s\n", time.Since(t)) }(time.Now())
 	if b.Len() == 0 {
 		return nil, nil
 	}
@@ -71,7 +69,6 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataPr
 	defer w.Flush() //nolint:errcheck
 
 	defer func() {
-		defer func(t time.Time) { fmt.Printf("dataprovider.go:78: %s\n", time.Since(t)) }(time.Now())
 		b.Reset() // run it after buf.flush and file.sync
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
@@ -80,7 +77,6 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataPr
 			"name", bufferFile.Name(),
 			"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	}()
-	defer func(t time.Time) { fmt.Printf("dataprovider.go:86: %s\n", time.Since(t)) }(time.Now())
 
 	encoder.Reset(w)
 	err = writeToDisk(encoder, b.GetEntries())
