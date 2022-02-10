@@ -19,8 +19,10 @@ package etl
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -113,6 +115,8 @@ func (b *sortableBuffer) Get(i int) sortableBufferEntry {
 func (b *sortableBuffer) Reset() {
 	b.entries = nil
 	b.size = 0
+	defer func(t time.Time) { fmt.Printf("buffers.go:118: %s\n", time.Since(t)) }(time.Now())
+	runtime.GC()
 }
 func (b *sortableBuffer) Sort() {
 	sort.Stable(b)
@@ -189,6 +193,8 @@ func (b *appendSortableBuffer) Reset() {
 	b.sortedBuf = nil
 	b.entries = make(map[string][]byte)
 	b.size = 0
+	defer func(t time.Time) { fmt.Printf("buffers.go:196: %s\n", time.Since(t)) }(time.Now())
+	runtime.GC()
 }
 
 func (b *appendSortableBuffer) GetEntries() []sortableBufferEntry {
@@ -264,6 +270,8 @@ func (b *oldestEntrySortableBuffer) Reset() {
 	b.sortedBuf = nil
 	b.entries = make(map[string][]byte)
 	b.size = 0
+	defer func(t time.Time) { fmt.Printf("buffers.go:273: %s\n", time.Since(t)) }(time.Now())
+	runtime.GC()
 }
 
 func (b *oldestEntrySortableBuffer) GetEntries() []sortableBufferEntry {
