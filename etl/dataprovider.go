@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/log/v3"
@@ -50,17 +51,22 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string) (dataProvider, error)
 	}
 	// if we are going to create files in the system temp dir, we don't need any
 	// subfolders.
+	defer func(t time.Time) { fmt.Printf("dataprovider.go:54: %s\n", time.Since(t)) }(time.Now())
 	if tmpdir != "" {
 		if err := os.MkdirAll(tmpdir, 0755); err != nil {
 			return nil, err
 		}
 	}
+	defer func(t time.Time) { fmt.Printf("dataprovider.go:59: %s\n", time.Since(t)) }(time.Now())
 
 	bufferFile, err := ioutil.TempFile(tmpdir, "erigon-sortable-buf-")
 	if err != nil {
 		return nil, err
 	}
-	defer bufferFile.Sync() //nolint:errcheck
+	defer func() {
+		defer func(t time.Time) { fmt.Printf("dataprovider.go:67: %s\n", time.Since(t)) }(time.Now())
+		bufferFile.Sync() //nolint:errcheck
+	}()
 
 	w := bufio.NewWriterSize(bufferFile, BufIOSize)
 	defer w.Flush() //nolint:errcheck
