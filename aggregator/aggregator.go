@@ -2633,7 +2633,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	w.a.changesBtree.Delete(i)
 	var aggTask AggregationTask
 	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
-		aggTask.changes[fType].Init(fType.String(), w.a.aggregationStep, w.a.diffDir, w.a.changesets)
+		aggTask.changes[fType].Init(fType.String(), w.a.aggregationStep, w.a.diffDir, w.a.changesets && fType != Commitment)
 	}
 	var err error
 	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
