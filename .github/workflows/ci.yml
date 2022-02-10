@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
-            sudo apt update && sudo apt install build-essential
+            sudo apt update && sudo apt install build-essential gcc
           fi
         shell: bash
       - uses: actions/cache@v2
