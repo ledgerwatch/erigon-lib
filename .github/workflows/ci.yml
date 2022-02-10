@@ -45,8 +45,4 @@ jobs:
       - name: Install deps
         if: matrix.os == 'windows-2019'
         run: choco upgrade mingw cmake -y --no-progress
-      - name: Test
-        run: go test $(go list ./... | grep -v /pedersen_hash/)
-
-
-
+      - run: go test ./...

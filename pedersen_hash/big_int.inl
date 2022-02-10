@@ -4,7 +4,11 @@
 #include <sstream>
 #include <tuple>
 
-#include "math.h"
+#ifdef __APPLE__
+    #include <cmath>
+#else
+    #include "math.h"
+#endif
 
 namespace starkware {
 
