@@ -11,6 +11,7 @@ on:
 env:
   CGO_ENABLED: "1"
   CGO_CXXFLAGS: "-std=c++17"
+  CPLUS_INCLUDE_PATH: /usr/local/gcc-10/include/c++/10.2.0:/Library/Developer/CommandLineTools/SDKs/MacOSX10.15.sdk/usr/include
 jobs:
   tests:
     strategy:
