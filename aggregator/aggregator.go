@@ -1495,13 +1495,12 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 			lastOffset = pos
 		}
 		if err = rs.Build(); err != nil {
-			return fmt.Errorf("reduceHistoryFiles Build: %w", err)
-		}
-		if rs.Collision() {
-			log.Info("Building reduceHistoryFiles. Collision happened. It's ok. Restarting...")
-			rs.ResetNextSalt()
-		} else {
-			break
+			if rs.Collision() {
+				log.Info("Building reduceHistoryFiles. Collision happened. It's ok. Restarting...")
+				rs.ResetNextSalt()
+			} else {
+				return fmt.Errorf("reduceHistoryFiles Build: %w", err)
+			}
 		}
 	}
 	if err = item.decompressor.Close(); err != nil {
