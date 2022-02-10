@@ -97,7 +97,8 @@ func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 			provider = KeepInRAM(sortableBuffer)
 			c.allFlushed = true
 		} else {
-			provider, err = FlushToDisk(encoder, sortableBuffer, tmpdir)
+			doFsync := !c.autoClean /* is critical collector */
+			provider, err = FlushToDisk(encoder, sortableBuffer, tmpdir, doFsync)
 		}
 		if err != nil {
 			return err

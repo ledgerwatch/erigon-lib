@@ -45,24 +45,27 @@ type Encoder interface {
 	Reset(writer io.Writer)
 }
 
-func FlushToDisk(encoder Encoder, b Buffer, tmpdir string) (dataProvider, error) {
+// FlushToDisk - `doFsync` is true only for 'critical' collectors (which should not loose).
+func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataProvider, error) {
 	if b.Len() == 0 {
 		return nil, nil
 	}
 	// if we are going to create files in the system temp dir, we don't need any
 	// subfolders.
-	defer func(t time.Time) { fmt.Printf("dataprovider.go:54: %s\n", time.Since(t)) }(time.Now())
 	if tmpdir != "" {
 		if err := os.MkdirAll(tmpdir, 0755); err != nil {
 			return nil, err
 		}
 	}
-	defer func(t time.Time) { fmt.Printf("dataprovider.go:59: %s\n", time.Since(t)) }(time.Now())
 
 	bufferFile, err := ioutil.TempFile(tmpdir, "erigon-sortable-buf-")
 	if err != nil {
 		return nil, err
 	}
+	if doFsync {
+		defer bufferFile.Sync()
+	}
+	// no bufferFile.Sync() - because it's not important to tmp files
 	defer func() {
 		defer func(t time.Time) { fmt.Printf("dataprovider.go:67: %s\n", time.Since(t)) }(time.Now())
 		bufferFile.Sync() //nolint:errcheck
@@ -72,6 +75,7 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string) (dataProvider, error)
 	defer w.Flush() //nolint:errcheck
 
 	defer func() {
+		defer func(t time.Time) { fmt.Printf("dataprovider.go:78: %s\n", time.Since(t)) }(time.Now())
 		b.Reset() // run it after buf.flush and file.sync
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
@@ -80,6 +84,7 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string) (dataProvider, error)
 			"name", bufferFile.Name(),
 			"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	}()
+	defer func(t time.Time) { fmt.Printf("dataprovider.go:86: %s\n", time.Since(t)) }(time.Now())
 
 	encoder.Reset(w)
 	err = writeToDisk(encoder, b.GetEntries())
