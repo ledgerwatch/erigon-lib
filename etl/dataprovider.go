@@ -47,6 +47,7 @@ type Encoder interface {
 
 // FlushToDisk - `doFsync` is true only for 'critical' collectors (which should not loose).
 func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataProvider, error) {
+	defer func(t time.Time) { fmt.Printf("dataprovider.go:50: %s\n", time.Since(t)) }(time.Now())
 	if b.Len() == 0 {
 		return nil, nil
 	}
