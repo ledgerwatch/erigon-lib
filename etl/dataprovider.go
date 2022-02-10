@@ -63,13 +63,11 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync bool) (dataPr
 		return nil, err
 	}
 	if doFsync {
-		defer bufferFile.Sync()
+		defer func() {
+			defer func(t time.Time) { fmt.Printf("dataprovider.go:67: %s\n", time.Since(t)) }(time.Now())
+			bufferFile.Sync() //nolint:errcheck
+		}()
 	}
-	// no bufferFile.Sync() - because it's not important to tmp files
-	defer func() {
-		defer func(t time.Time) { fmt.Printf("dataprovider.go:67: %s\n", time.Since(t)) }(time.Now())
-		bufferFile.Sync() //nolint:errcheck
-	}()
 
 	w := bufio.NewWriterSize(bufferFile, BufIOSize)
 	defer w.Flush() //nolint:errcheck
