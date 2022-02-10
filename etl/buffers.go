@@ -19,7 +19,6 @@ package etl
 import (
 	"bytes"
 	"fmt"
-	"runtime"
 	"sort"
 	"strconv"
 
@@ -114,7 +113,6 @@ func (b *sortableBuffer) Get(i int) sortableBufferEntry {
 func (b *sortableBuffer) Reset() {
 	b.entries = nil
 	b.size = 0
-	runtime.GC()
 }
 func (b *sortableBuffer) Sort() {
 	sort.Stable(b)
@@ -191,7 +189,6 @@ func (b *appendSortableBuffer) Reset() {
 	b.sortedBuf = nil
 	b.entries = make(map[string][]byte)
 	b.size = 0
-	runtime.GC()
 }
 
 func (b *appendSortableBuffer) GetEntries() []sortableBufferEntry {
@@ -267,7 +264,6 @@ func (b *oldestEntrySortableBuffer) Reset() {
 	b.sortedBuf = nil
 	b.entries = make(map[string][]byte)
 	b.size = 0
-	runtime.GC()
 }
 
 func (b *oldestEntrySortableBuffer) GetEntries() []sortableBufferEntry {
