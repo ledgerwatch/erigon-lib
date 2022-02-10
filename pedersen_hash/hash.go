@@ -1,6 +1,5 @@
 package hash
 
-//nolint
 /*
 #include <stdlib.h>
 #include "hash.h"
@@ -22,7 +21,6 @@ func reverseHexEndianRepresentation(s string) string {
 	return string(rns)
 }
 
-//nolint
 func Hash(input1, input2 string) (string, error) {
 	input1Dec, _ := hex.DecodeString(reverseHexEndianRepresentation(input1))
 	input2Dec, _ := hex.DecodeString(reverseHexEndianRepresentation(input2))
