@@ -15,7 +15,7 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: [ ubuntu-20.04, macos-11, windows-2019 ] # list of os: https://github.com/actions/virtual-environments
+        os: [ windows-2019, ubuntu-20.04, macos-11 ] # list of os: https://github.com/actions/virtual-environments
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -46,5 +46,5 @@ jobs:
         if: matrix.os == 'windows-2019'
         run: choco upgrade mingw cmake -y --no-progress
       - name: Test
-        if: matrix.os == 'ubuntu-20.04'
+        if: matrix.os != 'macos-11'
         run: go test ./...
