@@ -47,9 +47,7 @@ jobs:
         run: choco upgrade mingw cmake -y --no-progress
       - name: Test
         run: |
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            ;
-          else
+          if [ "$RUNNER_OS" != "macOS" ]; then
             go test $(go list ./... | grep -v /pedersen_hash/)
           fi
           
