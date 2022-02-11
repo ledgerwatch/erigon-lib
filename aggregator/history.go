@@ -64,7 +64,7 @@ func NewHistory(diffDir string, blockTo uint64, aggregationStep uint64) (*Histor
 		return nil, err
 	}
 	h.scanStateFiles(files, blockTo)
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		if err := h.openFiles(fType); err != nil {
 			return nil, fmt.Errorf("opening %s state files: %w", fType.String(), err)
 		}
