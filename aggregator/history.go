@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,6 +30,8 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
 
@@ -61,6 +64,11 @@ func NewHistory(diffDir string, blockTo uint64, aggregationStep uint64) (*Histor
 		return nil, err
 	}
 	h.scanStateFiles(files, blockTo)
+	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		if err := h.openFiles(fType); err != nil {
+			return nil, fmt.Errorf("opening %s state files: %w", fType.String(), err)
+		}
+	}
 	return h, nil
 }
 
@@ -114,6 +122,25 @@ func (h *History) scanStateFiles(files []fs.DirEntry, blockTo uint64) {
 			h.files[fType].ReplaceOrInsert(item)
 		}
 	}
+}
+
+func (h *History) openFiles(fType FileType) error {
+	var err error
+	h.files[fType].Ascend(func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		if item.decompressor, err = compress.NewDecompressor(path.Join(h.diffDir, fmt.Sprintf("%s.%d-%d.dat", fType.String(), item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		if item.index, err = recsplit.OpenIndex(path.Join(h.diffDir, fmt.Sprintf("%s.%d-%d.idx", fType.String(), item.startBlock, item.endBlock))); err != nil {
+			return false
+		}
+		item.getter = item.decompressor.MakeGetter()
+		item.getterMerge = item.decompressor.MakeGetter()
+		item.indexReader = recsplit.NewIndexReader(item.index)
+		item.readerMerge = recsplit.NewIndexReader(item.index)
+		return true
+	})
+	return err
 }
 
 func (h *History) closeFiles(fType FileType) {
