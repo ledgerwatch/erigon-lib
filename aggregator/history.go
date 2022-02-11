@@ -106,7 +106,6 @@ func (h *History) scanStateFiles(files []fs.DirEntry, blockTo uint64) {
 			// Only load files up to specified block
 			continue
 		}
-		log.Info("Load file", "name", name)
 		fType, ok := ParseFileType(subs[1])
 		if !ok {
 			log.Warn("File ignored by history, type unknown", "type", subs[1])
@@ -122,6 +121,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry, blockTo uint64) {
 		})
 		if foundI == nil || foundI.startBlock > startBlock {
 			h.files[fType].ReplaceOrInsert(item)
+			log.Info("Load file", "name", name, "type", fType.String(), "endBlock", item.endBlock)
 		}
 	}
 }
@@ -246,6 +246,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	copy(lookupKey[8:], key)
 	var historyItem *byEndBlockItem
 	hr.search.endBlock = foundEndBlock
+	hr.search.startBlock = foundEndBlock - 499_999
 	if i := hr.h.files[historyType].Get(&hr.search); i != nil {
 		historyItem = i.(*byEndBlockItem)
 	} else {
