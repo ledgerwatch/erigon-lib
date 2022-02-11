@@ -234,6 +234,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	if !found {
 		return false, nil, nil
 	}
+	fmt.Printf("found in tx %d, endBlock %d\n", foundTxNum, foundEndBlock)
 	binary.BigEndian.PutUint64(lookupKey, foundTxNum)
 	copy(lookupKey[8:], key)
 	var historyItem *byEndBlockItem
