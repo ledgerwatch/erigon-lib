@@ -1470,7 +1470,7 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 	var rs *recsplit.RecSplit
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
-		Enums:      true,
+		Enums:      false,
 		BucketSize: 2000,
 		Salt:       0,
 		LeafSize:   8,
