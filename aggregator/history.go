@@ -245,6 +245,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 		return false, nil, fmt.Errorf("no history file found for %d", foundEndBlock)
 	}
 	offset := historyItem.indexReader.Lookup(lookupKey)
+	fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, historyType.String(), historyItem.startBlock, historyItem.endBlock, offset)
 	historyItem.getter.Reset(offset)
 	v, _ := historyItem.getter.Next(nil)
 	return true, v, nil
