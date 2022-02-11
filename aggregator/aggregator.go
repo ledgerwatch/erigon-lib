@@ -679,7 +679,7 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 				bitmaps[string(key)] = bitmap
 			}
 			bitmap.Add(txNum)
-			fmt.Printf("adding [%x] %d to %s\n", key, txNum, bitmapType.String())
+			//fmt.Printf("adding [%x] %d to %s\n", key, txNum, bitmapType.String())
 		}
 		if e != nil {
 			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets nextTriple: %w", e)
@@ -1451,6 +1451,7 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 	g := item.getter
 	var val []byte
 	var count int
+	g.Reset(0)
 	for g.HasNext() {
 		g.Skip() // Skip key on on the first pass
 		val, _ = g.Next(val[:0])
@@ -1489,8 +1490,9 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 		var key []byte
 		for g.HasNext() {
 			key, _ = g.Next(key[:0])
-			g.Skip()
-			pos := g1.Skip()
+			g.Skip() // Skip value
+			val, pos := g1.Next(nil)
+			fmt.Printf("Adding [%x]=>[%x] with offset %d\n", key, val, lastOffset)
 			if err = rs.AddKey(key, lastOffset); err != nil {
 				return fmt.Errorf("reduceHistoryFiles %p AddKey: %w", rs, err)
 			}
