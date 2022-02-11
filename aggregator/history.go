@@ -249,7 +249,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	if i := hr.h.files[historyType].Get(&hr.search); i != nil {
 		historyItem = i.(*byEndBlockItem)
 	} else {
-		return false, nil, fmt.Errorf("no history file found for %d", foundEndBlock)
+		return false, nil, fmt.Errorf("no %s file found for %d", historyType.String(), foundEndBlock)
 	}
 	offset := historyItem.indexReader.Lookup(lookupKey)
 	if trace {
