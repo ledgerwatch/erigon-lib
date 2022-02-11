@@ -679,6 +679,7 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 				bitmaps[string(key)] = bitmap
 			}
 			bitmap.Add(txNum)
+			fmt.Printf("adding [%x] %d to %s\n", key, txNum, bitmapType.String())
 		}
 		if e != nil {
 			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets nextTriple: %w", e)
