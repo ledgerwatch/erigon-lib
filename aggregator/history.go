@@ -186,7 +186,7 @@ func (hr *HistoryReader) SetNums(blockNum uint64, txNum uint64, lastTx bool) {
 }
 
 func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key []byte) (bool, []byte, error) {
-	fmt.Printf("searchInHistory %s %s [%x] blockNum %d, txNum %d\n", bitmapType.String(), historyType.String(), key, hr.blockNum, hr.txNum)
+	//fmt.Printf("searchInHistory %s %s [%x] blockNum %d, txNum %d\n", bitmapType.String(), historyType.String(), key, hr.blockNum, hr.txNum)
 	searchBlock := hr.blockNum
 	if hr.lastTx {
 		searchBlock++
@@ -207,7 +207,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 		for chunkEnd := hr.h.aggregationStep*(searchBlock/hr.h.aggregationStep) + hr.h.aggregationStep - 1; chunkEnd <= item.endBlock; chunkEnd += hr.h.aggregationStep {
 			binary.BigEndian.PutUint64(lookupKey[len(key):], chunkEnd)
 			offset := item.indexReader.Lookup(lookupKey)
-			fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock, offset)
+			//fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock, offset)
 			g.Reset(offset)
 			if keyMatch, _ := g.Match(lookupKey); keyMatch {
 				bitmapVal, _ = g.Next(bitmapVal[:0])
@@ -234,7 +234,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	if !found {
 		return false, nil, nil
 	}
-	fmt.Printf("found in tx %d, endBlock %d\n", foundTxNum, foundEndBlock)
+	//fmt.Printf("found in tx %d, endBlock %d\n", foundTxNum, foundEndBlock)
 	binary.BigEndian.PutUint64(lookupKey, foundTxNum)
 	copy(lookupKey[8:], key)
 	var historyItem *byEndBlockItem
@@ -245,7 +245,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 		return false, nil, fmt.Errorf("no history file found for %d", foundEndBlock)
 	}
 	offset := historyItem.indexReader.Lookup(lookupKey)
-	fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, historyType.String(), historyItem.startBlock, historyItem.endBlock, offset)
+	//fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, historyType.String(), historyItem.startBlock, historyItem.endBlock, offset)
 	historyItem.getter.Reset(offset)
 	v, _ := historyItem.getter.Next(nil)
 	return true, v, nil
