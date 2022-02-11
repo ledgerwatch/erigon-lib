@@ -196,6 +196,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	}
 	searchTx := hr.txNum
 	hr.search.endBlock = searchBlock
+	hr.search.startBlock = searchBlock - (searchBlock % 500_000)
 	var lookupKey = make([]byte, len(key)+8)
 	copy(lookupKey, key)
 	var bitmapVal []byte
