@@ -158,7 +158,7 @@ func (hr *HistoryReader) SetNums(blockNum uint64, txNum uint64, lastTx bool) {
 }
 
 func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key []byte) (bool, []byte, error) {
-	fmt.Printf("searchInHistory %s %s [%x]\n", bitmapType.String(), historyType.String(), key)
+	fmt.Printf("searchInHistory %s %s [%x] blockNum %d, txNum %d\n", bitmapType.String(), historyType.String(), key, hr.blockNum, hr.txNum)
 	searchBlock := hr.blockNum
 	if hr.lastTx {
 		searchBlock++
