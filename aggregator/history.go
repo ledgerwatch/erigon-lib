@@ -186,8 +186,10 @@ func (hr *HistoryReader) SetNums(blockNum uint64, txNum uint64, lastTx bool) {
 	hr.lastTx = lastTx
 }
 
-func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key []byte) (bool, []byte, error) {
-	//fmt.Printf("searchInHistory %s %s [%x] blockNum %d, txNum %d\n", bitmapType.String(), historyType.String(), key, hr.blockNum, hr.txNum)
+func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key []byte, trace bool) (bool, []byte, error) {
+	if trace {
+		fmt.Printf("searchInHistory %s %s [%x] blockNum %d, txNum %d\n", bitmapType.String(), historyType.String(), key, hr.blockNum, hr.txNum)
+	}
 	searchBlock := hr.blockNum
 	if hr.lastTx {
 		searchBlock++
@@ -208,7 +210,9 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 		for chunkEnd := hr.h.aggregationStep*(searchBlock/hr.h.aggregationStep) + hr.h.aggregationStep - 1; chunkEnd <= item.endBlock; chunkEnd += hr.h.aggregationStep {
 			binary.BigEndian.PutUint64(lookupKey[len(key):], chunkEnd)
 			offset := item.indexReader.Lookup(lookupKey)
-			//fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock, offset)
+			if trace {
+				fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock, offset)
+			}
 			g.Reset(offset)
 			if keyMatch, _ := g.Match(lookupKey); keyMatch {
 				bitmapVal, _ = g.Next(bitmapVal[:0])
@@ -235,7 +239,9 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	if !found {
 		return false, nil, nil
 	}
-	//fmt.Printf("found in tx %d, endBlock %d\n", foundTxNum, foundEndBlock)
+	if trace {
+		fmt.Printf("found in tx %d, endBlock %d\n", foundTxNum, foundEndBlock)
+	}
 	binary.BigEndian.PutUint64(lookupKey, foundTxNum)
 	copy(lookupKey[8:], key)
 	var historyItem *byEndBlockItem
@@ -246,7 +252,9 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 		return false, nil, fmt.Errorf("no history file found for %d", foundEndBlock)
 	}
 	offset := historyItem.indexReader.Lookup(lookupKey)
-	//fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, historyType.String(), historyItem.startBlock, historyItem.endBlock, offset)
+	if trace {
+		fmt.Printf("Lookup [%x] in %s.[%d-%d].idx = %d\n", lookupKey, historyType.String(), historyItem.startBlock, historyItem.endBlock, offset)
+	}
 	historyItem.getter.Reset(offset)
 	v, _ := historyItem.getter.Next(nil)
 	return true, v, nil
@@ -254,7 +262,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 
 func (hr *HistoryReader) ReadAccountData(addr []byte, trace bool) ([]byte, error) {
 	// Look in the history first
-	hOk, v, err := hr.searchInHistory(AccountBitmap, AccountHistory, addr)
+	hOk, v, err := hr.searchInHistory(AccountBitmap, AccountHistory, addr, trace)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +278,7 @@ func (hr *HistoryReader) ReadAccountStorage(addr []byte, loc []byte, trace bool)
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
 	copy(dbkey[len(addr):], loc)
-	hOk, v, err := hr.searchInHistory(StorageBitmap, StorageHistory, dbkey)
+	hOk, v, err := hr.searchInHistory(StorageBitmap, StorageHistory, dbkey, trace)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +295,7 @@ func (hr *HistoryReader) ReadAccountStorage(addr []byte, loc []byte, trace bool)
 
 func (hr *HistoryReader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 	// Look in the history first
-	hOk, v, err := hr.searchInHistory(CodeBitmap, CodeHistory, addr)
+	hOk, v, err := hr.searchInHistory(CodeBitmap, CodeHistory, addr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +308,7 @@ func (hr *HistoryReader) ReadAccountCode(addr []byte, trace bool) ([]byte, error
 
 func (hr *HistoryReader) ReadAccountCodeSize(addr []byte, trace bool) (int, error) {
 	// Look in the history first
-	hOk, v, err := hr.searchInHistory(CodeBitmap, CodeHistory, addr)
+	hOk, v, err := hr.searchInHistory(CodeBitmap, CodeHistory, addr, false)
 	if err != nil {
 		return 0, err
 	}
