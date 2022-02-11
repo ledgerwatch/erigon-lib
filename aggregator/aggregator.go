@@ -158,6 +158,7 @@ type Aggregator struct {
 	hph             *commitment.HexPatriciaHashed
 	keccak          hash.Hash
 	changesets      bool // Whether to generate changesets (off by default)
+	commitments     bool // Whether to calculate commitments
 	aggChannel      chan *AggregationTask
 	aggBackCh       chan struct{} // Channel for acknoledgement of AggregationTask
 	aggError        chan error
@@ -1157,7 +1158,11 @@ func removeFiles(fType FileType, diffDir string, toRemove []*byEndBlockItem) err
 func (a *Aggregator) backgroundAggregation() {
 	defer a.aggWg.Done()
 	for aggTask := range a.aggChannel {
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		typesLimit := Commitment
+		if a.commitments {
+			typesLimit = AccountHistory
+		}
+		for fType := FirstType; fType < typesLimit; fType++ {
 			a.addLocked(fType, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.bt[fType]})
 		}
 		a.aggBackCh <- struct{}{}
@@ -1226,7 +1231,7 @@ func (a *Aggregator) backgroundAggregation() {
 				return
 			}
 		}
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		for fType := FirstType; fType < typesLimit; fType++ {
 			var err error
 			if err = aggTask.changes[fType].closeFiles(); err != nil {
 				a.aggError <- fmt.Errorf("close %sChanges: %w", fType.String(), err)
@@ -1386,13 +1391,19 @@ func (a *Aggregator) backgroundMerge() {
 		var toRemove [NumberOfStateTypes][]*byEndBlockItem
 		var newItems [NumberOfStateTypes]*byEndBlockItem
 		var blockFrom, blockTo uint64
-		// Lock the set of commitment files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
-		toRemove[Commitment], _, _, blockFrom, blockTo = a.findLargestMerge(Commitment, uint64(math.MaxUint64) /* maxBlockTo */, uint64(math.MaxUint64) /* maxSpan */)
+		lastType := Code
+		typesLimit := Commitment
+		if a.commitments {
+			lastType = Commitment
+			typesLimit = AccountHistory
+		}
+		// Lock the set of commitment (or code if commitments are off) files - those are the smallest, because account, storage and code files may be added by the aggregation thread first
+		toRemove[lastType], _, _, blockFrom, blockTo = a.findLargestMerge(lastType, uint64(math.MaxUint64) /* maxBlockTo */, uint64(math.MaxUint64) /* maxSpan */)
 
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		for fType := FirstType; fType < typesLimit; fType++ {
 			var pre, post []*byEndBlockItem
 			var from, to uint64
-			if fType == Commitment {
+			if fType == lastType {
 				from = blockFrom
 				to = blockTo
 			} else {
@@ -1425,7 +1436,7 @@ func (a *Aggregator) backgroundMerge() {
 		// Switch aggregator to new state files, close and remove old files
 		a.removeLockedState(toRemove[Account], newItems[Account], toRemove[Code], newItems[Code], toRemove[Storage], newItems[Storage], toRemove[Commitment], newItems[Commitment])
 		removed := 0
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		for fType := FirstType; fType < typesLimit; fType++ {
 			if len(toRemove[fType]) > 1 {
 				removeFiles(fType, a.diffDir, toRemove[fType])
 				removed += len(toRemove[fType]) - 1
@@ -1609,6 +1620,10 @@ func (a *Aggregator) GenerateChangesets(on bool) {
 		a.historyWg.Wait()
 	}
 	a.changesets = on
+}
+
+func (a *Aggregator) Commitments(on bool) {
+	a.commitments = on
 }
 
 // checkOverlaps does not lock tree, because it is only called from the constructor of aggregator
@@ -2158,7 +2173,9 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 }
 
 func (w *Writer) FinishTx(txNum uint64, trace bool) error {
-	w.captureCommitmentData(trace)
+	if w.a.commitments {
+		w.captureCommitmentData(trace)
+	}
 	var err error
 	for fType := FirstType; fType < Commitment; fType++ {
 		if err = w.changes[fType].finish(txNum); err != nil {
@@ -2169,6 +2186,9 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 }
 
 func (w *Writer) ComputeCommitment(trace bool) ([]byte, error) {
+	if !w.a.commitments {
+		return nil, fmt.Errorf("commitments turned off")
+	}
 	comm, err := w.computeCommitment(trace)
 	if err != nil {
 		return nil, fmt.Errorf("compute commitment: %w", err)
@@ -2624,6 +2644,10 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		return err
 	default:
 	}
+	typesLimit := Commitment
+	if w.a.commitments {
+		typesLimit = AccountHistory
+	}
 	t := time.Now()
 	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
 	if i == nil {
@@ -2635,11 +2659,11 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	}
 	w.a.changesBtree.Delete(i)
 	var aggTask AggregationTask
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+	for fType := FirstType; fType < typesLimit; fType++ {
 		aggTask.changes[fType].Init(fType.String(), w.a.aggregationStep, w.a.diffDir, w.a.changesets && fType != Commitment)
 	}
 	var err error
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+	for fType := FirstType; fType < typesLimit; fType++ {
 		var prefixLen int
 		if fType == Storage {
 			prefixLen = length.Addr
