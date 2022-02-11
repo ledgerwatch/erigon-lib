@@ -562,11 +562,12 @@ func buildIndex(d *compress.Decompressor, idxPath, tmpDir string, count int) (*r
 			pos = g.Skip()
 		}
 		if err = rs.Build(); err != nil {
-			return nil, err
-		}
-		if rs.Collision() {
-			log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
-			rs.ResetNextSalt()
+			if rs.Collision() {
+				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
+				rs.ResetNextSalt()
+			} else {
+				return nil, err
+			}
 		} else {
 			break
 		}
@@ -1492,14 +1493,12 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 			if err = rs.AddKey(key, lastOffset); err != nil {
 				return fmt.Errorf("reduceHistoryFiles %p AddKey: %w", rs, err)
 			}
-			//fmt.Printf("AddKey [%x]\n", key)
 			lastOffset = pos
 		}
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
 				log.Info("Building reduceHistoryFiles. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
-				//fmt.Printf("Salt reset %p\n", rs)
 			} else {
 				return fmt.Errorf("reduceHistoryFiles Build: %w", err)
 			}
