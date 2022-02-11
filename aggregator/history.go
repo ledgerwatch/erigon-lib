@@ -208,6 +208,9 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 		item := i.(*byEndBlockItem)
 		g := item.getter
 		for chunkEnd := hr.h.aggregationStep*(searchBlock/hr.h.aggregationStep) + hr.h.aggregationStep - 1; chunkEnd <= item.endBlock; chunkEnd += hr.h.aggregationStep {
+			if chunkEnd < item.startBlock {
+				continue
+			}
 			binary.BigEndian.PutUint64(lookupKey[len(key):], chunkEnd)
 			offset := item.indexReader.Lookup(lookupKey)
 			if trace {
