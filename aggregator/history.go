@@ -106,6 +106,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry, blockTo uint64) {
 			// Only load files up to specified block
 			continue
 		}
+		log.Info("Load file", "name", name)
 		fType, ok := ParseFileType(subs[1])
 		if !ok {
 			log.Warn("File ignored by history, type unknown", "type", subs[1])
