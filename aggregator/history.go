@@ -69,6 +69,7 @@ func NewHistory(diffDir string, blockTo uint64, aggregationStep uint64) (*Histor
 			return nil, fmt.Errorf("opening %s state files: %w", fType.String(), err)
 		}
 	}
+	closeStateFiles = false
 	return h, nil
 }
 
@@ -205,6 +206,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 		g := item.getter
 		for chunkEnd := hr.h.aggregationStep*(searchBlock/hr.h.aggregationStep) + hr.h.aggregationStep - 1; chunkEnd <= item.endBlock; chunkEnd += hr.h.aggregationStep {
 			binary.BigEndian.PutUint64(lookupKey[len(key):], chunkEnd)
+			fmt.Printf("Lookup [%x] in %s.[%d-%d].idx\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock)
 			offset := item.indexReader.Lookup(lookupKey)
 			g.Reset(offset)
 			if keyMatch, _ := g.Match(lookupKey); keyMatch {
