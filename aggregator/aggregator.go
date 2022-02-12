@@ -1850,7 +1850,11 @@ func (a *Aggregator) MakeStateWriter(beforeOn bool) *Writer {
 }
 
 func (w *Writer) Close() {
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+	typesLimit := Commitment
+	if w.a.commitments {
+		typesLimit = AccountHistory
+	}
+	for fType := FirstType; fType < typesLimit; fType++ {
 		w.changes[fType].closeFiles()
 	}
 }
