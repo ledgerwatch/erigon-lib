@@ -688,9 +688,11 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 	if e != nil {
 		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets prevTx: %w", e)
 	}
+	t := time.Now()
 	if err = comp.Compress(); err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("produceChangeSets Compress: %w", err)
 	}
+	fmt.Printf("cs: %d-%d, took: %s, ratio=%.2f\n", blockFrom, blockTo, time.Since(t), comp.Ratio)
 	comp.Close()
 	comp = nil
 	var d *compress.Decompressor
