@@ -281,7 +281,7 @@ const (
 	// Beacon chain head that is been executed at the current time
 	CurrentExecutionPayload = "CurrentExecutionPayload"
 	// Keeps track of the final POW block hash TTD -> blockHash
-	TerminalBlock = "TerminalBlock"
+	ConsensusTable = "ConsensusTable"
 	// this bucket stored in separated database
 	Inodes = "Inode"
 
@@ -351,6 +351,7 @@ var ChaindataTables = []string{
 	StorageHistory,
 	Code,
 	ContractCode,
+	ConsensusTable,
 	HeaderNumber,
 	BlockBody,
 	Receipts,
@@ -385,7 +386,6 @@ var ChaindataTables = []string{
 	Sequence,
 	EthTx,
 	NonCanonicalTxs,
-	TerminalBlock,
 	TransitionBlockKey,
 	TrieOfAccounts,
 	TrieOfStorage,
