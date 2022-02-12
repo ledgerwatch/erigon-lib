@@ -1862,8 +1862,12 @@ func (w *Writer) Close() {
 
 func (w *Writer) Reset(blockNum uint64) error {
 	w.blockNum = blockNum
+	typesLimit := Commitment
+	if w.a.commitments {
+		typesLimit = AccountHistory
+	}
 	if blockNum > w.changeFileNum {
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		for fType := FirstType; fType < typesLimit; fType++ {
 			if err := w.changes[fType].closeFiles(); err != nil {
 				return err
 			}
@@ -1873,7 +1877,7 @@ func (w *Writer) Reset(blockNum uint64) error {
 		}
 	}
 	if w.changeFileNum == 0 || blockNum > w.changeFileNum {
-		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+		for fType := FirstType; fType < typesLimit; fType++ {
 			if err := w.changes[fType].openFiles(blockNum, true /* write */); err != nil {
 				return err
 			}
