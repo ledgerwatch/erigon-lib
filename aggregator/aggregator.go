@@ -2444,6 +2444,10 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
 					if bytes.HasPrefix(ci1.key, addr) {
 						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
+						if len(ci1.val) > 0 {
+							copy(ci1.val[:], ci1.val[1:])
+							ci1.val = ci1.val[:len(ci1.val)-1]
+						}
 						heap.Fix(&cp, 0)
 					} else {
 						heap.Pop(&cp)
