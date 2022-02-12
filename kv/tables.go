@@ -280,6 +280,8 @@ const (
 	// Proof-of-stake
 	// Beacon chain head that is been executed at the current time
 	CurrentExecutionPayload = "CurrentExecutionPayload"
+	// Keeps track of the final POW block hash TTD -> blockHash
+	TerminalBlock = "TerminalBlock"
 	// this bucket stored in separated database
 	Inodes = "Inode"
 
