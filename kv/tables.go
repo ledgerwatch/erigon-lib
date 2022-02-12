@@ -385,6 +385,7 @@ var ChaindataTables = []string{
 	Sequence,
 	EthTx,
 	NonCanonicalTxs,
+	TerminalBlock,
 	TransitionBlockKey,
 	TrieOfAccounts,
 	TrieOfStorage,
