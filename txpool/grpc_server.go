@@ -75,9 +75,6 @@ func (*GrpcDisabled) Transactions(ctx context.Context, request *txpool_proto.Tra
 func (*GrpcDisabled) All(ctx context.Context, request *txpool_proto.AllRequest) (*txpool_proto.AllReply, error) {
 	return nil, ErrPoolDisabled
 }
-func (*GrpcDisabled) Pending(ctx context.Context, empty *emptypb.Empty) (*txpool_proto.PendingReply, error) {
-	return nil, ErrPoolDisabled
-}
 func (*GrpcDisabled) OnAdd(request *txpool_proto.OnAddRequest, server txpool_proto.Txpool_OnAddServer) error {
 	return ErrPoolDisabled
 }
