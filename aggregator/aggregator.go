@@ -1014,10 +1014,6 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 				err = fmt.Errorf("whole in change files [%d-%d]", item.endBlock, minStart)
 				return false
 			}
-			if item.fileCount != 11 && item.fileCount != 8 {
-				err = fmt.Errorf("missing or too many (%d) change files for interval [%d-%d]", item.fileCount, item.startBlock, item.endBlock)
-				return false
-			}
 			minStart = item.startBlock
 		} else {
 			err = fmt.Errorf("overlap of change files [%d-%d] with %d", item.startBlock, item.endBlock, minStart)
