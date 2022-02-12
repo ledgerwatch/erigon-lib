@@ -19,6 +19,7 @@ package compress
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
