@@ -898,7 +898,6 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 		if !ok {
 			log.Warn("File ignored by aggregator, type unknown", "type", subs[1])
 		}
-		log.Info("Loading state file", "name", name)
 		var item = &byEndBlockItem{startBlock: startBlock, endBlock: endBlock}
 		var foundI *byEndBlockItem
 		a.files[fType].AscendGreaterOrEqual(&byEndBlockItem{startBlock: endBlock, endBlock: endBlock}, func(i btree.Item) bool {
