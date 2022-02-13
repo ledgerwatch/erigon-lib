@@ -2,6 +2,7 @@ package direct
 
 import (
 	"context"
+	"io"
 
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -80,6 +81,9 @@ type TxPoolOnAddC struct {
 
 func (c *TxPoolOnAddC) Recv() (*txpool_proto.OnAddReply, error) {
 	m := <-c.messageCh
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *TxPoolOnAddC) Context() context.Context {

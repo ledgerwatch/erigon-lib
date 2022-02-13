@@ -19,6 +19,7 @@ package direct
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
@@ -236,6 +237,9 @@ type SentryReceiveClientDirect struct {
 
 func (c *SentryReceiveClientDirect) Recv() (*sentry.InboundMessage, error) {
 	m := <-c.messageCh
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *SentryReceiveClientDirect) Context() context.Context {
@@ -280,6 +284,9 @@ type SentryReceivePeersClientDirect struct {
 
 func (c *SentryReceivePeersClientDirect) Recv() (*sentry.PeersReply, error) {
 	m := <-c.ch
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *SentryReceivePeersClientDirect) Context() context.Context {

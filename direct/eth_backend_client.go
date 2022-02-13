@@ -2,6 +2,7 @@ package direct
 
 import (
 	"context"
+	"io"
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -90,6 +91,9 @@ type SubscribeClientStreamDirect struct {
 
 func (c *SubscribeClientStreamDirect) Recv() (*remote.SubscribeReply, error) {
 	m := <-c.messageCh
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *SubscribeClientStreamDirect) Context() context.Context {

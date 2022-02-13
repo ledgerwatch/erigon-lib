@@ -2,6 +2,7 @@ package direct
 
 import (
 	"context"
+	"io"
 
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
@@ -60,6 +61,9 @@ type MiningOnPendingBlockC struct {
 
 func (c *MiningOnPendingBlockC) Recv() (*txpool_proto.OnPendingBlockReply, error) {
 	m := <-c.messageCh
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *MiningOnPendingBlockC) Context() context.Context {
@@ -103,6 +107,9 @@ type MiningOnMinedBlockC struct {
 
 func (c *MiningOnMinedBlockC) Recv() (*txpool_proto.OnMinedBlockReply, error) {
 	m := <-c.messageCh
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *MiningOnMinedBlockC) Context() context.Context {
@@ -146,6 +153,9 @@ type MiningOnPendingLogsC struct {
 
 func (c *MiningOnPendingLogsC) Recv() (*txpool_proto.OnPendingLogsReply, error) {
 	m := <-c.messageCh
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *MiningOnPendingLogsC) Context() context.Context {

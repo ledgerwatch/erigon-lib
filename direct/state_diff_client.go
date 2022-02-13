@@ -18,6 +18,7 @@ package direct
 
 import (
 	"context"
+	"io"
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/log/v3"
@@ -62,6 +63,9 @@ type StateDiffClientStream struct {
 
 func (c *StateDiffClientStream) Recv() (*remote.StateChangeBatch, error) {
 	m := <-c.messageCh
+	if m == nil {
+		return nil, io.EOF
+	}
 	return m, nil
 }
 func (c *StateDiffClientStream) Context() context.Context { return c.ctx }
