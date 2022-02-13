@@ -1681,13 +1681,23 @@ func (a *Aggregator) closeFiles(fType FileType) {
 
 func (a *Aggregator) Close() {
 	close(a.aggChannel)
-	a.aggWg.Wait()
+	// Drain channel before closing
+	select {
+	case <-a.mergeChannel:
+	default:
+	}
 	close(a.mergeChannel)
-	a.mergeWg.Wait()
 	if a.changesets {
+		// Drain channel before closing
+		select {
+		case <-a.historyChannel:
+		default:
+		}
 		close(a.historyChannel)
 		a.historyWg.Wait()
 	}
+	a.aggWg.Wait()
+	a.mergeWg.Wait()
 	// Closing state files only after background aggregation goroutine is finished
 	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		a.closeFiles(fType)
@@ -2415,7 +2425,11 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 				if len(aitem.k) == len(addr) {
 					return true
 				}
-				heap.Push(&cp, &CursorItem{t: TREE_CURSOR, key: aitem.k, val: aitem.v, tree: item.tree, endBlock: item.endBlock})
+				val := aitem.v
+				if len(val) > 0 {
+					val = val[1:]
+				}
+				heap.Push(&cp, &CursorItem{t: TREE_CURSOR, key: aitem.k, val: val, tree: item.tree, endBlock: item.endBlock})
 				return false
 			})
 			return true
@@ -2480,7 +2494,11 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 				})
 				if aitem != nil && bytes.HasPrefix(aitem.k, addr) {
 					ci1.key = aitem.k
-					ci1.val = aitem.v
+					if len(aitem.v) > 0 {
+						ci1.val = aitem.v[1:]
+					} else {
+						ci1.val = aitem.v
+					}
 					heap.Fix(&cp, 0)
 				} else {
 					heap.Pop(&cp)
