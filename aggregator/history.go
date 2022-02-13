@@ -230,7 +230,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 					found = true
 					return false
 				}
-				searchRank := bm.Rank(searchTx-1) + 1
+				searchRank := bm.Rank(searchTx - 1)
 				if searchRank >= bm.GetCardinality() {
 					continue
 				}
