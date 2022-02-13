@@ -58,15 +58,15 @@ func (s *EthBackendClientDirect) ClientVersion(ctx context.Context, in *remote.C
 // -- start Subscribe
 
 func (s *EthBackendClientDirect) Subscribe(ctx context.Context, in *remote.SubscribeRequest, opts ...grpc.CallOption) (remote.ETHBACKEND_SubscribeClient, error) {
-	messageCh := make(chan *remote.SubscribeReply, 16384)
-	streamServer := &SubscribeServerStreamDirect{messageCh: messageCh, ctx: ctx}
+	ch := make(chan *remote.SubscribeReply, 16384)
+	streamServer := &SubscribeServerStreamDirect{messageCh: ch, ctx: ctx}
 	go func() {
+		defer close(ch)
 		if err := s.server.Subscribe(in, streamServer); err != nil {
 			log.Warn("Messages returned", "err", err)
 		}
-		close(messageCh)
 	}()
-	return &SubscribeClientStreamDirect{messageCh: messageCh, ctx: ctx}, nil
+	return &SubscribeClientStreamDirect{messageCh: ch, ctx: ctx}, nil
 }
 
 type SubscribeServerStreamDirect struct {
