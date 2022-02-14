@@ -1681,6 +1681,7 @@ func (a *Aggregator) closeFiles(fType FileType) {
 
 func (a *Aggregator) Close() {
 	close(a.aggChannel)
+	a.aggWg.Wait() // Need to wait for the background aggregation to finish because itsends to merge channels
 	// Drain channel before closing
 	select {
 	case <-a.mergeChannel:
@@ -1696,7 +1697,6 @@ func (a *Aggregator) Close() {
 		close(a.historyChannel)
 		a.historyWg.Wait()
 	}
-	a.aggWg.Wait()
 	a.mergeWg.Wait()
 	// Closing state files only after background aggregation goroutine is finished
 	for fType := FirstType; fType < NumberOfTypes; fType++ {
