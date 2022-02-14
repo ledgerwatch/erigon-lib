@@ -880,36 +880,29 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
 	hph.lockFn()
 	defer hph.unlockFn()
-	var branchData [16][]byte
-	var partBitmap uint16
-	var bit uint16 = 1
-	for nibble := byte(0); nibble < byte(16); nibble++ {
-		hph.currentKey[hph.currentKeyLen] = nibble
-		bd := hph.branchFn(hexToCompact(hph.currentKey[:hph.currentKeyLen+1]))
-		if len(bd) > 0 {
-			branchData[nibble] = bd
-			partBitmap |= bit
-		}
-		bit <<= 1
-	}
+	branchData := hph.branchFn(hexToCompact(hph.currentKey[:hph.currentKeyLen]))
 	if !hph.rootChecked && hph.currentKeyLen == 0 && len(branchData) == 0 {
 		// Special case - empty or deleted root
 		hph.rootChecked = true
 		return nil
 	}
-	hph.beforeBitmap[row] = partBitmap
+	beforeBitmap := binary.BigEndian.Uint16(branchData)
+	modBitmap := binary.BigEndian.Uint16(branchData[2:])
+	//delBitmap := binary.BigEndian.Uint16(branchData[4:])
+	pos := 6 // Skip delBitmap
+	hph.beforeBitmap[row] = beforeBitmap
 	if deleted {
-		hph.delBitmap[row] = partBitmap
+		hph.delBitmap[row] = modBitmap
 	}
 	// Loop iterating over the set bits of modMask
-	for bitset, j := partBitmap, 0; bitset != 0; j++ {
+	for bitset, j := modBitmap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
 		nibble := bits.TrailingZeros16(bit)
 		cell := &hph.grid[row][nibble]
-		fieldBits := branchData[nibble][0]
-		pos := 1
+		fieldBits := branchData[pos]
+		pos++
 		var err error
-		if _, err = cell.fillFromFields(branchData[nibble], pos, PartFlags(fieldBits)); err != nil {
+		if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
 			return err
 		}
 		if hph.trace {
@@ -1050,38 +1043,52 @@ func (hph *HexPatriciaHashed) foldRoot() ([]byte, error) {
 	if hph.activeRows != 0 {
 		return nil, fmt.Errorf("cannot fold root - there are still active rows: %d", hph.activeRows)
 	}
-	//if hph.root.downHashedLen == 0 {
-	//	return nil, nil
-	//}
 	var branchData []byte
-	branchData = append(branchData, 0)
+	var bitmapBuf [2]byte
+	binary.BigEndian.PutUint16(bitmapBuf[:], 0) // beforeBitmap
+	branchData = append(branchData, bitmapBuf[:]...)
+	binary.BigEndian.PutUint16(bitmapBuf[:], 1) // modBitmap
+	branchData = append(branchData, bitmapBuf[:]...)
+	binary.BigEndian.PutUint16(bitmapBuf[:], 0) // delBitmap
+	branchData = append(branchData, bitmapBuf[:]...)
 	var fieldBits PartFlags
 	cell := &hph.root
 	if cell.extLen > 0 {
 		fieldBits |= HASHEDKEY_PART
+	}
+	if cell.apl > 0 {
+		fieldBits |= ACCOUNT_PLAIN_PART
+	}
+	if cell.spl > 0 {
+		fieldBits |= STORAGE_PLAIN_PART
+	}
+	if cell.hl > 0 {
+		fieldBits |= HASH_PART
+	}
+	if cell.extLen > 0 {
+		fieldBits |= HASHEDKEY_PART
+	}
+	branchData = append(branchData, byte(fieldBits))
+	if cell.extLen > 0 {
 		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
 		branchData = append(branchData, hph.numBuf[:n]...)
 		branchData = append(branchData, cell.extension[:cell.extLen]...)
 	}
 	if cell.apl > 0 {
-		fieldBits |= ACCOUNT_PLAIN_PART
 		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.apl))
 		branchData = append(branchData, hph.numBuf[:n]...)
 		branchData = append(branchData, cell.apk[:cell.apl]...)
 	}
 	if cell.spl > 0 {
-		fieldBits |= STORAGE_PLAIN_PART
 		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.spl))
 		branchData = append(branchData, hph.numBuf[:n]...)
 		branchData = append(branchData, cell.spk[:cell.spl]...)
 	}
 	if cell.hl > 0 {
-		fieldBits |= HASH_PART
 		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.hl))
 		branchData = append(branchData, hph.numBuf[:n]...)
 		branchData = append(branchData, cell.h[:cell.hl]...)
 	}
-	branchData[0] = byte(fieldBits)
 	return branchData, nil
 }
 
@@ -1092,7 +1099,7 @@ func (hph *HexPatriciaHashed) needFolding(hashedKey []byte) bool {
 // The purpose of fold is to reduce hph.currentKey[:hph.currentKeyLen]. It should be invoked
 // until that current key becomes a prefix of hashedKey that we will proccess next
 // (in other words until the needFolding function returns 0)
-func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
+func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 	updateKeyLen := hph.currentKeyLen
 	if hph.activeRows == 0 {
 		return nil, nil, fmt.Errorf("cannot fold - no active rows")
@@ -1119,8 +1126,9 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 		upCell = &hph.grid[row-1][col]
 	}
 	depth := hph.depths[hph.activeRows-1]
-	var branchData [][]byte
-	var updateKeys [][]byte
+	var branchData []byte
+	var bitmapBuf [2]byte
+	updateKey := hexToCompact(hph.currentKey[:updateKeyLen])
 	if hph.trace {
 		fmt.Printf("beforeBitmap[%d]=%016b, modBitmap[%d]=%016b, delBitmap[%d]=%016b\n", row, hph.beforeBitmap[row], row, hph.modBitmap[row], row, hph.delBitmap[row])
 	}
@@ -1152,20 +1160,18 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 		upCell.extLen = 0
 		upCell.downHashedLen = 0
 		if branchNodeExisted {
-			for bitset, j := hph.beforeBitmap[row], 0; bitset != 0; j++ {
-				bit := bitset & -bitset
-				n := bits.TrailingZeros16(bit)
-				// Deletion
-				branchData = append(branchData, nil)
-				hph.currentKey[updateKeyLen] = byte(n)
-				//fmt.Printf("case 0: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
-				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
-				bitset ^= bit
-			}
+			binary.BigEndian.PutUint16(bitmapBuf[:], hph.beforeBitmap[row])
+			branchData = append(branchData, bitmapBuf[:]...)
+			binary.BigEndian.PutUint16(bitmapBuf[:], hph.modBitmap[row])
+			branchData = append(branchData, bitmapBuf[:]...)
+			binary.BigEndian.PutUint16(bitmapBuf[:], hph.delBitmap[row])
+			branchData = append(branchData, bitmapBuf[:]...)
 		}
 		hph.activeRows--
 		if upDepth > 0 {
 			hph.currentKeyLen = upDepth - 1
+		} else {
+			hph.currentKeyLen = 0
 		}
 	case 1:
 		// Leaf or extension node
@@ -1187,16 +1193,12 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 		upCell.fillFromLowerCell(cell, depth, hph.currentKey[upDepth:hph.currentKeyLen], nibble)
 		// Delete if it existed
 		if branchNodeExisted {
-			for bitset, j := hph.beforeBitmap[row], 0; bitset != 0; j++ {
-				bit := bitset & -bitset
-				n := bits.TrailingZeros16(bit)
-				// Deletion
-				branchData = append(branchData, nil)
-				hph.currentKey[updateKeyLen] = byte(n)
-				//fmt.Printf("case 1: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
-				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
-				bitset ^= bit
-			}
+			binary.BigEndian.PutUint16(bitmapBuf[:], hph.beforeBitmap[row])
+			branchData = append(branchData, bitmapBuf[:]...)
+			binary.BigEndian.PutUint16(bitmapBuf[:], hph.modBitmap[row])
+			branchData = append(branchData, bitmapBuf[:]...)
+			binary.BigEndian.PutUint16(bitmapBuf[:], hph.delBitmap[row])
+			branchData = append(branchData, bitmapBuf[:]...)
 		}
 		hph.activeRows--
 		if upDepth > 0 {
@@ -1227,19 +1229,12 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 			totalBranchLen += hph.computeCellHashLen(cell, depth)
 			bitset ^= bit
 		}
-		// Delete if it existed
-		if branchNodeExisted {
-			for bitset, j := hph.delBitmap[row], 0; bitset != 0; j++ {
-				bit := bitset & -bitset
-				n := bits.TrailingZeros16(bit)
-				// Deletion
-				branchData = append(branchData, nil)
-				hph.currentKey[updateKeyLen] = byte(n)
-				//fmt.Printf("case X: delete [%x]\n", hph.currentKey[:updateKeyLen+1])
-				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
-				bitset ^= bit
-			}
-		}
+		binary.BigEndian.PutUint16(bitmapBuf[:], hph.beforeBitmap[row])
+		branchData = append(branchData, bitmapBuf[:]...)
+		binary.BigEndian.PutUint16(bitmapBuf[:], hph.modBitmap[row])
+		branchData = append(branchData, bitmapBuf[:]...)
+		binary.BigEndian.PutUint16(bitmapBuf[:], hph.delBitmap[row])
+		branchData = append(branchData, bitmapBuf[:]...)
 		hph.keccak2.Reset()
 		var lenPrefix [4]byte
 		pt := rlp.GenerateStructLen(lenPrefix[:], totalBranchLen)
@@ -1273,37 +1268,41 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 			if _, err = hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
 			}
-			var fieldBits PartFlags
-			bd := []byte{0}
-			if cell.extLen > 0 && cell.spl == 0 {
-				fieldBits |= HASHEDKEY_PART
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
-				bd = append(bd, hph.numBuf[:n]...)
-				bd = append(bd, cell.extension[:cell.extLen]...)
-			}
-			if cell.apl > 0 {
-				fieldBits |= ACCOUNT_PLAIN_PART
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.apl))
-				bd = append(bd, hph.numBuf[:n]...)
-				bd = append(bd, cell.apk[:cell.apl]...)
-			}
-			if cell.spl > 0 {
-				fieldBits |= STORAGE_PLAIN_PART
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.spl))
-				bd = append(bd, hph.numBuf[:n]...)
-				bd = append(bd, cell.spk[:cell.spl]...)
-			}
-			if cell.hl > 0 {
-				fieldBits |= HASH_PART
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.hl))
-				bd = append(bd, hph.numBuf[:n]...)
-				bd = append(bd, cell.h[:cell.hl]...)
-			}
-			bd[0] = byte(fieldBits)
-			if !branchNodeExisted || (hph.modBitmap[row]&bit != 0) {
-				branchData = append(branchData, bd)
-				hph.currentKey[updateKeyLen] = byte(nibble)
-				updateKeys = append(updateKeys, hexToCompact(hph.currentKey[:updateKeyLen+1]))
+			if hph.modBitmap[row]&bit != 0 {
+				var fieldBits PartFlags
+				if cell.extLen > 0 && cell.spl == 0 {
+					fieldBits |= HASHEDKEY_PART
+				}
+				if cell.apl > 0 {
+					fieldBits |= ACCOUNT_PLAIN_PART
+				}
+				if cell.spl > 0 {
+					fieldBits |= STORAGE_PLAIN_PART
+				}
+				if cell.hl > 0 {
+					fieldBits |= HASH_PART
+				}
+				branchData = append(branchData, byte(fieldBits))
+				if cell.extLen > 0 && cell.spl == 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.extension[:cell.extLen]...)
+				}
+				if cell.apl > 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.apl))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.apk[:cell.apl]...)
+				}
+				if cell.spl > 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.spl))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.spk[:cell.spl]...)
+				}
+				if cell.hl > 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.hl))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.h[:cell.hl]...)
+				}
 			}
 			bitset ^= bit
 		}
@@ -1340,10 +1339,10 @@ func (hph *HexPatriciaHashed) fold() ([][]byte, [][]byte, error) {
 	}
 	if branchData != nil {
 		if hph.trace {
-			fmt.Printf("fold: update keys: %x\n", updateKeys)
+			fmt.Printf("fold: update keys: %x\n", updateKey)
 		}
 	}
-	return branchData, updateKeys, nil
+	return branchData, updateKey, nil
 }
 
 func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
@@ -1673,13 +1672,10 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 		}
 		// Keep folding until the currentKey is the prefix of the key we modify
 		for hph.needFolding(hashedKey) {
-			if updates, updateKeys, err := hph.fold(); err != nil {
+			if branchData, updateKey, err := hph.fold(); err != nil {
 				return nil, fmt.Errorf("fold: %w", err)
 			} else {
-				for i, updateKey := range updateKeys {
-					//fmt.Printf("UPDATE [%x]\n", compactToHex(updateKey))
-					branchNodeUpdates[string(updateKey)] = updates[i]
-				}
+				branchNodeUpdates[string(updateKey)] = branchData
 			}
 		}
 		// Now unfold until we step on an empty cell
@@ -1708,13 +1704,10 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 	}
 	// Folding everything up to the root
 	for hph.activeRows > 0 {
-		if updates, updateKeys, err := hph.fold(); err != nil {
+		if branchData, updateKey, err := hph.fold(); err != nil {
 			return nil, fmt.Errorf("final fold: %w", err)
 		} else {
-			for i, updateKey := range updateKeys {
-				//fmt.Printf("UPDATE R [%x]\n", compactToHex(updateKey))
-				branchNodeUpdates[string(updateKey)] = updates[i]
-			}
+			branchNodeUpdates[string(updateKey)] = branchData
 		}
 	}
 	if branchNodeUpdate, err := hph.foldRoot(); err != nil {
@@ -1727,144 +1720,159 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 
 // ExtractPlainKeys parses branchData and extract the plain keys for accounts and storage in the same order
 // they appear witjin the branchData
-func ExtractPlainKeys(branchData []byte) (accountPlainKey []byte, storagePlainKey []byte, err error) {
-	fieldBits := PartFlags(branchData[0])
-	pos := 1
-	if fieldBits&HASHEDKEY_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hashedKey len")
-		} else if n < 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys value overflow for hashedKey len")
+func ExtractPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlainKeys [][]byte, err error) {
+	modBitmap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 6
+	for bitset, j := modBitmap, 0; bitset != 0; j++ {
+		bit := bitset & -bitset
+		fieldBits := PartFlags(branchData[pos])
+		pos++
+		if fieldBits&HASHEDKEY_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hashedKey len")
+			} else if n < 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys value overflow for hashedKey len")
+			}
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hashedKey")
+			}
+			if l > 0 {
+				pos += int(l)
+			}
 		}
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hashedKey")
+		if fieldBits&ACCOUNT_PLAIN_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for accountPlainKey len")
+			} else if n < 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys value overflow for accountPlainKey len")
+			}
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for accountPlainKey")
+			}
+			accountPlainKeys = append(accountPlainKeys, branchData[pos:pos+int(l)])
+			if l > 0 {
+				pos += int(l)
+			}
 		}
-		if l > 0 {
-			pos += int(l)
+		if fieldBits&STORAGE_PLAIN_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for storagePlainKey len")
+			} else if n < 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys value overflow for storagePlainKey len")
+			}
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for storagePlainKey")
+			}
+			storagePlainKeys = append(storagePlainKeys, branchData[pos:pos+int(l)])
+			if l > 0 {
+				pos += int(l)
+			}
 		}
-	}
-	if fieldBits&ACCOUNT_PLAIN_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for accountPlainKey len")
-		} else if n < 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys value overflow for accountPlainKey len")
+		if fieldBits&HASH_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hash len")
+			} else if n < 0 {
+				return nil, nil, fmt.Errorf("extractPlainKeys value overflow for hash len")
+			}
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hash")
+			}
 		}
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for accountPlainKey")
-		}
-		accountPlainKey = branchData[pos : pos+int(l)]
-		if l > 0 {
-			pos += int(l)
-		}
-	}
-	if fieldBits&STORAGE_PLAIN_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for storagePlainKey len")
-		} else if n < 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys value overflow for storagePlainKey len")
-		}
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for storagePlainKey")
-		}
-		storagePlainKey = branchData[pos : pos+int(l)]
-		if l > 0 {
-			pos += int(l)
-		}
-	}
-	if fieldBits&HASH_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hash len")
-		} else if n < 0 {
-			return nil, nil, fmt.Errorf("extractPlainKeys value overflow for hash len")
-		}
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, nil, fmt.Errorf("extractPlainKeys buffer too small for hash")
-		}
+		bitset ^= bit
 	}
 	return
 }
 
-func ReplacePlainKeys(branchData []byte, accountPlainKey []byte, storagePlainKey []byte, newData []byte) ([]byte, error) {
+func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, newData []byte) ([]byte, error) {
 	var numBuf [binary.MaxVarintLen64]byte
-	newData = append(newData, branchData[0])
-	fieldBits := PartFlags(branchData[0])
-	pos := 1
-	if fieldBits&HASHEDKEY_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for hashedKey len")
-		} else if n < 0 {
-			return nil, fmt.Errorf("replacePlainKeys value overflow for hashedKey len")
+	newData = append(newData, branchData[:6]...) // Copy bitmaps
+	modBitmap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 6
+	var accountI, storageI int
+	for bitset, j := modBitmap, 0; bitset != 0; j++ {
+		bit := bitset & -bitset
+		fieldBits := PartFlags(branchData[pos])
+		pos++
+		if fieldBits&HASHEDKEY_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for hashedKey len")
+			} else if n < 0 {
+				return nil, fmt.Errorf("replacePlainKeys value overflow for hashedKey len")
+			}
+			newData = append(newData, branchData[pos:pos+n]...)
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for hashedKey")
+			}
+			if l > 0 {
+				newData = append(newData, branchData[pos:pos+int(l)]...)
+				pos += int(l)
+			}
 		}
-		newData = append(newData, branchData[pos:pos+n]...)
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for hashedKey")
+		if fieldBits&ACCOUNT_PLAIN_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for accountPlainKey len")
+			} else if n < 0 {
+				return nil, fmt.Errorf("replacePlainKeys value overflow for accountPlainKey len")
+			}
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for accountPlainKey")
+			}
+			if l > 0 {
+				pos += int(l)
+			}
+			n = binary.PutUvarint(numBuf[:], uint64(len(accountPlainKeys[accountI])))
+			newData = append(newData, numBuf[:n]...)
+			newData = append(newData, accountPlainKeys[accountI]...)
+			accountI++
 		}
-		if l > 0 {
-			newData = append(newData, branchData[pos:pos+int(l)]...)
-			pos += int(l)
+		if fieldBits&STORAGE_PLAIN_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for storagePlainKey len")
+			} else if n < 0 {
+				return nil, fmt.Errorf("replacePlainKeys value overflow for storagePlainKey len")
+			}
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for storagePlainKey")
+			}
+			if l > 0 {
+				pos += int(l)
+			}
+			n = binary.PutUvarint(numBuf[:], uint64(len(storagePlainKeys[storageI])))
+			newData = append(newData, numBuf[:n]...)
+			newData = append(newData, storagePlainKeys[storageI]...)
+			storageI++
 		}
-	}
-	if fieldBits&ACCOUNT_PLAIN_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for accountPlainKey len")
-		} else if n < 0 {
-			return nil, fmt.Errorf("replacePlainKeys value overflow for accountPlainKey len")
+		if fieldBits&HASH_PART != 0 {
+			l, n := binary.Uvarint(branchData[pos:])
+			if n == 0 {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for hash len")
+			} else if n < 0 {
+				return nil, fmt.Errorf("replacePlainKeys value overflow for hash len")
+			}
+			newData = append(newData, branchData[pos:pos+n]...)
+			pos += n
+			if len(branchData) < pos+int(l) {
+				return nil, fmt.Errorf("replacePlainKeys buffer too small for hash")
+			}
+			if l > 0 {
+				newData = append(newData, branchData[pos:pos+int(l)]...)
+			}
 		}
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for accountPlainKey")
-		}
-		if l > 0 {
-			pos += int(l)
-		}
-		n = binary.PutUvarint(numBuf[:], uint64(len(accountPlainKey)))
-		newData = append(newData, numBuf[:n]...)
-		newData = append(newData, accountPlainKey...)
-	}
-	if fieldBits&STORAGE_PLAIN_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for storagePlainKey len")
-		} else if n < 0 {
-			return nil, fmt.Errorf("replacePlainKeys value overflow for storagePlainKey len")
-		}
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for storagePlainKey")
-		}
-		if l > 0 {
-			pos += int(l)
-		}
-		n = binary.PutUvarint(numBuf[:], uint64(len(storagePlainKey)))
-		newData = append(newData, numBuf[:n]...)
-		newData = append(newData, storagePlainKey...)
-	}
-	if fieldBits&HASH_PART != 0 {
-		l, n := binary.Uvarint(branchData[pos:])
-		if n == 0 {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for hash len")
-		} else if n < 0 {
-			return nil, fmt.Errorf("replacePlainKeys value overflow for hash len")
-		}
-		newData = append(newData, branchData[pos:pos+n]...)
-		pos += n
-		if len(branchData) < pos+int(l) {
-			return nil, fmt.Errorf("replacePlainKeys buffer too small for hash")
-		}
-		if l > 0 {
-			newData = append(newData, branchData[pos:pos+int(l)]...)
-		}
+		bitset ^= bit
 	}
 	return newData, nil
 }
