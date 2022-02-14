@@ -1305,14 +1305,14 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 	if len(val) == 0 {
 		return transValBuf, nil
 	}
-	accountPlainKey, storagePlainKey, err := commitment.ExtractPlainKeys(val[1:])
+	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val[1:])
 	if err != nil {
 		return nil, err
 	}
-	var transAccountPk []byte
-	var transStoragePk []byte
+	var transAccountPks [][]byte
+	var transStoragePks [][]byte
 	var apkBuf, spkBuf []byte
-	if accountPlainKey != nil {
+	for _, accountPlainKey := range accountPlainKeys {
 		if len(accountPlainKey) == length.Addr {
 			// Non-optimised key originating from a database record
 			apkBuf = append(apkBuf[:0], accountPlainKey...)
@@ -1340,9 +1340,9 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 				}
 			}
 		}
-		transAccountPk = accountPlainKey
+		transAccountPks = append(transAccountPks, accountPlainKey)
 	}
-	if storagePlainKey != nil {
+	for _, storagePlainKey := range storagePlainKeys {
 		if len(storagePlainKey) == length.Addr+length.Hash {
 			// Non-optimised key originating from a database record
 			spkBuf = append(spkBuf[:0], storagePlainKey...)
@@ -1370,10 +1370,10 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 				}
 			}
 		}
-		transStoragePk = storagePlainKey
+		transStoragePks = append(transStoragePks, storagePlainKey)
 	}
 	transValBuf = append(transValBuf, val[0])
-	if transValBuf, err = commitment.ReplacePlainKeys(val[1:], transAccountPk, transStoragePk, transValBuf); err != nil {
+	if transValBuf, err = commitment.ReplacePlainKeys(val[1:], transAccountPks, transStoragePks, transValBuf); err != nil {
 		return nil, err
 	}
 	return transValBuf, nil
@@ -2298,6 +2298,7 @@ type CursorType uint8
 const (
 	FILE_CURSOR CursorType = iota
 	TREE_CURSOR
+	TREE_CURSOR_NOCHOP
 )
 
 // CursorItem is the item in the priority queue used to do merge interation
@@ -2412,7 +2413,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 		return false
 	})
 	if found {
-		heap.Push(&cp, &CursorItem{t: TREE_CURSOR, key: common.Copy(k), val: common.Copy(v), tree: w.a.trees[Storage], endBlock: w.blockNum})
+		heap.Push(&cp, &CursorItem{t: TREE_CURSOR_NOCHOP, key: common.Copy(k), val: common.Copy(v), tree: w.a.trees[Storage], endBlock: w.blockNum})
 	}
 	w.a.files[Storage].Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
@@ -2499,6 +2500,24 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 					} else {
 						ci1.val = aitem.v
 					}
+					heap.Fix(&cp, 0)
+				} else {
+					heap.Pop(&cp)
+				}
+			case TREE_CURSOR_NOCHOP:
+				skip := true
+				var aitem *AggregateItem
+				ci1.tree.AscendGreaterOrEqual(&AggregateItem{k: ci1.key}, func(ai btree.Item) bool {
+					if skip {
+						skip = false
+						return true
+					}
+					aitem = ai.(*AggregateItem)
+					return false
+				})
+				if aitem != nil && bytes.HasPrefix(aitem.k, addr) {
+					ci1.key = aitem.k
+					ci1.val = aitem.v
 					heap.Fix(&cp, 0)
 				} else {
 					heap.Pop(&cp)
