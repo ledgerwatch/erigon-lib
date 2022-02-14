@@ -1926,8 +1926,32 @@ func MergeBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, err
 					pos2 += int(l)
 				}
 			}
-			// Skip  fields from branchData1
-			if bitmap1&bit != 0 {
+		}
+		if bitmap1&bit != 0 {
+			if touchMap2&bit == 0 && afterMap2&bit != 0 {
+				// Add fields from branchData1
+				fieldBits := PartFlags(branchData1[pos1])
+				newData = append(newData, byte(fieldBits))
+				pos1++
+				for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
+					l, n := binary.Uvarint(branchData1[pos1:])
+					if n == 0 {
+						return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
+					} else if n < 0 {
+						return nil, fmt.Errorf("MergeBranches value1 overflow for field")
+					}
+					newData = append(newData, branchData1[pos1:pos1+n]...)
+					pos1 += n
+					if len(branchData1) < pos1+int(l) {
+						return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
+					}
+					if l > 0 {
+						newData = append(newData, branchData1[pos1:pos1+int(l)]...)
+						pos1 += int(l)
+					}
+				}
+			} else {
+				// Skip fields from branch data - either deleted or modified in branchData2
 				fieldBits := PartFlags(branchData1[pos1])
 				pos1++
 				for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
@@ -1944,28 +1968,6 @@ func MergeBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, err
 					if l > 0 {
 						pos1 += int(l)
 					}
-				}
-			}
-		} else if bitmap1&bit != 0 {
-			// Add fields from branchData1
-			fieldBits := PartFlags(branchData1[pos1])
-			newData = append(newData, byte(fieldBits))
-			pos1++
-			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
-				l, n := binary.Uvarint(branchData1[pos1:])
-				if n == 0 {
-					return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
-				} else if n < 0 {
-					return nil, fmt.Errorf("MergeBranches value1 overflow for field")
-				}
-				newData = append(newData, branchData1[pos1:pos1+n]...)
-				pos1 += n
-				if len(branchData1) < pos1+int(l) {
-					return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
-				}
-				if l > 0 {
-					newData = append(newData, branchData1[pos1:pos1+int(l)]...)
-					pos1 += int(l)
 				}
 			}
 		}
