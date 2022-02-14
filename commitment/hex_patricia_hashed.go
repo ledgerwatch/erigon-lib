@@ -1212,7 +1212,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		}
 		// Calculate total length of all hashes
 		totalBranchLen := 17 - partsCount // For every empty cell, one byte
-		for bitset, j := bitmap, 0; bitset != 0; j++ {
+		for bitset, j := hph.afterMap[row], 0; bitset != 0; j++ {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
 			cell := &hph.grid[row][nibble]
