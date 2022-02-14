@@ -1921,7 +1921,7 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 		}
 	}
 
-	return mergedVal
+	return mergedVal[2:] // Skip touchMap but keep afterMap
 }
 
 func bytesToUint64(buf []byte) (x uint64) {
