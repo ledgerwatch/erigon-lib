@@ -1136,7 +1136,6 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 	if hph.trace {
 		fmt.Printf("touchMap[%d]=%016b, afterMap[%d]=%016b\n", row, hph.touchMap[row], row, hph.afterMap[row])
 	}
-	bitmap := hph.touchMap[row] & hph.afterMap[row]
 	partsCount := bits.OnesCount16(hph.afterMap[row])
 	switch partsCount {
 	case 0:
@@ -1209,6 +1208,12 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 				// Modifiction is propagated upwards
 				hph.touchMap[row-1] |= (uint16(1) << col)
 			}
+		}
+		bitmap := hph.touchMap[row] & hph.afterMap[row]
+		if !hph.branchBefore[row] {
+			// There was no branch node before, so we need to touch even the singular child that existed
+			hph.touchMap[row] = hph.afterMap[row]
+			bitmap = hph.afterMap[row]
 		}
 		// Calculate total length of all hashes
 		totalBranchLen := 17 - partsCount // For every empty cell, one byte
