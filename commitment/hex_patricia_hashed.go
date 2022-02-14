@@ -1326,7 +1326,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 	}
 	if branchData != nil {
 		if hph.trace {
-			fmt.Printf("fold: update key: %x, branchData: [%x]\n", compactToHex(updateKey), branchData)
+			fmt.Printf("fold: update key: %x, branchData: [%x]\n", CompactToHex(updateKey), branchData)
 		}
 	}
 	return branchData, updateKey, nil
@@ -2011,7 +2011,7 @@ func decodeKey(key, buf []byte) []byte {
 	return buf
 }
 
-func compactToHex(compact []byte) []byte {
+func CompactToHex(compact []byte) []byte {
 	if len(compact) == 0 {
 		return compact
 	}

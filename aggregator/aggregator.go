@@ -1916,7 +1916,7 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 			if mergedVal == nil {
 				return nil
 			}
-			panic("Incomplete branch data")
+			panic(fmt.Sprintf("Incomplete branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock))
 		}
 		var err error
 		if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {

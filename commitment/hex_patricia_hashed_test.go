@@ -430,7 +430,7 @@ func TestEmptyState(t *testing.T) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
-		fmt.Printf("%x => %s\n", compactToHex([]byte(key)), branchToString(branchNodeUpdate))
+		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
 	}
 	// More updates
 	hph.Reset()
@@ -454,7 +454,7 @@ func TestEmptyState(t *testing.T) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
-		fmt.Printf("%x => %s\n", compactToHex([]byte(key)), branchToString(branchNodeUpdate))
+		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
 	}
 	// More updates
 	hph.Reset()
@@ -478,6 +478,6 @@ func TestEmptyState(t *testing.T) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
-		fmt.Printf("%x => %s\n", compactToHex([]byte(key)), branchToString(branchNodeUpdate))
+		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
 	}
 }
