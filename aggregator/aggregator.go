@@ -1919,16 +1919,16 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 			panic(fmt.Sprintf("Incomplete branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock))
 		}
 		var err error
-		fmt.Printf("Pre-merge [%x]+[%x]\n", val, mergedVal)
+		//fmt.Printf("Pre-merge [%x]+[%x]\n", val, mergedVal)
 		if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
 			panic(err)
 		}
-		fmt.Printf("Post-merge [%x]\n", mergedVal)
+		//fmt.Printf("Post-merge [%x]\n", mergedVal)
 	}
 	if mergedVal == nil {
 		return nil
 	}
-	fmt.Printf("Returning branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
+	//fmt.Printf("Returning branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
 	return mergedVal[2:] // Skip touchMap but keep afterMap
 }
 
@@ -2169,7 +2169,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			if branchNodeUpdate == nil {
 				branchNodeUpdate = original
 			} else if mergedVal, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err == nil {
-				fmt.Printf("Merged [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
+				//fmt.Printf("Merged [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
 				branchNodeUpdate = mergedVal
 			} else {
 				return nil, err
