@@ -1928,6 +1928,7 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 	if mergedVal == nil {
 		return nil
 	}
+	fmt.Printf("Returning branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
 	return mergedVal[2:] // Skip touchMap but keep afterMap
 }
 
