@@ -1912,9 +1912,8 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 		}
 		var val []byte
 		val, startBlock = w.a.readFromFiles(Commitment, false /* lock */, startBlock-1, prefix, false /* trace */)
-		commitment.IsComplete(val)
 		if val == nil {
-			panic("Not expected")
+			return mergedVal
 		}
 		var err error
 		if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
