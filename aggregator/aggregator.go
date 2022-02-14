@@ -1898,13 +1898,13 @@ func (w *Writer) unlockFn() {
 }
 
 func (w *Writer) branchFn(prefix []byte) []byte {
+	var mergedVal []byte
 	// Look in the summary table first
 	w.search.k = prefix
 	if vi := w.a.trees[Commitment].Get(&w.search); vi != nil {
-		return vi.(*AggregateItem).v
+		mergedVal = vi.(*AggregateItem).v
 	}
-	// Look in the files
-	var mergedVal []byte
+	// Look in the files and merge, while it becomes complete
 	var startBlock uint64 = w.blockNum + 1
 	for mergedVal == nil || !commitment.IsComplete(mergedVal) {
 		if startBlock == 0 {
