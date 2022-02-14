@@ -1904,8 +1904,25 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 		return vi.(*AggregateItem).v
 	}
 	// Look in the files
-	val, startBlock := w.a.readFromFiles(Commitment, false /* lock */, w.blockNum, prefix, false /* trace */)
-	return val
+	var mergedVal []byte
+	var startBlock uint64 = w.blockNum + 1
+	for mergedVal == nil || !commitment.IsComplete(mergedVal) {
+		if startBlock == 0 {
+			panic("startBlock is 0")
+		}
+		var val []byte
+		val, startBlock = w.a.readFromFiles(Commitment, false /* lock */, startBlock-1, prefix, false /* trace */)
+		commitment.IsComplete(val)
+		if val == nil {
+			panic("Not expected")
+		}
+		var err error
+		if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
+			panic(err)
+		}
+	}
+
+	return mergedVal
 }
 
 func bytesToUint64(buf []byte) (x uint64) {

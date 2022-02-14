@@ -52,7 +52,7 @@ func (ms MockState) unlockFn() {
 
 func (ms MockState) branchFn(prefix []byte) []byte {
 	if exBytes, ok := ms.cm[string(prefix)]; ok {
-		return exBytes
+		return exBytes[2:] // Skip touchMap, but keep afterMap
 	}
 	return nil
 }
@@ -180,7 +180,16 @@ func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) err
 
 func (ms *MockState) applyBranchNodeUpdates(updates map[string][]byte) {
 	for key, update := range updates {
-		ms.cm[key] = update
+		if pre, ok := ms.cm[key]; ok {
+			// Merge
+			merged, err := MergeBranches(pre, update, nil)
+			if err != nil {
+				panic(err)
+			}
+			ms.cm[key] = merged
+		} else {
+			ms.cm[key] = update
+		}
 	}
 }
 
@@ -425,7 +434,7 @@ func TestEmptyState(t *testing.T) {
 	}
 	// More updates
 	hph.Reset()
-	hph.SetTrace(true)
+	hph.SetTrace(false)
 	plainKeys, hashedKeys, updates = NewUpdateBuilder().
 		Storage("03", "58", "050505").
 		Build()
@@ -449,7 +458,7 @@ func TestEmptyState(t *testing.T) {
 	}
 	// More updates
 	hph.Reset()
-	hph.SetTrace(true)
+	hph.SetTrace(false)
 	plainKeys, hashedKeys, updates = NewUpdateBuilder().
 		Storage("03", "58", "070807").
 		Build()
