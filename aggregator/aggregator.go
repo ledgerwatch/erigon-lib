@@ -1913,7 +1913,10 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 		var val []byte
 		val, startBlock = w.a.readFromFiles(Commitment, false /* lock */, startBlock-1, prefix, false /* trace */)
 		if val == nil {
-			break
+			if mergedVal == nil {
+				return nil
+			}
+			panic("Incomplete branch data")
 		}
 		var err error
 		if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
@@ -2157,6 +2160,13 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			original, _ = w.a.readFromFiles(Commitment, true /* lock */, w.blockNum, prefix, false)
 		} else {
 			original = prevV.v
+		}
+		if original != nil {
+			if branchNodeUpdate == nil {
+				branchNodeUpdate = original
+			} else if branchNodeUpdate, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err != nil {
+				return nil, err
+			}
 		}
 		if prevV == nil {
 			w.a.trees[Commitment].ReplaceOrInsert(&AggregateItem{k: prefix, v: branchNodeUpdate, count: 1})
