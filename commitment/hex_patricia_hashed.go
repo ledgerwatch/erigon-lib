@@ -1877,6 +1877,31 @@ func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 	return newData, nil
 }
 
+// IsComplete determines whether given branch data is complete, meaning that all information about all the children is present
+// All of the 16 children of a branch node may be one of the following
+// 1. Missing (corresponding bit in beforeBitmap is 0)
+// 2. Deleted (corresponding bit in delBitmap is 1)
+// 3. Present (corresponding bit in modBitmap is 1)
+// So the condition is not(beforeBitmap) or delBitmap or modBitmap
+func IsComplete(branchData []byte) bool {
+	beforeBitmap := binary.BigEndian.Uint16(branchData[0:])
+	modBitmap := binary.BigEndian.Uint16(branchData[2:])
+	delBitmap := binary.BigEndian.Uint16(branchData[4:])
+	bitmap := beforeBitmap &^ modBitmap &^ delBitmap
+	return bitmap == 0
+}
+
+// MergeBranches combines two branchData, number 2 coming after (and potentially shadowing) number 1
+func MergeBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, error) {
+	beforeBitmap1 := binary.BigEndian.Uint16(branchData1[0:])
+	modBitmap1 := binary.BigEndian.Uint16(branchData1[2:])
+	delBitmap1 := binary.BigEndian.Uint16(branchData1[4:])
+	beforeBitmap2 := binary.BigEndian.Uint16(branchData2[0:])
+	modBitmap2 := binary.BigEndian.Uint16(branchData2[2:])
+	delBitmap2 := binary.BigEndian.Uint16(branchData2[4:])
+	return newData, nil
+}
+
 func hexToCompact(key []byte) []byte {
 	zeroByte, keyPos, keyLen := makeCompactZeroByte(key)
 	bufLen := keyLen/2 + 1 // always > 0

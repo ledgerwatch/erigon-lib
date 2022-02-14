@@ -1693,12 +1693,13 @@ func checkOverlapWithMinStart(treeName string, tree *btree.BTree, minStart uint6
 	return nil
 }
 
-func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, filekey []byte, trace bool) []byte {
+func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, filekey []byte, trace bool) ([]byte, uint64) {
 	if lock {
 		a.fileLocks[fType].RLock()
 		defer a.fileLocks[fType].RUnlock()
 	}
 	var val []byte
+	var startBlock uint64
 	a.files[fType].DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if trace {
@@ -1710,6 +1711,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 				return true
 			}
 			val = ai.(*AggregateItem).v
+			startBlock = item.startBlock
 			return false
 		}
 		if item.index.Empty() {
@@ -1724,12 +1726,13 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 				if trace {
 					fmt.Printf("read %s %x: found [%x] in file [%d-%d]\n", fType.String(), filekey, val, item.startBlock, item.endBlock)
 				}
+				startBlock = item.startBlock
 				return false
 			}
 		}
 		return true
 	})
-	return val
+	return val, startBlock
 }
 
 // readByOffset is assumed to be invoked under a read lock
@@ -1771,7 +1774,8 @@ func (r *Reader) ReadAccountData(addr []byte, trace bool) []byte {
 	if vi := r.a.trees[Account].Get(&r.search); vi != nil {
 		return vi.(*AggregateItem).v
 	}
-	return r.a.readFromFiles(Account, true /* lock */, r.blockNum, addr, trace)
+	val, _ := r.a.readFromFiles(Account, true /* lock */, r.blockNum, addr, trace)
+	return val
 }
 
 func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) *uint256.Int {
@@ -1784,7 +1788,7 @@ func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) *uint25
 	if vi := r.a.trees[Storage].Get(&r.search); vi != nil {
 		v = vi.(*AggregateItem).v
 	} else {
-		v = r.a.readFromFiles(Storage, true /* lock */, r.blockNum, dbkey, trace)
+		v, _ = r.a.readFromFiles(Storage, true /* lock */, r.blockNum, dbkey, trace)
 	}
 	if v != nil {
 		return new(uint256.Int).SetBytes(v)
@@ -1799,7 +1803,8 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) []byte {
 		return vi.(*AggregateItem).v
 	}
 	// Look in the files
-	return r.a.readFromFiles(Code, true /* lock */, r.blockNum, addr, trace)
+	val, _ := r.a.readFromFiles(Code, true /* lock */, r.blockNum, addr, trace)
+	return val
 }
 
 func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) int {
@@ -1809,7 +1814,8 @@ func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) int {
 		return len(vi.(*AggregateItem).v)
 	}
 	// Look in the files. TODO - use specialised function to only lookup size
-	return len(r.a.readFromFiles(Code, true /* lock */, r.blockNum, addr, trace))
+	val, _ := r.a.readFromFiles(Code, true /* lock */, r.blockNum, addr, trace)
+	return len(val)
 }
 
 type Writer struct {
@@ -1898,7 +1904,8 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 		return vi.(*AggregateItem).v
 	}
 	// Look in the files
-	return w.a.readFromFiles(Commitment, false /* lock */, w.blockNum, prefix, false /* trace */)
+	val, startBlock := w.a.readFromFiles(Commitment, false /* lock */, w.blockNum, prefix, false /* trace */)
+	return val
 }
 
 func bytesToUint64(buf []byte) (x uint64) {
@@ -1925,7 +1932,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) []byte {
 		enc = encI.(*AggregateItem).v
 	} else {
 		// Look in the files
-		enc = w.a.readFromFiles(Account, false /* lock */, w.blockNum, plainKey, false /* trace */)
+		enc, _ = w.a.readFromFiles(Account, false /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -1950,7 +1957,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) []byte {
 		enc = encI.(*AggregateItem).v
 	} else {
 		// Look in the files
-		enc = w.a.readFromFiles(Code, false /* lock */, w.blockNum, plainKey, false /* trace */)
+		enc, _ = w.a.readFromFiles(Code, false /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	if len(enc) > 0 {
 		w.a.keccak.Reset()
@@ -1974,7 +1981,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) []byte {
 		enc = encI.(*AggregateItem).v
 	} else {
 		// Look in the files
-		enc = w.a.readFromFiles(Storage, false /* lock */, w.blockNum, plainKey, false /* trace */)
+		enc, _ = w.a.readFromFiles(Storage, false /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
@@ -2129,7 +2136,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 
 		var original []byte
 		if prevV == nil {
-			original = w.a.readFromFiles(Commitment, true /* lock */, w.blockNum, prefix, false)
+			original, _ = w.a.readFromFiles(Commitment, true /* lock */, w.blockNum, prefix, false)
 		} else {
 			original = prevV.v
 		}
@@ -2208,7 +2215,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) {
 	}
 	var original []byte
 	if prevV == nil {
-		original = w.a.readFromFiles(Account, true /* lock */, w.blockNum, addr, trace)
+		original, _ = w.a.readFromFiles(Account, true /* lock */, w.blockNum, addr, trace)
 	} else {
 		original = prevV.v
 	}
@@ -2241,7 +2248,7 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) {
 	}
 	var original []byte
 	if prevV == nil {
-		original = w.a.readFromFiles(Code, true /* lock */, w.blockNum, addr, trace)
+		original, _ = w.a.readFromFiles(Code, true /* lock */, w.blockNum, addr, trace)
 	} else {
 		original = prevV.v
 	}
@@ -2318,7 +2325,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) bool {
 	}
 	var original []byte
 	if prevV == nil {
-		original = w.a.readFromFiles(Account, true /* lock */, w.blockNum, addr, trace)
+		original, _ = w.a.readFromFiles(Account, true /* lock */, w.blockNum, addr, trace)
 		if original == nil {
 			return false
 		}
@@ -2343,7 +2350,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) {
 	}
 	var original []byte
 	if prevV == nil {
-		original = w.a.readFromFiles(Code, true /* lock */, w.blockNum, addr, trace)
+		original, _ = w.a.readFromFiles(Code, true /* lock */, w.blockNum, addr, trace)
 		if original == nil {
 			// Nothing to do
 			return
@@ -2489,7 +2496,7 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	}
 	var original []byte
 	if prevV == nil {
-		original = w.a.readFromFiles(Storage, true /* lock */, w.blockNum, dbkey, trace)
+		original, _ = w.a.readFromFiles(Storage, true /* lock */, w.blockNum, dbkey, trace)
 	} else {
 		original = prevV.v
 	}
