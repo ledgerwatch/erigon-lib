@@ -911,7 +911,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		hph.afterMap[row] = bitmap
 		hph.touchMap[row] = 0
 	}
-	fmt.Printf("unfoldBranchNode [%x], afterMap = [%x], touchMap = [%x]\n", branchData, hph.afterMap[row], hph.touchMap[row])
+	//fmt.Printf("unfoldBranchNode [%x], afterMap = [%x], touchMap = [%x]\n", branchData, hph.afterMap[row], hph.touchMap[row])
 	// Loop iterating over the set bits of modMask
 	for bitset, j := bitmap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
@@ -1231,7 +1231,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		var lastNibble int
 		var b [1]byte
 		var cellHashBuf [33]byte
-		for bitset, j := bitmap, 0; bitset != 0; j++ {
+		for bitset, j := hph.afterMap[row], 0; bitset != 0; j++ {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
 			b[0] = 0x80
@@ -1255,39 +1255,41 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			if _, err = hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
 			}
-			var fieldBits PartFlags
-			if cell.extLen > 0 && cell.spl == 0 {
-				fieldBits |= HASHEDKEY_PART
-			}
-			if cell.apl > 0 {
-				fieldBits |= ACCOUNT_PLAIN_PART
-			}
-			if cell.spl > 0 {
-				fieldBits |= STORAGE_PLAIN_PART
-			}
-			if cell.hl > 0 {
-				fieldBits |= HASH_PART
-			}
-			branchData = append(branchData, byte(fieldBits))
-			if cell.extLen > 0 && cell.spl == 0 {
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
-				branchData = append(branchData, hph.numBuf[:n]...)
-				branchData = append(branchData, cell.extension[:cell.extLen]...)
-			}
-			if cell.apl > 0 {
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.apl))
-				branchData = append(branchData, hph.numBuf[:n]...)
-				branchData = append(branchData, cell.apk[:cell.apl]...)
-			}
-			if cell.spl > 0 {
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.spl))
-				branchData = append(branchData, hph.numBuf[:n]...)
-				branchData = append(branchData, cell.spk[:cell.spl]...)
-			}
-			if cell.hl > 0 {
-				n := binary.PutUvarint(hph.numBuf[:], uint64(cell.hl))
-				branchData = append(branchData, hph.numBuf[:n]...)
-				branchData = append(branchData, cell.h[:cell.hl]...)
+			if bitmap&bit != 0 {
+				var fieldBits PartFlags
+				if cell.extLen > 0 && cell.spl == 0 {
+					fieldBits |= HASHEDKEY_PART
+				}
+				if cell.apl > 0 {
+					fieldBits |= ACCOUNT_PLAIN_PART
+				}
+				if cell.spl > 0 {
+					fieldBits |= STORAGE_PLAIN_PART
+				}
+				if cell.hl > 0 {
+					fieldBits |= HASH_PART
+				}
+				branchData = append(branchData, byte(fieldBits))
+				if cell.extLen > 0 && cell.spl == 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.extension[:cell.extLen]...)
+				}
+				if cell.apl > 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.apl))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.apk[:cell.apl]...)
+				}
+				if cell.spl > 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.spl))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.spk[:cell.spl]...)
+				}
+				if cell.hl > 0 {
+					n := binary.PutUvarint(hph.numBuf[:], uint64(cell.hl))
+					branchData = append(branchData, hph.numBuf[:n]...)
+					branchData = append(branchData, cell.h[:cell.hl]...)
+				}
 			}
 			bitset ^= bit
 		}
