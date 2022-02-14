@@ -1913,14 +1913,16 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 		var val []byte
 		val, startBlock = w.a.readFromFiles(Commitment, false /* lock */, startBlock-1, prefix, false /* trace */)
 		if val == nil {
-			return mergedVal
+			break
 		}
 		var err error
 		if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
 			panic(err)
 		}
 	}
-
+	if mergedVal == nil {
+		return nil
+	}
 	return mergedVal[2:] // Skip touchMap but keep afterMap
 }
 
