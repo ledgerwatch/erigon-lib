@@ -574,12 +574,12 @@ func buildIndex(d *compress.Decompressor, idxPath, tmpDir string, count int) (*r
 // aggregate gathers changes from the changefiles into a B-tree, and "removes" them from the database
 // This function is time-critical because it needs to be run in the same go-routine (thread) as the general
 // execution (due to read-write tx). After that, we can optimistically execute the rest in the background
-func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, dbTree *btree.BTree) (*btree.BTree, error) {
+func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, dbTree *btree.BTree, commitments bool) (*btree.BTree, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
 		return nil, fmt.Errorf("open files: %w", err)
 	}
 	bt := btree.New(32)
-	err := c.aggregateToBtree(bt, prefixLen)
+	err := c.aggregateToBtree(bt, prefixLen, commitments)
 	if err != nil {
 		return nil, fmt.Errorf("aggregateToBtree: %w", err)
 	}
@@ -746,7 +746,7 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 // (there are 3 of them, one for "keys", one for values "before" every change, and one for values "after" every change)
 // and create a B-tree where each key is only represented once, with the value corresponding to the "after" value
 // of the latest change.
-func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
+func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments bool) error {
 	var b bool
 	var e error
 	var key, before, after []byte
@@ -769,9 +769,11 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 				bt.ReplaceOrInsert(item)
 			} else {
 				item := i.(*AggregateItem)
-				var err error
-				if item.v, err = commitment.MergeBranches(item.v, after, nil); err != nil {
-					return fmt.Errorf("merge branches: %w", err)
+				if commitments {
+					var err error
+					if item.v, err = commitment.MergeBranches(after, item.v, nil); err != nil {
+						return fmt.Errorf("merge branches: %w", err)
+					}
 				}
 				item.count++
 			}
@@ -1040,7 +1042,7 @@ func (a *Aggregator) rebuildRecentState() error {
 			if changes.openFiles(item.startBlock, false /* write */); err != nil {
 				return false
 			}
-			if err = changes.aggregateToBtree(a.trees[fType], 0); err != nil {
+			if err = changes.aggregateToBtree(a.trees[fType], 0, fType == Commitment); err != nil {
 				return false
 			}
 			if err = changes.closeFiles(); err != nil {
@@ -2700,7 +2702,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		if fType == Storage {
 			prefixLen = length.Addr
 		}
-		if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.a.trees[fType]); err != nil {
+		if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.a.trees[fType], fType == Commitment); err != nil {
 			return fmt.Errorf("aggregate %sChanges: %w", fType.String(), err)
 		}
 	}
