@@ -771,9 +771,12 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 				item := i.(*AggregateItem)
 				if commitments {
 					var err error
-					if item.v, err = commitment.MergeBranches(after, item.v, nil); err != nil {
+					var mergedVal []byte
+					if mergedVal, err = commitment.MergeBranches(after, item.v, nil); err != nil {
 						return fmt.Errorf("merge branches: %w", err)
 					}
+					fmt.Printf("aggMerge prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
+					item.v = mergedVal
 				}
 				item.count++
 			}
