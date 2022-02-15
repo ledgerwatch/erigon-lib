@@ -769,6 +769,10 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int) error {
 				bt.ReplaceOrInsert(item)
 			} else {
 				item := i.(*AggregateItem)
+				var err error
+				if item.v, err = commitment.MergeBranches(item.v, after, nil); err != nil {
+					return fmt.Errorf("merge branches: %w", err)
+				}
 				item.count++
 			}
 		}
