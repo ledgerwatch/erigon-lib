@@ -1428,10 +1428,10 @@ func (a *Aggregator) backgroundMerge() {
 				removed += len(toRemove[fType]) - 1
 			}
 		}
-		mergeTime := time.Since(t)
-		if mergeTime > time.Minute {
-			log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", removed, "time", time.Since(t))
-		}
+		//mergeTime := time.Since(t)
+		//if mergeTime > time.Minute {
+		log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", removed, "time", time.Since(t))
+		//}
 	}
 }
 
