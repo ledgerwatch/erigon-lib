@@ -1802,6 +1802,7 @@ func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 	for bitset, j := touchMap&afterMap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
 		fieldBits := PartFlags(branchData[pos])
+		newData = append(newData, byte(fieldBits))
 		pos++
 		if fieldBits&HASHEDKEY_PART != 0 {
 			l, n := binary.Uvarint(branchData[pos:])
