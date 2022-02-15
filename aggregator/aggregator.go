@@ -2164,6 +2164,9 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		return nil, err
 	}
 	for prefixStr, branchNodeUpdate := range branchNodeUpdates {
+		if branchNodeUpdate == nil {
+			continue
+		}
 		prefix := []byte(prefixStr)
 		w.search.k = prefix
 		var prevV *AggregateItem
@@ -2179,9 +2182,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		}
 		if original != nil {
 			var mergedVal []byte
-			if branchNodeUpdate == nil {
-				branchNodeUpdate = original
-			} else if mergedVal, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err == nil {
+			if mergedVal, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err == nil {
 				//fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
 				branchNodeUpdate = mergedVal
 			} else {
