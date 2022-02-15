@@ -1311,7 +1311,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			g := cvt.pre[Account][fileI].getterMerge
 			g.Reset(offset)
 			apkBuf, _ = g.Next(apkBuf[:0])
-			fmt.Printf("replacing account [%x] from [%x]\n", apkBuf, accountPlainKey)
+			//fmt.Printf("replacing account [%x] from [%x]\n", apkBuf, accountPlainKey)
 		}
 		// Look up apkBuf in the post account files
 		for j := len(cvt.post[Account]); j > 0; j-- {
@@ -1325,7 +1325,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					accountPlainKey = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Printf("replaced account [%x]=>[%x] for file [%d-%d]\n", apkBuf, accountPlainKey, item.startBlock, item.endBlock)
+					//fmt.Printf("replaced account [%x]=>[%x] for file [%d-%d]\n", apkBuf, accountPlainKey, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1343,7 +1343,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			g := cvt.pre[Storage][fileI].getterMerge
 			g.Reset(offset)
 			spkBuf, _ = g.Next(spkBuf[:0])
-			fmt.Printf("replacing storage [%x] from [%x]\n", spkBuf, storagePlainKey)
+			//fmt.Printf("replacing storage [%x] from [%x]\n", spkBuf, storagePlainKey)
 		}
 		// Lookup spkBuf in the post storage files
 		for j := len(cvt.post[Storage]); j > 0; j-- {
@@ -1357,7 +1357,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Printf("replaced storage [%x]=>[%x]\n", spkBuf, storagePlainKey)
+					//fmt.Printf("replaced storage [%x]=>[%x]\n", spkBuf, storagePlainKey)
 					break
 				}
 			}
@@ -1804,7 +1804,6 @@ func (a *Aggregator) readByOffset(fType FileType, fileI int, offset uint64) ([]b
 			return true
 		}
 		item := i.(*byEndBlockItem)
-		fmt.Printf("reading offset [%x] from file [%d-%d]\n", offset, item.startBlock, item.endBlock)
 		g := item.getter
 		g.Reset(offset)
 		key, _ = g.Next(nil)
@@ -2801,11 +2800,11 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			}
 			if commitments {
 				if mergedOnce {
-					fmt.Printf("mergeIntoStateFile pre-merge prefix [%x], [%x]+[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal)
+					//fmt.Printf("mergeIntoStateFile pre-merge prefix [%x], [%x]+[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal)
 					if lastVal, err = commitment.MergeBranches(ci1.val, lastVal, nil); err != nil {
 						return nil, 0, fmt.Errorf("mergeIntoStateFile: merge commitments: %w", err)
 					}
-					fmt.Printf("mergeIntoStateFile post-merge  prefix [%x], [%x]\n", commitment.CompactToHex(lastKey), lastVal)
+					//fmt.Printf("mergeIntoStateFile post-merge  prefix [%x], [%x]\n", commitment.CompactToHex(lastKey), lastVal)
 				} else {
 					mergedOnce = true
 				}

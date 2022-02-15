@@ -911,7 +911,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		hph.afterMap[row] = bitmap
 		hph.touchMap[row] = 0
 	}
-	fmt.Printf("unfoldBranchNode [%x], afterMap = [%x], touchMap = [%x]\n", branchData, hph.afterMap[row], hph.touchMap[row])
+	//fmt.Printf("unfoldBranchNode [%x], afterMap = [%x], touchMap = [%x]\n", branchData, hph.afterMap[row], hph.touchMap[row])
 	// Loop iterating over the set bits of modMask
 	for bitset, j := bitmap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
@@ -923,9 +923,9 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
 			return fmt.Errorf("prefix [%x], branchData[%x]: %w", hph.currentKey[:hph.currentKeyLen], branchData, err)
 		}
-		//if hph.trace {
-		fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
-		//}
+		if hph.trace {
+			fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
+		}
 		if cell.apl > 0 {
 			k := hph.accountFn(cell.apk[:cell.apl], cell)
 			cell.apl = len(k)
