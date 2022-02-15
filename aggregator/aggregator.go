@@ -1410,7 +1410,11 @@ func (a *Aggregator) backgroundMerge() {
 				if fType == Commitment {
 					valTransform = cvt.commitmentValTransform
 				}
-				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, valTransform, true /* withIndex */); err != nil {
+				var prefixLen int
+				if fType == Storage {
+					prefixLen = length.Addr
+				}
+				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, valTransform, true /* withIndex */, prefixLen); err != nil {
 					a.mergeError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
 					return
 				}
@@ -2506,6 +2510,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(addr); !keyMatch {
+				fmt.Printf("DeleteAccount %x - not found anchor in file [%d-%d]\n", addr, item.startBlock, item.endBlock)
 				return true
 			}
 			g.Skip()
@@ -2569,7 +2574,6 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 			prevV.v = nil
 			prevV.count++
 		}
-		fmt.Printf("DeleteAccount storage [%x]\n", lastKey)
 		w.changes[Storage].delete(lastKey, lastVal)
 	}
 	if trace {
@@ -2665,7 +2669,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 func (a *Aggregator) computeAggregation(fType FileType,
 	toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64,
 	valTransform func(val []byte, transValBuf []byte) ([]byte, error),
-	withIndex bool) (*byEndBlockItem, error) {
+	withIndex bool, prefixLen int) (*byEndBlockItem, error) {
 	var item2 = &byEndBlockItem{startBlock: aggFrom, endBlock: aggTo}
 	var cp CursorHeap
 	heap.Init(&cp)
@@ -2680,7 +2684,7 @@ func (a *Aggregator) computeAggregation(fType FileType,
 	}
 	var err error
 	var count int
-	if item2.decompressor, count, err = a.mergeIntoStateFile(&cp, 0, fType.String(), aggFrom, aggTo, a.diffDir, valTransform, fType == Commitment); err != nil {
+	if item2.decompressor, count, err = a.mergeIntoStateFile(&cp, prefixLen, fType.String(), aggFrom, aggTo, a.diffDir, valTransform, fType == Commitment); err != nil {
 		return nil, fmt.Errorf("mergeIntoStateFile %s [%d-%d]: %w", fType.String(), aggFrom, aggTo, err)
 	}
 	item2.getter = item2.decompressor.MakeGetter()
