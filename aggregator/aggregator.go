@@ -2011,7 +2011,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) []byte {
 		enc = encI.(*AggregateItem).v
 	} else {
 		// Look in the files
-		enc, _ = w.a.readFromFiles(Account, false /* lock */, w.blockNum, plainKey, false /* trace */)
+		enc, _ = w.a.readFromFiles(Account, true /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
@@ -2036,7 +2036,7 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) []byte {
 		enc = encI.(*AggregateItem).v
 	} else {
 		// Look in the files
-		enc, _ = w.a.readFromFiles(Code, false /* lock */, w.blockNum, plainKey, false /* trace */)
+		enc, _ = w.a.readFromFiles(Code, true /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	if len(enc) > 0 {
 		w.a.keccak.Reset()
@@ -2054,7 +2054,7 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) []byte {
 		enc = encI.(*AggregateItem).v
 	} else {
 		// Look in the files
-		enc, _ = w.a.readFromFiles(Storage, false /* lock */, w.blockNum, plainKey, false /* trace */)
+		enc, _ = w.a.readFromFiles(Storage, true /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
