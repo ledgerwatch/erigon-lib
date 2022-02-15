@@ -892,8 +892,8 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 }
 
 func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
-	hph.lockFn()
-	defer hph.unlockFn()
+	//hph.lockFn()
+	//defer hph.unlockFn()
 	branchData := hph.branchFn(hexToCompact(hph.currentKey[:hph.currentKeyLen]))
 	if !hph.rootChecked && hph.currentKeyLen == 0 && len(branchData) == 0 {
 		// Special case - empty or deleted root

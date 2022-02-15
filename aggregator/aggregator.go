@@ -1707,8 +1707,15 @@ func checkOverlapWithMinStart(treeName string, tree *btree.BTree, minStart uint6
 
 func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, filekey []byte, trace bool) ([]byte, uint64) {
 	if lock {
-		a.fileLocks[fType].RLock()
-		defer a.fileLocks[fType].RUnlock()
+		if fType == Commitment {
+			for lockFType := FirstType; lockFType < NumberOfStateTypes; lockFType++ {
+				a.fileLocks[lockFType].RLock()
+				defer a.fileLocks[lockFType].RUnlock()
+			}
+		} else {
+			a.fileLocks[fType].RLock()
+			defer a.fileLocks[fType].RUnlock()
+		}
 	}
 	var val []byte
 	var startBlock uint64
@@ -1735,15 +1742,55 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(filekey); keyMatch {
 				val, _ = g.Next(nil)
-				//if trace {
-				fmt.Printf("read %s %x: found [%x] in file [%d-%d]\n", fType.String(), filekey, val, item.startBlock, item.endBlock)
-				//}
+				if trace {
+					fmt.Printf("read %s %x: found [%x] in file [%d-%d]\n", fType.String(), filekey, val, item.startBlock, item.endBlock)
+				}
 				startBlock = item.startBlock
 				return false
 			}
 		}
 		return true
 	})
+	if fType == Commitment {
+		// Transform references
+		if len(val) > 0 {
+			accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val)
+			if err != nil {
+				panic(err)
+			}
+			var transAccountPks [][]byte
+			var transStoragePks [][]byte
+			for _, accountPlainKey := range accountPlainKeys {
+				var apkBuf []byte
+				if len(accountPlainKey) == length.Addr {
+					// Non-optimised key originating from a database record
+					apkBuf = accountPlainKey
+				} else {
+					// Optimised key referencing a state file record (file number and offset within the file)
+					fileI := int(accountPlainKey[0])
+					offset := decodeU64(accountPlainKey[1:])
+					apkBuf, _ = a.readByOffset(Account, fileI, offset)
+				}
+				transAccountPks = append(transAccountPks, apkBuf)
+			}
+			for _, storagePlainKey := range storagePlainKeys {
+				var spkBuf []byte
+				if len(storagePlainKey) == length.Addr+length.Hash {
+					// Non-optimised key originating from a database record
+					spkBuf = storagePlainKey
+				} else {
+					// Optimised key referencing a state file record (file number and offset within the file)
+					fileI := int(storagePlainKey[0])
+					offset := decodeU64(storagePlainKey[1:])
+					spkBuf, _ = a.readByOffset(Storage, fileI, offset)
+				}
+				transStoragePks = append(transStoragePks, spkBuf)
+			}
+			if val, err = commitment.ReplacePlainKeys(val, transAccountPks, transStoragePks, nil); err != nil {
+				panic(err)
+			}
+		}
+	}
 	return val, startBlock
 }
 
@@ -1932,18 +1979,18 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 			panic(fmt.Sprintf("Incomplete branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock))
 		}
 		var err error
-		fmt.Printf("Pre-merge prefix [%x] [%x]+[%x], startBlock %d\n", commitment.CompactToHex(prefix), val, mergedVal, startBlock)
+		//fmt.Printf("Pre-merge prefix [%x] [%x]+[%x], startBlock %d\n", commitment.CompactToHex(prefix), val, mergedVal, startBlock)
 		if mergedVal == nil {
 			mergedVal = val
 		} else if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
 			panic(err)
 		}
-		fmt.Printf("Post-merge prefix [%x] [%x], startBlock %d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
+		//fmt.Printf("Post-merge prefix [%x] [%x], startBlock %d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
 	}
 	if mergedVal == nil {
 		return nil
 	}
-	fmt.Printf("Returning branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
+	//fmt.Printf("Returning branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
 	return mergedVal[2:] // Skip touchMap but keep afterMap
 }
 
@@ -1959,12 +2006,6 @@ func bytesToUint64(buf []byte) (x uint64) {
 
 func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) []byte {
 	var enc []byte
-	if len(plainKey) != length.Addr { // Accessing account key and value via "thin reference" to the state file and offset
-		fileI := int(plainKey[0])
-		offset := decodeU64(plainKey[1:])
-		plainKey, _ = w.a.readByOffset(Account, fileI, offset)
-	}
-	// Full account key is provided, search as usual
 	// Look in the summary table first
 	w.search.k = plainKey
 	if encI := w.a.trees[Account].Get(&w.search); encI != nil {
@@ -2008,12 +2049,6 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) []byte {
 
 func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) []byte {
 	var enc []byte
-	if len(plainKey) != length.Addr+length.Hash { // Accessing storage key and value via "thin reference" to the state file and offset
-		fileI := int(plainKey[0])
-		offset := decodeU64(plainKey[1:])
-		plainKey, _ = w.a.readByOffset(Storage, fileI, offset)
-	}
-	// Full storage key is provided, search as usual
 	// Look in the summary table first
 	w.search.k = plainKey
 	if encI := w.a.trees[Storage].Get(&w.search); encI != nil {
