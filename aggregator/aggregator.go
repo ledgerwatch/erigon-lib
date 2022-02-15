@@ -1407,7 +1407,7 @@ func (a *Aggregator) backgroundMerge() {
 				if fType == Commitment {
 					valTransform = cvt.commitmentValTransform
 				}
-				if newItems[fType], err = a.computeAggregation(fType.String(), toRemove[fType], from, to, valTransform, true /* withIndex */); err != nil {
+				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, valTransform, true /* withIndex */); err != nil {
 					a.mergeError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
 					return
 				}
@@ -1553,7 +1553,7 @@ func (a *Aggregator) backgroundHistoryMerge() {
 				}
 			}
 			if len(toRemove[fType]) > 1 {
-				if newItems[fType], err = a.computeAggregation(fType.String(), toRemove[fType], from, to, nil, /* valTransform */
+				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, nil, /* valTransform */
 					!finalMerge || fType == AccountBitmap || fType == StorageBitmap || fType == CodeBitmap /* withIndex */); err != nil {
 					a.historyError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
 					return
