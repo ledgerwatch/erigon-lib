@@ -1928,13 +1928,13 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 			panic(fmt.Sprintf("Incomplete branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock))
 		}
 		var err error
-		//fmt.Printf("Pre-merge [%x]+[%x]\n", val, mergedVal)
+		fmt.Printf("Pre-merge prefix [%x] [%x]+[%x], startBlock %d\n", commitment.CompactToHex(prefix), val, mergedVal, startBlock)
 		if mergedVal == nil {
 			mergedVal = val
 		} else if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
 			panic(err)
 		}
-		//fmt.Printf("Post-merge [%x]\n", mergedVal)
+		fmt.Printf("Post-merge prefix [%x] [%x], startBlock %d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
 	}
 	if mergedVal == nil {
 		return nil
