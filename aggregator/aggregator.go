@@ -1311,6 +1311,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			g := cvt.pre[Account][fileI].getterMerge
 			g.Reset(offset)
 			apkBuf, _ = g.Next(apkBuf[:0])
+			fmt.Printf("replacing account [%x] from [%x]\n", apkBuf, accountPlainKey)
 		}
 		// Look up apkBuf in the post account files
 		for j := len(cvt.post[Account]); j > 0; j-- {
@@ -1342,6 +1343,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			g := cvt.pre[Storage][fileI].getterMerge
 			g.Reset(offset)
 			spkBuf, _ = g.Next(spkBuf[:0])
+			fmt.Printf("replacing storage [%x] from [%x]\n", spkBuf, storagePlainKey)
 		}
 		// Lookup spkBuf in the post storage files
 		for j := len(cvt.post[Storage]); j > 0; j-- {
