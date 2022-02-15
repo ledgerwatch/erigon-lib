@@ -1324,6 +1324,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					accountPlainKey = encodeU64(offset, []byte{byte(j - 1)})
+					fmt.Printf("replaced account [%x]=>[%x]\n", apkBuf, accountPlainKey)
 					break
 				}
 			}
@@ -1354,6 +1355,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
+					fmt.Printf("replaced storage [%x]=>[%x]\n", spkBuf, storagePlainKey)
 					break
 				}
 			}
