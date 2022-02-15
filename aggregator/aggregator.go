@@ -775,7 +775,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 					if mergedVal, err = commitment.MergeBranches(after, item.v, nil); err != nil {
 						return fmt.Errorf("merge branches: %w", err)
 					}
-					//fmt.Printf("aggMerge prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
+					fmt.Printf("aggregateToBtree prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
 					item.v = mergedVal
 				}
 				item.count++
@@ -2762,9 +2762,11 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				if mergedVal == nil {
 					mergedVal = common.Copy(ci1.val)
 				} else {
-					if mergedVal, err = commitment.MergeBranches(ci1.val, mergedVal, nil); err != nil {
+					if mergedVal, err = commitment.MergeBranches(ci1.val, lastVal, nil); err != nil {
 						return nil, 0, fmt.Errorf("mergeIntoStateFile: merge commitments: %w", err)
 					}
+					fmt.Printf("mergeIntoStateFile prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal, mergedVal)
+					lastVal = mergedVal
 				}
 			}
 			if ci1.dg.HasNext() {
@@ -2774,9 +2776,6 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			} else {
 				heap.Pop(cp)
 			}
-		}
-		if commitments {
-			lastVal = mergedVal
 		}
 		if startBlock == 0 && len(lastVal) == 0 { // Deleted marker can be skipped if we merge into the first file
 			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
