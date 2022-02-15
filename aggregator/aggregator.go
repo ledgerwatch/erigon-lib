@@ -888,7 +888,18 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 			log.Warn("File ignored by aggregator, type unknown", "type", subs[1])
 		}
 		var item = &byEndBlockItem{startBlock: startBlock, endBlock: endBlock}
-		a.files[fType].ReplaceOrInsert(item)
+		var foundI *byEndBlockItem
+		a.files[fType].AscendGreaterOrEqual(&byEndBlockItem{startBlock: endBlock, endBlock: endBlock}, func(i btree.Item) bool {
+			it := i.(*byEndBlockItem)
+			if it.endBlock == endBlock {
+				foundI = it
+			}
+			return false
+		})
+		if foundI == nil || foundI.startBlock > startBlock {
+			log.Info("Load state file", "name", name, "startBlock", startBlock, "endBlock", endBlock)
+			a.files[fType].ReplaceOrInsert(item)
+		}
 	}
 }
 
@@ -2626,13 +2637,17 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 	if maxEndBlock == 0 {
 		return
 	}
-	fmt.Printf("findLargestMerge %s, maxEndBlock=%d\n", fType.String(), maxEndBlock)
+	if fType == CodeBitmap {
+		fmt.Printf("findLargestMerge %s, maxEndBlock=%d\n", fType.String(), maxEndBlock)
+	}
 	a.files[fType].Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.decompressor == nil {
 			return true // Skip B-tree based items
 		}
-		fmt.Printf("findLargestMerge [%d-%d]\n", item.startBlock, item.endBlock)
+		if fType == CodeBitmap {
+			fmt.Printf("findLargestMerge [%d-%d]\n", item.startBlock, item.endBlock)
+		}
 		pre = append(pre, item)
 		if aggTo == 0 {
 			var doubleEnd uint64
@@ -2641,7 +2656,9 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 				doubleEnd = nextDouble
 				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
 			}
-			fmt.Printf("findLargestMerge doubleEnd = %d\n", doubleEnd)
+			if fType == CodeBitmap {
+				fmt.Printf("findLargestMerge doubleEnd = %d\n", doubleEnd)
+			}
 			if doubleEnd != item.endBlock {
 				aggFrom = item.startBlock
 				aggTo = doubleEnd
@@ -2821,7 +2838,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				heap.Pop(cp)
 			}
 		}
-		if startBlock == 0 && len(lastVal) == 0 && len(lastKey) != prefixLen { // Deleted marker can be skipped if we merge into the first file, except for the storage addr markers
+		if startBlock == 0 && len(lastVal) == 0 && len(lastKey) != prefixLen { // Deleted marker can be skipped if we merge into the first file, except for the storage addr marker
 			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
 				fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
 			}
