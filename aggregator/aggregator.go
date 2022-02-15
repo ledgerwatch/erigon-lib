@@ -1428,10 +1428,10 @@ func (a *Aggregator) backgroundMerge() {
 				removed += len(toRemove[fType]) - 1
 			}
 		}
-		//mergeTime := time.Since(t)
-		//if mergeTime > time.Minute {
-		log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", removed, "time", time.Since(t))
-		//}
+		mergeTime := time.Since(t)
+		if mergeTime > time.Minute {
+			log.Info("Long merge", "from", blockFrom, "to", blockTo, "files", removed, "time", time.Since(t))
+		}
 	}
 }
 
@@ -2768,7 +2768,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 					if mergedVal, err = commitment.MergeBranches(ci1.val, lastVal, nil); err != nil {
 						return nil, 0, fmt.Errorf("mergeIntoStateFile: merge commitments: %w", err)
 					}
-					//fmt.Printf("mergeIntoStateFile prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal, mergedVal)
+					fmt.Printf("mergeIntoStateFile prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal, mergedVal)
 					lastVal = mergedVal
 				}
 			}
