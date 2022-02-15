@@ -1908,7 +1908,7 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 	var startBlock uint64 = w.blockNum + 1
 	for mergedVal == nil || !commitment.IsComplete(mergedVal) {
 		if startBlock == 0 {
-			panic("startBlock is 0")
+			panic(fmt.Sprintf("Incomplete branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock))
 		}
 		var val []byte
 		val, startBlock = w.a.readFromFiles(Commitment, false /* lock */, startBlock-1, prefix, false /* trace */)
