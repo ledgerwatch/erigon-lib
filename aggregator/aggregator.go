@@ -2745,7 +2745,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 	for cp.Len() > 0 {
 		lastKey := common.Copy((*cp)[0].key)
 		lastVal := common.Copy((*cp)[0].val)
-		var mergedVal []byte
+		var mergedOnce bool
 		if a.trace {
 			if _, ok := a.tracedKeys[string(lastKey)]; ok {
 				fmt.Printf("looking at key %x val [%x] endBlock %d to merge into [%d-%d]\n", lastKey, lastVal, (*cp)[0].endBlock, startBlock, endBlock)
@@ -2763,14 +2763,14 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				return nil, 0, fmt.Errorf("mergeIntoStateFile: cursor of unexpected type: %d", ci1.t)
 			}
 			if commitments {
-				if mergedVal == nil {
-					mergedVal = common.Copy(ci1.val)
-				} else {
-					if mergedVal, err = commitment.MergeBranches(ci1.val, lastVal, nil); err != nil {
+				if mergedOnce {
+					fmt.Printf("mergeIntoStateFile pre-merge prefix [%x], [%x]+[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal)
+					if lastVal, err = commitment.MergeBranches(ci1.val, lastVal, nil); err != nil {
 						return nil, 0, fmt.Errorf("mergeIntoStateFile: merge commitments: %w", err)
 					}
-					fmt.Printf("mergeIntoStateFile prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal, mergedVal)
-					lastVal = mergedVal
+					fmt.Printf("mergeIntoStateFile post-merge  prefix [%x], [%x]\n", commitment.CompactToHex(lastKey), lastVal)
+				} else {
+					mergedOnce = true
 				}
 			}
 			if ci1.dg.HasNext() {
