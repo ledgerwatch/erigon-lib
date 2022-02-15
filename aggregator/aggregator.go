@@ -2500,7 +2500,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(addr); !keyMatch {
-				fmt.Printf("DeleteAccount %x - not found anchor in file [%d-%d]\n", addr, item.startBlock, item.endBlock)
+				//fmt.Printf("DeleteAccount %x - not found anchor in file [%d-%d]\n", addr, item.startBlock, item.endBlock)
 				return true
 			}
 			g.Skip()
