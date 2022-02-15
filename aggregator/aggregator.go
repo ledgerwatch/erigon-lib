@@ -775,7 +775,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 					if mergedVal, err = commitment.MergeBranches(after, item.v, nil); err != nil {
 						return fmt.Errorf("merge branches: %w", err)
 					}
-					fmt.Printf("aggMerge prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
+					//fmt.Printf("aggMerge prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
 					item.v = mergedVal
 				}
 				item.count++
@@ -2612,7 +2612,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 	return
 }
 
-func (a *Aggregator) computeAggregation(treeName string,
+func (a *Aggregator) computeAggregation(fType FileType,
 	toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64,
 	valTransform func(val []byte, transValBuf []byte) ([]byte, error),
 	withIndex bool) (*byEndBlockItem, error) {
@@ -2630,15 +2630,15 @@ func (a *Aggregator) computeAggregation(treeName string,
 	}
 	var err error
 	var count int
-	if item2.decompressor, count, err = a.mergeIntoStateFile(&cp, 0, treeName, aggFrom, aggTo, a.diffDir, valTransform); err != nil {
-		return nil, fmt.Errorf("mergeIntoStateFile %s [%d-%d]: %w", treeName, aggFrom, aggTo, err)
+	if item2.decompressor, count, err = a.mergeIntoStateFile(&cp, 0, fType.String(), aggFrom, aggTo, a.diffDir, valTransform, fType == Commitment); err != nil {
+		return nil, fmt.Errorf("mergeIntoStateFile %s [%d-%d]: %w", fType.String(), aggFrom, aggTo, err)
 	}
 	item2.getter = item2.decompressor.MakeGetter()
 	item2.getterMerge = item2.decompressor.MakeGetter()
 	if withIndex {
-		idxPath := filepath.Join(a.diffDir, fmt.Sprintf("%s.%d-%d.idx", treeName, aggFrom, aggTo))
+		idxPath := filepath.Join(a.diffDir, fmt.Sprintf("%s.%d-%d.idx", fType.String(), aggFrom, aggTo))
 		if item2.index, err = buildIndex(item2.decompressor, idxPath, a.diffDir, count); err != nil {
-			return nil, fmt.Errorf("mergeIntoStateFile buildIndex %s [%d-%d]: %w", treeName, aggFrom, aggTo, err)
+			return nil, fmt.Errorf("mergeIntoStateFile buildIndex %s [%d-%d]: %w", fType.String(), aggFrom, aggTo, err)
 		}
 		item2.indexReader = recsplit.NewIndexReader(item2.index)
 		item2.readerMerge = recsplit.NewIndexReader(item2.index)
@@ -2728,6 +2728,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 	basename string, startBlock, endBlock uint64, dir string,
 	valTransform func(val []byte, transValBuf []byte) ([]byte, error),
+	commitments bool,
 ) (*compress.Decompressor, int, error) {
 	datPath := filepath.Join(dir, fmt.Sprintf("%s.%d-%d.dat", basename, startBlock, endBlock))
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, dir, compress.MinPatternScore, 1)
@@ -2740,6 +2741,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 	for cp.Len() > 0 {
 		lastKey := common.Copy((*cp)[0].key)
 		lastVal := common.Copy((*cp)[0].val)
+		var mergedVal []byte
 		if a.trace {
 			if _, ok := a.tracedKeys[string(lastKey)]; ok {
 				fmt.Printf("looking at key %x val [%x] endBlock %d to merge into [%d-%d]\n", lastKey, lastVal, (*cp)[0].endBlock, startBlock, endBlock)
@@ -2756,6 +2758,15 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			if ci1.t != FILE_CURSOR {
 				return nil, 0, fmt.Errorf("mergeIntoStateFile: cursor of unexpected type: %d", ci1.t)
 			}
+			if commitments {
+				if mergedVal == nil {
+					mergedVal = common.Copy(ci1.val)
+				} else {
+					if mergedVal, err = commitment.MergeBranches(ci1.val, mergedVal, nil); err != nil {
+						return nil, 0, fmt.Errorf("mergeIntoStateFile: merge commitments: %w", err)
+					}
+				}
+			}
 			if ci1.dg.HasNext() {
 				ci1.key, _ = ci1.dg.Next(ci1.key[:0])
 				ci1.val, _ = ci1.dg.Next(ci1.val[:0])
@@ -2763,6 +2774,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			} else {
 				heap.Pop(cp)
 			}
+		}
+		if commitments {
+			lastVal = mergedVal
 		}
 		if startBlock == 0 && len(lastVal) == 0 { // Deleted marker can be skipped if we merge into the first file
 			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
