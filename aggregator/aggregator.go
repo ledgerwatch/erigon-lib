@@ -2180,12 +2180,13 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			if branchNodeUpdate == nil {
 				branchNodeUpdate = original
 			} else if mergedVal, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err == nil {
-				fmt.Printf("computeCommitment [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
+				fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
 				branchNodeUpdate = mergedVal
 			} else {
 				return nil, err
 			}
 		}
+		fmt.Printf("computeCommitment set [%x] [%x]\n", commitment.CompactToHex(prefix), branchNodeUpdate)
 		if prevV == nil {
 			w.a.trees[Commitment].ReplaceOrInsert(&AggregateItem{k: prefix, v: branchNodeUpdate, count: 1})
 		} else {
