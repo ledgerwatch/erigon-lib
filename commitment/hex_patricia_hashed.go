@@ -1212,8 +1212,8 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		bitmap := hph.touchMap[row] & hph.afterMap[row]
 		if !hph.branchBefore[row] {
 			// There was no branch node before, so we need to touch even the singular child that existed
-			hph.touchMap[row] = hph.afterMap[row]
-			bitmap = hph.afterMap[row]
+			hph.touchMap[row] |= hph.afterMap[row]
+			bitmap |= hph.afterMap[row]
 		}
 		// Calculate total length of all hashes
 		totalBranchLen := 17 - partsCount // For every empty cell, one byte
@@ -1930,46 +1930,31 @@ func MergeBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, err
 			}
 		}
 		if bitmap1&bit != 0 {
-			if touchMap2&bit == 0 && afterMap2&bit != 0 {
-				// Add fields from branchData1
-				fieldBits := PartFlags(branchData1[pos1])
+			add := (touchMap2&bit == 0) && (afterMap2&bit != 0) // Add fields from branchData1
+			fieldBits := PartFlags(branchData1[pos1])
+			if add {
 				newData = append(newData, byte(fieldBits))
-				pos1++
-				for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
-					l, n := binary.Uvarint(branchData1[pos1:])
-					if n == 0 {
-						return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
-					} else if n < 0 {
-						return nil, fmt.Errorf("MergeBranches value1 overflow for field")
-					}
-					newData = append(newData, branchData1[pos1:pos1+n]...)
-					pos1 += n
-					if len(branchData1) < pos1+int(l) {
-						return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
-					}
-					if l > 0 {
-						newData = append(newData, branchData1[pos1:pos1+int(l)]...)
-						pos1 += int(l)
-					}
+			}
+			pos1++
+			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
+				l, n := binary.Uvarint(branchData1[pos1:])
+				if n == 0 {
+					return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
+				} else if n < 0 {
+					return nil, fmt.Errorf("MergeBranches value1 overflow for field")
 				}
-			} else {
-				// Skip fields from branch data - either deleted or modified in branchData2
-				fieldBits := PartFlags(branchData1[pos1])
-				pos1++
-				for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
-					l, n := binary.Uvarint(branchData1[pos1:])
-					if n == 0 {
-						return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
-					} else if n < 0 {
-						return nil, fmt.Errorf("MergeBranches value1 overflow for field")
+				if add {
+					newData = append(newData, branchData1[pos1:pos1+n]...)
+				}
+				pos1 += n
+				if len(branchData1) < pos1+int(l) {
+					return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
+				}
+				if l > 0 {
+					if add {
+						newData = append(newData, branchData1[pos1:pos1+int(l)]...)
 					}
-					pos1 += n
-					if len(branchData1) < pos1+int(l) {
-						return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
-					}
-					if l > 0 {
-						pos1 += int(l)
-					}
+					pos1 += int(l)
 				}
 			}
 		}
