@@ -2569,6 +2569,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 			prevV.v = nil
 			prevV.count++
 		}
+		fmt.Printf("DeleteAccount storage [%x]\n", lastKey)
 		w.changes[Storage].delete(lastKey, lastVal)
 	}
 	if trace {
