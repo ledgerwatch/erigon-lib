@@ -775,7 +775,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 					if mergedVal, err = commitment.MergeBranches(after, item.v, nil); err != nil {
 						return fmt.Errorf("merge branches: %w", err)
 					}
-					fmt.Printf("aggregateToBtree prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
+					//fmt.Printf("aggregateToBtree prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
 					item.v = mergedVal
 				}
 				item.count++
@@ -1927,13 +1927,13 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 			panic(fmt.Sprintf("Incomplete branch data prefix [%x], mergeVal=[%x], startBlock=%d\n", commitment.CompactToHex(prefix), mergedVal, startBlock))
 		}
 		var err error
-		fmt.Printf("Pre-merge prefix [%x] [%x]+[%x], startBlock %d\n", commitment.CompactToHex(prefix), val, mergedVal, startBlock)
+		//fmt.Printf("Pre-merge prefix [%x] [%x]+[%x], startBlock %d\n", commitment.CompactToHex(prefix), val, mergedVal, startBlock)
 		if mergedVal == nil {
 			mergedVal = val
 		} else if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
 			panic(err)
 		}
-		fmt.Printf("Post-merge prefix [%x] [%x], startBlock %d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
+		//fmt.Printf("Post-merge prefix [%x] [%x], startBlock %d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
 	}
 	if mergedVal == nil {
 		return nil
@@ -2179,13 +2179,13 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			if branchNodeUpdate == nil {
 				branchNodeUpdate = original
 			} else if mergedVal, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err == nil {
-				fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
+				//fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
 				branchNodeUpdate = mergedVal
 			} else {
 				return nil, err
 			}
 		}
-		fmt.Printf("computeCommitment set [%x] [%x]\n", commitment.CompactToHex(prefix), branchNodeUpdate)
+		//fmt.Printf("computeCommitment set [%x] [%x]\n", commitment.CompactToHex(prefix), branchNodeUpdate)
 		if prevV == nil {
 			w.a.trees[Commitment].ReplaceOrInsert(&AggregateItem{k: prefix, v: branchNodeUpdate, count: 1})
 		} else {
@@ -2765,7 +2765,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 					if mergedVal, err = commitment.MergeBranches(ci1.val, lastVal, nil); err != nil {
 						return nil, 0, fmt.Errorf("mergeIntoStateFile: merge commitments: %w", err)
 					}
-					fmt.Printf("mergeIntoStateFile prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal, mergedVal)
+					//fmt.Printf("mergeIntoStateFile prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(lastKey), ci1.val, lastVal, mergedVal)
 					lastVal = mergedVal
 				}
 			}
