@@ -1360,7 +1360,6 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 		}
 		transStoragePks = append(transStoragePks, storagePlainKey)
 	}
-	transValBuf = append(transValBuf, val[0])
 	if transValBuf, err = commitment.ReplacePlainKeys(val, transAccountPks, transStoragePks, transValBuf); err != nil {
 		return nil, err
 	}
