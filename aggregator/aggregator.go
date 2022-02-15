@@ -2461,6 +2461,8 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 	if deleted := w.deleteAccount(addr, trace); !deleted {
 		return
 	}
+	w.a.fileLocks[Storage].RLock()
+	defer w.a.fileLocks[Storage].RUnlock()
 	w.deleteCode(addr, trace)
 	// Find all storage items for this address
 	var cp CursorHeap
