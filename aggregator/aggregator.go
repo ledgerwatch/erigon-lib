@@ -1324,7 +1324,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(apkBuf); keyMatch {
 					accountPlainKey = encodeU64(offset, []byte{byte(j - 1)})
-					fmt.Printf("replaced account [%x]=>[%x]\n", apkBuf, accountPlainKey)
+					fmt.Printf("replaced account [%x]=>[%x] for file [%d-%d]\n", apkBuf, accountPlainKey, item.startBlock, item.endBlock)
 					break
 				}
 			}
@@ -1755,6 +1755,7 @@ func (a *Aggregator) readByOffset(fType FileType, fileI int, offset uint64) ([]b
 			return true
 		}
 		item := i.(*byEndBlockItem)
+		fmt.Printf("reading offset [%x] from file [%d-%d]\n", offset, item.startBlock, item.endBlock)
 		g := item.getter
 		g.Reset(offset)
 		key, _ = g.Next(nil)
