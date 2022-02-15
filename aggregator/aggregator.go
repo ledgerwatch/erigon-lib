@@ -1957,6 +1957,10 @@ func (w *Writer) unlockFn() {
 }
 
 func (w *Writer) branchFn(prefix []byte) []byte {
+	for lockFType := FirstType; lockFType < NumberOfStateTypes; lockFType++ {
+		w.a.fileLocks[lockFType].RLock()
+		defer w.a.fileLocks[lockFType].RUnlock()
+	}
 	var mergedVal []byte
 	// Look in the summary table first
 	w.search.k = prefix
@@ -2625,11 +2629,13 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 	if maxEndBlock == 0 {
 		return
 	}
+	fmt.Printf("findLargestMerge %s, maxEndBlock=%d\n", fType.String(), maxEndBlock)
 	a.files[fType].Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.decompressor == nil {
 			return true // Skip B-tree based items
 		}
+		fmt.Printf("findLargestMerge [%d-%d]\n", item.startBlock, item.endBlock)
 		pre = append(pre, item)
 		if aggTo == 0 {
 			var doubleEnd uint64
@@ -2638,6 +2644,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 				doubleEnd = nextDouble
 				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
 			}
+			fmt.Printf("findLargestMerge doubleEnd = %d\n", doubleEnd)
 			if doubleEnd != item.endBlock {
 				aggFrom = item.startBlock
 				aggTo = doubleEnd
