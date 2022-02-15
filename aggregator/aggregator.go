@@ -888,17 +888,7 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 			log.Warn("File ignored by aggregator, type unknown", "type", subs[1])
 		}
 		var item = &byEndBlockItem{startBlock: startBlock, endBlock: endBlock}
-		var foundI *byEndBlockItem
-		a.files[fType].AscendGreaterOrEqual(&byEndBlockItem{startBlock: endBlock, endBlock: endBlock}, func(i btree.Item) bool {
-			it := i.(*byEndBlockItem)
-			if it.endBlock == endBlock {
-				foundI = it
-			}
-			return false
-		})
-		if foundI == nil || foundI.startBlock > startBlock {
-			a.files[fType].ReplaceOrInsert(item)
-		}
+		a.files[fType].ReplaceOrInsert(item)
 	}
 }
 
@@ -2472,18 +2462,18 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) {
 	var cp CursorHeap
 	heap.Init(&cp)
 	w.search.k = addr
-	found := false
+	foundInTree := false
 	var k, v []byte
 	w.a.trees[Storage].AscendGreaterOrEqual(&w.search, func(i btree.Item) bool {
 		item := i.(*AggregateItem)
 		if bytes.HasPrefix(item.k, addr) {
-			found = true
+			foundInTree = true
 			k = item.k
 			v = item.v
 		}
 		return false
 	})
-	if found {
+	if foundInTree {
 		heap.Push(&cp, &CursorItem{t: TREE_CURSOR, key: common.Copy(k), val: common.Copy(v), tree: w.a.trees[Storage], endBlock: w.blockNum})
 	}
 	w.a.files[Storage].Ascend(func(i btree.Item) bool {
@@ -2831,7 +2821,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				heap.Pop(cp)
 			}
 		}
-		if startBlock == 0 && len(lastVal) == 0 { // Deleted marker can be skipped if we merge into the first file
+		if startBlock == 0 && len(lastVal) == 0 && len(lastKey) != prefixLen { // Deleted marker can be skipped if we merge into the first file, except for the storage addr markers
 			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
 				fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
 			}
