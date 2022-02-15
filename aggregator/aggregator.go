@@ -1561,7 +1561,7 @@ func (a *Aggregator) backgroundHistoryMerge() {
 			}
 			if len(toRemove[fType]) > 1 {
 				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, nil, /* valTransform */
-					!finalMerge || fType == AccountBitmap || fType == StorageBitmap || fType == CodeBitmap /* withIndex */); err != nil {
+					!finalMerge || fType == AccountBitmap || fType == StorageBitmap || fType == CodeBitmap /* withIndex */, 0 /* prefixLen */); err != nil {
 					a.historyError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
 					return
 				}
