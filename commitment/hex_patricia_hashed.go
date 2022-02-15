@@ -1718,9 +1718,10 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 // ExtractPlainKeys parses branchData and extract the plain keys for accounts and storage in the same order
 // they appear witjin the branchData
 func ExtractPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlainKeys [][]byte, err error) {
-	modBitmap := binary.BigEndian.Uint16(branchData[2:])
-	pos := 6
-	for bitset, j := modBitmap, 0; bitset != 0; j++ {
+	touchMap := binary.BigEndian.Uint16(branchData[0:])
+	afterMap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 4
+	for bitset, j := touchMap&afterMap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
 		fieldBits := PartFlags(branchData[pos])
 		pos++
@@ -1793,11 +1794,12 @@ func ExtractPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlai
 
 func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, newData []byte) ([]byte, error) {
 	var numBuf [binary.MaxVarintLen64]byte
-	newData = append(newData, branchData[:6]...) // Copy bitmaps
-	modBitmap := binary.BigEndian.Uint16(branchData[2:])
-	pos := 6
+	touchMap := binary.BigEndian.Uint16(branchData[0:])
+	afterMap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 4
+	newData = append(newData, branchData[:4]...)
 	var accountI, storageI int
-	for bitset, j := modBitmap, 0; bitset != 0; j++ {
+	for bitset, j := touchMap&afterMap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
 		fieldBits := PartFlags(branchData[pos])
 		pos++
