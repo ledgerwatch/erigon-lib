@@ -903,7 +903,7 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 	}
 }
 
-func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (*Aggregator, error) {
+func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, changesets, commitments bool) (*Aggregator, error) {
 	a := &Aggregator{
 		diffDir:         diffDir,
 		unwindLimit:     unwindLimit,
@@ -918,6 +918,8 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64) (
 		mergeError:      make(chan error, 1),
 		historyChannel:  make(chan struct{}, 1),
 		historyError:    make(chan error, 1),
+		changesets:      changesets,
+		commitments:     commitments,
 	}
 	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		a.files[fType] = btree.New(32)
@@ -1600,22 +1602,6 @@ func (a *Aggregator) backgroundHistoryMerge() {
 			log.Info("Long history merge", "from", blockFrom, "to", blockTo, "files", removed, "time", time.Since(t))
 		}
 	}
-}
-
-func (a *Aggregator) GenerateChangesets(on bool) {
-	if !a.changesets && on {
-		a.historyWg.Add(1)
-		go a.backgroundHistoryMerge()
-	}
-	if a.changesets && !on {
-		close(a.historyChannel)
-		a.historyWg.Wait()
-	}
-	a.changesets = on
-}
-
-func (a *Aggregator) Commitments(on bool) {
-	a.commitments = on
 }
 
 // checkOverlaps does not lock tree, because it is only called from the constructor of aggregator
