@@ -2180,7 +2180,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			if branchNodeUpdate == nil {
 				branchNodeUpdate = original
 			} else if mergedVal, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err == nil {
-				//fmt.Printf("Merged [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
+				fmt.Printf("computeCommitment [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
 				branchNodeUpdate = mergedVal
 			} else {
 				return nil, err
