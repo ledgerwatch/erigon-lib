@@ -1920,7 +1920,9 @@ func (w *Writer) branchFn(prefix []byte) []byte {
 		}
 		var err error
 		//fmt.Printf("Pre-merge [%x]+[%x]\n", val, mergedVal)
-		if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
+		if mergedVal == nil {
+			mergedVal = val
+		} else if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
 			panic(err)
 		}
 		//fmt.Printf("Post-merge [%x]\n", mergedVal)
