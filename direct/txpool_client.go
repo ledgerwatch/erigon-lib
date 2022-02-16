@@ -48,6 +48,7 @@ func (s *TxPoolClient) Pending(ctx context.Context, in *emptypb.Empty, opts ...g
 // -- start OnAdd
 
 func (s *TxPoolClient) OnAdd(ctx context.Context, in *txpool_proto.OnAddRequest, opts ...grpc.CallOption) (txpool_proto.Txpool_OnAddClient, error) {
+	panic(1)
 	ch := make(chan *txpool_proto.OnAddReply, 16384)
 	streamServer := &TxPoolOnAddS{messageCh: ch, ctx: ctx}
 	go func() {
