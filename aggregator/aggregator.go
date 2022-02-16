@@ -2608,6 +2608,8 @@ func (w *Writer) WriteAccountStorage(addr []byte, loc []byte, value *uint256.Int
 	}
 }
 
+// findLargestMerge looks through the state files of the speficied type and determines the largest merge that can be undertaken
+// a state file block [a; b] is valid if its length is a divisor of its starting block, or `(b-a+1) = 0 mod a`
 func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint64) (toAggregate []*byEndBlockItem, pre []*byEndBlockItem, post []*byEndBlockItem, aggFrom uint64, aggTo uint64) {
 	a.fileLocks[fType].RLock()
 	defer a.fileLocks[fType].RUnlock()
@@ -2620,9 +2622,6 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 		maxEndBlock = item.endBlock
 		return false
 	})
-	if fType == CodeBitmap {
-		log.Info("findLargestMerge", "type", fType.String(), "maxTo", maxTo, "maxEndBlock", maxEndBlock)
-	}
 	if maxEndBlock == 0 {
 		return
 	}
@@ -2631,9 +2630,6 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 		if item.decompressor == nil {
 			return true // Skip B-tree based items
 		}
-		if fType == CodeBitmap {
-			log.Info("findLargestMerge", "type", fType.String(), "startBlock", item.startBlock, "endBlock", item.endBlock)
-		}
 		pre = append(pre, item)
 		if aggTo == 0 {
 			var doubleEnd uint64
@@ -2641,9 +2637,6 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 			for nextDouble <= maxEndBlock && nextDouble-item.startBlock < maxSpan {
 				doubleEnd = nextDouble
 				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
-			}
-			if fType == CodeBitmap {
-				log.Info("findLargestMerge", "type", fType.String(), "startBlock", item.startBlock, "endBlock", item.endBlock, "doubleEnd", doubleEnd)
 			}
 			if doubleEnd != item.endBlock {
 				aggFrom = item.startBlock
