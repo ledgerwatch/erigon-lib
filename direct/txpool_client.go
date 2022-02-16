@@ -51,11 +51,14 @@ func (s *TxPoolClient) OnAdd(ctx context.Context, in *txpool_proto.OnAddRequest,
 	streamServer := &TxPoolOnAddS{messageCh: ch, ctx: ctx}
 	go func() {
 		defer close(ch)
-		if err := s.server.OnAdd(in, streamServer); err != nil {
-			streamServer.Err(err)
-		}
+		streamServer.Err(s.server.OnAdd(in, streamServer))
 	}()
 	return &TxPoolOnAddC{messageCh: ch, ctx: ctx}, nil
+}
+
+type onAddReply struct {
+	r   *txpool_proto.OnAddReply
+	err error
 }
 
 type TxPoolOnAddS struct {
@@ -71,10 +74,6 @@ func (s *TxPoolOnAddS) Send(m *txpool_proto.OnAddReply) error {
 func (s *TxPoolOnAddS) Err(err error)            { s.messageCh <- &onAddReply{err: err} }
 func (s *TxPoolOnAddS) Context() context.Context { return s.ctx }
 
-type onAddReply struct {
-	r   *txpool_proto.OnAddReply
-	err error
-}
 type TxPoolOnAddC struct {
 	messageCh chan *onAddReply
 	ctx       context.Context
@@ -83,17 +82,12 @@ type TxPoolOnAddC struct {
 
 func (c *TxPoolOnAddC) Recv() (*txpool_proto.OnAddReply, error) {
 	m := <-c.messageCh
-	if m.err != nil {
-		return nil, m.err
-	}
 	if m == nil {
 		return nil, io.EOF
 	}
-	return m.r, nil
+	return m.r, m.err
 }
-func (c *TxPoolOnAddC) Context() context.Context {
-	return c.ctx
-}
+func (c *TxPoolOnAddC) Context() context.Context { return c.ctx }
 
 // -- end OnAdd
 
