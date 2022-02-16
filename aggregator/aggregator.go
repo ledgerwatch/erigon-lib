@@ -897,7 +897,7 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 			return false
 		})
 		if foundI == nil || foundI.startBlock > startBlock {
-			log.Info("Load state file", "name", name, "startBlock", startBlock, "endBlock", endBlock)
+			log.Info("Load state file", "name", name, "type", fType.String(), "startBlock", startBlock, "endBlock", endBlock)
 			a.files[fType].ReplaceOrInsert(item)
 		}
 	}
@@ -947,7 +947,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 		}
 	}
 	// Open decompressor and index files for all items in state trees
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
+	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		if err := a.openFiles(fType); err != nil {
 			return nil, fmt.Errorf("opening %s state files: %w", fType.String(), err)
 		}
