@@ -2620,11 +2620,11 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 		maxEndBlock = item.endBlock
 		return false
 	})
+	if fType == CodeBitmap {
+		log.Info("findLargestMerge", "type", fType.String(), "maxTo", maxTo, "maxEndBlock", maxEndBlock)
+	}
 	if maxEndBlock == 0 {
 		return
-	}
-	if fType == CodeBitmap {
-		fmt.Printf("findLargestMerge %s, maxEndBlock=%d\n", fType.String(), maxEndBlock)
 	}
 	a.files[fType].Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
@@ -2632,7 +2632,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 			return true // Skip B-tree based items
 		}
 		if fType == CodeBitmap {
-			fmt.Printf("findLargestMerge [%d-%d]\n", item.startBlock, item.endBlock)
+			log.Info("findLargestMerge", "type", fType.String(), "startBlock", item.startBlock, "endBlock", item.endBlock)
 		}
 		pre = append(pre, item)
 		if aggTo == 0 {
@@ -2643,7 +2643,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 				nextDouble = doubleEnd + (doubleEnd - item.startBlock) + 1
 			}
 			if fType == CodeBitmap {
-				fmt.Printf("findLargestMerge doubleEnd = %d\n", doubleEnd)
+				log.Info("findLargestMerge", "type", fType.String(), "startBlock", item.startBlock, "endBlock", item.endBlock, "doubleEnd", doubleEnd)
 			}
 			if doubleEnd != item.endBlock {
 				aggFrom = item.startBlock
