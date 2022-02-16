@@ -48,12 +48,12 @@ func (s *TxPoolClient) Pending(ctx context.Context, in *emptypb.Empty, opts ...g
 
 func (s *TxPoolClient) OnAdd(ctx context.Context, in *txpool_proto.OnAddRequest, opts ...grpc.CallOption) (txpool_proto.Txpool_OnAddClient, error) {
 	ch := make(chan *onAddReply, 16384)
-	streamServer := &TxPoolOnAddS{messageCh: ch, ctx: ctx}
+	streamServer := &TxPoolOnAddS{ch: ch, ctx: ctx}
 	go func() {
 		defer close(ch)
 		streamServer.Err(s.server.OnAdd(in, streamServer))
 	}()
-	return &TxPoolOnAddC{messageCh: ch, ctx: ctx}, nil
+	return &TxPoolOnAddC{ch: ch, ctx: ctx}, nil
 }
 
 type onAddReply struct {
@@ -62,26 +62,26 @@ type onAddReply struct {
 }
 
 type TxPoolOnAddS struct {
-	messageCh chan *onAddReply
-	ctx       context.Context
+	ch  chan *onAddReply
+	ctx context.Context
 	grpc.ServerStream
 }
 
 func (s *TxPoolOnAddS) Send(m *txpool_proto.OnAddReply) error {
-	s.messageCh <- &onAddReply{r: m}
+	s.ch <- &onAddReply{r: m}
 	return nil
 }
-func (s *TxPoolOnAddS) Err(err error)            { s.messageCh <- &onAddReply{err: err} }
+func (s *TxPoolOnAddS) Err(err error)            { s.ch <- &onAddReply{err: err} }
 func (s *TxPoolOnAddS) Context() context.Context { return s.ctx }
 
 type TxPoolOnAddC struct {
-	messageCh chan *onAddReply
-	ctx       context.Context
+	ch  chan *onAddReply
+	ctx context.Context
 	grpc.ClientStream
 }
 
 func (c *TxPoolOnAddC) Recv() (*txpool_proto.OnAddReply, error) {
-	m := <-c.messageCh
+	m := <-c.ch
 	if m == nil {
 		return nil, io.EOF
 	}

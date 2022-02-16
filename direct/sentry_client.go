@@ -203,12 +203,12 @@ func (c *SentryClientDirect) PeerCount(ctx context.Context, in *sentry.PeerCount
 func (c *SentryClientDirect) Messages(ctx context.Context, in *sentry.MessagesRequest, opts ...grpc.CallOption) (sentry.Sentry_MessagesClient, error) {
 	in.Ids = filterIds(in.Ids, c.Protocol())
 	ch := make(chan *inboundMessageReply, 16384)
-	streamServer := &SentryMessagesStreamS{messageCh: ch, ctx: ctx}
+	streamServer := &SentryMessagesStreamS{ch: ch, ctx: ctx}
 	go func() {
 		defer close(ch)
 		streamServer.Err(c.server.Messages(in, streamServer))
 	}()
-	return &SentryMessagesStreamC{messageCh: ch, ctx: ctx}, nil
+	return &SentryMessagesStreamC{ch: ch, ctx: ctx}, nil
 }
 
 type inboundMessageReply struct {
@@ -218,26 +218,26 @@ type inboundMessageReply struct {
 
 // SentryMessagesStreamS implements proto_sentry.Sentry_ReceiveMessagesServer
 type SentryMessagesStreamS struct {
-	messageCh chan *inboundMessageReply
-	ctx       context.Context
+	ch  chan *inboundMessageReply
+	ctx context.Context
 	grpc.ServerStream
 }
 
 func (s *SentryMessagesStreamS) Send(m *sentry.InboundMessage) error {
-	s.messageCh <- &inboundMessageReply{r: m}
+	s.ch <- &inboundMessageReply{r: m}
 	return nil
 }
 func (s *SentryMessagesStreamS) Context() context.Context { return s.ctx }
-func (s *SentryMessagesStreamS) Err(err error)            { s.messageCh <- &inboundMessageReply{err: err} }
+func (s *SentryMessagesStreamS) Err(err error)            { s.ch <- &inboundMessageReply{err: err} }
 
 type SentryMessagesStreamC struct {
-	messageCh chan *inboundMessageReply
-	ctx       context.Context
+	ch  chan *inboundMessageReply
+	ctx context.Context
 	grpc.ClientStream
 }
 
 func (c *SentryMessagesStreamC) Recv() (*sentry.InboundMessage, error) {
-	m := <-c.messageCh
+	m := <-c.ch
 	if m == nil {
 		return nil, io.EOF
 	}

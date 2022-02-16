@@ -44,7 +44,7 @@ func NewStateDiffClientDirect(server remote.KVServer) *StateDiffClientDirect {
 
 func (c *StateDiffClientDirect) StateChanges(ctx context.Context, in *remote.StateChangeRequest, opts ...grpc.CallOption) (remote.KV_StateChangesClient, error) {
 	ch := make(chan *stateDiffReply, 16384)
-	streamServer := &StateDiffStreamS{messageCh: ch, ctx: ctx}
+	streamServer := &StateDiffStreamS{ch: ch, ctx: ctx}
 	go func() {
 		defer close(ch)
 		streamServer.Err(c.server.StateChanges(in, streamServer))
@@ -74,16 +74,16 @@ func (c *StateDiffStreamC) Context() context.Context { return c.ctx }
 
 // StateDiffStreamS implements proto_sentry.Sentry_ReceiveMessagesServer
 type StateDiffStreamS struct {
-	messageCh chan *stateDiffReply
-	ctx       context.Context
+	ch  chan *stateDiffReply
+	ctx context.Context
 	grpc.ServerStream
 }
 
 func (s *StateDiffStreamS) Send(m *remote.StateChangeBatch) error {
-	s.messageCh <- &stateDiffReply{r: m}
+	s.ch <- &stateDiffReply{r: m}
 	return nil
 }
 func (s *StateDiffStreamS) Context() context.Context { return s.ctx }
-func (s *StateDiffStreamS) Err(err error)            { s.messageCh <- &stateDiffReply{err: err} }
+func (s *StateDiffStreamS) Err(err error)            { s.ch <- &stateDiffReply{err: err} }
 
 // -- end StateChanges

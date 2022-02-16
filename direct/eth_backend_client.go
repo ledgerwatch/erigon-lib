@@ -63,7 +63,7 @@ func (s *EthBackendClientDirect) Subscribe(ctx context.Context, in *remote.Subsc
 		defer close(ch)
 		streamServer.Err(s.server.Subscribe(in, streamServer))
 	}()
-	return &SubscribeStreamC{messageCh: ch, ctx: ctx}, nil
+	return &SubscribeStreamC{ch: ch, ctx: ctx}, nil
 }
 
 type subscribeReply struct {
@@ -84,13 +84,13 @@ func (s *SubscribeStreamS) Context() context.Context { return s.ctx }
 func (s *SubscribeStreamS) Err(err error)            { s.ch <- &subscribeReply{err: err} }
 
 type SubscribeStreamC struct {
-	messageCh chan *subscribeReply
-	ctx       context.Context
+	ch  chan *subscribeReply
+	ctx context.Context
 	grpc.ClientStream
 }
 
 func (c *SubscribeStreamC) Recv() (*remote.SubscribeReply, error) {
-	m := <-c.messageCh
+	m := <-c.ch
 	if m == nil {
 		return nil, io.EOF
 	}
