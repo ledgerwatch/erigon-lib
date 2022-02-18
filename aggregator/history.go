@@ -219,7 +219,9 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 			}
 			g.Reset(offset)
 			if keyMatch, _ := g.Match(lookupKey); keyMatch {
-				fmt.Printf("Found bitmap for [%x] in %s.[%d-%d]\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock)
+				if trace {
+					fmt.Printf("Found bitmap for [%x] in %s.[%d-%d]\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock)
+				}
 				bitmapVal, _ = g.Next(bitmapVal[:0])
 				bm.Clear()
 				if _, err = bm.ReadFrom(bytes.NewReader(bitmapVal)); err != nil {
@@ -232,8 +234,10 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 					return false
 				}
 				searchRank := bm.Rank(searchTx - 1)
-				fmt.Printf("searchRank = %d for searchTx = %d, cardinality = %d\n", searchRank, searchTx, bm.GetCardinality())
-				if bm.GetCardinality() > 0 {
+				if trace {
+					fmt.Printf("searchRank = %d for searchTx = %d, cardinality = %d\n", searchRank, searchTx, bm.GetCardinality())
+				}
+				if trace && bm.GetCardinality() > 0 {
 					fmt.Printf("min = %d, max = %d\n", bm.Minimum(), bm.Maximum())
 				}
 				if searchRank >= bm.GetCardinality() {
