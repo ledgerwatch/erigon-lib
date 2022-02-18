@@ -129,8 +129,8 @@ func IsEndOfStream(err error) bool {
 	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		return true
 	}
-	if s, ok := status.FromError(err); ok && s.Code() == codes.Canceled {
-		return true
+	if s, ok := status.FromError(err); ok {
+		return s.Code() == codes.Canceled || s.Message() == context.Canceled.Error()
 	}
 	return false
 }
