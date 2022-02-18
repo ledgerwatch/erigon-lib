@@ -232,6 +232,10 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 					return false
 				}
 				searchRank := bm.Rank(searchTx - 1)
+				fmt.Printf("searchRank = %d for searchTx = %d, cardinality = %d\n", searchRank, searchTx, bm.GetCardinality())
+				if bm.GetCardinality() > 0 {
+					fmt.Printf("min = %d, max = %d\n", bm.Minimum(), bm.Maximum())
+				}
 				if searchRank >= bm.GetCardinality() {
 					continue
 				}
