@@ -278,7 +278,11 @@ func (hr *HistoryReader) ReadAccountData(addr []byte, trace bool) ([]byte, error
 		return nil, err
 	}
 	if hOk {
+		fmt.Printf("ReadAccountData %x, found in history [%x]\n", addr, v)
 		return v, nil
+	}
+	if trace {
+		fmt.Printf("ReadAccountData %x, not found in history, get from the state\n", addr)
 	}
 	// Not found in history - look in the state files
 	return hr.h.readFromFiles(Account, addr, trace), nil
