@@ -219,6 +219,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 			}
 			g.Reset(offset)
 			if keyMatch, _ := g.Match(lookupKey); keyMatch {
+				fmt.Printf("Found bitmap for [%x] in %s.[%d-%d]\n", lookupKey, bitmapType.String(), item.startBlock, item.endBlock)
 				bitmapVal, _ = g.Next(bitmapVal[:0])
 				bm.Clear()
 				if _, err = bm.ReadFrom(bytes.NewReader(bitmapVal)); err != nil {
