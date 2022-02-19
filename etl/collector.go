@@ -227,25 +227,25 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 			return nil // nothing to delete after end of bucket
 		}
 		if len(v) == 0 {
-			if err := c.Delete(k, nil); err != nil {
+			if err := c.Delete(common.Copy(k), nil); err != nil {
 				return err
 			}
 			return nil
 		}
 		if canUseAppend {
 			if isDupSort {
-				if err := c.(kv.RwCursorDupSort).AppendDup(k, v); err != nil {
+				if err := c.(kv.RwCursorDupSort).AppendDup(common.Copy(k), common.Copy(v)); err != nil {
 					return fmt.Errorf("%s: bucket: %s, appendDup: k=%x, %w", logPrefix, bucket, k, err)
 				}
 			} else {
-				if err := c.Append(k, v); err != nil {
+				if err := c.Append(common.Copy(k), common.Copy(v)); err != nil {
 					return fmt.Errorf("%s: bucket: %s, append: k=%x, v=%x, %w", logPrefix, bucket, k, v, err)
 				}
 			}
 
 			return nil
 		}
-		if err := c.Put(k, v); err != nil {
+		if err := c.Put(common.Copy(k), common.Copy(v)); err != nil {
 			return fmt.Errorf("%s: put: k=%x, %w", logPrefix, k, err)
 		}
 		return nil
