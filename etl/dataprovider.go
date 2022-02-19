@@ -119,8 +119,6 @@ func readElementFromDisk(resultBuf [][]byte, r io.Reader, br io.ByteReader) ([]b
 	}
 	if n == 0 {
 		return nil, nil, fmt.Errorf("buffer too small for key")
-	} else if n < 0 {
-		return nil, nil, fmt.Errorf("value overflow for key")
 	}
 	key := make([]byte, n)
 	if _, err = io.ReadFull(r, key); err != nil {
@@ -132,8 +130,6 @@ func readElementFromDisk(resultBuf [][]byte, r io.Reader, br io.ByteReader) ([]b
 	}
 	if n == 0 {
 		return nil, nil, fmt.Errorf("buffer too small for value")
-	} else if n < 0 {
-		return nil, nil, fmt.Errorf("value overflow for value")
 	}
 	value := make([]byte, n)
 	if _, err = io.ReadFull(r, value); err != nil {
