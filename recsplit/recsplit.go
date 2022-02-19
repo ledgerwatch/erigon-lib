@@ -547,7 +547,7 @@ func (rs *RecSplit) Build() error {
 
 	rs.currentBucketIdx = math.MaxUint64 // To make sure 0 bucket is detected
 	defer rs.bucketCollector.Close()
-	if err := rs.bucketCollector.Load(nil, "", rs.loadFuncBucket, etl.TransformArgs{}); err != nil {
+	if err := rs.bucketCollector.Load1(nil, "", rs.loadFuncBucket, etl.TransformArgs{}); err != nil {
 		return err
 	}
 	if len(rs.currentBucket) > 0 {
@@ -568,7 +568,7 @@ func (rs *RecSplit) Build() error {
 	if rs.enums {
 		rs.offsetEf = eliasfano32.NewEliasFano(rs.keysAdded, rs.maxOffset, rs.minDelta)
 		defer rs.offsetCollector.Close()
-		if err := rs.offsetCollector.Load(nil, "", rs.loadFuncOffset, etl.TransformArgs{}); err != nil {
+		if err := rs.offsetCollector.Load1(nil, "", rs.loadFuncOffset, etl.TransformArgs{}); err != nil {
 			return err
 		}
 		rs.offsetEf.Build()

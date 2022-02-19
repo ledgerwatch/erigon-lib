@@ -57,9 +57,8 @@ func TestWriteAndReadBufferEntry(t *testing.T) {
 
 	readBuffer := bytes.NewReader(bb)
 
-	buf := make([][]byte, 2)
 	for i := range entries {
-		k, v, err := readElementFromDisk(buf, readBuffer, readBuffer)
+		k, v, err := readElementFromDisk(readBuffer, readBuffer, nil, nil)
 		if err != nil {
 			t.Error(err)
 		}
@@ -67,7 +66,7 @@ func TestWriteAndReadBufferEntry(t *testing.T) {
 		assert.Equal(t, string(entries[i].value), string(v))
 	}
 
-	_, _, err := readElementFromDisk(buf, readBuffer, readBuffer)
+	_, _, err := readElementFromDisk(readBuffer, readBuffer, nil, nil)
 	assert.Equal(t, io.EOF, err)
 }
 

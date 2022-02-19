@@ -1198,7 +1198,7 @@ func (c *CompressorSequential) buildDictionary() error {
 		}
 	}
 	c.dictBuilder.Reset(maxDictPatterns)
-	if err := c.collector.Load(nil, "", c.dictBuilder.loadFunc, etl.TransformArgs{}); err != nil {
+	if err := c.collector.Load1(nil, "", c.dictBuilder.loadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
 	c.dictBuilder.finish()
@@ -1324,7 +1324,7 @@ func (da *DictAggregator) processWord(word []byte, score uint64) error {
 
 func (da *DictAggregator) Load(loadFunc etl.LoadFunc, args etl.TransformArgs) error {
 	defer da.collector.Close()
-	return da.collector.Load(nil, "", loadFunc, args)
+	return da.collector.Load1(nil, "", loadFunc, args)
 }
 
 func (da *DictAggregator) aggLoadFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {

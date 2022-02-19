@@ -45,7 +45,7 @@ var BufferOptimalSize = 256 * datasize.MB /*  var because we want to sometimes c
 
 type Buffer interface {
 	Put(k, v []byte)
-	Get(i int) ([]byte, []byte)
+	Get(i int, keyBuf, valBuf []byte) ([]byte, []byte)
 	Len() int
 	Reset()
 	Write(io.Writer) error
@@ -124,8 +124,18 @@ func (b *sortableBuffer) Swap(i, j int) {
 	b.lens[i*2+1], b.lens[j*2+1] = b.lens[j*2+1], b.lens[i*2+1]
 }
 
-func (b *sortableBuffer) Get(i int) ([]byte, []byte) {
-	return b.data[b.offsets[i*2] : b.offsets[i*2]+b.lens[i*2]], b.data[b.offsets[i*2+1] : b.offsets[i*2+1]+b.lens[i*2+1]]
+func (b *sortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
+	keyOffset := b.offsets[i*2]
+	keyLen := b.lens[i*2]
+	valOffset := b.offsets[i*2+1]
+	valLen := b.lens[i*2+1]
+	if keyLen > 0 {
+		keyBuf = append(keyBuf, b.data[keyOffset:keyOffset+keyLen]...)
+	}
+	if valLen > 0 {
+		valBuf = append(valBuf, b.data[valOffset:valOffset+valLen]...)
+	}
+	return keyBuf, valBuf
 }
 
 func (b *sortableBuffer) Reset() {
@@ -211,8 +221,10 @@ func (b *appendSortableBuffer) Swap(i, j int) {
 	b.sortedBuf[i], b.sortedBuf[j] = b.sortedBuf[j], b.sortedBuf[i]
 }
 
-func (b *appendSortableBuffer) Get(i int) ([]byte, []byte) {
-	return b.sortedBuf[i].key, b.sortedBuf[i].value
+func (b *appendSortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
+	keyBuf = append(keyBuf, b.sortedBuf[i].key...)
+	valBuf = append(valBuf, b.sortedBuf[i].value...)
+	return keyBuf, valBuf
 }
 func (b *appendSortableBuffer) Reset() {
 	b.sortedBuf = nil
@@ -303,8 +315,10 @@ func (b *oldestEntrySortableBuffer) Swap(i, j int) {
 	b.sortedBuf[i], b.sortedBuf[j] = b.sortedBuf[j], b.sortedBuf[i]
 }
 
-func (b *oldestEntrySortableBuffer) Get(i int) ([]byte, []byte) {
-	return b.sortedBuf[i].key, b.sortedBuf[i].value
+func (b *oldestEntrySortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
+	keyBuf = append(keyBuf, b.sortedBuf[i].key...)
+	valBuf = append(valBuf, b.sortedBuf[i].value...)
+	return keyBuf, valBuf
 }
 func (b *oldestEntrySortableBuffer) Reset() {
 	b.sortedBuf = nil

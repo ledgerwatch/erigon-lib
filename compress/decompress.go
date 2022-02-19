@@ -111,7 +111,6 @@ type Getter struct {
 	dataP       uint64
 	patternDict *Dictionary
 	posDict     *Dictionary
-	offset      uint64
 	b           byte
 	mask        byte
 	uncovered   []int // Buffer for uncovered portions of the word
@@ -119,35 +118,35 @@ type Getter struct {
 	fName       string
 }
 
-func (g *Getter) zero() bool {
-	g.offset, _ = binary.Uvarint(g.patternDict.data[g.offset:])
-	return g.offset < g.patternDict.cutoff
+func (g *Getter) zero(offset uint64) uint64 {
+	offset, _ = binary.Uvarint(g.patternDict.data[offset:])
+	return offset
 }
 
-func (g *Getter) one() bool {
-	_, n := binary.Uvarint(g.patternDict.data[g.offset:])
-	g.offset, _ = binary.Uvarint(g.patternDict.data[g.offset+uint64(n):])
-	return g.offset < g.patternDict.cutoff
+func (g *Getter) one(offset uint64) uint64 {
+	_, n := binary.Uvarint(g.patternDict.data[offset:])
+	offset, _ = binary.Uvarint(g.patternDict.data[offset+uint64(n):])
+	return offset
 }
 
-func (g *Getter) posZero() bool {
-	g.offset, _ = binary.Uvarint(g.posDict.data[g.offset:])
-	return g.offset < g.posDict.cutoff
+func (g *Getter) posZero(offset uint64) uint64 {
+	offset, _ = binary.Uvarint(g.posDict.data[offset:])
+	return offset
 }
 
-func (g *Getter) posOne() bool {
-	_, n := binary.Uvarint(g.posDict.data[g.offset:])
-	g.offset, _ = binary.Uvarint(g.posDict.data[g.offset+uint64(n):])
-	return g.offset < g.posDict.cutoff
+func (g *Getter) posOne(offset uint64) uint64 {
+	_, n := binary.Uvarint(g.posDict.data[offset:])
+	offset, _ = binary.Uvarint(g.posDict.data[offset+uint64(n):])
+	return offset
 }
 
-func (g *Getter) pattern() []byte {
-	l, n := binary.Uvarint(g.patternDict.data[g.offset:])
-	return g.patternDict.data[g.offset+uint64(n) : g.offset+uint64(n)+l]
+func (g *Getter) pattern(offset uint64) []byte {
+	l, n := binary.Uvarint(g.patternDict.data[offset:])
+	return g.patternDict.data[offset+uint64(n) : offset+uint64(n)+l]
 }
 
-func (g *Getter) pos() uint64 {
-	pos, _ := binary.Uvarint(g.posDict.data[g.offset:])
+func (g *Getter) pos(offset uint64) uint64 {
+	pos, _ := binary.Uvarint(g.posDict.data[offset:])
 	return pos
 }
 
@@ -155,56 +154,59 @@ func (g *Getter) nextPos(clean bool) uint64 {
 	if clean {
 		g.mask = 0
 	}
-	g.offset = g.posDict.rootOffset
-	if g.offset < g.posDict.cutoff {
-		return g.pos()
+	offset := g.posDict.rootOffset
+	cutoff := g.posDict.cutoff
+	if offset < cutoff {
+		return g.pos(offset)
 	}
-	for {
-		if g.mask == 0 {
-			g.mask = 1
-			g.b = g.data[g.dataP]
-			g.dataP++
+	b := g.b
+	mask := g.mask
+	dataP := g.dataP
+	for offset >= cutoff {
+		if mask == 0 {
+			mask = 1
+			b = g.data[dataP]
+			dataP++
 		}
-		if g.b&g.mask == 0 {
-			g.mask <<= 1
-			if g.posZero() {
-				break
-			}
+		if b&mask == 0 {
+			offset = g.posZero(offset)
 		} else {
-			g.mask <<= 1
-			if g.posOne() {
-				break
-			}
+			offset = g.posOne(offset)
 		}
+		mask <<= 1
 	}
-	return g.pos()
+	g.b = b
+	g.mask = mask
+	g.dataP = dataP
+	return g.pos(offset)
 }
 
 func (g *Getter) nextPattern() []byte {
-	g.offset = g.patternDict.rootOffset
-	if g.offset < g.patternDict.cutoff {
-		return g.pattern()
+	offset := g.patternDict.rootOffset
+	cutoff := g.patternDict.cutoff
+	if offset < cutoff {
+		return g.pattern(offset)
 	}
-
-	for {
-		if g.mask == 0 {
-			g.mask = 1
-			g.b = g.data[g.dataP]
-			g.dataP++
+	b := g.b
+	mask := g.mask
+	dataP := g.dataP
+	for offset >= cutoff {
+		if mask == 0 {
+			mask = 1
+			b = g.data[dataP]
+			dataP++
 		}
-		if g.b&g.mask == 0 {
-			g.mask <<= 1
-			if g.zero() {
-				break
-			}
+		if b&mask == 0 {
+			offset = g.zero(offset)
 		} else {
-			g.mask <<= 1
-			if g.one() {
-				break
-			}
+			offset = g.one(offset)
 		}
+		mask <<= 1
 	}
-	return g.pattern()
+	g.b = b
+	g.mask = mask
+	g.dataP = dataP
+	return g.pattern(offset)
 }
 
 func (d *Decompressor) Count() int { return int(d.count) }
@@ -218,7 +220,6 @@ func (d *Decompressor) MakeGetter() *Getter {
 
 func (g *Getter) Reset(offset uint64) {
 	g.dataP = offset
-	g.offset = 0
 	g.mask = 0
 	g.b = 0
 }

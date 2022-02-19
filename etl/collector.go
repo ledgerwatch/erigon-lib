@@ -126,7 +126,7 @@ func (c *Collector) Collect(k, v []byte) error {
 
 func (c *Collector) NoLogs(v bool) { c.noLogs = v }
 
-func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args TransformArgs) error {
+func (c *Collector) Load1(db kv.RwTx, toBucket string, loadFunc LoadFunc, args TransformArgs) error {
 	defer func() {
 		if c.autoClean {
 			c.Close()
@@ -159,7 +159,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 	h := &Heap{comparator: args.Comparator}
 	heap.Init(h)
 	for i, provider := range providers {
-		if key, value, err := provider.Next(); err == nil {
+		if key, value, err := provider.Next(nil, nil); err == nil {
 			he := HeapElem{key, i, value}
 			heap.Push(h, he)
 		} else /* we must have at least one entry per file */ {
@@ -262,7 +262,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		if err != nil {
 			return err
 		}
-		if element.Key, element.Value, err = provider.Next(); err == nil {
+		if element.Key, element.Value, err = provider.Next(element.Key[:0], element.Value[:0]); err == nil {
 			heap.Push(h, element)
 		} else if err != io.EOF {
 			return fmt.Errorf("%s: error while reading next element from disk: %w", logPrefix, err)
