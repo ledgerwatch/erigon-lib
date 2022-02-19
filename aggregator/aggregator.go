@@ -35,6 +35,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -148,29 +149,30 @@ func ParseFileType(s string) (FileType, bool) {
 }
 
 type Aggregator struct {
-	diffDir         string // Directory where the state diff files are stored
-	files           [NumberOfTypes]*btree.BTree
-	fileLocks       [NumberOfTypes]sync.RWMutex
-	unwindLimit     uint64              // How far the chain may unwind
-	aggregationStep uint64              // How many items (block, but later perhaps txs or changes) are required to form one state diff file
-	changesBtree    *btree.BTree        // btree of ChangesItem
-	trace           bool                // Turns on tracing for specific accounts and locations
-	tracedKeys      map[string]struct{} // Set of keys being traced during aggregations
-	hph             *commitment.HexPatriciaHashed
-	keccak          hash.Hash
-	changesets      bool // Whether to generate changesets (off by default)
-	commitments     bool // Whether to calculate commitments
-	aggChannel      chan *AggregationTask
-	aggBackCh       chan struct{} // Channel for acknoledgement of AggregationTask
-	aggError        chan error
-	aggWg           sync.WaitGroup
-	mergeChannel    chan struct{}
-	mergeError      chan error
-	mergeWg         sync.WaitGroup
-	historyChannel  chan struct{}
-	historyError    chan error
-	historyWg       sync.WaitGroup
-	trees           [NumberOfStateTypes]*btree.BTree
+	diffDir              string // Directory where the state diff files are stored
+	files                [NumberOfTypes]*btree.BTree
+	fileLocks            [NumberOfTypes]sync.RWMutex
+	unwindLimit          uint64              // How far the chain may unwind
+	aggregationStep      uint64              // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	changesBtree         *btree.BTree        // btree of ChangesItem
+	trace                bool                // Turns on tracing for specific accounts and locations
+	tracedKeys           map[string]struct{} // Set of keys being traced during aggregations
+	hph                  *commitment.HexPatriciaHashed
+	keccak               hash.Hash
+	changesets           bool // Whether to generate changesets (off by default)
+	commitments          bool // Whether to calculate commitments
+	aggChannel           chan *AggregationTask
+	aggBackCh            chan struct{} // Channel for acknoledgement of AggregationTask
+	aggError             chan error
+	aggWg                sync.WaitGroup
+	mergeChannel         chan struct{}
+	mergeError           chan error
+	mergeWg              sync.WaitGroup
+	historyChannel       chan struct{}
+	historyError         chan error
+	historyWg            sync.WaitGroup
+	trees                [NumberOfStateTypes]*btree.BTree
+	fileHits, fileMisses uint64 // Counters for state file hit ratio
 }
 
 type ChangeFile struct {
@@ -1737,9 +1739,11 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 					fmt.Printf("read %s %x: found [%x] in file [%d-%d]\n", fType.String(), filekey, val, item.startBlock, item.endBlock)
 				}
 				startBlock = item.startBlock
+				atomic.AddUint64(&a.fileHits, 1)
 				return false
 			}
 		}
+		atomic.AddUint64(&a.fileMisses, 1)
 		return true
 	})
 	if fType == Commitment {
@@ -2936,6 +2940,8 @@ type FilesStats struct {
 	CommitmentCount   int
 	CommitmentDatSize int64
 	CommitmentIdxSize int64
+	Hits              uint64
+	Misses            uint64
 }
 
 func (a *Aggregator) Stats() FilesStats {
@@ -2944,5 +2950,7 @@ func (a *Aggregator) Stats() FilesStats {
 	fs.CodeCount, fs.CodeDatSize, fs.CodeIdxSize = a.stats(Code)
 	fs.StorageCount, fs.StorageDatSize, fs.StorageIdxSize = a.stats(Storage)
 	fs.CommitmentCount, fs.CommitmentDatSize, fs.CommitmentIdxSize = a.stats(Commitment)
+	fs.Hits = atomic.LoadUint64(&a.fileHits)
+	fs.Misses = atomic.LoadUint64(&a.fileMisses)
 	return fs
 }
