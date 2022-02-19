@@ -18,6 +18,7 @@ package etl
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,23 +30,19 @@ import (
 )
 
 type dataProvider interface {
-	Next(decoder Decoder) ([]byte, []byte, error)
+	Next() ([]byte, []byte, error)
 	Dispose() uint64 // Safe for repeated call, doesn't return error - means defer-friendly
 }
 
 type fileDataProvider struct {
-	file      *os.File
-	reader    io.Reader
-	resultBuf [][]byte
-}
-
-type Encoder interface {
-	Encode(toWrite interface{}) error
-	Reset(writer io.Writer)
+	file       *os.File
+	reader     io.Reader
+	byteReader io.ByteReader // Different interface to the same object as reader
+	resultBuf  [][]byte
 }
 
 // FlushToDisk - `doFsync` is true only for 'critical' collectors (which should not loose).
-func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync, noLogs bool) (dataProvider, error) {
+func FlushToDisk(b Buffer, tmpdir string, doFsync, noLogs bool) (dataProvider, error) {
 	if b.Len() == 0 {
 		return nil, nil
 	}
@@ -80,25 +77,25 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string, doFsync, noLogs bool)
 		}
 	}()
 
-	encoder.Reset(w)
-	err = writeToDisk(encoder, b.GetEntries())
-	if err != nil {
+	if err = b.Write(w); err != nil {
 		return nil, fmt.Errorf("error writing entries to disk: %w", err)
 	}
 
 	return &fileDataProvider{file: bufferFile, reader: nil, resultBuf: make([][]byte, 2)}, nil
 }
 
-func (p *fileDataProvider) Next(decoder Decoder) ([]byte, []byte, error) {
+func (p *fileDataProvider) Next() ([]byte, []byte, error) {
 	if p.reader == nil {
 		_, err := p.file.Seek(0, 0)
 		if err != nil {
 			return nil, nil, err
 		}
-		p.reader = bufio.NewReaderSize(p.file, BufIOSize)
+		r := bufio.NewReaderSize(p.file, BufIOSize)
+		p.reader = r
+		p.byteReader = r
+
 	}
-	decoder.Reset(p.reader)
-	return readElementFromDisk(p.resultBuf, decoder)
+	return readElementFromDisk(p.resultBuf, p.reader, p.byteReader)
 }
 
 func (p *fileDataProvider) Dispose() uint64 {
@@ -115,22 +112,34 @@ func (p *fileDataProvider) String() string {
 	return fmt.Sprintf("%T(file: %s)", p, p.file.Name())
 }
 
-func writeToDisk(encoder Encoder, entries []sortableBufferEntry) error {
-	pair := make([][]byte, 2)
-	pairInterface := interface{}(pair) // to avoid interface cast on each iteration
-	for i := range entries {
-		pair[0], pair[1] = entries[i].key, entries[i].value
-		if err := encoder.Encode(pairInterface); err != nil {
-			return fmt.Errorf("error writing entries to disk: %w", err)
-		}
+func readElementFromDisk(resultBuf [][]byte, r io.Reader, br io.ByteReader) ([]byte, []byte, error) {
+	n, err := binary.ReadUvarint(br)
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil
-}
-
-func readElementFromDisk(resultBuf [][]byte, decoder Decoder) ([]byte, []byte, error) {
-	resultBuf[0], resultBuf[1] = nil, nil
-	err := decoder.Decode(&resultBuf)
-	return resultBuf[0], resultBuf[1], err
+	if n == 0 {
+		return nil, nil, fmt.Errorf("buffer too small for key")
+	} else if n < 0 {
+		return nil, nil, fmt.Errorf("value overflow for key")
+	}
+	key := make([]byte, n)
+	if _, err = io.ReadFull(r, key); err != nil {
+		return nil, nil, err
+	}
+	n, err = binary.ReadUvarint(br)
+	if err != nil {
+		return nil, nil, err
+	}
+	if n == 0 {
+		return nil, nil, fmt.Errorf("buffer too small for value")
+	} else if n < 0 {
+		return nil, nil, fmt.Errorf("value overflow for value")
+	}
+	value := make([]byte, n)
+	if _, err = io.ReadFull(r, value); err != nil {
+		return nil, nil, err
+	}
+	return key, value, err
 }
 
 type memoryDataProvider struct {
@@ -142,13 +151,13 @@ func KeepInRAM(buffer Buffer) dataProvider {
 	return &memoryDataProvider{buffer, 0}
 }
 
-func (p *memoryDataProvider) Next(decoder Decoder) ([]byte, []byte, error) {
+func (p *memoryDataProvider) Next() ([]byte, []byte, error) {
 	if p.currentIndex >= p.buffer.Len() {
 		return nil, nil, io.EOF
 	}
-	entry := p.buffer.Get(p.currentIndex)
+	key, value := p.buffer.Get(p.currentIndex)
 	p.currentIndex++
-	return entry.key, entry.value, nil
+	return key, value, nil
 }
 
 func (p *memoryDataProvider) Dispose() uint64 {

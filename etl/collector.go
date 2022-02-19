@@ -31,7 +31,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/ugorji/go/codec"
 )
 
 const TmpDirName = "etl-temp"
@@ -85,7 +84,6 @@ func NewCriticalCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Coll
 
 func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 	c := &Collector{autoClean: true, bufType: getTypeByBuffer(sortableBuffer), logPrefix: logPrefix}
-	encoder := codec.NewEncoder(nil, &cbor)
 
 	c.flushBuffer = func(currentKey []byte, canStoreInRam bool) error {
 		if sortableBuffer.Len() == 0 {
@@ -99,7 +97,7 @@ func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 			c.allFlushed = true
 		} else {
 			doFsync := !c.autoClean /* is critical collector */
-			provider, err = FlushToDisk(encoder, sortableBuffer, tmpdir, doFsync, c.noLogs)
+			provider, err = FlushToDisk(sortableBuffer, tmpdir, doFsync, c.noLogs)
 		}
 		if err != nil {
 			return err
@@ -156,13 +154,12 @@ func (c *Collector) Close() {
 }
 
 func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType int, providers []dataProvider, loadFunc LoadFunc, args TransformArgs) error {
-	decoder := codec.NewDecoder(nil, &cbor)
 	var m runtime.MemStats
 
 	h := &Heap{comparator: args.Comparator}
 	heap.Init(h)
 	for i, provider := range providers {
-		if key, value, err := provider.Next(decoder); err == nil {
+		if key, value, err := provider.Next(); err == nil {
 			he := HeapElem{key, i, value}
 			heap.Push(h, he)
 		} else /* we must have at least one entry per file */ {
@@ -265,7 +262,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		if err != nil {
 			return err
 		}
-		if element.Key, element.Value, err = provider.Next(decoder); err == nil {
+		if element.Key, element.Value, err = provider.Next(); err == nil {
 			heap.Push(h, element)
 		} else if err != io.EOF {
 			return fmt.Errorf("%s: error while reading next element from disk: %w", logPrefix, err)

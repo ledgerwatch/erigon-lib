@@ -644,6 +644,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 	var dictVal [8]byte
 	dictKey := make([]byte, maxPatternLen)
 	sa := make([]int32, superstringLimit)
+	lcp := make([]int32, superstringLimit)
 	divsufsort, err := transform.NewDivSufSort()
 	if err != nil {
 		log.Error("processSuperstring", "create divsufsoet", err)
@@ -676,7 +677,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			inv[filtered[i]] = int32(i)
 		}
 		//log.Info("Inverted array done")
-		lcp := make([]int32, n)
 		var k int
 		// Process all suffixes one by one starting from
 		// first suffix in txt[]

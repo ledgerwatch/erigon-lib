@@ -18,7 +18,9 @@ package etl
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 
@@ -42,10 +44,10 @@ var BufferOptimalSize = 256 * datasize.MB /*  var because we want to sometimes c
 
 type Buffer interface {
 	Put(k, v []byte)
-	Get(i int) sortableBufferEntry
+	Get(i int) ([]byte, []byte)
 	Len() int
 	Reset()
-	GetEntries() []sortableBufferEntry
+	Write(io.Writer) error
 	Sort()
 	CheckFlushSize() bool
 	SetComparator(cmp kv.CmpFunc)
@@ -64,31 +66,39 @@ var (
 
 func NewSortableBuffer(bufferOptimalSize datasize.ByteSize) *sortableBuffer {
 	return &sortableBuffer{
-		entries:     make([]sortableBufferEntry, 0),
-		size:        0,
 		optimalSize: int(bufferOptimalSize.Bytes()),
 	}
 }
 
 type sortableBuffer struct {
-	entries     []sortableBufferEntry
-	size        int
+	offsets     []int
+	lens        []int
+	data        []byte
 	optimalSize int
 	comparator  kv.CmpFunc
 }
 
+// Put adds key and value to the buffer. These slices will not be accessed later,
+// so no copying is necessary
 func (b *sortableBuffer) Put(k, v []byte) {
-	b.size += len(k)
-	b.size += len(v)
-	b.entries = append(b.entries, sortableBufferEntry{k, v})
+	b.offsets = append(b.offsets, len(b.data))
+	b.lens = append(b.lens, len(k))
+	if len(k) > 0 {
+		b.data = append(b.data, k...)
+	}
+	b.offsets = append(b.offsets, len(b.data))
+	b.lens = append(b.lens, len(v))
+	if len(v) > 0 {
+		b.data = append(b.data, v...)
+	}
 }
 
 func (b *sortableBuffer) Size() int {
-	return b.size
+	return len(b.data) + 8*len(b.offsets) + 8*len(b.lens)
 }
 
 func (b *sortableBuffer) Len() int {
-	return len(b.entries)
+	return len(b.offsets) / 2
 }
 
 func (b *sortableBuffer) SetComparator(cmp kv.CmpFunc) {
@@ -96,34 +106,53 @@ func (b *sortableBuffer) SetComparator(cmp kv.CmpFunc) {
 }
 
 func (b *sortableBuffer) Less(i, j int) bool {
+	ki := b.data[b.offsets[i*2] : b.offsets[i*2]+b.lens[i*2]]
+	kj := b.data[b.offsets[j*2] : b.offsets[j*2]+b.lens[j*2]]
 	if b.comparator != nil {
-		return b.comparator(b.entries[i].key, b.entries[j].key, b.entries[i].value, b.entries[j].value) < 0
+		vi := b.data[b.offsets[i*2+1] : b.offsets[i*2+1]+b.lens[i*2+1]]
+		vj := b.data[b.offsets[j*2+1] : b.offsets[j*2+1]+b.lens[j*2+1]]
+		return b.comparator(ki, kj, vi, vj) < 0
 	}
-	return bytes.Compare(b.entries[i].key, b.entries[j].key) < 0
+	return bytes.Compare(ki, kj) < 0
 }
 
 func (b *sortableBuffer) Swap(i, j int) {
-	b.entries[i], b.entries[j] = b.entries[j], b.entries[i]
+	b.offsets[i*2], b.offsets[j*2] = b.offsets[j*2], b.offsets[i*2]
+	b.lens[i*2], b.lens[j*2] = b.lens[j*2], b.lens[i*2]
+	b.offsets[i*2+1], b.offsets[j*2+1] = b.offsets[j*2+1], b.offsets[i*2+1]
+	b.lens[i*2+1], b.lens[j*2+1] = b.lens[j*2+1], b.lens[i*2+1]
 }
 
-func (b *sortableBuffer) Get(i int) sortableBufferEntry {
-	return b.entries[i]
+func (b *sortableBuffer) Get(i int) ([]byte, []byte) {
+	return b.data[b.offsets[i*2] : b.offsets[i*2]+b.lens[i*2]], b.data[b.offsets[i*2+1] : b.offsets[i*2+1]+b.lens[i*2+1]]
 }
 
 func (b *sortableBuffer) Reset() {
-	b.entries = nil
-	b.size = 0
+	b.offsets = b.offsets[:0]
+	b.lens = b.lens[:0]
+	b.data = b.data[:0]
 }
 func (b *sortableBuffer) Sort() {
 	sort.Stable(b)
 }
 
-func (b *sortableBuffer) GetEntries() []sortableBufferEntry {
-	return b.entries
+func (b *sortableBuffer) CheckFlushSize() bool {
+	return b.Size() >= b.optimalSize
 }
 
-func (b *sortableBuffer) CheckFlushSize() bool {
-	return b.size >= b.optimalSize
+func (b *sortableBuffer) Write(w io.Writer) error {
+	var numBuf [binary.MaxVarintLen64]byte
+	for i, offset := range b.offsets {
+		l := b.lens[i]
+		n := binary.PutUvarint(numBuf[:], uint64(l))
+		if _, err := w.Write(numBuf[:n]); err != nil {
+			return err
+		}
+		if _, err := w.Write(b.data[offset : offset+l]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func NewAppendBuffer(bufferOptimalSize datasize.ByteSize) *appendSortableBuffer {
@@ -182,8 +211,8 @@ func (b *appendSortableBuffer) Swap(i, j int) {
 	b.sortedBuf[i], b.sortedBuf[j] = b.sortedBuf[j], b.sortedBuf[i]
 }
 
-func (b *appendSortableBuffer) Get(i int) sortableBufferEntry {
-	return b.sortedBuf[i]
+func (b *appendSortableBuffer) Get(i int) ([]byte, []byte) {
+	return b.sortedBuf[i].key, b.sortedBuf[i].value
 }
 func (b *appendSortableBuffer) Reset() {
 	b.sortedBuf = nil
@@ -191,8 +220,26 @@ func (b *appendSortableBuffer) Reset() {
 	b.size = 0
 }
 
-func (b *appendSortableBuffer) GetEntries() []sortableBufferEntry {
-	return b.sortedBuf
+func (b *appendSortableBuffer) Write(w io.Writer) error {
+	var numBuf [binary.MaxVarintLen64]byte
+	entries := b.sortedBuf
+	for _, entry := range entries {
+		n := binary.PutUvarint(numBuf[:], uint64(len(entry.key)))
+		if _, err := w.Write(numBuf[:n]); err != nil {
+			return err
+		}
+		if _, err := w.Write(entry.key); err != nil {
+			return err
+		}
+		n = binary.PutUvarint(numBuf[:], uint64(len(entry.value)))
+		if _, err := w.Write(numBuf[:n]); err != nil {
+			return err
+		}
+		if _, err := w.Write(entry.value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (b *appendSortableBuffer) CheckFlushSize() bool {
@@ -257,8 +304,8 @@ func (b *oldestEntrySortableBuffer) Swap(i, j int) {
 	b.sortedBuf[i], b.sortedBuf[j] = b.sortedBuf[j], b.sortedBuf[i]
 }
 
-func (b *oldestEntrySortableBuffer) Get(i int) sortableBufferEntry {
-	return b.sortedBuf[i]
+func (b *oldestEntrySortableBuffer) Get(i int) ([]byte, []byte) {
+	return b.sortedBuf[i].key, b.sortedBuf[i].value
 }
 func (b *oldestEntrySortableBuffer) Reset() {
 	b.sortedBuf = nil
@@ -266,10 +313,27 @@ func (b *oldestEntrySortableBuffer) Reset() {
 	b.size = 0
 }
 
-func (b *oldestEntrySortableBuffer) GetEntries() []sortableBufferEntry {
-	return b.sortedBuf
+func (b *oldestEntrySortableBuffer) Write(w io.Writer) error {
+	var numBuf [binary.MaxVarintLen64]byte
+	entries := b.sortedBuf
+	for _, entry := range entries {
+		n := binary.PutUvarint(numBuf[:], uint64(len(entry.key)))
+		if _, err := w.Write(numBuf[:n]); err != nil {
+			return err
+		}
+		if _, err := w.Write(entry.key); err != nil {
+			return err
+		}
+		n = binary.PutUvarint(numBuf[:], uint64(len(entry.value)))
+		if _, err := w.Write(numBuf[:n]); err != nil {
+			return err
+		}
+		if _, err := w.Write(entry.value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
-
 func (b *oldestEntrySortableBuffer) CheckFlushSize() bool {
 	return b.size >= b.optimalSize
 }
