@@ -103,7 +103,7 @@ func Transform(
 	defer func(t time.Time) {
 		log.Trace(fmt.Sprintf("[%s] Load finished", logPrefix), "took", time.Since(t))
 	}(time.Now())
-	return collector.Load1(db, toBucket, loadFunc, args)
+	return collector.Load(db, toBucket, loadFunc, args)
 }
 
 func extractBucketIntoFiles(

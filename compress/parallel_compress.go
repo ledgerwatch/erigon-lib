@@ -545,7 +545,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	var hc HuffmanCoder
 	hc.w = cw
 	r := bytes.NewReader(nil)
-	if err = aggregator.Load1(nil, "", func(_, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	if err = aggregator.Load(nil, "", func(_, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 		// Re-encode it
 		r.Reset(v)
 		var l uint64
@@ -804,7 +804,7 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 	defer dictCollector.Close()
 	dictAggregator := &DictAggregator{collector: dictCollector, dist: map[int]int{}}
 	for _, collector := range collectors {
-		if err := collector.Load1(nil, "", dictAggregator.aggLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+		if err := collector.Load(nil, "", dictAggregator.aggLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return nil, err
 		}
 		collector.Close()
@@ -813,7 +813,7 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 		return nil, err
 	}
 	db := &DictionaryBuilder{limit: maxDictPatterns} // Only collect 1m words with highest scores
-	if err := dictCollector.Load1(nil, "", db.loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+	if err := dictCollector.Load(nil, "", db.loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return nil, err
 	}
 	db.finish()

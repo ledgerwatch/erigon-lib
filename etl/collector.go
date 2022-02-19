@@ -126,7 +126,7 @@ func (c *Collector) Collect(k, v []byte) error {
 
 func (c *Collector) NoLogs(v bool) { c.noLogs = v }
 
-func (c *Collector) Load1(db kv.RwTx, toBucket string, loadFunc LoadFunc, args TransformArgs) error {
+func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args TransformArgs) error {
 	defer func() {
 		if c.autoClean {
 			c.Close()
