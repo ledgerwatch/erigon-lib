@@ -643,7 +643,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 	defer completion.Done()
 	var dictVal [8]byte
 	dictKey := make([]byte, maxPatternLen)
-	var lcp, sa []int32
+	var lcp, sa, inv []int32
 	divsufsort, err := transform.NewDivSufSort()
 	if err != nil {
 		log.Error("processSuperstring", "create divsufsoet", err)
@@ -675,7 +675,11 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				inv[filtered[i]] = int32(i)
 			}
 		*/
-		inv := make([]int32, n)
+		if cap(inv) < n {
+			inv = make([]int32, n)
+		} else {
+			inv = inv[:n]
+		}
 		for i := 0; i < n; i++ {
 			inv[filtered[i]] = int32(i)
 		}
