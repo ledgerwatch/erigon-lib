@@ -203,10 +203,13 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		// SortableOldestAppearedBuffer must guarantee that only 1 oldest value of key will appear
 		// but because size of buffer is limited - each flushed file does guarantee "oldest appeared"
 		// property, but files may overlap. files are sorted, just skip repeated keys here
-		if bufType == SortableOldestAppearedBuffer && bytes.Equal(prevK, k) {
-			return nil
+		if bufType == SortableOldestAppearedBuffer {
+			if bytes.Equal(prevK, k) {
+				return nil
+			} else {
+				prevK = common.Copy(k)
+			}
 		}
-		prevK = k
 
 		select {
 		default:
@@ -262,7 +265,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		if err != nil {
 			return err
 		}
-		if element.Key, element.Value, err = provider.Next(nil, nil); err == nil {
+		if element.Key, element.Value, err = provider.Next(element.Key[:0], element.Value[:0]); err == nil {
 			heap.Push(h, element)
 		} else if err != io.EOF {
 			return fmt.Errorf("%s: error while reading next element from disk: %w", logPrefix, err)
