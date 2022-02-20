@@ -1650,7 +1650,10 @@ func (a *Aggregator) openFiles(fType FileType) error {
 		item.readerMerge = recsplit.NewIndexReader(item.index)
 		return true
 	})
-	log.Info("Creating arch...", "type", fType.String, "total keys in all state files", totalKeys)
+	if fType >= NumberOfStateTypes {
+		return nil
+	}
+	log.Info("Creating arch...", "type", fType.String(), "total keys in all state files", totalKeys)
 	// Allocate arch of 1.5 of total keys
 	n := totalKeys * 3 / 2
 	a.arches[fType] = make([]uint32, n)
@@ -1676,7 +1679,7 @@ func (a *Aggregator) openFiles(fType FileType) error {
 		}
 		return true
 	})
-	log.Info("Created arch", "type", fType.String, "collisions", collisions)
+	log.Info("Created arch", "type", fType.String(), "collisions", collisions)
 	return err
 }
 
