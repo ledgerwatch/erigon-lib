@@ -635,7 +635,9 @@ func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint
 		h.Write(item.k) //nolint:errcheck
 		p, _ := h.Sum128()
 		p = p % n
-		arch[p] = blockNum32
+		if arch[p] < blockNum32 {
+			arch[p] = blockNum32
+		}
 		return true
 	})
 }
@@ -1774,7 +1776,9 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 	if arch[p] == 0 {
 		return nil, 0
 	}
-	blockNum = uint64(arch[p])
+	if uint64(arch[p]) < blockNum {
+		blockNum = uint64(arch[p])
+	}
 	var val []byte
 	var startBlock uint64
 	a.files[fType].DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
