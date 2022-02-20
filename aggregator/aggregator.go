@@ -639,7 +639,7 @@ func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint
 		p, _ := h.Sum128()
 		p = p % n
 		if arch[p] < blockNum32 {
-			//fmt.Printf("Updated %s arch [%x]=%d %d\n", fType.String(), item.k, p, blockNum32)
+			fmt.Printf("Updated %s arch [%x]=%d %d\n", fType.String(), item.k, p, blockNum32)
 			arch[p] = blockNum32
 		}
 		return true
@@ -1782,7 +1782,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		h.Write(filekey) //nolint:errcheck
 		p, _ := h.Sum128()
 		p = p % n
-		//fmt.Printf("Reading from %s arch key [%x]=%d, %d\n", fType.String(), filekey, p, arch[p])
+		fmt.Printf("Reading from %s arch key [%x]=%d, %d\n", fType.String(), filekey, p, arch[p])
 		if arch[p] == 0 {
 			return nil, 0
 		}
