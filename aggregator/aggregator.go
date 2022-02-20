@@ -622,6 +622,24 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, dbTree *bt
 	return bt, nil
 }
 
+func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint32) {
+	arch := a.arches[fType]
+	h := a.archHasher
+	n := uint64(len(arch))
+	bt.Ascend(func(i btree.Item) bool {
+		item := i.(*AggregateItem)
+		if item.count == 0 {
+			return true
+		}
+		h.Reset()
+		h.Write(item.k) //nolint:errcheck
+		p, _ := h.Sum128()
+		p = p % n
+		arch[p] = blockNum32
+		return true
+	})
+}
+
 type AggregateItem struct {
 	k, v  []byte
 	count uint32
@@ -1746,6 +1764,17 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 			defer a.fileLocks[fType].RUnlock()
 		}
 	}
+	h := a.archHasher
+	arch := a.arches[fType]
+	n := uint64(len(arch))
+	h.Reset()
+	h.Write(filekey) //nolint:errcheck
+	p, _ := h.Sum128()
+	p = p % n
+	if arch[p] == 0 {
+		return nil, 0
+	}
+	blockNum = uint64(arch[p])
 	var val []byte
 	var startBlock uint64
 	a.files[fType].DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
@@ -2787,6 +2816,9 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		}
 		if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.a.trees[fType], fType == Commitment); err != nil {
 			return fmt.Errorf("aggregate %sChanges: %w", fType.String(), err)
+		}
+		if fType < NumberOfStateTypes {
+			w.a.updateArch(aggTask.bt[fType], fType, uint32(blockTo))
 		}
 	}
 	aggTask.blockFrom = blockFrom
