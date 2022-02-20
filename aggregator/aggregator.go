@@ -1676,6 +1676,9 @@ func (a *Aggregator) openFiles(fType FileType) error {
 	log.Info("Creating arch...", "type", fType.String(), "total keys in all state files", totalKeys)
 	// Allocate arch of double of total keys
 	n := totalKeys * 2
+	if n < 100*1000*1000 {
+		n = 100 * 1000 * 1000
+	}
 	a.arches[fType] = make([]uint32, n)
 	arch := a.arches[fType]
 	var key []byte
