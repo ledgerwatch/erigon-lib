@@ -1786,9 +1786,13 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		if arch[p] == 0 {
 			return nil, 0
 		}
-		if uint64(arch[p]) < blockNum {
-			blockNum = uint64(arch[p])
-		}
+		a.files[fType].AscendGreaterOrEqual(&byEndBlockItem{startBlock: uint64(arch[p]), endBlock: uint64(arch[p])}, func(i btree.Item) bool {
+			item := i.(*byEndBlockItem)
+			if item.endBlock < blockNum {
+				blockNum = item.endBlock
+			}
+			return false
+		})
 	}
 	var val []byte
 	var startBlock uint64
