@@ -47,6 +47,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
+	"github.com/spaolacci/murmur3"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -172,7 +173,9 @@ type Aggregator struct {
 	historyError         chan error
 	historyWg            sync.WaitGroup
 	trees                [NumberOfStateTypes]*btree.BTree
-	fileHits, fileMisses uint64 // Counters for state file hit ratio
+	fileHits, fileMisses uint64                       // Counters for state file hit ratio
+	arches               [NumberOfStateTypes][]uint32 // Over-arching hash tables containing the block number of last aggregation
+	archHasher           murmur3.Hash128
 }
 
 type ChangeFile struct {
@@ -922,6 +925,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 		historyError:    make(chan error, 1),
 		changesets:      changesets,
 		commitments:     commitments,
+		archHasher:      murmur3.New128WithSeed(0), // TODO: Randomise salt
 	}
 	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		a.files[fType] = btree.New(32)
@@ -1630,6 +1634,7 @@ func checkOverlaps(treeName string, tree *btree.BTree) error {
 
 func (a *Aggregator) openFiles(fType FileType) error {
 	var err error
+	var totalKeys uint64
 	a.files[fType].Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
 		if item.decompressor, err = compress.NewDecompressor(path.Join(a.diffDir, fmt.Sprintf("%s.%d-%d.dat", fType.String(), item.startBlock, item.endBlock))); err != nil {
@@ -1638,12 +1643,40 @@ func (a *Aggregator) openFiles(fType FileType) error {
 		if item.index, err = recsplit.OpenIndex(path.Join(a.diffDir, fmt.Sprintf("%s.%d-%d.idx", fType.String(), item.startBlock, item.endBlock))); err != nil {
 			return false
 		}
+		totalKeys += item.index.KeyCount()
 		item.getter = item.decompressor.MakeGetter()
 		item.getterMerge = item.decompressor.MakeGetter()
 		item.indexReader = recsplit.NewIndexReader(item.index)
 		item.readerMerge = recsplit.NewIndexReader(item.index)
 		return true
 	})
+	log.Info("Creating arch...", "type", fType.String, "total keys in all state files", totalKeys)
+	// Allocate arch of 1.5 of total keys
+	n := totalKeys * 3 / 2
+	a.arches[fType] = make([]uint32, n)
+	arch := a.arches[fType]
+	var key []byte
+	h := a.archHasher
+	collisions := 0
+	a.files[fType].Ascend(func(i btree.Item) bool {
+		item := i.(*byEndBlockItem)
+		g := item.getter
+		g.Reset(0)
+		for g.HasNext() {
+			key, _ = g.Next(key[:0])
+			h.Reset()
+			h.Write(key) //nolint:errcheck
+			p, _ := h.Sum128()
+			p = p % n
+			if arch[p] != 0 {
+				collisions++
+			}
+			arch[p] = uint32(item.endBlock)
+			g.Skip()
+		}
+		return true
+	})
+	log.Info("Created arch", "type", fType.String, "collisions", collisions)
 	return err
 }
 
