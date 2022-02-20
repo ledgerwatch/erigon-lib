@@ -639,7 +639,7 @@ func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint
 		p, _ := h.Sum128()
 		p = p % n
 		if arch[p] < blockNum32 {
-			fmt.Printf("Updated %s arch [%x]=%d %d\n", fType.String(), item.k, p, blockNum32)
+			//fmt.Printf("Updated %s arch [%x]=%d %d\n", fType.String(), item.k, p, blockNum32)
 			arch[p] = blockNum32
 		}
 		return true
@@ -1692,7 +1692,7 @@ func (a *Aggregator) openFiles(fType FileType, minArch uint64) error {
 		item := i.(*byEndBlockItem)
 		g := item.getter
 		g.Reset(0)
-		blockNum := uint32(item.endBlock) + 1
+		blockNum := uint32(item.endBlock)
 		for g.HasNext() {
 			key, _ = g.Next(key[:0])
 			h.Reset()
@@ -1782,7 +1782,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		h.Write(filekey) //nolint:errcheck
 		p, _ := h.Sum128()
 		p = p % n
-		fmt.Printf("Reading from %s arch key [%x]=%d, %d\n", fType.String(), filekey, p, arch[p])
+		//fmt.Printf("Reading from %s arch key [%x]=%d, %d\n", fType.String(), filekey, p, arch[p])
 		if arch[p] == 0 {
 			return nil, 0
 		}
@@ -2837,7 +2837,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 			return fmt.Errorf("aggregate %sChanges: %w", fType.String(), err)
 		}
 		if fType < NumberOfStateTypes {
-			w.a.updateArch(aggTask.bt[fType], fType, uint32(blockTo)+1)
+			w.a.updateArch(aggTask.bt[fType], fType, uint32(blockTo))
 		}
 	}
 	aggTask.blockFrom = blockFrom
