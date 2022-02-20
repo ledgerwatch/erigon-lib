@@ -626,6 +626,9 @@ func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint
 	arch := a.arches[fType]
 	h := a.archHasher
 	n := uint64(len(arch))
+	if n == 0 {
+		return
+	}
 	bt.Ascend(func(i btree.Item) bool {
 		item := i.(*AggregateItem)
 		if item.count == 0 {
@@ -636,6 +639,7 @@ func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint
 		p, _ := h.Sum128()
 		p = p % n
 		if arch[p] < blockNum32 {
+			//fmt.Printf("Updated %s arch [%x]=%d %d\n", fType.String(), item.k, p, blockNum32)
 			arch[p] = blockNum32
 		}
 		return true
@@ -928,7 +932,7 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 	}
 }
 
-func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, changesets, commitments bool) (*Aggregator, error) {
+func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, changesets, commitments bool, minArch uint64) (*Aggregator, error) {
 	a := &Aggregator{
 		diffDir:         diffDir,
 		unwindLimit:     unwindLimit,
@@ -974,7 +978,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 	}
 	// Open decompressor and index files for all items in state trees
 	for fType := FirstType; fType < NumberOfTypes; fType++ {
-		if err := a.openFiles(fType); err != nil {
+		if err := a.openFiles(fType, minArch); err != nil {
 			return nil, fmt.Errorf("opening %s state files: %w", fType.String(), err)
 		}
 	}
@@ -1652,7 +1656,7 @@ func checkOverlaps(treeName string, tree *btree.BTree) error {
 	return err
 }
 
-func (a *Aggregator) openFiles(fType FileType) error {
+func (a *Aggregator) openFiles(fType FileType, minArch uint64) error {
 	var err error
 	var totalKeys uint64
 	a.files[fType].Ascend(func(i btree.Item) bool {
@@ -1676,8 +1680,8 @@ func (a *Aggregator) openFiles(fType FileType) error {
 	log.Info("Creating arch...", "type", fType.String(), "total keys in all state files", totalKeys)
 	// Allocate arch of double of total keys
 	n := totalKeys * 2
-	if n < 100*1000*1000 {
-		n = 100 * 1000 * 1000
+	if n < minArch {
+		n = minArch
 	}
 	a.arches[fType] = make([]uint32, n)
 	arch := a.arches[fType]
@@ -1772,15 +1776,18 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 	h := a.archHasher
 	arch := a.arches[fType]
 	n := uint64(len(arch))
-	h.Reset()
-	h.Write(filekey) //nolint:errcheck
-	p, _ := h.Sum128()
-	p = p % n
-	if arch[p] == 0 {
-		return nil, 0
-	}
-	if uint64(arch[p]) < blockNum {
-		blockNum = uint64(arch[p])
+	if n > 0 {
+		h.Reset()
+		h.Write(filekey) //nolint:errcheck
+		p, _ := h.Sum128()
+		p = p % n
+		//fmt.Printf("Reading from %s arch key [%x]=%d, %d\n", fType.String(), filekey, p, arch[p])
+		if arch[p] == 0 {
+			return nil, 0
+		}
+		if uint64(arch[p]) < blockNum {
+			blockNum = uint64(arch[p])
+		}
 	}
 	var val []byte
 	var startBlock uint64
