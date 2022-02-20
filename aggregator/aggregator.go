@@ -638,9 +638,10 @@ func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint
 		h.Write(item.k) //nolint:errcheck
 		p, _ := h.Sum128()
 		p = p % n
-		if arch[p] < blockNum32 {
+		v := atomic.LoadUint32(&arch[p])
+		if v < blockNum32 {
 			//fmt.Printf("Updated %s arch [%x]=%d %d\n", fType.String(), item.k, p, blockNum32)
-			arch[p] = blockNum32
+			atomic.StoreUint32(&arch[p], blockNum32)
 		}
 		return true
 	})
@@ -1181,6 +1182,9 @@ func (a *Aggregator) backgroundAggregation() {
 			typesLimit = AccountHistory
 		}
 		for fType := FirstType; fType < typesLimit; fType++ {
+			if fType < NumberOfStateTypes {
+				a.updateArch(aggTask.bt[fType], fType, uint32(aggTask.blockTo))
+			}
 			a.addLocked(fType, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.bt[fType]})
 		}
 		a.aggBackCh <- struct{}{}
@@ -1782,11 +1786,12 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		h.Write(filekey) //nolint:errcheck
 		p, _ := h.Sum128()
 		p = p % n
+		v := uint64(atomic.LoadUint32(&arch[p]))
 		//fmt.Printf("Reading from %s arch key [%x]=%d, %d\n", fType.String(), filekey, p, arch[p])
-		if arch[p] == 0 {
+		if v == 0 {
 			return nil, 0
 		}
-		a.files[fType].AscendGreaterOrEqual(&byEndBlockItem{startBlock: uint64(arch[p]), endBlock: uint64(arch[p])}, func(i btree.Item) bool {
+		a.files[fType].AscendGreaterOrEqual(&byEndBlockItem{startBlock: v, endBlock: v}, func(i btree.Item) bool {
 			item := i.(*byEndBlockItem)
 			if item.endBlock < blockNum {
 				blockNum = item.endBlock
@@ -2835,9 +2840,6 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		}
 		if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.a.trees[fType], fType == Commitment); err != nil {
 			return fmt.Errorf("aggregate %sChanges: %w", fType.String(), err)
-		}
-		if fType < NumberOfStateTypes {
-			w.a.updateArch(aggTask.bt[fType], fType, uint32(blockTo))
 		}
 	}
 	aggTask.blockFrom = blockFrom
