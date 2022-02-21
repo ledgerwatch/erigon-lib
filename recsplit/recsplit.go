@@ -18,15 +18,14 @@ package recsplit
 
 import (
 	"bufio"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"math/bits"
 	"os"
-	"path/filepath"
 
-	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
@@ -97,6 +96,7 @@ type RecSplit struct {
 	indexW             *bufio.Writer
 	bytesPerRec        int
 	numBuf             [8]byte
+	bucketKeyBuf       [16]byte
 	trace              bool
 	prevOffset         uint64 // Previously added offset (for calculating minDelta for Elias Fano encoding of "enum -> offset" index)
 	minDelta           uint64 // minDelta for Elias Fano encoding of "enum -> offset" index
@@ -127,6 +127,13 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a}
 	}
 	rs.salt = args.Salt
+	if rs.salt == 0 {
+		seedBytes := make([]byte, 4)
+		if _, err := rand.Read(seedBytes); err != nil {
+			return nil, err
+		}
+		rs.salt = binary.BigEndian.Uint32(seedBytes)
+	}
 	rs.hasher = murmur3.New128WithSeed(rs.salt)
 	rs.tmpDir = args.TmpDir
 	rs.indexFile = args.IndexFile
@@ -190,16 +197,20 @@ func remap16(x uint64, n uint16) uint16 {
 // ResetNextSalt resets the RecSplit and uses the next salt value to try to avoid collisions
 // when mapping keys to 64-bit values
 func (rs *RecSplit) ResetNextSalt() {
+	rs.built = false
 	rs.collision = false
 	rs.keysAdded = 0
 	rs.salt++
 	rs.hasher = murmur3.New128WithSeed(rs.salt)
 	rs.bucketCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+	if rs.offsetCollector != nil {
+		rs.offsetCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+	}
 	rs.currentBucket = rs.currentBucket[:0]
 	rs.currentBucketOffs = rs.currentBucketOffs[:0]
 	rs.maxOffset = 0
 	rs.bucketSizeAcc = rs.bucketSizeAcc[:1] // First entry is always zero
-	rs.bucketPosAcc = rs.bucketPosAcc[:0]   // First entry is always zero
+	rs.bucketPosAcc = rs.bucketPosAcc[:1]   // First entry is always zero
 }
 
 func splitParams(m uint16, leafSize uint16, primaryAggrBound uint16, secondaryAggrBound uint16) (fanout, unit uint16) {
@@ -281,11 +292,9 @@ func (rs *RecSplit) AddKey(key []byte, offset uint64) error {
 	rs.hasher.Reset()
 	rs.hasher.Write(key) //nolint:errcheck
 	hi, lo := rs.hasher.Sum128()
-	var bucketKey [16]byte
-	binary.BigEndian.PutUint64(bucketKey[:], remap(hi, rs.bucketCount))
-	binary.BigEndian.PutUint64(bucketKey[8:], lo)
-	var offsetVal [8]byte
-	binary.BigEndian.PutUint64(offsetVal[:], offset)
+	binary.BigEndian.PutUint64(rs.bucketKeyBuf[:], remap(hi, rs.bucketCount))
+	binary.BigEndian.PutUint64(rs.bucketKeyBuf[8:], lo)
+	binary.BigEndian.PutUint64(rs.numBuf[:], offset)
 	if offset > rs.maxOffset {
 		rs.maxOffset = offset
 	}
@@ -297,22 +306,30 @@ func (rs *RecSplit) AddKey(key []byte, offset uint64) error {
 	}
 
 	if rs.enums {
-		if err := rs.offsetCollector.Collect(offsetVal[:], nil); err != nil {
+		if err := rs.offsetCollector.Collect(rs.numBuf[:], nil); err != nil {
 			return err
 		}
-		var keyIdx [8]byte
-		binary.BigEndian.PutUint64(keyIdx[:], rs.keysAdded)
-		if err := rs.bucketCollector.Collect(bucketKey[:], keyIdx[:]); err != nil {
+		binary.BigEndian.PutUint64(rs.numBuf[:], rs.keysAdded)
+		if err := rs.bucketCollector.Collect(rs.bucketKeyBuf[:], rs.numBuf[:]); err != nil {
 			return err
 		}
 	} else {
-		if err := rs.bucketCollector.Collect(bucketKey[:], offsetVal[:]); err != nil {
+		if err := rs.bucketCollector.Collect(rs.bucketKeyBuf[:], rs.numBuf[:]); err != nil {
 			return err
 		}
 	}
 	rs.keysAdded++
 	rs.prevOffset = offset
 	return nil
+}
+
+func (rs *RecSplit) NoLogs(v bool) {
+	if rs.bucketCollector != nil {
+		rs.bucketCollector.NoLogs(v)
+	}
+	if rs.offsetCollector != nil {
+		rs.offsetCollector.NoLogs(v)
+	}
 }
 
 func (rs *RecSplit) recsplitCurrentBucket() error {
@@ -495,9 +512,7 @@ func (rs *RecSplit) loadFuncOffset(k, _ []byte, _ etl.CurrentTableReader, _ etl.
 // Build has to be called after all the keys have been added, and it initiates the process
 // of building the perfect hash function and writing index into a file
 func (rs *RecSplit) Build() error {
-	_, fileName := filepath.Split(rs.indexFile)
-	tmpIdxFilePath := filepath.Join(rs.tmpDir, fileName)
-	common.MustExist(rs.tmpDir)
+	tmpIdxFilePath := rs.indexFile + ".tmp"
 
 	if rs.built {
 		return fmt.Errorf("already built")
@@ -622,8 +637,6 @@ func (rs *RecSplit) Build() error {
 	_ = rs.indexW.Flush()
 	_ = rs.indexF.Sync()
 	_ = rs.indexF.Close()
-	dir, _ := filepath.Split(rs.indexFile)
-	common.MustExist(dir)
 	if err := os.Rename(tmpIdxFilePath, rs.indexFile); err != nil {
 		return err
 	}

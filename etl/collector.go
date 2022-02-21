@@ -31,7 +31,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/ugorji/go/codec"
 )
 
 const TmpDirName = "etl-temp"
@@ -47,6 +46,7 @@ type Collector struct {
 	dataProviders   []dataProvider
 	allFlushed      bool
 	autoClean       bool
+	noLogs          bool
 	bufType         int
 	logPrefix       string
 }
@@ -84,7 +84,6 @@ func NewCriticalCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Coll
 
 func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 	c := &Collector{autoClean: true, bufType: getTypeByBuffer(sortableBuffer), logPrefix: logPrefix}
-	encoder := codec.NewEncoder(nil, &cbor)
 
 	c.flushBuffer = func(currentKey []byte, canStoreInRam bool) error {
 		if sortableBuffer.Len() == 0 {
@@ -97,7 +96,8 @@ func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 			provider = KeepInRAM(sortableBuffer)
 			c.allFlushed = true
 		} else {
-			provider, err = FlushToDisk(encoder, sortableBuffer, tmpdir)
+			doFsync := !c.autoClean /* is critical collector */
+			provider, err = FlushToDisk(sortableBuffer, tmpdir, doFsync, c.noLogs)
 		}
 		if err != nil {
 			return err
@@ -109,7 +109,7 @@ func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 	}
 
 	c.extractNextFunc = func(originalK, k []byte, v []byte) error {
-		sortableBuffer.Put(common.Copy(k), common.Copy(v))
+		sortableBuffer.Put(k, v)
 		if sortableBuffer.CheckFlushSize() {
 			if err := c.flushBuffer(originalK, false); err != nil {
 				return err
@@ -123,6 +123,8 @@ func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 func (c *Collector) Collect(k, v []byte) error {
 	return c.extractNextFunc(k, k, v)
 }
+
+func (c *Collector) NoLogs(v bool) { c.noLogs = v }
 
 func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args TransformArgs) error {
 	defer func() {
@@ -152,13 +154,12 @@ func (c *Collector) Close() {
 }
 
 func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType int, providers []dataProvider, loadFunc LoadFunc, args TransformArgs) error {
-	decoder := codec.NewDecoder(nil, &cbor)
 	var m runtime.MemStats
 
 	h := &Heap{comparator: args.Comparator}
 	heap.Init(h)
 	for i, provider := range providers {
-		if key, value, err := provider.Next(decoder); err == nil {
+		if key, value, err := provider.Next(nil, nil); err == nil {
 			he := HeapElem{key, i, value}
 			heap.Push(h, he)
 		} else /* we must have at least one entry per file */ {
@@ -202,10 +203,14 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		// SortableOldestAppearedBuffer must guarantee that only 1 oldest value of key will appear
 		// but because size of buffer is limited - each flushed file does guarantee "oldest appeared"
 		// property, but files may overlap. files are sorted, just skip repeated keys here
-		if bufType == SortableOldestAppearedBuffer && bytes.Equal(prevK, k) {
-			return nil
+		if bufType == SortableOldestAppearedBuffer {
+			if bytes.Equal(prevK, k) {
+				return nil
+			} else {
+				// Need to copy k because the underlying space will be re-used for the next key
+				prevK = common.Copy(k)
+			}
 		}
-		prevK = k
 
 		select {
 		default:
@@ -261,7 +266,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		if err != nil {
 			return err
 		}
-		if element.Key, element.Value, err = provider.Next(decoder); err == nil {
+		if element.Key, element.Value, err = provider.Next(element.Key[:0], element.Value[:0]); err == nil {
 			heap.Push(h, element)
 		} else if err != io.EOF {
 			return fmt.Errorf("%s: error while reading next element from disk: %w", logPrefix, err)

@@ -39,16 +39,17 @@ func decodeHex(in string) []byte {
 }
 
 func TestWriteAndReadBufferEntry(t *testing.T) {
+	b := NewSortableBuffer(128)
 	buffer := bytes.NewBuffer(make([]byte, 0))
-	encoder := codec.NewEncoder(buffer, &cbor)
 
 	entries := make([]sortableBufferEntry, 100)
 	for i := range entries {
 		entries[i].key = []byte(fmt.Sprintf("key-%d", i))
 		entries[i].value = []byte(fmt.Sprintf("value-%d", i))
+		b.Put(entries[i].key, entries[i].value)
 	}
 
-	if err := writeToDisk(encoder, entries); err != nil {
+	if err := b.Write(buffer); err != nil {
 		t.Error(err)
 	}
 
@@ -56,10 +57,8 @@ func TestWriteAndReadBufferEntry(t *testing.T) {
 
 	readBuffer := bytes.NewReader(bb)
 
-	decoder := codec.NewDecoder(readBuffer, &cbor)
-
 	for i := range entries {
-		k, v, err := readElementFromDisk(decoder)
+		k, v, err := readElementFromDisk(readBuffer, readBuffer, nil, nil)
 		if err != nil {
 			t.Error(err)
 		}
@@ -67,7 +66,7 @@ func TestWriteAndReadBufferEntry(t *testing.T) {
 		assert.Equal(t, string(entries[i].value), string(v))
 	}
 
-	_, _, err := readElementFromDisk(decoder)
+	_, _, err := readElementFromDisk(readBuffer, readBuffer, nil, nil)
 	assert.Equal(t, io.EOF, err)
 }
 
@@ -278,6 +277,7 @@ func generateTestData(t *testing.T, db kv.Putter, bucket string, count int) {
 }
 
 func testExtractToMapFunc(k, v []byte, next ExtractNextFunc) error {
+	var cbor codec.CborHandle
 	buf := bytes.NewBuffer(nil)
 	encoder := codec.NewEncoder(nil, &cbor)
 
@@ -289,6 +289,7 @@ func testExtractToMapFunc(k, v []byte, next ExtractNextFunc) error {
 }
 
 func testExtractDoubleToMapFunc(k, v []byte, next ExtractNextFunc) error {
+	var cbor codec.CborHandle
 	buf := bytes.NewBuffer(nil)
 	encoder := codec.NewEncoder(nil, &cbor)
 
@@ -313,6 +314,7 @@ func testExtractDoubleToMapFunc(k, v []byte, next ExtractNextFunc) error {
 }
 
 func testLoadFromMapFunc(k []byte, v []byte, _ CurrentTableReader, next LoadNextFunc) error {
+	var cbor codec.CborHandle
 	decoder := codec.NewDecoder(nil, &cbor)
 	decoder.ResetBytes(v)
 	valueMap := make(map[string][]byte)
@@ -325,6 +327,7 @@ func testLoadFromMapFunc(k []byte, v []byte, _ CurrentTableReader, next LoadNext
 }
 
 func testLoadFromMapDoubleFunc(k []byte, v []byte, _ CurrentTableReader, next LoadNextFunc) error {
+	var cbor codec.CborHandle
 	decoder := codec.NewDecoder(nil, &cbor)
 	decoder.ResetBytes(v)
 

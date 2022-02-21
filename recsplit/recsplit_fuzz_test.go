@@ -20,7 +20,7 @@
 package recsplit
 
 import (
-	"path"
+	"path/filepath"
 	"testing"
 )
 
@@ -49,7 +49,7 @@ func FuzzRecSplit(f *testing.F) {
 			t.Skip()
 		}
 		tmpDir := t.TempDir()
-		indexFile := path.Join(tmpDir, "index")
+		indexFile := filepath.Join(tmpDir, "index")
 		rs, err := NewRecSplit(RecSplitArgs{
 			KeyCount:   count,
 			Enums:      true,

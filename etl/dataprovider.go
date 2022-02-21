@@ -18,6 +18,7 @@ package etl
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,21 +30,18 @@ import (
 )
 
 type dataProvider interface {
-	Next(decoder Decoder) ([]byte, []byte, error)
+	Next(keyBuf, valBuf []byte) ([]byte, []byte, error)
 	Dispose() uint64 // Safe for repeated call, doesn't return error - means defer-friendly
 }
 
 type fileDataProvider struct {
-	file   *os.File
-	reader io.Reader
+	file       *os.File
+	reader     io.Reader
+	byteReader io.ByteReader // Different interface to the same object as reader
 }
 
-type Encoder interface {
-	Encode(toWrite interface{}) error
-	Reset(writer io.Writer)
-}
-
-func FlushToDisk(encoder Encoder, b Buffer, tmpdir string) (dataProvider, error) {
+// FlushToDisk - `doFsync` is true only for 'critical' collectors (which should not loose).
+func FlushToDisk(b Buffer, tmpdir string, doFsync, noLogs bool) (dataProvider, error) {
 	if b.Len() == 0 {
 		return nil, nil
 	}
@@ -59,40 +57,44 @@ func FlushToDisk(encoder Encoder, b Buffer, tmpdir string) (dataProvider, error)
 	if err != nil {
 		return nil, err
 	}
-	defer bufferFile.Sync() //nolint:errcheck
+	if doFsync {
+		defer bufferFile.Sync() //nolint:errcheck
+	}
 
 	w := bufio.NewWriterSize(bufferFile, BufIOSize)
 	defer w.Flush() //nolint:errcheck
 
 	defer func() {
 		b.Reset() // run it after buf.flush and file.sync
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-		log.Info(
-			"Flushed buffer file",
-			"name", bufferFile.Name(),
-			"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+		if !noLogs {
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			log.Info(
+				"Flushed buffer file",
+				"name", bufferFile.Name(),
+				"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+		}
 	}()
 
-	encoder.Reset(w)
-	err = writeToDisk(encoder, b.GetEntries())
-	if err != nil {
+	if err = b.Write(w); err != nil {
 		return nil, fmt.Errorf("error writing entries to disk: %w", err)
 	}
 
-	return &fileDataProvider{bufferFile, nil}, nil
+	return &fileDataProvider{file: bufferFile, reader: nil}, nil
 }
 
-func (p *fileDataProvider) Next(decoder Decoder) ([]byte, []byte, error) {
+func (p *fileDataProvider) Next(keyBuf, valBuf []byte) ([]byte, []byte, error) {
 	if p.reader == nil {
 		_, err := p.file.Seek(0, 0)
 		if err != nil {
 			return nil, nil, err
 		}
-		p.reader = bufio.NewReaderSize(p.file, BufIOSize)
+		r := bufio.NewReaderSize(p.file, BufIOSize)
+		p.reader = r
+		p.byteReader = r
+
 	}
-	decoder.Reset(p.reader)
-	return readElementFromDisk(decoder)
+	return readElementFromDisk(p.reader, p.byteReader, keyBuf, valBuf)
 }
 
 func (p *fileDataProvider) Dispose() uint64 {
@@ -109,21 +111,41 @@ func (p *fileDataProvider) String() string {
 	return fmt.Sprintf("%T(file: %s)", p, p.file.Name())
 }
 
-func writeToDisk(encoder Encoder, entries []sortableBufferEntry) error {
-	pair := [2][]byte{}
-	for i := range entries {
-		pair[0], pair[1] = entries[i].key, entries[i].value
-		if err := encoder.Encode(pair); err != nil {
-			return fmt.Errorf("error writing entries to disk: %w", err)
+func readElementFromDisk(r io.Reader, br io.ByteReader, keyBuf, valBuf []byte) ([]byte, []byte, error) {
+	n, err := binary.ReadUvarint(br)
+	if err != nil {
+		return nil, nil, err
+	}
+	if n > 0 {
+		// Reallocate the slice or extend it if there is enough capacity
+		if len(keyBuf)+int(n) > cap(keyBuf) {
+			newKeyBuf := make([]byte, len(keyBuf)+int(n))
+			copy(newKeyBuf, keyBuf)
+			keyBuf = newKeyBuf
+		} else {
+			keyBuf = keyBuf[:len(keyBuf)+int(n)]
+		}
+		if _, err = io.ReadFull(r, keyBuf[len(keyBuf)-int(n):]); err != nil {
+			return nil, nil, err
 		}
 	}
-	return nil
-}
-
-func readElementFromDisk(decoder Decoder) ([]byte, []byte, error) {
-	result := make([][]byte, 2)
-	err := decoder.Decode(&result)
-	return result[0], result[1], err
+	if n, err = binary.ReadUvarint(br); err != nil {
+		return nil, nil, err
+	}
+	if n > 0 {
+		// Reallocate the slice or extend it if there is enough capacity
+		if len(valBuf)+int(n) > cap(valBuf) {
+			newValBuf := make([]byte, len(valBuf)+int(n))
+			copy(newValBuf, valBuf)
+			valBuf = newValBuf
+		} else {
+			valBuf = valBuf[:len(valBuf)+int(n)]
+		}
+		if _, err = io.ReadFull(r, valBuf[len(valBuf)-int(n):]); err != nil {
+			return nil, nil, err
+		}
+	}
+	return keyBuf, valBuf, err
 }
 
 type memoryDataProvider struct {
@@ -135,13 +157,13 @@ func KeepInRAM(buffer Buffer) dataProvider {
 	return &memoryDataProvider{buffer, 0}
 }
 
-func (p *memoryDataProvider) Next(decoder Decoder) ([]byte, []byte, error) {
+func (p *memoryDataProvider) Next(keyBuf, valBuf []byte) ([]byte, []byte, error) {
 	if p.currentIndex >= p.buffer.Len() {
 		return nil, nil, io.EOF
 	}
-	entry := p.buffer.Get(p.currentIndex)
+	key, value := p.buffer.Get(p.currentIndex, keyBuf, valBuf)
 	p.currentIndex++
-	return entry.key, entry.value, nil
+	return key, value, nil
 }
 
 func (p *memoryDataProvider) Dispose() uint64 {
