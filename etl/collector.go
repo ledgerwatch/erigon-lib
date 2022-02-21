@@ -266,7 +266,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		if err != nil {
 			return err
 		}
-		if element.Key, element.Value, err = provider.Next(element.Key[:0], element.Value[:0]); err == nil {
+		if element.Key, element.Value, err = provider.Next(nil, nil); err == nil {
 			heap.Push(h, element)
 		} else if err != io.EOF {
 			return fmt.Errorf("%s: error while reading next element from disk: %w", logPrefix, err)
