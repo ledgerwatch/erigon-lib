@@ -887,17 +887,13 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			// TODO refactor to return the list of promoted hashes instead of using added inside the pool
 			switch found.currentSubPool {
 			case PendingSubPool:
-				fmt.Print("Adding pending\n")
 				if pending.adding {
 					pending.added = append(pending.added, found.Tx.IdHash[:]...)
 				}
 			case BaseFeeSubPool:
-				fmt.Print("Adding basefee\n")
 				if baseFee.adding {
 					baseFee.added = append(baseFee.added, found.Tx.IdHash[:]...)
 				}
-			default:
-				fmt.Printf("Subpool: %s\n", found.currentSubPool)
 			}
 			continue
 		}
