@@ -67,7 +67,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	}
 	d.size = stat.Size()
 	if d.size < 24 {
-		return nil, fmt.Errorf("compressed file is too short")
+		return nil, fmt.Errorf("compressed file is too short: %d", d.size)
 	}
 	if d.mmapHandle1, d.mmapHandle2, err = mmap.Mmap(d.f, int(d.size)); err != nil {
 		return nil, err

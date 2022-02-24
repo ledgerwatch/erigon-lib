@@ -18,7 +18,6 @@ package compress
 
 import (
 	"bufio"
-	"bytes"
 	"container/heap"
 	"context"
 	"encoding/binary"
@@ -43,11 +42,10 @@ import (
 // MinPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
 const MinPatternScore = 1024
 
-func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.PatriciaTree, mf *patricia.MatchFinder, output []byte, uncovered []int, patterns []int, cellRing *Ring, posMap map[uint64]uint64) ([]byte, []int, []int) {
+func optimiseCluster(trace bool, input []byte, trie *patricia.PatriciaTree, mf *patricia.MatchFinder, output []byte, uncovered []int, patterns []int, cellRing *Ring, posMap map[uint64]uint64) ([]byte, []int, []int) {
 	matches := mf.FindLongestMatches(trie, input)
 	if len(matches) == 0 {
-		n := binary.PutUvarint(numBuf, 0)
-		output = append(output, numBuf[:n]...)
+		output = append(output, 0) // Encoding of 0 in VarUint is 1 zero byte
 		output = append(output, input...)
 		return output, patterns, uncovered
 	}
@@ -141,7 +139,8 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 		patternCount++
 		patternIdx = patterns[patternIdx+1]
 	}
-	p := binary.PutUvarint(numBuf, patternCount)
+	var numBuf [binary.MaxVarintLen64]byte
+	p := binary.PutUvarint(numBuf[:], patternCount)
 	output = append(output, numBuf[:p]...)
 	patternIdx = optimCell.patternIdx
 	lastStart := 0
@@ -160,10 +159,10 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 		// Starting position
 		posMap[uint64(matches[pattern].Start-lastStart+1)]++
 		lastStart = matches[pattern].Start
-		n := binary.PutUvarint(numBuf, uint64(matches[pattern].Start))
+		n := binary.PutUvarint(numBuf[:], uint64(matches[pattern].Start))
 		output = append(output, numBuf[:n]...)
 		// Code
-		n = binary.PutUvarint(numBuf, p.code)
+		n = binary.PutUvarint(numBuf[:], p.code)
 		output = append(output, numBuf[:n]...)
 		atomic.AddUint64(&p.uses, 1)
 		patternIdx = patterns[patternIdx+1]
@@ -181,29 +180,60 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 	return output, patterns, uncovered
 }
 
-func reduceDictWorker(trace bool, inputCh chan *pair, outCh chan *pair, completion *sync.WaitGroup, trie *patricia.PatriciaTree, inputSize, outputSize *atomic2.Uint64, posMap map[uint64]uint64) {
+func reduceDictWorker(trace bool, inputCh chan *CompressionWord, outCh chan *CompressionWord, completion *sync.WaitGroup, trie *patricia.PatriciaTree, inputSize, outputSize *atomic2.Uint64, posMap map[uint64]uint64) {
 	defer completion.Done()
 	var output = make([]byte, 0, 256)
 	var uncovered = make([]int, 256)
 	var patterns = make([]int, 0, 256)
 	cellRing := NewRing()
 	var mf patricia.MatchFinder
-	numBuf := make([]byte, binary.MaxVarintLen64)
-	for p := range inputCh {
-		output, patterns, uncovered = optimiseCluster(trace, numBuf, p.v, trie, &mf, output, uncovered, patterns, cellRing, posMap)
-		p.v = common.Copy(output)
-		outCh <- p
-		inputSize.Add(1 + uint64(len(p.v)))
+	var numBuf [binary.MaxVarintLen64]byte
+	for compW := range inputCh {
+		wordLen := uint64(len(compW.word))
+		n := binary.PutUvarint(numBuf[:], wordLen)
+		output = append(output[:0], numBuf[:n]...) // Prepend with the encoding of length
+		output, patterns, uncovered = optimiseCluster(trace, compW.word, trie, &mf, output, uncovered, patterns, cellRing, posMap)
+		compW.word = append(compW.word[:0], output...)
+		outCh <- compW
+		inputSize.Add(1 + wordLen)
 		outputSize.Add(uint64(len(output)))
-		posMap[uint64(len(p.v)+1)]++
+		posMap[wordLen+1]++
 		posMap[0]++
 	}
 }
 
-type pair struct {
-	k          uint64
-	v          []byte
-	compressed bool
+// CompressionWord hold a word to be compressed (if flag is set), and the result of compression
+// To allow multiple words to be processed concurrently, order field is used to collect all
+// the words after processing without disrupting their order
+type CompressionWord struct {
+	order uint64
+	word  []byte
+}
+
+type CompressionQueue []*CompressionWord
+
+func (cq CompressionQueue) Len() int {
+	return len(cq)
+}
+
+func (cq CompressionQueue) Less(i, j int) bool {
+	return cq[i].order < cq[j].order
+}
+
+func (cq *CompressionQueue) Swap(i, j int) {
+	(*cq)[i], (*cq)[j] = (*cq)[j], (*cq)[i]
+}
+
+func (cq *CompressionQueue) Push(x interface{}) {
+	*cq = append(*cq, x.(*CompressionWord))
+}
+
+func (cq *CompressionQueue) Pop() interface{} {
+	old := *cq
+	n := len(old)
+	x := old[n-1]
+	*cq = old[0 : n-1]
+	return x
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
@@ -227,7 +257,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	})
 	dictBuilder.Close()
 	log.Debug(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
-	ch := make(chan *pair, 10_000)
+	ch := make(chan *CompressionWord, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
 
 	var collectors []*etl.Collector
@@ -236,23 +266,14 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			c.Close()
 		}
 	}()
-	out := make(chan *pair, 1024)
+	out := make(chan *CompressionWord, 1024)
+	var compressionQueue CompressionQueue
+	heap.Init(&compressionQueue)
+	queueLimit := 128 * 1024
 
-	aggregator := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
-	defer aggregator.Close()
-	var wgAggregator sync.WaitGroup
-	wgAggregator.Add(1)
-	go func() {
-		defer wgAggregator.Done()
-		var buf [8]byte
-		for a := range out {
-			binary.BigEndian.PutUint64(buf[:], a.k)
-			if err := aggregator.Collect(buf[:], a.v); err != nil {
-				panic(err)
-			}
-		}
-	}()
 	var posMaps []map[uint64]uint64
+	uncompPosMap := make(map[uint64]uint64) // For the uncompressed words
+	posMaps = append(posMaps, uncompPosMap)
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		//nolint
@@ -261,22 +282,73 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		wg.Add(1)
 		go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
 	}
-	var wordsCount uint64
-	if err := datFile.ForEach(func(v []byte, compressed bool) error {
-		if compressed {
-			ch <- &pair{k: wordsCount, v: common.Copy(v), compressed: true}
-		} else {
-			// Bypass compression and send directory to the output
-			out <- &pair{k: wordsCount, v: common.Copy(v), compressed: false}
+
+	var err error
+	intermediatePath := segmentFilePath + ".tmp"
+	defer os.Remove(intermediatePath)
+	var intermediateFile *os.File
+	if intermediateFile, err = os.Create(intermediatePath); err != nil {
+		return fmt.Errorf("create intermediate file: %w", err)
+	}
+	defer intermediateFile.Close()
+	intermediateW := bufio.NewWriterSize(intermediateFile, etl.BufIOSize)
+
+	var inCount, outCount uint64 // Counters words sent to compression and returned for compression
+	var numBuf [binary.MaxVarintLen64]byte
+	if err = datFile.ForEach(func(v []byte, compression bool) error {
+		// take processed words in non-blocking way and push them to the queue
+	outer:
+		for {
+			select {
+			case compW := <-out:
+				heap.Push(&compressionQueue, compW)
+			default:
+				break outer
+			}
 		}
-		wordsCount++
+		// take processed words in blocking way until either:
+		// 1. compressionQueue is below the limit so that new words can be allocated
+		// 2. there is word in order on top of the queue which can be written down and reused
+		for compressionQueue.Len() >= queueLimit && compressionQueue[0].order < outCount {
+			// Blocking wait to receive some outputs until the top of queue can be processed
+			compW := <-out
+			heap.Push(&compressionQueue, compW)
+		}
+		var compW *CompressionWord
+		// Either take the word from the top, write it down and reuse for the next unprocessed word
+		// Or allocate new word
+		if compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
+			compW = heap.Pop(&compressionQueue).(*CompressionWord)
+			outCount++
+			// Write to intermediate file
+			if _, e := intermediateW.Write(compW.word); e != nil {
+				return e
+			}
+			// Reuse compW for the next word
+		} else {
+			compW = &CompressionWord{}
+		}
+		compW.order = inCount
+		if compression {
+			compW.word = append(compW.word[:0], v...)
+			ch <- compW // Send for compression
+		} else {
+			// Prepend word with encoding of length + zero byte, which indicates no patterns to be found in this word
+			wordLen := uint64(len(v))
+			n := binary.PutUvarint(numBuf[:], wordLen)
+			uncompPosMap[wordLen+1]++
+			uncompPosMap[0]++
+			compW.word = append(append(append(compW.word[:0], numBuf[:n]...), 0), v...)
+			heap.Push(&compressionQueue, compW) // Push to the queue directly, bypassing compression
+		}
+		inCount++
 		select {
 		default:
 		case <-logEvery.C:
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 			log.Debug(fmt.Sprintf("[%s] Replacement preprocessing", logPrefix),
-				"processed", fmt.Sprintf("%.2f%%", 100*float64(wordsCount)/float64(datFile.count)),
+				"processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(datFile.count)),
 				//"input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()),
 				"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		}
@@ -285,9 +357,28 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		return err
 	}
 	close(ch)
+	// Drain the out queue
+	for compW := range out {
+		heap.Push(&compressionQueue, compW)
+		for compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
+			compW = heap.Pop(&compressionQueue).(*CompressionWord)
+			outCount++
+			if outCount == inCount {
+				close(out)
+			}
+			// Write to intermediate file
+			if _, e := intermediateW.Write(compW.word); e != nil {
+				return e
+			}
+		}
+	}
+	if err = intermediateW.Flush(); err != nil {
+		return err
+	}
 	wg.Wait()
-	close(out)
-	wgAggregator.Wait()
+	if _, err = intermediateFile.Seek(0, 0); err != nil {
+		return fmt.Errorf("return to the start of intermediate file: %w", err)
+	}
 
 	//var m runtime.MemStats
 	//runtime.ReadMemStats(&m)
@@ -308,10 +399,9 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	sort.Sort(&patternList)
 	// Calculate offsets of the dictionary patterns and total size
 	var offset uint64
-	numBuf := make([]byte, binary.MaxVarintLen64)
 	for _, p := range patternList {
 		p.offset = offset
-		n := binary.PutUvarint(numBuf, uint64(len(p.word)))
+		n := binary.PutUvarint(numBuf[:], uint64(len(p.word)))
 		offset += uint64(n + len(p.word))
 	}
 	patternCutoff := offset // All offsets below this will be considered patterns
@@ -333,7 +423,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.h0 = heap.Pop(&codeHeap).(*PatternHuff)
 			h.h0.AddZero()
 			h.uses += h.h0.uses
-			n := binary.PutUvarint(numBuf, h.h0.offset)
+			n := binary.PutUvarint(numBuf[:], h.h0.offset)
 			offset += uint64(n)
 		} else {
 			// Take p0 from the list
@@ -341,7 +431,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.p0.code = 0
 			h.p0.codeBits = 1
 			h.uses += h.p0.uses
-			n := binary.PutUvarint(numBuf, h.p0.offset)
+			n := binary.PutUvarint(numBuf[:], h.p0.offset)
 			offset += uint64(n)
 			i++
 		}
@@ -350,7 +440,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.h1 = heap.Pop(&codeHeap).(*PatternHuff)
 			h.h1.AddOne()
 			h.uses += h.h1.uses
-			n := binary.PutUvarint(numBuf, h.h1.offset)
+			n := binary.PutUvarint(numBuf[:], h.h1.offset)
 			offset += uint64(n)
 		} else {
 			// Take p1 from the list
@@ -358,7 +448,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.p1.code = 1
 			h.p1.codeBits = 1
 			h.uses += h.p1.uses
-			n := binary.PutUvarint(numBuf, h.p1.offset)
+			n := binary.PutUvarint(numBuf[:], h.p1.offset)
 			offset += uint64(n)
 			i++
 		}
@@ -371,34 +461,33 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		root = heap.Pop(&codeHeap).(*PatternHuff)
 	}
 	var cf *os.File
-	var err error
 	if cf, err = os.Create(segmentFilePath); err != nil {
 		return err
 	}
 	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
 	// 1-st, output dictionary
-	binary.BigEndian.PutUint64(numBuf, wordsCount) // Dictionary size
+	binary.BigEndian.PutUint64(numBuf[:], inCount) // Dictionary size
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// 2-nd, output dictionary
-	binary.BigEndian.PutUint64(numBuf, offset) // Dictionary size
+	binary.BigEndian.PutUint64(numBuf[:], offset) // Dictionary size
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// 3-rd, output directory root
-	binary.BigEndian.PutUint64(numBuf, root.offset)
+	binary.BigEndian.PutUint64(numBuf[:], root.offset)
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// 4-th, output pattern cutoff offset
-	binary.BigEndian.PutUint64(numBuf, patternCutoff)
+	binary.BigEndian.PutUint64(numBuf[:], patternCutoff)
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// Write all the pattens
 	for _, p := range patternList {
-		n := binary.PutUvarint(numBuf, uint64(len(p.word)))
+		n := binary.PutUvarint(numBuf[:], uint64(len(p.word)))
 		if _, err = cw.Write(numBuf[:n]); err != nil {
 			return err
 		}
@@ -410,17 +499,17 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	for _, h := range huffs {
 		var n int
 		if h.h0 != nil {
-			n = binary.PutUvarint(numBuf, h.h0.offset)
+			n = binary.PutUvarint(numBuf[:], h.h0.offset)
 		} else {
-			n = binary.PutUvarint(numBuf, h.p0.offset)
+			n = binary.PutUvarint(numBuf[:], h.p0.offset)
 		}
 		if _, err = cw.Write(numBuf[:n]); err != nil {
 			return err
 		}
 		if h.h1 != nil {
-			n = binary.PutUvarint(numBuf, h.h1.offset)
+			n = binary.PutUvarint(numBuf[:], h.h1.offset)
 		} else {
-			n = binary.PutUvarint(numBuf, h.p1.offset)
+			n = binary.PutUvarint(numBuf[:], h.p1.offset)
 		}
 		if _, err = cw.Write(numBuf[:n]); err != nil {
 			return err
@@ -440,7 +529,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	offset = 0
 	for _, p := range positionList {
 		p.offset = offset
-		n := binary.PutUvarint(numBuf, p.pos)
+		n := binary.PutUvarint(numBuf[:], p.pos)
 		offset += uint64(n)
 	}
 	positionCutoff := offset // All offsets below this will be considered positions
@@ -462,7 +551,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.h0 = heap.Pop(&posHeap).(*PositionHuff)
 			h.h0.AddZero()
 			h.uses += h.h0.uses
-			n := binary.PutUvarint(numBuf, h.h0.offset)
+			n := binary.PutUvarint(numBuf[:], h.h0.offset)
 			offset += uint64(n)
 		} else {
 			// Take p0 from the list
@@ -470,7 +559,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.p0.code = 0
 			h.p0.codeBits = 1
 			h.uses += h.p0.uses
-			n := binary.PutUvarint(numBuf, h.p0.offset)
+			n := binary.PutUvarint(numBuf[:], h.p0.offset)
 			offset += uint64(n)
 			i++
 		}
@@ -479,7 +568,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.h1 = heap.Pop(&posHeap).(*PositionHuff)
 			h.h1.AddOne()
 			h.uses += h.h1.uses
-			n := binary.PutUvarint(numBuf, h.h1.offset)
+			n := binary.PutUvarint(numBuf[:], h.h1.offset)
 			offset += uint64(n)
 		} else {
 			// Take p1 from the list
@@ -487,7 +576,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			h.p1.code = 1
 			h.p1.codeBits = 1
 			h.uses += h.p1.uses
-			n := binary.PutUvarint(numBuf, h.p1.offset)
+			n := binary.PutUvarint(numBuf[:], h.p1.offset)
 			offset += uint64(n)
 			i++
 		}
@@ -500,27 +589,27 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		posRoot = heap.Pop(&posHeap).(*PositionHuff)
 	}
 	// First, output dictionary
-	binary.BigEndian.PutUint64(numBuf, offset) // Dictionary size
+	binary.BigEndian.PutUint64(numBuf[:], offset) // Dictionary size
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// Secondly, output directory root
 	if posRoot == nil {
-		binary.BigEndian.PutUint64(numBuf, 0)
+		binary.BigEndian.PutUint64(numBuf[:], 0)
 	} else {
-		binary.BigEndian.PutUint64(numBuf, posRoot.offset)
+		binary.BigEndian.PutUint64(numBuf[:], posRoot.offset)
 	}
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// Thirdly, output pattern cutoff offset
-	binary.BigEndian.PutUint64(numBuf, positionCutoff)
+	binary.BigEndian.PutUint64(numBuf[:], positionCutoff)
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
 	// Write all the positions
 	for _, p := range positionList {
-		n := binary.PutUvarint(numBuf, p.pos)
+		n := binary.PutUvarint(numBuf[:], p.pos)
 		if _, err = cw.Write(numBuf[:n]); err != nil {
 			return err
 		}
@@ -529,36 +618,31 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	for _, h := range posHuffs {
 		var n int
 		if h.h0 != nil {
-			n = binary.PutUvarint(numBuf, h.h0.offset)
+			n = binary.PutUvarint(numBuf[:], h.h0.offset)
 		} else {
-			n = binary.PutUvarint(numBuf, h.p0.offset)
+			n = binary.PutUvarint(numBuf[:], h.p0.offset)
 		}
 		if _, err = cw.Write(numBuf[:n]); err != nil {
 			return err
 		}
 		if h.h1 != nil {
-			n = binary.PutUvarint(numBuf, h.h1.offset)
+			n = binary.PutUvarint(numBuf[:], h.h1.offset)
 		} else {
-			n = binary.PutUvarint(numBuf, h.p1.offset)
+			n = binary.PutUvarint(numBuf[:], h.p1.offset)
 		}
 		if _, err = cw.Write(numBuf[:n]); err != nil {
 			return err
 		}
 	}
 	log.Debug(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(offset), "position cutoff", positionCutoff)
-
+	// Re-encode all the words with the use of optimised (via Huffman coding) dictionaries
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
-	r := bytes.NewReader(nil)
-	if err = aggregator.Load(nil, "", func(_, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-		// Re-encode it
-		r.Reset(v)
-		var l uint64
-		var e error
-		if l, err = binary.ReadUvarint(r); err != nil {
-			return err
-		}
+	r := bufio.NewReaderSize(intermediateFile, etl.BufIOSize)
+	var l uint64
+	var e error
+	for l, e = binary.ReadUvarint(r); e == nil; l, e = binary.ReadUvarint(r) {
 		posCode := pos2code[l+1]
 		if posCode != nil {
 			if e = hc.encode(posCode.code, posCode.codeBits); e != nil {
@@ -627,11 +711,13 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		if wc%10_000_000 == 0 {
 			log.Info(fmt.Sprintf("[%s] Compressed", logPrefix), "millions", wc/1_000_000)
 		}
-		return nil
-	}, etl.TransformArgs{}); err != nil {
+	}
+	if e != nil && !errors.Is(e, io.EOF) {
+		return e
+	}
+	if err = intermediateFile.Close(); err != nil {
 		return err
 	}
-	aggregator.Close()
 	if err = cw.Flush(); err != nil {
 		return err
 	}
