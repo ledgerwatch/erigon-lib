@@ -73,23 +73,38 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		return nil, err
 	}
 	d.data = d.mmapHandle1[:d.size]
-	d.count = binary.BigEndian.Uint64(d.data[:8])
-	dictSize := binary.BigEndian.Uint64(d.data[8:16])
+	fmt.Println("D.DATA: ", d.data)
+	d.count = binary.BigEndian.Uint64(d.data[:8]) // 0..7 bytes - number of words in file
+	fmt.Println("D.COUNT: ", d.count)
+	dictSize := binary.BigEndian.Uint64(d.data[8:16]) // 8..15 bytes -
+	fmt.Println("DICTSIZE 1: ", dictSize)
 	rootOffset := binary.BigEndian.Uint64(d.data[16:24])
+	fmt.Println("ROOTOFFSET 1: ", rootOffset)
 	cutoff := binary.BigEndian.Uint64(d.data[24:32])
+	fmt.Println("CUTOFF 1: ", cutoff)
 	data := d.data[32 : 32+dictSize]
+	fmt.Println("DATA 1: ", data)
 	if dictSize > 0 {
 		d.dict = buildHuffmanPattern(data, rootOffset, cutoff)
+		fmt.Println("HUFFMAN D.DICT: ", d.dict)
 	}
 	pos := 32 + dictSize
+	fmt.Println("POS: ", pos)
 	dictSize = binary.BigEndian.Uint64(d.data[pos : pos+8])
+	fmt.Println("DICTSIZE 2: ", dictSize)
 	rootOffset = binary.BigEndian.Uint64(d.data[pos+8 : pos+16])
+	fmt.Println("ROOTOFFSET 2: ", rootOffset)
 	cutoff = binary.BigEndian.Uint64(d.data[pos+16 : pos+24])
+	fmt.Println("CUTOFF 2: ", cutoff)
 	data = d.data[pos+24 : pos+24+dictSize]
+	fmt.Println("DATA 2: ", data)
 	if dictSize > 0 {
 		d.posDict = buildHuffmanPos(data, rootOffset, cutoff)
+		fmt.Println("D.POSDICT: ", d.posDict)
 	}
 	d.wordsStart = pos + 24 + dictSize
+	fmt.Println("D.WORDSTART: ", d.wordsStart)
+
 	return d, nil
 }
 

@@ -708,10 +708,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			C.int(len(sa)),
 			C.int(n),
 		)
-		// if int(result) != 0 {
-		// 	fmt.Println("C LCP ERROR: lcp_kasai returned: ", result)
-		// 	return
-		// }
+
 		//log.Info("Kasai algorithm finished")
 		// Checking LCP array
 
