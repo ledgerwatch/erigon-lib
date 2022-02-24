@@ -181,7 +181,7 @@ func optimiseCluster(trace bool, numBuf []byte, input []byte, trie *patricia.Pat
 	return output, patterns, uncovered
 }
 
-func reduceDictWorker(trace bool, inputCh chan []byte, outCh chan *pair, completion *sync.WaitGroup, trie *patricia.PatriciaTree, inputSize, outputSize *atomic2.Uint64, posMap map[uint64]uint64) {
+func reduceDictWorker(trace bool, inputCh chan *pair, outCh chan *pair, completion *sync.WaitGroup, trie *patricia.PatriciaTree, inputSize, outputSize *atomic2.Uint64, posMap map[uint64]uint64) {
 	defer completion.Done()
 	var output = make([]byte, 0, 256)
 	var uncovered = make([]int, 256)
@@ -189,20 +189,22 @@ func reduceDictWorker(trace bool, inputCh chan []byte, outCh chan *pair, complet
 	cellRing := NewRing()
 	var mf patricia.MatchFinder
 	numBuf := make([]byte, binary.MaxVarintLen64)
-	for input := range inputCh {
-		// First 8 bytes are idx
-		n := binary.PutUvarint(numBuf, uint64(len(input)-8))
-		output = append(output[:0], numBuf[:n]...)
-		output, patterns, uncovered = optimiseCluster(trace, numBuf, input[8:], trie, &mf, output, uncovered, patterns, cellRing, posMap)
-		outCh <- &pair{k: input[:8], v: common.Copy(output)}
-		inputSize.Add(1 + uint64(len(input)-8))
+	for p := range inputCh {
+		output, patterns, uncovered = optimiseCluster(trace, numBuf, p.v, trie, &mf, output, uncovered, patterns, cellRing, posMap)
+		p.v = common.Copy(output)
+		outCh <- p
+		inputSize.Add(1 + uint64(len(p.v)))
 		outputSize.Add(uint64(len(output)))
-		posMap[uint64(len(input)-8+1)]++
+		posMap[uint64(len(p.v)+1)]++
 		posMap[0]++
 	}
 }
 
-type pair struct{ k, v []byte }
+type pair struct {
+	k          uint64
+	v          []byte
+	compressed bool
+}
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
 func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *DecompressedFile, workers int, dictBuilder *DictionaryBuilder) error {
@@ -225,7 +227,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	})
 	dictBuilder.Close()
 	log.Debug(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
-	ch := make(chan []byte, 10_000)
+	ch := make(chan *pair, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
 
 	var collectors []*etl.Collector
@@ -242,8 +244,10 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	wgAggregator.Add(1)
 	go func() {
 		defer wgAggregator.Done()
+		var buf [8]byte
 		for a := range out {
-			if err := aggregator.Collect(a.k, a.v); err != nil {
+			binary.BigEndian.PutUint64(buf[:], a.k)
+			if err := aggregator.Collect(buf[:], a.v); err != nil {
 				panic(err)
 			}
 		}
@@ -258,11 +262,13 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
 	}
 	var wordsCount uint64
-	if err := datFile.ForEach(func(v []byte) error {
-		input := make([]byte, 8+int(len(v)))
-		binary.BigEndian.PutUint64(input, wordsCount)
-		copy(input[8:], v)
-		ch <- input
+	if err := datFile.ForEach(func(v []byte, compressed bool) error {
+		if compressed {
+			ch <- &pair{k: wordsCount, v: common.Copy(v), compressed: true}
+		} else {
+			// Bypass compression and send directory to the output
+			out <- &pair{k: wordsCount, v: common.Copy(v), compressed: false}
+		}
 		wordsCount++
 		select {
 		default:
