@@ -14,8 +14,13 @@
    limitations under the License.
 */
 
-package compress
+package ccompress
 
+/*
+#include "sais.h"
+#include "utils.h"
+*/
+import "C"
 import (
 	"bufio"
 	"bytes"
@@ -31,8 +36,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
-	"github.com/flanglet/kanzi-go/transform"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/patricia"
@@ -643,11 +648,8 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 	defer completion.Done()
 	var dictVal [8]byte
 	dictKey := make([]byte, maxPatternLen)
-	var lcp, sa, inv []int32
-	divsufsort, err := transform.NewDivSufSort()
-	if err != nil {
-		log.Error("processSuperstring", "create divsufsoet", err)
-	}
+	var lcp, sa, inverted []int32
+
 	for superstring := range superstringCh {
 		if cap(sa) < len(superstring) {
 			sa = make([]int32, len(superstring))
@@ -656,35 +658,36 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		}
 		//log.Info("Superstring", "len", len(superstring))
 		//start := time.Now()
-		divsufsort.ComputeSuffixArray(superstring, sa)
+		size := C.int(len(superstring))
+		t_ptr := unsafe.Pointer(&superstring[0]) // source "text"
+		sa_ptr := unsafe.Pointer(&sa[0])
+
+		C.sais(
+			(*C.uchar)(t_ptr),
+			(*C.int)(sa_ptr),
+			size,
+		)
 		//log.Info("Suffix array built", "in", time.Since(start))
 		// filter out suffixes that start with odd positions
 		n := len(sa) / 2
 		filtered := make([]int32, n)
 		var j int
-		for i := 0; i < len(sa); i++ {
-			if sa[i]&1 == 0 {
-				filtered[j] = sa[i] >> 1
-				j++
-			}
-		}
+
 		// Now create an inverted array - we reuse the second half of suffix array for that
 		/*
-			inv := sa[:n]
+			inverted := sa[:n]
 			for i := 0; i < n; i++ {
-				inv[filtered[i]] = int32(i)
+				inverted[filtered[i]] = int32(i)
 			}
 		*/
-		if cap(inv) < n {
-			inv = make([]int32, n)
+		if cap(inverted) < n {
+			inverted = make([]int32, n)
 		} else {
-			inv = inv[:n]
+			inverted = inverted[:n]
 		}
-		for i := 0; i < n; i++ {
-			inv[filtered[i]] = int32(i)
-		}
+
 		//log.Info("Inverted array done")
-		var k int
+
 		// Process all suffixes one by one starting from
 		// first suffix in txt[]
 		if cap(lcp) < n {
@@ -692,21 +695,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		} else {
 			lcp = lcp[:n]
 		}
-		for i := 0; i < n; i++ {
-			/* If the current suffix is at n-1, then we don’t
-			   have next substring to consider. So lcp is not
-			   defined for this substring, we put zero. */
-			if inv[i] == int32(n-1) {
-				k = 0
-				continue
-			}
 
-			/* j contains index of the next substring to
-			   be considered  to compare with the present
-			   substring, i.e., next string in suffix array */
-			j := int(filtered[inv[i]+1])
-
-<<<<<<< HEAD
 		// //log.Info("Suffix array built", "in", time.Since(start))
 		// // filter out suffixes that start with odd positions
 
@@ -720,20 +709,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			C.int(n),
 		)
 
-=======
-			// Directly start matching from k'th index as
-			// at-least k-1 characters will match
-			for i+k < n && j+k < n && superstring[(i+k)*2] != 0 && superstring[(j+k)*2] != 0 && superstring[(i+k)*2+1] == superstring[(j+k)*2+1] {
-				k++
-			}
-			lcp[inv[i]] = int32(k) // lcp for the present suffix.
-
-			// Deleting the starting character from the string.
-			if k > 0 {
-				k--
-			}
-		}
->>>>>>> main
 		//log.Info("Kasai algorithm finished")
 		// Checking LCP array
 
@@ -761,7 +736,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		}
 		//log.Info("LCP array checked")
 		// Walk over LCP array and compute the scores of the strings
-		var b Int32Sort = inv
+		var b Int32Sort = inverted
 		j = 0
 		for i := 0; i < n-1; i++ {
 			// Only when there is a drop in LCP value
@@ -817,7 +792,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					dictKey[s] = superstring[(int(filtered[i])+s)*2+1]
 				}
 				binary.BigEndian.PutUint64(dictVal[:], score)
-				if err = dictCollector.Collect(dictKey, dictVal[:]); err != nil {
+				if err := dictCollector.Collect(dictKey, dictVal[:]); err != nil {
 					log.Error("processSuperstring", "collect", err)
 				}
 				prevSkipped = false
