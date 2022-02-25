@@ -1,12 +1,25 @@
 #include "decompress.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 
-decompress *test_d() {
-    decompress *ptr = malloc(sizeof(decompress) * 1);
-    return ptr;
+decompress *init_decompressor(const char *file_name) {
+    decompress *d = malloc(sizeof(decompress));
+    d->t = 123;
+    printf("Created dummy struct\n");
+    printf("%s\n", file_name);
+    return d;
 }
 
-void free_ptrs(void *p0) {
-    free(p0);
+int my_func(decompress *dcmp) {
+    printf("my value: %d\n", dcmp->t);
+    return dcmp->t;
+}
+
+void close_decompressor(decompress *d) {
+    printf("Freed dummy struct\n");
+
+    // if (d->data != NULL)
+    printf("We got some data: %d\n", d->data != NULL);
+    free(d);
 }

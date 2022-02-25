@@ -706,21 +706,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			   substring, i.e., next string in suffix array */
 			j := int(filtered[inv[i]+1])
 
-<<<<<<< HEAD
-		// //log.Info("Suffix array built", "in", time.Since(start))
-		// // filter out suffixes that start with odd positions
-
-		C.lcp_kasai(
-			(*C.uchar)(t_ptr),
-			(*C.int)(sa_ptr),
-			(*C.int)(unsafe.Pointer(&lcp[0])),
-			(*C.int)(unsafe.Pointer(&filtered[0])),
-			(*C.int)(unsafe.Pointer(&inverted[0])),
-			C.int(len(sa)),
-			C.int(n),
-		)
-
-=======
 			// Directly start matching from k'th index as
 			// at-least k-1 characters will match
 			for i+k < n && j+k < n && superstring[(i+k)*2] != 0 && superstring[(j+k)*2] != 0 && superstring[(i+k)*2+1] == superstring[(j+k)*2+1] {
@@ -733,7 +718,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 				k--
 			}
 		}
->>>>>>> main
 		//log.Info("Kasai algorithm finished")
 		// Checking LCP array
 

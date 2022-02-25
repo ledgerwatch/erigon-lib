@@ -97,7 +97,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	cutoff = binary.BigEndian.Uint64(d.data[pos+16 : pos+24])
 	fmt.Println("CUTOFF 2: ", cutoff)
 	data = d.data[pos+24 : pos+24+dictSize]
-	fmt.Println("DATA 2: ", data)
+	fmt.Println("DATA 2: ", string(data))
 	if dictSize > 0 {
 		d.posDict = buildHuffmanPos(data, rootOffset, cutoff)
 		fmt.Println("D.POSDICT: ", d.posDict)

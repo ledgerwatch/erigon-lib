@@ -674,12 +674,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		var j int
 
 		// Now create an inverted array - we reuse the second half of suffix array for that
-		/*
-			inverted := sa[:n]
-			for i := 0; i < n; i++ {
-				inverted[filtered[i]] = int32(i)
-			}
-		*/
 		if cap(inverted) < n {
 			inverted = make([]int32, n)
 		} else {

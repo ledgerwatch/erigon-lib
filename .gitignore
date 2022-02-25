@@ -73,6 +73,3 @@ libmdbx/build/*
 tests/testdata/*
 
 go.work
-main.go
-
-/compress/my_dec.go
