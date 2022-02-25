@@ -329,7 +329,13 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			compW = &CompressionWord{}
 		}
 		compW.order = inCount
-		if compression {
+		if len(v) == 0 {
+			// Empty word, cannot be compressed
+			compW.word = append(compW.word[:0], 0)
+			uncompPosMap[1]++
+			uncompPosMap[0]++
+			heap.Push(&compressionQueue, compW) // Push to the queue directly, bypassing compression
+		} else if compression {
 			compW.word = append(compW.word[:0], v...)
 			ch <- compW // Send for compression
 		} else {
@@ -357,18 +363,20 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		return err
 	}
 	close(ch)
-	// Drain the out queue
-	for compW := range out {
-		heap.Push(&compressionQueue, compW)
-		for compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
-			compW = heap.Pop(&compressionQueue).(*CompressionWord)
-			outCount++
-			if outCount == inCount {
-				close(out)
-			}
-			// Write to intermediate file
-			if _, e := intermediateW.Write(compW.word); e != nil {
-				return e
+	// Drain the out queue if necessary
+	if inCount > outCount {
+		for compW := range out {
+			heap.Push(&compressionQueue, compW)
+			for compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
+				compW = heap.Pop(&compressionQueue).(*CompressionWord)
+				outCount++
+				if outCount == inCount {
+					close(out)
+				}
+				// Write to intermediate file
+				if _, e := intermediateW.Write(compW.word); e != nil {
+					return e
+				}
 			}
 		}
 	}
