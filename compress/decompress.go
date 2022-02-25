@@ -146,7 +146,6 @@ type Getter struct {
 	b           byte
 	mask        byte
 	uncovered   []int // Buffer for uncovered portions of the word
-	word        []byte
 	fName       string
 }
 
@@ -235,21 +234,26 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	if l == 0 {
 		return buf, g.dataP
 	}
-	if int(l) > len(g.word) {
-		g.word = make([]byte, l)
+	lastPos := len(buf)
+	lastUncovered := len(buf)
+	if len(buf)+int(l) > cap(buf) {
+		newBuf := make([]byte, len(buf)+int(l))
+		copy(newBuf, buf)
+		buf = newBuf
+	} else {
+		// Expand buffer
+		buf = buf[:len(buf)+int(l)]
 	}
 	var pos uint64
-	var lastPos int
-	var lastUncovered int
 	g.uncovered = g.uncovered[:0]
 	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
 		pattern := g.nextPattern()
-		if len(g.word) < intPos {
+		if len(buf) < intPos {
 			panic(fmt.Sprintf("likely .idx is invalid: %s", g.fName))
 		}
-		copy(g.word[intPos:], pattern)
+		copy(buf[intPos:], pattern)
 		if intPos > lastUncovered {
 			g.uncovered = append(g.uncovered, lastUncovered, intPos)
 		}
@@ -260,11 +264,21 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	}
 	// Uncovered characters
 	for i := 0; i < len(g.uncovered); i += 2 {
-		copy(g.word[g.uncovered[i]:g.uncovered[i+1]], g.data[g.dataP:])
+		copy(buf[g.uncovered[i]:g.uncovered[i+1]], g.data[g.dataP:])
 		g.dataP += uint64(g.uncovered[i+1] - g.uncovered[i])
 	}
-	buf = append(buf, g.word[:l]...)
 	return buf, g.dataP
+}
+
+func (g *Getter) NextUncompressed() ([]byte, uint64) {
+	l := g.nextPos(true)
+	l-- // because when create huffman tree we do ++ , because 0 is terminator
+	if l == 0 {
+		return g.data[g.dataP:g.dataP], g.dataP
+	}
+	pos := g.dataP
+	g.dataP += l
+	return g.data[pos:g.dataP], g.dataP
 }
 
 // Skip moves offset to the next word and returns the new offset.
@@ -387,11 +401,6 @@ func (g *Getter) MatchPrefix(buf []byte) bool {
 	if l == 0 {
 		return false
 	}
-	// count available space for word without actual reallocating memory
-	wordLen := len(g.word)
-	if int(l) > wordLen {
-		wordLen = int(l)
-	}
 
 	var pos uint64
 	var lastPos int
@@ -401,9 +410,6 @@ func (g *Getter) MatchPrefix(buf []byte) bool {
 	for pos = g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		intPos := lastPos + int(pos) - 1
 		lastPos = intPos
-		if wordLen < intPos {
-			panic(fmt.Sprintf("likely .idx is invalid: %s", g.fName))
-		}
 		pattern = g.nextPattern()
 		if strings.HasPrefix(string(pattern), string(buf)) {
 			return true
