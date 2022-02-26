@@ -438,7 +438,6 @@ func (g *Getter) MatchPrefix(buf []byte) bool {
 		if !bytes.Equal(buf[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 			return false
 		}
-		postLoopPos += dif
 	}
 	return true
 }
