@@ -271,16 +271,25 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	heap.Init(&compressionQueue)
 	queueLimit := 128 * 1024
 
+	// For the case of workers == 1
+	var output = make([]byte, 0, 256)
+	var uncovered = make([]int, 256)
+	var patterns = make([]int, 0, 256)
+	cellRing := NewRing()
+	var mf patricia.MatchFinder
+
 	var posMaps []map[uint64]uint64
 	uncompPosMap := make(map[uint64]uint64) // For the uncompressed words
 	posMaps = append(posMaps, uncompPosMap)
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		//nolint
-		posMap := make(map[uint64]uint64)
-		posMaps = append(posMaps, posMap)
-		wg.Add(1)
-		go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
+	if workers > 1 {
+		for i := 0; i < workers; i++ {
+			//nolint
+			posMap := make(map[uint64]uint64)
+			posMaps = append(posMaps, posMap)
+			wg.Add(1)
+			go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
+		}
 	}
 
 	var err error
@@ -296,56 +305,85 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	var inCount, outCount uint64 // Counters words sent to compression and returned for compression
 	var numBuf [binary.MaxVarintLen64]byte
 	if err = datFile.ForEach(func(v []byte, compression bool) error {
-		// take processed words in non-blocking way and push them to the queue
-	outer:
-		for {
-			select {
-			case compW := <-out:
+		if workers > 1 {
+			// take processed words in non-blocking way and push them to the queue
+		outer:
+			for {
+				select {
+				case compW := <-out:
+					heap.Push(&compressionQueue, compW)
+				default:
+					break outer
+				}
+			}
+			// take processed words in blocking way until either:
+			// 1. compressionQueue is below the limit so that new words can be allocated
+			// 2. there is word in order on top of the queue which can be written down and reused
+			for compressionQueue.Len() >= queueLimit && compressionQueue[0].order < outCount {
+				// Blocking wait to receive some outputs until the top of queue can be processed
+				compW := <-out
 				heap.Push(&compressionQueue, compW)
-			default:
-				break outer
 			}
-		}
-		// take processed words in blocking way until either:
-		// 1. compressionQueue is below the limit so that new words can be allocated
-		// 2. there is word in order on top of the queue which can be written down and reused
-		for compressionQueue.Len() >= queueLimit && compressionQueue[0].order < outCount {
-			// Blocking wait to receive some outputs until the top of queue can be processed
-			compW := <-out
-			heap.Push(&compressionQueue, compW)
-		}
-		var compW *CompressionWord
-		// Either take the word from the top, write it down and reuse for the next unprocessed word
-		// Or allocate new word
-		if compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
-			compW = heap.Pop(&compressionQueue).(*CompressionWord)
+			var compW *CompressionWord
+			// Either take the word from the top, write it down and reuse for the next unprocessed word
+			// Or allocate new word
+			if compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
+				compW = heap.Pop(&compressionQueue).(*CompressionWord)
+				outCount++
+				// Write to intermediate file
+				if _, e := intermediateW.Write(compW.word); e != nil {
+					return e
+				}
+				// Reuse compW for the next word
+			} else {
+				compW = &CompressionWord{}
+			}
+			compW.order = inCount
+			if len(v) == 0 {
+				// Empty word, cannot be compressed
+				compW.word = append(compW.word[:0], 0)
+				uncompPosMap[1]++
+				uncompPosMap[0]++
+				heap.Push(&compressionQueue, compW) // Push to the queue directly, bypassing compression
+			} else if compression {
+				compW.word = append(compW.word[:0], v...)
+				ch <- compW // Send for compression
+			} else {
+				// Prepend word with encoding of length + zero byte, which indicates no patterns to be found in this word
+				wordLen := uint64(len(v))
+				n := binary.PutUvarint(numBuf[:], wordLen)
+				uncompPosMap[wordLen+1]++
+				uncompPosMap[0]++
+				compW.word = append(append(append(compW.word[:0], numBuf[:n]...), 0), v...)
+				heap.Push(&compressionQueue, compW) // Push to the queue directly, bypassing compression
+			}
+		} else {
 			outCount++
-			// Write to intermediate file
-			if _, e := intermediateW.Write(compW.word); e != nil {
-				return e
-			}
-			// Reuse compW for the next word
-		} else {
-			compW = &CompressionWord{}
-		}
-		compW.order = inCount
-		if len(v) == 0 {
-			// Empty word, cannot be compressed
-			compW.word = append(compW.word[:0], 0)
-			uncompPosMap[1]++
-			uncompPosMap[0]++
-			heap.Push(&compressionQueue, compW) // Push to the queue directly, bypassing compression
-		} else if compression {
-			compW.word = append(compW.word[:0], v...)
-			ch <- compW // Send for compression
-		} else {
-			// Prepend word with encoding of length + zero byte, which indicates no patterns to be found in this word
 			wordLen := uint64(len(v))
 			n := binary.PutUvarint(numBuf[:], wordLen)
+			if _, e := intermediateW.Write(numBuf[:n]); e != nil {
+				return e
+			}
+			if wordLen > 0 {
+				if compression {
+					output, patterns, uncovered = optimiseCluster(trace, v, &pt, &mf, output[:0], uncovered, patterns, cellRing, uncompPosMap)
+					if _, e := intermediateW.Write(output); e != nil {
+						return e
+					}
+					outputSize.Add(uint64(len(output)))
+				} else {
+					if e := intermediateW.WriteByte(0); e != nil {
+						return e
+					}
+					if _, e := intermediateW.Write(v); e != nil {
+						return e
+					}
+					outputSize.Add(1 + uint64(len(v)))
+				}
+			}
+			inputSize.Add(1 + wordLen)
 			uncompPosMap[wordLen+1]++
 			uncompPosMap[0]++
-			compW.word = append(append(append(compW.word[:0], numBuf[:n]...), 0), v...)
-			heap.Push(&compressionQueue, compW) // Push to the queue directly, bypassing compression
 		}
 		inCount++
 		select {
