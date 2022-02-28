@@ -23,7 +23,6 @@ import (
 )
 
 // Implementation of paticia tree for efficient search of substrings from a dictionary in a given string
-
 type node struct {
 	p0 uint32 // Number of bits in the left prefix is encoded into the lower 5 bits, the remaining 27 bits are left prefix
 	p1 uint32 // Number of bits in the right prefix is encoding into the lower 5 bits, the remaining 27 bits are right prefix
@@ -71,6 +70,15 @@ func (n *node) String() string {
 	return sb.String()
 }
 
+// state represent a position anywhere inside patricia tree
+// position can be identified by combination of node, and the partitioning
+// of that node's p0 or p1 into head and tail.
+// As with p0 and p1, head and tail are encoded as follows:
+// lowest 5 bits encode the length in bits, and the remaining 27 bits
+// encode the actual head or tail.
+// For example, if the position is at the beginning of a node,
+// head would be zero, and tail would be equal to either p0 or p1,
+// depending on whether the position corresponds to going left (0) or right (1).
 type state struct {
 	n    *node
 	head uint32
@@ -97,7 +105,6 @@ func (s *state) transition(b byte, readonly bool) uint32 {
 	bitsLeft := 8 // Bits in b to process
 	b32 := uint32(b) << 24
 	for bitsLeft > 0 {
-		//fmt.Printf("bitsLeft = %d, b32 = %x, s.head = %s, s.tail = %s\n", bitsLeft, b32, tostr(s.head), tostr(s.tail))
 		if s.head == 0 {
 			// tail has not been determined yet, do it now
 			if b32&0x80000000 == 0 {
@@ -105,54 +112,35 @@ func (s *state) transition(b byte, readonly bool) uint32 {
 			} else {
 				s.tail = s.n.p1
 			}
-			//fmt.Printf("s.tail <- %s\n", tostr(s.tail))
 		}
 		if s.tail == 0 {
+			// state positioned at the end of the current node
 			return b32 | uint32(bitsLeft)
 		}
 		tailLen := int(s.tail & 0x1f)
 		firstDiff := bits.LeadingZeros32(s.tail ^ b32) // First bit where b32 and tail are different
-		//fmt.Printf("firstDiff = %d, bitsLeft = %d\n", firstDiff, bitsLeft)
 		if firstDiff < bitsLeft {
-			//fmt.Printf("firstDiff < bitsLeft\n")
+			// divergence (where the key being searched and the existing structure of patricia tree becomes incompatible) is within currently supplied byte of the search key, b
 			if firstDiff >= tailLen {
-				//fmt.Printf("firstDiff >= tailLen\n")
+				// divergence is within currently supplied byte of the search key, b, but outside of the current node
 				bitsLeft -= tailLen
 				b32 <<= tailLen
 				// Need to switch to the next node
 				if (s.head == 0 && s.tail&0x80000000 == 0) || (s.head != 0 && s.head&0x80000000 == 0) {
 					if s.n.n0 == nil {
-						if readonly {
-							return b32 | uint32(bitsLeft)
-						}
-						//fmt.Printf("new node n0\n")
-						s.n.n0 = &node{}
-						if b32&0x80000000 == 0 {
-							s.n.n0.p0 = b32 | uint32(bitsLeft)
-						} else {
-							s.n.n0.p1 = b32 | uint32(bitsLeft)
-						}
+						panic("")
 					}
 					s.n = s.n.n0
 				} else {
 					if s.n.n1 == nil {
-						if readonly {
-							return b32 | uint32(bitsLeft)
-						}
-						//fmt.Printf("new node n1\n")
-						s.n.n1 = &node{}
-						if b32&0x80000000 == 0 {
-							s.n.n1.p0 = b32 | uint32(bitsLeft)
-						} else {
-							s.n.n1.p1 = b32 | uint32(bitsLeft)
-						}
+						panic("")
 					}
 					s.n = s.n.n1
 				}
-				//fmt.Printf("s.n = %p\n", s.n)
 				s.head = 0
 				s.tail = 0
 			} else {
+				// divergence is within currently supplied byte of the search key, b, and within the current node
 				bitsLeft -= firstDiff
 				b32 <<= firstDiff
 				// there is divergence, move head and tail
@@ -164,7 +152,7 @@ func (s *state) transition(b byte, readonly bool) uint32 {
 				return b32 | uint32(bitsLeft)
 			}
 		} else if tailLen < bitsLeft {
-			//fmt.Printf("tailLen < bitsLeft\n")
+			// divergence is outside of currently supplied byte of the search key, b
 			bitsLeft -= tailLen
 			b32 <<= tailLen
 			// Switch to the next node
@@ -198,7 +186,7 @@ func (s *state) transition(b byte, readonly bool) uint32 {
 			s.head = 0
 			s.tail = 0
 		} else {
-			// key byte is consumed
+			// key byte is consumed, but stay on the same node
 			mask := ^(uint32(1)<<(32-bitsLeft) - 1)
 			s.head |= (s.tail & mask) >> (s.head & 0x1f)
 			s.head += uint32(bitsLeft)
@@ -362,6 +350,11 @@ type MatchFinder struct {
 	matches []Match
 }
 
+type MatchFinder2 struct {
+	nodeStack []*node
+	matches   []Match
+}
+
 func (mf *MatchFinder) FindLongestMatches(pt *PatriciaTree, data []byte) []Match {
 	matchCount := 0
 	s := &mf.s
@@ -370,30 +363,30 @@ func (mf *MatchFinder) FindLongestMatches(pt *PatriciaTree, data []byte) []Match
 		s.reset(&pt.root)
 		emitted := false
 		for end := start + 1; end < len(data); end++ {
-			if d := s.transition(data[end-1], true /* readonly */); d == 0 {
-				if s.tail == 0 && s.n.val != nil && end > lastEnd {
-					var m *Match
-					if !emitted {
-						if matchCount == len(mf.matches) {
-							mf.matches = append(mf.matches, Match{})
-							m = &mf.matches[len(mf.matches)-1]
-						} else {
-							m = &mf.matches[matchCount]
-						}
-						matchCount++
-						emitted = true
-					} else {
-						m = &mf.matches[matchCount-1]
-					}
-					// This possible overwrites previous match for the same start position
-					m.Start = start
-					m.End = end
-					m.Val = s.n.val
-					lastEnd = end
-				}
-			} else {
+			if d := s.transition(data[end-1], true /* readonly */); d != 0 {
 				break
 			}
+			if s.tail != 0 || s.n.val == nil || end <= lastEnd {
+				continue
+			}
+			var m *Match
+			if emitted {
+				m = &mf.matches[matchCount-1]
+			} else {
+				if matchCount == len(mf.matches) {
+					mf.matches = append(mf.matches, Match{})
+					m = &mf.matches[len(mf.matches)-1]
+				} else {
+					m = &mf.matches[matchCount]
+				}
+				matchCount++
+				emitted = true
+			}
+			// This possibly overwrites previous match for the same start position
+			m.Start = start
+			m.End = end
+			m.Val = s.n.val
+			lastEnd = end
 		}
 	}
 	return mf.matches[:matchCount]
