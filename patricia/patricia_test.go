@@ -94,8 +94,26 @@ func TestFindMatches1(t *testing.T) {
 	pt.Insert([]byte("wolfs"), []byte{3})
 	fmt.Printf("n\n%s", &pt.root)
 	var mf MatchFinder
-	matches := mf.FindLongestMatches(&pt, []byte("Who lives here in winter, wolfs?"))
+	data := []byte("Who lives here in winter, wolfs")
+	matches := mf.FindLongestMatches(&pt, data)
 	for _, m := range matches {
-		fmt.Printf("%+v\n", m)
+		fmt.Printf("%+v, match [%s]\n", m, data[m.Start:m.End])
+	}
+}
+
+func TestFindMatches2(t *testing.T) {
+	var pt PatriciaTree
+	pt.Insert([]byte("wolf"), []byte{1})
+	pt.Insert([]byte("winter"), []byte{2})
+	pt.Insert([]byte("wolfs?"), []byte{3})
+	fmt.Printf("n\n%s", &pt.root)
+	mf2, err := NewMatchFinder2(&pt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("Who lives here in winter, wolfs?")
+	matches := mf2.FindLongestMatches(data)
+	for _, m := range matches {
+		fmt.Printf("%+v, match: [%s]\n", m, data[m.Start:m.End])
 	}
 }

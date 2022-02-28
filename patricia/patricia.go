@@ -334,6 +334,7 @@ type PatriciaTree struct {
 }
 
 func (pt *PatriciaTree) Insert(key []byte, value interface{}) {
+	fmt.Printf("Insert [%x]\n", key)
 	pt.root.insert(key, value)
 }
 
@@ -368,12 +369,13 @@ func NewMatchFinder2(pt *PatriciaTree) (*MatchFinder2, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &MatchFinder2{divsufsort: divsufsort, pt: pt}, nil
+	return &MatchFinder2{divsufsort: divsufsort, pt: pt, top: &pt.root, nodeStack: []*node{&pt.root}}, nil
 }
 
 // unfold consumes next byte of the key, moves the state to corresponding
 // node of the patricia tree and returns divergence prefix (0 if there is no divergence)
 func (mf2 *MatchFinder2) unfold(b byte) uint32 {
+	//fmt.Printf("unfold %b, head = %b, tail = %b, nodeStackLen = %d\n", b, mf2.head, mf2.tail, len(mf2.nodeStack))
 	bitsLeft := 8 // Bits in b to process
 	b32 := uint32(b) << 24
 	for bitsLeft > 0 {
@@ -402,11 +404,13 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 					if mf2.top.n0 == nil {
 						panic("")
 					}
+					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 					mf2.top = mf2.top.n0
 				} else {
 					if mf2.top.n1 == nil {
 						panic("")
 					}
+					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 					mf2.top = mf2.top.n1
 				}
 				mf2.head = 0
@@ -430,13 +434,33 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 			// Switch to the next node
 			if (mf2.head == 0 && mf2.tail&0x80000000 == 0) || (mf2.head != 0 && mf2.head&0x80000000 == 0) {
 				if mf2.top.n0 == nil {
-					return b32 | uint32(bitsLeft)
+					if mf2.head == 0 {
+						mf2.tail = 0
+					}
+					b32 <<= tailLen
+					// there is divergence, move head and tail
+					mask := ^(uint32(1)<<(32-tailLen) - 1)
+					mf2.head |= (mf2.tail & mask) >> (mf2.head & 0x1f)
+					mf2.head += uint32(tailLen)
+					mf2.tail = (mf2.tail&0xffffffe0)<<tailLen | (mf2.tail & 0x1f)
+					mf2.tail -= uint32(tailLen)
+					return b32 | uint32(tailLen)
 				}
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 				mf2.top = mf2.top.n0
 			} else {
 				if mf2.top.n1 == nil {
-					return b32 | uint32(bitsLeft)
+					if mf2.head == 0 {
+						mf2.tail = 0
+					}
+					b32 <<= tailLen
+					// there is divergence, move head and tail
+					mask := ^(uint32(1)<<(32-tailLen) - 1)
+					mf2.head |= (mf2.tail & mask) >> (mf2.head & 0x1f)
+					mf2.head += uint32(tailLen)
+					mf2.tail = (mf2.tail&0xffffffe0)<<tailLen | (mf2.tail & 0x1f)
+					mf2.tail -= uint32(tailLen)
+					return b32 | uint32(tailLen)
 				}
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 				mf2.top = mf2.top.n1
@@ -473,14 +497,20 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 
 // unfold moves the match finder back up the stack by specified number of bits
 func (mf2 *MatchFinder2) fold(bits int) {
+	//fmt.Printf("fold %d\n", bits)
 	bitsLeft := bits
 	for bitsLeft > 0 {
 		headLen := int(mf2.head & 0x1f)
-		if headLen >= bitsLeft {
+		//fmt.Printf("headLen = %d, bitsLeft = %d\n", headLen, bitsLeft)
+		if headLen == bitsLeft {
+			mf2.head = 0
+			mf2.tail = 0
+			bitsLeft = 0
+		} else if headLen >= bitsLeft {
 			// folding only affects top node, take bits from end of the head and prepend it to the tail
-			mf2.tail = (mf2.tail >> bitsLeft) | ((mf2.head << (headLen - bitsLeft)) & 0xff000000)
-			mf2.tail += 8
-			mask := ^(uint32(1)<<(headLen-8) - 1)
+			mf2.tail = (mf2.tail >> bitsLeft) | (mf2.head << (headLen - bitsLeft))
+			mf2.tail += uint32(bitsLeft)
+			mask := ^(uint32(1)<<(headLen-bitsLeft) - 1)
 			mf2.head = (mf2.head & mask) | (uint32(headLen - bitsLeft))
 			bitsLeft = 0
 		} else {
@@ -491,8 +521,12 @@ func (mf2 *MatchFinder2) fold(bits int) {
 			mf2.top = mf2.nodeStack[len(mf2.nodeStack)-1]
 			if mf2.top.n0 == prevTop {
 				mf2.head = mf2.top.p0
-			} else {
+				//fmt.Printf("mf2.head = p0 %b\n", mf2.head)
+			} else if mf2.top.n1 == prevTop {
 				mf2.head = mf2.top.p1
+				//fmt.Printf("mf2.head = p1 %b\n", mf2.head)
+			} else {
+				panic("")
 			}
 			mf2.tail = 0
 		}
@@ -500,8 +534,14 @@ func (mf2 *MatchFinder2) fold(bits int) {
 }
 
 func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
+	fmt.Printf("data=[%x]\n", data)
+	matchCount := 0
+	if len(data) == 0 {
+		return mf2.matches[:0]
+	}
 	mf2.nodeStack = mf2.nodeStack[:0]
 	mf2.nodeStack = append(mf2.nodeStack, &mf2.pt.root)
+	mf2.top = &mf2.pt.root
 	mf2.head = 0
 	mf2.tail = 0
 	n := len(data)
@@ -543,7 +583,7 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 
 		// Directly start matching from k'th index as
 		// at-least k-1 characters will match
-		for i+k < n && j+k < n {
+		for i+k < n && j+k < n && data[i+k] == data[j+k] {
 			k++
 		}
 		mf2.lcp[mf2.inv[i]] = int32(k) // lcp for the present suffix.
@@ -553,7 +593,58 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 			k--
 		}
 	}
-	return nil
+	fmt.Printf("sa=[%d]\n", mf2.sa)
+	fmt.Printf("lcp=[%d]\n", mf2.lcp)
+	depth := 0 // Depth in bits
+	for i := 0; i < n; i++ {
+		// Skip this starting position if a longer suffix containing this one is present
+		// lcp[i] is the Longest Common Prefix of suffixes starting from sa[i] and sa[i+1]
+		fmt.Printf("Suffix [%x], depth = %d\n", data[mf2.sa[i]:n], depth)
+		if mf2.sa[i] > 0 && mf2.sa[i]+mf2.lcp[i] == int32(n) {
+			fmt.Printf("Skipping because it contained in a longer suffix\n")
+			continue
+		}
+		if i > 0 {
+			// lcp[i-1] is the Longest Common Prefix of suffixes starting from sa[i-1] and sa[i]
+			if depth > 8*int(mf2.lcp[i-1]) {
+				mf2.fold(depth - 8*int(mf2.lcp[i-1]))
+				depth = 8 * int(mf2.lcp[i-1])
+			}
+		}
+		start := int(mf2.sa[i]) + depth/8
+		emitted := false
+		for end := start + 1; end <= n; end++ {
+			fmt.Printf("Looking at [%x], start=%d, depth = %d\n", data[mf2.sa[i]:end], start, depth)
+			d := mf2.unfold(data[end-1])
+			if d != 0 {
+				fmt.Printf("divergence found: %b\n", d)
+				depth += 8 - int(d&0x1f)
+				break
+			}
+			depth += 8
+			if mf2.tail != 0 || mf2.top.val == nil {
+				continue
+			}
+			var m *Match
+			if emitted {
+				m = &mf2.matches[matchCount-1]
+			} else {
+				if matchCount == len(mf2.matches) {
+					mf2.matches = append(mf2.matches, Match{})
+					m = &mf2.matches[len(mf2.matches)-1]
+				} else {
+					m = &mf2.matches[matchCount]
+				}
+				matchCount++
+				emitted = true
+			}
+			// This possibly overwrites previous match for the same start position
+			m.Start = int(mf2.sa[i])
+			m.End = end
+			m.Val = mf2.top.val
+		}
+	}
+	return mf2.matches[:matchCount]
 }
 
 func (mf *MatchFinder) FindLongestMatches(pt *PatriciaTree, data []byte) []Match {
@@ -563,7 +654,7 @@ func (mf *MatchFinder) FindLongestMatches(pt *PatriciaTree, data []byte) []Match
 	for start := 0; start < len(data)-1; start++ {
 		s.reset(&pt.root)
 		emitted := false
-		for end := start + 1; end < len(data); end++ {
+		for end := start + 1; end <= len(data); end++ {
 			if d := s.transition(data[end-1], true /* readonly */); d != 0 {
 				break
 			}
