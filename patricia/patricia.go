@@ -601,8 +601,8 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 		// lcp[i] is the Longest Common Prefix of suffixes starting from sa[i] and sa[i+1]
 		fmt.Printf("Suffix [%x], depth = %d\n", data[mf2.sa[i]:n], depth)
 		if mf2.sa[i] > 0 && mf2.sa[i]+mf2.lcp[i] == int32(n) {
-			fmt.Printf("Skipping because it contained in a longer suffix\n")
-			continue
+			//fmt.Printf("Skipping because it contained in a longer suffix\n")
+			//continue
 		}
 		if i > 0 {
 			// lcp[i-1] is the Longest Common Prefix of suffixes starting from sa[i-1] and sa[i]
