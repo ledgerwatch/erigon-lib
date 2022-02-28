@@ -132,7 +132,14 @@ func FuzzLongestMatch(f *testing.F) {
 		m1 := mf.FindLongestMatches(&pt, data)
 		mf2, _ := NewMatchFinder2(&pt)
 		m2 := mf2.FindLongestMatches(data)
-		if len(m1) != len(m2) {
+		if len(m1) == len(m2) {
+			for i, m := range m1 {
+				mm := m2[i]
+				if m.Start != mm.Start || m.End != m.End {
+					t.Errorf("mismatch, expected %+v, got %+v", m, mm)
+				}
+			}
+		} else {
 			t.Errorf("matches %d, expected %d", len(m2), len(m1))
 		}
 	})
