@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"math/bits"
 	"strings"
+
+	"github.com/flanglet/kanzi-go/transform"
 )
 
 // Implementation of paticia tree for efficient search of substrings from a dictionary in a given string
@@ -351,8 +353,207 @@ type MatchFinder struct {
 }
 
 type MatchFinder2 struct {
-	nodeStack []*node
-	matches   []Match
+	nodeStack    []*node
+	top          *node // Top of nodeStack
+	head         uint32
+	tail         uint32
+	matches      []Match
+	divsufsort   *transform.DivSufSort
+	pt           *PatriciaTree
+	sa, lcp, inv []int32
+}
+
+func NewMatchFinder2(pt *PatriciaTree) (*MatchFinder2, error) {
+	divsufsort, err := transform.NewDivSufSort()
+	if err != nil {
+		return nil, err
+	}
+	return &MatchFinder2{divsufsort: divsufsort, pt: pt}, nil
+}
+
+// unfold consumes next byte of the key, moves the state to corresponding
+// node of the patricia tree and returns divergence prefix (0 if there is no divergence)
+func (mf2 *MatchFinder2) unfold(b byte) uint32 {
+	bitsLeft := 8 // Bits in b to process
+	b32 := uint32(b) << 24
+	for bitsLeft > 0 {
+		if mf2.head == 0 {
+			// tail has not been determined yet, do it now
+			if b32&0x80000000 == 0 {
+				mf2.tail = mf2.top.p0
+			} else {
+				mf2.tail = mf2.top.p1
+			}
+		}
+		if mf2.tail == 0 {
+			// state positioned at the end of the current node
+			return b32 | uint32(bitsLeft)
+		}
+		tailLen := int(mf2.tail & 0x1f)
+		firstDiff := bits.LeadingZeros32(mf2.tail ^ b32) // First bit where b32 and tail are different
+		if firstDiff < bitsLeft {
+			// divergence (where the key being searched and the existing structure of patricia tree becomes incompatible) is within currently supplied byte of the search key, b
+			if firstDiff >= tailLen {
+				// divergence is within currently supplied byte of the search key, b, but outside of the current node
+				bitsLeft -= tailLen
+				b32 <<= tailLen
+				// Need to switch to the next node
+				if (mf2.head == 0 && mf2.tail&0x80000000 == 0) || (mf2.head != 0 && mf2.head&0x80000000 == 0) {
+					if mf2.top.n0 == nil {
+						panic("")
+					}
+					mf2.top = mf2.top.n0
+				} else {
+					if mf2.top.n1 == nil {
+						panic("")
+					}
+					mf2.top = mf2.top.n1
+				}
+				mf2.head = 0
+				mf2.tail = 0
+			} else {
+				// divergence is within currently supplied byte of the search key, b, and within the current node
+				bitsLeft -= firstDiff
+				b32 <<= firstDiff
+				// there is divergence, move head and tail
+				mask := ^(uint32(1)<<(32-firstDiff) - 1)
+				mf2.head |= (mf2.tail & mask) >> (mf2.head & 0x1f)
+				mf2.head += uint32(firstDiff)
+				mf2.tail = (mf2.tail&0xffffffe0)<<firstDiff | (mf2.tail & 0x1f)
+				mf2.tail -= uint32(firstDiff)
+				return b32 | uint32(bitsLeft)
+			}
+		} else if tailLen < bitsLeft {
+			// divergence is outside of currently supplied byte of the search key, b
+			bitsLeft -= tailLen
+			b32 <<= tailLen
+			// Switch to the next node
+			if (mf2.head == 0 && mf2.tail&0x80000000 == 0) || (mf2.head != 0 && mf2.head&0x80000000 == 0) {
+				if mf2.top.n0 == nil {
+					return b32 | uint32(bitsLeft)
+				}
+				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
+				mf2.top = mf2.top.n0
+			} else {
+				if mf2.top.n1 == nil {
+					return b32 | uint32(bitsLeft)
+				}
+				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
+				mf2.top = mf2.top.n1
+			}
+			mf2.head = 0
+			mf2.tail = 0
+		} else {
+			// key byte is consumed, but stay on the same node
+			mask := ^(uint32(1)<<(32-bitsLeft) - 1)
+			mf2.head |= (mf2.tail & mask) >> (mf2.head & 0x1f)
+			mf2.head += uint32(bitsLeft)
+			mf2.tail = (mf2.tail&0xffffffe0)<<bitsLeft | (mf2.tail & 0x1f)
+			mf2.tail -= uint32(bitsLeft)
+			bitsLeft = 0
+			if mf2.tail == 0 {
+				if mf2.head&0x80000000 == 0 {
+					if mf2.top.n0 != nil {
+						mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
+						mf2.top = mf2.top.n0
+						mf2.head = 0
+					}
+				} else {
+					if mf2.top.n1 != nil {
+						mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
+						mf2.top = mf2.top.n1
+						mf2.head = 0
+					}
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// unfold moves the match finder back up the stack by specified number of bits
+func (mf2 *MatchFinder2) fold(bits int) {
+	bitsLeft := bits
+	for bitsLeft > 0 {
+		headLen := int(mf2.head & 0x1f)
+		if headLen >= bitsLeft {
+			// folding only affects top node, take bits from end of the head and prepend it to the tail
+			mf2.tail = (mf2.tail >> bitsLeft) | ((mf2.head << (headLen - bitsLeft)) & 0xff000000)
+			mf2.tail += 8
+			mask := ^(uint32(1)<<(headLen-8) - 1)
+			mf2.head = (mf2.head & mask) | (uint32(headLen - bitsLeft))
+			bitsLeft = 0
+		} else {
+			// folding affects not only top node, remove top node
+			bitsLeft -= headLen
+			mf2.nodeStack = mf2.nodeStack[:len(mf2.nodeStack)-1]
+			prevTop := mf2.top
+			mf2.top = mf2.nodeStack[len(mf2.nodeStack)-1]
+			if mf2.top.n0 == prevTop {
+				mf2.head = mf2.top.p0
+			} else {
+				mf2.head = mf2.top.p1
+			}
+			mf2.tail = 0
+		}
+	}
+}
+
+func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
+	mf2.nodeStack = mf2.nodeStack[:0]
+	mf2.nodeStack = append(mf2.nodeStack, &mf2.pt.root)
+	mf2.head = 0
+	mf2.tail = 0
+	n := len(data)
+	if cap(mf2.sa) < n {
+		mf2.sa = make([]int32, n)
+	} else {
+		mf2.sa = mf2.sa[:n]
+	}
+	mf2.divsufsort.ComputeSuffixArray(data, mf2.sa)
+	if cap(mf2.inv) < n {
+		mf2.inv = make([]int32, n)
+	} else {
+		mf2.inv = mf2.inv[:n]
+	}
+	for i := 0; i < n; i++ {
+		mf2.inv[mf2.sa[i]] = int32(i)
+	}
+	var k int
+	// Process all suffixes one by one starting from
+	// first suffix in txt[]
+	if cap(mf2.lcp) < n {
+		mf2.lcp = make([]int32, n)
+	} else {
+		mf2.lcp = mf2.lcp[:n]
+	}
+	for i := 0; i < n; i++ {
+		/* If the current suffix is at n-1, then we don’t
+		   have next substring to consider. So lcp is not
+		   defined for this substring, we put zero. */
+		if mf2.inv[i] == int32(n-1) {
+			k = 0
+			continue
+		}
+
+		/* j contains index of the next substring to
+		   be considered  to compare with the present
+		   substring, i.e., next string in suffix array */
+		j := int(mf2.sa[mf2.inv[i]+1])
+
+		// Directly start matching from k'th index as
+		// at-least k-1 characters will match
+		for i+k < n && j+k < n {
+			k++
+		}
+		mf2.lcp[mf2.inv[i]] = int32(k) // lcp for the present suffix.
+
+		// Deleting the starting character from the string.
+		if k > 0 {
+			k--
+		}
+	}
+	return nil
 }
 
 func (mf *MatchFinder) FindLongestMatches(pt *PatriciaTree, data []byte) []Match {
