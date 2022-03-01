@@ -17,6 +17,7 @@
 package patricia
 
 import (
+	"encoding/hex"
 	"fmt"
 	"testing"
 )
@@ -112,6 +113,60 @@ func TestFindMatches2(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := []byte("Who lives here in winter, wolfs?")
+	matches := mf2.FindLongestMatches(data)
+	for _, m := range matches {
+		fmt.Printf("%+v, match: [%s]\n", m, data[m.Start:m.End])
+	}
+}
+
+func decodeHex(in string) []byte {
+	payload, err := hex.DecodeString(in)
+	if err != nil {
+		panic(err)
+	}
+	return payload
+}
+
+func TestFundMatches3(t *testing.T) {
+	var pt PatriciaTree
+	v := []byte{1}
+	pt.Insert(decodeHex("00000000000000000000000000000000000000"), v)
+	pt.Insert(decodeHex("000000000000000000000000000000000000"), v)
+	pt.Insert(decodeHex("0000000000000000000000000000000000"), v)
+	pt.Insert(decodeHex("00000000000000000000000000000000"), v)
+	pt.Insert(decodeHex("000000000000000000000000000000"), v)
+	pt.Insert(decodeHex("0000000000000000000000000000"), v)
+	pt.Insert(decodeHex("0100000000000000000000003b30000001000003"), v)
+	pt.Insert(decodeHex("0000000000000000003b30000001000003000100"), v)
+	pt.Insert(decodeHex("000000000000000000003b300000010000030001"), v)
+	pt.Insert(decodeHex("00000000000000000000003b3000000100000300"), v)
+	pt.Insert(decodeHex("00000000000000000000000000"), v)
+	pt.Insert(decodeHex("00000000000000003b30000001000003000100"), v)
+	pt.Insert(decodeHex("000000000000000000000000"), v)
+	pt.Insert(decodeHex("000000000000003b30000001000003000100"), v)
+	pt.Insert(decodeHex("0000000000003b30000001000003000100"), v)
+	pt.Insert(decodeHex("00000000003b30000001000003000100"), v)
+	pt.Insert(decodeHex("000000003b30000001000003000100"), v)
+	pt.Insert(decodeHex("0000003b30000001000003000100"), v)
+	pt.Insert(decodeHex("00003b30000001000003000100"), v)
+	pt.Insert(decodeHex("0100000000000000"), v)
+	pt.Insert(decodeHex("003b30000001000003000100"), v)
+	pt.Insert(decodeHex("3b30000001000003000100"), v)
+	pt.Insert(decodeHex("00000000000000003b3000000100000300010000"), v)
+	pt.Insert(decodeHex("0100000000000000000000003a30000001000000"), v)
+	pt.Insert(decodeHex("000000003a300000010000000000010010000000"), v)
+	pt.Insert(decodeHex("00000000003a3000000100000000000100100000"), v)
+	pt.Insert(decodeHex("0000000000003a30000001000000000001001000"), v)
+	pt.Insert(decodeHex("000000000000003a300000010000000000010010"), v)
+	pt.Insert(decodeHex("00000000000000003a3000000100000000000100"), v)
+	pt.Insert(decodeHex("0000000000000000003a30000001000000000001"), v)
+	pt.Insert(decodeHex("000000000000000000003a300000010000000000"), v)
+	pt.Insert(decodeHex("00000000000000000000003a3000000100000000"), v)
+	mf2, err := NewMatchFinder2(&pt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := decodeHex("0100000000000000000000003a30000001000000000001001000000044004500")
 	matches := mf2.FindLongestMatches(data)
 	for _, m := range matches {
 		fmt.Printf("%+v, match: [%s]\n", m, data[m.Start:m.End])
