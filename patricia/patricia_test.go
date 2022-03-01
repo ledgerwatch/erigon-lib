@@ -172,3 +172,18 @@ func TestFundMatches3(t *testing.T) {
 		fmt.Printf("%+v, match: [%x]\n", m, data[m.Start:m.End])
 	}
 }
+
+func TestFundMatches4(t *testing.T) {
+	var pt PatriciaTree
+	v := []byte{1}
+	pt.Insert(decodeHex("00000000000000000000000000000000000000"), v)
+	mf2, err := NewMatchFinder2(&pt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := decodeHex("01")
+	matches := mf2.FindLongestMatches(data)
+	for _, m := range matches {
+		fmt.Printf("%+v, match: [%x]\n", m, data[m.Start:m.End])
+	}
+}

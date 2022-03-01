@@ -335,7 +335,7 @@ type PatriciaTree struct {
 }
 
 func (pt *PatriciaTree) Insert(key []byte, value interface{}) {
-	fmt.Printf("Insert [%x]\n", key)
+	//fmt.Printf("Insert [%x]\n", key)
 	pt.root.insert(key, value)
 }
 
@@ -542,9 +542,9 @@ func (mf2 *MatchFinder2) fold(bits int) {
 }
 
 func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
-	fmt.Printf("data=[%x]\n", data)
+	//fmt.Printf("data=[%x]\n", data)
 	mf2.matches = mf2.matches[:0]
-	if len(data) == 0 {
+	if len(data) < 2 {
 		return mf2.matches
 	}
 	mf2.nodeStack = append(mf2.nodeStack[:0], &mf2.pt.root)
@@ -609,10 +609,6 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 		// Skip this starting position if a longer suffix containing this one is present
 		// lcp[i] is the Longest Common Prefix of suffixes starting from sa[i] and sa[i+1]
 		//fmt.Printf("Suffix [%x], depth = %d\n", data[mf2.sa[i]:n], depth)
-		//if mf2.sa[i] > 0 && mf2.sa[i]+mf2.lcp[i] == int32(n) {
-		//fmt.Printf("Skipping because it contained in a longer suffix\n")
-		//continue
-		//}
 		if i > 0 {
 			// lcp[i-1] is the Longest Common Prefix of suffixes starting from sa[i-1] and sa[i]
 			if depth > 8*int(mf2.lcp[i-1]) {
