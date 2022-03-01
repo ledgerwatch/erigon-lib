@@ -169,6 +169,6 @@ func TestFundMatches3(t *testing.T) {
 	data := decodeHex("0100000000000000000000003a30000001000000000001001000000044004500")
 	matches := mf2.FindLongestMatches(data)
 	for _, m := range matches {
-		fmt.Printf("%+v, match: [%s]\n", m, data[m.Start:m.End])
+		fmt.Printf("%+v, match: [%x]\n", m, data[m.Start:m.End])
 	}
 }
