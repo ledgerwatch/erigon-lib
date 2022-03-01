@@ -667,8 +667,24 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 			lastMatch.Val = mf2.top.val
 		}
 	}
+	if len(mf2.matches) < 2 {
+		return mf2.matches
+	}
 	sort.Sort(&mf2.matches)
-	return mf2.matches
+	lastEnd := mf2.matches[0].End
+	j := 1
+	for i, m := range mf2.matches {
+		if i > 0 {
+			if m.End > lastEnd {
+				if i != j {
+					mf2.matches[j] = m
+				}
+				lastEnd = m.End
+				j++
+			}
+		}
+	}
+	return mf2.matches[:j]
 }
 
 func (mf *MatchFinder) FindLongestMatches(data []byte) []Match {
