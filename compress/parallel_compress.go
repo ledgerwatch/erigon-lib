@@ -276,7 +276,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	var uncovered = make([]int, 256)
 	var patterns = make([]int, 0, 256)
 	cellRing := NewRing()
-	mf2, _ := patricia.NewMatchFinder2(&pt)
+	mf2 := patricia.NewMatchFinder(&pt)
 
 	var posMaps []map[uint64]uint64
 	uncompPosMap := make(map[uint64]uint64) // For the uncompressed words

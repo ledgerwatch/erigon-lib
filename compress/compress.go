@@ -746,7 +746,7 @@ func (c *CompressorSequential) findMatches() error {
 			return err
 		}
 		if len(word) > 0 {
-			matches := c.mf.FindLongestMatches(&c.pt, word)
+			matches := c.mf.FindLongestMatches(word)
 			if len(matches) == 0 {
 				n = binary.PutUvarint(c.numBuf[:], 0)
 				if _, err := c.interW.Write(c.numBuf[:n]); err != nil {
