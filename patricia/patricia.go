@@ -366,6 +366,11 @@ func (m *Matches) Swap(i, j int) {
 type MatchFinder struct {
 	s       state
 	matches []Match
+	pt      *PatriciaTree
+}
+
+func NewMatchFinder(pt *PatriciaTree) *MatchFinder {
+	return &MatchFinder{pt: pt}
 }
 
 type MatchFinder2 struct {
@@ -379,12 +384,12 @@ type MatchFinder2 struct {
 	sa, lcp, inv []int32
 }
 
-func NewMatchFinder2(pt *PatriciaTree) (*MatchFinder2, error) {
+func NewMatchFinder2(pt *PatriciaTree) *MatchFinder2 {
 	divsufsort, err := transform.NewDivSufSort()
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	return &MatchFinder2{divsufsort: divsufsort, pt: pt, top: &pt.root, nodeStack: []*node{&pt.root}}, nil
+	return &MatchFinder2{divsufsort: divsufsort, pt: pt, top: &pt.root, nodeStack: []*node{&pt.root}}
 }
 
 // unfold consumes next byte of the key, moves the state to corresponding
@@ -666,12 +671,12 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 	return mf2.matches
 }
 
-func (mf *MatchFinder) FindLongestMatches(pt *PatriciaTree, data []byte) []Match {
+func (mf *MatchFinder) FindLongestMatches(data []byte) []Match {
 	matchCount := 0
 	s := &mf.s
 	lastEnd := 0
 	for start := 0; start < len(data); start++ {
-		s.reset(&pt.root)
+		s.reset(&mf.pt.root)
 		emitted := false
 		for end := start + 1; end <= len(data); end++ {
 			if d := s.transition(data[end-1], true /* readonly */); d != 0 {

@@ -94,9 +94,9 @@ func TestFindMatches1(t *testing.T) {
 	pt.Insert([]byte("winter"), []byte{2})
 	pt.Insert([]byte("wolfs"), []byte{3})
 	fmt.Printf("n\n%s", &pt.root)
-	var mf MatchFinder
+	mf := NewMatchFinder(&pt)
 	data := []byte("Who lives here in winter, wolfs")
-	matches := mf.FindLongestMatches(&pt, data)
+	matches := mf.FindLongestMatches(data)
 	for _, m := range matches {
 		fmt.Printf("%+v, match [%s]\n", m, data[m.Start:m.End])
 	}
@@ -108,10 +108,7 @@ func TestFindMatches2(t *testing.T) {
 	pt.Insert([]byte("winter"), []byte{2})
 	pt.Insert([]byte("wolfs?"), []byte{3})
 	fmt.Printf("n\n%s", &pt.root)
-	mf2, err := NewMatchFinder2(&pt)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mf2 := NewMatchFinder2(&pt)
 	data := []byte("Who lives here in winter, wolfs?")
 	matches := mf2.FindLongestMatches(data)
 	for _, m := range matches {
@@ -162,10 +159,7 @@ func TestFundMatches3(t *testing.T) {
 	pt.Insert(decodeHex("0000000000000000003a30000001000000000001"), v)
 	pt.Insert(decodeHex("000000000000000000003a300000010000000000"), v)
 	pt.Insert(decodeHex("00000000000000000000003a3000000100000000"), v)
-	mf2, err := NewMatchFinder2(&pt)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mf2 := NewMatchFinder2(&pt)
 	data := decodeHex("0100000000000000000000003a30000001000000000001001000000044004500")
 	matches := mf2.FindLongestMatches(data)
 	for _, m := range matches {
@@ -177,10 +171,7 @@ func TestFundMatches4(t *testing.T) {
 	var pt PatriciaTree
 	v := []byte{1}
 	pt.Insert(decodeHex("00000000000000000000000000000000000000"), v)
-	mf2, err := NewMatchFinder2(&pt)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mf2 := NewMatchFinder2(&pt)
 	data := decodeHex("01")
 	matches := mf2.FindLongestMatches(data)
 	for _, m := range matches {
