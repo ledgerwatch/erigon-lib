@@ -421,12 +421,14 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 					}
 					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 					mf2.top = mf2.top.n0
+					fmt.Printf("add node 1\n")
 				} else {
 					if mf2.top.n1 == nil {
 						panic("")
 					}
 					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 					mf2.top = mf2.top.n1
+					fmt.Printf("add node 2\n")
 				}
 				mf2.head = 0
 				mf2.tail = 0
@@ -460,6 +462,7 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				}
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 				mf2.top = mf2.top.n0
+				fmt.Printf("add node 3, tailLen = %d\n", tailLen)
 			} else {
 				if mf2.top.n1 == nil {
 					b32 <<= tailLen
@@ -473,6 +476,7 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				}
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 				mf2.top = mf2.top.n1
+				fmt.Printf("add node 4\n")
 			}
 			mf2.head = 0
 			mf2.tail = 0
@@ -490,12 +494,14 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 						mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 						mf2.top = mf2.top.n0
 						mf2.head = 0
+						fmt.Printf("add node 5\n")
 					}
 				} else {
 					if mf2.top.n1 != nil {
 						mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 						mf2.top = mf2.top.n1
 						mf2.head = 0
+						fmt.Printf("add node 6\n")
 					}
 				}
 			}
