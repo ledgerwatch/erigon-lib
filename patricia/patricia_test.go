@@ -178,3 +178,52 @@ func TestFundMatches4(t *testing.T) {
 		fmt.Printf("%+v, match: [%x]\n", m, data[m.Start:m.End])
 	}
 }
+
+func TestFundMatches5(t *testing.T) {
+	var pt PatriciaTree
+	v := []byte{1}
+	pt.Insert(decodeHex("c64a7e3632cde8f4689f47acfc0760e35bce43af"), v)
+	pt.Insert(decodeHex("bdc64a7e3632cde8f4689f47acfc0760e35bce43"), v)
+	pt.Insert(decodeHex("9f47acfc0760e35bce43af50d4b1f5973463bde6"), v)
+	pt.Insert(decodeHex("90bdc64a7e3632cde8f4689f47acfc0760e35bce"), v)
+	pt.Insert(decodeHex("7e3632cde8f4689f47acfc0760e35bce43af50d4"), v)
+	pt.Insert(decodeHex("689f47acfc0760e35bce43af50d4b1f5973463bd"), v)
+	pt.Insert(decodeHex("4a7e3632cde8f4689f47acfc0760e35bce43af50"), v)
+	pt.Insert(decodeHex("3632cde8f4689f47acfc0760e35bce43af50d4b1"), v)
+	pt.Insert(decodeHex("32cde8f4689f47acfc0760e35bce43af50d4b1f5"), v)
+	pt.Insert(decodeHex("b7ae2363ecbb6a595f07cbc2fc0fd417d3"), v)
+	pt.Insert(decodeHex("47acfc0760e35bce43af50d4b1f5973463bde6"), v)
+	pt.Insert(decodeHex("ae2363ecbb6a595f07cbc2fc0fd417d3"), v)
+	pt.Insert(decodeHex("acfc0760e35bce43af50d4b1f5973463bde6"), v)
+	pt.Insert(decodeHex("2363ecbb6a595f07cbc2fc0fd417d3"), v)
+	pt.Insert(decodeHex("fc0760e35bce43af50d4b1f5973463bde6"), v)
+	pt.Insert(decodeHex("63ecbb6a595f07cbc2fc0fd417d3"), v)
+	pt.Insert(decodeHex("0000000000000000000000000000000000000001"), v)
+	pt.Insert(decodeHex("0760e35bce43af50d4b1f5973463bde6"), v)
+	pt.Insert(decodeHex("bc63768597761b6c198fd8bd0feded3970bcdafd"), v)
+	pt.Insert(decodeHex("97761b6c198fd8bd0feded3970bcdafd3adaa9dc"), v)
+	pt.Insert(decodeHex("8fd8bd0feded3970bcdafd3adaa9dce41b48747f"), v)
+	pt.Insert(decodeHex("8597761b6c198fd8bd0feded3970bcdafd3adaa9"), v)
+	pt.Insert(decodeHex("7e04bc63768597761b6c198fd8bd0feded3970bc"), v)
+	pt.Insert(decodeHex("768597761b6c198fd8bd0feded3970bcdafd3ada"), v)
+	pt.Insert(decodeHex("761b6c198fd8bd0feded3970bcdafd3adaa9dce4"), v)
+	pt.Insert(decodeHex("6c198fd8bd0feded3970bcdafd3adaa9dce41b48"), v)
+	pt.Insert(decodeHex("63768597761b6c198fd8bd0feded3970bcdafd3a"), v)
+	pt.Insert(decodeHex("1b6c198fd8bd0feded3970bcdafd3adaa9dce41b"), v)
+	pt.Insert(decodeHex("198fd8bd0feded3970bcdafd3adaa9dce41b4874"), v)
+	pt.Insert(decodeHex("04bc63768597761b6c198fd8bd0feded3970bcda"), v)
+	pt.Insert(decodeHex("00000000000000000000000000000000000001"), v)
+	pt.Insert(decodeHex("0000000000000000000000000000000000000000000000000000000000000002"), v)
+	pt.Insert(decodeHex("ecbb6a595f07cbc2fc0fd417d3"), v)
+	pt.Insert(decodeHex("60e35bce43af50d4b1f5973463bde6"), v)
+	pt.Insert(decodeHex("d8bd0feded3970bcdafd3adaa9dce41b48747f"), v)
+	pt.Insert(decodeHex("000000000000000000000000000000000001"), v)
+	pt.Insert(decodeHex("60e3997d5a409c25fe09d77351b6"), v)
+	pt.Insert(decodeHex("bd0feded3970bcdafd3adaa9dce41b48747f"), v)
+	mf2 := NewMatchFinder2(&pt)
+	data := decodeHex("1a5f1a5f0434ef514634519d0d610f2cfd020859cb1157b1807cc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85e0434ef514634519d0d610f2cfd020859cb1157b1807cc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85c08202d3381848e9412ddc8240cf54b9591609212e0f8144cb1d618d97c0beaa2ab780434ef514634519d0d610f2cfd020859cb1157b1807cc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85d0434ef514634519d0d610f2cfd020859cb1157b1807c00000000000000000000000000000000000000000000000000000000000000020434ef514634519d0d610f2cfd020859cb1157b1807cc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85f0434ef514634519d0d610f2cfd020859cb1157b1807cc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f8600434ef514634519d0d610f2cfd020859cb1157b1807c00000000000000000000000000000000000000000000000000000000000000010434ef514634519d0d610f2cfd020859cb1157b1807c0000000000000000000000000000000000000000000000000000000000000003")
+	matches := mf2.FindLongestMatches(data)
+	for _, m := range matches {
+		fmt.Printf("%+v, match: [%x]\n", m, data[m.Start:m.End])
+	}
+}
