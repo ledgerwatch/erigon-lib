@@ -66,6 +66,10 @@ func (s *EthBackendClientDirect) Subscribe(ctx context.Context, in *remote.Subsc
 	return &SubscribeStreamC{ch: ch, ctx: ctx}, nil
 }
 
+func (s *EthBackendClientDirect) SubscribeLogs(ctx context.Context, opts ...grpc.CallOption) (remote.ETHBACKEND_SubscribeLogsClient, error) {
+	return nil, nil
+}
+
 type subscribeReply struct {
 	r   *remote.SubscribeReply
 	err error
