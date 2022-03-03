@@ -620,13 +620,13 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 				mf2.fold(depth - 8*int(mf2.lcp[i-1]))
 				depth = 8 * int(mf2.lcp[i-1])
 				//fmt.Printf("after fold depth = %d\n", depth)
-				for lastMatch != nil && lastMatch.End-lastMatch.Start > int(mf2.lcp[i-1]) {
-					mf2.matchStack = mf2.matchStack[:len(mf2.matchStack)-1]
-					if len(mf2.matchStack) == 0 {
-						lastMatch = nil
-					} else {
-						lastMatch = &mf2.matchStack[len(mf2.matchStack)-1]
-					}
+			}
+			for lastMatch != nil && lastMatch.End-lastMatch.Start > int(mf2.lcp[i-1]) {
+				mf2.matchStack = mf2.matchStack[:len(mf2.matchStack)-1]
+				if len(mf2.matchStack) == 0 {
+					lastMatch = nil
+				} else {
+					lastMatch = &mf2.matchStack[len(mf2.matchStack)-1]
 				}
 			}
 		}

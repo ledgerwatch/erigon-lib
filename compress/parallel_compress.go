@@ -58,7 +58,7 @@ func optimiseCluster(trace bool, input []byte, mf *patricia.MatchFinder, mf2 *pa
 		good = false
 	}
 	if !good {
-		fmt.Printf("\n\n%p\n", input)
+		fmt.Printf("\n\n%p\n", mf2)
 		for i, m := range matches {
 			fmt.Printf("%d. %+v, match: [%x]\n", i, m, input[m.Start:m.End])
 		}
