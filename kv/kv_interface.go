@@ -23,7 +23,7 @@ import (
 	"github.com/VictoriaMetrics/metrics"
 )
 
-const ReadersLimit = 32000 // MDBX_READERS_LIMIT=32767
+const ReadersLimit = 2000 // MDBX_READERS_LIMIT=32767
 
 var (
 	ErrAttemptToDeleteNonDeprecatedBucket = errors.New("only buckets from dbutils.ChaindataDeprecatedTables can be deleted")
