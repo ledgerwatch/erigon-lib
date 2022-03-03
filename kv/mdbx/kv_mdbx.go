@@ -360,10 +360,14 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		}
 	}()
 
-	defer func(t time.Time) { fmt.Printf("kv_mdbx.go:363: %s\n", time.Since(t)) }(time.Now())
+	t := time.Now()
 	tx, err := db.env.BeginTxn(nil, mdbx.Readonly)
 	if err != nil {
 		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, db.opts.label.String(), stack2.Trace().String())
+	}
+	took := time.Since(t)
+	if took > time.Millisecond {
+		fmt.Printf("kv_mdbx.go:363: %s\n", took)
 	}
 	tx.RawRead = true
 	return &MdbxTx{
