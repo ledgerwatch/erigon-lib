@@ -335,7 +335,7 @@ type PatriciaTree struct {
 }
 
 func (pt *PatriciaTree) Insert(key []byte, value interface{}) {
-	fmt.Printf("%p Insert [%x]\n", pt, key)
+	//fmt.Printf("%p Insert [%x]\n", pt, key)
 	pt.root.insert(key, value)
 }
 
@@ -375,6 +375,7 @@ func NewMatchFinder(pt *PatriciaTree) *MatchFinder {
 
 type MatchFinder2 struct {
 	nodeStack    []*node
+	matchStack   []Match
 	top          *node // Top of nodeStack
 	head         uint32
 	tail         uint32
@@ -547,7 +548,7 @@ func (mf2 *MatchFinder2) fold(bits int) {
 }
 
 func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
-	fmt.Printf("mf2=%p pt=%p data=[%x]\n", mf2, mf2.pt, data)
+	//fmt.Printf("mf2=%p pt=%p data=[%x]\n", mf2, mf2.pt, data)
 	mf2.matches = mf2.matches[:0]
 	if len(data) < 2 {
 		return mf2.matches
@@ -608,10 +609,8 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 	//fmt.Printf("sa=[%d]\n", mf2.sa)
 	//fmt.Printf("lcp=[%d]\n", mf2.lcp)
 	depth := 0 // Depth in bits
-	var emitted bool
 	var lastMatch *Match
 	for i := 0; i < n; i++ {
-		// Skip this starting position if a longer suffix containing this one is present
 		// lcp[i] is the Longest Common Prefix of suffixes starting from sa[i] and sa[i+1]
 		//fmt.Printf("Suffix [%x], depth = %d\n", data[mf2.sa[i]:n], depth)
 		if i > 0 {
@@ -621,22 +620,15 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 				mf2.fold(depth - 8*int(mf2.lcp[i-1]))
 				depth = 8 * int(mf2.lcp[i-1])
 				//fmt.Printf("after fold depth = %d\n", depth)
+				for lastMatch != nil && lastMatch.End-lastMatch.Start > int(mf2.lcp[i-1]) {
+					mf2.matchStack = mf2.matchStack[:len(mf2.matchStack)-1]
+					if len(mf2.matchStack) == 0 {
+						lastMatch = nil
+					} else {
+						lastMatch = &mf2.matchStack[len(mf2.matchStack)-1]
+					}
+				}
 			}
-		}
-		if emitted && lastMatch.End-lastMatch.Start <= depth/8 {
-			if cap(mf2.matches) == len(mf2.matches) {
-				mf2.matches = append(mf2.matches, Match{})
-			} else {
-				mf2.matches = mf2.matches[:len(mf2.matches)+1]
-			}
-			m := &mf2.matches[len(mf2.matches)-1]
-			m.Start = int(mf2.sa[i])
-			m.End = m.Start + lastMatch.End - lastMatch.Start
-			m.Val = lastMatch.Val
-			lastMatch = m
-			//fmt.Printf("Added new Match 1: %d\n", len(mf2.matches))
-		} else {
-			emitted = false
 		}
 		start := int(mf2.sa[i]) + depth/8
 		for end := start + 1; end <= n; end++ {
@@ -651,22 +643,28 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 			if mf2.tail != 0 || mf2.top.val == nil {
 				continue
 			}
-			if !emitted {
-				if cap(mf2.matches) == len(mf2.matches) {
-					mf2.matches = append(mf2.matches, Match{})
-				} else {
-					mf2.matches = mf2.matches[:len(mf2.matches)+1]
-				}
-				lastMatch = &mf2.matches[len(mf2.matches)-1]
-				//fmt.Printf("Added new Match 2: %d\n", len(mf2.matches))
-				emitted = true
+			if cap(mf2.matchStack) == len(mf2.matchStack) {
+				mf2.matchStack = append(mf2.matchStack, Match{})
+			} else {
+				mf2.matchStack = mf2.matchStack[:len(mf2.matchStack)+1]
 			}
+			lastMatch = &mf2.matchStack[len(mf2.matchStack)-1]
 			// This possibly overwrites previous match for the same start position
+			//fmt.Printf("Push on the match stack[%x]\n", data[int(mf2.sa[i]):end])
 			lastMatch.Start = int(mf2.sa[i])
 			lastMatch.End = end
 			lastMatch.Val = mf2.top.val
 		}
+		if lastMatch != nil {
+			mf2.matches = append(mf2.matches, Match{})
+			m := &mf2.matches[len(mf2.matches)-1]
+			m.Start = int(mf2.sa[i])
+			m.End = m.Start + lastMatch.End - lastMatch.Start
+			m.Val = lastMatch.Val
+			//fmt.Printf("Added new Match 2: %d\n", len(mf2.matches))
+		}
 	}
+	//fmt.Printf("before sorting %d matches\n", len(mf2.matches))
 	if len(mf2.matches) < 2 {
 		return mf2.matches
 	}

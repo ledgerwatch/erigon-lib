@@ -22,6 +22,7 @@ package patricia
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"testing"
 )
 
@@ -128,8 +129,8 @@ func FuzzLongestMatch(f *testing.F) {
 				data = append(data, key[len(key)-1-j])
 			}
 		}
-		var mf MatchFinder
-		m1 := mf.FindLongestMatches(&pt, data)
+		mf := NewMatchFinder(&pt)
+		m1 := mf.FindLongestMatches(data)
 		mf2 := NewMatchFinder2(&pt)
 		m2 := mf2.FindLongestMatches(data)
 		if len(m1) == len(m2) {
@@ -141,6 +142,12 @@ func FuzzLongestMatch(f *testing.F) {
 			}
 		} else {
 			t.Errorf("matches %d, expected %d", len(m2), len(m1))
+			for _, m := range m1 {
+				fmt.Printf("%+v, match1: [%x]\n", m, data[m.Start:m.End])
+			}
+			for _, m := range m2 {
+				fmt.Printf("%+v, match2: [%x]\n", m, data[m.Start:m.End])
+			}
 		}
 	})
 }
