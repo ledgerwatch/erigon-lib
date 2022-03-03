@@ -27,7 +27,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/c2h5oh/datasize"
 	stack2 "github.com/go-stack/stack"
@@ -360,14 +359,9 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		}
 	}()
 
-	t := time.Now()
 	tx, err := db.env.BeginTxn(nil, mdbx.Readonly)
 	if err != nil {
 		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, db.opts.label.String(), stack2.Trace().String())
-	}
-	took := time.Since(t)
-	if took > time.Millisecond {
-		fmt.Printf("kv_mdbx.go:363: %s\n", took)
 	}
 	tx.RawRead = true
 	return &MdbxTx{
