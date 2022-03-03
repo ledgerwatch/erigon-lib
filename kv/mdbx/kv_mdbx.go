@@ -71,6 +71,7 @@ func NewMDBX(log log.Logger) MdbxOpts {
 		flags:      mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
 		log:        log,
 		pageSize:   4096,
+		roTxsLimit: runtime.NumCPU(),
 	}
 }
 
