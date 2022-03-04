@@ -379,6 +379,7 @@ type MatchFinder2 struct {
 	top          *node // Top of nodeStack
 	head         uint32
 	tail         uint32
+	side         int // 0, 1, or 2 (if side is not determined yet)
 	matches      Matches
 	divsufsort   *transform.DivSufSort
 	pt           *PatriciaTree
@@ -390,7 +391,7 @@ func NewMatchFinder2(pt *PatriciaTree) *MatchFinder2 {
 	if err != nil {
 		panic(err)
 	}
-	return &MatchFinder2{divsufsort: divsufsort, pt: pt, top: &pt.root, nodeStack: []*node{&pt.root}}
+	return &MatchFinder2{divsufsort: divsufsort, pt: pt, top: &pt.root, nodeStack: []*node{&pt.root}, side: 2}
 }
 
 // unfold consumes next byte of the key, moves the state to corresponding
@@ -400,21 +401,48 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 	bitsLeft := 8 // Bits in b to process
 	b32 := uint32(b) << 24
 	for bitsLeft > 0 {
-		if mf2.head == 0 {
-			// tail has not been determined yet, do it now
-			if b32&0x80000000 == 0 {
-				mf2.tail = mf2.top.p0
+		if mf2.tail == 0 {
+			// Switch to the next node
+			if mf2.side == 0 {
+				if mf2.top.n0 != nil {
+					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
+					mf2.top = mf2.top.n0
+					mf2.side = 2
+					//fmt.Printf("add node 5, bitsLeft = %d\n", bitsLeft)
+				}
+			} else if mf2.side == 1 {
+				if mf2.top.n1 != nil {
+					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
+					mf2.top = mf2.top.n1
+					mf2.side = 2
+					//fmt.Printf("add node 6, bitsLeft = %d\n", bitsLeft)
+				}
 			} else {
-				mf2.tail = mf2.top.p1
+				panic("")
 			}
 		}
-		if mf2.tail == 0 {
-			// state positioned at the end of the current node
-			return b32 | uint32(bitsLeft)
+		if mf2.side == 2 {
+			// tail has not been determined yet, do it now
+			if b32&0x80000000 == 0 {
+				mf2.side = 0
+				mf2.head = 0
+				mf2.tail = mf2.top.p0
+			} else {
+				mf2.side = 1
+				mf2.head = 0
+				mf2.tail = mf2.top.p1
+			}
+			if mf2.tail == 0 {
+				// state positioned at the end of the current node
+				return b32 | uint32(bitsLeft)
+			}
 		}
 		headLen := mf2.head & 0x1f
 		tailLen := int(mf2.tail & 0x1f)
 		firstDiff := bits.LeadingZeros32(mf2.tail ^ b32) // First bit where b32 and tail are different
+		if firstDiff > bitsLeft {
+			firstDiff = bitsLeft
+		}
 		if firstDiff < bitsLeft {
 			// divergence (where the key being searched and the existing structure of patricia tree becomes incompatible) is within currently supplied byte of the search key, b
 			if firstDiff >= tailLen {
@@ -422,23 +450,26 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				bitsLeft -= tailLen
 				b32 <<= tailLen
 				// Need to switch to the next node
-				if (mf2.head == 0 && mf2.tail&0x80000000 == 0) || (mf2.head != 0 && mf2.head&0x80000000 == 0) {
+				if mf2.side == 0 {
 					if mf2.top.n0 == nil {
 						panic("")
 					}
 					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 					mf2.top = mf2.top.n0
 					//fmt.Printf("add node 1, tailLen = %d\n", tailLen)
-				} else {
+				} else if mf2.side == 1 {
 					if mf2.top.n1 == nil {
 						panic("")
 					}
 					mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 					mf2.top = mf2.top.n1
 					//fmt.Printf("add node 2, tailLen = %d\n", tailLen)
+				} else {
+					panic("")
 				}
 				mf2.head = 0
 				mf2.tail = 0
+				mf2.side = 2
 			} else {
 				// divergence is within currently supplied byte of the search key, b, and within the current node
 				bitsLeft -= firstDiff
@@ -455,7 +486,7 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 			bitsLeft -= tailLen
 			b32 <<= tailLen
 			// Switch to the next node
-			if (mf2.head == 0 && mf2.tail&0x80000000 == 0) || (mf2.head != 0 && mf2.head&0x80000000 == 0) {
+			if mf2.side == 0 {
 				if mf2.top.n0 == nil {
 					// there is divergence, move head and tail
 					mf2.head |= (mf2.tail & 0xffffffe0) >> headLen
@@ -466,7 +497,7 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 				mf2.top = mf2.top.n0
 				//fmt.Printf("add node 3, tailLen = %d\n", tailLen)
-			} else {
+			} else if mf2.side == 1 {
 				if mf2.top.n1 == nil {
 					// there is divergence, move head and tail
 					mf2.head |= (mf2.tail & 0xffffffe0) >> headLen
@@ -477,9 +508,12 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 				mf2.top = mf2.top.n1
 				//fmt.Printf("add node 4, tailLen = %d\n", tailLen)
+			} else {
+				panic("")
 			}
 			mf2.head = 0
 			mf2.tail = 0
+			mf2.side = 2
 		} else {
 			// key byte is consumed, but stay on the same node
 			mask := ^(uint32(1)<<(32-bitsLeft) - 1)
@@ -487,23 +521,7 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 			mf2.head += uint32(bitsLeft)
 			mf2.tail = (mf2.tail&0xffffffe0)<<bitsLeft | uint32(tailLen-bitsLeft)
 			bitsLeft = 0
-			if mf2.tail == 0 {
-				if mf2.head&0x80000000 == 0 {
-					if mf2.top.n0 != nil {
-						mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
-						mf2.top = mf2.top.n0
-						mf2.head = 0
-						//fmt.Printf("add node 5, bitsLeft = %d\n", bitsLeft)
-					}
-				} else {
-					if mf2.top.n1 != nil {
-						mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
-						mf2.top = mf2.top.n1
-						mf2.head = 0
-						//fmt.Printf("add node 6, bitsLeft = %d\n", bitsLeft)
-					}
-				}
-			}
+			b32 = 0
 		}
 	}
 	return 0
