@@ -744,6 +744,7 @@ func (tx *MdbxTx) Commit() error {
 		if tx.readOnly {
 			select {
 			case <-tx.db.roTxsLimiter:
+			default:
 			}
 		} else {
 			runtime.UnlockOSThread()
@@ -804,6 +805,7 @@ func (tx *MdbxTx) Rollback() {
 		if tx.readOnly {
 			select {
 			case <-tx.db.roTxsLimiter:
+			default:
 			}
 		} else {
 			runtime.UnlockOSThread()
