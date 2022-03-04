@@ -228,6 +228,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.roTxsLimiter == nil {
+
 		opts.roTxsLimiter = make(chan struct{}, runtime.NumCPU())
 	}
 	db := &MdbxKV{
@@ -302,7 +303,7 @@ type MdbxKV struct {
 	buckets      kv.TableCfg
 	opts         MdbxOpts
 	txSize       uint64
-	roTxsLimiter chan struct{}
+	roTxsLimiter chan struct{} // does limit amount of concurrent Ro transactions - in most casess runtime.NumCPU() is good value for this channel capacity - this channel can be shared with other components (like Decompressor)
 }
 
 // openDBIs - first trying to open existing DBI's in RO transaction
