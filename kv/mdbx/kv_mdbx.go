@@ -54,7 +54,7 @@ type MdbxOpts struct {
 	log           log.Logger
 	augumentLimit uint64
 	pageSize      uint64
-	roTxsLimit    int
+	roTxsLimiter  chan struct{}
 }
 
 func testKVPath() string {
@@ -71,7 +71,6 @@ func NewMDBX(log log.Logger) MdbxOpts {
 		flags:      mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
 		log:        log,
 		pageSize:   4096,
-		roTxsLimit: runtime.NumCPU(),
 	}
 }
 
@@ -80,8 +79,8 @@ func (opts MdbxOpts) Label(label kv.Label) MdbxOpts {
 	return opts
 }
 
-func (opts MdbxOpts) RoTxsLimit(l int) MdbxOpts {
-	opts.roTxsLimit = l
+func (opts MdbxOpts) RoTxsLimiter(l chan struct{}) MdbxOpts {
+	opts.roTxsLimiter = l
 	return opts
 }
 
@@ -228,6 +227,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 	}
 
+	if opts.roTxsLimiter == nil {
+		opts.roTxsLimiter = make(chan struct{}, runtime.NumCPU())
+	}
 	db := &MdbxKV{
 		opts:         opts,
 		env:          env,
@@ -235,8 +237,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		wg:           &sync.WaitGroup{},
 		buckets:      kv.TableCfg{},
 		txSize:       dirtyPagesLimit * opts.pageSize,
-		roTxsLimiter: make(chan struct{}, opts.roTxsLimit),
+		roTxsLimiter: opts.roTxsLimiter,
 	}
+
 	customBuckets := opts.bucketsCfg(kv.ChaindataTablesCfg)
 	for name, cfg := range customBuckets { // copy map to avoid changing global variable
 		db.buckets[name] = cfg
