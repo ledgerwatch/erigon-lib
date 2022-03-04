@@ -27,8 +27,8 @@ import (
 
 // Implementation of paticia tree for efficient search of substrings from a dictionary in a given string
 type node struct {
-	p0 uint32 // Number of bits in the left prefix is encoded into the lower 5 bits, the remaining 27 bits are left prefix
-	p1 uint32 // Number of bits in the right prefix is encoding into the lower 5 bits, the remaining 27 bits are right prefix
+	p0 uint32
+	p1 uint32
 	//size   uint64
 	n0  *node
 	n1  *node
@@ -612,32 +612,35 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 	var lastMatch *Match
 	for i := 0; i < n; i++ {
 		// lcp[i] is the Longest Common Prefix of suffixes starting from sa[i] and sa[i+1]
-		//fmt.Printf("Suffix [%x], depth = %d\n", data[mf2.sa[i]:n], depth)
+		fmt.Printf("Suffix [%x], depth = %d\n", data[mf2.sa[i]:n], depth)
 		if i > 0 {
+			lcp := int(mf2.lcp[i-1])
 			// lcp[i-1] is the Longest Common Prefix of suffixes starting from sa[i-1] and sa[i]
-			if depth > 8*int(mf2.lcp[i-1]) {
+			if depth > 8*lcp {
 				//fmt.Printf("before fold depth = %d, mf2.lcp[i-1] = %d\n", depth, mf2.lcp[i-1])
-				mf2.fold(depth - 8*int(mf2.lcp[i-1]))
-				depth = 8 * int(mf2.lcp[i-1])
+				mf2.fold(depth - 8*lcp)
+				depth = 8 * lcp
 				//fmt.Printf("after fold depth = %d\n", depth)
-			}
-			for lastMatch != nil && lastMatch.End-lastMatch.Start > int(mf2.lcp[i-1]) {
-				mf2.matchStack = mf2.matchStack[:len(mf2.matchStack)-1]
-				if len(mf2.matchStack) == 0 {
-					lastMatch = nil
-				} else {
-					lastMatch = &mf2.matchStack[len(mf2.matchStack)-1]
+				for lastMatch != nil && lastMatch.End-lastMatch.Start > lcp {
+					fmt.Printf("Popped %d: [%d-%d] [%x]\n", len(mf2.matchStack)-1, lastMatch.Start, lastMatch.End, data[lastMatch.Start:lastMatch.End])
+					mf2.matchStack = mf2.matchStack[:len(mf2.matchStack)-1]
+					if len(mf2.matchStack) == 0 {
+						lastMatch = nil
+					} else {
+						lastMatch = &mf2.matchStack[len(mf2.matchStack)-1]
+					}
 				}
 			}
 		}
-		start := int(mf2.sa[i]) + depth/8
+		sa := int(mf2.sa[i])
+		start := sa + depth/8
 		for end := start + 1; end <= n; end++ {
-			//fmt.Printf("Looking at [%x], start=%d, depth = %d\n", data[mf2.sa[i]:end], start, depth)
+			fmt.Printf("Looking at [%d-%d] [%x]\n", sa, end, data[sa:end])
 			d := mf2.unfold(data[end-1])
 			depth += 8 - int(d&0x1f)
 			//fmt.Printf("after unfold depth=%d\n", depth)
 			if d != 0 {
-				//fmt.Printf("divergence found: %b\n", d)
+				fmt.Printf("divergence found: %b\n", d)
 				break
 			}
 			if mf2.tail != 0 || mf2.top.val == nil {
@@ -650,18 +653,18 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 			}
 			lastMatch = &mf2.matchStack[len(mf2.matchStack)-1]
 			// This possibly overwrites previous match for the same start position
-			//fmt.Printf("Push on the match stack[%x]\n", data[int(mf2.sa[i]):end])
-			lastMatch.Start = int(mf2.sa[i])
+			fmt.Printf("Push on the match stack [%d-%d] [%x]\n", sa, end, data[sa:end])
+			lastMatch.Start = sa
 			lastMatch.End = end
 			lastMatch.Val = mf2.top.val
 		}
 		if lastMatch != nil {
 			mf2.matches = append(mf2.matches, Match{})
 			m := &mf2.matches[len(mf2.matches)-1]
-			m.Start = int(mf2.sa[i])
-			m.End = m.Start + lastMatch.End - lastMatch.Start
+			m.Start = sa
+			m.End = sa + lastMatch.End - lastMatch.Start
 			m.Val = lastMatch.Val
-			//fmt.Printf("Added new Match 2: %d\n", len(mf2.matches))
+			fmt.Printf("Added new Match: [%d-%d] [%x]\n", m.Start, m.End, data[m.Start:m.End])
 		}
 	}
 	//fmt.Printf("before sorting %d matches\n", len(mf2.matches))
@@ -682,7 +685,7 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 			}
 		}
 	}
-	return mf2.matches[:j]
+	return mf2.matches
 }
 
 func (mf *MatchFinder) FindLongestMatches(data []byte) []Match {
