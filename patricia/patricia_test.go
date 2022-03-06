@@ -939,7 +939,7 @@ func TestFindMatches6(t *testing.T) {
 	for _, m := range matches {
 		fmt.Printf("%+v, match: [%x]\n", m, data[m.Start:m.End])
 	}
-	if len(matches) != 0 {
-		t.Errorf("expected matches: %d, got %d", 0, len(matches))
+	if len(matches) != 234 {
+		t.Errorf("expected matches: %d, got %d", 234, len(matches))
 	}
 }
