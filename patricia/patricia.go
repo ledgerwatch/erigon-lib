@@ -336,7 +336,7 @@ type PatriciaTree struct {
 }
 
 func (pt *PatriciaTree) Insert(key []byte, value interface{}) {
-	fmt.Printf("%p Insert [%x]\n", pt, key)
+	//fmt.Printf("%p Insert [%x]\n", pt, key)
 	pt.root.insert(key, value)
 }
 
@@ -416,6 +416,7 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 			}
 			if mf2.tailLen == 0 {
 				// state positioned at the end of the current node
+				mf2.side = 2
 				//fmt.Fprintf(&sb, "1 ")
 				//fmt.Printf("%s\n", sb.String())
 				return b32 | uint32(bitsLeft)
@@ -432,7 +433,6 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 				mf2.top = mf2.top.n0
 				//fmt.Fprintf(&sb, "a1,0,bl=%d ", bitsLeft)
-				//fmt.Printf("add node 1, tailLen = %d\n", tailLen)
 			} else if mf2.side == 1 {
 				if mf2.top.n1 == nil {
 					//fmt.Fprintf(&sb, "3 ")
@@ -442,7 +442,6 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 				mf2.top = mf2.top.n1
 				//fmt.Fprintf(&sb, "a1,1,bl=%d ", bitsLeft)
-				//fmt.Printf("add node 2, tailLen = %d\n", tailLen)
 			} else {
 				panic("")
 			}
@@ -462,11 +461,11 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 			// divergence (where the key being searched and the existing structure of patricia tree becomes incompatible) is within currently supplied byte of the search key, b
 			if firstDiff >= mf2.tailLen {
 				// divergence is within currently supplied byte of the search key, b, but outside of the current node
+				//fmt.Fprintf(&sb, "4,tl=%d ", mf2.tailLen)
 				bitsLeft -= mf2.tailLen
 				b32 <<= mf2.tailLen
 				mf2.headLen += mf2.tailLen
 				mf2.tailLen = 0
-				//fmt.Fprintf(&sb, "4 ")
 			} else {
 				// divergence is within currently supplied byte of the search key, b, and within the current node
 				bitsLeft -= firstDiff
@@ -487,11 +486,11 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 			//fmt.Fprintf(&sb, "6 ")
 		} else {
 			// key byte is consumed, but stay on the same node
+			//fmt.Fprintf(&sb, "7,bl=%d ", bitsLeft)
 			mf2.tailLen -= bitsLeft
 			mf2.headLen += bitsLeft
 			bitsLeft = 0
 			b32 = 0
-			//fmt.Fprintf(&sb, "7 ")
 		}
 		if mf2.tailLen == 0 {
 			// Need to switch to the next node
@@ -504,7 +503,6 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n0)
 				mf2.top = mf2.top.n0
 				//fmt.Fprintf(&sb, "a2,0,bl=%d ", bitsLeft)
-				//fmt.Printf("add node 1, tailLen = %d\n", tailLen)
 			} else if mf2.side == 1 {
 				if mf2.top.n1 == nil {
 					//fmt.Fprintf(&sb, "9 ")
@@ -514,7 +512,6 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 				mf2.nodeStack = append(mf2.nodeStack, mf2.top.n1)
 				mf2.top = mf2.top.n1
 				//fmt.Fprintf(&sb, "a2,1,bl=%d ", bitsLeft)
-				//fmt.Printf("add node 2, tailLen = %d\n", tailLen)
 			} else {
 				panic("")
 			}
@@ -565,7 +562,7 @@ func (mf2 *MatchFinder2) fold(bits int) {
 }
 
 func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
-	fmt.Printf("mf2=%p pt=%p data=[%x]\n", mf2, mf2.pt, data)
+	//fmt.Printf("mf2=%p pt=%p data=[%x]\n", mf2, mf2.pt, data)
 	mf2.matches = mf2.matches[:0]
 	if len(data) < 2 {
 		return mf2.matches
@@ -744,12 +741,12 @@ func (mf2 *MatchFinder2) Current() ([]byte, int) {
 		}
 		fmt.Printf("i,p=%d, %b\n", i, p)
 		// Add bit by bit
-		for p > 0 {
+		for (p & 0x1f) > 0 {
 			if depth >= 8*len(b) {
 				b = append(b, 0)
 			}
 			if p&0x80000000 != 0 {
-				b[depth/8] |= uint8(1) << (depth % 8)
+				b[depth/8] |= uint8(1) << (7 - (depth % 8))
 			}
 			depth++
 			p = ((p & 0xffffffe0) << 1) | uint32((p&0x1f)-1)
