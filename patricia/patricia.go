@@ -455,7 +455,7 @@ func (mf2 *MatchFinder2) unfold(b byte) uint32 {
 		} else if mf2.side == 1 {
 			tail = (mf2.top.p1 & 0xffffffe0) << mf2.headLen
 		} else {
-			panic("")
+			return b32 | uint32(bitsLeft)
 		}
 		firstDiff := bits.LeadingZeros32(tail ^ b32) // First bit where b32 and tail are different
 		if firstDiff < bitsLeft {
