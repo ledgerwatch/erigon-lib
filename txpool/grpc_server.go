@@ -264,17 +264,11 @@ func (s *GrpcServer) Transactions(ctx context.Context, in *txpool_proto.Transact
 
 	reply := &txpool_proto.TransactionsReply{RlpTxs: make([][]byte, len(in.Hashes))}
 	for i := range in.Hashes {
-		var h [32]byte
-		var txnRlp []byte
-
-		if in.Hashes[i] != nil {
-			h = gointerfaces.ConvertH256ToHash(in.Hashes[i])
-			txnRlp, err = s.txPool.GetRlp(tx, h[:])
-			if err != nil {
-				return nil, err
-			}
+		h := gointerfaces.ConvertH256ToHash(in.Hashes[i])
+		txnRlp, err := s.txPool.GetRlp(tx, h[:])
+		if err != nil {
+			return nil, err
 		}
-
 		reply.RlpTxs[i] = txnRlp
 	}
 
