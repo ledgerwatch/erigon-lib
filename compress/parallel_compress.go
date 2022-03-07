@@ -43,30 +43,31 @@ import (
 const MinPatternScore = 1024
 
 func optimiseCluster(trace bool, input []byte, mf *patricia.MatchFinder, mf2 *patricia.MatchFinder2, output []byte, uncovered []int, patterns []int, cellRing *Ring, posMap map[uint64]uint64) ([]byte, []int, []int) {
-	matches1 := mf.FindLongestMatches(input)
+	//matches1 := mf.FindLongestMatches(input)
 	matches := mf2.FindLongestMatches(input)
-
-	good := true
-	if len(matches) == len(matches1) {
-		for i, m := range matches {
-			mm := matches1[i]
-			if m.Start != mm.Start || m.End != mm.End {
-				good = false
+	/*
+		good := true
+		if len(matches) == len(matches1) {
+			for i, m := range matches {
+				mm := matches1[i]
+				if m.Start != mm.Start || m.End != mm.End {
+					good = false
+				}
+			}
+		} else {
+			good = false
+		}
+		if !good {
+			fmt.Printf("\n\n%p\n", mf2)
+			for i, m := range matches {
+				fmt.Printf("%d. %+v, match: [%x]\n", i, m, input[m.Start:m.End])
+			}
+			fmt.Printf("---------\n")
+			for i, m := range matches1 {
+				fmt.Printf("%d. %+v, match1: [%x]\n", i, m, input[m.Start:m.End])
 			}
 		}
-	} else {
-		good = false
-	}
-	if !good {
-		fmt.Printf("\n\n%p\n", mf2)
-		for i, m := range matches {
-			fmt.Printf("%d. %+v, match: [%x]\n", i, m, input[m.Start:m.End])
-		}
-		fmt.Printf("---------\n")
-		for i, m := range matches1 {
-			fmt.Printf("%d. %+v, match1: [%x]\n", i, m, input[m.Start:m.End])
-		}
-	}
+	*/
 
 	if len(matches) == 0 {
 		output = append(output, 0) // Encoding of 0 in VarUint is 1 zero byte
