@@ -257,13 +257,16 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		wg.Add(1)
 		go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
 	}
-	var wordsCount uint64
+	var wordsCount, emptyWordsCount uint64
 	if err := datFile.ForEach(func(v []byte) error {
 		input := make([]byte, 8+int(len(v)))
 		binary.BigEndian.PutUint64(input, wordsCount)
 		copy(input[8:], v)
 		ch <- input
 		wordsCount++
+		if len(v) == 0 {
+			emptyWordsCount++
+		}
 		select {
 		default:
 		case <-logEvery.C:
@@ -370,8 +373,12 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 		return err
 	}
 	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
-	// 1-st, output dictionary
+	// 1-st, output amount of words - just a useful metadata
 	binary.BigEndian.PutUint64(numBuf, wordsCount) // Dictionary size
+	if _, err = cw.Write(numBuf[:8]); err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint64(numBuf, emptyWordsCount)
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
