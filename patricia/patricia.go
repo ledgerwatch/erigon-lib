@@ -336,7 +336,7 @@ type PatriciaTree struct {
 }
 
 func (pt *PatriciaTree) Insert(key []byte, value interface{}) {
-	fmt.Printf("%p Insert [%x]\n", pt, key)
+	//fmt.Printf("%p Insert [%x]\n", pt, key)
 	pt.root.insert(key, value)
 }
 
@@ -562,12 +562,13 @@ func (mf2 *MatchFinder2) fold(bits int) {
 }
 
 func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
-	fmt.Printf("mf2=%p pt=%p data=[%x]\n", mf2, mf2.pt, data)
+	//fmt.Printf("mf2=%p pt=%p data=[%x]\n", mf2, mf2.pt, data)
 	mf2.matches = mf2.matches[:0]
 	if len(data) < 2 {
 		return mf2.matches
 	}
 	mf2.nodeStack = append(mf2.nodeStack[:0], &mf2.pt.root)
+	mf2.matchStack = mf2.matchStack[:0]
 	mf2.top = &mf2.pt.root
 	mf2.side = 2
 	mf2.tailLen = 0
