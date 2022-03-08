@@ -25,7 +25,8 @@ import (
 
 // DBSchemaVersion
 // 5.0 - BlockTransaction table now has canonical ids (txs of non-canonical blocks moving to NonCanonicalTransaction table)
-var DBSchemaVersion = types.VersionReply{Major: 5, Minor: 0, Patch: 0}
+// 6.0 - BlockTransaction table now has system-txs before and after block (records are absent if block has no system-tx, but sequence increasing)
+var DBSchemaVersion = types.VersionReply{Major: 6, Minor: 0, Patch: 0}
 
 // ChaindataTables
 
@@ -217,10 +218,12 @@ const (
 
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
-	// BlockTransaction - stores only txs of canonical blocks. As a result - id's used in this table are also
+	// EthTx - stores only txs of canonical blocks. As a result - id's used in this table are also
 	// canonical - same across all nodex in network - regardless reorgs. Transactions of
 	// non-canonical blocs are not removed, but moved to NonCanonicalTransaction - then during re-org don't
 	// need re-download block from network.
+	// Also this table has system-txs before and after block: if
+	// block has no system-tx - records are absent, but sequence increasing
 	EthTx           = "BlockTransaction"        // tbl_sequence_u64 -> rlp(tx)
 	NonCanonicalTxs = "NonCanonicalTransaction" // tbl_sequence_u64 -> rlp(tx)
 
