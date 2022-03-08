@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/flanglet/kanzi-go/transform"
+	"github.com/ledgerwatch/erigon-lib/sais"
 )
 
 // Implementation of paticia tree for efficient search of substrings from a dictionary in a given string
@@ -579,7 +580,7 @@ func (mf2 *MatchFinder2) FindLongestMatches(data []byte) []Match {
 	} else {
 		mf2.sa = mf2.sa[:n]
 	}
-	mf2.divsufsort.ComputeSuffixArray(data, mf2.sa)
+	sais.Sais(data, mf2.sa)
 	if cap(mf2.inv) < n {
 		mf2.inv = make([]int32, n)
 	} else {
