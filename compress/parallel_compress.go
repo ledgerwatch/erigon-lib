@@ -43,8 +43,8 @@ import (
 const MinPatternScore = 1024
 
 func optimiseCluster(trace bool, input []byte, mf *patricia.MatchFinder, mf2 *patricia.MatchFinder2, output []byte, uncovered []int, patterns []int, cellRing *Ring, posMap map[uint64]uint64) ([]byte, []int, []int) {
-	//matches := mf.FindLongestMatches(input)
-	matches := mf2.FindLongestMatches(input)
+	matches := mf.FindLongestMatches(input)
+	//matches := mf2.FindLongestMatches(input)
 	/*
 		good := true
 		if len(matches) == len(matches1) {
