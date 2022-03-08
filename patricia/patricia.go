@@ -22,7 +22,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/flanglet/kanzi-go/transform"
 	"github.com/ledgerwatch/erigon-lib/sais"
 )
 
@@ -383,17 +382,12 @@ type MatchFinder2 struct {
 	tailLen      int
 	side         int // 0, 1, or 2 (if side is not determined yet)
 	matches      Matches
-	divsufsort   *transform.DivSufSort
 	pt           *PatriciaTree
 	sa, lcp, inv []int32
 }
 
 func NewMatchFinder2(pt *PatriciaTree) *MatchFinder2 {
-	divsufsort, err := transform.NewDivSufSort()
-	if err != nil {
-		panic(err)
-	}
-	return &MatchFinder2{divsufsort: divsufsort, pt: pt, top: &pt.root, nodeStack: []*node{&pt.root}, side: 2}
+	return &MatchFinder2{pt: pt, top: &pt.root, nodeStack: []*node{&pt.root}, side: 2}
 }
 
 // unfold consumes next byte of the key, moves the state to corresponding

@@ -31,10 +31,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/flanglet/kanzi-go/transform"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/patricia"
+	"github.com/ledgerwatch/erigon-lib/sais"
 	"github.com/ledgerwatch/log/v3"
 	atomic2 "go.uber.org/atomic"
 )
@@ -809,10 +809,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 	var dictVal [8]byte
 	dictKey := make([]byte, maxPatternLen)
 	var lcp, sa, inv []int32
-	divsufsort, err := transform.NewDivSufSort()
-	if err != nil {
-		log.Error("processSuperstring", "create divsufsoet", err)
-	}
 	for superstring := range superstringCh {
 		if cap(sa) < len(superstring) {
 			sa = make([]int32, len(superstring))
@@ -821,7 +817,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		}
 		//log.Info("Superstring", "len", len(superstring))
 		//start := time.Now()
-		divsufsort.ComputeSuffixArray(superstring, sa)
+		sais.Sais(superstring, sa)
 		//log.Info("Suffix array built", "in", time.Since(start))
 		// filter out suffixes that start with odd positions
 		n := len(sa) / 2
