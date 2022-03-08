@@ -180,8 +180,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			}
 		}
 
-		const MAX_AUGMENT_LIMIT = 0x7fffFFFF
-		if err = env.SetOption(mdbx.OptRpAugmentLimit, MAX_AUGMENT_LIMIT); err != nil {
+		if err = env.SetOption(mdbx.OptRpAugmentLimit, opts.augumentLimit); err != nil {
 			return nil, err
 		}
 		if err = os.MkdirAll(opts.path, 0744); err != nil {
