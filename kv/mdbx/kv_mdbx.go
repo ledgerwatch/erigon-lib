@@ -126,11 +126,6 @@ func (opts MdbxOpts) Readonly() MdbxOpts {
 	return opts
 }
 
-func (opts MdbxOpts) SafeNoSync() MdbxOpts {
-	opts.flags = opts.flags | mdbx.SafeNoSync
-	return opts
-}
-
 func (opts MdbxOpts) SyncPeriod(period time.Duration) MdbxOpts {
 	opts.syncPeriod = period
 	return opts
