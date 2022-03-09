@@ -42,32 +42,8 @@ import (
 // MinPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
 const MinPatternScore = 1024
 
-func optimiseCluster(trace bool, input []byte, mf *patricia.MatchFinder, mf2 *patricia.MatchFinder2, output []byte, uncovered []int, patterns []int, cellRing *Ring, posMap map[uint64]uint64) ([]byte, []int, []int) {
-	//matches := mf.FindLongestMatches(input)
+func optimiseCluster(trace bool, input []byte, mf2 *patricia.MatchFinder2, output []byte, uncovered []int, patterns []int, cellRing *Ring, posMap map[uint64]uint64) ([]byte, []int, []int) {
 	matches := mf2.FindLongestMatches(input)
-	/*
-		good := true
-		if len(matches) == len(matches1) {
-			for i, m := range matches {
-				mm := matches1[i]
-				if m.Start != mm.Start || m.End != mm.End {
-					good = false
-				}
-			}
-		} else {
-			good = false
-		}
-		if !good {
-			fmt.Printf("\n\n%p\n", mf2)
-			for i, m := range matches {
-				fmt.Printf("%d. %+v, match: [%x]\n", i, m, input[m.Start:m.End])
-			}
-			fmt.Printf("---------\n")
-			for i, m := range matches1 {
-				fmt.Printf("%d. %+v, match1: [%x]\n", i, m, input[m.Start:m.End])
-			}
-		}
-	*/
 
 	if len(matches) == 0 {
 		output = append(output, 0) // Encoding of 0 in VarUint is 1 zero byte
@@ -211,14 +187,13 @@ func reduceDictWorker(trace bool, inputCh chan *CompressionWord, outCh chan *Com
 	var uncovered = make([]int, 256)
 	var patterns = make([]int, 0, 256)
 	cellRing := NewRing()
-	mf := patricia.NewMatchFinder(trie)
 	mf2 := patricia.NewMatchFinder2(trie)
 	var numBuf [binary.MaxVarintLen64]byte
 	for compW := range inputCh {
 		wordLen := uint64(len(compW.word))
 		n := binary.PutUvarint(numBuf[:], wordLen)
 		output = append(output[:0], numBuf[:n]...) // Prepend with the encoding of length
-		output, patterns, uncovered = optimiseCluster(trace, compW.word, mf, mf2, output, uncovered, patterns, cellRing, posMap)
+		output, patterns, uncovered = optimiseCluster(trace, compW.word, mf2, output, uncovered, patterns, cellRing, posMap)
 		compW.word = append(compW.word[:0], output...)
 		outCh <- compW
 		inputSize.Add(1 + wordLen)
@@ -302,7 +277,6 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	var uncovered = make([]int, 256)
 	var patterns = make([]int, 0, 256)
 	cellRing := NewRing()
-	mf := patricia.NewMatchFinder(&pt)
 	mf2 := patricia.NewMatchFinder2(&pt)
 
 	var posMaps []map[uint64]uint64
@@ -393,7 +367,7 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 			}
 			if wordLen > 0 {
 				if compression {
-					output, patterns, uncovered = optimiseCluster(trace, v, mf, mf2, output[:0], uncovered, patterns, cellRing, uncompPosMap)
+					output, patterns, uncovered = optimiseCluster(trace, v, mf2, output[:0], uncovered, patterns, cellRing, uncompPosMap)
 					if _, e := intermediateW.Write(output); e != nil {
 						return e
 					}
