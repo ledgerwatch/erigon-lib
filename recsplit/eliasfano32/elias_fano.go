@@ -57,10 +57,7 @@ type EliasFano struct {
 	wordsUpperBits int
 }
 
-func NewEliasFano(count uint64, maxOffset, minDelta uint64) *EliasFano {
-	if minDelta > (1 << 32) {
-		panic(fmt.Sprintf("too big minDelat: %d", minDelta))
-	}
+func NewEliasFano(count uint64, maxOffset uint64) *EliasFano {
 	if count == 0 {
 		panic(fmt.Sprintf("too small count: %d", count))
 	}
@@ -160,6 +157,7 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	if shift > 0 {
 		lower |= ef.lowerBits[idx64+1] << (64 - shift)
 	}
+	fmt.Printf("lower[%d]=%d\n", i, lower&ef.lowerBitsMask)
 
 	jumpSuperQ := (i / superQ) * superQSize
 	jumpInsideSuperQ := (i % superQ) / q
@@ -214,6 +212,48 @@ func (ef EliasFano) Search(offset uint64) uint64 {
 	}))
 }
 
+type EliasFanoIter struct {
+	ef        *EliasFano
+	lowerIdx  uint64
+	upperIdx  uint64
+	upperMask uint64
+	upper     uint64
+	upperStep uint64
+}
+
+func (efi *EliasFanoIter) HasNext() bool {
+	return efi.lowerIdx < efi.ef.count
+}
+
+func (efi *EliasFanoIter) Next() uint64 {
+	if efi.lowerIdx == 0 {
+		efi.upperMask = 1
+		efi.upperStep = uint64(1) << efi.ef.l
+	}
+	idx64 := efi.lowerIdx >> 6
+	shift := efi.lowerIdx & 63
+	lower := efi.ef.lowerBits[idx64] >> shift
+	if shift > 0 {
+		lower |= efi.ef.lowerBits[idx64+1] << (64 - shift)
+	}
+	for efi.ef.upperBits[efi.upperIdx]&efi.upperMask == 0 {
+		efi.upper += efi.upperStep
+		efi.upperMask <<= 1
+		if efi.upperMask == 0 {
+			efi.upperIdx++
+			efi.upperMask = 1
+		}
+	}
+	efi.upperMask <<= 1
+	if efi.upperMask == 0 {
+		efi.upperIdx++
+		efi.upperMask = 1
+	}
+	efi.lowerIdx += efi.ef.l
+	val := (lower & efi.ef.lowerBitsMask) | efi.upper
+	return val
+}
+
 // Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
 func (ef *EliasFano) Write(w io.Writer) error {
 	var numBuf [8]byte
@@ -247,7 +287,7 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
 	ef.data = p[:]
 	ef.deriveFields()
-	return ef, 24 + 8*len(ef.data)
+	return ef, 16 + 8*len(ef.data)
 }
 
 // DoubleEliasFano can be used to encode two monotone sequences

@@ -26,18 +26,12 @@ func TestEliasFano(t *testing.T) {
 	offsets := []uint64{1, 4, 6, 8, 10, 14, 16, 19, 22, 34, 37, 39, 41, 43, 48, 51, 54, 58, 62}
 	count := uint64(len(offsets))
 	maxOffset := offsets[0]
-	minDelta := offsets[1] - offsets[0]
-	for i, offset := range offsets {
+	for _, offset := range offsets {
 		if offset > maxOffset {
 			maxOffset = offset
 		}
-		if i > 0 {
-			if offset-offsets[i-1] < minDelta {
-				minDelta = offset - offsets[i-1]
-			}
-		}
 	}
-	ef := NewEliasFano(count, 100, 10)
+	ef := NewEliasFano(count, maxOffset)
 	for _, offset := range offsets {
 		ef.AddOffset(offset)
 	}
@@ -50,4 +44,27 @@ func TestEliasFano(t *testing.T) {
 	assert.Equal(t, uint64(0), ef.Search(0), "search2")
 	assert.Equal(t, uint64(19), ef.Search(100), "search3")
 	assert.Equal(t, uint64(5), ef.Search(11), "search4")
+}
+
+func TestIterator(t *testing.T) {
+	offsets := []uint64{1, 4, 6, 8, 10, 14, 16, 19, 22, 34, 37, 39, 41, 43, 48, 51, 54, 58, 62}
+	count := uint64(len(offsets))
+	maxOffset := offsets[0]
+	for _, offset := range offsets {
+		if offset > maxOffset {
+			maxOffset = offset
+		}
+	}
+	ef := NewEliasFano(count, maxOffset)
+	for _, offset := range offsets {
+		ef.AddOffset(offset)
+	}
+	ef.Build()
+	var efi EliasFanoIter
+	efi.ef = ef
+	i := 0
+	for efi.HasNext() {
+		assert.Equal(t, offsets[i], efi.Next(), "iter")
+		i++
+	}
 }
