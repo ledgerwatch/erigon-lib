@@ -22,6 +22,7 @@ import (
 	"io"
 	"math"
 	"math/bits"
+	"sort"
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/common/bitutil"
@@ -52,9 +53,7 @@ type EliasFano struct {
 	u              uint64
 	l              uint64
 	maxOffset      uint64
-	minDelta       uint64
 	i              uint64
-	delta          uint64
 	wordsUpperBits int
 }
 
@@ -69,9 +68,8 @@ func NewEliasFano(count uint64, maxOffset, minDelta uint64) *EliasFano {
 	ef := &EliasFano{
 		count:     count - 1,
 		maxOffset: maxOffset,
-		minDelta:  minDelta,
 	}
-	ef.u = maxOffset - ef.count*ef.minDelta + 1
+	ef.u = maxOffset + 1
 	ef.wordsUpperBits = ef.deriveFields()
 	return ef
 }
@@ -79,13 +77,12 @@ func NewEliasFano(count uint64, maxOffset, minDelta uint64) *EliasFano {
 func (ef *EliasFano) AddOffset(offset uint64) {
 	//fmt.Printf("0x%x,\n", offset)
 	if ef.l != 0 {
-		set_bits(ef.lowerBits, ef.i*ef.l, int(ef.l), (offset-ef.delta)&ef.lowerBitsMask)
+		set_bits(ef.lowerBits, ef.i*ef.l, int(ef.l), offset&ef.lowerBitsMask)
 	}
 	//pos := ((offset - ef.delta) >> ef.l) + ef.i
-	set(ef.upperBits, ((offset-ef.delta)>>ef.l)+ef.i)
+	set(ef.upperBits, (offset>>ef.l)+ef.i)
 	//fmt.Printf("add:%x, pos=%x, set=%x, res=%x\n", offset, pos, pos/64, uint64(1)<<(pos%64))
 	ef.i++
-	ef.delta += ef.minDelta
 }
 
 func (ef EliasFano) jumpSizeWords() int {
@@ -139,10 +136,6 @@ func (ef *EliasFano) Build() {
 					if offset >= (1 << 32) {
 						fmt.Printf("ef.l=%x,ef.u=%x\n", ef.l, ef.u)
 						fmt.Printf("offset=%x,lastSuperQ=%x,i=%x,b=%x,c=%x\n", offset, lastSuperQ, i, b, c)
-						fmt.Printf("ef.minDelta=%x\n", ef.minDelta)
-						//fmt.Printf("ef.upperBits=%x\n", ef.upperBits)
-						//fmt.Printf("ef.lowerBits=%x\n", ef.lowerBits)
-						//fmt.Printf("ef.wordsUpperBits=%b\n", ef.wordsUpperBits)
 						panic("")
 					}
 					// c % superQ is the bit index inside the group of 4096 bits
@@ -159,7 +152,7 @@ func (ef *EliasFano) Build() {
 	}
 }
 
-func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord uint64, lower uint64, delta uint64) {
+func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord uint64, lower uint64) {
 	lower = i * ef.l
 	idx64 := lower / 64
 	shift := lower % 64
@@ -186,14 +179,13 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	}
 
 	sel = bitutil.Select64(window, d)
-	delta = i * ef.minDelta
-	val = ((currWord*64+uint64(sel)-i)<<ef.l | (lower & ef.lowerBitsMask)) + delta
+	val = ((currWord*64+uint64(sel)-i)<<ef.l | (lower & ef.lowerBitsMask))
 
 	return
 }
 
 func (ef EliasFano) Get(i uint64) uint64 {
-	val, _, _, _, _, _ := ef.get(i)
+	val, _, _, _, _ := ef.get(i)
 	return val
 }
 
@@ -202,8 +194,7 @@ func (ef EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 	var sel int
 	var currWord uint64
 	var lower uint64
-	var delta uint64
-	val, window, sel, currWord, lower, delta = ef.get(i)
+	val, window, sel, currWord, lower = ef.get(i)
 	window &= (uint64(0xffffffffffffffff) << sel) << 1
 	for window == 0 {
 		currWord++
@@ -211,8 +202,16 @@ func (ef EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 	}
 
 	lower >>= ef.l
-	valNext = ((currWord*64+uint64(bits.TrailingZeros64(window))-i-1)<<ef.l | (lower & ef.lowerBitsMask)) + delta + ef.minDelta
+	valNext = ((currWord*64+uint64(bits.TrailingZeros64(window))-i-1)<<ef.l | (lower & ef.lowerBitsMask))
 	return
+}
+
+// Search returns the position of given offset value in the sequence, or the first position which is no less than the offset
+func (ef EliasFano) Search(offset uint64) uint64 {
+	return uint64(sort.Search(int(ef.count+1), func(i int) bool {
+		val, _, _, _, _ := ef.get(uint64(i))
+		return val >= offset
+	}))
 }
 
 // Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
@@ -224,10 +223,6 @@ func (ef *EliasFano) Write(w io.Writer) error {
 		return e
 	}
 	binary.BigEndian.PutUint64(numBuf[:], ef.u)
-	if _, e := w.Write(numBuf[:]); e != nil {
-		return e
-	}
-	binary.BigEndian.PutUint64(numBuf[:], ef.minDelta)
 	if _, e := w.Write(numBuf[:]); e != nil {
 		return e
 	}
@@ -247,8 +242,9 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 	ef.count = binary.BigEndian.Uint64(r[:8])
 	//fmt.Printf("read: %d,%x\n", ef.count, r[:8])
 	ef.u = binary.BigEndian.Uint64(r[8:16])
-	ef.minDelta = binary.BigEndian.Uint64(r[16:24])
-	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[24]))
+	ef.maxOffset = ef.u - 1
+
+	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
 	ef.data = p[:]
 	ef.deriveFields()
 	return ef, 24 + 8*len(ef.data)

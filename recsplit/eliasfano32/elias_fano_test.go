@@ -46,4 +46,8 @@ func TestEliasFano(t *testing.T) {
 		offset1 := ef.Get(uint64(i))
 		assert.Equal(t, offset, offset1, "offset")
 	}
+	assert.Equal(t, uint64(10), ef.Search(37), "search1")
+	assert.Equal(t, uint64(0), ef.Search(0), "search2")
+	assert.Equal(t, uint64(19), ef.Search(100), "search3")
+	assert.Equal(t, uint64(5), ef.Search(11), "search4")
 }
