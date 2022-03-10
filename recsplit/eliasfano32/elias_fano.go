@@ -95,9 +95,7 @@ func (ef *EliasFano) deriveFields() int {
 		ef.l = 0
 	} else {
 		ef.l = 63 ^ uint64(bits.LeadingZeros64(ef.u/(ef.count+1))) // pos of first non-zero bit
-		//fmt.Printf("lllllllll: %d, %d\n", 63^uint64(bits.LeadingZeros64(24/7)), msb(ef.u/(ef.count+1)))
 	}
-	//fmt.Printf("EF: %d, %d,%d\n", ef.count, ef.u, ef.l)
 	ef.lowerBitsMask = (uint64(1) << ef.l) - 1
 	wordsLowerBits := int(((ef.count+1)*ef.l+63)/64 + 1)
 	wordsUpperBits := int((ef.count + 1 + (ef.u >> ef.l) + 63) / 64)
