@@ -114,6 +114,6 @@ func TestCompressDict1(t *testing.T) {
 	if checksum(d.compressedFile) != 2417476255 {
 		// it's ok if hash changed, but need re-generate all existing snapshot hashes
 		// in https://github.com/ledgerwatch/erigon-snapshot
-		t.Errorf("result file hash changed")
+		t.Errorf("result file hash changed, %d", cs)
 	}
 }
