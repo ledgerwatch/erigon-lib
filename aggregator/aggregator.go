@@ -1587,7 +1587,7 @@ func mergeReplace(preval, val, buf []byte) ([]byte, error) {
 func mergeBitmaps(preval, val, buf []byte) ([]byte, error) {
 	preef, _ := eliasfano32.ReadEliasFano(preval)
 	ef, _ := eliasfano32.ReadEliasFano(val)
-	//fmt.Printf("mergeBitmaps (count=%d,max=%d) + (count=%d,max=%d)\n", preef.Count(), preef.Max(), ef.Count(), ef.Max())
+	fmt.Printf("mergeBitmaps (count=%d,max=%d) + (count=%d,max=%d)\n", preef.Count(), preef.Max(), ef.Count(), ef.Max())
 	preIt := preef.Iterator()
 	efIt := ef.Iterator()
 	newEf := eliasfano32.NewEliasFano(preef.Count()+ef.Count(), ef.Max())
