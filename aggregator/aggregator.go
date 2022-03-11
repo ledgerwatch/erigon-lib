@@ -751,9 +751,9 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 		for it.HasNext() {
 			v := it.Next()
 			ef.AddOffset(v)
-			//fmt.Printf("%d ", v)
+			fmt.Printf("%d ", v)
 		}
-		//fmt.Printf("\n")
+		fmt.Printf("\n")
 		ef.Build()
 		buf.Reset()
 		if err = ef.Write(&buf); err != nil {
