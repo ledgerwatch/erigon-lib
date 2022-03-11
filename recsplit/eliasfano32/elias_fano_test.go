@@ -60,8 +60,7 @@ func TestIterator(t *testing.T) {
 		ef.AddOffset(offset)
 	}
 	ef.Build()
-	var efi EliasFanoIter
-	efi.ef = ef
+	efi := ef.Iterator()
 	i := 0
 	for efi.HasNext() {
 		assert.Equal(t, offsets[i], efi.Next(), "iter")

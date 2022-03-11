@@ -749,8 +749,11 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 		ef := eliasfano32.NewEliasFano(bitmap.GetCardinality(), bitmap.Maximum())
 		it := bitmap.Iterator()
 		for it.HasNext() {
-			ef.AddOffset(it.Next())
+			v := it.Next()
+			ef.AddOffset(v)
+			//fmt.Printf("%d ", v)
 		}
+		//fmt.Printf("\n")
 		ef.Build()
 		buf.Reset()
 		if err = ef.Write(&buf); err != nil {
@@ -1460,7 +1463,7 @@ func (a *Aggregator) backgroundMerge() {
 				if fType == Storage {
 					prefixLen = length.Addr
 				}
-				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, valTransform, mergeFunc, true /* withIndex */, prefixLen); err != nil {
+				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, valTransform, mergeFunc, true /* valCompressed */, true /* withIndex */, prefixLen); err != nil {
 					a.mergeError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
 					return
 				}
@@ -1582,7 +1585,20 @@ func mergeReplace(preval, val, buf []byte) ([]byte, error) {
 }
 
 func mergeBitmaps(preval, val, buf []byte) ([]byte, error) {
-	return nil, nil
+	preef, _ := eliasfano32.ReadEliasFano(preval)
+	ef, _ := eliasfano32.ReadEliasFano(val)
+	//fmt.Printf("mergeBitmaps (count=%d,max=%d) + (count=%d,max=%d)\n", preef.Count(), preef.Max(), ef.Count(), ef.Max())
+	preIt := preef.Iterator()
+	efIt := ef.Iterator()
+	newEf := eliasfano32.NewEliasFano(preef.Count()+ef.Count(), ef.Max())
+	for preIt.HasNext() {
+		newEf.AddOffset(preIt.Next())
+	}
+	for efIt.HasNext() {
+		newEf.AddOffset(efIt.Next())
+	}
+	newEf.Build()
+	return newEf.AppendBytes(buf), nil
 }
 
 func mergeCommitments(preval, val, buf []byte) ([]byte, error) {
@@ -1628,7 +1644,7 @@ func (a *Aggregator) backgroundHistoryMerge() {
 					mergeFunc = mergeReplace
 				}
 				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, nil /* valTransform */, mergeFunc,
-					!finalMerge || isBitmap /* withIndex */, 0 /* prefixLen */); err != nil {
+					!isBitmap /* valCompressed */, !finalMerge || isBitmap /* withIndex */, 0 /* prefixLen */); err != nil {
 					a.historyError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
 					return
 				}
@@ -2779,6 +2795,7 @@ func (a *Aggregator) computeAggregation(fType FileType,
 	toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64,
 	valTransform func(val []byte, transValBuf []byte) ([]byte, error),
 	mergeFunc func(preval, val, buf []byte) ([]byte, error),
+	valCompressed bool,
 	withIndex bool, prefixLen int) (*byEndBlockItem, error) {
 	var item2 = &byEndBlockItem{startBlock: aggFrom, endBlock: aggTo}
 	var cp CursorHeap
@@ -2794,7 +2811,7 @@ func (a *Aggregator) computeAggregation(fType FileType,
 	}
 	var err error
 	var count int
-	if item2.decompressor, count, err = a.mergeIntoStateFile(&cp, prefixLen, fType, aggFrom, aggTo, a.diffDir, valTransform, mergeFunc); err != nil {
+	if item2.decompressor, count, err = a.mergeIntoStateFile(&cp, prefixLen, fType, aggFrom, aggTo, a.diffDir, valTransform, mergeFunc, valCompressed); err != nil {
 		return nil, fmt.Errorf("mergeIntoStateFile %s [%d-%d]: %w", fType.String(), aggFrom, aggTo, err)
 	}
 	item2.getter = item2.decompressor.MakeGetter()
@@ -2893,6 +2910,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 	fType FileType, startBlock, endBlock uint64, dir string,
 	valTransform func(val []byte, transValBuf []byte) ([]byte, error),
 	mergeFunc func(preval, val, buf []byte) ([]byte, error),
+	valCompressed bool,
 ) (*compress.Decompressor, int, error) {
 	datPath := filepath.Join(dir, fmt.Sprintf("%s.%d-%d.dat", fType.String(), startBlock, endBlock))
 	comp, err := compress.NewCompressor(context.Background(), AggregatorPrefix, datPath, dir, compress.MinPatternScore, 1)
@@ -2987,8 +3005,14 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 					if err = comp.AddWord(transValBuf); err != nil {
 						return nil, 0, err
 					}
-				} else if err = comp.AddWord(valBuf); err != nil {
-					return nil, 0, err
+				} else if valCompressed {
+					if err = comp.AddWord(valBuf); err != nil {
+						return nil, 0, err
+					}
+				} else {
+					if err = comp.AddUncompressedWord(valBuf); err != nil {
+						return nil, 0, err
+					}
 				}
 			}
 			keyBuf = append(keyBuf[:0], lastKey...)

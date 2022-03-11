@@ -155,7 +155,6 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	if shift > 0 {
 		lower |= ef.lowerBits[idx64+1] << (64 - shift)
 	}
-	fmt.Printf("lower[%d]=%d\n", i, lower&ef.lowerBitsMask)
 
 	jumpSuperQ := (i / superQ) * superQSize
 	jumpInsideSuperQ := (i % superQ) / q
@@ -210,8 +209,21 @@ func (ef EliasFano) Search(offset uint64) uint64 {
 	}))
 }
 
+func (ef EliasFano) Max() uint64 {
+	return ef.maxOffset
+}
+
+func (ef EliasFano) Count() uint64 {
+	return ef.count + 1
+}
+
+func (ef *EliasFano) Iterator() *EliasFanoIter {
+	return &EliasFanoIter{ef: ef, upperMask: 1, upperStep: uint64(1) << ef.l}
+}
+
 type EliasFanoIter struct {
 	ef        *EliasFano
+	idx       uint64
 	lowerIdx  uint64
 	upperIdx  uint64
 	upperMask uint64
@@ -220,19 +232,19 @@ type EliasFanoIter struct {
 }
 
 func (efi *EliasFanoIter) HasNext() bool {
-	return efi.lowerIdx < efi.ef.count
+	return efi.idx <= efi.ef.count
 }
 
 func (efi *EliasFanoIter) Next() uint64 {
-	if efi.lowerIdx == 0 {
-		efi.upperMask = 1
-		efi.upperStep = uint64(1) << efi.ef.l
-	}
 	idx64 := efi.lowerIdx >> 6
 	shift := efi.lowerIdx & 63
 	lower := efi.ef.lowerBits[idx64] >> shift
 	if shift > 0 {
 		lower |= efi.ef.lowerBits[idx64+1] << (64 - shift)
+	}
+	if efi.upperMask == 0 {
+		efi.upperIdx++
+		efi.upperMask = 1
 	}
 	for efi.ef.upperBits[efi.upperIdx]&efi.upperMask == 0 {
 		efi.upper += efi.upperStep
@@ -243,11 +255,8 @@ func (efi *EliasFanoIter) Next() uint64 {
 		}
 	}
 	efi.upperMask <<= 1
-	if efi.upperMask == 0 {
-		efi.upperIdx++
-		efi.upperMask = 1
-	}
 	efi.lowerIdx += efi.ef.l
+	efi.idx++
 	val := (lower & efi.ef.lowerBitsMask) | efi.upper
 	return val
 }
@@ -270,6 +279,19 @@ func (ef *EliasFano) Write(w io.Writer) error {
 		return e
 	}
 	return nil
+}
+
+// Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
+func (ef *EliasFano) AppendBytes(buf []byte) []byte {
+	var numBuf [8]byte
+	binary.BigEndian.PutUint64(numBuf[:], ef.count)
+	buf = append(buf, numBuf[:]...)
+	binary.BigEndian.PutUint64(numBuf[:], ef.u)
+	buf = append(buf, numBuf[:]...)
+	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
+	b := (*p)[:]
+	buf = append(buf, b[:len(ef.data)*8]...)
+	return buf
 }
 
 const maxDataSize = 0xFFFFFFFFFFFF
