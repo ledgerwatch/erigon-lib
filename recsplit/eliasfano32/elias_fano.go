@@ -265,7 +265,6 @@ func (efi *EliasFanoIter) Next() uint64 {
 func (ef *EliasFano) Write(w io.Writer) error {
 	var numBuf [8]byte
 	binary.BigEndian.PutUint64(numBuf[:], ef.count)
-	//fmt.Printf("write: %d,%x\n", ef.count, numBuf)
 	if _, e := w.Write(numBuf[:]); e != nil {
 		return e
 	}
@@ -300,10 +299,8 @@ const maxDataSize = 0xFFFFFFFFFFFF
 func ReadEliasFano(r []byte) (*EliasFano, int) {
 	ef := &EliasFano{}
 	ef.count = binary.BigEndian.Uint64(r[:8])
-	//fmt.Printf("read: %d,%x\n", ef.count, r[:8])
 	ef.u = binary.BigEndian.Uint64(r[8:16])
 	ef.maxOffset = ef.u - 1
-
 	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
 	ef.data = p[:]
 	ef.deriveFields()
