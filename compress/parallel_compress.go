@@ -408,6 +408,17 @@ func reducedict(trace bool, logPrefix, segmentFilePath, tmpDir string, datFile *
 	close(ch)
 	// Drain the out queue if necessary
 	if inCount > outCount {
+		for compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
+			compW := heap.Pop(&compressionQueue).(*CompressionWord)
+			outCount++
+			if outCount == inCount {
+				close(out)
+			}
+			// Write to intermediate file
+			if _, e := intermediateW.Write(compW.word); e != nil {
+				return e
+			}
+		}
 		for compW := range out {
 			heap.Push(&compressionQueue, compW)
 			for compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {

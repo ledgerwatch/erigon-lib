@@ -2956,7 +2956,11 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			}
 			if ci1.dg.HasNext() {
 				ci1.key, _ = ci1.dg.Next(ci1.key[:0])
-				ci1.val, _ = ci1.dg.Next(ci1.val[:0])
+				if valCompressed {
+					ci1.val, _ = ci1.dg.Next(ci1.val[:0])
+				} else {
+					ci1.val, _ = ci1.dg.NextUncompressed()
+				}
 				heap.Fix(cp, 0)
 			} else {
 				heap.Pop(cp)
@@ -3036,8 +3040,14 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			if err = comp.AddWord(transValBuf); err != nil {
 				return nil, 0, err
 			}
-		} else if err = comp.AddWord(valBuf); err != nil {
-			return nil, 0, err
+		} else if valCompressed {
+			if err = comp.AddWord(valBuf); err != nil {
+				return nil, 0, err
+			}
+		} else {
+			if err = comp.AddUncompressedWord(valBuf); err != nil {
+				return nil, 0, err
+			}
 		}
 	}
 	if err = comp.Compress(); err != nil {
