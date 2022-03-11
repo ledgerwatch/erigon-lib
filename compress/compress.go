@@ -43,6 +43,10 @@ const ASSERT = false
 
 // Compressor is the main operating type for performing per-word compression
 // After creating a compression, one needs to add superstrings to it, using `AddWord` function
+// In order to add word without compression, function `AddUncompressedWord` needs to be used
+// Compressor only tracks which words are compressed and which are not until the compressed
+// file is created. After that, the user of the file needs to know when to call
+// `Next` or `NextUncompressed` function on the decompressor.
 // After that, `Compress` function needs to be called to perform the compression
 // and eventually create output file
 type Compressor struct {
@@ -136,6 +140,11 @@ func (c *Compressor) AddWord(word []byte) error {
 	return c.uncompressedFile.Append(word)
 }
 
+func (c *Compressor) AddUncompressedWord(word []byte) error {
+	c.wordsCount++
+	return c.uncompressedFile.AppendUncompressed(word)
+}
+
 func (c *Compressor) Compress() error {
 	c.uncompressedFile.w.Flush()
 	logEvery := time.NewTicker(20 * time.Second)
@@ -201,7 +210,7 @@ type CompressorSequential struct {
 	uncovered   []int                       // Buffer of intervals that are not covered by patterns
 	posMap      map[uint64]uint64           // Counter of use for each position within compressed word (for building huffman code for positions)
 
-	wordsCount uint64
+	wordsCount, emptyWordsCount uint64
 }
 
 // superstringLimit limits how large can one "superstring" get before it is processed
@@ -654,6 +663,9 @@ func NewCompressorSequential(logPrefix, outputFile string, tmpDir string, minPat
 // AddWord needs to be called repeatedly to provide all the superstrings to compress
 func (c *CompressorSequential) AddWord(word []byte) error {
 	c.wordsCount++
+	if len(word) == 0 {
+		c.emptyWordsCount++
+	}
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
 		// Adding this word would make superstring go over the limit
 		if err := c.processSuperstring(); err != nil {
@@ -737,7 +749,7 @@ func (c *CompressorSequential) findMatches() error {
 			return err
 		}
 		if len(word) > 0 {
-			matches := c.mf.FindLongestMatches(&c.pt, word)
+			matches := c.mf.FindLongestMatches(word)
 			if len(matches) == 0 {
 				n = binary.PutUvarint(c.numBuf[:], 0)
 				if _, err := c.interW.Write(c.numBuf[:n]); err != nil {
@@ -946,8 +958,12 @@ func (c *CompressorSequential) optimiseCodes() error {
 	defer cf.Sync()
 	cw := bufio.NewWriterSize(cf, etl.BufIOSize)
 	defer cw.Flush()
-	// 1-st, output amount of superstrings in file
+	// 1-st, output amount of words and emptyWords in file
 	binary.BigEndian.PutUint64(c.numBuf[:], c.wordsCount)
+	if _, err = cw.Write(c.numBuf[:8]); err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint64(c.numBuf[:], c.emptyWordsCount)
 	if _, err = cw.Write(c.numBuf[:8]); err != nil {
 		return err
 	}
@@ -1398,7 +1414,22 @@ func (f *DecompressedFile) Close() {
 }
 func (f *DecompressedFile) Append(v []byte) error {
 	f.count++
-	n := binary.PutUvarint(f.buf, uint64(len(v)))
+	// For compressed words, the length prefix is shifted to make lowest bit zero
+	n := binary.PutUvarint(f.buf, 2*uint64(len(v)))
+	if _, e := f.w.Write(f.buf[:n]); e != nil {
+		return e
+	}
+	if len(v) > 0 {
+		if _, e := f.w.Write(v); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+func (f *DecompressedFile) AppendUncompressed(v []byte) error {
+	f.count++
+	// For uncompressed words, the length prefix is shifted to make lowest bit one
+	n := binary.PutUvarint(f.buf, 2*uint64(len(v))+1)
 	if _, e := f.w.Write(f.buf[:n]); e != nil {
 		return e
 	}
@@ -1412,7 +1443,7 @@ func (f *DecompressedFile) Append(v []byte) error {
 
 // ForEach - Read keys from the file and generate superstring (with extra byte 0x1 prepended to each character, and with 0x0 0x0 pair inserted between keys and values)
 // We only consider values with length > 2, because smaller values are not compressible without going into bits
-func (f *DecompressedFile) ForEach(walker func(v []byte) error) error {
+func (f *DecompressedFile) ForEach(walker func(v []byte, compressed bool) error) error {
 	_, err := f.f.Seek(0, 0)
 	if err != nil {
 		return err
@@ -1421,13 +1452,16 @@ func (f *DecompressedFile) ForEach(walker func(v []byte) error) error {
 	buf := make([]byte, 4096)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
+		// extract lowest bit of length prefix as "uncompressed" flag and shift to obtain correct length
+		compressed := (l & 1) == 0
+		l >>= 1
 		if len(buf) < int(l) {
 			buf = make([]byte, l)
 		}
 		if _, e = io.ReadFull(r, buf[:l]); e != nil {
 			return e
 		}
-		if err := walker(buf[:l]); err != nil {
+		if err := walker(buf[:l], compressed); err != nil {
 			return err
 		}
 	}
