@@ -754,9 +754,9 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 			ef.AddOffset(v)
 			fmt.Printf(" %d", v)
 		}
-		fmt.Printf("\n")
 		ef.Build()
 		buf = ef.AppendBytes(buf[:0])
+		fmt.Printf("\n bytes: [%x]\n", buf)
 		if err = bitmapC.AddUncompressedWord(buf); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap add val: %w", err)
 		}
