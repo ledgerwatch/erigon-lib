@@ -201,12 +201,16 @@ func (ef EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 	return
 }
 
-// Search returns the position of given offset value in the sequence, or the first position which is no less than the offset
-func (ef EliasFano) Search(offset uint64) uint64 {
-	return uint64(sort.Search(int(ef.count+1), func(i int) bool {
+// Search returns the value in the sequence, equal or greater than given value
+func (ef EliasFano) Search(offset uint64) (uint64, bool) {
+	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
 		val, _, _, _, _ := ef.get(uint64(i))
 		return val >= offset
 	}))
+	if i <= ef.count {
+		return ef.Get(i), true
+	}
+	return 0, false
 }
 
 func (ef EliasFano) Max() uint64 {

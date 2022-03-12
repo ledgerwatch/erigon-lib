@@ -212,8 +212,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 			}
 			eliasVal, _ = g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			idx := ef.Search(searchTx)
-			foundTxNum = ef.Get(idx)
+			foundTxNum, found = ef.Search(searchTx)
 			foundEndBlock = item.endBlock
 			found = true
 			return false
