@@ -203,7 +203,9 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	var foundEndBlock uint64
 	hr.h.files[bitmapType].AscendGreaterOrEqual(&hr.search, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
+		offset := item.indexReader.Lookup(key)
 		g := item.getter
+		g.Reset(offset)
 		if keyMatch, _ := g.Match(key); keyMatch {
 			if trace {
 				fmt.Printf("Found bitmap for [%x] in %s.[%d-%d]\n", key, bitmapType.String(), item.startBlock, item.endBlock)
