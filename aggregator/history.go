@@ -193,7 +193,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 	if hr.lastTx {
 		searchBlock++
 	}
-	searchTx := hr.txNum + 1
+	searchTx := hr.txNum
 	hr.search.endBlock = searchBlock
 	hr.search.startBlock = searchBlock - (searchBlock % 500_000)
 	var eliasVal []byte
