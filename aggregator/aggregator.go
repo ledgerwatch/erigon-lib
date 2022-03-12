@@ -748,10 +748,11 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 		bitmap := bitmaps[key]
 		ef := eliasfano32.NewEliasFano(bitmap.GetCardinality(), bitmap.Maximum())
 		it := bitmap.Iterator()
+		fmt.Printf("%x ", key)
 		for it.HasNext() {
 			v := it.Next()
 			ef.AddOffset(v)
-			fmt.Printf("%d ", v)
+			fmt.Printf(" %d", v)
 		}
 		fmt.Printf("\n")
 		ef.Build()
