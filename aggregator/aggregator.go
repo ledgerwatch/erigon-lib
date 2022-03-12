@@ -735,7 +735,7 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 	}()
 	idxKeys := make([]string, len(bitmaps))
 	i := 0
-	var buf bytes.Buffer
+	var buf []byte
 	for key := range bitmaps {
 		idxKeys[i] = key
 		i++
@@ -756,11 +756,8 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 		}
 		fmt.Printf("\n")
 		ef.Build()
-		buf.Reset()
-		if err = ef.Write(&buf); err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets write elias fano: %w", err)
-		}
-		if err = bitmapC.AddUncompressedWord(buf.Bytes()); err != nil {
+		buf = ef.AppendBytes(buf[:0])
+		if err = bitmapC.AddUncompressedWord(buf); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap add val: %w", err)
 		}
 	}
