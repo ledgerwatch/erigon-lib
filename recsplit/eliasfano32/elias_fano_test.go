@@ -40,10 +40,17 @@ func TestEliasFano(t *testing.T) {
 		offset1 := ef.Get(uint64(i))
 		assert.Equal(t, offset, offset1, "offset")
 	}
-	assert.Equal(t, uint64(10), ef.Search(37), "search1")
-	assert.Equal(t, uint64(0), ef.Search(0), "search2")
-	assert.Equal(t, uint64(19), ef.Search(100), "search3")
-	assert.Equal(t, uint64(5), ef.Search(11), "search4")
+	v, ok := ef.Search(37)
+	assert.True(t, ok, "search1")
+	assert.Equal(t, uint64(37), v, "search1")
+	v, ok = ef.Search(0)
+	assert.True(t, ok, "search2")
+	assert.Equal(t, uint64(1), v, "search2")
+	v, ok = ef.Search(100)
+	assert.False(t, ok, "search3")
+	v, ok = ef.Search(11)
+	assert.True(t, ok, "search4")
+	assert.Equal(t, uint64(14), v, "search4")
 }
 
 func TestIterator(t *testing.T) {
