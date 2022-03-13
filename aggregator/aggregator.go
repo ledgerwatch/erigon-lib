@@ -1498,9 +1498,10 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 	var val []byte
 	var count int
 	g.Reset(0)
+	var key []byte
 	fmt.Printf("reduce1 [%s.%d-%d]\n", fType.String(), item.startBlock, item.endBlock)
 	for g.HasNext() {
-		key := g.Skip() // Skip key on on the first pass
+		key, _ = g.Next(key[:0]) // Skip key on on the first pass
 		val, _ = g.Next(val[:0])
 		fmt.Printf("[%x]=>[%x]\n", key, val)
 		if err = comp.AddWord(val); err != nil {
@@ -1535,7 +1536,6 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 		g.Reset(0)
 		g1.Reset(0)
 		var lastOffset uint64
-		var key []byte
 		for g.HasNext() {
 			key, _ = g.Next(key[:0])
 			g.Skip() // Skip value
