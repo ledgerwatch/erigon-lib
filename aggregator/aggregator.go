@@ -1498,9 +1498,11 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 	var val []byte
 	var count int
 	g.Reset(0)
+	fmt.Printf("reduce1 [%s.%d-%d]\n", fType.String(), item.startBlock, item.endBlock)
 	for g.HasNext() {
-		g.Skip() // Skip key on on the first pass
+		key := g.Skip() // Skip key on on the first pass
 		val, _ = g.Next(val[:0])
+		fmt.Printf("[%x]=>[%x]\n", key, val)
 		if err = comp.AddWord(val); err != nil {
 			return fmt.Errorf("reduceHistoryFiles AddWord: %w", err)
 		}
@@ -1528,6 +1530,7 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 		return fmt.Errorf("reduceHistoryFiles NewRecSplit: %w", err)
 	}
 	g1 := d.MakeGetter()
+	fmt.Printf("reduce2 [%s.%d-%d]\n", fType.String(), item.startBlock, item.endBlock)
 	for {
 		g.Reset(0)
 		g1.Reset(0)
@@ -1537,6 +1540,7 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 			key, _ = g.Next(key[:0])
 			g.Skip() // Skip value
 			_, pos := g1.Next(nil)
+			fmt.Printf("[%x]==>%d\n", key, lastOffset)
 			if err = rs.AddKey(key, lastOffset); err != nil {
 				return fmt.Errorf("reduceHistoryFiles %p AddKey: %w", rs, err)
 			}
