@@ -46,7 +46,7 @@ func TestEliasFano(t *testing.T) {
 	v, ok = ef.Search(0)
 	assert.True(t, ok, "search2")
 	assert.Equal(t, uint64(1), v, "search2")
-	v, ok = ef.Search(100)
+	_, ok = ef.Search(100)
 	assert.False(t, ok, "search3")
 	v, ok = ef.Search(11)
 	assert.True(t, ok, "search4")
