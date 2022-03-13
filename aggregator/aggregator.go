@@ -2980,6 +2980,8 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			// Its bit are set for children that are present in the tree, and unset for those that are not (deleted, for example)
 			// If all bits are zero (check below), this branch can be skipped, since it is empty
 			skip = startBlock == 0 && len(lastVal) >= 4 && lastVal[2] == 0 && lastVal[3] == 0
+		case AccountHistory, StorageHistory, CodeHistory:
+			skip = false
 		default:
 			// For the rest of types, empty value means deletion
 			skip = startBlock == 0 && len(lastVal) == 0
