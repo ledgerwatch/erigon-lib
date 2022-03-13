@@ -221,7 +221,6 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 			}
 			foundTxNum, found = ef.Search(searchTx)
 			foundEndBlock = item.endBlock
-			found = true
 			return false
 		}
 		// Not found, next
