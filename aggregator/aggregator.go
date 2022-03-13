@@ -3052,6 +3052,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				return nil, 0, err
 			}
 		}
+		if fType == AccountHistory {
+			fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
+		}
 	}
 	if err = comp.Compress(); err != nil {
 		return nil, 0, err
