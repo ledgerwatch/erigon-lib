@@ -695,9 +695,9 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 			if err = comp.AddWord(before); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("produceChangeSets AddWord before: %w", err)
 			}
-			if historyType == AccountHistory {
-				fmt.Printf("produce %s.%d-%d [%x]=>[%x]\n", historyType.String(), blockFrom, blockTo, txKey, before)
-			}
+			//if historyType == AccountHistory {
+			//	fmt.Printf("produce %s.%d-%d [%x]=>[%x]\n", historyType.String(), blockFrom, blockTo, txKey, before)
+			//}
 			var bitmap *roaring64.Bitmap
 			var ok bool
 			if bitmap, ok = bitmaps[string(key)]; !ok {
@@ -1503,9 +1503,9 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 	g.Reset(0)
 	var key []byte
 	for g.HasNext() {
-		key, _ = g.Next(key[:0]) // Skip key on on the first pass
+		g.Skip() // Skip key on on the first pass
 		val, _ = g.Next(val[:0])
-		fmt.Printf("reduce1 [%s.%d-%d] [%x]=>[%x]\n", fType.String(), item.startBlock, item.endBlock, key, val)
+		//fmt.Printf("reduce1 [%s.%d-%d] [%x]=>[%x]\n", fType.String(), item.startBlock, item.endBlock, key, val)
 		if err = comp.AddWord(val); err != nil {
 			return fmt.Errorf("reduceHistoryFiles AddWord: %w", err)
 		}
@@ -1541,7 +1541,7 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 			key, _ = g.Next(key[:0])
 			g.Skip() // Skip value
 			_, pos := g1.Next(nil)
-			fmt.Printf("reduce2 [%s.%d-%d] [%x]==>%d\n", fType.String(), item.startBlock, item.endBlock, key, lastOffset)
+			//fmt.Printf("reduce2 [%s.%d-%d] [%x]==>%d\n", fType.String(), item.startBlock, item.endBlock, key, lastOffset)
 			if err = rs.AddKey(key, lastOffset); err != nil {
 				return fmt.Errorf("reduceHistoryFiles %p AddKey: %w", rs, err)
 			}
@@ -3020,9 +3020,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 						return nil, 0, err
 					}
 				}
-				if fType == AccountHistory {
-					fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
-				}
+				//if fType == AccountHistory {
+				//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
+				//}
 			}
 			keyBuf = append(keyBuf[:0], lastKey...)
 			valBuf = append(valBuf[:0], lastVal...)
@@ -3054,9 +3054,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				return nil, 0, err
 			}
 		}
-		if fType == AccountHistory {
-			fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
-		}
+		//if fType == AccountHistory {
+		//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
+		//}
 	}
 	if err = comp.Compress(); err != nil {
 		return nil, 0, err
