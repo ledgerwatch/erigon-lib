@@ -161,12 +161,19 @@ type Getter struct {
 
 func (g *Getter) nextPos(clean bool) uint64 {
 	if clean {
+		if g.mask != 0 && g.compBits != nil {
+			*g.compBits += 7 - bits.LeadingZeros8(g.mask)
+		}
 		g.mask = 0
 	}
 	node := g.posDict
 	if node.zero == nil && node.one == nil {
 		if g.posCounts != nil {
 			g.posCounts[node.pos]++
+		}
+		if g.compBits != nil {
+			idx := g.posSubs[node.pos]
+			*g.compBits += g.posDivisor + int(idx>>g.posDivisor) + 1
 		}
 		return node.pos
 	}
@@ -192,6 +199,10 @@ func (g *Getter) nextPos(clean bool) uint64 {
 	if g.posCounts != nil {
 		g.posCounts[node.pos]++
 	}
+	if g.compBits != nil {
+		idx := g.posSubs[node.pos]
+		*g.compBits += g.posDivisor + int(idx>>g.posDivisor) + 1
+	}
 	return node.pos
 }
 
@@ -200,6 +211,10 @@ func (g *Getter) nextPattern() []byte {
 	if node.zero == nil && node.one == nil {
 		if g.patternCounts != nil {
 			g.patternCounts[string(node.pattern)]++
+		}
+		if g.compBits != nil {
+			idx := g.patternSubs[string(node.pattern)]
+			*g.compBits += g.patternDivisor + int(idx>>g.patternDivisor) + 1
 		}
 		return node.pattern
 	}
@@ -224,6 +239,10 @@ func (g *Getter) nextPattern() []byte {
 	g.dataP = dataP
 	if g.patternCounts != nil {
 		g.patternCounts[string(node.pattern)]++
+	}
+	if g.compBits != nil {
+		idx := g.patternSubs[string(node.pattern)]
+		*g.compBits += g.patternDivisor + int(idx>>g.patternDivisor) + 1
 	}
 	return node.pattern
 }
@@ -284,6 +303,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 			dif := uint64(bufPos - lastUncovered)
 			copy(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
 			postLoopPos += dif
+			if g.compBits != nil {
+				*g.compBits += 8 * int(dif)
+			}
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
 	}
@@ -291,8 +313,8 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		dif := l - uint64(lastUncovered)
 		copy(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif])
 		postLoopPos += dif
-		if g.uncompCount != nil {
-			*g.uncompCount++
+		if g.compBits != nil {
+			*g.compBits += 8 * int(dif)
 		}
 	}
 	g.dataP = postLoopPos
@@ -474,7 +496,6 @@ func (g *Getter) MatchPrefix(buf []byte) bool {
 func (g *Getter) GolombSize() int {
 	g.patternCounts = map[string]int{}
 	g.posCounts = map[uint64]int{}
-	g.uncompCount = new(int)
 	g.Reset(0)
 	var word []byte
 	for g.HasNext() {
@@ -546,5 +567,12 @@ func (g *Getter) GolombSize() int {
 		}
 	}
 	g.posCounts = nil
-	return 0
+	g.uncompCount = new(int)
+	g.compBits = new(int)
+	// Reiterate to compute bits
+	g.Reset(0)
+	for g.HasNext() {
+		word, _ = g.Next(word[:0])
+	}
+	return *g.compBits
 }
