@@ -508,7 +508,7 @@ func (g *Getter) GolombSize() int {
 		i++
 	}
 	sort.Slice(patterns, func(i, j int) bool {
-		return g.patternCounts[patterns[i]] < g.patternCounts[patterns[j]]
+		return g.patternCounts[patterns[i]] > g.patternCounts[patterns[j]]
 	})
 	g.patternSubs = map[string]int{}
 	for idx, pattern := range patterns {
@@ -541,7 +541,7 @@ func (g *Getter) GolombSize() int {
 		i++
 	}
 	sort.Slice(pos, func(i, j int) bool {
-		return g.posCounts[pos[i]] < g.posCounts[pos[j]]
+		return g.posCounts[pos[i]] > g.posCounts[pos[j]]
 	})
 	g.posSubs = map[uint64]int{}
 	for idx, p := range pos {
