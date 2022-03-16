@@ -20,7 +20,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math/bits"
 	"os"
+	"sort"
 
 	"github.com/ledgerwatch/erigon-lib/mmap"
 )
@@ -140,13 +142,21 @@ func (d *Decompressor) WithReadAhead(f func() error) error {
 // Getter represent "reader" or "interator" that can move accross the data of the decompressor
 // The full state of the getter can be captured by saving dataP, b, and mask values.
 type Getter struct {
-	data        []byte
-	dataP       uint64
-	patternDict *huffmanNodePattern
-	posDict     *huffmanNodePos
-	b           byte
-	mask        byte
-	fName       string
+	data           []byte
+	dataP          uint64
+	patternDict    *huffmanNodePattern
+	posDict        *huffmanNodePos
+	b              byte
+	mask           byte
+	fName          string
+	patternCounts  map[string]int // Counter of pattern use
+	posCounts      map[uint64]int // Counter of pos use
+	uncompCount    *int           // Counter of uncompressed words
+	patternSubs    map[string]int
+	patternDivisor int
+	posSubs        map[uint64]int
+	posDivisor     int
+	compBits       *int
 }
 
 func (g *Getter) nextPos(clean bool) uint64 {
@@ -155,6 +165,9 @@ func (g *Getter) nextPos(clean bool) uint64 {
 	}
 	node := g.posDict
 	if node.zero == nil && node.one == nil {
+		if g.posCounts != nil {
+			g.posCounts[node.pos]++
+		}
 		return node.pos
 	}
 	b := g.b
@@ -176,12 +189,18 @@ func (g *Getter) nextPos(clean bool) uint64 {
 	g.b = b
 	g.mask = mask
 	g.dataP = dataP
+	if g.posCounts != nil {
+		g.posCounts[node.pos]++
+	}
 	return node.pos
 }
 
 func (g *Getter) nextPattern() []byte {
 	node := g.patternDict
 	if node.zero == nil && node.one == nil {
+		if g.patternCounts != nil {
+			g.patternCounts[string(node.pattern)]++
+		}
 		return node.pattern
 	}
 	b := g.b
@@ -203,6 +222,9 @@ func (g *Getter) nextPattern() []byte {
 	g.b = b
 	g.mask = mask
 	g.dataP = dataP
+	if g.patternCounts != nil {
+		g.patternCounts[string(node.pattern)]++
+	}
 	return node.pattern
 }
 
@@ -269,6 +291,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		dif := l - uint64(lastUncovered)
 		copy(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif])
 		postLoopPos += dif
+		if g.uncompCount != nil {
+			*g.uncompCount++
+		}
 	}
 	g.dataP = postLoopPos
 	return buf, postLoopPos
@@ -444,4 +469,82 @@ func (g *Getter) MatchPrefix(buf []byte) bool {
 		}
 	}
 	return true
+}
+
+func (g *Getter) GolombSize() int {
+	g.patternCounts = map[string]int{}
+	g.posCounts = map[uint64]int{}
+	g.uncompCount = new(int)
+	g.Reset(0)
+	var word []byte
+	for g.HasNext() {
+		word, _ = g.Next(word[:0])
+	}
+	patterns := make([]string, len(g.patternCounts))
+	i := 0
+	for pattern := range g.patternCounts {
+		patterns[i] = pattern
+		i++
+	}
+	sort.Slice(patterns, func(i, j int) bool {
+		return g.patternCounts[patterns[i]] < g.patternCounts[patterns[j]]
+	})
+	g.patternSubs = map[string]int{}
+	for idx, pattern := range patterns {
+		g.patternSubs[pattern] = idx
+	}
+	// Find optimal divisor for patterns
+	patternBits := make([]int, bits.Len(uint(len(patterns)-1)))
+	for idx, pattern := range patterns {
+		count := g.patternCounts[pattern]
+		for d := 0; d < len(patternBits); d++ {
+			// Lower part
+			patternBits[d] += d * count
+			// Upper part
+			patternBits[d] += (idx>>d + 1) * count
+		}
+	}
+	g.patternDivisor = 0
+	min := patternBits[0]
+	for d := 1; d < len(patternBits); d++ {
+		if patternBits[d] < min {
+			min = patternBits[d]
+			g.patternDivisor = d
+		}
+	}
+	g.patternCounts = nil
+	i = 0
+	pos := make([]uint64, len(g.posCounts))
+	for p := range g.posCounts {
+		pos[i] = p
+		i++
+	}
+	sort.Slice(pos, func(i, j int) bool {
+		return g.posCounts[pos[i]] < g.posCounts[pos[j]]
+	})
+	g.posSubs = map[uint64]int{}
+	for idx, p := range pos {
+		g.posSubs[p] = idx
+	}
+	// Find optimal divisor for positions
+	posBits := make([]int, bits.Len(uint(len(pos)-1)))
+	for idx, p := range pos {
+		count := g.posCounts[p]
+		for d := 0; d < len(posBits); d++ {
+			// Lower part
+			posBits[d] += d * count
+			// Upper part
+			posBits[d] += (idx>>d + 1) * count
+		}
+	}
+	g.posDivisor = 0
+	min = posBits[0]
+	for d := 1; d < len(posBits); d++ {
+		if posBits[d] < min {
+			min = posBits[d]
+			g.posDivisor = d
+		}
+	}
+	g.posCounts = nil
+	return 0
 }
