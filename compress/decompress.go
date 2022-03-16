@@ -151,7 +151,6 @@ type Getter struct {
 	fName          string
 	patternCounts  map[string]int // Counter of pattern use
 	posCounts      map[uint64]int // Counter of pos use
-	uncompCount    *int           // Counter of uncompressed words
 	patternSubs    map[string]int
 	patternDivisor int
 	posSubs        map[uint64]int
@@ -533,6 +532,7 @@ func (g *Getter) GolombSize() int {
 			g.patternDivisor = d
 		}
 	}
+	fmt.Printf("patternDivisor=%d\n", g.patternDivisor)
 	g.patternCounts = nil
 	i = 0
 	pos := make([]uint64, len(g.posCounts))
@@ -566,8 +566,8 @@ func (g *Getter) GolombSize() int {
 			g.posDivisor = d
 		}
 	}
+	fmt.Printf("posDivisor=%d\n", g.posDivisor)
 	g.posCounts = nil
-	g.uncompCount = new(int)
 	g.compBits = new(int)
 	// Reiterate to compute bits
 	g.Reset(0)
