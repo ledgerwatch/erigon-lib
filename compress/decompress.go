@@ -532,7 +532,6 @@ func (g *Getter) GolombSize() int {
 			g.patternDivisor = d
 		}
 	}
-	fmt.Printf("patternDivisor=%d\n", g.patternDivisor)
 	g.patternCounts = nil
 	i = 0
 	pos := make([]uint64, len(g.posCounts))
@@ -566,7 +565,6 @@ func (g *Getter) GolombSize() int {
 			g.posDivisor = d
 		}
 	}
-	fmt.Printf("posDivisor=%d\n", g.posDivisor)
 	g.posCounts = nil
 	g.compBits = new(int)
 	// Reiterate to compute bits
