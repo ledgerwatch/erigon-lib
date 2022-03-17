@@ -103,6 +103,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		} else {
 			bitLen = tree.maxDepth
 		}
+		fmt.Printf("pattern maxDepth=%d\n", tree.maxDepth)
 		tableSize := 1 << bitLen
 		d.dict = &patternTable{
 			bitLen:   bitLen,
@@ -125,6 +126,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		} else {
 			bitLen = tree.maxDepth
 		}
+		fmt.Printf("pos maxDepth=%d\n", tree.maxDepth)
 		tableSize := 1 << bitLen
 		d.posDict = &posTable{
 			bitLen: bitLen,
@@ -181,10 +183,10 @@ func buildPatternTable(tree *huffmanNodePattern, table *patternTable, code uint1
 			table.lens[code] = byte(depth)
 			table.ptrs[code] = nil
 		} else {
-			code <<= (table.bitLen - depth)
-			codeFrom := code << (table.bitLen - depth)
-			codeTo := codeFrom | (uint16(1) << (table.bitLen - depth))
-			for c := codeFrom; c < codeTo; c++ {
+			codeStep := uint16(1) << depth
+			codeFrom := code
+			codeTo := code | (uint16(1) << table.bitLen)
+			for c := codeFrom; c < codeTo; c += codeStep {
 				table.patterns[c] = tree.pattern
 				table.lens[c] = byte(depth)
 				table.ptrs[c] = nil
@@ -212,22 +214,24 @@ func buildPatternTable(tree *huffmanNodePattern, table *patternTable, code uint1
 		buildPatternTable(tree, newTable, 0, 0)
 		return
 	}
-	buildPatternTable(tree.zero, table, code<<1, depth+1)
-	buildPatternTable(tree.one, table, 1+(code<<1), depth+1)
+	buildPatternTable(tree.zero, table, code, depth+1)
+	buildPatternTable(tree.one, table, (uint16(1)<<depth)|code, depth+1)
 }
 
 func buildPosTable(tree *huffmanNodePos, table *posTable, code uint16, depth int) {
 	if tree.zero == nil && tree.one == nil {
 		if table.bitLen == depth {
 			table.pos[code] = tree.pos
+			fmt.Printf("[%b]=>%d\n", code, tree.pos)
 			table.lens[code] = byte(depth)
 			table.ptrs[code] = nil
 		} else {
-			code <<= (table.bitLen - depth)
-			codeFrom := code << (table.bitLen - depth)
-			codeTo := codeFrom | (uint16(1) << (table.bitLen - depth))
-			for c := codeFrom; c < codeTo; c++ {
+			codeStep := uint16(1) << depth
+			codeFrom := code
+			codeTo := code | (uint16(1) << table.bitLen)
+			for c := codeFrom; c < codeTo; c += codeStep {
 				table.pos[c] = tree.pos
+				fmt.Printf("[%b]=>%d\n", c, tree.pos)
 				table.lens[c] = byte(depth)
 				table.ptrs[c] = nil
 			}
@@ -254,8 +258,8 @@ func buildPosTable(tree *huffmanNodePos, table *posTable, code uint16, depth int
 		buildPosTable(tree, newTable, 0, 0)
 		return
 	}
-	buildPosTable(tree.zero, table, code<<1, depth+1)
-	buildPosTable(tree.one, table, 1+(code<<1), depth+1)
+	buildPosTable(tree.zero, table, code, depth+1)
+	buildPosTable(tree.one, table, (uint16(1)<<depth)|code, depth+1)
 }
 
 func (d *Decompressor) Size() int64 {
@@ -286,68 +290,65 @@ func (d *Decompressor) WithReadAhead(f func() error) error {
 type Getter struct {
 	data        []byte
 	dataP       uint64
+	dataBit     int // Value 0..7 - position of the bit
 	patternDict *patternTable
 	posDict     *posTable
-	b           byte
-	mask        byte
 	fName       string
 }
 
 func (g *Getter) nextPos(clean bool) uint64 {
 	if clean {
-		g.mask = 0
-	}
-	node := g.posDict
-	if node.zero == nil && node.one == nil {
-		return node.pos
-	}
-	b := g.b
-	mask := g.mask
-	dataP := g.dataP
-	for node.zero != nil || node.one != nil {
-		if mask == 0 {
-			mask = 1
-			b = g.data[dataP]
-			dataP++
+		if g.dataBit > 0 {
+			g.dataP++
+			g.dataBit = 0
 		}
-		if b&mask == 0 {
-			node = node.zero
+	}
+	table := g.posDict
+	var l byte
+	var pos uint64
+	for l == 0 {
+		code := uint16(g.data[g.dataP]) >> g.dataBit
+		if 8-g.dataBit < table.bitLen && int(g.dataP)+1 < len(g.data) {
+			code |= uint16(g.data[g.dataP+1]) << (8 - g.dataBit)
+		}
+		code &^= (uint16(1) << table.bitLen) - 1
+		l = table.lens[code]
+		fmt.Printf("nextPos code=%b, l=%d\n", code, l)
+		if l == 0 {
+			table = table.ptrs[code]
+			g.dataBit += 9
 		} else {
-			node = node.one
+			g.dataBit += int(l)
+			pos = table.pos[code]
 		}
-		mask <<= 1
+		g.dataP += uint64(g.dataBit / 8)
+		g.dataBit = g.dataBit % 8
 	}
-	g.b = b
-	g.mask = mask
-	g.dataP = dataP
-	return node.pos
+	return pos
 }
 
 func (g *Getter) nextPattern() []byte {
-	node := g.patternDict
-	if node.zero == nil && node.one == nil {
-		return node.pattern
-	}
-	b := g.b
-	mask := g.mask
-	dataP := g.dataP
-	for node.zero != nil || node.one != nil {
-		if mask == 0 {
-			mask = 1
-			b = g.data[dataP]
-			dataP++
+	table := g.patternDict
+	var l byte
+	var pattern []byte
+	for l == 0 {
+		code := uint16(g.data[g.dataP]) >> g.dataBit
+		if 8-g.dataBit < table.bitLen && int(g.dataP)+1 < len(g.data) {
+			code |= uint16(g.data[g.dataP+1]) << (8 - g.dataBit)
 		}
-		if b&mask == 0 {
-			node = node.zero
+		code &^= (uint16(1) << table.bitLen) - 1
+		l = table.lens[code]
+		if l == 0 {
+			table = table.ptrs[code]
+			g.dataBit += 9
 		} else {
-			node = node.one
+			g.dataBit += int(l)
+			pattern = table.patterns[code]
 		}
-		mask <<= 1
+		g.dataP += uint64(g.dataBit / 8)
+		g.dataBit = g.dataBit % 8
 	}
-	g.b = b
-	g.mask = mask
-	g.dataP = dataP
-	return node.pattern
+	return pattern
 }
 
 func (d *Decompressor) Count() int           { return int(d.wordsCount) }
@@ -362,8 +363,7 @@ func (d *Decompressor) MakeGetter() *Getter {
 
 func (g *Getter) Reset(offset uint64) {
 	g.dataP = offset
-	g.mask = 0
-	g.b = 0
+	g.dataBit = 0
 }
 
 func (g *Getter) HasNext() bool {
