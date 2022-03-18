@@ -292,7 +292,6 @@ func (d *Decompressor) WithReadAhead(f func() error) error {
 type Getter struct {
 	data        []byte
 	dataP       uint64
-	b           byte
 	dataBit     int // Value 0..7 - position of the bit
 	patternDict *patternTable
 	posDict     *posTable
