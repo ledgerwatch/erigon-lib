@@ -2897,12 +2897,17 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		if fType < NumberOfStateTypes {
 			w.a.updateArch(aggTask.bt[fType], fType, uint32(aggTask.blockTo))
 		}
+	}
+	updateArchTime := time.Since(t)
+	t = time.Now()
+	for fType := FirstType; fType < typesLimit; fType++ {
 		w.a.addLocked(fType, &byEndBlockItem{startBlock: aggTask.blockFrom, endBlock: aggTask.blockTo, tree: aggTask.bt[fType]})
 	}
+	switchTime := time.Since(t)
 	w.a.aggChannel <- &aggTask
 	handoverTime := time.Since(t)
 	if handoverTime > time.Second {
-		log.Info("Long handover to background aggregation", "from", blockFrom, "to", blockTo, "composition", aggTime, "handover", time.Since(t))
+		log.Info("Long handover to background aggregation", "from", blockFrom, "to", blockTo, "composition", aggTime, "arch update", updateArchTime, "switch", switchTime)
 	}
 	return nil
 }
