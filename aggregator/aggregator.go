@@ -688,10 +688,10 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 			totalRecords++
 			txKey = append(txKey[:8], key...)
 			// In the inital files and most merged file, the txKey is added to the file, but it gets removed in the final merge
-			if err = comp.AddWord(txKey); err != nil {
+			if err = comp.AddUncompressedWord(txKey); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("produceChangeSets AddWord key: %w", err)
 			}
-			if err = comp.AddWord(before); err != nil {
+			if err = comp.AddUncompressedWord(before); err != nil {
 				return nil, nil, nil, nil, fmt.Errorf("produceChangeSets AddWord before: %w", err)
 			}
 			//if historyType == AccountHistory {
@@ -744,7 +744,7 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 	}
 	sort.Strings(idxKeys)
 	for _, key := range idxKeys {
-		if err = bitmapC.AddWord([]byte(key)); err != nil {
+		if err = bitmapC.AddUncompressedWord([]byte(key)); err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("produceChangeSets bitmap add key: %w", err)
 		}
 		bitmap := bitmaps[key]
@@ -838,11 +838,11 @@ func btreeToFile(bt *btree.BTree, datPath string, tmpdir string, trace bool, wor
 	count := 0
 	bt.Ascend(func(i btree.Item) bool {
 		item := i.(*AggregateItem)
-		if err = comp.AddWord(item.k); err != nil {
+		if err = comp.AddUncompressedWord(item.k); err != nil {
 			return false
 		}
 		count++ // Only counting keys, not values
-		if err = comp.AddWord(item.v); err != nil {
+		if err = comp.AddUncompressedWord(item.v); err != nil {
 			return false
 		}
 		return true
@@ -946,7 +946,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 		tracedKeys:      map[string]struct{}{},
 		keccak:          sha3.NewLegacyKeccak256(),
 		hph:             commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
-		aggChannel:      make(chan *AggregationTask),
+		aggChannel:      make(chan *AggregationTask, 1024),
 		aggError:        make(chan error, 1),
 		mergeChannel:    make(chan struct{}, 1),
 		mergeError:      make(chan error, 1),
