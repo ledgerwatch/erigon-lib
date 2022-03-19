@@ -945,7 +945,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 		aggregationStep: aggregationStep,
 		tracedKeys:      map[string]struct{}{},
 		keccak:          sha3.NewLegacyKeccak256(),
-		hph:             commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil, nil, nil),
+		hph:             commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
 		aggChannel:      make(chan *AggregationTask),
 		aggError:        make(chan error, 1),
 		mergeChannel:    make(chan struct{}, 1),
@@ -2065,18 +2065,6 @@ func (i *CommitmentItem) Less(than btree.Item) bool {
 	return bytes.Compare(i.hashedKey, than.(*CommitmentItem).hashedKey) < 0
 }
 
-func (w *Writer) lockFn() {
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
-		w.a.fileLocks[fType].RLock()
-	}
-}
-
-func (w *Writer) unlockFn() {
-	for fType := FirstType; fType < NumberOfStateTypes; fType++ {
-		w.a.fileLocks[fType].RUnlock()
-	}
-}
-
 func (w *Writer) branchFn(prefix []byte) []byte {
 	for lockFType := FirstType; lockFType < NumberOfStateTypes; lockFType++ {
 		w.a.fileLocks[lockFType].RLock()
@@ -2323,7 +2311,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 	}
 
 	w.a.hph.Reset()
-	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn, w.lockFn, w.unlockFn)
+	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn)
 	w.a.hph.SetTrace(trace)
 	branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
