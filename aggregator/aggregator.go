@@ -2851,6 +2851,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	if w.a.commitments {
 		typesLimit = AccountHistory
 	}
+	t0 := time.Now()
 	t := time.Now()
 	i := w.a.changesBtree.Get(&ChangesItem{startBlock: blockFrom, endBlock: blockTo})
 	if i == nil {
@@ -2893,7 +2894,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 	}
 	switchTime := time.Since(t)
 	w.a.aggChannel <- &aggTask
-	handoverTime := time.Since(t)
+	handoverTime := time.Since(t0)
 	if handoverTime > time.Second {
 		log.Info("Long handover to background aggregation", "from", blockFrom, "to", blockTo, "composition", aggTime, "arch update", updateArchTime, "switch", switchTime)
 	}
