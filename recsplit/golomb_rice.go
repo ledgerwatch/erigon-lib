@@ -71,18 +71,18 @@ func (g *GolombRice) appendFixed(v uint64, log2golomb int) {
 	}
 	appendPtr := g.bitCount / 64 // The index in b.data corresponding to the last element used by previous value, or if previous values fits perfectly, the index of the next free element
 	curWord := g.data[appendPtr]
-	curWord |= uint64(lowerBits) << usedBits // curWord now contains the new value potentially combined with the part of the previous value
+	curWord |= lowerBits << usedBits // curWord now contains the new value potentially combined with the part of the previous value
 	if usedBits+log2golomb > 64 {
 		// New value overflows to the next element
 		g.data[appendPtr] = curWord
 		appendPtr++
-		curWord = uint64(lowerBits) >> (64 - usedBits) // curWord now contains the part of the new value that overflows
+		curWord = lowerBits >> (64 - usedBits) // curWord now contains the part of the new value that overflows
 	}
 	g.data[appendPtr] = curWord
 	g.bitCount += log2golomb
 }
 
-// bits returns currrent number of bits in the compact encoding of the hash function representation
+// Bits returns currrent number of bits in the compact encoding of the hash function representation
 func (g GolombRice) Bits() int {
 	return g.bitCount
 }

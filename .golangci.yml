@@ -2,20 +2,86 @@ run:
   deadline: 10m
 
 linters:
-  disable-all: true
-  enable:
-    - gofmt
-    - deadcode
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - structcheck
+  presets:
+    - bugs
+    - comment
+    - complexity
+    - error
+    - format
+    - import
+    - metalinter
+    - module
+    - performance
+    - sql
+    - style
+    - test
     - unused
-    - varcheck
-    - gocritic
-    - bodyclose
+  disable:
+    - maligned
+    - goerr113
+    - golint
+    - interfacer
+    - scopelint
+    - nolintlint
+    - wrapcheck
+    - varnamelen
+    - testpackage
+    - ireturn
+    - paralleltest
+    - ifshort
+    - nlreturn
+    - exhaustive
+    - cyclop
+    - nilnil
+    - gochecknoglobals
+    - nestif
+    - gomnd
+    - gci
+    - forcetypeassert
+    - exhaustivestruct
+    - nakedret
+    - lll
+    - goconst
+    - misspell
+    - unparam
+    - prealloc
+    - godox
+    - contextcheck
+    - containedctx
+    - wsl
+    - whitespace
+    - gocognit
+    - dupl
+    - forbidigo
+    - dogsled
+    - revive
+    - stylecheck
+#  disable-all: true
+#  enable:
+#    - prealloc
+#    - contextcheck
+#    - goerr113
+
+#    - revive
+#    - stylecheck
+
+#    - errorlint
+#    - unconvert
+#    - predeclared
+#    - wastedassign
+#    - thelper
+#    - gofmt
+#    - deadcode
+#    - errcheck
+#    - gosimple
+#    - govet
+#    - ineffassign
+#    - staticcheck
+#    - structcheck
+#    - unused
+#    - varcheck
+#    - gocritic
+#    - bodyclose
 #    - gosec
 #    - forcetypeassert
 

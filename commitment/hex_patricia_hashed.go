@@ -777,7 +777,7 @@ func branchToString(branchData []byte) string {
 			fieldBits := PartFlags(branchData[pos])
 			pos++
 			var err error
-			if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
+			if pos, err = cell.fillFromFields(branchData, pos, fieldBits); err != nil {
 				// This is used for test output, so ok to panic
 				panic(err)
 			}
