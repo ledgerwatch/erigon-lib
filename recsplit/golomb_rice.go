@@ -87,7 +87,7 @@ func (g GolombRice) Bits() int {
 	return g.bitCount
 }
 
-func (g *GolombRiceReader) ReadReset(bitPos int, unaryOffset int) {
+func (g *GolombRiceReader) ReadReset(bitPos, unaryOffset int) {
 	g.currFixedOffset = bitPos
 	unaryPos := bitPos + unaryOffset
 	g.currPtrUnary = unaryPos / 64
@@ -96,7 +96,7 @@ func (g *GolombRiceReader) ReadReset(bitPos int, unaryOffset int) {
 	g.validLowerBitsUnary = 64 - (unaryPos & 63)
 }
 
-func (g *GolombRiceReader) SkipSubtree(nodes int, fixedLen int) {
+func (g *GolombRiceReader) SkipSubtree(nodes, fixedLen int) {
 	if nodes <= 0 {
 		panic("nodes <= 0")
 	}

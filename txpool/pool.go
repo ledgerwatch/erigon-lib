@@ -1727,7 +1727,7 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 }
 
 // CalcIntrinsicGas computes the 'intrinsic gas' for a message with the given data.
-func CalcIntrinsicGas(dataLen, dataNonZeroLen uint64, accessList AccessList, isContractCreation bool, isHomestead, isEIP2028 bool) (uint64, DiscardReason) {
+func CalcIntrinsicGas(dataLen, dataNonZeroLen uint64, accessList AccessList, isContractCreation, isHomestead, isEIP2028 bool) (uint64, DiscardReason) {
 	// Set the starting gas for the raw transaction
 	var gas uint64
 	if isContractCreation && isHomestead {

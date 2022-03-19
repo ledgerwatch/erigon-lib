@@ -2,88 +2,32 @@ run:
   deadline: 10m
 
 linters:
-  presets:
-    - bugs
-    - comment
-    - complexity
-    - error
-    - format
-    - import
-    - metalinter
-    - module
-    - performance
-    - sql
-    - style
-    - test
+  disable-all: true
+  enable:
+    - errorlint
+    - unconvert
+    - predeclared
+    - wastedassign
+    - thelper
+    - gofmt
+    - deadcode
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - structcheck
     - unused
-  disable:
-    - maligned
-    - goerr113
-    - golint
-    - interfacer
-    - scopelint
-    - nolintlint
-    - wrapcheck
-    - varnamelen
-    - testpackage
-    - ireturn
-    - paralleltest
-    - ifshort
-    - nlreturn
-    - exhaustive
-    - cyclop
-    - nilnil
-    - gochecknoglobals
-    - nestif
-    - gomnd
-    - gci
-    - forcetypeassert
-    - exhaustivestruct
-    - nakedret
-    - lll
-    - goconst
-    - misspell
-    - unparam
-    - prealloc
-    - godox
-    - contextcheck
-    - containedctx
-    - wsl
-    - whitespace
-    - gocognit
-    - dupl
-    - forbidigo
-    - dogsled
-    - revive
-    - stylecheck
-#  disable-all: true
-#  enable:
+    - varcheck
+    - gocritic
+    - bodyclose
+    - gosec
+#    - forcetypeassert
 #    - prealloc
 #    - contextcheck
 #    - goerr113
-
 #    - revive
 #    - stylecheck
-
-#    - errorlint
-#    - unconvert
-#    - predeclared
-#    - wastedassign
-#    - thelper
-#    - gofmt
-#    - deadcode
-#    - errcheck
-#    - gosimple
-#    - govet
-#    - ineffassign
-#    - staticcheck
-#    - structcheck
-#    - unused
-#    - varcheck
-#    - gocritic
-#    - bodyclose
-#    - gosec
-#    - forcetypeassert
 
 linters-settings:
   gocritic:
@@ -116,6 +60,10 @@ linters-settings:
     # Empty list by default. See https://github.com/go-critic/go-critic#usage -> section "Tags".
     enabled-tags:
       - performance
+      - diagnostic
+    #      - style
+    #      - experimental
+    #      - opinionated
     disabled-tags:
       - experimental
     ruleguard:

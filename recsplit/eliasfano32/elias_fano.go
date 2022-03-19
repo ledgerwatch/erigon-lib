@@ -565,12 +565,12 @@ func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 	return
 }
 
-func (ef DoubleEliasFano) Get2(i uint64) (cumKeys uint64, position uint64) {
+func (ef DoubleEliasFano) Get2(i uint64) (cumKeys, position uint64) {
 	cumKeys, position, _, _, _, _, _ = ef.get2(i)
 	return
 }
 
-func (ef DoubleEliasFano) Get3(i uint64) (cumKeys uint64, cumKeysNext uint64, position uint64) {
+func (ef DoubleEliasFano) Get3(i uint64) (cumKeys, cumKeysNext, position uint64) {
 	var windowCumKeys uint64
 	var selectCumKeys int
 	var currWordCumKeys uint64
