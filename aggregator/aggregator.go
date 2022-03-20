@@ -184,12 +184,15 @@ type ChangeFile struct {
 	namebase    string
 	path        string
 	file        *os.File
+	fileTx      *os.File
 	w           *bufio.Writer
+	wTx         *bufio.Writer
 	r           *bufio.Reader
 	numBuf      [8]byte
 	sizeCounter uint64
 	txPos       int64 // Position of the last block iterated upon
-	txNum       uint64
+	txNums      []uint64
+	txEnds      []uint64
 	txSize      uint64
 	txRemaining uint64 // Remaining number of bytes to read in the current transaction
 	words       []byte // Words pending for the next block record, in the same slice
@@ -278,6 +281,8 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	}
 	cf.words = cf.words[:0]
 	cf.wordOffsets = cf.wordOffsets[:0]
+	cf.txNums = append(cf.txNums, txNum)
+	cf.txEnds = append(cf.txEnds, cf.sizeCounter)
 	// Write out tx number and then size of changes in this block
 	binary.BigEndian.PutUint64(cf.numBuf[:], txNum)
 	if _, err := cf.w.Write(cf.numBuf[:]); err != nil {
