@@ -829,8 +829,9 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 					}
 					//fmt.Printf("aggregateToBtree prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
 					item.v = mergedVal
+				} else {
+					item.v = common.Copy(after)
 				}
-				item.v = common.Copy(after)
 				item.count++
 			}
 		}
