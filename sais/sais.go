@@ -1,6 +1,9 @@
 package sais
 
 /*
+#cgo CFLAGS: -O3
+#cgo LDFLAGS: -O3
+
 #include "sais.h"
 #include "utils.h"
 */
