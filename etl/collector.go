@@ -28,7 +28,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
@@ -150,7 +149,7 @@ func (c *Collector) Close() {
 		totalSize += p.Dispose()
 	}
 	if totalSize > 0 {
-		log.Log(c.logLvl, fmt.Sprintf("[%s] etl: temp files removed", c.logPrefix), "total size", datasize.ByteSize(totalSize).HumanReadable())
+		log.Log(c.logLvl, fmt.Sprintf("[%s] etl: temp files removed", c.logPrefix), "total size", common.ByteCount(totalSize))
 	}
 }
 
