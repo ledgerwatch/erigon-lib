@@ -216,7 +216,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 					t.Fatal(err)
 				}
 				if !uint256.NewInt(s + 1).Eq(uint256.NewInt(0).SetBytes(v)) {
-					t.Errorf("wrong storage value after block %d, expected %d, got %s", blockNum, s+1, v)
+					t.Errorf("wrong storage value after block %d, expected %d, got %d", blockNum, s+1, uint256.NewInt(0).SetBytes(v))
 				}
 			}
 		case 22, 44:
@@ -233,7 +233,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 					t.Fatal(err)
 				}
 				if v != nil {
-					t.Errorf("wrong storage value after block %d, expected nil, got %s", blockNum, v)
+					t.Errorf("wrong storage value after block %d, expected nil, got %d", blockNum, uint256.NewInt(0).SetBytes(v))
 				}
 			}
 		case 66:
@@ -251,10 +251,10 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 				}
 				if s < 50 {
 					if v != nil {
-						t.Errorf("wrong storage value after block %d, expected nil, got %s", blockNum, v)
+						t.Errorf("wrong storage value after block %d, expected nil, got %d", blockNum, uint256.NewInt(0).SetBytes(v))
 					}
 				} else if v == nil || !uint256.NewInt(2*s+1).Eq(uint256.NewInt(0).SetBytes(v)) {
-					t.Errorf("wrong storage value after block %d, expected %d, got %s", blockNum, 2*s+1, v)
+					t.Errorf("wrong storage value after block %d, expected %d, got %d", blockNum, 2*s+1, uint256.NewInt(0).SetBytes(v))
 				}
 			}
 		}

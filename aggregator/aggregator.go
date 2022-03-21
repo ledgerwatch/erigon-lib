@@ -1996,7 +1996,6 @@ func (a *Aggregator) MakeStateReader(blockNum uint64, tx kv.Tx) *Reader {
 
 type Reader struct {
 	a        *Aggregator
-	search   AggregateItem
 	tx       kv.Getter
 	blockNum uint64
 }
@@ -2007,7 +2006,7 @@ func (r *Reader) ReadAccountData(addr []byte, trace bool) ([]byte, error) {
 		return nil, err
 	}
 	if v != nil {
-		return v[:4], nil
+		return v[4:], nil
 	}
 	v, _ = r.a.readFromFiles(Account, true /* lock */, r.blockNum, addr, trace)
 	return v, nil
@@ -2023,7 +2022,10 @@ func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) ([]byte
 		return nil, err
 	}
 	if v != nil {
-		return v[:4], nil
+		if len(v) == 4 {
+			return nil, nil
+		}
+		return v[4:], nil
 	}
 	v, _ = r.a.readFromFiles(Storage, true /* lock */, r.blockNum, dbkey, trace)
 	return v, nil
@@ -2036,7 +2038,7 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 		return nil, err
 	}
 	if v != nil {
-		return v[:4], nil
+		return v[4:], nil
 	}
 	// Look in the files
 	v, _ = r.a.readFromFiles(Code, true /* lock */, r.blockNum, addr, trace)
@@ -2059,7 +2061,6 @@ func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) (int, error) {
 
 type Writer struct {
 	a             *Aggregator
-	search        AggregateItem // Aggregate item used to search in trees
 	blockNum      uint64
 	changeFileNum uint64 // Block number associated with the current change files. It is the last block number whose changes will go into that file
 	changes       [NumberOfStateTypes]Changes
@@ -2399,14 +2400,13 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		}
 		if prevV != nil {
 			prevNum = binary.BigEndian.Uint32(prevV[:4])
-			prevV = prevV[4:]
 		}
 
 		var original []byte
 		if prevV == nil {
 			original, _ = w.a.readFromFiles(Commitment, true /* lock */, w.blockNum, prefix, false)
 		} else {
-			original = prevV
+			original = prevV[4:]
 		}
 		if original != nil {
 			var mergedVal []byte
@@ -2494,13 +2494,12 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 	}
 	if prevV != nil {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
-		prevV = prevV[4:]
 	}
 	var original []byte
 	if prevV == nil {
 		original, _ = w.a.readFromFiles(Account, true /* lock */, w.blockNum, addr, trace)
 	} else {
-		original = prevV
+		original = prevV[4:]
 	}
 	if bytes.Equal(account, original) {
 		// No change
@@ -2532,13 +2531,12 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 	}
 	if prevV != nil {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
-		prevV = prevV[4:]
 	}
 	var original []byte
 	if prevV == nil {
 		original, _ = w.a.readFromFiles(Code, true /* lock */, w.blockNum, addr, trace)
 	} else {
-		original = prevV
+		original = prevV[4:]
 	}
 	v := make([]byte, 4+len(code))
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
@@ -2616,7 +2614,6 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	var prevNum uint32
 	if prevV != nil {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
-		prevV = prevV[4:]
 	}
 	var original []byte
 	if prevV == nil {
@@ -2625,7 +2622,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 			return false, nil
 		}
 	} else {
-		original = prevV
+		original = prevV[4:]
 	}
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
@@ -2644,7 +2641,6 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	var prevNum uint32
 	if prevV != nil {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
-		prevV = prevV[4:]
 	}
 	var original []byte
 	if prevV == nil {
@@ -2654,7 +2650,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 			return nil
 		}
 	} else {
-		original = prevV
+		original = prevV[4:]
 	}
 	v := make([]byte, 4)
 	binary.BigEndian.PutUint32(v[:4], prevNum+1)
@@ -2813,13 +2809,12 @@ func (w *Writer) WriteAccountStorage(addr, loc []byte, value []byte, trace bool)
 	var prevNum uint32
 	if prevV != nil {
 		prevNum = binary.BigEndian.Uint32(prevV[:4])
-		prevV = prevV[4:]
 	}
 	var original []byte
 	if prevV == nil {
 		original, _ = w.a.readFromFiles(Storage, true /* lock */, w.blockNum, dbkey, trace)
 	} else {
-		original = prevV
+		original = prevV[4:]
 	}
 	if bytes.Equal(value, original) {
 		// No change
@@ -2832,9 +2827,9 @@ func (w *Writer) WriteAccountStorage(addr, loc []byte, value []byte, trace bool)
 		return err
 	}
 	if prevV == nil && len(original) == 0 {
-		w.changes[Storage].insert(dbkey, v)
+		w.changes[Storage].insert(dbkey, value)
 	} else {
-		w.changes[Storage].update(dbkey, original, v)
+		w.changes[Storage].update(dbkey, original, value)
 	}
 	if trace {
 		w.a.trace = true
