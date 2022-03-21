@@ -84,7 +84,7 @@ func NewCriticalCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Coll
 }
 
 func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
-	c := &Collector{autoClean: true, bufType: getTypeByBuffer(sortableBuffer), logPrefix: logPrefix}
+	c := &Collector{autoClean: true, bufType: getTypeByBuffer(sortableBuffer), logPrefix: logPrefix, logLvl: log.LvlInfo}
 
 	c.flushBuffer = func(currentKey []byte, canStoreInRam bool) error {
 		if sortableBuffer.Len() == 0 {
@@ -150,7 +150,7 @@ func (c *Collector) Close() {
 		totalSize += p.Dispose()
 	}
 	if totalSize > 0 {
-		log.Info(fmt.Sprintf("[%s] etl: temp files removed", c.logPrefix), "total size", datasize.ByteSize(totalSize).HumanReadable())
+		log.Log(c.logLvl, fmt.Sprintf("[%s] etl: temp files removed", c.logPrefix), "total size", datasize.ByteSize(totalSize).HumanReadable())
 	}
 }
 
