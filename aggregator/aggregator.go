@@ -1776,6 +1776,7 @@ func (a *Aggregator) openFiles(fType FileType, minArch uint64) error {
 			return false
 		}
 		totalKeys += item.index.KeyCount()
+		fmt.Printf("openFiles (keyCount) %s.%d-%d = %d\n", fType.String(), item.startBlock, item.endBlock, item.index.KeyCount())
 		item.getter = item.decompressor.MakeGetter()
 		item.getterMerge = item.decompressor.MakeGetter()
 		item.indexReader = recsplit.NewIndexReader(item.index)
