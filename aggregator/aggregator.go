@@ -269,6 +269,12 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 				return err
 			}
 		}
+		if _, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
+			return err
+		}
+		if _, err = cf.fileTx.Seek(0, 2 /* relative to the end of the file */); err != nil {
+			return err
+		}
 		if write {
 			cf.w = bufio.NewWriter(cf.file)
 			cf.wTx = bufio.NewWriter(cf.fileTx)
@@ -2040,6 +2046,9 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 		return nil, err
 	}
 	if v != nil {
+		if len(v) == 4 {
+			return nil, nil
+		}
 		return v[4:], nil
 	}
 	// Look in the files
