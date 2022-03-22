@@ -261,6 +261,12 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 			if cf.fileTx, err = os.OpenFile(cf.pathTx, os.O_RDWR|os.O_CREATE, 0755); err != nil {
 				return err
 			}
+			if _, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
+				return err
+			}
+			if _, err = cf.fileTx.Seek(0, 2 /* relative to the end of the file */); err != nil {
+				return err
+			}
 		} else {
 			if cf.file, err = os.Open(cf.path); err != nil {
 				return err
@@ -268,12 +274,6 @@ func (cf *ChangeFile) openFile(blockNum uint64, write bool) error {
 			if cf.fileTx, err = os.Open(cf.pathTx); err != nil {
 				return err
 			}
-		}
-		if _, err = cf.file.Seek(0, 2 /* relative to the end of the file */); err != nil {
-			return err
-		}
-		if _, err = cf.fileTx.Seek(0, 2 /* relative to the end of the file */); err != nil {
-			return err
 		}
 		if write {
 			cf.w = bufio.NewWriter(cf.file)
@@ -1776,7 +1776,6 @@ func (a *Aggregator) openFiles(fType FileType, minArch uint64) error {
 			return false
 		}
 		totalKeys += item.index.KeyCount()
-		fmt.Printf("openFiles (keyCount) %s.%d-%d = %d\n", fType.String(), item.startBlock, item.endBlock, item.index.KeyCount())
 		item.getter = item.decompressor.MakeGetter()
 		item.getterMerge = item.decompressor.MakeGetter()
 		item.indexReader = recsplit.NewIndexReader(item.index)
