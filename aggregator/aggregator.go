@@ -1100,9 +1100,9 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 			return nil, err
 		}
 	}
-	//if err = a.rebuildRecentState(tx); err != nil {
-	//	return nil, fmt.Errorf("rebuilding recent state from change files: %w", err)
-	//}
+	if err = a.rebuildRecentState(tx); err != nil {
+		return nil, fmt.Errorf("rebuilding recent state from change files: %w", err)
+	}
 	closeStateFiles = false
 	a.aggWg.Add(1)
 	go a.backgroundAggregation()
@@ -1116,7 +1116,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 }
 
 // rebuildRecentState reads change files and reconstructs the recent state
-func (a *Aggregator) RebuildRecentState(tx kv.RwTx) error {
+func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 	t := time.Now()
 	var err error
 	a.changesBtree.Ascend(func(i btree.Item) bool {
@@ -1134,10 +1134,18 @@ func (a *Aggregator) RebuildRecentState(tx kv.RwTx) error {
 			}
 			tree.Ascend(func(i1 btree.Item) bool {
 				item1 := i1.(*AggregateItem)
-				v := make([]byte, 4+len(item1.v))
+				var v []byte
 				binary.BigEndian.PutUint32(v[:4], item1.count)
 				copy(v[4:], item1.v)
-				if err = tx.Put(table, item1.k, v); err != nil {
+				if v, err = tx.GetOne(table, item1.k); err != nil {
+					return false
+				}
+				if item1.count != binary.BigEndian.Uint32(v[:4]) {
+					err = fmt.Errorf("mismatched count for %x: change file %d, db: %d", item1.k, item1.count, binary.BigEndian.Uint32(v[:4]))
+					return false
+				}
+				if !bytes.Equal(item1.v, v[4:]) {
+					err = fmt.Errorf("mismatched v for %x: change file [%x], db: [%x]", item1.k, item1.v, v[4:])
 					return false
 				}
 				return true
