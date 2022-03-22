@@ -1135,8 +1135,6 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			tree.Ascend(func(i1 btree.Item) bool {
 				item1 := i1.(*AggregateItem)
 				var v []byte
-				binary.BigEndian.PutUint32(v[:4], item1.count)
-				copy(v[4:], item1.v)
 				if v, err = tx.GetOne(table, item1.k); err != nil {
 					return false
 				}
