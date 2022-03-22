@@ -647,8 +647,10 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 				return false
 			}
 		} else {
-			binary.BigEndian.PutUint32(prevV[:4], prevNum-item.count)
-			if e = tx.Put(table, dbPrefix, prevV); e != nil {
+			v := make([]byte, len(prevV))
+			binary.BigEndian.PutUint32(v[:4], prevNum-item.count)
+			copy(v[4:], prevV[4:])
+			if e = tx.Put(table, dbPrefix, v); e != nil {
 				return false
 			}
 		}
