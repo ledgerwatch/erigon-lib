@@ -1138,6 +1138,9 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			}
 			tree.Ascend(func(i1 btree.Item) bool {
 				item1 := i1.(*AggregateItem)
+				if len(item1.v) == 0 {
+					return true
+				}
 				var v []byte
 				if v, err = tx.GetOne(table, item1.k); err != nil {
 					return false
