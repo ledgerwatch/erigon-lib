@@ -1129,7 +1129,11 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			if err = changes.openFiles(item.startBlock, false /* write */); err != nil {
 				return false
 			}
-			if err = changes.aggregateToBtree(tree, 0, fType == Commitment); err != nil {
+			var prefixLen int
+			if fType == Storage {
+				prefixLen = length.Addr
+			}
+			if err = changes.aggregateToBtree(tree, prefixLen, fType == Commitment); err != nil {
 				return false
 			}
 			tree.Ascend(func(i1 btree.Item) bool {
