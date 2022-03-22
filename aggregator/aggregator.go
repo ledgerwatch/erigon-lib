@@ -1143,11 +1143,11 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 					return false
 				}
 				if item1.count != binary.BigEndian.Uint32(v[:4]) {
-					err = fmt.Errorf("mismatched count for %x: change file %d, db: %d", item1.k, item1.count, binary.BigEndian.Uint32(v[:4]))
-					return false
+					fmt.Printf("mismatched count for %x: change file %d, db: %d\n", item1.k, item1.count, binary.BigEndian.Uint32(v[:4]))
+					//return false
 				}
 				if !bytes.Equal(item1.v, v[4:]) {
-					err = fmt.Errorf("mismatched v for %x: change file [%x], db: [%x]", item1.k, item1.v, v[4:])
+					fmt.Printf("mismatched v for %x: change file [%x], db: [%x]\n", item1.k, item1.v, v[4:])
 					return false
 				}
 				return true
