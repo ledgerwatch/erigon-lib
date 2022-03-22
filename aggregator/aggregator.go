@@ -1092,9 +1092,9 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 			return nil, err
 		}
 	}
-	if err = a.rebuildRecentState(tx); err != nil {
-		return nil, fmt.Errorf("rebuilding recent state from change files: %w", err)
-	}
+	//if err = a.rebuildRecentState(tx); err != nil {
+	//	return nil, fmt.Errorf("rebuilding recent state from change files: %w", err)
+	//}
 	closeStateFiles = false
 	a.aggWg.Add(1)
 	go a.backgroundAggregation()
@@ -1108,7 +1108,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 }
 
 // rebuildRecentState reads change files and reconstructs the recent state
-func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
+func (a *Aggregator) RebuildRecentState(tx kv.RwTx) error {
 	t := time.Now()
 	var err error
 	a.changesBtree.Ascend(func(i btree.Item) bool {
