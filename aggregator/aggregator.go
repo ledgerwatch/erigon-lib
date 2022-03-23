@@ -846,7 +846,6 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 			if i == nil {
 				item := &AggregateItem{k: common.Copy(key), v: common.Copy(after), count: 1}
 				bt.ReplaceOrInsert(item)
-				fmt.Printf("create [%x] [%x]\n", item.k, item.v)
 			} else {
 				item := i.(*AggregateItem)
 				if commitments {
@@ -859,7 +858,6 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 					item.v = mergedVal
 				} else {
 					item.v = common.Copy(after)
-					fmt.Printf("change [%x] [%x]\n", item.k, item.v)
 				}
 				item.count++
 			}
@@ -1120,11 +1118,15 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 	t := time.Now()
 	var err error
+	trees := map[FileType]*btree.BTree{}
 	a.changesBtree.Ascend(func(i btree.Item) bool {
 		item := i.(*ChangesItem)
 		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
-			tree := btree.New(32)
-			table := fType.Table()
+			tree, ok := trees[fType]
+			if !ok {
+				tree = btree.New(32)
+				trees[fType] = tree
+			}
 			var changes Changes
 			changes.Init(fType.String(), a.aggregationStep, a.diffDir, false /* beforeOn */)
 			if err = changes.openFiles(item.startBlock, false /* write */); err != nil {
@@ -1138,34 +1140,37 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			if err = changes.aggregateToBtree(tree, prefixLen, fType == Commitment); err != nil {
 				return false
 			}
-			tree.Ascend(func(i1 btree.Item) bool {
-				item1 := i1.(*AggregateItem)
-				if len(item1.v) == 0 {
-					return true
-				}
-				var v []byte
-				if v, err = tx.GetOne(table, item1.k); err != nil {
-					return false
-				}
-				if item1.count != binary.BigEndian.Uint32(v[:4]) {
-					fmt.Printf("mismatched count for %x: change file %d, db: %d\n", item1.k, item1.count, binary.BigEndian.Uint32(v[:4]))
-					//return false
-				}
-				if !bytes.Equal(item1.v, v[4:]) {
-					fmt.Printf("mismatched v for %x: change file [%x], db: [%x]\n", item1.k, item1.v, v[4:])
-					return false
-				}
-				return true
-			})
-			if err != nil {
-				return false
-			}
 			if err = changes.closeFiles(); err != nil {
 				return false
 			}
 		}
 		return true
 	})
+	if err != nil {
+		return err
+	}
+	for fType, tree := range trees {
+		table := fType.Table()
+		tree.Ascend(func(i btree.Item) bool {
+			item := i.(*AggregateItem)
+			if len(item.v) == 0 {
+				return true
+			}
+			var v []byte
+			if v, err = tx.GetOne(table, item.k); err != nil {
+				return false
+			}
+			if item.count != binary.BigEndian.Uint32(v[:4]) {
+				fmt.Printf("mismatched count for %x: change file %d, db: %d\n", item.k, item.count, binary.BigEndian.Uint32(v[:4]))
+				//return false
+			}
+			if !bytes.Equal(item.v, v[4:]) {
+				fmt.Printf("mismatched v for %x: change file [%x], db: [%x]\n", item.k, item.v, v[4:])
+				return false
+			}
+			return true
+		})
+	}
 	if err != nil {
 		return err
 	}
