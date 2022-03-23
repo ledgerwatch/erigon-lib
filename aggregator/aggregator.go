@@ -205,7 +205,6 @@ type ChangeFile struct {
 	wTx         *bufio.Writer
 	r           *bufio.Reader
 	rTx         *bufio.Reader
-	sizeCounter uint64
 	txNum       uint64 // Currently read transaction number
 	txRemaining uint64 // Remaining number of bytes to read in the current transaction
 	words       []byte // Words pending for the next block record, in the same slice
@@ -307,6 +306,7 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	var numBuf [10]byte
 	// Write out words
 	lastOffset := 0
+	var size uint64
 	for _, offset := range cf.wordOffsets {
 		word := cf.words[lastOffset:offset]
 		n := binary.PutUvarint(numBuf[:], uint64(len(word)))
@@ -318,7 +318,7 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 				return err
 			}
 		}
-		cf.sizeCounter += uint64(n + len(word))
+		size += uint64(n + len(word))
 		lastOffset = offset
 	}
 	cf.words = cf.words[:0]
@@ -327,11 +327,10 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	if _, err := cf.wTx.Write(numBuf[:n]); err != nil {
 		return err
 	}
-	n = binary.PutUvarint(numBuf[:], cf.sizeCounter)
+	n = binary.PutUvarint(numBuf[:], size)
 	if _, err := cf.wTx.Write(numBuf[:n]); err != nil {
 		return err
 	}
-	cf.sizeCounter = 0
 	return nil
 }
 
@@ -847,6 +846,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 			if i == nil {
 				item := &AggregateItem{k: common.Copy(key), v: common.Copy(after), count: 1}
 				bt.ReplaceOrInsert(item)
+				fmt.Printf("create [%x] [%x]\n", item.k, item.v)
 			} else {
 				item := i.(*AggregateItem)
 				if commitments {
@@ -859,6 +859,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 					item.v = mergedVal
 				} else {
 					item.v = common.Copy(after)
+					fmt.Printf("change [%x] [%x]\n", item.k, item.v)
 				}
 				item.count++
 			}
@@ -1129,6 +1130,7 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			if err = changes.openFiles(item.startBlock, false /* write */); err != nil {
 				return false
 			}
+			fmt.Printf("Rebuilding %s, keys: %s %s, after: %s %s\n", fType.String(), changes.keys.path, changes.keys.pathTx, changes.after.path, changes.after.pathTx)
 			var prefixLen int
 			if fType == Storage {
 				prefixLen = length.Addr
@@ -1841,7 +1843,7 @@ func (a *Aggregator) closeFiles(fType FileType) {
 
 func (a *Aggregator) Close() {
 	close(a.aggChannel)
-	a.aggWg.Wait() // Need to wait for the background aggregation to finish because itsends to merge channels
+	a.aggWg.Wait() // Need to wait for the background aggregation to finish because it sends to merge channels
 	// Drain channel before closing
 	select {
 	case <-a.mergeChannel:
