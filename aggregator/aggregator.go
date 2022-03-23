@@ -1132,7 +1132,6 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			if err = changes.openFiles(item.startBlock, false /* write */); err != nil {
 				return false
 			}
-			fmt.Printf("Rebuilding %s, keys: %s %s, after: %s %s\n", fType.String(), changes.keys.path, changes.keys.pathTx, changes.after.path, changes.after.pathTx)
 			var prefixLen int
 			if fType == Storage {
 				prefixLen = length.Addr
@@ -1161,11 +1160,11 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 				return false
 			}
 			if item.count != binary.BigEndian.Uint32(v[:4]) {
-				fmt.Printf("mismatched count for %x: change file %d, db: %d\n", item.k, item.count, binary.BigEndian.Uint32(v[:4]))
-				//return false
+				err = fmt.Errorf("mismatched count for %x: change file %d, db: %d", item.k, item.count, binary.BigEndian.Uint32(v[:4]))
+				return false
 			}
 			if !bytes.Equal(item.v, v[4:]) {
-				fmt.Printf("mismatched v for %x: change file [%x], db: [%x]\n", item.k, item.v, v[4:])
+				err = fmt.Errorf("mismatched v for %x: change file [%x], db: [%x]", item.k, item.v, v[4:])
 				return false
 			}
 			return true
