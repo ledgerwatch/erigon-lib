@@ -17,7 +17,6 @@
 package commitment
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -481,26 +480,25 @@ func TestEmptyState(t *testing.T) {
 	}
 }
 
-func TestEmptyUpdateState(t *testing.T) {
+func Test_HexPatriciaHashed_EmptyUpdateState(t *testing.T) {
 	ms := NewMockState(t)
 	hph := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
 	hph.SetTrace(false)
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
 		Balance("01", 5).
+		Storage("04", "01", "0401").
+		Storage("03", "56", "050505").
 		Build()
+
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
 	}
 	branchNodeUpdates, err := hph.ProcessUpdates(plainKeys, hashedKeys, updates)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	rh, err := hph.RootHash()
-	if err != nil {
-		t.Fatal(err)
-	}
+	hashBeforeEmptyUpdate, err := hph.RootHash()
+	require.NoError(t, err)
 
 	ms.applyBranchNodeUpdates(branchNodeUpdates)
 
@@ -518,77 +516,84 @@ func TestEmptyUpdateState(t *testing.T) {
 	// generate empty updates and do NOT reset tree
 	hph.SetTrace(true)
 	plainKeys, hashedKeys, updates = NewUpdateBuilder().Build()
-	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
-		t.Fatal(err)
-	}
+
+	err = ms.applyPlainUpdates(plainKeys, updates)
+	require.NoError(t, err)
 
 	branchNodeUpdates, err = hph.ProcessUpdates(plainKeys, hashedKeys, updates)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ms.applyBranchNodeUpdates(branchNodeUpdates)
-	fmt.Println("2. empty updates applied without state reset")
+	require.NoError(t, err)
 
-	firstRH := rh
-	rh, err = hph.RootHash()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(firstRH, rh) {
-		t.Fatalf("expected root hash [%v] after update but got [%v]", hex.EncodeToString(firstRH), hex.EncodeToString(rh))
-	}
-	fmt.Printf("root %v\n", hex.EncodeToString(rh))
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
+	fmt.Println("2. Empty updates applied without state reset")
+
+	hashAfterEmptyUpdate, err := hph.RootHash()
+	require.NoError(t, err)
+
+	require.EqualValues(t, hashBeforeEmptyUpdate, hashAfterEmptyUpdate)
 }
 
 func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	ms := NewMockState(t)
 	ms2 := NewMockState(t)
 
-	trieOne := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
-	trieTwo := NewHexPatriciaHashed(1, ms2.branchFn, ms2.accountFn, ms2.storageFn)
-
-	trieTwo.Reset()
-	trieOne.Reset()
-	trieOne.SetTrace(false)
-	trieTwo.SetTrace(false)
-
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
-		Balance("00", 4).
-		Balance("01", 5).
-		Balance("02", 6).
-		Balance("03", 7).
-		Balance("04", 8).
-		Storage("04", "01", "0401").
-		Storage("03", "56", "050505").
-		Storage("03", "57", "060606").
-		Balance("05", 9).
-		Storage("05", "02", "8989").
-		Storage("05", "04", "9898").
+		Balance("f4", 4).
+		Balance("ba", 065606).
 		Build()
 
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
 	}
 
-	branchNodeUpdates := make(map[string][]byte)
-	for i := 0; i < len(updates); i += 2 {
+	renderUpdates := func(branchNodeUpdates map[string][]byte) {
+		var keys []string
+		for key := range branchNodeUpdates {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			branchNodeUpdate := branchNodeUpdates[key]
+			fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
+		}
+	}
+
+	trieOne := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
+	trieTwo := NewHexPatriciaHashed(1, ms2.branchFn, ms2.accountFn, ms2.storageFn)
+
+	trieTwo.Reset()
+	trieOne.Reset()
+
+	trieOne.SetTrace(true)
+	trieTwo.SetTrace(true)
+
+	// single sequential update
+	branchNodeUpdatesOne := make(map[string][]byte)
+	for i := 0; i < len(updates); i++ {
 		branchNodeUpdates, err := trieOne.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
 		require.NoError(t, err)
 		ms.applyBranchNodeUpdates(branchNodeUpdates)
+
+		for br, upd := range branchNodeUpdates {
+			branchNodeUpdatesOne[br] = upd
+		}
 	}
-	_, err := trieTwo.ProcessUpdates(plainKeys, hashedKeys, updates)
+
+	fmt.Printf("1. Trie sequential update generated following branch updates\n")
+	renderUpdates(branchNodeUpdatesOne)
+
+	err := ms2.applyPlainUpdates(plainKeys, updates)
 	require.NoError(t, err)
 
-	fmt.Printf("1. Generated updates\n")
-	var keys []string
-	for key := range branchNodeUpdates {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		branchNodeUpdate := branchNodeUpdates[key]
-		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
-	}
+	// batch update
+	branchNodeUpdatesTwo, err := trieTwo.ProcessUpdates(plainKeys, hashedKeys, updates)
+	require.NoError(t, err)
+
+	ms2.applyBranchNodeUpdates(branchNodeUpdatesTwo)
+
+	fmt.Printf("2. Trie batch update generated following branch updates\n")
+	renderUpdates(branchNodeUpdatesTwo)
+
+	trieOne.Reset()
 
 	sequentialRoot, err := trieOne.RootHash()
 	require.NoError(t, err)
@@ -598,4 +603,5 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 
 	require.EqualValues(t, sequentialRoot, batchRoot,
 		"expected equal roots, got sequential [%v] != batch [%v]", hex.EncodeToString(sequentialRoot), hex.EncodeToString(batchRoot))
+	require.Lenf(t, batchRoot, 32, "root hash length should be equal to 32 bytes")
 }
