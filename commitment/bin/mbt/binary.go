@@ -18,6 +18,7 @@ package mbt
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -46,10 +47,7 @@ type store []storeSlot
 
 type hashType int
 
-const (
-	typeKeccak256 hashType = iota
-	typeBlake2b
-)
+const typeKeccak256 hashType = iota
 
 type BinaryTrie struct {
 	root     BinaryNode
@@ -141,13 +139,7 @@ func (s store) Less(i, j int) bool {
 	return len(s[i].key) < len(s[j].key)
 }
 func (s store) Swap(i, j int) {
-	temp := s[i]
-	s[i] = s[j]
-	s[j] = temp
-}
-
-func NewBinTrie() BinaryNode {
-	return empty(struct{}{})
+	s[i], s[j] = s[j], s[i]
 }
 
 func (bt *BinaryTrie) TryGet(key []byte) ([]byte, error) {
@@ -155,11 +147,11 @@ func (bt *BinaryTrie) TryGet(key []byte) ([]byte, error) {
 	off := 0
 
 	var currentNode *branch
-	switch bt.root.(type) {
+	switch node := bt.root.(type) {
 	case empty:
 		return nil, ErrKeyNotPresent
 	case *branch:
-		currentNode = bt.root.(*branch)
+		currentNode = node
 	case hashBinaryNode:
 		return nil, errReadFromHash
 	}
@@ -210,9 +202,12 @@ func (br *branch) hash(off int) []byte {
 	if br.value == nil {
 		// This is a branch node, so the rule is
 		// branch_hash = hash(left_root_hash || right_root_hash)
-		hasher.sha.Write(br.left.hash(off + len(br.prefix) + 1))
-		hasher.sha.Write(br.right.hash(off + len(br.prefix) + 1))
+		lh := br.left.hash(off + len(br.prefix) + 1)
+		rh := br.right.hash(off + len(br.prefix) + 1)
+		hasher.sha.Write(lh)
+		hasher.sha.Write(rh)
 		hash = hasher.sha.Sum(nil)
+		fmt.Printf("branch hash %v (%v|%v) off %d\n", hex.EncodeToString(hash), hex.EncodeToString(lh), hex.EncodeToString(rh), off)
 		hasher.sha.Reset()
 	} else {
 		// This is a leaf node, so the hashing rule is
@@ -229,6 +224,7 @@ func (br *branch) hash(off int) []byte {
 		hasher.sha.Write(hash)
 		hash = hasher.sha.Sum(nil)
 		hasher.sha.Reset()
+		fmt.Printf("leaf hash %v off %d\n", hex.EncodeToString(hash), off)
 	}
 
 	if len(br.prefix) > 0 {
@@ -238,6 +234,9 @@ func (br *branch) hash(off int) []byte {
 		hasher.sha.Write(hash)
 		hash = hasher.sha.Sum(nil)
 		hasher.sha.Reset()
+		fmt.Printf("hash wpref %v off %d\n", hex.EncodeToString(hash), fpLen)
+	} else {
+		fmt.Printf("hash %v off %d, prefs %d\n", hex.EncodeToString(hash), off, len(br.prefix))
 	}
 
 	return hash
@@ -282,12 +281,12 @@ func (bt *BinaryTrie) resolveNode(childNode BinaryNode, bk binkey, off int) *bra
 
 	// Check if the node has already been resolved,
 	// otherwise, resolve it.
-	switch childNode.(type) {
+	switch child := childNode.(type) {
 	case empty:
 		return nil
 	case hashBinaryNode:
 		// empty root ?
-		if bytes.Equal(childNode.(hashBinaryNode)[:], emptyRoot[:]) {
+		if bytes.Equal(child[:], emptyRoot) {
 			return nil
 		}
 
@@ -316,8 +315,8 @@ func (bt *BinaryTrie) TryUpdate(key, value []byte) error {
 		bt.root = &branch{
 			prefix: bk,
 			value:  value,
-			left:   hashBinaryNode(emptyRoot[:]),
-			right:  hashBinaryNode(emptyRoot[:]),
+			left:   hashBinaryNode(emptyRoot),
+			right:  hashBinaryNode(emptyRoot),
 			key:    key,
 			hType:  bt.hashType,
 		}
@@ -345,8 +344,8 @@ func (bt *BinaryTrie) TryUpdate(key, value []byte) error {
 			if childNode == nil {
 				childNode = &branch{
 					prefix: bk[off+1:],
-					left:   hashBinaryNode(emptyRoot[:]),
-					right:  hashBinaryNode(emptyRoot[:]),
+					left:   hashBinaryNode(emptyRoot),
+					right:  hashBinaryNode(emptyRoot),
 					value:  value,
 					hType:  bt.hashType,
 				}
@@ -405,8 +404,8 @@ func (bt *BinaryTrie) TryUpdate(key, value []byte) error {
 				currentNode.left = midNode
 				currentNode.right = &branch{
 					prefix: bk[off+split+1:],
-					left:   hashBinaryNode(emptyRoot[:]),
-					right:  hashBinaryNode(emptyRoot[:]),
+					left:   hashBinaryNode(emptyRoot),
+					right:  hashBinaryNode(emptyRoot),
 					value:  value,
 					key:    key,
 					hType:  bt.hashType,
@@ -416,8 +415,8 @@ func (bt *BinaryTrie) TryUpdate(key, value []byte) error {
 				currentNode.right = midNode
 				currentNode.left = &branch{
 					prefix: bk[off+split+1:],
-					left:   hashBinaryNode(emptyRoot[:]),
-					right:  hashBinaryNode(emptyRoot[:]),
+					left:   hashBinaryNode(emptyRoot),
+					right:  hashBinaryNode(emptyRoot),
 					value:  value,
 					key:    key,
 					hType:  bt.hashType,
@@ -474,17 +473,13 @@ func (h hashBinaryNode) tryGet(key []byte, depth int) ([]byte, error) {
 }
 
 func (e empty) Hash() []byte {
-	return emptyRoot[:]
+	return emptyRoot
 }
 
 func (e empty) hash(off int) []byte {
-	return emptyRoot[:]
+	return emptyRoot
 }
 
 func (e empty) Commit() error {
 	return errors.New("can not commit empty node")
-}
-
-func (e empty) tryGet(key []byte, depth int) ([]byte, error) {
-	return nil, ErrReadFromEmptyTree
 }
