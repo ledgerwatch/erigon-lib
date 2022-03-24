@@ -6,7 +6,6 @@ require (
 	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/VictoriaMetrics/metrics v1.18.1
 	github.com/c2h5oh/datasize v0.0.0-20200825124411-48ed595a09d2
-	github.com/ethereum/go-ethereum v1.10.16
 	github.com/flanglet/kanzi-go v1.9.1-0.20211212184056-72dda96261ee
 	github.com/go-stack/stack v1.8.1
 	github.com/gofrs/flock v0.8.1
@@ -14,6 +13,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/holiman/uint256 v1.2.0
+	github.com/kr/text v0.2.0 // indirect
 	github.com/ledgerwatch/log/v3 v3.4.1
 	github.com/ledgerwatch/secp256k1 v1.0.0
 	github.com/matryer/moq v0.2.6
@@ -27,4 +27,5 @@ require (
 	google.golang.org/grpc v1.41.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.1.0
 	google.golang.org/protobuf v1.27.1
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )

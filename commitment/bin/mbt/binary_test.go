@@ -19,6 +19,7 @@ package mbt
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"math/rand"
 	"sort"
 	"testing"
@@ -116,16 +117,6 @@ func TestBinaryTrieEmptyHash(t *testing.T) {
 	if !bytes.Equal(got, exp) {
 		t.Fatalf("invalid empty trie hash, got %x != exp %x", got, exp)
 	}
-
-	trie = NewBinaryTrieWithBlake2b()
-	got = trie.Hash()
-	// This is the wrong empty root for blake2b. We are only focused
-	// on preformance measurements at the moment.
-	exp = emptyRoot[:]
-
-	if !bytes.Equal(got, exp) {
-		t.Fatalf("invalid empty trie hash, got %x != exp %x", got, exp)
-	}
 }
 
 func TestBinaryTrieInsertOneLeafAndHash(t *testing.T) {
@@ -190,7 +181,7 @@ func TestBinaryTrieInsertWithOffsetAndHash(t *testing.T) {
 func TestBinaryTrieReadEmpty(t *testing.T) {
 	trie := NewBinaryTrie()
 	_, err := trie.TryGet([]byte{1})
-	if err != ErrKeyNotPresent {
+	if errors.Is(err, ErrKeyNotPresent) {
 		t.Fatalf("incorrect error received, expected '%v', got '%v'", ErrKeyNotPresent, err)
 	}
 }
@@ -208,7 +199,7 @@ func TestBinaryTrieReadOneLeaf(t *testing.T) {
 	}
 
 	v, err = trie.TryGet([]byte{1})
-	if err != ErrKeyNotPresent {
+	if errors.Is(err, ErrKeyNotPresent) {
 		t.Fatalf("incorrect error received, expected '%v', got '%v'", ErrKeyNotPresent, err)
 	}
 }
@@ -228,16 +219,13 @@ func TestBinaryTrieReadOneFromManyLeaves(t *testing.T) {
 	}
 
 	v, err = trie.TryGet([]byte{1})
-	if err != ErrKeyNotPresent {
+	if errors.Is(err, ErrKeyNotPresent) {
 		t.Fatalf("incorrect error received, expected '%v', got '%v'", ErrKeyNotPresent, err)
 	}
 }
 
 func BenchmarkTrieHash(b *testing.B) {
 	trieK := NewBinaryTrie()
-	//trieK4 := NewM4BinaryTrie()
-	trieB := NewBinaryTrieWithBlake2b()
-	//trieB4 := NewM4BinaryTrieWithBlake2b()
 	key := make([]byte, 32)
 	val := make([]byte, 32)
 	rand.Seed(time.Now().UnixNano())
@@ -245,9 +233,6 @@ func BenchmarkTrieHash(b *testing.B) {
 		rand.Read(key)
 		rand.Read(val)
 		trieK.TryUpdate(key, val)
-		//trieK4.Update(key, val)
-		trieB.TryUpdate(key, val)
-		//trieB4.Update(key, val)
 	}
 	b.Run("m5-keccak", func(b *testing.B) {
 		b.ResetTimer()
@@ -257,28 +242,4 @@ func BenchmarkTrieHash(b *testing.B) {
 			trieK.Hash()
 		}
 	})
-	//b.Run("m5-blake2b", func(b *testing.B) {
-	//	b.ResetTimer()
-	//	b.ReportAllocs()
-	//
-	//	for i := 0; i < b.N; i++ {
-	//		trieB.Hash()
-	//	}
-	//})
-	//b.Run("m4-keccak", func(b *testing.B) {
-	//	b.ResetTimer()
-	//	b.ReportAllocs()
-	//
-	//	for i := 0; i < b.N; i++ {
-	//		trieK4.Hash()
-	//	}
-	//})
-	//b.Run("m4-blake", func(b *testing.B) {
-	//	b.ResetTimer()
-	//	b.ReportAllocs()
-	//
-	//	for i := 0; i < b.N; i++ {
-	//		trieB4.Hash()
-	//	}
-	//})
 }

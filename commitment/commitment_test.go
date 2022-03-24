@@ -9,7 +9,7 @@ import (
 )
 
 func Test_AccountEncodeDecode(t *testing.T) {
-	balance := uint256.NewInt(100)
+	balance := uint256.NewInt(1002020020)
 	acc := &Account{
 		Nonce:   19,
 		Balance: *balance,
@@ -26,7 +26,6 @@ func Test_AccountEncodeDecode(t *testing.T) {
 	require.EqualValues(t, acc.Nonce, bcc.Nonce)
 	require.True(t, acc.Balance.Eq(&bcc.Balance))
 	require.EqualValues(t, acc.CodeHash, bcc.CodeHash)
-
 }
 
 func Test_BinPatriciaTrie_UniqueRepresentation(t *testing.T) {
@@ -50,4 +49,43 @@ func Test_BinPatriciaTrie_UniqueRepresentation(t *testing.T) {
 
 	batchHash, _ := trieBatch.RootHash()
 	require.EqualValues(t, hash, batchHash)
+}
+
+func Test_BinPatriciaTrie_Compare(t *testing.T) {
+	trie := NewBinPatriciaTrie()
+	otherTrie := NewBinaryPatriciaTrie()
+
+	plainKeys, hashedKeys, updates := NewUpdateBuilder().
+		Balance("01", 12).
+		Balance("f1", 120000).
+		Nonce("aa", 152512).
+		Balance("9a", 100000).
+		Balance("e8", 200000).
+		Balance("a2", 300000).
+		Balance("f0", 400000).
+		Balance("af", 500000).
+		Balance("33", 600000).
+		Nonce("aa", 184).
+		Build()
+
+	otherTrie.trace = true
+
+	trie.ProcessUpdates(plainKeys, hashedKeys, updates)
+	otherTrie.ProcessUpdates(plainKeys, hashedKeys, updates)
+
+	hash, _ := trie.RootHash()
+	require.Len(t, hash, 32)
+
+	batchHash, _ := otherTrie.RootHash()
+
+	require.EqualValues(t, hash, batchHash)
+
+	for _, hkey := range hashedKeys {
+		buf, err := trie.t.TryGet(hkey)
+		require.NoError(t, err)
+		buf2, ok := otherTrie.Get(hkey)
+		require.True(t, ok)
+		require.EqualValues(t, buf2, buf)
+	}
+
 }

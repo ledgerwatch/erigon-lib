@@ -1,52 +1,94 @@
 package commitment
 
 import (
-	"errors"
+	"encoding/hex"
 	"fmt"
-	"math/bits"
 
-	"github.com/holiman/uint256"
-
-	"github.com/ledgerwatch/erigon-lib/commitment/bin/mbt"
+	"golang.org/x/crypto/sha3"
 )
 
-type wrappedBinaryTrie struct {
-	t     *mbt.BinaryTrie
+type BinPatriciaTrie struct {
+	root  *Node
 	trace bool
+
+	keccak keccakState
 }
 
-func NewBinPatriciaTrie() *wrappedBinaryTrie {
-	return &wrappedBinaryTrie{
-		t:     mbt.NewBinaryTrie(),
-		trace: false,
+func NewBinaryPatriciaTrie() *BinPatriciaTrie {
+	return &BinPatriciaTrie{
+		keccak: sha3.NewLegacyKeccak256().(keccakState),
 	}
 }
 
-func (w *wrappedBinaryTrie) RootHash() ([]byte, error) {
-	return w.t.Hash(), nil
+func (t *BinPatriciaTrie) Update(key, value []byte) {
+	keyPath := newBitstring(key)
+	if t.root == nil {
+		t.root = &Node{
+			Key:   key,
+			Value: value,
+		}
+		return
+	}
+
+	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath)
+	if len(edge) == 0 && len(keyPathRest) == 0 {
+		latest.Value = value
+		return
+	}
+
+	newLeaf := &Node{P: latest, Key: key, Value: value}
+	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, keyPath, newLeaf)
 }
 
-func (w *wrappedBinaryTrie) Reset() {}
-func (w *wrappedBinaryTrie) ResetFns(
-	branchFn func(prefix []byte) ([]byte, error),
-	accountFn func(plainKey []byte, cell *Cell) error,
-	storageFn func(plainKey []byte, cell *Cell) error,
-) {
+// Key describes path in trie to value. When UpdateHashed is used,
+// hashed key describes path to the leaf node and plainKey is stored in the leaf node Key field.
+func (t *BinPatriciaTrie) UpdateHahsed(plainKey, hashedKey, value []byte) {
+	keyPath := newBitstring(hashedKey)
+	if t.root == nil {
+		t.root = &Node{
+			Key:   hashedKey,
+			Value: value,
+		}
+		return
+	}
+
+	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath)
+	if len(edge) == 0 && len(keyPathRest) == 0 {
+		latest.Value = value
+		return
+	}
+
+	newLeaf := &Node{P: latest, Key: plainKey, Value: value}
+	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, keyPath, newLeaf)
 }
 
-func (w *wrappedBinaryTrie) SetTrace(trace bool) { w.trace = trace }
+// Get returns value stored by provided key.
+func (t *BinPatriciaTrie) Get(key []byte) ([]byte, bool) {
+	keyPath := newBitstring(key)
+	if t.root == nil {
+		return nil, false
+	}
 
-func (w *wrappedBinaryTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []Update) (branchNodeUpdates map[string][]byte, err error) {
+	edge, keyPathRest, _, latest := t.root.followPath(keyPath)
+	if len(edge) == 0 && len(keyPathRest) == 0 {
+		return latest.Value, true
+	}
+	return nil, false
+}
+
+func (t *BinPatriciaTrie) RootHash() ([]byte, error) {
+	if t.root == nil {
+		return EmptyRootHash, nil
+	}
+	return t.hash(t.root, t.root.Key, 0), nil
+}
+
+func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []Update) (branchNodeUpdates map[string][]byte, err error) {
 	branchNodeUpdates = make(map[string][]byte)
 	for i, update := range updates {
 		account := new(Account)
-		node, err := w.t.TryGet(hashedKeys[i]) // check if key exist
-		if err != nil {
-			if !errors.Is(err, mbt.ErrKeyNotPresent) || errors.Is(err, mbt.ErrReadFromEmptyTree) {
-				return nil, fmt.Errorf("failed to check key: %w", err)
-			}
-		} else {
-			// key exists, decode value to account
+		node, found := t.Get(hashedKeys[i]) // check if key exist
+		if found {
 			account.decode(node)
 		}
 
@@ -59,7 +101,7 @@ func (w *wrappedBinaryTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updat
 		case update.Flags&CODE_UPDATE != 0:
 			copy(account.CodeHash[:], update.CodeHashOrStorage[:])
 		default:
-			if w.trace {
+			if t.trace {
 				fmt.Printf("update of type %d has been skipped: unsupported for bin trie", update.Flags)
 			}
 			continue
@@ -68,127 +110,242 @@ func (w *wrappedBinaryTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updat
 		aux := make([]byte, 128)
 		n := account.encode(aux)
 
-		if err := w.t.TryUpdate(hashedKeys[i], aux[:n]); err != nil {
-			return nil, fmt.Errorf("update failed: %w", err)
-		}
+		t.Update(hashedKeys[i], aux[:n])
+		//t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
 	}
 
 	return branchNodeUpdates, nil
 }
 
-type Account struct {
-	Nonce    uint64
-	Balance  uint256.Int
-	CodeHash [32]byte // hash of the bytecode
+func (t *BinPatriciaTrie) Reset() { t.root = nil }
+
+func (t *BinPatriciaTrie) ResetFns(branchFn func(prefix []byte) ([]byte, error), accountFn func(plainKey []byte, cell *Cell) error, storageFn func(plainKey []byte, cell *Cell) error) {
 }
 
-func (a *Account) decode(buffer []byte) *Account {
-	size := uint64(buffer[0])
-	var pos int
-	if size < 192+56 {
-		size -= 192
-	} else {
-		sizeBytes := int(size - 247)
-		var sz uint64
-		for i := 1; i <= sizeBytes; i++ {
-			n := uint64(buffer[pos+i])
-			sz |= n << (8 * (sizeBytes - i))
-		}
-		size = sz
-		pos += sizeBytes
-	}
-	pos++
-
-	if buffer[pos] < 128 {
-		a.Nonce = uint64(buffer[pos])
-	} else {
-		var nonce uint64
-		sizeBytes := int(buffer[pos] - 128)
-		for i := 1; i <= sizeBytes; i++ {
-			nonce |= uint64(buffer[pos+i]) << (8 * (sizeBytes - i))
-		}
-		a.Nonce = nonce
-		pos += sizeBytes
-	}
-	pos++
-
-	if buffer[pos] < 128 {
-		b := uint256.NewInt(uint64(buffer[pos]))
-		a.Balance = *b
-	} else {
-		bc := int(buffer[pos] - 128)
-		a.Balance.SetBytes(buffer[pos : pos+bc])
-		pos += bc
-	}
-	pos++
-
-	if buffer[pos] == 160 {
-		pos++
-		copy(a.CodeHash[:], buffer[pos:pos+32])
-	}
-	return a
+func (t *BinPatriciaTrie) SetTrace(b bool) {
+	t.trace = b
 }
 
-func (a *Account) encode(buffer []byte) int {
-	balanceBytes := 0
-	if !a.Balance.LtUint64(128) {
-		balanceBytes = a.Balance.ByteLen()
-	}
+// There are three types of nodes:
+// - Leaf (with a value and without branches)
+// - Branch (with left and right child)
+// - Root - Either leaf or branch. When root is branch, it's Key contains their common prefix as a bitstring.
+type Node struct {
+	L, R, P *Node     // left and right child, parent. For root P is nil
+	LPrefix bitstring // left child prefix, always begins with 0
+	RPrefix bitstring // right child prefix, always begins with 1
+	hash    []byte    // node hash
+	Key     []byte    // same as common prefix, useful for debugging, actual key should be reconstructed by path to the node
+	Value   []byte    // exists only in LEAF node
+}
 
-	var nonceBytes int
-	if a.Nonce < 128 && a.Nonce != 0 {
-		nonceBytes = 0
-	} else {
-		nonceBytes = (bits.Len64(a.Nonce) + 7) / 8
-	}
-
-	var structLength = uint(balanceBytes + nonceBytes + 2)
-	structLength += 36 // onee 32-byte array + 2 prefixes
-
-	var pos int
-	if structLength < 56 {
-		buffer[0] = byte(192 + structLength)
-		pos = 1
-	} else {
-		lengthBytes := (bits.Len(structLength) + 7) / 8
-		buffer[0] = byte(247 + lengthBytes)
-
-		for i := lengthBytes; i > 0; i-- {
-			buffer[i] = byte(structLength)
-			structLength >>= 8
+func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath, fullPath bitstring, newLeaf *Node) {
+	var movedNode *Node
+	switch {
+	case n.Value == nil:
+		movedNode = &Node{ // move existed branch
+			L:       n.L,
+			R:       n.R,
+			P:       n,
+			LPrefix: n.LPrefix,
+			RPrefix: n.RPrefix,
+			hash:    n.hash,
 		}
-
-		pos = lengthBytes + 1
-	}
-
-	// Encoding nonce
-	if a.Nonce < 128 && a.Nonce != 0 {
-		buffer[pos] = byte(a.Nonce)
-	} else {
-		buffer[pos] = byte(128 + nonceBytes)
-		var nonce = a.Nonce
-		for i := nonceBytes; i > 0; i-- {
-			buffer[pos+i] = byte(nonce)
-			nonce >>= 8
+	default:
+		movedNode = &Node{ // move existed leaf
+			P:     n,
+			Key:   n.Key,
+			Value: n.Value,
 		}
 	}
-	pos += 1 + nonceBytes
 
-	// Encoding balance
-	if a.Balance.LtUint64(128) && !a.Balance.IsZero() {
-		buffer[pos] = byte(a.Balance.Uint64())
-		pos++
-	} else {
-		buffer[pos] = byte(128 + balanceBytes)
-		pos++
-		a.Balance.WriteToSlice(buffer[pos : pos+balanceBytes])
-		pos += balanceBytes
+	switch restKeyPath[0] {
+	case 0:
+		n.LPrefix, n.L = restKeyPath, newLeaf
+		n.RPrefix, n.R = detachedPath, movedNode
+	case 1:
+		n.LPrefix, n.L = detachedPath, movedNode
+		n.RPrefix, n.R = restKeyPath, newLeaf
 	}
 
-	// Encoding CodeHash
-	buffer[pos] = 128 + 32
-	pos++
-	copy(buffer[pos:], a.CodeHash[:])
-	pos += 32
-	return pos
+	// node become extented, reset key and value
+	n.Key, n.Value, n.hash = nil, nil, nil
+	if n.P == nil {
+		n.Key = commonPath // root Key stores common prefix for L and R branches
+		return
+	}
+
+	if len(commonPath) > 0 {
+		switch commonPath[0] {
+		case 1:
+			if n.P != nil {
+				n.P.RPrefix = commonPath
+				return
+			}
+			n.RPrefix = commonPath
+		case 0:
+			if n.P != nil {
+				n.P.LPrefix = commonPath
+				return
+			}
+			n.LPrefix = commonPath
+		}
+	}
+}
+
+// followPath goes by provided path and exits when
+//  - node path splits with desired path
+//  - desired path is not finished but node path is finished
+func (n *Node) followPath(path bitstring) (nodePath, pathRest bitstring, splitAt int, current *Node) {
+	if n.P == nil { // it's root
+		if n.Value != nil {
+			nodePath = newBitstring(n.Key) // this key is not stored as bitstring
+		} else {
+			nodePath = n.Key // this key is stored as bitstring
+		}
+	}
+
+	current = n
+	var bit uint8
+	var equal bool
+	for current != nil {
+		splitAt, bit, equal = nodePath.splitPoint(path)
+		if equal {
+			return bitstring{}, bitstring{}, 0, current
+		}
+
+		if splitAt < len(nodePath) {
+			return nodePath, path[splitAt:], splitAt, current
+		}
+
+		if splitAt == 0 || splitAt == len(nodePath) {
+			path = path[splitAt:]
+
+			switch bit {
+			case 1:
+				if current.R == nil {
+					return nodePath, path, splitAt, current
+				}
+				nodePath = current.RPrefix
+				current = current.R
+			case 0:
+				if current.L == nil {
+					return nodePath, path, splitAt, current
+				}
+				nodePath = current.LPrefix
+				current = current.L
+			}
+
+			continue
+		}
+		break
+	}
+	return nodePath, path, splitAt, current
+}
+
+func (t *BinPatriciaTrie) hash(n *Node, pref bitstring, off int) []byte {
+	t.keccak.Reset()
+
+	var hash []byte
+	if n.Value == nil {
+		// This is a branch node, so the rule is
+		// branch_hash = hash(left_root_hash || right_root_hash)
+		lh := t.hash(n.L, n.LPrefix, off+len(pref))
+		rh := t.hash(n.R, n.RPrefix, off+len(pref))
+		t.keccak.Write(lh)
+		t.keccak.Write(rh)
+		hash = t.keccak.Sum(nil)
+		if t.trace {
+			fmt.Printf("branch %v (%v|%v)\n", hex.EncodeToString(hash), hex.EncodeToString(lh), hex.EncodeToString(rh))
+		}
+		t.keccak.Reset()
+	} else {
+		// This is a leaf node, so the hashing rule is
+		// leaf_hash = hash(hash(key) || hash(leaf_value))
+		t.keccak.Write(n.Key)
+		kh := t.keccak.Sum(nil)
+		t.keccak.Reset()
+
+		t.keccak.Write(n.Value)
+		hash = t.keccak.Sum(nil)
+		t.keccak.Reset()
+
+		t.keccak.Write(kh)
+		t.keccak.Write(hash)
+		hash = t.keccak.Sum(nil)
+		t.keccak.Reset()
+
+		if t.trace {
+			fmt.Printf("leaf   %v\n", hex.EncodeToString(hash))
+		}
+	}
+
+	if len(pref) > 1 {
+		fpLen := len(pref) + off
+		t.keccak.Write([]byte{byte(fpLen), byte(fpLen >> 8)})
+		t.keccak.Write(zero30)
+		t.keccak.Write(hash)
+
+		hash = t.keccak.Sum(nil)
+		t.keccak.Reset()
+	}
+	if t.trace {
+		fmt.Printf("hash   %v off %d, pref %d\n", hex.EncodeToString(hash), off, len(pref))
+	}
+	n.hash = hash
+
+	return hash
+}
+
+var zero30 = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+
+type bitstring []uint8
+
+func newBitstring(key []byte) bitstring {
+	bits := make([]byte, 8*len(key))
+	for i := range bits {
+
+		if key[i/8]&(1<<(7-i%8)) == 0 {
+			bits[i] = 0
+		} else {
+			bits[i] = 1
+		}
+	}
+
+	return bits
+}
+
+func (b bitstring) String() string {
+	var s string
+	for _, bit := range b {
+		switch bit {
+		case 1:
+			s += "1"
+		case 0:
+			s += "0"
+		default:
+			panic(fmt.Errorf("invalid bit %d in bitstring", bit))
+
+		}
+	}
+	return s
+}
+
+func (b bitstring) splitPoint(other bitstring) (at int, bit byte, equal bool) {
+	for ; at < len(b) && at < len(other); at++ {
+		if b[at] != other[at] {
+			return at, other[at], false
+		}
+	}
+
+	switch {
+	case len(b) == len(other):
+		return 0, 0, true
+	case at == len(b): // b ends before other
+		return at, other[at], false
+	case at == len(other): // other ends before b
+		return at, b[at], false
+	default:
+		panic("oroo")
+	}
 }
