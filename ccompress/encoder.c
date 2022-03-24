@@ -682,7 +682,6 @@ int __compress(byte *src, byte *dst, int size) {
             dst[i + 4] = src[i];
     }
 
-    // printf("Total: %d, compressed: %d, topo size: %d, original_size: %d\n\n", total, compressed, topo_size, size);
     free(topo);
 
     return result;
