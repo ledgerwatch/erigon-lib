@@ -6,6 +6,7 @@ require (
 	github.com/RoaringBitmap/roaring v0.9.4
 	github.com/VictoriaMetrics/metrics v1.18.1
 	github.com/c2h5oh/datasize v0.0.0-20200825124411-48ed595a09d2
+	github.com/ethereum/go-ethereum v1.10.16
 	github.com/flanglet/kanzi-go v1.9.1-0.20211212184056-72dda96261ee
 	github.com/go-stack/stack v1.8.1
 	github.com/gofrs/flock v0.8.1
