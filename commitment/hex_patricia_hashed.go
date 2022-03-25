@@ -1369,21 +1369,26 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
 	var col int
 	var depth int
 	if hph.activeRows == 0 {
-		// Update the root
-		cell = &hph.root
-		hph.rootTouched = true
-		hph.rootPresent = true
-	} else {
-		row := hph.activeRows - 1
-		depth = hph.depths[hph.activeRows-1]
-		col = int(hashedKey[hph.currentKeyLen])
-		cell = &hph.grid[row][col]
-		hph.touchMap[row] |= (uint16(1) << col)
-		hph.afterMap[row] |= (uint16(1) << col)
-		if hph.trace {
-			fmt.Printf("updateAccount setting (%d, %x), depth=%d\n", row, col, depth)
-		}
+		//if hph.root.apl == 0 {
+		hph.activeRows++
+		//} else {
+		//	//Update the root
+		//	cell = &hph.root
+		//hph.rootTouched = true
+		//hph.rootPresent = true
+		//}
 	}
+	//} else {
+	row := hph.activeRows - 1
+	depth = hph.depths[hph.activeRows-1]
+	col = int(hashedKey[hph.currentKeyLen])
+	cell = &hph.grid[row][col]
+	hph.touchMap[row] |= (uint16(1) << col)
+	hph.afterMap[row] |= (uint16(1) << col)
+	if hph.trace {
+		fmt.Printf("updateAccount setting (%d, %x), depth=%d\n", row, col, depth)
+	}
+	//}
 	if cell.downHashedLen == 0 {
 		copy(cell.downHashedKey[:], hashedKey[depth:])
 		cell.downHashedLen = len(hashedKey) - depth
@@ -1469,11 +1474,12 @@ func (hph *HexPatriciaHashed) RootHash() ([]byte, error) {
 	if hph.root.hl > 0 {
 		return hph.root.h[:hph.root.hl], nil
 	}
+
 	hash, err := hph.computeCellHash(&hph.root, 0, nil)
 	if err != nil {
 		return nil, err
 	}
-	return hash, nil
+	return hash[1:], nil // first byte is 128+hash_len
 }
 
 type UpdateFlags uint8
