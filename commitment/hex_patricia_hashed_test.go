@@ -537,8 +537,21 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	ms2 := NewMockState(t)
 
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
-		Balance("f4", 4).
-		Balance("ba", 065606).
+		//Balance("f4", 4).
+		//Storage("04", "01", "0401").
+		//Balance("ba", 065606).
+		//Balance("b9", 6).
+		//Balance("00", 4).
+		//Balance("01", 5).
+		//Balance("02", 6).
+		//Balance("03", 7).
+
+		Storage("03", "56", "050505").
+		Storage("03", "57", "060606").
+		//Balance("05", 9).
+		//Nonce("ff", 169356).
+		//Storage("05", "02", "8989").
+		//Storage("f5", "04", "9898").
 		Build()
 
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
@@ -567,15 +580,22 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	trieTwo.SetTrace(true)
 
 	// single sequential update
+	roots := make([][]byte, 0)
 	branchNodeUpdatesOne := make(map[string][]byte)
 	for i := 0; i < len(updates); i++ {
 		branchNodeUpdates, err := trieOne.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
 		require.NoError(t, err)
+
+		sequentialRoot, err := trieOne.RootHash()
+		require.NoError(t, err)
+		roots = append(roots, sequentialRoot)
+
 		ms.applyBranchNodeUpdates(branchNodeUpdates)
 
 		for br, upd := range branchNodeUpdates {
 			branchNodeUpdatesOne[br] = upd
 		}
+		renderUpdates(branchNodeUpdatesOne)
 	}
 
 	fmt.Printf("1. Trie sequential update generated following branch updates\n")
@@ -583,6 +603,7 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 
 	err := ms2.applyPlainUpdates(plainKeys, updates)
 	require.NoError(t, err)
+	fmt.Printf("\n\n")
 
 	// batch update
 	branchNodeUpdatesTwo, err := trieTwo.ProcessUpdates(plainKeys, hashedKeys, updates)
@@ -593,15 +614,18 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	fmt.Printf("2. Trie batch update generated following branch updates\n")
 	renderUpdates(branchNodeUpdatesTwo)
 
-	trieOne.Reset()
-
 	sequentialRoot, err := trieOne.RootHash()
 	require.NoError(t, err)
+
+	for i, root := range roots {
+		fmt.Printf("%d [%s]\n", i, hex.EncodeToString(root))
+	}
+	require.NotContainsf(t, roots[:len(roots)-1], sequentialRoot, "sequential root %s found in previous hashes", hex.EncodeToString(sequentialRoot))
 
 	batchRoot, err := trieTwo.RootHash()
 	require.NoError(t, err)
 
-	require.EqualValues(t, sequentialRoot, batchRoot,
+	require.EqualValues(t, batchRoot, sequentialRoot,
 		"expected equal roots, got sequential [%v] != batch [%v]", hex.EncodeToString(sequentialRoot), hex.EncodeToString(batchRoot))
 	require.Lenf(t, batchRoot, 32, "root hash length should be equal to 32 bytes")
 }
