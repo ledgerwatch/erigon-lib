@@ -8,6 +8,8 @@ import (
 	"unsafe"
 )
 
+// Implementation from https://github.com/felipelouza/gsufsort
+
 func SaSize(l int) int {
 	var a uint
 	return l * int(unsafe.Sizeof(a))
