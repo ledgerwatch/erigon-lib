@@ -14,14 +14,27 @@ func SaSize(l int) int {
 	var a uint
 	return l * int(unsafe.Sizeof(a))
 }
-func GSA(data []byte, sa []uint) error {
+func LcpSize(l int) int {
+	var a uint
+	return l * int(unsafe.Sizeof(a))
+}
+func GSA(data []byte, sa []uint, lcp []int, da []int32) error {
 	tPtr := unsafe.Pointer(&data[0]) // source "text"
-	saPtr := unsafe.Pointer(&sa[0])
+	var lcpPtr, saPtr, daPtr unsafe.Pointer
+	if sa != nil {
+		saPtr = unsafe.Pointer(&sa[0])
+	}
+	if lcp != nil {
+		lcpPtr = unsafe.Pointer(&lcp[0])
+	}
+	if da != nil {
+		daPtr = unsafe.Pointer(&da[0])
+	}
 	depth := C.gsacak(
 		(*C.uchar)(tPtr),
 		(*C.uint_t)(saPtr),
-		nil,
-		nil,
+		(*C.int_t)(lcpPtr),
+		(*C.int_da)(daPtr),
 		C.uint_t(len(data)),
 	)
 	_ = depth
