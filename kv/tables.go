@@ -59,6 +59,7 @@ Physical layout:
                         ...
 */
 const PlainState = "PlainState"
+const StateLookup = "StateLookup"
 
 //PlainContractCode -
 //key - address+incarnation
@@ -371,6 +372,7 @@ var ChaindataTables = []string{
 	ParliaSnapshot,
 	SyncStageProgress,
 	PlainState,
+	StateLookup,
 	PlainContractCode,
 	AccountChangeSet,
 	StorageChangeSet,
