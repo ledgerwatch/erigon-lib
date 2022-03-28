@@ -146,7 +146,7 @@ func (ft FileType) HistoryTable() string {
 	case Storage:
 		return kv.HistoryStorage
 	case Code:
-		return kv.HistoryStorage
+		return kv.HistoryCode
 	default:
 		panic(fmt.Sprintf("no history table for type: %d", ft))
 	}
@@ -2523,16 +2523,29 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 	}
 	var err error
 	dbKey := make([]byte, 8, 60)
+	var dbKeyInv []byte
 	binary.BigEndian.PutUint64(dbKey[:8], txNum)
 	for fType := FirstType; fType < Commitment; fType++ {
 		c := w.changes[fType]
 		l := c.length()
 		if l > 0 {
-			historyTable := fType.HistoryTable()
+			var historyCursor, indexCursor kv.RwCursorDupSort
+			if historyCursor, err = w.tx.RwCursorDupSort(fType.HistoryTable()); err != nil {
+				return err
+			}
+			defer historyCursor.Close()
+			if indexCursor, err = w.tx.RwCursorDupSort(fType.IndexTable()); err != nil {
+				return err
+			}
+			defer indexCursor.Close()
 			for i := 0; i < l; i++ {
 				key, before := c.getBeforePair(i)
 				dbKey = append(dbKey[8:], key...)
-				if err = w.tx.Put(historyTable, dbKey, before); err != nil {
+				if err = historyCursor.Put(dbKey, before); err != nil {
+					return err
+				}
+				dbKeyInv = append(append(dbKeyInv[:0], key...), dbKey[:8]...)
+				if err = indexCursor.Put(dbKeyInv, nil); err != nil {
 					return err
 				}
 			}

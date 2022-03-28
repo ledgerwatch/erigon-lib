@@ -498,13 +498,22 @@ var ChaindataTablesCfg = TableCfg{
 		Flags: DupSort,
 	},
 	IndexAccounts: {
-		Flags: DupSort,
+		Flags:                     DupSort,
+		AutoDupSortKeysConversion: true,
+		DupFromLen:                28,
+		DupToLen:                  20,
 	},
 	IndexStorage: {
-		Flags: DupSort,
+		Flags:                     DupSort,
+		AutoDupSortKeysConversion: true,
+		DupFromLen:                60,
+		DupToLen:                  52,
 	},
 	IndexCode: {
-		Flags: DupSort,
+		Flags:                     DupSort,
+		AutoDupSortKeysConversion: true,
+		DupFromLen:                28,
+		DupToLen:                  20,
 	},
 }
 
