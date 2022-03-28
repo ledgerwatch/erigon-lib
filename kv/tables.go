@@ -314,6 +314,12 @@ const (
 	StateStorage    = "StateStorage"
 	StateCode       = "StateCode"
 	StateCommitment = "StateCommitment"
+	HistoryAccounts = "HistoryAccounts"
+	HistoryStorage  = "HistoryStorage"
+	HistoryCode     = "HistoryCode"
+	IndexAccounts   = "IndexAccounts"
+	IndexStorage    = "IndexStorage"
+	IndexCode       = "IndexCode"
 
 	// BOR
 
@@ -406,6 +412,12 @@ var ChaindataTables = []string{
 	StateStorage,
 	StateCode,
 	StateCommitment,
+	HistoryAccounts,
+	HistoryStorage,
+	HistoryCode,
+	IndexAccounts,
+	IndexStorage,
+	IndexCode,
 	BorReceipts,
 	BorTxLookup,
 	BorSeparate,
@@ -483,6 +495,15 @@ var ChaindataTablesCfg = TableCfg{
 		DupToLen:                  28,
 	},
 	CallTraceSet: {
+		Flags: DupSort,
+	},
+	IndexAccounts: {
+		Flags: DupSort,
+	},
+	IndexStorage: {
+		Flags: DupSort,
+	},
+	IndexCode: {
 		Flags: DupSort,
 	},
 }

@@ -139,6 +139,32 @@ func (ft FileType) Table() string {
 	}
 }
 
+func (ft FileType) HistoryTable() string {
+	switch ft {
+	case Account:
+		return kv.HistoryAccounts
+	case Storage:
+		return kv.HistoryStorage
+	case Code:
+		return kv.HistoryStorage
+	default:
+		panic(fmt.Sprintf("no history table for type: %d", ft))
+	}
+}
+
+func (ft FileType) IndexTable() string {
+	switch ft {
+	case Account:
+		return kv.IndexAccounts
+	case Storage:
+		return kv.IndexStorage
+	case Code:
+		return kv.IndexStorage
+	default:
+		panic(fmt.Sprintf("no index table for type: %d", ft))
+	}
+}
+
 func ParseFileType(s string) (FileType, bool) {
 	switch s {
 	case "account":
@@ -334,6 +360,17 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	return nil
 }
 
+func (cf *ChangeFile) length() int {
+	return len(cf.wordOffsets)
+}
+
+func (cf *ChangeFile) getWord(i int) []byte {
+	if i == 0 {
+		return cf.words[0:cf.wordOffsets[i]]
+	}
+	return cf.words[cf.wordOffsets[i-1]:cf.wordOffsets[i]]
+}
+
 // prevTx positions the reader to the beginning
 // of the transaction
 func (cf *ChangeFile) nextTx() (bool, error) {
@@ -477,6 +514,14 @@ func (c *Changes) finish(txNum uint64) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Changes) length() int {
+	return c.keys.length()
+}
+
+func (c *Changes) getBeforePair(i int) ([]byte, []byte) {
+	return c.keys.getWord(i), c.before.getWord(i)
 }
 
 func (c *Changes) nextTx() (bool, uint64, error) {
@@ -2477,8 +2522,22 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 		w.captureCommitmentData(trace)
 	}
 	var err error
+	dbKey := make([]byte, 8, 60)
+	binary.BigEndian.PutUint64(dbKey[:8], txNum)
 	for fType := FirstType; fType < Commitment; fType++ {
-		if err = w.changes[fType].finish(txNum); err != nil {
+		c := w.changes[fType]
+		l := c.length()
+		if l > 0 {
+			historyTable := fType.HistoryTable()
+			for i := 0; i < l; i++ {
+				key, before := c.getBeforePair(i)
+				dbKey = append(dbKey[8:], key...)
+				if err = w.tx.Put(historyTable, dbKey, before); err != nil {
+					return err
+				}
+			}
+		}
+		if err = c.finish(txNum); err != nil {
 			return fmt.Errorf("finish %sChanges: %w", fType.String(), err)
 		}
 	}
