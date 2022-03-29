@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -133,7 +132,6 @@ func TestLoopAggregator(t *testing.T) {
 		accountKey := int160(blockNum/10 + 1)
 		//fmt.Printf("blockNum = %d\n", blockNum)
 		if err = w.Reset(blockNum, rwTx); err != nil {
-			fmt.Printf("error: %v\n", err)
 			t.Fatal(err)
 		}
 		w.UpdateAccountData(accountKey, account1, false /* trace */)
