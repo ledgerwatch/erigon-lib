@@ -295,8 +295,10 @@ const (
 
 	// headBlockKey tracks the latest know full block's hash.
 	HeadBlockKey = "LastBlock"
+
 	// TransitionBlockKey tracks the last proof-of-work block
 	TransitionBlockKey = "TransitionBlock"
+
 	// migrationName -> serialized SyncStageProgress and SyncStageUnwind buckets
 	// it stores stages progress to understand in which context was executed migration
 	// in case of bug-report developer can ask content of this bucket
@@ -390,7 +392,6 @@ var ChaindataTables = []string{
 	Sequence,
 	EthTx,
 	NonCanonicalTxs,
-	TransitionBlockKey,
 	TrieOfAccounts,
 	TrieOfStorage,
 	HashedAccounts,
@@ -427,6 +428,7 @@ var SentryTables = []string{}
 // ChaindataDeprecatedTables - list of buckets which can be programmatically deleted - for example after migration
 var ChaindataDeprecatedTables = []string{
 	Clique,
+	TransitionBlockKey,
 }
 
 type CmpFunc func(k1, k2, v1, v2 []byte) int
