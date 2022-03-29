@@ -500,19 +500,19 @@ var ChaindataTablesCfg = TableCfg{
 	IndexAccounts: {
 		Flags:                     DupSort,
 		AutoDupSortKeysConversion: true,
-		DupFromLen:                28,
+		DupFromLen:                20,
 		DupToLen:                  20,
 	},
 	IndexStorage: {
 		Flags:                     DupSort,
 		AutoDupSortKeysConversion: true,
-		DupFromLen:                60,
+		DupFromLen:                52,
 		DupToLen:                  52,
 	},
 	IndexCode: {
 		Flags:                     DupSort,
 		AutoDupSortKeysConversion: true,
-		DupFromLen:                28,
+		DupFromLen:                20,
 		DupToLen:                  20,
 	},
 }

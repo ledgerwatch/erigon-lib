@@ -134,6 +134,18 @@ func (ft FileType) Table() string {
 		return kv.StateCode
 	case Commitment:
 		return kv.StateCommitment
+	case AccountHistory:
+		return kv.HistoryAccounts
+	case StorageHistory:
+		return kv.HistoryStorage
+	case CodeHistory:
+		return kv.HistoryCode
+	case AccountBitmap:
+		return kv.IndexAccounts
+	case StorageBitmap:
+		return kv.IndexStorage
+	case CodeBitmap:
+		return kv.IndexCode
 	default:
 		panic(fmt.Sprintf("unknown file type: %d", ft))
 	}
@@ -239,7 +251,7 @@ type ChangeFile struct {
 
 func (cf *ChangeFile) closeFile() error {
 	if len(cf.wordOffsets) > 0 {
-		return fmt.Errorf("closeFile without finish")
+		return fmt.Errorf("closeFile without finish %d", len(cf.wordOffsets))
 	}
 	if cf.w != nil {
 		if err := cf.w.Flush(); err != nil {
@@ -360,11 +372,11 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	return nil
 }
 
-func (cf *ChangeFile) length() int {
+func (cf ChangeFile) length() int {
 	return len(cf.wordOffsets)
 }
 
-func (cf *ChangeFile) getWord(i int) []byte {
+func (cf ChangeFile) getWord(i int) []byte {
 	if i == 0 {
 		return cf.words[0:cf.wordOffsets[i]]
 	}
@@ -449,15 +461,15 @@ func (c *Changes) Init(namebase string, step uint64, dir string, beforeOn bool) 
 
 func (c *Changes) closeFiles() error {
 	if err := c.keys.closeFile(); err != nil {
-		return err
+		return fmt.Errorf("keys: %w", err)
 	}
 	if c.beforeOn {
 		if err := c.before.closeFile(); err != nil {
-			return err
+			return fmt.Errorf("before: %w", err)
 		}
 	}
 	if err := c.after.closeFile(); err != nil {
-		return err
+		return fmt.Errorf("after: %w", err)
 	}
 	return nil
 }
@@ -516,11 +528,11 @@ func (c *Changes) finish(txNum uint64) error {
 	return nil
 }
 
-func (c *Changes) length() int {
+func (c Changes) length() int {
 	return c.keys.length()
 }
 
-func (c *Changes) getBeforePair(i int) ([]byte, []byte) {
+func (c Changes) getBeforePair(i int) ([]byte, []byte) {
 	return c.keys.getWord(i), c.before.getWord(i)
 }
 
@@ -2174,7 +2186,7 @@ func (w *Writer) Reset(blockNum uint64, tx kv.RwTx) error {
 	if blockNum > w.changeFileNum {
 		for fType := FirstType; fType < typesLimit; fType++ {
 			if err := w.changes[fType].closeFiles(); err != nil {
-				return err
+				return fmt.Errorf("reset %s: %w", fType.String(), err)
 			}
 		}
 		if w.changeFileNum != 0 {
@@ -2523,10 +2535,9 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 	}
 	var err error
 	dbKey := make([]byte, 8, 60)
-	var dbKeyInv []byte
 	binary.BigEndian.PutUint64(dbKey[:8], txNum)
 	for fType := FirstType; fType < Commitment; fType++ {
-		c := w.changes[fType]
+		c := &w.changes[fType]
 		l := c.length()
 		if l > 0 {
 			var historyCursor, indexCursor kv.RwCursorDupSort
@@ -2544,8 +2555,7 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 				if err = historyCursor.Put(dbKey, before); err != nil {
 					return err
 				}
-				dbKeyInv = append(append(dbKeyInv[:0], key...), dbKey[:8]...)
-				if err = indexCursor.Put(dbKeyInv, nil); err != nil {
+				if err = indexCursor.Put(key, dbKey[:8]); err != nil {
 					return err
 				}
 			}
@@ -3083,6 +3093,17 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		}
 		if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.tx, fType.Table(), fType == Commitment); err != nil {
 			return fmt.Errorf("aggregate %sChanges: %w", fType.String(), err)
+		}
+	}
+	if w.a.changesets {
+		for fType := FirstType; fType < typesLimit; fType++ {
+			var prefixLen int
+			if fType == Storage {
+				prefixLen = length.Addr
+			}
+			if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.tx, fType.Table(), fType == Commitment); err != nil {
+				return fmt.Errorf("aggregate %sChanges: %w", fType.String(), err)
+			}
 		}
 	}
 	aggTask.blockFrom = blockFrom
