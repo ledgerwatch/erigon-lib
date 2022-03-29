@@ -296,6 +296,13 @@ const (
 	// headBlockKey tracks the latest know full block's hash.
 	HeadBlockKey = "LastBlock"
 
+	HeadHeaderKey = "LastHeader"
+
+	// https://github.com/ethereum/execution-apis/blob/v1.0.0-alpha.8/src/engine/specification.md#forkchoicestatev1
+	ForkchoiceHead      = "ForkchoiceHead"      // headBlockHash
+	ForkchoiceSafe      = "ForkchoiceSafe"      // safeBlockHash
+	ForkchoiceFinalized = "ForkchoiceFinalized" // finalizedBlockHash
+
 	// TransitionBlockKey tracks the last proof-of-work block
 	TransitionBlockKey = "TransitionBlock"
 
@@ -304,8 +311,7 @@ const (
 	// in case of bug-report developer can ask content of this bucket
 	Migrations = "Migration"
 
-	Sequence      = "Sequence" // tbl_name -> seq_u64
-	HeadHeaderKey = "LastHeader"
+	Sequence = "Sequence" // tbl_name -> seq_u64
 
 	Epoch        = "DevEpoch"        // block_num_u64+block_hash->transition_proof
 	PendingEpoch = "DevPendingEpoch" // block_num_u64+block_hash->transition_proof
@@ -410,6 +416,9 @@ var ChaindataTables = []string{
 	BorReceipts,
 	BorTxLookup,
 	BorSeparate,
+	ForkchoiceHead,
+	ForkchoiceSafe,
+	ForkchoiceFinalized,
 }
 
 const (
