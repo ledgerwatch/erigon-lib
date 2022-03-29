@@ -298,10 +298,8 @@ const (
 
 	HeadHeaderKey = "LastHeader"
 
-	// https://github.com/ethereum/execution-apis/blob/v1.0.0-alpha.8/src/engine/specification.md#forkchoicestatev1
-	ForkchoiceHead      = "ForkchoiceHead"      // headBlockHash
-	ForkchoiceSafe      = "ForkchoiceSafe"      // safeBlockHash
-	ForkchoiceFinalized = "ForkchoiceFinalized" // finalizedBlockHash
+	// headBlockHash, safeBlockHash, finalizedBlockHash of the latest Engine API forkchoice
+	LastForkchoice = "LastForkchoice"
 
 	// TransitionBlockKey tracks the last proof-of-work block
 	TransitionBlockKey = "TransitionBlock"
@@ -385,6 +383,7 @@ var ChaindataTables = []string{
 	Senders,
 	HeadBlockKey,
 	HeadHeaderKey,
+	LastForkchoice,
 	Migrations,
 	LogTopicIndex,
 	LogAddressIndex,
@@ -416,9 +415,6 @@ var ChaindataTables = []string{
 	BorReceipts,
 	BorTxLookup,
 	BorSeparate,
-	ForkchoiceHead,
-	ForkchoiceSafe,
-	ForkchoiceFinalized,
 }
 
 const (
