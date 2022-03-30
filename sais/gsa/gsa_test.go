@@ -10,19 +10,20 @@ import (
 
 func TestExampleGSA(t *testing.T) {
 	R := [][]byte{
-		[]byte("hihi"),
-		[]byte("alexhihialex"),
 		[]byte("alex"),
+		[]byte("alexhihialex"),
+		[]byte("hihi"),
 	}
 	str, n := ConcatAll(R)
+	//fmt.Printf("n=%d, %d, %d\n", n, len(R), len(R[0])+len(R[1])+len(R[2])+len(R[3]))
 	sa := make([]uint, n)
 	lcp := make([]int, n)
 	da := make([]int32, n)
 	_ = GSA(str, sa, lcp, da)
 
 	fmt.Printf("sa: %d, lcp: %d\n", sa, lcp)
-	PrintArrays(str, sa, lcp, da)
-	PrintRepeats(str, sa, da)
+	//PrintArrays(str, sa, lcp, da)
+	PrintRepeats(str, sa, lcp, da)
 	gsa := SA2GSA(sa, da)
 	fmt.Printf("gsa: %d, da: %d\n", gsa, da)
 }

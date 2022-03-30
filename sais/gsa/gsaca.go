@@ -32,7 +32,7 @@ func PrintArrays(str []byte, sa []uint, lcp []int, da []int32) {
 	fmt.Printf("\n")
 	for i := 0; i < n; i++ {
 		fmt.Printf("%d\t", i)
-		fmt.Printf("%d\t", sa[i])
+		fmt.Printf("n-%d=%d\t", sa[i], n-int(sa[i]))
 		if lcp != nil {
 			fmt.Printf("%d\t", lcp[i])
 		}
@@ -45,10 +45,21 @@ func PrintArrays(str []byte, sa []uint, lcp []int, da []int32) {
 			fmt.Printf("(%d %d)\t", da[i], value)
 		}
 		//bwt
+		if sa[i] == 0 {
+			fmt.Printf("$\t")
+		} else {
+			c := str[sa[i]-1] - 1
+			if c == 0 {
+				c = '$'
+			}
+			fmt.Printf("%c\t", c)
+		}
+
 		//	char c = (SA[i])? T[SA[i]-1]-1:terminal;
 		//	if(c==0) c = '$';
 		//	printf("%c\t",c);
 
+		//suffixes
 		for j := sa[i]; int(j) < n; j++ {
 			if str[j] == 1 {
 				fmt.Printf("$")
@@ -76,25 +87,93 @@ func SA2GSA(sa []uint, da []int32) []uint {
 
 	for i := 0; i < n; i++ {
 		if da[i] != 0 {
-			gsa[i] = sa[i] - sa[da[i]-1] - 1
+			pos := sa[da[i]-1]
+			//posAfter := sa[da[i]-1]
+			//length := posAfter - pos
+			//
+			gsa[i] = sa[i] - pos - 1
 		}
 	}
 	return gsa
 }
 
-func PrintRepeats(str []byte, sa []uint, da []int32) {
+func PrintRepeats(str []byte, sa []uint, lcp []int, da []int32) {
 	sa = sa[1:]
+	lcp = lcp[1:]
 	da = da[1:]
 	n := len(sa) - 1
+	fmt.Printf("== Repeatst ==\n")
+	var stack []int
+	top := func() int { return stack[len(stack)-1] }
+	pop := func() { stack = stack[:len(stack)-1] }
+	push := func(i int) { stack = append(stack, i) }
+	count := make([]int, n+1)
+	count[sa[n-1]] = 1
+
+	stack = stack[:0]
+	var j int
+	for i := 0; i < n-1; i++ {
+		//fmt.Printf("alex foud: %d-%d\n", n, j)
+		for j = i; lcp[j+1] >= lcp[j]; j++ {
+		}
+		fmt.Printf("alex foud: %d-%d\n", i, j)
+	}
+	panic(1)
+	for k := 11; k >= 6; k-- {
+
+		for j := sa[k]; int(j) < n; j++ {
+			if str[j] == 1 {
+				fmt.Printf("$")
+				break
+			} else if str[j] == 0 {
+				fmt.Printf("#")
+			} else {
+				fmt.Printf("%c", str[j]-1)
+			}
+		}
+		fmt.Printf("\n")
+
+		posAfter := sa[da[k]]
+		l := posAfter - sa[k]
+
+		//fmt.Printf("a: %d\n", k)
+		fmt.Printf("a: %d, %d, %d, %d\n", lcp[k], sa[k], n-int(sa[k]), stack)
+		for len(stack) > 0 {
+			//fmt.Printf("stop?: %d, %d\n", lcp[top()], lcp[k])
+			if lcp[top()] < lcp[k] {
+				break
+			}
+			pop()
+		}
+		gsa := sa[k]
+		if da[k] != 0 {
+			gsa = sa[k] - sa[da[k]-1] - 1
+		}
+		_, _ = l, gsa
+		if int(lcp[k]) == n-int(sa[k]) {
+			if len(stack) == 0 {
+				count[sa[k]] = n - k
+			} else {
+				count[sa[k]] = top() - k
+			}
+		} else {
+			count[sa[k]] = 1
+		}
+		fmt.Printf("count: %d, %d,%d, %d\n", gsa, int(gsa)-k, n-int(sa[k]), count)
+
+		push(k)
+	}
+	fmt.Printf("count: %d\n", count)
+	return
 	var repeats int
-	for i := 0; i < len(da)-1; i++ {
+	for i := 0; i < n; i++ {
 		repeats++
 		if da[i] < da[i+1] { // same suffix
 			continue
 		}
 
 		// new suffix
-		fmt.Printf(" repeats: %d\t", repeats)
+		fmt.Printf(" repeats: %d, %d\t", repeats, lcp[i])
 		for j := sa[i]; int(j) < n; j++ {
 			if str[j] == 1 {
 				//fmt.Printf("$")
@@ -141,14 +220,10 @@ func ConcatAll(R [][]byte) (str []byte, n int) {
 
 	n++ //add 0 at the end
 	str = make([]byte, n)
-	var l, max int
-	k := len(R)
+	var l int
 
-	for i := 0; i < k; i++ {
+	for i := 0; i < len(R); i++ {
 		m := len(R[i])
-		if m > max {
-			max = m
-		}
 		for j := 0; j < m; j++ {
 			if R[i][j] < 255 && R[i][j] > 1 {
 				str[l] = R[i][j] + 1
