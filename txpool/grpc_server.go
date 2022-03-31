@@ -145,12 +145,6 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 
 	var slots TxSlots
 	parseCtx := NewTxParseContext(s.chainID)
-	parseCtx.Reject(func(hash []byte) error {
-		if known, _ := s.txPool.IdHashKnown(tx, hash); known {
-			return ErrAlreadyKnown
-		}
-		return nil
-	})
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
 
 	j := 0
@@ -158,7 +152,12 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 		slots.Resize(uint(j + 1))
 		slots.txs[j] = &TxSlot{}
 		slots.isLocal[j] = true
-		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[j], slots.senders.At(j), false /* hasEnvelope */); err != nil {
+		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.txs[j], slots.senders.At(j), false /* hasEnvelope */, func(hash []byte) error {
+			if known, _ := s.txPool.IdHashKnown(tx, hash); known {
+				return ErrAlreadyKnown
+			}
+			return nil
+		}); err != nil {
 			switch err {
 			case ErrAlreadyKnown: // Noop, but need to handle to not count these
 				reply.Errors[i] = AlreadyKnown.String()
