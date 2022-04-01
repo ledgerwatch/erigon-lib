@@ -283,23 +283,31 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}
 	case sentry.MessageId_POOLED_TRANSACTIONS_66, sentry.MessageId_TRANSACTIONS_66:
 		txs := TxSlots{}
-		f.pooledTxsParseCtx.Reject(func(hash []byte) error {
-			known, err := f.pool.IdHashKnown(tx, hash)
-			if err != nil {
-				return err
-			}
-			if known {
-				return ErrRejected
-			}
-			return nil
-		})
 		switch req.Id {
 		case sentry.MessageId_TRANSACTIONS_66:
-			if _, err := ParseTransactions(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
+			if _, err := ParseTransactions(req.Data, 0, f.pooledTxsParseCtx, &txs, func(hash []byte) error {
+				known, err := f.pool.IdHashKnown(tx, hash)
+				if err != nil {
+					return err
+				}
+				if known {
+					return ErrRejected
+				}
+				return nil
+			}); err != nil {
 				return err
 			}
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
-			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs); err != nil {
+			if _, _, err := ParsePooledTransactions66(req.Data, 0, f.pooledTxsParseCtx, &txs, func(hash []byte) error {
+				known, err := f.pool.IdHashKnown(tx, hash)
+				if err != nil {
+					return err
+				}
+				if known {
+					return ErrRejected
+				}
+				return nil
+			}); err != nil {
 				return err
 			}
 		default:
@@ -408,7 +416,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				minedTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
 					minedTxs.txs[i] = &TxSlot{}
-					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i), true /* hasEnvelope */); err != nil {
+					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, minedTxs.txs[i], minedTxs.senders.At(i), true /* hasEnvelope */, nil); err != nil {
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}
@@ -418,7 +426,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				unwindTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
 					unwindTxs.txs[i] = &TxSlot{}
-					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i), true /* hasEnvelope */); err != nil {
+					if _, err := f.stateChangesParseCtx.ParseTransaction(change.Txs[i], 0, unwindTxs.txs[i], unwindTxs.senders.At(i), true /* hasEnvelope */, nil); err != nil {
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}

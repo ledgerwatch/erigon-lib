@@ -52,7 +52,6 @@ type TxParseContext struct {
 	sig              [65]byte
 	withSender       bool
 	isProtected      bool
-	checkHash        func([]byte) error
 
 	cfg TxParsseConfig
 }
@@ -109,12 +108,11 @@ var ErrParseTxn = fmt.Errorf("%w transaction", rlp.ErrParse)
 var ErrRejected = errors.New("rejected")
 var ErrAlreadyKnown = errors.New("already known")
 
-func (ctx *TxParseContext) Reject(f func(hash []byte) error) { ctx.checkHash = f }
-func (ctx *TxParseContext) WithSender(v bool)                { ctx.withSender = v }
+func (ctx *TxParseContext) WithSender(v bool) { ctx.withSender = v }
 
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
-func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool) (p int, err error) {
+func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, validateHash func(hash []byte) error) (p int, err error) {
 	const (
 		// txSlotSize is used to calculate how many data slots a single transaction
 		// takes up based on its size. The slots are used as DoS protection, ensuring
@@ -377,8 +375,8 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if !ctx.withSender {
 		return p, nil
 	}
-	if ctx.checkHash != nil {
-		if err := ctx.checkHash(slot.IdHash[:32]); err != nil {
+	if validateHash != nil {
+		if err := validateHash(slot.IdHash[:32]); err != nil {
 			return p, err
 		}
 	}
