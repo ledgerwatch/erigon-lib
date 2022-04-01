@@ -1,15 +1,19 @@
 package commitment
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/bits"
+	"strings"
 
 	"golang.org/x/crypto/sha3"
 )
 
 type BinPatriciaTrie struct {
-	root  *Node
-	trace bool
+	root       *Node
+	rootPrefix bitstring
+	trace      bool
 
 	keccak keccakState
 }
@@ -27,39 +31,57 @@ func (t *BinPatriciaTrie) Update(key, value []byte) {
 			Key:   key,
 			Value: value,
 		}
+		t.rootPrefix = keyPath
 		return
 	}
 
-	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath)
+	if t.rootPrefix != nil {
+		defer func() { t.rootPrefix = nil }() // and we clear it after first root split
+	}
+
+	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath, t.rootPrefix)
 	if len(edge) == 0 && len(keyPathRest) == 0 {
 		latest.Value = value
 		return
 	}
 
 	newLeaf := &Node{P: latest, Key: key, Value: value}
-	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, keyPath, newLeaf)
+	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, newLeaf)
 }
 
 // Key describes path in trie to value. When UpdateHashed is used,
 // hashed key describes path to the leaf node and plainKey is stored in the leaf node Key field.
-func (t *BinPatriciaTrie) UpdateHahsed(plainKey, hashedKey, value []byte) {
+func (t *BinPatriciaTrie) UpdateHahsed(plainKey, hashedKey, value []byte) (string, []byte) {
 	keyPath := newBitstring(hashedKey)
 	if t.root == nil {
 		t.root = &Node{
-			Key:   hashedKey,
+			Key:   plainKey,
 			Value: value,
 		}
-		return
+		t.rootPrefix = keyPath // further root Key will be processed like common path, but that's plainKey
+		return keyPath.String(), t.encodeUpdate(keyPath, 0, 0, t.root)
+	}
+	if t.rootPrefix != nil {
+		defer func() { t.rootPrefix = nil }() // and we clear it after first root split
 	}
 
-	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath)
+	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath, t.rootPrefix)
+
+	followedKey := keyPath[:len(keyPath)-len(keyPathRest)]
+	before := latest.childMask()
+
 	if len(edge) == 0 && len(keyPathRest) == 0 {
 		latest.Value = value
-		return
+
+		return followedKey.String(), t.encodeUpdate(followedKey, before, before, latest)
 	}
 
 	newLeaf := &Node{P: latest, Key: plainKey, Value: value}
-	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, keyPath, newLeaf)
+	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, newLeaf)
+
+	after := latest.childMask()
+
+	return followedKey.String(), t.encodeUpdate(followedKey, before, after, latest)
 }
 
 // Get returns value stored by provided key.
@@ -69,7 +91,7 @@ func (t *BinPatriciaTrie) Get(key []byte) ([]byte, bool) {
 		return nil, false
 	}
 
-	edge, keyPathRest, _, latest := t.root.followPath(keyPath)
+	edge, keyPathRest, _, latest := t.root.followPath(keyPath, t.rootPrefix)
 	if len(edge) == 0 && len(keyPathRest) == 0 {
 		return latest.Value, true
 	}
@@ -79,6 +101,9 @@ func (t *BinPatriciaTrie) Get(key []byte) ([]byte, bool) {
 func (t *BinPatriciaTrie) RootHash() ([]byte, error) {
 	if t.root == nil {
 		return EmptyRootHash, nil
+	}
+	if t.rootPrefix != nil {
+		return t.hash(t.root, t.rootPrefix, 0), nil
 	}
 	return t.hash(t.root, t.root.Key, 0), nil
 }
@@ -110,17 +135,148 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 		aux := make([]byte, 128)
 		n := account.encode(aux)
 
-		t.Update(hashedKeys[i], aux[:n])
-		//t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
+		ukey, updbytes := t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
+		branchNodeUpdates[ukey] = updbytes
+		if updbytes != nil && t.trace {
+			fmt.Printf("%q => %s\n", ukey, branchToString2(updbytes))
+		}
 	}
 
 	return branchNodeUpdates, nil
 }
 
+func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint16, node *Node) []byte {
+	buf := make([]byte, 0)
+
+	var bitmapBuf [4]byte
+	binary.BigEndian.PutUint16(bitmapBuf[0:], before)
+	binary.BigEndian.PutUint16(bitmapBuf[2:], after)
+	buf = append(buf, bitmapBuf[:]...)
+
+	list := []*Node{node, node.L, node.R}
+	//keys := []string{string(followedKey), string(followedKey) + string(node.LPrefix), string(followedKey) + string(node.RPrefix)}
+
+	var numBuf [binary.MaxVarintLen64]byte
+
+	branchData := make([]byte, 0)
+	for i := 0; i < 3; i++ {
+		latest := list[i]
+		if latest == nil {
+			break
+		}
+		var fieldBits PartFlags
+
+		aux := make([]byte, 0)
+		if latest.Value == nil {
+			fieldBits = BRANCH_PART
+
+			//fmt.Printf("BRANCH_PART Lsize=%d Rsize=%d\n", len(latest.LPrefix), len(latest.RPrefix))
+			n := binary.PutUvarint(numBuf[:], uint64(len(latest.LPrefix)))
+			aux = append(aux, append(numBuf[:n], latest.LPrefix...)...)
+			n = binary.PutUvarint(numBuf[:], uint64(len(latest.RPrefix)))
+			aux = append(aux, append(numBuf[:n], latest.RPrefix...)...)
+		}
+		if len(latest.Key) > 0 && latest.Value != nil {
+			fieldBits = ACCOUNT_PLAIN_PART
+
+			//fmt.Printf("ACCOUNT_PLAIN_PART key=%d val=%d\n", len(latest.Key), len(latest.Value))
+			n := binary.PutUvarint(numBuf[:], uint64(len(latest.Key)))
+			aux = append(aux, append(numBuf[:n], latest.Key...)...)
+			n = binary.PutUvarint(numBuf[:], uint64(len(latest.Value)))
+			aux = append(aux, append(numBuf[:n], latest.Value...)...)
+		}
+
+		branchData = append(branchData, byte(fieldBits))
+		if len(aux) > 0 {
+			branchData = append(branchData, aux...)
+			aux = aux[:0]
+		} else {
+			n := binary.PutUvarint(numBuf[:], 0)
+			branchData = append(branchData, numBuf[:n]...)
+		}
+	}
+	return append(buf, branchData...)
+}
+
+func branchToString2(branchData []byte) string {
+	touchMap := binary.BigEndian.Uint16(branchData[0:])
+	afterMap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 4
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "touchMap %016b, afterMap %016b\n", touchMap, afterMap)
+
+	for i := 0; i < bits.OnesCount16(afterMap)+1; i++ {
+		if pos >= len(branchData) {
+			break
+		}
+
+		fieldBits := PartFlags(branchData[pos])
+		pos++
+
+		sz, n := binary.Uvarint(branchData[pos:])
+		pos += n
+		size := int(sz)
+		if size == 0 {
+			continue
+		}
+
+		switch {
+		case fieldBits == ACCOUNT_PLAIN_PART:
+			key := branchData[pos : pos+size]
+			pos += size
+			//pos
+			//size = int(branchData[pos])
+			sz, n := binary.Uvarint(branchData[pos:])
+			pos += n
+			size = int(sz)
+
+			pos++
+			value := branchData[pos : pos+size]
+			pos += size
+			//fmt.Printf("+ACCOUNT_PLAIN_PART key_size=%d val_size=%d\n", len(key), len(value))
+
+			sb.WriteString("{")
+
+			acc := new(Account).decode(value)
+			fmt.Fprintf(&sb, "accountPlainKey=[%x] -> %v", key, acc.String())
+			sb.WriteString("}\n")
+		case fieldBits == BRANCH_PART:
+			lpref := branchData[pos : pos+size]
+			pos += size
+			//pos
+			//size = int(branchData[pos])
+			sz, n := binary.Uvarint(branchData[pos:])
+			pos += n
+			size = int(sz)
+
+			pos++
+			rpref := branchData[pos : pos+size]
+			pos += size
+			//fmt.Printf("+BRANCH_PART key_size=%d val_size=%d\n", len(lpref), len(rpref))
+
+			sb.WriteString("{")
+			fmt.Fprintf(&sb, "branch=\n\tL [%v]\n\tR [%v]", lpref, rpref)
+			sb.WriteString("}\n")
+
+		default:
+			pos++
+			continue
+		}
+	}
+	return sb.String()
+}
+
 func (t *BinPatriciaTrie) Reset() { t.root = nil }
 
-func (t *BinPatriciaTrie) ResetFns(branchFn func(prefix []byte) ([]byte, error), accountFn func(plainKey []byte, cell *Cell) error, storageFn func(plainKey []byte, cell *Cell) error) {
+func (t *BinPatriciaTrie) ResetFns(
+	branchFn func(prefix []byte) ([]byte, error),
+	accountFn func(plainKey []byte, cell *Cell) error,
+	storageFn func(plainKey []byte, cell *Cell) error,
+) {
 }
+
+func (t *BinPatriciaTrie) Variant() TrieVariant { return VariantBinPatriciaTrie }
 
 func (t *BinPatriciaTrie) SetTrace(b bool) {
 	t.trace = b
@@ -139,7 +295,19 @@ type Node struct {
 	Value   []byte    // exists only in LEAF node
 }
 
-func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath, fullPath bitstring, newLeaf *Node) {
+func (n *Node) childMask() uint16 {
+	mask := uint16(0)
+	//if latest.Value != nil {}
+	if n.L != nil {
+		mask |= 1 << 0
+	}
+	if n.R != nil {
+		mask |= 1 << 1
+	}
+	return mask
+}
+
+func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath bitstring, newLeaf *Node) {
 	var movedNode *Node
 	switch {
 	case n.Value == nil:
@@ -149,7 +317,6 @@ func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath, fullPath bitstri
 			P:       n,
 			LPrefix: n.LPrefix,
 			RPrefix: n.RPrefix,
-			hash:    n.hash,
 		}
 	default:
 		movedNode = &Node{ // move existed leaf
@@ -196,10 +363,10 @@ func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath, fullPath bitstri
 // followPath goes by provided path and exits when
 //  - node path splits with desired path
 //  - desired path is not finished but node path is finished
-func (n *Node) followPath(path bitstring) (nodePath, pathRest bitstring, splitAt int, current *Node) {
+func (n *Node) followPath(path, rootPrefix bitstring) (nodePath, pathRest bitstring, splitAt int, current *Node) {
 	if n.P == nil { // it's root
 		if n.Value != nil {
-			nodePath = newBitstring(n.Key) // this key is not stored as bitstring
+			nodePath = rootPrefix // this key is not stored as bitstring
 		} else {
 			nodePath = n.Key // this key is stored as bitstring
 		}
@@ -348,4 +515,237 @@ func (b bitstring) splitPoint(other bitstring) (at int, bit byte, equal bool) {
 	default:
 		panic("oroo")
 	}
+}
+
+// Converts b into slice of bytes.
+//If latest chunk could not be correctly converted to byte, chunk returned as bitstring
+func (b bitstring) reconstructHex() ([]byte, bitstring) {
+	re := make([]byte, len(b)/8)
+
+	var offt, i int
+	for {
+		bt, ok := b.readByte(offt)
+		if !ok {
+			break
+		}
+		re[i] = bt
+		offt += 8
+		i++
+	}
+
+	if offt < len(b) {
+		return re, b[offt:]
+	}
+	return re, bitstring{}
+}
+
+func (b bitstring) readByte(offsetBits int) (byte, bool) {
+	if len(b) <= offsetBits+7 {
+		return 0, false
+	}
+	return b[offsetBits+7] | b[offsetBits+6]<<1 | b[offsetBits+5]<<2 | b[offsetBits+4]<<3 | b[offsetBits+3]<<4 | b[offsetBits+2]<<5 | b[offsetBits+1]<<6 | b[offsetBits]<<7, true
+}
+
+// ExtractPlainKeys parses branchData and extract the plain keys for accounts and storage in the same order
+// they appear witjin the branchData
+func ExtractBinPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storagePlainKeys [][]byte, err error) {
+	storagePlainKeys = make([][]byte, 0)
+	accountPlainKeys = make([][]byte, 0)
+
+	//touchMap := binary.BigEndian.Uint16(branchData[0:])
+	afterMap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 4
+
+	for i := 0; i < bits.OnesCount16(afterMap)+1; i++ {
+		if pos >= len(branchData) {
+			break
+		}
+
+		fieldBits := PartFlags(branchData[pos])
+		pos++
+
+		switch {
+		case fieldBits == ACCOUNT_PLAIN_PART:
+			// read plainkey, move pos
+			sz, n := binary.Uvarint(branchData[pos:])
+			switch {
+			case n == 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for accountPlainKey")
+			case n < 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for accountPlainKey")
+			default:
+			}
+			pos += n
+			size := int(sz)
+			if size == 0 {
+				continue
+			}
+			plainKey := branchData[pos : pos+size]
+			pos += size
+
+			accountPlainKeys = append(accountPlainKeys, plainKey)
+
+			// skip account encoded value, just move pos
+			sz, n = binary.Uvarint(branchData[pos:])
+			switch {
+			case n == 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for accountValue")
+			case n < 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for accountValue")
+			default:
+			}
+
+			pos += n + int(sz)
+			//fmt.Printf("+ACCOUNT_PLAIN_PART key_size=%d val_size=%d\n", len(plainKey), len(value))
+		case fieldBits == BRANCH_PART:
+			// here we just read sizes and move pos, without reading any values
+			sz, n := binary.Uvarint(branchData[pos:])
+			switch {
+			case n == 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch len")
+			case n < 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for branch len")
+			default:
+			}
+
+			pos += n
+			size := int(sz)
+			if size == 0 {
+				continue
+			}
+			pos += size
+
+			fmt.Printf("!BRANCH l_size=%d vr_size=%d\n", size, len(branchData))
+			if len(branchData) < pos {
+				fmt.Printf("pos %d n %d sz %d\n\n%v", pos, n, sz, branchData)
+			}
+
+			sz, n = binary.Uvarint(branchData[pos:])
+			switch {
+			case n == 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch value")
+			case n < 0:
+				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for branch value")
+			default:
+			}
+
+			pos += n + int(sz)
+		default:
+			pos++
+			continue
+		}
+	}
+	return
+}
+
+func ReplaceBinPlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, newData []byte) ([]byte, error) {
+	var numBuf [binary.MaxVarintLen64]byte
+	touchMap := binary.BigEndian.Uint16(branchData[0:])
+	afterMap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 4
+	newData = append(newData, branchData[:4]...)
+	var accountI, storageI int
+	_, _ = touchMap, storageI
+
+	for i := 0; i < bits.OnesCount16(afterMap)+1; i++ {
+		if pos >= len(branchData) {
+			break
+		}
+
+		fieldBits := PartFlags(branchData[pos])
+		newData = append(newData, byte(fieldBits))
+		pos++
+
+		switch {
+		case fieldBits == ACCOUNT_PLAIN_PART:
+			// read plainkey, move pos
+			sz, n := binary.Uvarint(branchData[pos:])
+			switch {
+			case n == 0:
+				return nil, fmt.Errorf("replaceBinPlainKeys buffer too small for accountPlainKey")
+			case n < 0:
+				return nil, fmt.Errorf("replaceBinPlainKeys value overflow for accountPlainKey")
+			default:
+			}
+			pos += n
+			size := int(sz)
+			if size == 0 {
+				continue
+			}
+			if len(branchData) < pos+size {
+				return nil, fmt.Errorf("replaceBinPlainKeys buffer too small for accountPlainKey")
+			}
+
+			n = binary.PutUvarint(numBuf[:], uint64(len(accountPlainKeys[accountI])))
+			newData = append(newData, numBuf[:n]...)
+			newData = append(newData, accountPlainKeys[accountI]...)
+			accountI++
+
+			//plainKey := branchData[pos : pos+size]
+			pos += size
+
+			//accountPlainKeys = append(accountPlainKeys, plainKey)
+
+			// skip account encoded value, just move pos
+			sz, n = binary.Uvarint(branchData[pos:])
+			switch {
+			case n == 0:
+				return nil, fmt.Errorf("replaceBinPlainKeys buffer too small for accountValue")
+			case n < 0:
+				return nil, fmt.Errorf("replaceBinPlainKeys value overflow for accountValue")
+			default:
+			}
+			size = int(sz)
+			if len(branchData) < pos+size {
+				return nil, fmt.Errorf("replaceBinPlainKeys buffer too small for accountValue")
+			}
+			newData = append(newData, branchData[pos:pos+n+size]...)
+
+			pos += n + int(sz)
+			//fmt.Printf("+ACCOUNT_PLAIN_PART key_size=%d val_size=%d\n", len(plainKey), len(value))
+		case fieldBits == BRANCH_PART:
+			// here we just read sizes and move pos, without reading any values
+			sz, n := binary.Uvarint(branchData[pos:])
+			switch {
+			case n == 0:
+				return nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch len")
+			case n < 0:
+				return nil, fmt.Errorf("extractBinPlainKeys value overflow for branch len")
+			case sz == 0:
+				pos += n
+				continue
+			default:
+			}
+
+			size := int(sz)
+			if len(branchData) < pos+n+size {
+				fmt.Printf("\n%v\n", hex.EncodeToString(branchData))
+			}
+			//pos += size
+			newData = append(newData, branchData[pos:pos+n+size]...) // copy left prefix
+			pos += size + n
+
+			sz, n = binary.Uvarint(branchData[pos:])
+			fmt.Printf("~BRANCH l=%d r=%d\n", size, sz)
+			switch {
+			case n == 0:
+				return nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch value")
+			case n < 0:
+				return nil, fmt.Errorf("extractBinPlainKeys value overflow for branch value")
+			default:
+			}
+			size = int(sz)
+			fmt.Printf("rBRANCH size=%d pos=%d len=%d\n", size, pos, len(branchData))
+			if len(branchData) == 19 {
+				fmt.Printf("\n%s\n", hex.EncodeToString(branchData))
+			}
+
+			newData = append(newData, branchData[pos:pos+n+size]...) // copy right prefix
+			pos += n + size
+		default:
+			pos++
+			continue
+		}
+	}
+	return newData, nil
 }

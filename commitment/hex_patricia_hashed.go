@@ -753,6 +753,7 @@ const (
 	ACCOUNT_PLAIN_PART PartFlags = 2
 	STORAGE_PLAIN_PART PartFlags = 4
 	HASH_PART          PartFlags = 8
+	BRANCH_PART        PartFlags = 16
 )
 
 func branchToString(branchData []byte) string {
@@ -1827,6 +1828,8 @@ func ReplacePlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePlain
 	return newData, nil
 }
 
+func (hph *HexPatriciaHashed) Variant() TrieVariant { return VariantHexPatriciaTrie }
+
 // IsComplete determines whether given branch data is complete, meaning that all information about all the children is present
 // All of the 16 children of a branch node have two attributes
 // touch - whether this child has been modified or deleted in this branchData (corresponding bit in touchMap is set)
@@ -1837,8 +1840,8 @@ func IsComplete(branchData []byte) bool {
 	return ^touchMap&afterMap == 0
 }
 
-// MergeBranches combines two branchData, number 2 coming after (and potentially shadowing) number 1
-func MergeBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, error) {
+// MergeHexBranches combines two branchData, number 2 coming after (and potentially shadowing) number 1
+func MergeHexBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, error) {
 	touchMap1 := binary.BigEndian.Uint16(branchData1[0:])
 	afterMap1 := binary.BigEndian.Uint16(branchData1[2:])
 	bitmap1 := touchMap1 & afterMap1
@@ -1861,14 +1864,14 @@ func MergeBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, err
 			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
 				l, n := binary.Uvarint(branchData2[pos2:])
 				if n == 0 {
-					return nil, fmt.Errorf("MergeBranches buffer2 too small for field")
+					return nil, fmt.Errorf("MergeHexBranches buffer2 too small for field")
 				} else if n < 0 {
-					return nil, fmt.Errorf("MergeBranches value2 overflow for field")
+					return nil, fmt.Errorf("MergeHexBranches value2 overflow for field")
 				}
 				newData = append(newData, branchData2[pos2:pos2+n]...)
 				pos2 += n
 				if len(branchData2) < pos2+int(l) {
-					return nil, fmt.Errorf("MergeBranches buffer2 too small for field")
+					return nil, fmt.Errorf("MergeHexBranches buffer2 too small for field")
 				}
 				if l > 0 {
 					newData = append(newData, branchData2[pos2:pos2+int(l)]...)
@@ -1886,16 +1889,16 @@ func MergeBranches(branchData1, branchData2 []byte, newData []byte) ([]byte, err
 			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
 				l, n := binary.Uvarint(branchData1[pos1:])
 				if n == 0 {
-					return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
+					return nil, fmt.Errorf("MergeHexBranches buffer1 too small for field")
 				} else if n < 0 {
-					return nil, fmt.Errorf("MergeBranches value1 overflow for field")
+					return nil, fmt.Errorf("MergeHexBranches value1 overflow for field")
 				}
 				if add {
 					newData = append(newData, branchData1[pos1:pos1+n]...)
 				}
 				pos1 += n
 				if len(branchData1) < pos1+int(l) {
-					return nil, fmt.Errorf("MergeBranches buffer1 too small for field")
+					return nil, fmt.Errorf("MergeHexBranches buffer1 too small for field")
 				}
 				if l > 0 {
 					if add {

@@ -22,6 +22,7 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
@@ -41,6 +42,10 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/log/v3"
+	"github.com/spaolacci/murmur3"
+	"golang.org/x/crypto/sha3"
+
 	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
@@ -48,9 +53,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
-	"github.com/spaolacci/murmur3"
-	"golang.org/x/crypto/sha3"
 )
 
 // Aggregator of multiple state files to support state reader and state writer
@@ -175,7 +177,7 @@ type Aggregator struct {
 	changesBtree         *btree.BTree        // btree of ChangesItem
 	trace                bool                // Turns on tracing for specific accounts and locations
 	tracedKeys           map[string]struct{} // Set of keys being traced during aggregations
-	hph                  *commitment.HexPatriciaHashed
+	hph                  commitment.Trie     //*commitment.HexPatriciaHashed
 	keccak               hash.Hash
 	changesets           bool // Whether to generate changesets (off by default)
 	commitments          bool // Whether to calculate commitments
@@ -851,7 +853,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 				if commitments {
 					var err error
 					var mergedVal []byte
-					if mergedVal, err = commitment.MergeBranches(item.v, after, nil); err != nil {
+					if mergedVal, err = commitment.MergeHexBranches(item.v, after, nil); err != nil {
 						return fmt.Errorf("merge branches: %w", err)
 					}
 					//fmt.Printf("aggregateToBtree prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
@@ -984,14 +986,14 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 	}
 }
 
-func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, changesets, commitments bool, minArch uint64, tx kv.RwTx) (*Aggregator, error) {
+func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, changesets, commitments bool, minArch uint64, trie commitment.Trie, tx kv.RwTx) (*Aggregator, error) {
 	a := &Aggregator{
 		diffDir:         diffDir,
 		unwindLimit:     unwindLimit,
 		aggregationStep: aggregationStep,
 		tracedKeys:      map[string]struct{}{},
 		keccak:          sha3.NewLegacyKeccak256(),
-		hph:             commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
+		hph:             trie,
 		aggChannel:      make(chan *AggregationTask, 1024),
 		aggError:        make(chan error, 1),
 		mergeChannel:    make(chan struct{}, 1),
@@ -1398,7 +1400,7 @@ func encodeU64(i uint64, to []byte) []byte {
 	}
 }
 
-// commitmentValTransform parses the value of of the commitment record to extract references
+// commitmentValTransform parses the value of the commitment record to extract references
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
 // the updated references
 func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBuf []byte) ([]byte, error) {
@@ -1482,6 +1484,92 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 	return transValBuf, nil
 }
 
+// commitmentValTransform parses the value of the commitment record to extract references
+// to accounts and storage items, then looks them up in the new, merged files, and replaces them with
+// the updated references
+//
+// this is copy of the above function, but with a different plainkeys extractor
+func (cvt *CommitmentValTransform) commitmentBinValTransform(val []byte, transValBuf []byte) ([]byte, error) {
+	if len(val) == 0 {
+		return transValBuf, nil
+	}
+	accountPlainKeys, storagePlainKeys, err := commitment.ExtractBinPlainKeys(val)
+	if err != nil {
+		return nil, err
+	}
+	var transAccountPks [][]byte
+	var transStoragePks [][]byte
+	var apkBuf, spkBuf []byte
+	for _, accountPlainKey := range accountPlainKeys {
+		if len(accountPlainKey) == length.Addr {
+			// Non-optimised key originating from a database record
+			apkBuf = append(apkBuf[:0], accountPlainKey...)
+		} else {
+			// Optimised key referencing a state file record (file number and offset within the file)
+			fileI := int(accountPlainKey[0])
+			offset := decodeU64(accountPlainKey[1:])
+			g := cvt.pre[Account][fileI].getterMerge
+			g.Reset(offset)
+			apkBuf, _ = g.Next(apkBuf[:0])
+			//fmt.Printf("replacing account [%x] from [%x]\n", apkBuf, accountPlainKey)
+		}
+		// Look up apkBuf in the post account files
+		for j := len(cvt.post[Account]); j > 0; j-- {
+			item := cvt.post[Account][j-1]
+			if item.index.Empty() {
+				continue
+			}
+			offset := item.readerMerge.Lookup(apkBuf)
+			g := item.getterMerge
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(apkBuf); keyMatch {
+					accountPlainKey = encodeU64(offset, []byte{byte(j - 1)})
+					//fmt.Printf("replaced account [%x]=>[%x] for file [%d-%d]\n", apkBuf, accountPlainKey, item.startBlock, item.endBlock)
+					break
+				}
+			}
+		}
+		transAccountPks = append(transAccountPks, accountPlainKey)
+	}
+	for _, storagePlainKey := range storagePlainKeys {
+		if len(storagePlainKey) == length.Addr+length.Hash {
+			// Non-optimised key originating from a database record
+			spkBuf = append(spkBuf[:0], storagePlainKey...)
+		} else {
+			// Optimised key referencing a state file record (file number and offset within the file)
+			fileI := int(storagePlainKey[0])
+			offset := decodeU64(storagePlainKey[1:])
+			g := cvt.pre[Storage][fileI].getterMerge
+			g.Reset(offset)
+			spkBuf, _ = g.Next(spkBuf[:0])
+			//fmt.Printf("replacing storage [%x] from [%x]\n", spkBuf, storagePlainKey)
+		}
+		// Lookup spkBuf in the post storage files
+		for j := len(cvt.post[Storage]); j > 0; j-- {
+			item := cvt.post[Storage][j-1]
+			if item.index.Empty() {
+				continue
+			}
+			offset := item.readerMerge.Lookup(spkBuf)
+			g := item.getterMerge
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(spkBuf); keyMatch {
+					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
+					//fmt.Printf("replaced storage [%x]=>[%x]\n", spkBuf, storagePlainKey)
+					break
+				}
+			}
+		}
+		transStoragePks = append(transStoragePks, storagePlainKey)
+	}
+	if transValBuf, err = commitment.ReplaceBinPlainKeys(val, transAccountPks, transStoragePks, transValBuf); err != nil {
+		return nil, err
+	}
+	return transValBuf, nil
+}
+
 func (a *Aggregator) backgroundMerge() {
 	defer a.mergeWg.Done()
 	for range a.mergeChannel {
@@ -1521,8 +1609,14 @@ func (a *Aggregator) backgroundMerge() {
 				var valTransform func([]byte, []byte) ([]byte, error)
 				var mergeFunc func([]byte, []byte, []byte) ([]byte, error)
 				if fType == Commitment {
-					valTransform = cvt.commitmentValTransform
-					mergeFunc = mergeCommitments
+					switch a.hph.Variant() {
+					case commitment.VariantBinPatriciaTrie:
+						valTransform = cvt.commitmentBinValTransform
+						mergeFunc = mergeBinCommitments
+					case commitment.VariantHexPatriciaTrie:
+						valTransform = cvt.commitmentValTransform
+						mergeFunc = mergeCommitments
+					}
 				} else {
 					mergeFunc = mergeReplace
 				}
@@ -1671,7 +1765,12 @@ func mergeBitmaps(preval, val, buf []byte) ([]byte, error) {
 }
 
 func mergeCommitments(preval, val, buf []byte) ([]byte, error) {
-	return commitment.MergeBranches(preval, val, buf)
+	return commitment.MergeHexBranches(preval, val, buf)
+}
+
+func mergeBinCommitments(preval, val, buf []byte) ([]byte, error) {
+	copy(buf, val)
+	return buf, nil
 }
 
 func (a *Aggregator) backgroundHistoryMerge() {
@@ -1953,7 +2052,10 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 	if fType == Commitment {
 		// Transform references
 		if len(val) > 0 {
-			accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val)
+			if len(val) == 19 {
+				fmt.Printf("-%s\n", hex.EncodeToString(val))
+			}
+			accountPlainKeys, storagePlainKeys, err := commitment.ExtractBinPlainKeys(val)
 			if err != nil {
 				panic(err)
 			}
@@ -1961,31 +2063,31 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 			var transStoragePks [][]byte
 			for _, accountPlainKey := range accountPlainKeys {
 				var apkBuf []byte
-				if len(accountPlainKey) == length.Addr {
-					// Non-optimised key originating from a database record
-					apkBuf = accountPlainKey
-				} else {
-					// Optimised key referencing a state file record (file number and offset within the file)
-					fileI := int(accountPlainKey[0])
-					offset := decodeU64(accountPlainKey[1:])
-					apkBuf, _ = a.readByOffset(Account, fileI, offset)
-				}
+				//if len(accountPlainKey) == length.Addr {
+				// Non-optimised key originating from a database record
+				apkBuf = accountPlainKey
+				//} else {
+				//	// Optimised key referencing a state file record (file number and offset within the file)
+				//	fileI := int(accountPlainKey[0])
+				//	offset := decodeU64(accountPlainKey[1:])
+				//	apkBuf, _ = a.readByOffset(Account, fileI, offset)
+				//}
 				transAccountPks = append(transAccountPks, apkBuf)
 			}
 			for _, storagePlainKey := range storagePlainKeys {
 				var spkBuf []byte
-				if len(storagePlainKey) == length.Addr+length.Hash {
-					// Non-optimised key originating from a database record
-					spkBuf = storagePlainKey
-				} else {
-					// Optimised key referencing a state file record (file number and offset within the file)
-					fileI := int(storagePlainKey[0])
-					offset := decodeU64(storagePlainKey[1:])
-					spkBuf, _ = a.readByOffset(Storage, fileI, offset)
-				}
+				//if len(storagePlainKey) == length.Addr+length.Hash {
+				// Non-optimised key originating from a database record
+				spkBuf = storagePlainKey
+				//} else {
+				//	// Optimised key referencing a state file record (file number and offset within the file)
+				//	fileI := int(storagePlainKey[0])
+				//	offset := decodeU64(storagePlainKey[1:])
+				//	spkBuf, _ = a.readByOffset(Storage, fileI, offset)
+				//}
 				transStoragePks = append(transStoragePks, spkBuf)
 			}
-			if val, err = commitment.ReplacePlainKeys(val, transAccountPks, transStoragePks, nil); err != nil {
+			if val, err = commitment.ReplaceBinPlainKeys(val, transAccountPks, transStoragePks, nil); err != nil {
 				panic(err)
 			}
 		}
@@ -2188,7 +2290,7 @@ func (w *Writer) branchFn(prefix []byte) ([]byte, error) {
 		//fmt.Printf("Pre-merge prefix [%x] [%x]+[%x], startBlock %d\n", commitment.CompactToHex(prefix), val, mergedVal, startBlock)
 		if mergedVal == nil {
 			mergedVal = val
-		} else if mergedVal, err = commitment.MergeBranches(val, mergedVal, nil); err != nil {
+		} else if mergedVal, err = commitment.MergeHexBranches(val, mergedVal, nil); err != nil {
 			return nil, err
 		}
 		//fmt.Printf("Post-merge prefix [%x] [%x], startBlock %d\n", commitment.CompactToHex(prefix), mergedVal, startBlock)
@@ -2439,12 +2541,19 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			original = prevV[4:]
 		}
 		if original != nil {
-			var mergedVal []byte
-			if mergedVal, err = commitment.MergeBranches(original, branchNodeUpdate, nil); err == nil {
+			switch w.a.hph.Variant() {
+			case commitment.VariantBinPatriciaTrie:
+				// use current version without merge
+			case commitment.VariantHexPatriciaTrie:
+				// try to merge previous (original) and current (branchNodeUpdate) into one update
+				mergedVal, err := commitment.MergeHexBranches(original, branchNodeUpdate, nil)
+				if err != nil {
+					return nil, err
+				}
 				//fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", commitment.CompactToHex(prefix), original, branchNodeUpdate, mergedVal)
 				branchNodeUpdate = mergedVal
-			} else {
-				return nil, err
+			default:
+				panic(fmt.Errorf("unknown commitment trie variant %s", w.a.hph.Variant()))
 			}
 		}
 		//fmt.Printf("computeCommitment set [%x] [%x]\n", commitment.CompactToHex(prefix), branchNodeUpdate)
