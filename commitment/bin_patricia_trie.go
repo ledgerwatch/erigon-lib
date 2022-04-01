@@ -110,8 +110,7 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 		aux := make([]byte, 128)
 		n := account.encode(aux)
 
-		t.Update(hashedKeys[i], aux[:n])
-		//t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
+		t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
 	}
 
 	return branchNodeUpdates, nil
@@ -119,7 +118,11 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 
 func (t *BinPatriciaTrie) Reset() { t.root = nil }
 
-func (t *BinPatriciaTrie) ResetFns(branchFn func(prefix []byte) ([]byte, error), accountFn func(plainKey []byte, cell *Cell) error, storageFn func(plainKey []byte, cell *Cell) error) {
+func (t *BinPatriciaTrie) ResetFns(
+	branchFn func(prefix []byte) ([]byte, error),
+	accountFn func(plainKey []byte, cell *Cell) error,
+	storageFn func(plainKey []byte, cell *Cell) error,
+) {
 }
 
 func (t *BinPatriciaTrie) SetTrace(b bool) {
