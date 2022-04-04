@@ -141,6 +141,7 @@ func Test_BinaryPatriciaTrie_ProcessUpdates(t *testing.T) {
 		Nonce("aa", 184)
 
 	plainKeys, hashedKeys, updates := builder.Build()
+	bt.SetTrace(true)
 	bt.ProcessUpdates(plainKeys, hashedKeys, updates)
 
 	require.NotNil(t, bt.root)

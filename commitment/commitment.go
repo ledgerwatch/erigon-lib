@@ -1,6 +1,7 @@
 package commitment
 
 import (
+	"fmt"
 	"math/bits"
 
 	"github.com/holiman/uint256"
@@ -49,6 +50,10 @@ type Account struct {
 	CodeHash [32]byte // hash of the bytecode
 	Nonce    uint64
 	Balance  uint256.Int
+}
+
+func (a *Account) String() string {
+	return fmt.Sprintf("Account{Nonce: %d, Balance: %d, CodeHash: %x}", a.Nonce, a.Balance, a.CodeHash)
 }
 
 func (a *Account) decode(buffer []byte) *Account {

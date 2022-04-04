@@ -1,15 +1,19 @@
 package commitment
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math/bits"
+	"strings"
 
 	"golang.org/x/crypto/sha3"
 )
 
 type BinPatriciaTrie struct {
-	root  *Node
-	trace bool
+	root       *Node
+	rootPrefix bitstring
+	trace      bool
 
 	keccak keccakState
 }
@@ -27,39 +31,177 @@ func (t *BinPatriciaTrie) Update(key, value []byte) {
 			Key:   key,
 			Value: value,
 		}
+		t.rootPrefix = keyPath
 		return
 	}
 
-	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath)
+	if t.rootPrefix != nil {
+		defer func() { t.rootPrefix = nil }() // and we clear it after first root split
+	}
+
+	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath, t.rootPrefix)
 	if len(edge) == 0 && len(keyPathRest) == 0 {
 		latest.Value = value
 		return
 	}
 
 	newLeaf := &Node{P: latest, Key: key, Value: value}
-	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, keyPath, newLeaf)
+	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, newLeaf)
+}
+
+func (t *BinPatriciaTrie) fold(latest *Node) uint16 {
+	before := uint16(0)
+	//if latest.Value != nil {}
+	if latest.L != nil {
+		before |= 1 << 0
+	}
+	if latest.R != nil {
+		before |= 1 << 1
+	}
+	return before
+}
+
+func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint16, latest *Node) []byte {
+	buf := make([]byte, 0)
+
+	var bitmapBuf [4]byte
+	binary.BigEndian.PutUint16(bitmapBuf[0:], before)
+	binary.BigEndian.PutUint16(bitmapBuf[2:], after)
+	buf = append(buf, bitmapBuf[:]...)
+
+	//branchSize := bits.OnesCount16(after) + 1
+	//pt := rlp.GenerateStructLen(lenPrefix[:], branchSize)
+
+	list := []*Node{latest, latest.L, latest.R}
+	//keys := []string{string(followedKey), string(followedKey) + string(latest.LPrefix), string(followedKey) + string(latest.RPrefix)}
+
+	branchData := make([]byte, 0)
+	for i := 0; i < 3; i++ {
+		//bit := bitset & -bitset
+		//nibble := bits.TrailingZeros16(bit) b[0] = 0x80
+		//cell := &hph.grid[row][nibble]
+		latest := list[i]
+		if latest == nil {
+			break
+		}
+		//cellHash, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
+
+		//if bitmap&bit != 0 {
+		var fieldBits PartFlags
+		//if cell.extLen > 0 && cell.spl == 0 {
+		//	fieldBits |= HASHEDKEY_PART
+		//}
+		if len(latest.Key) > 0 && latest.Value != nil {
+			fieldBits |= ACCOUNT_PLAIN_PART
+		}
+		//if cell.spl > 0 {
+		//	fieldBits |= STORAGE_PLAIN_PART
+		//}
+		//if len(latest.hash) > 0 { // could be old hash
+		//	fieldBits |= HASH_PART
+		//}
+		branchData = append(branchData, byte(fieldBits))
+		//if cell.extLen > 0 && cell.spl == 0 {
+		//	n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
+		//	branchData = append(branchData, hph.numBuf[:n]...)
+		//	branchData = append(branchData, cell.extension[:cell.extLen]...)
+		//}
+		if len(latest.Key) > 0 && latest.Value != nil {
+			branchData = append(branchData, byte(len(latest.Key)))
+			branchData = append(branchData, latest.Key...)
+			branchData = append(branchData, byte(len(latest.Value)))
+			branchData = append(branchData, latest.Value...)
+		} else {
+			branchData = append(branchData, byte(0))
+		}
+
+		//if cell.spl > 0 {
+		//	n := binary.PutUvarint(hph.numBuf[:], uint64(cell.spl))
+		//	branchData = append(branchData, hph.numBuf[:n]...)
+		//	branchData = append(branchData, cell.spk[:cell.spl]...)
+		//}
+		//if cell.hl > 0 {
+		//	n := binary.PutUvarint(hph.numBuf[:], uint64(cell.hl))
+		//	branchData = append(branchData, hph.numBuf[:n]...)
+		//	branchData = append(branchData, cell.h[:cell.hl]...)
+		//}
+		//}
+
+	}
+	return append(buf, branchData...)
+}
+
+func branchToString2(branchData []byte) string {
+	touchMap := binary.BigEndian.Uint16(branchData[0:])
+	afterMap := binary.BigEndian.Uint16(branchData[2:])
+	pos := 4
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "touchMap %016b, afterMap %016b\n", touchMap, afterMap)
+	for i := 0; i < bits.OnesCount16(afterMap)+1; i++ {
+
+		fieldBits := PartFlags(branchData[pos])
+		pos++
+		if fieldBits&ACCOUNT_PLAIN_PART != 0 {
+			size := int(branchData[pos])
+			if size == 0 {
+				pos++
+				continue
+			}
+			key := branchData[pos+1 : pos+1+size]
+			pos += size + 1
+			size = int(branchData[pos])
+			//fmt.Printf("%d key %d val %d\n", i, len(key), size)
+			pos++
+			value := branchData[pos : pos+size-1]
+			pos += size
+
+			sb.WriteString("{")
+			var comma string
+			acc := new(Account).decode(value)
+			fmt.Fprintf(&sb, "%saccountPlainKey=[%x] -> %v", comma, key, acc.String())
+			comma = ","
+			sb.WriteString("}\n")
+		} else {
+			pos++
+			continue
+		}
+	}
+	return sb.String()
 }
 
 // Key describes path in trie to value. When UpdateHashed is used,
 // hashed key describes path to the leaf node and plainKey is stored in the leaf node Key field.
-func (t *BinPatriciaTrie) UpdateHahsed(plainKey, hashedKey, value []byte) {
+func (t *BinPatriciaTrie) UpdateHahsed(plainKey, hashedKey, value []byte) (string, []byte) {
 	keyPath := newBitstring(hashedKey)
 	if t.root == nil {
 		t.root = &Node{
-			Key:   hashedKey,
+			Key:   plainKey,
 			Value: value,
 		}
-		return
+		t.rootPrefix = keyPath // further root Key will be processed like common path, but that's plainKey
+		return keyPath.String(), t.encodeUpdate(keyPath, 0, 0, t.root)
+	}
+	if t.rootPrefix != nil {
+		defer func() { t.rootPrefix = nil }() // and we clear it after first root split
 	}
 
-	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath)
+	edge, keyPathRest, splitAt, latest := t.root.followPath(keyPath, t.rootPrefix)
+
+	followedKey := keyPath[:len(keyPath)-len(keyPathRest)]
+	before := t.fold(latest)
+
 	if len(edge) == 0 && len(keyPathRest) == 0 {
 		latest.Value = value
-		return
+
+		return followedKey.String(), t.encodeUpdate(followedKey, before, before, latest)
 	}
 
 	newLeaf := &Node{P: latest, Key: plainKey, Value: value}
-	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, keyPath, newLeaf)
+	latest.splitEdge(edge[:splitAt], edge[splitAt:], keyPathRest, newLeaf)
+
+	after := t.fold(latest)
+
+	return followedKey.String(), t.encodeUpdate(followedKey, before, after, latest)
 }
 
 // Get returns value stored by provided key.
@@ -69,7 +211,7 @@ func (t *BinPatriciaTrie) Get(key []byte) ([]byte, bool) {
 		return nil, false
 	}
 
-	edge, keyPathRest, _, latest := t.root.followPath(keyPath)
+	edge, keyPathRest, _, latest := t.root.followPath(keyPath, t.rootPrefix)
 	if len(edge) == 0 && len(keyPathRest) == 0 {
 		return latest.Value, true
 	}
@@ -79,6 +221,9 @@ func (t *BinPatriciaTrie) Get(key []byte) ([]byte, bool) {
 func (t *BinPatriciaTrie) RootHash() ([]byte, error) {
 	if t.root == nil {
 		return EmptyRootHash, nil
+	}
+	if t.rootPrefix != nil {
+		return t.hash(t.root, t.rootPrefix, 0), nil
 	}
 	return t.hash(t.root, t.root.Key, 0), nil
 }
@@ -110,7 +255,11 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 		aux := make([]byte, 128)
 		n := account.encode(aux)
 
-		t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
+		ukey, updbytes := t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
+		branchNodeUpdates[ukey] = updbytes
+		if updbytes != nil && t.trace {
+			fmt.Printf("%q => %s\n", ukey, branchToString2(updbytes))
+		}
 	}
 
 	return branchNodeUpdates, nil
@@ -142,7 +291,7 @@ type Node struct {
 	Value   []byte    // exists only in LEAF node
 }
 
-func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath, fullPath bitstring, newLeaf *Node) {
+func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath bitstring, newLeaf *Node) {
 	var movedNode *Node
 	switch {
 	case n.Value == nil:
@@ -199,10 +348,10 @@ func (n *Node) splitEdge(commonPath, detachedPath, restKeyPath, fullPath bitstri
 // followPath goes by provided path and exits when
 //  - node path splits with desired path
 //  - desired path is not finished but node path is finished
-func (n *Node) followPath(path bitstring) (nodePath, pathRest bitstring, splitAt int, current *Node) {
+func (n *Node) followPath(path, rootPrefix bitstring) (nodePath, pathRest bitstring, splitAt int, current *Node) {
 	if n.P == nil { // it's root
 		if n.Value != nil {
-			nodePath = newBitstring(n.Key) // this key is not stored as bitstring
+			nodePath = rootPrefix // this key is not stored as bitstring
 		} else {
 			nodePath = n.Key // this key is stored as bitstring
 		}
