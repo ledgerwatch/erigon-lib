@@ -1,6 +1,7 @@
 package gsa
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/sais"
@@ -9,16 +10,21 @@ import (
 
 func TestExampleGSA(t *testing.T) {
 	R := [][]byte{
-		[]byte("hihihi"),
-		[]byte("hihihi"),
-		[]byte("hihihi"),
+		[]byte("hihi"),
+		[]byte("alexhihialex"),
+		[]byte("alex"),
 	}
 	str, n := ConcatAll(R)
 	sa := make([]uint, n)
 	lcp := make([]int, n)
 	da := make([]int32, n)
 	_ = GSA(str, sa, lcp, da)
-	PrintArrays(str, sa, lcp, da, n)
+
+	fmt.Printf("sa: %d, lcp: %d\n", sa, lcp)
+	PrintArrays(str, sa, lcp, da)
+	PrintRepeats(str, sa, da)
+	gsa := SA2GSA(sa, da)
+	fmt.Printf("gsa: %d, da: %d\n", gsa, da)
 }
 
 func TestGSA(t *testing.T) {
