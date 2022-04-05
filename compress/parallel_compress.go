@@ -455,7 +455,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 			posMap[l] += c
 		}
 	}
-	//fmt.Printf("posMap = %v\n", posMap)
+	fmt.Printf("posMap = %v\n", len(posMap))
 	var patternList PatternList
 	for _, p := range code2pattern {
 		if p.uses > 0 {
