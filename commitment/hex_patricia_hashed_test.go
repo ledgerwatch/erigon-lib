@@ -25,8 +25,9 @@ import (
 	"testing"
 
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/common"
 	"golang.org/x/crypto/sha3"
+
+	"github.com/ledgerwatch/erigon-lib/common"
 )
 
 // In memory commitment and state to use with the tests
@@ -178,7 +179,7 @@ func (ms *MockState) applyBranchNodeUpdates(updates map[string][]byte) {
 	for key, update := range updates {
 		if pre, ok := ms.cm[key]; ok {
 			// Merge
-			merged, err := MergeBranches(pre, update, nil)
+			merged, err := MergeHexBranches(pre, update, nil)
 			if err != nil {
 				panic(err)
 			}

@@ -15,12 +15,14 @@ type Trie interface {
 
 	RootHash() (hash []byte, err error)
 
+	Variant() TrieVariant
+
 	Reset()
 
 	ResetFns(
-		branchFn func(prefix []byte) ([]byte, error),
-		accountFn func(plainKey []byte, cell *Cell) error,
-		storageFn func(plainKey []byte, cell *Cell) error,
+		 branchFn func(prefix []byte) ([]byte, error),
+		 accountFn func(plainKey []byte, cell *Cell) error,
+		 storageFn func(plainKey []byte, cell *Cell) error,
 	)
 
 	SetTrace(bool)
