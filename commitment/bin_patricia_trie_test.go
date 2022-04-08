@@ -305,7 +305,43 @@ func Test_ReplaceBinPlainKeys2(t *testing.T) {
 
 	storageKeys := make([][]byte, 0)
 	buf := make([]byte, 0)
+	//fin, err := ReplacePlainKeys(v, accountPlainKeys, storageKeys, buf)
 	fin, err := ReplaceBinPlainKeys(v, accountPlainKeys, storageKeys, buf)
 	require.NoError(t, err)
 	require.NotEmpty(t, fin)
+}
+
+func Test_EncodeUpdate(t *testing.T) {
+	latest := &Node{
+		LPrefix: bitstring{0, 1},
+		RPrefix: bitstring{1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0},
+		Key:     nil,
+		Value:   nil,
+	}
+
+	latest.L = &Node{Key: []byte("0a"), Value: []byte("aa"), P: latest}
+	latest.R = &Node{Key: []byte("1a"), Value: []byte("bb"), P: latest}
+
+	trie := NewBinaryPatriciaTrie()
+	buf := trie.encodeUpdate(bitstring{1, 1}, 0, 3, latest)
+
+	newAccountPlainKeys := make([][]byte, 0)
+	newAccountPlainKeys = append(newAccountPlainKeys, []byte("00a"))
+	newAccountPlainKeys = append(newAccountPlainKeys, []byte("11a"))
+
+	storageKeys := make([][]byte, 0)
+	fin := make([]byte, 0)
+
+	v, err := hex.DecodeString("0003000310020001f303010000000000000100")
+	require.NoError(t, err)
+
+	accountPlainKeys, storagePlainKeys, err := ExtractBinPlainKeys(v)
+	require.NoError(t, err)
+	require.Empty(t, storagePlainKeys)
+	require.Len(t, accountPlainKeys, 2)
+
+	fin, err = ReplaceBinPlainKeys(buf, newAccountPlainKeys, storageKeys, fin)
+	require.NoError(t, err)
+	require.NotEmpty(t, fin)
+
 }

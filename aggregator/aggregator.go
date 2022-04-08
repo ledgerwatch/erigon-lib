@@ -618,12 +618,12 @@ func buildIndex(d *compress.Decompressor, idxPath, tmpDir string, count int) (*r
 // aggregate gathers changes from the changefiles into a B-tree, and "removes" them from the database
 // This function is time-critical because it needs to be run in the same go-routine (thread) as the general
 // execution (due to read-write tx). After that, we can optimistically execute the rest in the background
-func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx, table string, commitments bool) (*btree.BTree, error) {
+func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx, table string, commitMerger commitmentMerger) (*btree.BTree, error) {
 	if err := c.openFiles(blockTo, false /* write */); err != nil {
 		return nil, fmt.Errorf("open files: %w", err)
 	}
 	bt := btree.New(32)
-	err := c.aggregateToBtree(bt, prefixLen, commitments)
+	err := c.aggregateToBtree(bt, prefixLen, commitMerger)
 	if err != nil {
 		return nil, fmt.Errorf("aggregateToBtree: %w", err)
 	}
@@ -828,7 +828,7 @@ func (c *Changes) produceChangeSets(blockFrom, blockTo uint64, historyType, bitm
 // (there are 3 of them, one for "keys", one for values "before" every change, and one for values "after" every change)
 // and create a B-tree where each key is only represented once, with the value corresponding to the "after" value
 // of the latest change.
-func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments bool) error {
+func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitMerge commitmentMerger) error {
 	var b bool
 	var e error
 	var key, before, after []byte
@@ -843,26 +843,27 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 				item := &AggregateItem{k: prefix, count: 0}
 				bt.ReplaceOrInsert(item)
 			}
+
 			ai.k = key
 			i := bt.Get(&ai)
 			if i == nil {
 				item := &AggregateItem{k: common.Copy(key), v: common.Copy(after), count: 1}
 				bt.ReplaceOrInsert(item)
-			} else {
-				item := i.(*AggregateItem)
-				if commitments {
-					var err error
-					var mergedVal []byte
-					if mergedVal, err = commitment.MergeHexBranches(item.v, after, nil); err != nil {
-						return fmt.Errorf("merge branches: %w", err)
-					}
-					//fmt.Printf("aggregateToBtree prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
-					item.v = mergedVal
-				} else {
-					item.v = common.Copy(after)
-				}
-				item.count++
+				continue
 			}
+
+			item := i.(*AggregateItem)
+			if commitMerge != nil {
+				mergedVal, err := mergeBinCommitments(item.v, after, nil)
+				if err != nil {
+					return fmt.Errorf("merge branches (%T) : %w", commitMerge, err)
+				}
+				//fmt.Printf("aggregateToBtree prefix [%x], [%x]+[%x]=>[%x]\n", commitment.CompactToHex(key), after, item.v, mergedVal)
+				item.v = mergedVal
+			} else {
+				item.v = common.Copy(after)
+			}
+			item.count++
 		}
 		if e != nil {
 			return fmt.Errorf("aggregateToBtree nextTriple: %w", e)
@@ -1121,6 +1122,7 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 	t := time.Now()
 	var err error
 	trees := map[FileType]*btree.BTree{}
+
 	a.changesBtree.Ascend(func(i btree.Item) bool {
 		item := i.(*ChangesItem)
 		for fType := FirstType; fType < NumberOfStateTypes; fType++ {
@@ -1138,7 +1140,20 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			if fType == Storage {
 				prefixLen = length.Addr
 			}
-			if err = changes.aggregateToBtree(tree, prefixLen, fType == Commitment); err != nil {
+
+			var commitMerger commitmentMerger
+			if fType == Commitment {
+				switch a.hph.Variant() {
+				case commitment.VariantHexPatriciaTrie:
+					commitMerger = mergeCommitments
+				case commitment.VariantBinPatriciaTrie:
+					commitMerger = mergeBinCommitments
+				default:
+					return false
+				}
+			}
+
+			if err = changes.aggregateToBtree(tree, prefixLen, commitMerger); err != nil {
 				return false
 			}
 			if err = changes.closeFiles(); err != nil {
@@ -1743,6 +1758,8 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 	return nil
 }
 
+type commitmentMerger func(prev, current, target []byte) ([]byte, error)
+
 func mergeReplace(preval, val, buf []byte) ([]byte, error) {
 	return append(buf, val...), nil
 }
@@ -1769,7 +1786,10 @@ func mergeCommitments(preval, val, buf []byte) ([]byte, error) {
 }
 
 func mergeBinCommitments(preval, val, buf []byte) ([]byte, error) {
-	copy(buf, val)
+	if buf == nil {
+		return val, nil
+	}
+	buf = append(buf, val...)
 	return buf, nil
 }
 
@@ -1803,14 +1823,17 @@ func (a *Aggregator) backgroundHistoryMerge() {
 			}
 			if len(toRemove[fType]) > 1 {
 				isBitmap := fType == AccountBitmap || fType == StorageBitmap || fType == CodeBitmap
-				var mergeFunc func([]byte, []byte, []byte) ([]byte, error)
-				if isBitmap {
+
+				var mergeFunc commitmentMerger
+				switch {
+				case isBitmap:
 					mergeFunc = mergeBitmaps
-				} else if fType == Commitment {
+				case fType == Commitment:
 					mergeFunc = mergeCommitments
-				} else {
+				default:
 					mergeFunc = mergeReplace
 				}
+
 				if newItems[fType], err = a.computeAggregation(fType, toRemove[fType], from, to, nil /* valTransform */, mergeFunc,
 					!isBitmap /* valCompressed */, !finalMerge || isBitmap /* withIndex */, 0 /* prefixLen */); err != nil {
 					a.historyError <- fmt.Errorf("computeAggreation %s: %w", fType.String(), err)
@@ -2063,28 +2086,28 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 			var transStoragePks [][]byte
 			for _, accountPlainKey := range accountPlainKeys {
 				var apkBuf []byte
-				//if len(accountPlainKey) == length.Addr {
-				// Non-optimised key originating from a database record
-				apkBuf = accountPlainKey
-				//} else {
-				//	// Optimised key referencing a state file record (file number and offset within the file)
-				//	fileI := int(accountPlainKey[0])
-				//	offset := decodeU64(accountPlainKey[1:])
-				//	apkBuf, _ = a.readByOffset(Account, fileI, offset)
-				//}
+				if len(accountPlainKey) == length.Addr {
+					// Non-optimised key originating from a database record
+					apkBuf = accountPlainKey
+				} else {
+					// Optimised key referencing a state file record (file number and offset within the file)
+					fileI := int(accountPlainKey[0])
+					offset := decodeU64(accountPlainKey[1:])
+					apkBuf, _ = a.readByOffset(Account, fileI, offset)
+				}
 				transAccountPks = append(transAccountPks, apkBuf)
 			}
 			for _, storagePlainKey := range storagePlainKeys {
 				var spkBuf []byte
-				//if len(storagePlainKey) == length.Addr+length.Hash {
-				// Non-optimised key originating from a database record
-				spkBuf = storagePlainKey
-				//} else {
-				//	// Optimised key referencing a state file record (file number and offset within the file)
-				//	fileI := int(storagePlainKey[0])
-				//	offset := decodeU64(storagePlainKey[1:])
-				//	spkBuf, _ = a.readByOffset(Storage, fileI, offset)
-				//}
+				if len(storagePlainKey) == length.Addr+length.Hash {
+					// Non-optimised key originating from a database record
+					spkBuf = storagePlainKey
+				} else {
+					// Optimised key referencing a state file record (file number and offset within the file)
+					fileI := int(storagePlainKey[0])
+					offset := decodeU64(storagePlainKey[1:])
+					spkBuf, _ = a.readByOffset(Storage, fileI, offset)
+				}
 				transStoragePks = append(transStoragePks, spkBuf)
 			}
 			if val, err = commitment.ReplaceBinPlainKeys(val, transAccountPks, transStoragePks, nil); err != nil {
@@ -3025,7 +3048,7 @@ func (a *Aggregator) findLargestMerge(fType FileType, maxTo uint64, maxSpan uint
 func (a *Aggregator) computeAggregation(fType FileType,
 	toAggregate []*byEndBlockItem, aggFrom uint64, aggTo uint64,
 	valTransform func(val []byte, transValBuf []byte) ([]byte, error),
-	mergeFunc func(preval, val, buf []byte) ([]byte, error),
+	mergeFunc commitmentMerger,
 	valCompressed bool,
 	withIndex bool, prefixLen int) (*byEndBlockItem, error) {
 	var item2 = &byEndBlockItem{startBlock: aggFrom, endBlock: aggTo}
@@ -3118,7 +3141,20 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		if fType == Storage {
 			prefixLen = length.Addr
 		}
-		if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.tx, fType.Table(), fType == Commitment); err != nil {
+
+		var commitMerger commitmentMerger
+		if fType == Commitment {
+			switch w.a.hph.Variant() {
+			case commitment.VariantHexPatriciaTrie:
+				commitMerger = mergeCommitments
+			case commitment.VariantBinPatriciaTrie:
+				commitMerger = mergeBinCommitments
+			default:
+				return fmt.Errorf("unknown commitment variant %s: failed to define how to merge commitments", w.a.hph.Variant())
+			}
+		}
+
+		if aggTask.bt[fType], err = aggTask.changes[fType].aggregate(blockFrom, blockTo, prefixLen, w.tx, fType.Table(), commitMerger); err != nil {
 			return fmt.Errorf("aggregate %sChanges: %w", fType.String(), err)
 		}
 	}
