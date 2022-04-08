@@ -104,7 +104,7 @@ func (a *Account) decode(buffer []byte) *Account {
 
 	if buffer[pos] == 160 {
 		pos++
-		copy(a.CodeHash[:], buffer[pos:pos+32])
+		copy(a.CodeHash, buffer[pos:pos+32])
 	}
 	return a
 }
@@ -172,7 +172,7 @@ func (a *Account) encode(buffer []byte) int {
 	if len(a.CodeHash) == 32 {
 		buffer[pos-1] += 32
 
-		copy(buffer[pos:pos+32], a.CodeHash[:])
+		copy(buffer[pos:pos+32], a.CodeHash)
 		pos += 32
 	}
 	return pos

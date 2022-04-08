@@ -125,7 +125,7 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 		case update.Flags&NONCE_UPDATE != 0:
 			account.Nonce = update.Nonce
 		case update.Flags&CODE_UPDATE != 0:
-			copy(account.CodeHash[:], update.CodeHashOrStorage[:])
+			copy(account.CodeHash, update.CodeHashOrStorage[:])
 		default:
 			if t.trace {
 				fmt.Printf("update of type %d has been skipped: unsupported for bin trie", update.Flags)
@@ -156,11 +156,6 @@ func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint
 
 	list := []*Node{latest, latest.L, latest.R}
 	//keys := []string{string(followedKey), string(followedKey) + string(latest.LPrefix), string(followedKey) + string(latest.RPrefix)}
-	defer func() {
-		if len(branchData) == 19 {
-			panic("WHAT")
-		}
-	}()
 
 	var numBuf [binary.MaxVarintLen64]byte
 
@@ -192,17 +187,13 @@ func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint
 			if t.trace {
 				fmt.Printf("encode BRANCH_PART LSize=%d RSize=%d\n", len(lenc), len(renc))
 			}
-
-			//aux = append(aux, append(numBuf[:n], node.LPrefix...)...)
-			//n = binary.PutUvarint(numBuf[:], uint64(len(node.RPrefix)))
-			//aux = append(aux, append(numBuf[:n], node.RPrefix...)...)
 		}
 
 		if len(node.Key) > 0 && node.Value != nil {
 			fieldBits = ACCOUNT_PLAIN_PART
 
 			if t.trace {
-				fmt.Printf("encode ACCOUNT_PLAIN_PART key=%d val=%d\n", len(node.Key), len(node.Value))
+				fmt.Printf("encode ACCOUNT_PLAIN_PART key_size=%d val_size=%d\n", len(node.Key), len(node.Value))
 			}
 
 			n := binary.PutUvarint(numBuf[:], uint64(len(node.Key)))
@@ -214,7 +205,6 @@ func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint
 		branchData = append(branchData, byte(fieldBits))
 		if len(aux) > 0 {
 			branchData = append(branchData, aux...)
-			aux = aux[:0]
 		} else {
 			n := binary.PutUvarint(numBuf[:], 0)
 			branchData = append(branchData, numBuf[:n]...)
