@@ -130,8 +130,8 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 				fmt.Printf("update of type %d has been skipped: unsupported for bin trie", update.Flags)
 			}
 			continue
-
 		}
+
 		aux := make([]byte, 128)
 		n := account.encode(aux)
 
@@ -146,19 +146,18 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 }
 
 func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint16, node *Node) []byte {
-	buf := make([]byte, 0)
 
+	branchData := make([]byte, 0)
 	var bitmapBuf [4]byte
 	binary.BigEndian.PutUint16(bitmapBuf[0:], before)
 	binary.BigEndian.PutUint16(bitmapBuf[2:], after)
-	buf = append(buf, bitmapBuf[:]...)
+	branchData = append(branchData, bitmapBuf[:]...)
 
 	list := []*Node{node, node.L, node.R}
 	//keys := []string{string(followedKey), string(followedKey) + string(node.LPrefix), string(followedKey) + string(node.RPrefix)}
 
 	var numBuf [binary.MaxVarintLen64]byte
 
-	branchData := make([]byte, 0)
 	for i := 0; i < 3; i++ {
 		latest := list[i]
 		if latest == nil {
@@ -195,7 +194,7 @@ func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint
 			branchData = append(branchData, numBuf[:n]...)
 		}
 	}
-	return append(buf, branchData...)
+	return branchData
 }
 
 func branchToString2(branchData []byte) string {
@@ -602,9 +601,9 @@ func ExtractBinPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storageP
 			sz, n := binary.Uvarint(branchData[pos:])
 			switch {
 			case n == 0:
-				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch len")
+				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch left prefix size")
 			case n < 0:
-				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for branch len")
+				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for branch left prefix size")
 			default:
 			}
 
@@ -623,10 +622,15 @@ func ExtractBinPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storageP
 			sz, n = binary.Uvarint(branchData[pos:])
 			switch {
 			case n == 0:
-				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch value")
+				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch right prefix size")
 			case n < 0:
-				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for branch value")
+				return nil, nil, fmt.Errorf("extractBinPlainKeys value overflow for branch right prefix size")
 			default:
+			}
+
+			if pos+n+int(sz) >= len(branchData) {
+				fmt.Printf("extractBinPlainKeys buffer too small for right branch prefix l=%d p=%d\n", len(branchData), pos+n+int(sz))
+				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for right branch prefix")
 			}
 
 			pos += n + int(sz)
@@ -684,9 +688,6 @@ func ReplaceBinPlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePl
 			//plainKey := branchData[pos : pos+size]
 			pos += size
 
-			//accountPlainKeys = append(accountPlainKeys, plainKey)
-
-			// skip account encoded value, just move pos
 			sz, n = binary.Uvarint(branchData[pos:])
 			switch {
 			case n == 0:
@@ -701,7 +702,7 @@ func ReplaceBinPlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePl
 			}
 			newData = append(newData, branchData[pos:pos+n+size]...)
 
-			pos += n + int(sz)
+			pos += n + size
 			//fmt.Printf("+ACCOUNT_PLAIN_PART key_size=%d val_size=%d\n", len(plainKey), len(value))
 		case fieldBits == BRANCH_PART:
 			// here we just read sizes and move pos, without reading any values
@@ -721,7 +722,6 @@ func ReplaceBinPlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePl
 			if len(branchData) < pos+n+size {
 				fmt.Printf("\n%v\n", hex.EncodeToString(branchData))
 			}
-			//pos += size
 			newData = append(newData, branchData[pos:pos+n+size]...) // copy left prefix
 			pos += size + n
 
@@ -738,6 +738,9 @@ func ReplaceBinPlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePl
 			fmt.Printf("rBRANCH size=%d pos=%d len=%d\n", size, pos, len(branchData))
 			if len(branchData) == 19 {
 				fmt.Printf("\n%s\n", hex.EncodeToString(branchData))
+			}
+			if len(branchData) < pos+n+size {
+				return newData, nil
 			}
 
 			newData = append(newData, branchData[pos:pos+n+size]...) // copy right prefix

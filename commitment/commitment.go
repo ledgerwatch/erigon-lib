@@ -13,18 +13,22 @@ import (
 type Trie interface {
 	ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []Update) (branchNodeUpdates map[string][]byte, err error)
 
+	// RootHash produces root hash of the trie
 	RootHash() (hash []byte, err error)
 
+	// Variant returns commitment trie variant
 	Variant() TrieVariant
 
+	// Reset Drops everything from the trie
 	Reset()
 
 	ResetFns(
-		 branchFn func(prefix []byte) ([]byte, error),
-		 accountFn func(plainKey []byte, cell *Cell) error,
-		 storageFn func(plainKey []byte, cell *Cell) error,
+		branchFn func(prefix []byte) ([]byte, error),
+		accountFn func(plainKey []byte, cell *Cell) error,
+		storageFn func(plainKey []byte, cell *Cell) error,
 	)
 
+	// Makes trie more verbose
 	SetTrace(bool)
 }
 
