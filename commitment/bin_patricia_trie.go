@@ -1,6 +1,7 @@
 package commitment
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -145,44 +146,69 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 	return branchNodeUpdates, nil
 }
 
-func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint16, node *Node) []byte {
-
-	branchData := make([]byte, 0)
+func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint16, latest *Node) []byte {
 	var bitmapBuf [4]byte
 	binary.BigEndian.PutUint16(bitmapBuf[0:], before)
 	binary.BigEndian.PutUint16(bitmapBuf[2:], after)
+
+	branchData := make([]byte, 0)
 	branchData = append(branchData, bitmapBuf[:]...)
 
-	list := []*Node{node, node.L, node.R}
-	//keys := []string{string(followedKey), string(followedKey) + string(node.LPrefix), string(followedKey) + string(node.RPrefix)}
+	list := []*Node{latest, latest.L, latest.R}
+	//keys := []string{string(followedKey), string(followedKey) + string(latest.LPrefix), string(followedKey) + string(latest.RPrefix)}
+	defer func() {
+		if len(branchData) == 19 {
+			panic("WHAT")
+		}
+	}()
 
 	var numBuf [binary.MaxVarintLen64]byte
 
-	for i := 0; i < 3; i++ {
-		latest := list[i]
-		if latest == nil {
+	for _, node := range list {
+		if node == nil {
 			break
 		}
+
 		var fieldBits PartFlags
 
 		aux := make([]byte, 0)
-		if latest.Value == nil {
+		if node.Value == nil {
 			fieldBits = BRANCH_PART
 
-			//fmt.Printf("BRANCH_PART Lsize=%d Rsize=%d\n", len(latest.LPrefix), len(latest.RPrefix))
-			n := binary.PutUvarint(numBuf[:], uint64(len(latest.LPrefix)))
-			aux = append(aux, append(numBuf[:n], latest.LPrefix...)...)
-			n = binary.PutUvarint(numBuf[:], uint64(len(latest.RPrefix)))
-			aux = append(aux, append(numBuf[:n], latest.RPrefix...)...)
+			lenc, padding := node.LPrefix.reconstructHex()
+
+			n := binary.PutUvarint(numBuf[:], uint64(len(lenc)))
+			numBuf[n] = byte(padding)
+
+			aux = append(aux, append(numBuf[:n+1], lenc...)...)
+
+			renc, padding := node.RPrefix.reconstructHex()
+
+			n = binary.PutUvarint(numBuf[:], uint64(len(renc)))
+			numBuf[n] = byte(padding)
+
+			aux = append(aux, append(numBuf[:n+1], renc...)...)
+
+			if t.trace {
+				fmt.Printf("encode BRANCH_PART LSize=%d RSize=%d\n", len(lenc), len(renc))
+			}
+
+			//aux = append(aux, append(numBuf[:n], node.LPrefix...)...)
+			//n = binary.PutUvarint(numBuf[:], uint64(len(node.RPrefix)))
+			//aux = append(aux, append(numBuf[:n], node.RPrefix...)...)
 		}
-		if len(latest.Key) > 0 && latest.Value != nil {
+
+		if len(node.Key) > 0 && node.Value != nil {
 			fieldBits = ACCOUNT_PLAIN_PART
 
-			//fmt.Printf("ACCOUNT_PLAIN_PART key=%d val=%d\n", len(latest.Key), len(latest.Value))
-			n := binary.PutUvarint(numBuf[:], uint64(len(latest.Key)))
-			aux = append(aux, append(numBuf[:n], latest.Key...)...)
-			n = binary.PutUvarint(numBuf[:], uint64(len(latest.Value)))
-			aux = append(aux, append(numBuf[:n], latest.Value...)...)
+			if t.trace {
+				fmt.Printf("encode ACCOUNT_PLAIN_PART key=%d val=%d\n", len(node.Key), len(node.Value))
+			}
+
+			n := binary.PutUvarint(numBuf[:], uint64(len(node.Key)))
+			aux = append(aux, append(numBuf[:n], node.Key...)...)
+			n = binary.PutUvarint(numBuf[:], uint64(len(node.Value)))
+			aux = append(aux, append(numBuf[:n], node.Value...)...)
 		}
 
 		branchData = append(branchData, byte(fieldBits))
@@ -517,9 +543,10 @@ func (b bitstring) splitPoint(other bitstring) (at int, bit byte, equal bool) {
 }
 
 // Converts b into slice of bytes.
-//If latest chunk could not be correctly converted to byte, chunk returned as bitstring
-func (b bitstring) reconstructHex() ([]byte, bitstring) {
-	re := make([]byte, len(b)/8)
+// if len of b is not a multiple of 8, we add 1 <= padding <= 7 zeros to the latest byte
+// and return amount of added zeros
+func (b bitstring) reconstructHex() (re []byte, padding int) {
+	re = make([]byte, len(b)/8)
 
 	var offt, i int
 	for {
@@ -532,10 +559,18 @@ func (b bitstring) reconstructHex() ([]byte, bitstring) {
 		i++
 	}
 
-	if offt < len(b) {
-		return re, b[offt:]
+	if offt >= len(b) {
+		return re, 0
 	}
-	return re, bitstring{}
+
+	padding = offt + 8 - len(b)
+	pd := append(b[offt:], bytes.Repeat([]byte{0}, padding)...)
+
+	last, ok := pd.readByte(0)
+	if !ok {
+		panic(fmt.Errorf("reconstruct failed: padding %d padded size %d", padding, len(pd)))
+	}
+	return append(re, last), padding
 }
 
 func (b bitstring) readByte(offsetBits int) (byte, bool) {
@@ -597,6 +632,13 @@ func ExtractBinPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storageP
 			pos += n + int(sz)
 			//fmt.Printf("+ACCOUNT_PLAIN_PART key_size=%d val_size=%d\n", len(plainKey), len(value))
 		case fieldBits == BRANCH_PART:
+			// [ bytes
+			//   0-10   : size
+			//   11     : L padding
+			//   12+size: LPrefix (hex encoded)
+			//   same order for right branch
+			// ]
+
 			// here we just read sizes and move pos, without reading any values
 			sz, n := binary.Uvarint(branchData[pos:])
 			switch {
@@ -612,9 +654,9 @@ func ExtractBinPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storageP
 			if size == 0 {
 				continue
 			}
-			pos += size
+			pos += size + 1 // LPrefix wrapped to slice of uint8 numbers + one byte stores amount of trailing zeros (padding)
 
-			fmt.Printf("!BRANCH l_size=%d vr_size=%d\n", size, len(branchData))
+			//fmt.Printf("!BRANCH l_size=%d vr_size=%d\n", size, len(branchData))
 			if len(branchData) < pos {
 				fmt.Printf("pos %d n %d sz %d\n\n%v", pos, n, sz, branchData)
 			}
@@ -628,12 +670,12 @@ func ExtractBinPlainKeys(branchData []byte) (accountPlainKeys [][]byte, storageP
 			default:
 			}
 
-			if pos+n+int(sz) >= len(branchData) {
-				fmt.Printf("extractBinPlainKeys buffer too small for right branch prefix l=%d p=%d\n", len(branchData), pos+n+int(sz))
+			if pos+n+int(sz)+1 >= len(branchData) {
+				fmt.Printf("extractBinPlainKeys buffer too small for right branch prefix l=%d p=%d\n", len(branchData), pos+n+int(sz)+1)
 				return nil, nil, fmt.Errorf("extractBinPlainKeys buffer too small for right branch prefix")
 			}
 
-			pos += n + int(sz)
+			pos += n + 1 + int(sz) // len of RPrefix + RPadding + RPrefix wrapped to slice of uint8 numbers
 		default:
 			pos++
 			continue
@@ -719,14 +761,15 @@ func ReplaceBinPlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePl
 			}
 
 			size := int(sz)
-			if len(branchData) < pos+n+size {
-				fmt.Printf("\n%v\n", hex.EncodeToString(branchData))
+			if len(branchData) < pos+n+1+size {
+				fmt.Printf("\nbranch_size=%d wanted_pos=%d\n%s\n", len(branchData), pos+n+size+1, hex.EncodeToString(branchData))
+				return newData, nil
 			}
-			newData = append(newData, branchData[pos:pos+n+size]...) // copy left prefix
-			pos += size + n
+
+			newData = append(newData, branchData[pos:pos+n+1+size]...) // copy left prefix size + left padding + left prefix
+			pos += n + 1 + size
 
 			sz, n = binary.Uvarint(branchData[pos:])
-			fmt.Printf("~BRANCH l=%d r=%d\n", size, sz)
 			switch {
 			case n == 0:
 				return nil, fmt.Errorf("extractBinPlainKeys buffer too small for branch value")
@@ -735,16 +778,14 @@ func ReplaceBinPlainKeys(branchData []byte, accountPlainKeys [][]byte, storagePl
 			default:
 			}
 			size = int(sz)
-			fmt.Printf("rBRANCH size=%d pos=%d len=%d\n", size, pos, len(branchData))
-			if len(branchData) == 19 {
-				fmt.Printf("\n%s\n", hex.EncodeToString(branchData))
-			}
-			if len(branchData) < pos+n+size {
+
+			if len(branchData) < pos+n+1+size {
+				fmt.Printf("\nbranch_size=%d wanted_pos=%d\n%s\n", len(branchData), pos+n+size+1, hex.EncodeToString(branchData))
 				return newData, nil
 			}
 
-			newData = append(newData, branchData[pos:pos+n+size]...) // copy right prefix
-			pos += n + size
+			newData = append(newData, branchData[pos:pos+n+1+size]...) // copy right prefix size + right padding + right prefix
+			pos += n + 1 + size
 		default:
 			pos++
 			continue

@@ -332,10 +332,10 @@ func Test_EncodeUpdate(t *testing.T) {
 	storageKeys := make([][]byte, 0)
 	fin := make([]byte, 0)
 
-	v, err := hex.DecodeString("0003000310020001f303010000000000000100")
-	require.NoError(t, err)
+	//v, err := hex.DecodeString("0003000310020001f303010000000000000100")
+	//require.NoError(t, err)
 
-	accountPlainKeys, storagePlainKeys, err := ExtractBinPlainKeys(v)
+	accountPlainKeys, storagePlainKeys, err := ExtractBinPlainKeys(buf)
 	require.NoError(t, err)
 	require.Empty(t, storagePlainKeys)
 	require.Len(t, accountPlainKeys, 2)

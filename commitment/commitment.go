@@ -53,7 +53,7 @@ func InitializeTrie(tv TrieVariant) Trie {
 }
 
 type Account struct {
-	CodeHash [32]byte // hash of the bytecode
+	CodeHash []byte // hash of the bytecode
 	Nonce    uint64
 	Balance  uint256.Int
 }
@@ -166,9 +166,14 @@ func (a *Account) encode(buffer []byte) int {
 	}
 
 	// Encoding CodeHash
-	buffer[pos] = 128 + 32
+	buffer[pos] = 128
+
 	pos++
-	copy(buffer[pos:], a.CodeHash[:])
-	pos += 32
+	if len(a.CodeHash) == 32 {
+		buffer[pos-1] += 32
+
+		copy(buffer[pos:pos+32], a.CodeHash[:])
+		pos += 32
+	}
 	return pos
 }
