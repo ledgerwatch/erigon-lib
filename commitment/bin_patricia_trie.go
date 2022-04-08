@@ -170,22 +170,22 @@ func (t *BinPatriciaTrie) encodeUpdate(followedKey bitstring, before, after uint
 		if node.Value == nil {
 			fieldBits = BRANCH_PART
 
-			lenc, padding := node.LPrefix.reconstructHex()
+			lenc, lpadding := node.LPrefix.reconstructHex()
 
 			n := binary.PutUvarint(numBuf[:], uint64(len(lenc)))
-			numBuf[n] = byte(padding)
+			numBuf[n] = byte(lpadding)
 
 			aux = append(aux, append(numBuf[:n+1], lenc...)...)
 
-			renc, padding := node.RPrefix.reconstructHex()
+			renc, rpadding := node.RPrefix.reconstructHex()
 
 			n = binary.PutUvarint(numBuf[:], uint64(len(renc)))
-			numBuf[n] = byte(padding)
+			numBuf[n] = byte(rpadding)
 
 			aux = append(aux, append(numBuf[:n+1], renc...)...)
 
 			if t.trace {
-				fmt.Printf("encode BRANCH_PART LSize=%d RSize=%d\n", len(lenc), len(renc))
+				fmt.Printf("encode BRANCH_PART LSize=%d|%d RSize=%d|%d\n", len(lenc), len(renc), lpadding, rpadding)
 			}
 		}
 
@@ -229,27 +229,23 @@ func branchToString2(branchData []byte) string {
 		fieldBits := PartFlags(branchData[pos])
 		pos++
 
-		sz, n := binary.Uvarint(branchData[pos:])
-		pos += n
-		size := int(sz)
-		if size == 0 {
-			continue
-		}
-
 		switch {
 		case fieldBits == ACCOUNT_PLAIN_PART:
+			sz, n := binary.Uvarint(branchData[pos:])
+			pos += n
+			size := int(sz)
+			if size == 0 {
+				continue
+			}
 			key := branchData[pos : pos+size]
 			pos += size
-			//pos
-			//size = int(branchData[pos])
-			sz, n := binary.Uvarint(branchData[pos:])
+
+			sz, n = binary.Uvarint(branchData[pos:])
 			pos += n
 			size = int(sz)
 
-			pos++
 			value := branchData[pos : pos+size]
 			pos += size
-			//fmt.Printf("+ACCOUNT_PLAIN_PART key_size=%d val_size=%d\n", len(key), len(value))
 
 			sb.WriteString("{")
 
@@ -257,21 +253,33 @@ func branchToString2(branchData []byte) string {
 			fmt.Fprintf(&sb, "accountPlainKey=[%x] -> %v", key, acc.String())
 			sb.WriteString("}\n")
 		case fieldBits == BRANCH_PART:
+			sz, n := binary.Uvarint(branchData[pos:])
+			pos += n
+			size := int(sz)
+			if size == 0 {
+				continue
+			}
+			lpadding := int(branchData[pos])
+			pos++
+
 			lpref := branchData[pos : pos+size]
 			pos += size
-			//pos
-			//size = int(branchData[pos])
-			sz, n := binary.Uvarint(branchData[pos:])
+
+			lp := bitstringWithPadding(lpref, lpadding)
+
+			sz, n = binary.Uvarint(branchData[pos:])
 			pos += n
 			size = int(sz)
 
+			rpadding := int(branchData[pos])
 			pos++
+
 			rpref := branchData[pos : pos+size]
 			pos += size
-			//fmt.Printf("+BRANCH_PART key_size=%d val_size=%d\n", len(lpref), len(rpref))
+			rp := bitstringWithPadding(rpref, rpadding)
 
 			sb.WriteString("{")
-			fmt.Fprintf(&sb, "branch=\n\tL [%v]\n\tR [%v]", lpref, rpref)
+			fmt.Fprintf(&sb, "branch=\n\tL [%v]\n\tR [%v]", lp, rp)
 			sb.WriteString("}\n")
 
 		default:
@@ -285,9 +293,9 @@ func branchToString2(branchData []byte) string {
 func (t *BinPatriciaTrie) Reset() { t.root = nil }
 
 func (t *BinPatriciaTrie) ResetFns(
-	branchFn func(prefix []byte) ([]byte, error),
-	accountFn func(plainKey []byte, cell *Cell) error,
-	storageFn func(plainKey []byte, cell *Cell) error,
+	 branchFn func(prefix []byte) ([]byte, error),
+	 accountFn func(plainKey []byte, cell *Cell) error,
+	 storageFn func(plainKey []byte, cell *Cell) error,
 ) {
 }
 
@@ -495,6 +503,12 @@ func newBitstring(key []byte) bitstring {
 	}
 
 	return bits
+}
+
+func bitstringWithPadding(key []byte, padding int) bitstring {
+	bs := newBitstring(key)
+	bs = bs[:len(bs)-padding]
+	return bs
 }
 
 func (b bitstring) String() string {

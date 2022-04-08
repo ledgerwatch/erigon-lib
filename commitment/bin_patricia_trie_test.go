@@ -345,3 +345,28 @@ func Test_EncodeUpdate(t *testing.T) {
 	require.NotEmpty(t, fin)
 
 }
+
+func Test_bitstring_encode_decode_padding(t *testing.T) {
+	key, err := hex.DecodeString("db3164534fec08b5a86ae5dda0a997a63f2ee408")
+	require.NoError(t, err)
+
+	bs := newBitstring(key)
+	re, padding := bs.reconstructHex()
+	require.Zerof(t, padding, "padding should be zero")
+	require.EqualValues(t, key, re)
+}
+
+func Test_bitstring_encode_decode_padding_notzero(t *testing.T) {
+	key, err := hex.DecodeString("db3164534fec08b5a86ae5dda0a997a63f2ee408")
+	require.NoError(t, err)
+
+	bs := newBitstring(key)
+	offt := 3 // last byte is 08 => 1000, chop last three zeros
+
+	chop := bs[len(bs)-offt:]
+	bs = bs[:len(bs)-offt]
+	_ = chop
+	re, padding := bs.reconstructHex() // during reconstruction padding will be applied - add 3 chopped zero
+	require.EqualValues(t, offt, padding)
+	require.EqualValues(t, key, re)
+}
