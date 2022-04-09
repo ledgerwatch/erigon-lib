@@ -85,7 +85,7 @@ func TestSimpleAggregator(t *testing.T) {
 	}
 	defer a.Close()
 	w := a.MakeStateWriter(true /* beforeOn */)
-	if err = w.Reset(0, rwTx); err != nil {
+	if err = w.Reset(0, 0, 0, rwTx); err != nil {
 		t.Fatal(err)
 	}
 	defer w.Close()
@@ -131,7 +131,7 @@ func TestLoopAggregator(t *testing.T) {
 	for blockNum := uint64(0); blockNum < 1000; blockNum++ {
 		accountKey := int160(blockNum/10 + 1)
 		//fmt.Printf("blockNum = %d\n", blockNum)
-		if err = w.Reset(blockNum, rwTx); err != nil {
+		if err = w.Reset(blockNum, blockNum, blockNum-(blockNum%4), rwTx); err != nil {
 			t.Fatal(err)
 		}
 		w.UpdateAccountData(accountKey, account1, false /* trace */)
@@ -177,7 +177,7 @@ func TestRecreateAccountWithStorage(t *testing.T) {
 	w := a.MakeStateWriter(true /* beforeOn */)
 	defer w.Close()
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
-		if err = w.Reset(blockNum, rwTx); err != nil {
+		if err = w.Reset(blockNum, blockNum, blockNum-(blockNum%4), rwTx); err != nil {
 			t.Fatal(err)
 		}
 		switch blockNum {
@@ -285,7 +285,7 @@ func TestChangeCode(t *testing.T) {
 	w := a.MakeStateWriter(true /* beforeOn */)
 	defer w.Close()
 	for blockNum := uint64(0); blockNum < 100; blockNum++ {
-		if err = w.Reset(blockNum, rwTx); err != nil {
+		if err = w.Reset(blockNum, blockNum, blockNum-(blockNum%4), rwTx); err != nil {
 			t.Fatal(err)
 		}
 		switch blockNum {
