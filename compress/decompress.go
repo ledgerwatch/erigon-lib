@@ -92,11 +92,9 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	d.wordsCount = binary.BigEndian.Uint64(d.data[:8])
 	d.emptyWordsCount = binary.BigEndian.Uint64(d.data[8:16])
 	dictSize := binary.BigEndian.Uint64(d.data[16:24])
-	rootOffset := binary.BigEndian.Uint64(d.data[24:32])
-	cutoff := binary.BigEndian.Uint64(d.data[32:40])
-	data := d.data[40 : 40+dictSize]
+	data := d.data[24 : 24+dictSize]
 	if dictSize > 0 {
-		tree := buildHuffmanPattern(data, rootOffset, cutoff)
+		tree := buildHuffmanPattern(data, 0 /* depth */)
 		var bitLen int
 		if tree.maxDepth > 9 {
 			bitLen = 9
@@ -113,13 +111,11 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		}
 		buildPatternTable(tree, d.dict, 0, 0)
 	}
-	pos := 40 + dictSize
+	pos := 24 + dictSize
 	dictSize = binary.BigEndian.Uint64(d.data[pos : pos+8])
-	rootOffset = binary.BigEndian.Uint64(d.data[pos+8 : pos+16])
-	cutoff = binary.BigEndian.Uint64(d.data[pos+16 : pos+24])
-	data = d.data[pos+24 : pos+24+dictSize]
+	data = d.data[pos+8 : pos+8+dictSize]
 	if dictSize > 0 {
-		tree := buildHuffmanPos(data, rootOffset, cutoff)
+		tree := buildHuffmanPos(data, 0 /* depth */)
 		var bitLen int
 		if tree.maxDepth > 9 {
 			bitLen = 9
@@ -140,7 +136,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	return d, nil
 }
 
-func buildHuffmanPos(data []byte, offset uint64, cutoff uint64) *huffmanNodePos {
+func buildHuffmanPos(data []byte, depth int) *huffmanNodePos {
 	if offset < cutoff {
 		pos, _ := binary.Uvarint(data[offset:])
 		return &huffmanNodePos{pos: pos, maxDepth: 0}
@@ -158,7 +154,7 @@ func buildHuffmanPos(data []byte, offset uint64, cutoff uint64) *huffmanNodePos 
 	return &huffmanNodePos{zero: t0, one: t1, maxDepth: maxDepth}
 }
 
-func buildHuffmanPattern(data []byte, offset uint64, cutoff uint64) *huffmanNodePattern {
+func buildHuffmanPattern(data []byte, depth int) *huffmanNodePattern {
 	if offset < cutoff {
 		l, n := binary.Uvarint(data[offset:])
 		return &huffmanNodePattern{pattern: data[offset+uint64(n) : offset+uint64(n)+l], maxDepth: 0}
@@ -176,7 +172,17 @@ func buildHuffmanPattern(data []byte, offset uint64, cutoff uint64) *huffmanNode
 	return &huffmanNodePattern{zero: t0, one: t1, maxDepth: maxDepth}
 }
 
-func buildPatternTable(tree *huffmanNodePattern, table *patternTable, code uint16, depth int) {
+func buildPatternTable(data []byte, table *patternTable, code uint16, depth int) {
+	if len(data) == 0 {
+		return
+	}
+	d, ns := binary.Uvarint(data)
+	if d < depth {
+
+	}
+	l, n := binary.Uvarint(data[ns:])
+	pattern := data[ns+n : ns+n+l]
+
 	if tree.zero == nil && tree.one == nil {
 		if table.bitLen == depth {
 			table.patterns[code] = tree.pattern

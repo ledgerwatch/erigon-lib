@@ -969,7 +969,6 @@ func (c *CompressorSequential) optimiseCodes() error {
 		n := binary.PutUvarint(c.numBuf[:], uint64(len(p.word))) // Length of the word's length
 		patternsSize += uint64(ns + n + len(p.word))
 	}
-
 	// Start writing to result file
 	cf, err := os.Create(c.outputFile)
 	if err != nil {
