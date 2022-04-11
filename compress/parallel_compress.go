@@ -537,6 +537,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return err
 	}
 	// Write all the pattens
+	sort.Sort(&patternList)
 	for _, p := range patternList {
 		ns := binary.PutUvarint(numBuf[:], uint64(p.depth))
 		if _, err = cw.Write(numBuf[:ns]); err != nil {
@@ -549,13 +550,14 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		if _, err = cw.Write(p.word); err != nil {
 			return err
 		}
+		fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pattern=[%x]\n", p.depth, p.code, p.codeBits, p.word)
 	}
 	log.Debug(fmt.Sprintf("[%s] Dictionary", logPrefix), "size", common.ByteCount(patternsSize))
 
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)
 	for pos, uses := range posMap {
-		p := &Position{pos: pos, uses: uses, code: 0, codeBits: 0}
+		p := &Position{pos: pos, uses: uses, code: pos, codeBits: 0}
 		positionList = append(positionList, p)
 		pos2code[pos] = p
 	}
@@ -620,6 +622,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return err
 	}
 	// Write all the positions
+	sort.Sort(&positionList)
 	for _, p := range positionList {
 		ns := binary.PutUvarint(numBuf[:], uint64(p.depth))
 		if _, err = cw.Write(numBuf[:ns]); err != nil {

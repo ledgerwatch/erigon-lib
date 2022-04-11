@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"sort"
@@ -333,7 +334,7 @@ func (pl PatternList) Len() int {
 
 func (pl PatternList) Less(i, j int) bool {
 	if pl[i].uses == pl[j].uses {
-		return pl[i].code < pl[j].code
+		return bits.Reverse64(pl[i].code) < bits.Reverse64(pl[j].code)
 	}
 	return pl[i].uses < pl[j].uses
 }
@@ -433,8 +434,8 @@ func (ph *PatternHeap) Pop() interface{} {
 }
 
 type Position struct {
-	pos      uint64
 	uses     uint64
+	pos      uint64
 	code     uint64
 	codeBits int
 	depth    int // Depth of the position in the huffman tree (for encoding in the file)
@@ -502,7 +503,7 @@ func (pl PositionList) Len() int {
 
 func (pl PositionList) Less(i, j int) bool {
 	if pl[i].uses == pl[j].uses {
-		return pl[i].pos < pl[j].pos
+		return bits.Reverse64(pl[i].code) < bits.Reverse64(pl[j].code)
 	}
 	return pl[i].uses < pl[j].uses
 }
@@ -993,6 +994,7 @@ func (c *CompressorSequential) optimiseCodes() error {
 		return err
 	}
 	// 3-rd, write all the pattens, with their depths
+	sort.Sort(&patternList)
 	for _, p := range patternList {
 		ns := binary.PutUvarint(c.numBuf[:], uint64(p.depth))
 		if _, err = cw.Write(c.numBuf[:ns]); err != nil {
@@ -1005,11 +1007,12 @@ func (c *CompressorSequential) optimiseCodes() error {
 		if _, err = cw.Write(p.word); err != nil {
 			return err
 		}
+		fmt.Printf("[comp] depth=%d, code=[%b], pattern=[%x]\n", p.depth, p.code, p.word)
 	}
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)
 	for pos, uses := range c.posMap {
-		p := &Position{pos: pos, uses: uses, code: 0, codeBits: 0}
+		p := &Position{pos: pos, uses: uses, code: pos, codeBits: 0}
 		positionList = append(positionList, p)
 		pos2code[pos] = p
 	}
@@ -1072,6 +1075,7 @@ func (c *CompressorSequential) optimiseCodes() error {
 	if _, err = cw.Write(c.numBuf[:8]); err != nil {
 		return err
 	}
+	sort.Sort(&positionList)
 	// Write all the positions and their depths
 	for _, p := range positionList {
 		ns := binary.PutUvarint(c.numBuf[:], uint64(p.depth))
