@@ -388,9 +388,11 @@ func (h *PatternHuff) AddOne() {
 func (h *PatternHuff) SetDepth(depth int) {
 	if h.p0 != nil {
 		h.p0.depth = depth + 1
+		h.p0.uses = 0
 	}
 	if h.p1 != nil {
 		h.p1.depth = depth + 1
+		h.p1.uses = 0
 	}
 	if h.h0 != nil {
 		h.h0.SetDepth(depth + 1)
@@ -483,9 +485,11 @@ func (h *PositionHuff) AddOne() {
 func (h *PositionHuff) SetDepth(depth int) {
 	if h.p0 != nil {
 		h.p0.depth = depth + 1
+		h.p0.uses = 0
 	}
 	if h.p1 != nil {
 		h.p1.depth = depth + 1
+		h.p1.uses = 0
 	}
 	if h.h0 != nil {
 		h.h0.SetDepth(depth + 1)
@@ -1007,7 +1011,7 @@ func (c *CompressorSequential) optimiseCodes() error {
 		if _, err = cw.Write(p.word); err != nil {
 			return err
 		}
-		fmt.Printf("[comp] depth=%d, code=[%b], pattern=[%x]\n", p.depth, p.code, p.word)
+		//fmt.Printf("[comp] depth=%d, code=[%b], pattern=[%x]\n", p.depth, p.code, p.word)
 	}
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)

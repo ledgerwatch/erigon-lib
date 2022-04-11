@@ -536,6 +536,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
+	//fmt.Printf("patternsSize = %d\n", patternsSize)
 	// Write all the pattens
 	sort.Sort(&patternList)
 	for _, p := range patternList {
@@ -550,7 +551,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		if _, err = cw.Write(p.word); err != nil {
 			return err
 		}
-		fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pattern=[%x]\n", p.depth, p.code, p.codeBits, p.word)
+		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pattern=[%x]\n", p.depth, p.code, p.codeBits, p.word)
 	}
 	log.Debug(fmt.Sprintf("[%s] Dictionary", logPrefix), "size", common.ByteCount(patternsSize))
 
@@ -621,6 +622,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	if _, err = cw.Write(numBuf[:8]); err != nil {
 		return err
 	}
+	//fmt.Printf("posSize = %d\n", posSize)
 	// Write all the positions
 	sort.Sort(&positionList)
 	for _, p := range positionList {
@@ -632,6 +634,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		if _, err = cw.Write(numBuf[:n]); err != nil {
 			return err
 		}
+		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pos=%d\n", p.depth, p.code, p.codeBits, p.pos)
 	}
 	log.Debug(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(posSize))
 	// Re-encode all the words with the use of optimised (via Huffman coding) dictionaries

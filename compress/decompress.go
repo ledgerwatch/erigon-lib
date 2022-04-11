@@ -97,6 +97,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	var patterns [][]byte
 	var i uint64
 	var patternMaxDepth uint64
+	//fmt.Printf("[decomp] dictSize = %d\n", dictSize)
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
 		depths = append(depths, d)
@@ -107,7 +108,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		l, n := binary.Uvarint(data[i:])
 		i += uint64(n)
 		patterns = append(patterns, data[i:i+l])
-		fmt.Printf("depth = %d, pattern = [%x]\n", d, data[i:i+l])
+		//fmt.Printf("depth = %d, pattern = [%x]\n", d, data[i:i+l])
 		i += l
 	}
 	if dictSize > 0 {
@@ -133,6 +134,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	var posDepths []uint64
 	var poss []uint64
 	var posMaxDepth uint64
+	//fmt.Printf("[decomp] posDictSize = %d\n", dictSize)
 	i = 0
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
@@ -173,7 +175,7 @@ func buildPatternTable(depths []uint64, patterns [][]byte, table *patternTable, 
 	}
 	if depth == depths[0] {
 		pattern := patterns[0]
-		fmt.Printf("depth=%d, maxDepth=%d, code=[%b], codeLen=%d, pattern=[%x]\n", depth, maxDepth, code, bits, pattern)
+		//fmt.Printf("depth=%d, maxDepth=%d, code=[%b], codeLen=%d, pattern=[%x]\n", depth, maxDepth, code, bits, pattern)
 		if table.bitLen == int(bits) {
 			table.patterns[code] = pattern
 			table.lens[code] = byte(bits)
@@ -219,6 +221,7 @@ func buildPosTable(depths []uint64, poss []uint64, table *posTable, code uint16,
 	}
 	if depth == depths[0] {
 		p := poss[0]
+		//fmt.Printf("depth=%d, maxDepth=%d, code=[%b], codeLen=%d, pos=%d\n", depth, maxDepth, code, bits, p)
 		if table.bitLen == int(bits) {
 			table.pos[code] = p
 			table.lens[code] = byte(bits)
