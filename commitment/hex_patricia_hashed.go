@@ -1252,7 +1252,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			cellHash[0] = 160
 			copy(cellHash[1:], cell.h[:cell.hl])
 
-			fmt.Printf("touched %t hash %s\n", hph.touchMap[row]&(uint16(1)<<(nibble)) != 0, hex.EncodeToString(cell.h[:]))
+			fmt.Printf("touched %t stored_hash %s\n", hph.touchMap[row]&(uint16(1)<<(nibble)) != 0, hex.EncodeToString(cell.h[:]))
 			var re string
 			if hph.touchMap[row]&(uint16(1)<<(nibble)) != 0 {
 				ch, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
