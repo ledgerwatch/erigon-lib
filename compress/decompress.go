@@ -39,20 +39,6 @@ type posTable struct {
 	ptrs   []*posTable
 }
 
-type huffmanNodePos struct {
-	zero     *huffmanNodePos
-	one      *huffmanNodePos
-	pos      uint64
-	maxDepth int
-}
-
-type huffmanNodePattern struct {
-	zero     *huffmanNodePattern
-	one      *huffmanNodePattern
-	pattern  []byte
-	maxDepth int
-}
-
 // Decompressor provides access to the superstrings in a file produced by a compressor
 type Decompressor struct {
 	compressedFile string
