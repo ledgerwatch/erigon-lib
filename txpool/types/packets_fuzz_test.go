@@ -1,7 +1,7 @@
 //go:build gofuzzbeta
 // +build gofuzzbeta
 
-package txpool
+package types
 
 import (
 	"testing"
@@ -24,8 +24,8 @@ func FuzzPooledTransactions66(f *testing.F) {
 		}
 
 		var rlpTxs [][]byte
-		for i := range slots.txs {
-			rlpTxs = append(rlpTxs, slots.txs[i].rlp)
+		for i := range slots.Txs {
+			rlpTxs = append(rlpTxs, slots.Txs[i].Rlp)
 		}
 		_ = EncodePooledTransactions66(rlpTxs, reqId, nil)
 		if err != nil {
