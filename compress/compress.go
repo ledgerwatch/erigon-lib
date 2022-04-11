@@ -960,9 +960,8 @@ func (c *CompressorSequential) optimiseCodes() error {
 		tieBreaker++
 		heap.Push(&codeHeap, h)
 	}
-	var root *PatternHuff
 	if codeHeap.Len() > 0 {
-		root = heap.Pop(&codeHeap).(*PatternHuff) // Root node of huffman tree
+		root := heap.Pop(&codeHeap).(*PatternHuff) // Root node of huffman tree
 		root.SetDepth(0)
 	}
 	// Calculate total size of the dictionary
@@ -1058,9 +1057,8 @@ func (c *CompressorSequential) optimiseCodes() error {
 		tieBreaker++
 		heap.Push(&posHeap, h)
 	}
-	var posRoot *PositionHuff
 	if posHeap.Len() > 0 {
-		posRoot = heap.Pop(&posHeap).(*PositionHuff)
+		posRoot := heap.Pop(&posHeap).(*PositionHuff)
 		posRoot.SetDepth(0)
 	}
 	// Calculate the size of pos dictionary

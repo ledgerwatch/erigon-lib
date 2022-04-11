@@ -503,9 +503,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		tieBreaker++
 		heap.Push(&codeHeap, h)
 	}
-	root := &PatternHuff{}
 	if codeHeap.Len() > 0 {
-		root = heap.Pop(&codeHeap).(*PatternHuff)
+		root := heap.Pop(&codeHeap).(*PatternHuff)
 		root.SetDepth(0)
 	}
 	// Calculate total size of the dictionary
@@ -601,9 +600,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		tieBreaker++
 		heap.Push(&posHeap, h)
 	}
-	var posRoot *PositionHuff
 	if posHeap.Len() > 0 {
-		posRoot = heap.Pop(&posHeap).(*PositionHuff)
+		posRoot := heap.Pop(&posHeap).(*PositionHuff)
 		posRoot.SetDepth(0)
 	}
 	// Calculate the size of pos dictionary
