@@ -469,7 +469,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	var codeHeap PatternHeap
 	heap.Init(&codeHeap)
 	tieBreaker := uint64(0)
-	var huffs []*PatternHuff // To be used to output dictionary
 	for codeHeap.Len()+(patternList.Len()-i) > 1 {
 		// New node
 		h := &PatternHuff{
@@ -503,7 +502,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		tieBreaker++
 		heap.Push(&codeHeap, h)
-		huffs = append(huffs, h)
 	}
 	root := &PatternHuff{}
 	if codeHeap.Len() > 0 {
@@ -569,7 +567,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	var posHeap PositionHeap
 	heap.Init(&posHeap)
 	tieBreaker = uint64(0)
-	var posHuffs []*PositionHuff // To be used to output dictionary
 	for posHeap.Len()+(positionList.Len()-i) > 1 {
 		// New node
 		h := &PositionHuff{
@@ -603,7 +600,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		tieBreaker++
 		heap.Push(&posHeap, h)
-		posHuffs = append(posHuffs, h)
 	}
 	var posRoot *PositionHuff
 	if posHeap.Len() > 0 {
