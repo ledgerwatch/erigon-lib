@@ -17,7 +17,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/ledgerwatch/erigon-lib/rlp"
-	"github.com/ledgerwatch/erigon-lib/txpool/types"
+	"github.com/ledgerwatch/erigon-lib/types"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -33,7 +33,7 @@ import (
 	txpool_proto "github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/txpool/types"
+	"github.com/ledgerwatch/erigon-lib/types"
 	"github.com/ledgerwatch/log/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

@@ -9,7 +9,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/txpool/types"
+	"github.com/ledgerwatch/erigon-lib/types"
 )
 
 // Ensure, that PoolMock does implement Pool.

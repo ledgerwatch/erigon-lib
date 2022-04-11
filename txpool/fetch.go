@@ -30,7 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/rlp"
-	"github.com/ledgerwatch/erigon-lib/txpool/types"
+	types2 "github.com/ledgerwatch/erigon-lib/types"
 	"github.com/ledgerwatch/log/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -49,9 +49,9 @@ type Fetch struct {
 	wg                 *sync.WaitGroup // used for synchronisation in the tests (nil when not in tests)
 	stateChangesClient StateChangesClient
 
-	stateChangesParseCtx     *types.TxParseContext
+	stateChangesParseCtx     *types2.TxParseContext
 	stateChangesParseCtxLock sync.Mutex
-	pooledTxsParseCtx        *types.TxParseContext
+	pooledTxsParseCtx        *types2.TxParseContext
 	pooledTxsParseCtxLock    sync.Mutex
 }
 
@@ -70,8 +70,8 @@ func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Poo
 		coreDB:               coreDB,
 		db:                   db,
 		stateChangesClient:   stateChangesClient,
-		stateChangesParseCtx: types.NewTxParseContext(chainID), //TODO: change ctx if rules changed
-		pooledTxsParseCtx:    types.NewTxParseContext(chainID),
+		stateChangesParseCtx: types2.NewTxParseContext(chainID), //TODO: change ctx if rules changed
+		pooledTxsParseCtx:    types2.NewTxParseContext(chainID),
 	}
 	f.pooledTxsParseCtx.ValidateRLP(f.pool.ValidateSerializedTxn)
 	f.stateChangesParseCtx.ValidateRLP(f.pool.ValidateSerializedTxn)
@@ -83,13 +83,13 @@ func (f *Fetch) SetWaitGroup(wg *sync.WaitGroup) {
 	f.wg = wg
 }
 
-func (f *Fetch) threadSafeParsePooledTxn(cb func(*types.TxParseContext) error) error {
+func (f *Fetch) threadSafeParsePooledTxn(cb func(*types2.TxParseContext) error) error {
 	f.pooledTxsParseCtxLock.Lock()
 	defer f.pooledTxsParseCtxLock.Unlock()
 	return cb(f.pooledTxsParseCtx)
 }
 
-func (f *Fetch) threadSafeParseStateChangeTxn(cb func(*types.TxParseContext) error) error {
+func (f *Fetch) threadSafeParseStateChangeTxn(cb func(*types2.TxParseContext) error) error {
 	f.stateChangesParseCtxLock.Lock()
 	defer f.stateChangesParseCtxLock.Unlock()
 	return cb(f.stateChangesParseCtx)
@@ -219,14 +219,14 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 
 	switch req.Id {
 	case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66:
-		hashCount, pos, err := types.ParseHashesCount(req.Data, 0)
+		hashCount, pos, err := types2.ParseHashesCount(req.Data, 0)
 		if err != nil {
 			return fmt.Errorf("parsing NewPooledTransactionHashes: %w", err)
 		}
 		var hashbuf [32]byte
-		var unknownHashes types.Hashes
+		var unknownHashes types2.Hashes
 		for i := 0; i < hashCount; i++ {
-			_, pos, err = types.ParseHash(req.Data, pos, hashbuf[:0])
+			_, pos, err = types2.ParseHash(req.Data, pos, hashbuf[:0])
 			if err != nil {
 				return fmt.Errorf("parsing NewPooledTransactionHashes: %w", err)
 			}
@@ -243,7 +243,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			var messageID sentry.MessageId
 			switch req.Id {
 			case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66:
-				if encodedRequest, err = types.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
+				if encodedRequest, err = types2.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
 					return err
 				}
 				messageID = sentry.MessageId_GET_POOLED_TRANSACTIONS_66
@@ -264,7 +264,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		switch req.Id {
 		case sentry.MessageId_GET_POOLED_TRANSACTIONS_66:
 			messageID = sentry.MessageId_POOLED_TRANSACTIONS_66
-			requestID, hashes, _, err := types.ParseGetPooledTransactions66(req.Data, 0, nil)
+			requestID, hashes, _, err := types2.ParseGetPooledTransactions66(req.Data, 0, nil)
 			if err != nil {
 				return err
 			}
@@ -281,7 +281,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				txs = append(txs, txn)
 			}
 
-			encodedRequest = types.EncodePooledTransactions66(txs, requestID, nil)
+			encodedRequest = types2.EncodePooledTransactions66(txs, requestID, nil)
 		default:
 			return fmt.Errorf("unexpected message: %s", req.Id.String())
 		}
@@ -293,8 +293,8 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			return err
 		}
 	case sentry.MessageId_POOLED_TRANSACTIONS_66, sentry.MessageId_TRANSACTIONS_66:
-		txs := types.TxSlots{}
-		if err := f.threadSafeParsePooledTxn(func(parseContext *types.TxParseContext) error {
+		txs := types2.TxSlots{}
+		if err := f.threadSafeParsePooledTxn(func(parseContext *types2.TxParseContext) error {
 			return nil
 		}); err != nil {
 			return err
@@ -302,14 +302,14 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 
 		switch req.Id {
 		case sentry.MessageId_TRANSACTIONS_66:
-			if err := f.threadSafeParsePooledTxn(func(parseContext *types.TxParseContext) error {
-				if _, err := types.ParseTransactions(req.Data, 0, parseContext, &txs, func(hash []byte) error {
+			if err := f.threadSafeParsePooledTxn(func(parseContext *types2.TxParseContext) error {
+				if _, err := types2.ParseTransactions(req.Data, 0, parseContext, &txs, func(hash []byte) error {
 					known, err := f.pool.IdHashKnown(tx, hash)
 					if err != nil {
 						return err
 					}
 					if known {
-						return types.ErrRejected
+						return types2.ErrRejected
 					}
 					return nil
 				}); err != nil {
@@ -320,14 +320,14 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				return err
 			}
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
-			if err := f.threadSafeParsePooledTxn(func(parseContext *types.TxParseContext) error {
-				if _, _, err := types.ParsePooledTransactions66(req.Data, 0, parseContext, &txs, func(hash []byte) error {
+			if err := f.threadSafeParsePooledTxn(func(parseContext *types2.TxParseContext) error {
+				if _, _, err := types2.ParsePooledTransactions66(req.Data, 0, parseContext, &txs, func(hash []byte) error {
 					known, err := f.pool.IdHashKnown(tx, hash)
 					if err != nil {
 						return err
 					}
 					if known {
-						return types.ErrRejected
+						return types2.ErrRejected
 					}
 					return nil
 				}); err != nil {
@@ -437,13 +437,13 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 			return nil
 		}
 
-		var unwindTxs, minedTxs types.TxSlots
+		var unwindTxs, minedTxs types2.TxSlots
 		for _, change := range req.ChangeBatch {
 			if change.Direction == remote.Direction_FORWARD {
 				minedTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
-					minedTxs.Txs[i] = &types.TxSlot{}
-					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types.TxParseContext) error {
+					minedTxs.Txs[i] = &types2.TxSlot{}
+					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
 						_, err := parseContext.ParseTransaction(change.Txs[i], 0, minedTxs.Txs[i], minedTxs.Senders.At(i), true /* hasEnvelope */, nil)
 						return err
 					}); err != nil {
@@ -455,8 +455,8 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 			if change.Direction == remote.Direction_UNWIND {
 				unwindTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
-					unwindTxs.Txs[i] = &types.TxSlot{}
-					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types.TxParseContext) error {
+					unwindTxs.Txs[i] = &types2.TxSlot{}
+					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
 						_, err = parseContext.ParseTransaction(change.Txs[i], 0, unwindTxs.Txs[i], unwindTxs.Senders.At(i), true /* hasEnvelope */, nil)
 						return err
 					}); err != nil {
