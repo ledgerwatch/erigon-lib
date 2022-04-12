@@ -72,6 +72,15 @@ func (t *BinPatriciaTrie) UpdateHahsed(plainKey, hashedKey, value []byte) (strin
 	before := latest.childMask()
 
 	if len(edge) == 0 && len(keyPathRest) == 0 {
+		if len(value) == 0 { // delete key
+			if latest.P != nil {
+				latest.P.deleteChild(latest)
+			} else { // remove root
+				t.root = nil
+				t.rootPrefix = nil
+			}
+			return followedKey.String(), []byte{}
+		}
 		latest.Value = value
 
 		return followedKey.String(), t.encodeUpdate(followedKey, before, before, latest)
@@ -83,6 +92,39 @@ func (t *BinPatriciaTrie) UpdateHahsed(plainKey, hashedKey, value []byte) (strin
 	after := latest.childMask()
 
 	return followedKey.String(), t.encodeUpdate(followedKey, before, after, latest)
+}
+
+func (n *Node) deleteChild(child *Node) bitstring {
+	var melt *Node
+	var meltPrefix bitstring
+
+	// remove child data
+	switch child {
+	case n.L:
+		n.L, n.LPrefix = nil, nil
+		melt = n.R
+		meltPrefix = n.RPrefix
+	case n.R:
+		n.R, n.RPrefix = nil, nil
+		melt = n.L
+		meltPrefix = n.LPrefix
+	default:
+		panic("could delete only child nodes")
+	}
+	melt.P = n.P
+
+	// merge parent path to skip this half-branch node
+	if n.P != nil {
+		switch {
+		case n.P.L == n:
+			n.P.L, n.P.LPrefix = melt, append(n.P.LPrefix, meltPrefix...)
+		case n.P.R == n:
+			n.P.R, n.P.RPrefix = melt, append(n.P.RPrefix, meltPrefix...)
+		default:
+			panic("failed to merge parent path")
+		}
+	}
+	return meltPrefix
 }
 
 // Get returns value stored by provided key.
@@ -120,6 +162,8 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 
 		// apply supported updates
 		switch {
+		case update.Flags == DELETE_UPDATE:
+			account.deleteNow = true
 		case update.Flags&BALANCE_UPDATE != 0:
 			account.Balance.Set(&update.Balance)
 		case update.Flags&NONCE_UPDATE != 0:
@@ -134,7 +178,10 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 		}
 
 		aux := make([]byte, 128)
-		n := account.encode(aux)
+		var n int
+		if !account.deleteNow {
+			n = account.encode(aux)
+		}
 
 		ukey, updbytes := t.UpdateHahsed(plainKeys[i], hashedKeys[i], aux[:n])
 		branchNodeUpdates[ukey] = updbytes
@@ -293,9 +340,9 @@ func branchToString2(branchData []byte) string {
 func (t *BinPatriciaTrie) Reset() { t.root = nil }
 
 func (t *BinPatriciaTrie) ResetFns(
-	 branchFn func(prefix []byte) ([]byte, error),
-	 accountFn func(plainKey []byte, cell *Cell) error,
-	 storageFn func(plainKey []byte, cell *Cell) error,
+	branchFn func(prefix []byte) ([]byte, error),
+	accountFn func(plainKey []byte, cell *Cell) error,
+	storageFn func(plainKey []byte, cell *Cell) error,
 ) {
 }
 

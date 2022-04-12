@@ -53,9 +53,10 @@ func InitializeTrie(tv TrieVariant) Trie {
 }
 
 type Account struct {
-	CodeHash []byte // hash of the bytecode
-	Nonce    uint64
-	Balance  uint256.Int
+	deleteNow bool   // if true, account will be deleted
+	CodeHash  []byte // hash of the bytecode
+	Nonce     uint64
+	Balance   uint256.Int
 }
 
 func (a *Account) String() string {

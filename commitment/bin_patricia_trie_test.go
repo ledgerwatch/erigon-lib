@@ -356,6 +356,16 @@ func Test_bitstring_encode_decode_padding(t *testing.T) {
 	require.EqualValues(t, key, re)
 }
 
+func Test_bitstring_encode_decode_one_padding(t *testing.T) {
+	bs := bitstring{1}
+	re, pad := bs.reconstructHex()
+	require.EqualValues(t, 7, pad)
+	require.EqualValues(t, []byte{1 << 7}, re)
+
+	bs2 := bitstringWithPadding(re, pad)
+	require.EqualValues(t, bs, bs2)
+}
+
 func Test_bitstring_encode_decode_padding_notzero(t *testing.T) {
 	key, err := hex.DecodeString("db3164534fec08b5a86ae5dda0a997a63f2ee408")
 	require.NoError(t, err)
@@ -369,4 +379,88 @@ func Test_bitstring_encode_decode_padding_notzero(t *testing.T) {
 	re, padding := bs.reconstructHex() // during reconstruction padding will be applied - add 3 chopped zero
 	require.EqualValues(t, offt, padding)
 	require.EqualValues(t, key, re)
+}
+
+func Test_BinaryPatriciaTrie_ProcessUpdatesDelete(t *testing.T) {
+	bt := NewBinaryPatriciaTrie()
+
+	builder := NewUpdateBuilder().
+		Balance("9a", 100000).
+		Balance("e8", 200000).
+		Balance("a2", 300000).
+		Balance("f0", 400000).
+		Balance("af", 500000).
+		Balance("33", 600000).
+		Nonce("aa", 184).
+		Delete("e8").
+		Delete("af")
+
+	plainKeys, hashedKeys, updates := builder.Build()
+	bt.SetTrace(true)
+	bt.ProcessUpdates(plainKeys, hashedKeys, updates)
+
+	require.NotNil(t, bt.root)
+
+	checkPlainKeys, checkHashedKeys, _ := NewUpdateBuilder().
+		Delete("e8").
+		Delete("af").
+		Build()
+
+	for i, key := range checkHashedKeys {
+		v, ok := bt.Get(key) // keys "af" and "e8" should be deleted
+		require.Emptyf(t, v, "value for key %x should be empty", checkPlainKeys[i])
+		require.False(t, ok)
+	}
+
+	stack := make([]*Node, 0)
+	var stackPtr int
+
+	stack = append(stack, bt.root)
+	stackPtr++
+	visited := make(map[*Node]struct{})
+
+	// validity check
+	for len(stack) > 0 {
+		next := stack[stackPtr-1]
+		_, seen := visited[next]
+		if seen {
+			stack = stack[:stackPtr-1]
+			stackPtr--
+			continue
+		}
+		visited[next] = struct{}{}
+
+		if next.Value == nil {
+			require.Truef(t, next.L != nil || next.R != nil, "if node is not a leaf, at least one child should present")
+			if next.P != nil {
+				require.True(t, next.R != nil && next.L != nil, "bot child should exist L: %p, R: %p", next.L, next.R)
+			}
+		}
+		if next.L != nil || next.R != nil {
+			require.Truef(t, next.Value == nil, "if node has childs, node value should be nil, got %v", next.Value)
+		}
+		if next.L != nil {
+			stack = append(stack, next.L)
+			stackPtr++
+
+			require.Truef(t, bytes.HasPrefix(next.LPrefix, []byte{0}), "left prefix always begins with 0, got %v", next.LPrefix)
+		}
+		if next.R != nil {
+			stack = append(stack, next.R)
+			stackPtr++
+
+			require.Truef(t, bytes.HasPrefix(next.RPrefix, []byte{1}), "right prefix always begins with 1, got %v", next.RPrefix)
+		}
+
+		if next.Value != nil {
+			// leaf, go back
+			stack = stack[:stackPtr-1]
+			stackPtr--
+			continue
+		}
+	}
+	rootHash, _ := bt.RootHash()
+	require.Len(t, rootHash, 32)
+	fmt.Printf("%+v\n", hex.EncodeToString(rootHash))
+	t.Logf("tree total nodes: %d", len(visited))
 }
