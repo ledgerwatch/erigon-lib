@@ -702,6 +702,7 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, lowerBoundTxId uint64, pr
 				if e = cursor.DeleteCurrent(); e != nil {
 					return false
 				}
+				fmt.Printf("Storage delcurrent [%x]\n", k)
 			}
 		} else {
 			e = fmt.Errorf("record not found in db for %s key %x", table, item.k)
@@ -894,6 +895,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 			if i == nil {
 				item := &AggregateItem{k: common.Copy(key), v: common.Copy(after), count: 1}
 				bt.ReplaceOrInsert(item)
+				fmt.Printf("add to btree: [%x]\n", key)
 			} else {
 				item := i.(*AggregateItem)
 				if commitments {
@@ -2086,7 +2088,7 @@ func (r *Reader) ReadAccountData(addr []byte, trace bool) ([]byte, error) {
 		return nil, err
 	}
 	if bytes.HasPrefix(k, addr) {
-		return v, nil
+		return v[1:], nil
 	}
 	v, _ = r.a.readFromFiles(Account, true /* lock */, r.blockNum, addr, trace)
 	return v, nil
@@ -2107,7 +2109,7 @@ func (r *Reader) ReadAccountStorage(addr []byte, loc []byte, trace bool) ([]byte
 		return nil, err
 	}
 	if bytes.HasPrefix(k, dbkey) {
-		return v, nil
+		return v[1:], nil
 	}
 	v, _ = r.a.readFromFiles(Storage, true /* lock */, r.blockNum, dbkey, trace)
 	return v, nil
@@ -2125,7 +2127,7 @@ func (r *Reader) ReadAccountCode(addr []byte, trace bool) ([]byte, error) {
 		return nil, err
 	}
 	if bytes.HasPrefix(k, addr) {
-		return v, nil
+		return v[1:], nil
 	}
 	// Look in the files
 	v, _ = r.a.readFromFiles(Code, true /* lock */, r.blockNum, addr, trace)
@@ -2144,7 +2146,7 @@ func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) (int, error) {
 		return 0, err
 	}
 	if bytes.HasPrefix(k, addr) {
-		return len(v), nil
+		return len(v) - 1, nil
 	}
 	// Look in the files. TODO - use specialised function to only lookup size
 	v, _ = r.a.readFromFiles(Code, true /* lock */, r.blockNum, addr, trace)
@@ -2573,9 +2575,8 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 			defer indexCursor.Close()
 			for i := 0; i < l; i++ {
 				key, before := c.getBeforePair(i)
-				dbKey = append(dbKey[8:], key...)
+				dbKey = append(dbKey[:8], key...)
 				if err = historyCursor.Put(dbKey, before); err != nil {
-					fmt.Printf("History [%x] => [%x]\n", dbKey, before)
 					return err
 				}
 				if err = indexCursor.Put(key, dbKey[:8]); err != nil {
@@ -2650,7 +2651,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 	dbkey := make([]byte, len(addr)+8)
 	copy(dbkey, addr)
 	binary.BigEndian.PutUint64(dbkey[len(addr):], ^w.txId)
-	if err = c.Put(dbkey, account); err != nil {
+	if err = c.Put(dbkey, append([]byte{0}, account...)); err != nil {
 		return err
 	}
 	if len(original) == 0 {
@@ -2694,7 +2695,7 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 	dbkey := make([]byte, len(addr)+8)
 	copy(dbkey, addr)
 	binary.BigEndian.PutUint64(dbkey[len(addr):], ^w.txId)
-	if err = c.Put(dbkey, code); err != nil {
+	if err = c.Put(dbkey, append([]byte{0}, code...)); err != nil {
 		return err
 	}
 	if len(original) == 0 {
@@ -2787,7 +2788,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	dbkey := make([]byte, len(addr)+8)
 	copy(dbkey, addr)
 	binary.BigEndian.PutUint64(dbkey[len(addr):], ^w.txId)
-	if err = c.Put(dbkey, []byte{}); err != nil {
+	if err = c.Put(dbkey, []byte{0}); err != nil {
 		return false, err
 	}
 	w.changes[Account].delete(addr, original)
@@ -2822,7 +2823,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	dbkey := make([]byte, len(addr)+8)
 	copy(dbkey, addr)
 	binary.BigEndian.PutUint64(dbkey[len(addr):], ^w.txId)
-	if err = c.Put(dbkey, []byte{}); err != nil {
+	if err = c.Put(dbkey, []byte{0}); err != nil {
 		return err
 	}
 	w.changes[Code].delete(addr, original)
@@ -2843,8 +2844,8 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 	// Find all storage items for this address
 	var cp CursorHeap
 	heap.Init(&cp)
-	var c kv.Cursor
-	if c, err = w.tx.Cursor(kv.StateStorage); err != nil {
+	var c kv.RwCursor
+	if c, err = w.tx.RwCursor(kv.StateStorage); err != nil {
 		return err
 	}
 	defer c.Close()
@@ -2879,7 +2880,6 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(addr); !keyMatch {
-				//fmt.Printf("DeleteAccount %x - not found anchor in file [%d-%d]\n", addr, item.startBlock, item.endBlock)
 				return true
 			}
 			g.Skip()
@@ -2945,20 +2945,25 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 				}
 			}
 		}
-		var prevV []byte
-		prevV, err = w.tx.GetOne(kv.StateStorage, lastKey)
-		if err != nil {
+		var k []byte
+		if k, _, err = c.Seek(lastKey); err != nil {
 			return err
 		}
-		var prevNum uint32
-		if prevV != nil {
-			prevNum = binary.BigEndian.Uint32(prevV[:4])
+		if bytes.HasPrefix(k, lastKey) {
+			txId := ^binary.BigEndian.Uint64(k[len(lastKey):])
+			if txId >= w.lowerBoundTxId {
+				if err = c.DeleteCurrent(); err != nil {
+					return err
+				}
+			}
 		}
-		v = make([]byte, 4)
-		binary.BigEndian.PutUint32(v[:4], prevNum+1)
-		if err = w.tx.Put(kv.StateStorage, lastKey, v); err != nil {
+		newdbkey := make([]byte, len(lastKey)+8)
+		copy(newdbkey, lastKey)
+		binary.BigEndian.PutUint64(newdbkey[len(lastKey):], ^w.txId)
+		if err = c.Put(newdbkey, []byte{0}); err != nil {
 			return err
 		}
+		fmt.Printf("Storage del [%x]\n", newdbkey)
 		w.changes[Storage].delete(lastKey, lastVal)
 	}
 	if trace {
@@ -3000,9 +3005,10 @@ func (w *Writer) WriteAccountStorage(addr, loc []byte, value []byte, trace bool)
 	newdbkey := make([]byte, len(dbkey)+8)
 	copy(newdbkey, dbkey)
 	binary.BigEndian.PutUint64(newdbkey[len(dbkey):], ^w.txId)
-	if err = c.Put(newdbkey, value); err != nil {
+	if err = c.Put(newdbkey, append([]byte{0}, value...)); err != nil {
 		return err
 	}
+	fmt.Printf("Storage [%x]=>[%x]\n", newdbkey, value)
 	if len(original) == 0 {
 		w.changes[Storage].insert(dbkey, value)
 	} else {

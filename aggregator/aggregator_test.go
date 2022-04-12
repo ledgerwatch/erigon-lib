@@ -323,7 +323,7 @@ func TestChangeCode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if code != nil {
+			if len(code) > 0 {
 				t.Errorf("wrong code after block %d, expected nil, got %x", blockNum, code)
 			}
 		}
