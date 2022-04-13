@@ -2293,7 +2293,9 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 	if k, enc, err = c.Seek(plainKey); err != nil {
 		return err
 	}
-	if !bytes.HasPrefix(k, plainKey) {
+	if bytes.HasPrefix(k, plainKey) {
+		enc = enc[1:]
+	} else {
 		// Look in the files
 		enc, _ = w.a.readFromFiles(Account, true /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
@@ -2323,7 +2325,9 @@ func (w *Writer) accountFn(plainKey []byte, cell *commitment.Cell) error {
 	if k, enc, err = cc.Seek(plainKey); err != nil {
 		return err
 	}
-	if !bytes.HasPrefix(k, plainKey) {
+	if bytes.HasPrefix(k, plainKey) {
+		enc = enc[1:]
+	} else {
 		// Look in the files
 		enc, _ = w.a.readFromFiles(Code, true /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
@@ -2346,7 +2350,9 @@ func (w *Writer) storageFn(plainKey []byte, cell *commitment.Cell) error {
 	if k, enc, err = c.Seek(plainKey); err != nil {
 		return err
 	}
-	if !bytes.HasPrefix(k, plainKey) {
+	if bytes.HasPrefix(k, plainKey) {
+		enc = enc[1:]
+	} else {
 		// Look in the files
 		enc, _ = w.a.readFromFiles(Storage, true /* lock */, w.blockNum, plainKey, false /* trace */)
 	}
@@ -2634,7 +2640,7 @@ func (w *Writer) UpdateAccountData(addr []byte, account []byte, trace bool) erro
 	}
 	var original []byte
 	if bytes.HasPrefix(k, addr) {
-		original = v
+		original = v[1:]
 		txId := ^binary.BigEndian.Uint64(k[len(addr):])
 		if txId >= w.lowerBoundTxId {
 			if err = c.DeleteCurrent(); err != nil {
@@ -2678,7 +2684,7 @@ func (w *Writer) UpdateAccountCode(addr []byte, code []byte, trace bool) error {
 	}
 	var original []byte
 	if bytes.HasPrefix(k, addr) {
-		original = v
+		original = v[1:]
 		txId := ^binary.BigEndian.Uint64(k[len(addr):])
 		if txId >= w.lowerBoundTxId {
 			if err = c.DeleteCurrent(); err != nil {
@@ -2772,7 +2778,7 @@ func (w *Writer) deleteAccount(addr []byte, trace bool) (bool, error) {
 	}
 	var original []byte
 	if bytes.HasPrefix(k, addr) {
-		original = v
+		original = v[1:]
 		txId := ^binary.BigEndian.Uint64(k[len(addr):])
 		if txId >= w.lowerBoundTxId {
 			if err = c.DeleteCurrent(); err != nil {
@@ -2807,7 +2813,7 @@ func (w *Writer) deleteCode(addr []byte, trace bool) error {
 	}
 	var original []byte
 	if bytes.HasPrefix(k, addr) {
-		original = v
+		original = v[1:]
 		txId := ^binary.BigEndian.Uint64(k[len(addr):])
 		if txId >= w.lowerBoundTxId {
 			if err = c.DeleteCurrent(); err != nil {
@@ -2988,7 +2994,7 @@ func (w *Writer) WriteAccountStorage(addr, loc []byte, value []byte, trace bool)
 	}
 	var original []byte
 	if bytes.HasPrefix(k, dbkey) {
-		original = v
+		original = v[1:]
 		txId := ^binary.BigEndian.Uint64(k[len(dbkey):])
 		if txId >= w.lowerBoundTxId {
 			if err = c.DeleteCurrent(); err != nil {
@@ -3008,7 +3014,7 @@ func (w *Writer) WriteAccountStorage(addr, loc []byte, value []byte, trace bool)
 	if err = c.Put(newdbkey, append([]byte{0}, value...)); err != nil {
 		return err
 	}
-	fmt.Printf("Storage [%x]=>[%x]\n", newdbkey, value)
+	fmt.Printf("Storage [%x]=>[%x|%x]\n", dbkey, original, value)
 	if len(original) == 0 {
 		w.changes[Storage].insert(dbkey, value)
 	} else {
