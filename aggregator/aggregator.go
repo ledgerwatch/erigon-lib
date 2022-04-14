@@ -338,6 +338,7 @@ func (cf *ChangeFile) rewind() error {
 func (cf *ChangeFile) add(word []byte) {
 	cf.words = append(cf.words, word...)
 	cf.wordOffsets = append(cf.wordOffsets, len(cf.words))
+	fmt.Printf("add word [%x] offset %d\n", word, len(cf.words))
 }
 
 func (cf *ChangeFile) finish(txNum uint64) error {
@@ -347,6 +348,7 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	var size uint64
 	for _, offset := range cf.wordOffsets {
 		word := cf.words[lastOffset:offset]
+		fmt.Printf("write word [%x], offset %d\n", word, offset)
 		n := binary.PutUvarint(numBuf[:], uint64(len(word)))
 		if _, err := cf.w.Write(numBuf[:n]); err != nil {
 			return err
@@ -514,9 +516,11 @@ func (c *Changes) delete(key, before []byte) {
 }
 
 func (c *Changes) finish(txNum uint64) error {
+	fmt.Printf("keys-----\n")
 	if err := c.keys.finish(txNum); err != nil {
 		return err
 	}
+	fmt.Printf("end keys ------\n")
 	if c.beforeOn {
 		if err := c.before.finish(txNum); err != nil {
 			return err
@@ -881,6 +885,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 	var key, before, after []byte
 	var ai AggregateItem
 	var prefix []byte
+	fmt.Printf("add to btree\n")
 	// Note that the following loop iterates over transactions forwards, therefore it replace entries in the B-tree
 	for b, _, e = c.nextTx(); b && e == nil; b, _, e = c.nextTx() {
 		// Within each transaction, keys are unique, but they can appear in any order
