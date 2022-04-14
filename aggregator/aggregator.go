@@ -338,7 +338,7 @@ func (cf *ChangeFile) rewind() error {
 func (cf *ChangeFile) add(word []byte) {
 	cf.words = append(cf.words, word...)
 	cf.wordOffsets = append(cf.wordOffsets, len(cf.words))
-	fmt.Printf("add word [%x] offset %d\n", word, len(cf.words))
+	//fmt.Printf("add word [%x] offset %d, in: [%x]\n", word, len(cf.words), cf.words[off:])
 }
 
 func (cf *ChangeFile) finish(txNum uint64) error {
@@ -348,7 +348,7 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	var size uint64
 	for _, offset := range cf.wordOffsets {
 		word := cf.words[lastOffset:offset]
-		fmt.Printf("write word [%x], offset %d\n", word, offset)
+		//fmt.Printf("write word [%x], offset %d\n", word, offset)
 		n := binary.PutUvarint(numBuf[:], uint64(len(word)))
 		if _, err := cf.w.Write(numBuf[:n]); err != nil {
 			return err
@@ -516,11 +516,9 @@ func (c *Changes) delete(key, before []byte) {
 }
 
 func (c *Changes) finish(txNum uint64) error {
-	fmt.Printf("keys-----\n")
 	if err := c.keys.finish(txNum); err != nil {
 		return err
 	}
-	fmt.Printf("end keys ------\n")
 	if c.beforeOn {
 		if err := c.before.finish(txNum); err != nil {
 			return err
@@ -885,7 +883,6 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 	var key, before, after []byte
 	var ai AggregateItem
 	var prefix []byte
-	fmt.Printf("add to btree\n")
 	// Note that the following loop iterates over transactions forwards, therefore it replace entries in the B-tree
 	for b, _, e = c.nextTx(); b && e == nil; b, _, e = c.nextTx() {
 		// Within each transaction, keys are unique, but they can appear in any order
@@ -900,7 +897,6 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitments b
 			if i == nil {
 				item := &AggregateItem{k: common.Copy(key), v: common.Copy(after), count: 1}
 				bt.ReplaceOrInsert(item)
-				fmt.Printf("add to btree: [%x]\n", key)
 			} else {
 				item := i.(*AggregateItem)
 				if commitments {
@@ -2587,10 +2583,10 @@ func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 			for i := 0; i < l; i++ {
 				key, before := c.getBeforePair(i)
 				dbKey = append(dbKey[:8], key...)
-				if err = historyCursor.Put(dbKey, before); err != nil {
+				if err = historyCursor.Put(common.Copy(dbKey), common.Copy(before)); err != nil {
 					return err
 				}
-				if err = indexCursor.Put(key, dbKey[:8]); err != nil {
+				if err = indexCursor.Put(common.Copy(key), dbKey[:8]); err != nil {
 					return err
 				}
 			}
@@ -2865,7 +2861,7 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 		return err
 	}
 	if bytes.HasPrefix(k, addr) {
-		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: c, endBlock: w.blockNum})
+		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k[:len(k)-8]), val: common.Copy(v), c: c, endBlock: w.blockNum})
 	}
 	w.a.files[Storage].Ascend(func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
@@ -2924,13 +2920,15 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 					heap.Pop(&cp)
 				}
 			case DB_CURSOR:
-				binary.BigEndian.PutUint64(ci1.key[len(ci1.key)-8:], 0)
-				k, v, err = ci1.c.Seek(ci1.key)
+				seekkey := make([]byte, len(ci1.key)+8)
+				copy(seekkey, ci1.key)
+				k, v, err = ci1.c.Seek(seekkey)
 				if err != nil {
 					return err
 				}
+				fmt.Printf("seek [%x] => [%x]\n", seekkey, k)
 				if bytes.HasPrefix(k, addr) {
-					ci1.key = common.Copy(k)
+					ci1.key = common.Copy(k[:len(k)-8])
 					ci1.val = common.Copy(v)
 					heap.Fix(&cp, 0)
 				} else {
@@ -2961,6 +2959,9 @@ func (w *Writer) DeleteAccount(addr []byte, trace bool) error {
 			return err
 		}
 		if bytes.HasPrefix(k, lastKey) {
+			if len(k) < len(lastKey)+8 {
+				fmt.Printf("k = [%x], lastKey=[%x]\n", k, lastKey)
+			}
 			txId := ^binary.BigEndian.Uint64(k[len(lastKey):])
 			if txId >= w.lowerBoundTxId {
 				if err = c.DeleteCurrent(); err != nil {
