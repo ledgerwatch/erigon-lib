@@ -22,7 +22,6 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
@@ -644,6 +643,7 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 			e = fmt.Errorf("record not found in db for %s key %x", table, dbPrefix)
 			return false
 		}
+
 		prevNum := binary.BigEndian.Uint32(prevV[:4])
 		if prevNum < item.count {
 			e = fmt.Errorf("record count too low for %s key %s count %d, subtracting %d", table, dbPrefix, prevNum, item.count)
@@ -657,6 +657,7 @@ func (c *Changes) aggregate(blockFrom, blockTo uint64, prefixLen int, tx kv.RwTx
 			v := make([]byte, len(prevV))
 			binary.BigEndian.PutUint32(v[:4], prevNum-item.count)
 			copy(v[4:], prevV[4:])
+
 			if e = tx.Put(table, dbPrefix, v); e != nil {
 				return false
 			}
@@ -854,7 +855,7 @@ func (c *Changes) aggregateToBtree(bt *btree.BTree, prefixLen int, commitMerge c
 
 			item := i.(*AggregateItem)
 			if commitMerge != nil {
-				mergedVal, err := mergeBinCommitments(item.v, after, nil)
+				mergedVal, err := commitMerge(item.v, after, nil)
 				if err != nil {
 					return fmt.Errorf("merge branches (%T) : %w", commitMerge, err)
 				}
@@ -924,7 +925,7 @@ type byEndBlockItem struct {
 	endBlock     uint64
 	decompressor *compress.Decompressor
 	getter       *compress.Getter // reader for the decompressor
-	getterMerge  *compress.Getter // reader for the decomporessor used in the background merge thread
+	getterMerge  *compress.Getter // reader for the decompressor used in the background merge thread
 	index        *recsplit.Index
 	indexReader  *recsplit.IndexReader // reader for the index
 	readerMerge  *recsplit.IndexReader // index reader for the background merge thread
@@ -1005,6 +1006,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 		commitments:     commitments,
 		archHasher:      murmur3.New128WithSeed(0), // TODO: Randomise salt
 	}
+	a.trace = true
 	for fType := FirstType; fType < NumberOfTypes; fType++ {
 		a.files[fType] = btree.New(32)
 	}
@@ -1144,7 +1146,7 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 			var commitMerger commitmentMerger
 			if fType == Commitment {
 				switch a.hph.Variant() {
-				case commitment.VariantHexPatriciaTrie:
+				case commitment.VariantHexPatriciaTrie, commitment.VariantReducedHexPatriciaTrie:
 					commitMerger = mergeCommitments
 				case commitment.VariantBinPatriciaTrie:
 					commitMerger = mergeBinCommitments
@@ -1382,7 +1384,7 @@ func (a *Aggregator) backgroundAggregation() {
 
 type CommitmentValTransform struct {
 	pre  [NumberOfAccountStorageTypes][]*byEndBlockItem // List of state files before the merge
-	post [NumberOfAccountStorageTypes][]*byEndBlockItem // List of state files aftee the merge
+	post [NumberOfAccountStorageTypes][]*byEndBlockItem // List of state files after the merge
 }
 
 func decodeU64(from []byte) uint64 {
@@ -1508,6 +1510,7 @@ func (cvt *CommitmentValTransform) commitmentBinValTransform(val []byte, transVa
 	if len(val) == 0 {
 		return transValBuf, nil
 	}
+
 	accountPlainKeys, storagePlainKeys, err := commitment.ExtractBinPlainKeys(val)
 	if err != nil {
 		return nil, err
@@ -1582,6 +1585,7 @@ func (cvt *CommitmentValTransform) commitmentBinValTransform(val []byte, transVa
 	if transValBuf, err = commitment.ReplaceBinPlainKeys(val, transAccountPks, transStoragePks, transValBuf); err != nil {
 		return nil, err
 	}
+
 	return transValBuf, nil
 }
 
@@ -1628,7 +1632,7 @@ func (a *Aggregator) backgroundMerge() {
 					case commitment.VariantBinPatriciaTrie:
 						valTransform = cvt.commitmentBinValTransform
 						mergeFunc = mergeBinCommitments
-					case commitment.VariantHexPatriciaTrie:
+					case commitment.VariantHexPatriciaTrie, commitment.VariantReducedHexPatriciaTrie:
 						valTransform = cvt.commitmentValTransform
 						mergeFunc = mergeCommitments
 					}
@@ -1786,11 +1790,7 @@ func mergeCommitments(preval, val, buf []byte) ([]byte, error) {
 }
 
 func mergeBinCommitments(preval, val, buf []byte) ([]byte, error) {
-	if buf == nil {
-		return val, nil
-	}
-	buf = append(buf, val...)
-	return buf, nil
+	return mergeReplace(preval, val, buf)
 }
 
 func (a *Aggregator) backgroundHistoryMerge() {
@@ -1829,7 +1829,12 @@ func (a *Aggregator) backgroundHistoryMerge() {
 				case isBitmap:
 					mergeFunc = mergeBitmaps
 				case fType == Commitment:
-					mergeFunc = mergeCommitments
+					switch a.hph.Variant() {
+					case commitment.VariantBinPatriciaTrie:
+						mergeFunc = mergeBinCommitments
+					case commitment.VariantHexPatriciaTrie, commitment.VariantReducedHexPatriciaTrie:
+						mergeFunc = mergeCommitments
+					}
 				default:
 					mergeFunc = mergeReplace
 				}
@@ -2050,6 +2055,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 			}
 			val = ai.(*AggregateItem).v
 			startBlock = item.startBlock
+
 			return false
 		}
 		if item.index.Empty() {
@@ -2072,15 +2078,25 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		atomic.AddUint64(&a.fileMisses, 1)
 		return true
 	})
+
 	if fType == Commitment {
+		var plainKeysExtractor func(branchData []byte) (accountPlainKeys [][]byte, storagePlainKeys [][]byte, err error)
+		var plainKeysReplacer func(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, newData []byte) ([]byte, error)
+
+		switch a.hph.Variant() {
+		case commitment.VariantHexPatriciaTrie:
+			plainKeysExtractor = commitment.ExtractPlainKeys
+			plainKeysReplacer = commitment.ReplacePlainKeys
+		case commitment.VariantBinPatriciaTrie:
+			plainKeysExtractor = commitment.ExtractBinPlainKeys
+			plainKeysReplacer = commitment.ReplaceBinPlainKeys
+		}
+
 		// Transform references
 		if len(val) > 0 {
-			if len(val) == 19 {
-				fmt.Printf("-%s\n", hex.EncodeToString(val))
-			}
-			accountPlainKeys, storagePlainKeys, err := commitment.ExtractBinPlainKeys(val)
+			accountPlainKeys, storagePlainKeys, err := plainKeysExtractor(val)
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("value %x: %w", val, err))
 			}
 			var transAccountPks [][]byte
 			var transStoragePks [][]byte
@@ -2110,7 +2126,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 				}
 				transStoragePks = append(transStoragePks, spkBuf)
 			}
-			if val, err = commitment.ReplaceBinPlainKeys(val, transAccountPks, transStoragePks, nil); err != nil {
+			if val, err = plainKeysReplacer(val, transAccountPks, transStoragePks, nil); err != nil {
 				panic(err)
 			}
 		}
@@ -2132,6 +2148,7 @@ func (a *Aggregator) readByOffset(fType FileType, fileI int, offset uint64) ([]b
 		g.Reset(offset)
 		key, _ = g.Next(nil)
 		val, _ = g.Next(nil)
+
 		return false
 	})
 	return key, val
@@ -2519,6 +2536,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 	if trace {
 		fmt.Printf("computeCommitment w.commTree.Len()=%d\n", w.commTree.Len())
 	}
+
 	plainKeys := make([][]byte, w.commTree.Len())
 	hashedKeys := make([][]byte, w.commTree.Len())
 	updates := make([]commitment.Update, w.commTree.Len())
@@ -2566,6 +2584,10 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		if original != nil {
 			switch w.a.hph.Variant() {
 			case commitment.VariantBinPatriciaTrie:
+				branchNodeUpdate, err = mergeReplace(original, branchNodeUpdate, nil)
+				if err != nil {
+					return nil, err
+				}
 				// use current version without merge
 			case commitment.VariantHexPatriciaTrie:
 				// try to merge previous (original) and current (branchNodeUpdate) into one update
@@ -2578,11 +2600,15 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 			default:
 				panic(fmt.Errorf("unknown commitment trie variant %s", w.a.hph.Variant()))
 			}
+
+			//fmt.Printf("bstat: %v\n", w.a.hph.(*commitment.BinPatriciaTrie).StatString())
 		}
+
 		//fmt.Printf("computeCommitment set [%x] [%x]\n", commitment.CompactToHex(prefix), branchNodeUpdate)
 		v := make([]byte, 4+len(branchNodeUpdate))
 		binary.BigEndian.PutUint32(v[:4], prevNum+1)
 		copy(v[4:], branchNodeUpdate)
+
 		if err = w.tx.Put(kv.StateCommitment, prefix, v); err != nil {
 			return nil, err
 		}
@@ -3145,7 +3171,7 @@ func (w *Writer) aggregateUpto(blockFrom, blockTo uint64) error {
 		var commitMerger commitmentMerger
 		if fType == Commitment {
 			switch w.a.hph.Variant() {
-			case commitment.VariantHexPatriciaTrie:
+			case commitment.VariantHexPatriciaTrie, commitment.VariantReducedHexPatriciaTrie:
 				commitMerger = mergeCommitments
 			case commitment.VariantBinPatriciaTrie:
 				commitMerger = mergeBinCommitments
@@ -3239,6 +3265,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				} else {
 					ci1.val, _ = ci1.dg.NextUncompressed()
 				}
+
 				heap.Fix(cp, 0)
 			} else {
 				heap.Pop(cp)
@@ -3284,8 +3311,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				count++ // Only counting keys, not values
 				if valTransform != nil {
 					if transValBuf, err = valTransform(valBuf, transValBuf[:0]); err != nil {
-						return nil, 0, fmt.Errorf("mergeIntoStateFile valTransform [%x]: %w", valBuf, err)
+						return nil, 0, fmt.Errorf("mergeIntoStateFile -valTransform [%x]: %w", valBuf, err)
 					}
+
 					if err = comp.AddWord(transValBuf); err != nil {
 						return nil, 0, err
 					}
@@ -3302,6 +3330,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
 				//}
 			}
+
 			keyBuf = append(keyBuf[:0], lastKey...)
 			valBuf = append(valBuf[:0], lastVal...)
 		}

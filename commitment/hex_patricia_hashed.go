@@ -753,7 +753,6 @@ const (
 	ACCOUNT_PLAIN_PART PartFlags = 2
 	STORAGE_PLAIN_PART PartFlags = 4
 	HASH_PART          PartFlags = 8
-	BRANCH_PART        PartFlags = 16
 )
 
 func branchToString(branchData []byte) string {
