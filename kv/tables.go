@@ -320,6 +320,10 @@ const (
 	StateStorage    = "StateStorage"
 	StateCode       = "StateCode"
 	StateCommitment = "StateCommitment"
+	DelAccounts     = "DelAccounts"
+	DelStorage      = "DelStorage"
+	DelCode         = "DelCode"
+	DelCommitment   = "DelCommitment"
 	HistoryAccounts = "HistoryAccounts"
 	HistoryStorage  = "HistoryStorage"
 	HistoryCode     = "HistoryCode"
@@ -418,6 +422,10 @@ var ChaindataTables = []string{
 	StateStorage,
 	StateCode,
 	StateCommitment,
+	DelAccounts,
+	DelStorage,
+	DelCode,
+	DelCommitment,
 	HistoryAccounts,
 	HistoryStorage,
 	HistoryCode,
@@ -504,23 +512,26 @@ var ChaindataTablesCfg = TableCfg{
 	CallTraceSet: {
 		Flags: DupSort,
 	},
+	DelAccounts: {
+		Flags: DupSort,
+	},
+	DelStorage: {
+		Flags: DupSort,
+	},
+	DelCode: {
+		Flags: DupSort,
+	},
+	DelCommitment: {
+		Flags: DupSort,
+	}
 	IndexAccounts: {
-		Flags:                     DupSort,
-		AutoDupSortKeysConversion: true,
-		DupFromLen:                20,
-		DupToLen:                  20,
+		Flags: DupSort,
 	},
 	IndexStorage: {
-		Flags:                     DupSort,
-		AutoDupSortKeysConversion: true,
-		DupFromLen:                52,
-		DupToLen:                  52,
+		Flags: DupSort,
 	},
 	IndexCode: {
-		Flags:                     DupSort,
-		AutoDupSortKeysConversion: true,
-		DupFromLen:                20,
-		DupToLen:                  20,
+		Flags: DupSort,
 	},
 }
 
