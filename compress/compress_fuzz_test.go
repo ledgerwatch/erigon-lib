@@ -34,7 +34,7 @@ func min(a, b int) int {
 }
 
 func FuzzCompress(f *testing.F) {
-	f.Fuzz(func(t *testing.T, x []byte, pos []byte) {
+	f.Fuzz(func(t *testing.T, x []byte, pos []byte, minPatternScore, workers int8) {
 		t.Parallel()
 		if len(pos) < 1 {
 			t.Skip()
@@ -55,7 +55,7 @@ func FuzzCompress(f *testing.F) {
 		ctx := context.Background()
 		tmpDir := t.TempDir()
 		file := filepath.Join(tmpDir, fmt.Sprintf("compressed-%d", rand.Int31()))
-		c, err := NewCompressor(ctx, t.Name(), file, tmpDir, 1, 2, log.LvlDebug)
+		c, err := NewCompressor(ctx, t.Name(), file, tmpDir, minPatternScore, workers, log.LvlDebug)
 		if err != nil {
 			t.Fatal(err)
 		}
