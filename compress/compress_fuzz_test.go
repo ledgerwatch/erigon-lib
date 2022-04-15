@@ -36,7 +36,7 @@ func min(a, b int) int {
 func FuzzCompress(f *testing.F) {
 	f.Fuzz(func(t *testing.T, x []byte, pos []byte, workers int8) {
 		t.Parallel()
-		if len(pos) < 1 {
+		if len(pos) < 1 || workers < 1 {
 			t.Skip()
 			return
 		}
