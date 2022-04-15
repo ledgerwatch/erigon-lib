@@ -523,7 +523,7 @@ var ChaindataTablesCfg = TableCfg{
 	},
 	DelCommitment: {
 		Flags: DupSort,
-	}
+	},
 	IndexAccounts: {
 		Flags: DupSort,
 	},
