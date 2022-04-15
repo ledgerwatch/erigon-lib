@@ -36,11 +36,7 @@ func min(a, b int) int {
 func FuzzCompress(f *testing.F) {
 	f.Fuzz(func(t *testing.T, x []byte, pos []byte) {
 		t.Parallel()
-		if len(x) < 10000 {
-			t.Skip()
-			return
-		}
-		if len(pos) < 10 {
+		if len(pos) < 1 {
 			t.Skip()
 			return
 		}
@@ -50,13 +46,12 @@ func FuzzCompress(f *testing.F) {
 			if pos[i] == 0 {
 				continue
 			}
-			next := min(j+int(pos[i]), len(x)-1)
+			next := min(j+int(pos[i]*10), len(x)-1)
 			bbb := x[j:next]
 			a = append(a, bbb)
 			j = next
 		}
 
-		panic(len(a))
 		ctx := context.Background()
 		tmpDir := t.TempDir()
 		file := filepath.Join(tmpDir, fmt.Sprintf("compressed-%d", rand.Int31()))
