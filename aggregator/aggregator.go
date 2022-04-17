@@ -338,7 +338,6 @@ func (cf *ChangeFile) rewind() error {
 func (cf *ChangeFile) add(word []byte) {
 	cf.words = append(cf.words, word...)
 	cf.wordOffsets = append(cf.wordOffsets, len(cf.words))
-	//fmt.Printf("add word [%x] offset %d, in: [%x]\n", word, len(cf.words), cf.words[off:])
 }
 
 func (cf *ChangeFile) finish(txNum uint64) error {
@@ -348,7 +347,6 @@ func (cf *ChangeFile) finish(txNum uint64) error {
 	var size uint64
 	for _, offset := range cf.wordOffsets {
 		word := cf.words[lastOffset:offset]
-		//fmt.Printf("write word [%x], offset %d\n", word, offset)
 		n := binary.PutUvarint(numBuf[:], uint64(len(word)))
 		if _, err := cf.w.Write(numBuf[:n]); err != nil {
 			return err
@@ -736,7 +734,6 @@ func (a *Aggregator) updateArch(bt *btree.BTree, fType FileType, blockNum32 uint
 		p = p % n
 		v := atomic.LoadUint32(&arch[p])
 		if v < blockNum32 {
-			//fmt.Printf("Updated %s arch [%x]=%d %d\n", fType.String(), item.k, p, blockNum32)
 			atomic.StoreUint32(&arch[p], blockNum32)
 		}
 		return true
