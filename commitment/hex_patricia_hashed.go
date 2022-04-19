@@ -1033,6 +1033,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 	return nil
 }
 
+/*
 func (hph *HexPatriciaHashed) foldRoot() ([]byte, error) {
 	if hph.trace {
 		fmt.Printf("foldRoot: activeRows: %d\n", hph.activeRows)
@@ -1089,6 +1090,7 @@ func (hph *HexPatriciaHashed) foldRoot() ([]byte, error) {
 	}
 	return branchData, nil
 }
+*/
 
 func (hph *HexPatriciaHashed) needFolding(hashedKey []byte) bool {
 	return !bytes.HasPrefix(hashedKey, hph.currentKey[:hph.currentKeyLen])
