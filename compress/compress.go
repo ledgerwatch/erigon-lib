@@ -66,6 +66,7 @@ type Compressor struct {
 	wg               *sync.WaitGroup
 	suffixCollectors []*etl.Collector
 	wordsCount       uint64
+	superstringCount uint64
 
 	ctx       context.Context
 	logPrefix string
@@ -132,8 +133,11 @@ func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
 
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		c.superstrings <- c.superstring
+		if c.superstringCount%10 == 0 {
+			c.superstrings <- c.superstring
+		}
 		c.superstring = nil
+		c.superstringCount++
 	}
 	for _, a := range word {
 		c.superstring = append(c.superstring, 1, a)
