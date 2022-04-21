@@ -53,6 +53,13 @@ func NewTestPoolDB(tb testing.TB) kv.RwDB {
 	return db
 }
 
+func NewTestDownloaderDB(tb testing.TB) kv.RwDB {
+	tb.Helper()
+	db := NewDownloaderDB()
+	tb.Cleanup(db.Close)
+	return db
+}
+
 func NewTestSentrylDB(tb testing.TB) kv.RwDB {
 	tb.Helper()
 	db := NewPoolDB()
