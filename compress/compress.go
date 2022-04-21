@@ -141,6 +141,7 @@ func (c *Compressor) AddWord(word []byte) error {
 		}
 		c.superstring = append(c.superstring, 0, 0)
 	}
+
 	c.wordsCount++
 
 	return c.uncompressedFile.Append(word)
