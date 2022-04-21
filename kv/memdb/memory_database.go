@@ -32,7 +32,9 @@ func New() kv.RwDB {
 func NewPoolDB() kv.RwDB {
 	return mdbx.NewMDBX(log.New()).InMem().Label(kv.TxPoolDB).WithTablessCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).MustOpen()
 }
-
+func NewDownloaderDB() kv.RwDB {
+	return mdbx.NewMDBX(log.New()).InMem().Label(kv.DownloaderDB).WithTablessCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.DownloaderTablesCfg }).MustOpen()
+}
 func NewSentryDB() kv.RwDB {
 	return mdbx.NewMDBX(log.New()).InMem().Label(kv.SentryDB).WithTablessCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.SentryTablesCfg }).MustOpen()
 }
