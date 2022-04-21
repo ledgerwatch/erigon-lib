@@ -28,8 +28,8 @@ func Fuzz_ProcessUpdate(f *testing.F) {
 
 		ms := NewMockState(t)
 		ms2 := NewMockState(t)
-		hph := NewHexPatriciaHashed(20, ms.branchFn, ms.accountFn, ms.storageFn, ms.lockFn, ms.unlockFn)
-		hphAnother := NewHexPatriciaHashed(20, ms2.branchFn, ms2.accountFn, ms2.storageFn, ms2.lockFn, ms2.unlockFn)
+		hph := NewHexPatriciaHashed(20, ms.branchFn, ms.accountFn, ms.storageFn)
+		hphAnother := NewHexPatriciaHashed(20, ms2.branchFn, ms2.accountFn, ms2.storageFn)
 
 		hph.SetTrace(false)
 		hphAnother.SetTrace(false)
@@ -111,8 +111,8 @@ func Fuzz_ProcessUpdates_ArbitraryUpdateCount(f *testing.F) {
 
 		ms := NewMockState(t)
 		ms2 := NewMockState(t)
-		hph := NewHexPatriciaHashed(20, ms.branchFn, ms.accountFn, ms.storageFn, ms.lockFn, ms.unlockFn)
-		hphAnother := NewHexPatriciaHashed(20, ms2.branchFn, ms2.accountFn, ms2.storageFn, ms2.lockFn, ms2.unlockFn)
+		hph := NewHexPatriciaHashed(20, ms.branchFn, ms.accountFn, ms.storageFn)
+		hphAnother := NewHexPatriciaHashed(20, ms2.branchFn, ms2.accountFn, ms2.storageFn)
 
 		hph.SetTrace(false)
 		hphAnother.SetTrace(false)

@@ -1033,65 +1033,6 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 	return nil
 }
 
-/*
-func (hph *HexPatriciaHashed) foldRoot() ([]byte, error) {
-	if hph.trace {
-		fmt.Printf("foldRoot: activeRows: %d\n", hph.activeRows)
-	}
-	if hph.activeRows != 0 {
-		return nil, fmt.Errorf("cannot fold root - there are still active rows: %d", hph.activeRows)
-	}
-	if hph.root.downHashedLen == 0 {
-		// Not overwrite previous branch node
-		return nil, nil
-	}
-	var branchData []byte
-	var bitmapBuf [4]byte
-	binary.BigEndian.PutUint16(bitmapBuf[0:], 1) // touchMap
-	binary.BigEndian.PutUint16(bitmapBuf[2:], 1) // afterMap
-	branchData = append(branchData, bitmapBuf[:]...)
-	var fieldBits PartFlags
-	cell := &hph.root
-	if cell.extLen > 0 {
-		fieldBits |= HASHEDKEY_PART
-	}
-	if cell.apl > 0 {
-		fieldBits |= ACCOUNT_PLAIN_PART
-	}
-	if cell.spl > 0 {
-		fieldBits |= STORAGE_PLAIN_PART
-	}
-	if cell.hl > 0 {
-		fieldBits |= HASH_PART
-	}
-	if cell.extLen > 0 {
-		fieldBits |= HASHEDKEY_PART
-	}
-	branchData = append(branchData, byte(fieldBits))
-	if cell.extLen > 0 {
-		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.extLen))
-		branchData = append(branchData, hph.numBuf[:n]...)
-		branchData = append(branchData, cell.extension[:cell.extLen]...)
-	}
-	if cell.apl > 0 {
-		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.apl))
-		branchData = append(branchData, hph.numBuf[:n]...)
-		branchData = append(branchData, cell.apk[:cell.apl]...)
-	}
-	if cell.spl > 0 {
-		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.spl))
-		branchData = append(branchData, hph.numBuf[:n]...)
-		branchData = append(branchData, cell.spk[:cell.spl]...)
-	}
-	if cell.hl > 0 {
-		n := binary.PutUvarint(hph.numBuf[:], uint64(cell.hl))
-		branchData = append(branchData, hph.numBuf[:n]...)
-		branchData = append(branchData, cell.h[:cell.hl]...)
-	}
-	return branchData, nil
-}
-*/
-
 func (hph *HexPatriciaHashed) needFolding(hashedKey []byte) bool {
 	return !bytes.HasPrefix(hashedKey, hph.currentKey[:hph.currentKeyLen])
 }
@@ -1254,22 +1195,17 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			cellHash[0] = 160
 			copy(cellHash[1:], cell.h[:cell.hl])
 
-			fmt.Printf("touched %t stored_hash %s\n", hph.touchMap[row]&(uint16(1)<<(nibble)) != 0, hex.EncodeToString(cell.h[:]))
-			var re string
 			//if hph.touchMap[row]&(uint16(1)<<(nibble)) != 0 {
 			ch, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
 			if err != nil {
 				return nil, nil, err
 			}
-			re = "re"
 
-			//cell.hl = 32
-			//copy(cell.h[:], ch[1:])
 			cellHash = ch
 			//}
 
 			if hph.trace {
-				fmt.Printf("%x: %scomputeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, re, row, nibble, depth, cellHash)
+				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
 			}
 			if _, err := hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
@@ -1729,11 +1665,6 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 			branchNodeUpdates[string(updateKey)] = branchData
 		}
 	}
-	//if branchData, err := hph.foldRoot(); err != nil {
-	//	return nil, fmt.Errorf("foldRoot: %w", err)
-	//} else if branchData != nil {
-	//	branchNodeUpdates[string(hexToCompact([]byte{}))] = branchData
-	//}
 	return branchNodeUpdates, nil
 }
 
