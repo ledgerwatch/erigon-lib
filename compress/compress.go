@@ -130,19 +130,18 @@ func (c *Compressor) SetTrace(trace bool) {
 }
 
 func (c *Compressor) AddWord(word []byte) error {
-	c.wordsCount++
-
-	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		if c.superstringCount%10 == 0 {
+	if c.wordsCount%10 == 0 {
+		if len(c.superstring)+2*len(word)+2 > superstringLimit {
 			c.superstrings <- c.superstring
+			c.superstring = nil
+			c.superstringCount++
 		}
-		c.superstring = nil
-		c.superstringCount++
+		for _, a := range word {
+			c.superstring = append(c.superstring, 1, a)
+		}
+		c.superstring = append(c.superstring, 0, 0)
 	}
-	for _, a := range word {
-		c.superstring = append(c.superstring, 1, a)
-	}
-	c.superstring = append(c.superstring, 0, 0)
+	c.wordsCount++
 
 	return c.uncompressedFile.Append(word)
 }
