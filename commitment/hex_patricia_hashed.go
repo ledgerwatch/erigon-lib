@@ -142,7 +142,6 @@ func (cell *Cell) fillEmpty() {
 }
 
 func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
-	fmt.Printf("fillFromUpperCell depth = %d, depthIncrement = %d\n", depth, depthIncrement)
 	if upCell.downHashedLen >= depthIncrement {
 		cell.downHashedLen = upCell.downHashedLen - depthIncrement
 	} else {

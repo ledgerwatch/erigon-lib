@@ -139,7 +139,6 @@ func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
 func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) error {
 	for i, key := range plainKeys {
 		update := updates[i]
-		fmt.Printf("applyPlainUpdate [%x]=>[%s]\n", key, update)
 		if update.Flags&DELETE_UPDATE != 0 {
 			delete(ms.sm, string(key))
 		} else {
