@@ -91,7 +91,7 @@ func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
 	if ex.Flags&CODE_UPDATE != 0 {
 		copy(cell.CodeHash[:], ex.CodeHashOrStorage[:])
 	} else {
-		cell.CodeHash = [32]byte{}
+		copy(cell.CodeHash[:], EmptyCodeHash)
 	}
 	return nil
 }
@@ -139,6 +139,7 @@ func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
 func (ms *MockState) applyPlainUpdates(plainKeys [][]byte, updates []Update) error {
 	for i, key := range plainKeys {
 		update := updates[i]
+		fmt.Printf("applyPlainUpdate [%x]=>[%s]\n", key, update)
 		if update.Flags&DELETE_UPDATE != 0 {
 			delete(ms.sm, string(key))
 		} else {
@@ -553,10 +554,6 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 		//Storage("f5", "04", "9898").
 		Build()
 
-	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
-		t.Fatal(err)
-	}
-
 	renderUpdates := func(branchNodeUpdates map[string][]byte) {
 		var keys []string
 		for key := range branchNodeUpdates {
@@ -582,6 +579,9 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	roots := make([][]byte, 0)
 	branchNodeUpdatesOne := make(map[string][]byte)
 	for i := 0; i < len(updates); i++ {
+		if err := ms.applyPlainUpdates(plainKeys[i:i+1], updates[i:i+1]); err != nil {
+			t.Fatal(err)
+		}
 		branchNodeUpdates, err := trieOne.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
 		require.NoError(t, err)
 

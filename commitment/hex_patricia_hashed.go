@@ -142,6 +142,7 @@ func (cell *Cell) fillEmpty() {
 }
 
 func (cell *Cell) fillFromUpperCell(upCell *Cell, depth, depthIncrement int) {
+	fmt.Printf("fillFromUpperCell depth = %d, depthIncrement = %d\n", depth, depthIncrement)
 	if upCell.downHashedLen >= depthIncrement {
 		cell.downHashedLen = upCell.downHashedLen - depthIncrement
 	} else {
@@ -1256,17 +1257,17 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 
 			fmt.Printf("touched %t stored_hash %s\n", hph.touchMap[row]&(uint16(1)<<(nibble)) != 0, hex.EncodeToString(cell.h[:]))
 			var re string
-			if hph.touchMap[row]&(uint16(1)<<(nibble)) != 0 {
-				ch, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
-				if err != nil {
-					return nil, nil, err
-				}
-				re = "re"
-
-				cell.hl = 32
-				copy(cell.h[:], ch[1:])
-				cellHash = ch
+			//if hph.touchMap[row]&(uint16(1)<<(nibble)) != 0 {
+			ch, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
+			if err != nil {
+				return nil, nil, err
 			}
+			re = "re"
+
+			//cell.hl = 32
+			//copy(cell.h[:], ch[1:])
+			cellHash = ch
+			//}
 
 			if hph.trace {
 				fmt.Printf("%x: %scomputeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, re, row, nibble, depth, cellHash)
