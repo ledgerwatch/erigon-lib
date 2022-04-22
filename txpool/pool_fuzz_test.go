@@ -243,6 +243,7 @@ func fakeRlpTx(slot *types.TxSlot, data []byte) []byte {
 	p += rlp.EncodeU64(1, buf[p:])        //v
 	p += rlp.EncodeU64(1, buf[p:])        //r
 	p += rlp.EncodeU64(1, buf[p:])        //s
+	_ = p
 	return buf[:]
 }
 
@@ -494,6 +495,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 			},
 		}
 		err = pool.OnNewBlock(ctx, change, types.TxSlots{}, txs2, tx)
+		assert.NoError(err)
 		check(types.TxSlots{}, txs2, "fork1 mined")
 		checkNotify(types.TxSlots{}, txs2, "fork1 mined")
 

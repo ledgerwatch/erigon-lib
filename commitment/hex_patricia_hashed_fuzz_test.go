@@ -133,7 +133,7 @@ func Fuzz_ProcessUpdates_ArbitraryUpdateCount(f *testing.F) {
 			t.Fatalf("invalid root hash length: expected 32 bytes, got %v", len(rootHash))
 		}
 
-		branchNodeUpdates, err = hphAnother.ProcessUpdates(plainKeys, hashedKeys, updates)
+		_, err = hphAnother.ProcessUpdates(plainKeys, hashedKeys, updates)
 		if err != nil {
 			t.Fatal(err)
 		}
