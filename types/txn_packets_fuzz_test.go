@@ -1,6 +1,3 @@
-//go:build gofuzzbeta
-// +build gofuzzbeta
-
 package types
 
 import (

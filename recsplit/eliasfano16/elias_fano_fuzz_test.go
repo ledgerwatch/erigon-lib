@@ -1,6 +1,3 @@
-//go:build gofuzzbeta
-// +build gofuzzbeta
-
 /*
    Copyright 2021 Erigon contributors
 
@@ -23,7 +20,7 @@ import (
 	"testing"
 )
 
-// gotip test -trimpath -v -fuzz=FuzzEliasFano -fuzztime=10s ./recsplit
+// go test -trimpath -v -fuzz=FuzzEliasFano -fuzztime=10s ./recsplit
 
 func FuzzSingleEliasFano(f *testing.F) {
 	f.Fuzz(func(t *testing.T, in []byte) {

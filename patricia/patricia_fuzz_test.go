@@ -1,6 +1,3 @@
-//go:build gofuzzbeta
-// +build gofuzzbeta
-
 /*
    Copyright 2021 Erigon contributors
 
@@ -26,7 +23,7 @@ import (
 	"testing"
 )
 
-// gotip test -trimpath -v -fuzz=FuzzPatricia -fuzztime=10s ./patricia
+// go test -trimpath -v -fuzz=FuzzPatricia -fuzztime=10s ./patricia
 
 func FuzzPatricia(f *testing.F) {
 	f.Fuzz(func(t *testing.T, build []byte, test []byte) {

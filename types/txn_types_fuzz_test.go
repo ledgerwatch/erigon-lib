@@ -1,6 +1,3 @@
-//go:build gofuzzbeta
-// +build gofuzzbeta
-
 package types
 
 import (
@@ -9,14 +6,13 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 )
 
-// https://blog.golang.org/fuzz-beta
 // golang.org/s/draft-fuzzing-design
-//gotip doc testing
-//gotip doc testing.F
-//gotip doc testing.F.AddRemoteTxs
-//gotip doc testing.F.Fuzz
+//go doc testing
+//go doc testing.F
+//go doc testing.F.AddRemoteTxs
+//go doc testing.F.Fuzz
 
-// gotip test -trimpath -v -fuzz=Fuzz -fuzztime=10s ./txpool
+// go test -trimpath -v -fuzz=Fuzz -fuzztime=10s ./txpool
 
 //func init() {
 //	log.Root().SetHandler(log.LvlFilterHandler(log.LvlInfo, log.StderrHandler))
