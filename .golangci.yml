@@ -8,7 +8,7 @@ linters:
 #    - unconvert
     - predeclared
     - wastedassign
-    - thelper
+#    - thelper
     - gofmt
     - deadcode
     - errcheck
