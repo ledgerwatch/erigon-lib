@@ -133,7 +133,7 @@ func FuzzLongestMatch(f *testing.F) {
 		if len(m1) == len(m2) {
 			for i, m := range m1 {
 				mm := m2[i]
-				if m.Start != mm.Start || m.End != m.End {
+				if m.Start != mm.Start || m.End != mm.End {
 					t.Errorf("mismatch, expected %+v, got %+v", m, mm)
 				}
 			}
