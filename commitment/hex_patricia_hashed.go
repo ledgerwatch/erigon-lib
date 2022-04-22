@@ -1191,18 +1191,11 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			}
 			lastNibble = nibble + 1
 			cell := &hph.grid[row][nibble]
-			cellHash := make([]byte, cell.hl+1)
-			cellHash[0] = 160
-			copy(cellHash[1:], cell.h[:cell.hl])
 
-			//if hph.touchMap[row]&(uint16(1)<<(nibble)) != 0 {
-			ch, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
+			cellHash, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
 			if err != nil {
 				return nil, nil, err
 			}
-
-			cellHash = ch
-			//}
 
 			if hph.trace {
 				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
