@@ -83,7 +83,7 @@ func Fuzz_ProcessUpdates_ArbitraryUpdateCount(f *testing.F) {
 		keyMap := make(map[string]uint64)
 		i := 0
 		for i < len(build) {
-			keyLen := int(build[i]>>16) + 1
+			keyLen := int(build[i]>>4) + 1
 			valLen := int(build[i]&15) + 1
 			i++
 			var key []byte
