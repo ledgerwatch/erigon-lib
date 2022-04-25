@@ -44,7 +44,7 @@ jobs:
           skip-pkg-cache: true
           skip-build-cache: true
       - name: Install deps
-        if: matrix.os == 'windows-2019'
+        if: matrix.os == 'windows-2022'
         run: choco upgrade mingw cmake -y --no-progress
       - name: Test
         run: go test ./...
