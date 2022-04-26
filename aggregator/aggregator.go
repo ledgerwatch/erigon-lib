@@ -2084,7 +2084,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		var plainKeysReplacer func(branchData []byte, accountPlainKeys [][]byte, storagePlainKeys [][]byte, newData []byte) ([]byte, error)
 
 		switch a.hph.Variant() {
-		case commitment.VariantHexPatriciaTrie:
+		case commitment.VariantHexPatriciaTrie, commitment.VariantReducedHexPatriciaTrie:
 			plainKeysExtractor = commitment.ExtractPlainKeys
 			plainKeysReplacer = commitment.ReplacePlainKeys
 		case commitment.VariantBinPatriciaTrie:
@@ -2589,7 +2589,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 					return nil, err
 				}
 				// use current version without merge
-			case commitment.VariantHexPatriciaTrie:
+			case commitment.VariantHexPatriciaTrie, commitment.VariantReducedHexPatriciaTrie:
 				// try to merge previous (original) and current (branchNodeUpdate) into one update
 				mergedVal, err := commitment.MergeHexBranches(original, branchNodeUpdate, nil)
 				if err != nil {
