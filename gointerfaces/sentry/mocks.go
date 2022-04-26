@@ -33,10 +33,13 @@ var _ SentryServer = &SentryServerMock{}
 // 			PeerCountFunc: func(contextMoqParam context.Context, peerCountRequest *PeerCountRequest) (*PeerCountReply, error) {
 // 				panic("mock out the PeerCount method")
 // 			},
+// 			PeerEventsFunc: func(peerEventsRequest *PeerEventsRequest, sentry_PeerEventsServer Sentry_PeerEventsServer) error {
+// 				panic("mock out the PeerEvents method")
+// 			},
 // 			PeerMinBlockFunc: func(contextMoqParam context.Context, peerMinBlockRequest *PeerMinBlockRequest) (*emptypb.Empty, error) {
 // 				panic("mock out the PeerMinBlock method")
 // 			},
-// 			PeersFunc: func(peersRequest *PeersRequest, sentry_PeersServer Sentry_PeersServer) error {
+// 			PeersFunc: func(contextMoqParam context.Context, empty *emptypb.Empty) (*PeersReply, error) {
 // 				panic("mock out the Peers method")
 // 			},
 // 			PenalizePeerFunc: func(contextMoqParam context.Context, penalizePeerRequest *PenalizePeerRequest) (*emptypb.Empty, error) {
@@ -79,11 +82,14 @@ type SentryServerMock struct {
 	// PeerCountFunc mocks the PeerCount method.
 	PeerCountFunc func(contextMoqParam context.Context, peerCountRequest *PeerCountRequest) (*PeerCountReply, error)
 
+	// PeerEventsFunc mocks the PeerEvents method.
+	PeerEventsFunc func(peerEventsRequest *PeerEventsRequest, sentry_PeerEventsServer Sentry_PeerEventsServer) error
+
 	// PeerMinBlockFunc mocks the PeerMinBlock method.
 	PeerMinBlockFunc func(contextMoqParam context.Context, peerMinBlockRequest *PeerMinBlockRequest) (*emptypb.Empty, error)
 
 	// PeersFunc mocks the Peers method.
-	PeersFunc func(peersRequest *PeersRequest, sentry_PeersServer Sentry_PeersServer) error
+	PeersFunc func(contextMoqParam context.Context, empty *emptypb.Empty) (*PeersReply, error)
 
 	// PenalizePeerFunc mocks the PenalizePeer method.
 	PenalizePeerFunc func(contextMoqParam context.Context, penalizePeerRequest *PenalizePeerRequest) (*emptypb.Empty, error)
@@ -136,6 +142,13 @@ type SentryServerMock struct {
 			// PeerCountRequest is the peerCountRequest argument value.
 			PeerCountRequest *PeerCountRequest
 		}
+		// PeerEvents holds details about calls to the PeerEvents method.
+		PeerEvents []struct {
+			// PeerEventsRequest is the peerEventsRequest argument value.
+			PeerEventsRequest *PeerEventsRequest
+			// Sentry_PeerEventsServer is the sentry_PeerEventsServer argument value.
+			Sentry_PeerEventsServer Sentry_PeerEventsServer
+		}
 		// PeerMinBlock holds details about calls to the PeerMinBlock method.
 		PeerMinBlock []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -145,10 +158,10 @@ type SentryServerMock struct {
 		}
 		// Peers holds details about calls to the Peers method.
 		Peers []struct {
-			// PeersRequest is the peersRequest argument value.
-			PeersRequest *PeersRequest
-			// Sentry_PeersServer is the sentry_PeersServer argument value.
-			Sentry_PeersServer Sentry_PeersServer
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Empty is the empty argument value.
+			Empty *emptypb.Empty
 		}
 		// PenalizePeer holds details about calls to the PenalizePeer method.
 		PenalizePeer []struct {
@@ -200,6 +213,7 @@ type SentryServerMock struct {
 	lockMessages                           sync.RWMutex
 	lockNodeInfo                           sync.RWMutex
 	lockPeerCount                          sync.RWMutex
+	lockPeerEvents                         sync.RWMutex
 	lockPeerMinBlock                       sync.RWMutex
 	lockPeers                              sync.RWMutex
 	lockPenalizePeer                       sync.RWMutex
@@ -366,6 +380,44 @@ func (mock *SentryServerMock) PeerCountCalls() []struct {
 	return calls
 }
 
+// PeerEvents calls PeerEventsFunc.
+func (mock *SentryServerMock) PeerEvents(peerEventsRequest *PeerEventsRequest, sentry_PeerEventsServer Sentry_PeerEventsServer) error {
+	callInfo := struct {
+		PeerEventsRequest       *PeerEventsRequest
+		Sentry_PeerEventsServer Sentry_PeerEventsServer
+	}{
+		PeerEventsRequest:       peerEventsRequest,
+		Sentry_PeerEventsServer: sentry_PeerEventsServer,
+	}
+	mock.lockPeerEvents.Lock()
+	mock.calls.PeerEvents = append(mock.calls.PeerEvents, callInfo)
+	mock.lockPeerEvents.Unlock()
+	if mock.PeerEventsFunc == nil {
+		var (
+			errOut error
+		)
+		return errOut
+	}
+	return mock.PeerEventsFunc(peerEventsRequest, sentry_PeerEventsServer)
+}
+
+// PeerEventsCalls gets all the calls that were made to PeerEvents.
+// Check the length with:
+//     len(mockedSentryServer.PeerEventsCalls())
+func (mock *SentryServerMock) PeerEventsCalls() []struct {
+	PeerEventsRequest       *PeerEventsRequest
+	Sentry_PeerEventsServer Sentry_PeerEventsServer
+} {
+	var calls []struct {
+		PeerEventsRequest       *PeerEventsRequest
+		Sentry_PeerEventsServer Sentry_PeerEventsServer
+	}
+	mock.lockPeerEvents.RLock()
+	calls = mock.calls.PeerEvents
+	mock.lockPeerEvents.RUnlock()
+	return calls
+}
+
 // PeerMinBlock calls PeerMinBlockFunc.
 func (mock *SentryServerMock) PeerMinBlock(contextMoqParam context.Context, peerMinBlockRequest *PeerMinBlockRequest) (*emptypb.Empty, error) {
 	callInfo := struct {
@@ -406,36 +458,37 @@ func (mock *SentryServerMock) PeerMinBlockCalls() []struct {
 }
 
 // Peers calls PeersFunc.
-func (mock *SentryServerMock) Peers(peersRequest *PeersRequest, sentry_PeersServer Sentry_PeersServer) error {
+func (mock *SentryServerMock) Peers(contextMoqParam context.Context, empty *emptypb.Empty) (*PeersReply, error) {
 	callInfo := struct {
-		PeersRequest       *PeersRequest
-		Sentry_PeersServer Sentry_PeersServer
+		ContextMoqParam context.Context
+		Empty           *emptypb.Empty
 	}{
-		PeersRequest:       peersRequest,
-		Sentry_PeersServer: sentry_PeersServer,
+		ContextMoqParam: contextMoqParam,
+		Empty:           empty,
 	}
 	mock.lockPeers.Lock()
 	mock.calls.Peers = append(mock.calls.Peers, callInfo)
 	mock.lockPeers.Unlock()
 	if mock.PeersFunc == nil {
 		var (
-			errOut error
+			peersReplyOut *PeersReply
+			errOut        error
 		)
-		return errOut
+		return peersReplyOut, errOut
 	}
-	return mock.PeersFunc(peersRequest, sentry_PeersServer)
+	return mock.PeersFunc(contextMoqParam, empty)
 }
 
 // PeersCalls gets all the calls that were made to Peers.
 // Check the length with:
 //     len(mockedSentryServer.PeersCalls())
 func (mock *SentryServerMock) PeersCalls() []struct {
-	PeersRequest       *PeersRequest
-	Sentry_PeersServer Sentry_PeersServer
+	ContextMoqParam context.Context
+	Empty           *emptypb.Empty
 } {
 	var calls []struct {
-		PeersRequest       *PeersRequest
-		Sentry_PeersServer Sentry_PeersServer
+		ContextMoqParam context.Context
+		Empty           *emptypb.Empty
 	}
 	mock.lockPeers.RLock()
 	calls = mock.calls.Peers
@@ -725,10 +778,13 @@ var _ SentryClient = &SentryClientMock{}
 // 			PeerCountFunc: func(ctx context.Context, in *PeerCountRequest, opts ...grpc.CallOption) (*PeerCountReply, error) {
 // 				panic("mock out the PeerCount method")
 // 			},
+// 			PeerEventsFunc: func(ctx context.Context, in *PeerEventsRequest, opts ...grpc.CallOption) (Sentry_PeerEventsClient, error) {
+// 				panic("mock out the PeerEvents method")
+// 			},
 // 			PeerMinBlockFunc: func(ctx context.Context, in *PeerMinBlockRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 // 				panic("mock out the PeerMinBlock method")
 // 			},
-// 			PeersFunc: func(ctx context.Context, in *PeersRequest, opts ...grpc.CallOption) (Sentry_PeersClient, error) {
+// 			PeersFunc: func(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error) {
 // 				panic("mock out the Peers method")
 // 			},
 // 			PenalizePeerFunc: func(ctx context.Context, in *PenalizePeerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
@@ -768,11 +824,14 @@ type SentryClientMock struct {
 	// PeerCountFunc mocks the PeerCount method.
 	PeerCountFunc func(ctx context.Context, in *PeerCountRequest, opts ...grpc.CallOption) (*PeerCountReply, error)
 
+	// PeerEventsFunc mocks the PeerEvents method.
+	PeerEventsFunc func(ctx context.Context, in *PeerEventsRequest, opts ...grpc.CallOption) (Sentry_PeerEventsClient, error)
+
 	// PeerMinBlockFunc mocks the PeerMinBlock method.
 	PeerMinBlockFunc func(ctx context.Context, in *PeerMinBlockRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 
 	// PeersFunc mocks the Peers method.
-	PeersFunc func(ctx context.Context, in *PeersRequest, opts ...grpc.CallOption) (Sentry_PeersClient, error)
+	PeersFunc func(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error)
 
 	// PenalizePeerFunc mocks the PenalizePeer method.
 	PenalizePeerFunc func(ctx context.Context, in *PenalizePeerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -830,6 +889,15 @@ type SentryClientMock struct {
 			// Opts is the opts argument value.
 			Opts []grpc.CallOption
 		}
+		// PeerEvents holds details about calls to the PeerEvents method.
+		PeerEvents []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// In is the in argument value.
+			In *PeerEventsRequest
+			// Opts is the opts argument value.
+			Opts []grpc.CallOption
+		}
 		// PeerMinBlock holds details about calls to the PeerMinBlock method.
 		PeerMinBlock []struct {
 			// Ctx is the ctx argument value.
@@ -844,7 +912,7 @@ type SentryClientMock struct {
 			// Ctx is the ctx argument value.
 			Ctx context.Context
 			// In is the in argument value.
-			In *PeersRequest
+			In *emptypb.Empty
 			// Opts is the opts argument value.
 			Opts []grpc.CallOption
 		}
@@ -907,6 +975,7 @@ type SentryClientMock struct {
 	lockMessages                 sync.RWMutex
 	lockNodeInfo                 sync.RWMutex
 	lockPeerCount                sync.RWMutex
+	lockPeerEvents               sync.RWMutex
 	lockPeerMinBlock             sync.RWMutex
 	lockPeers                    sync.RWMutex
 	lockPenalizePeer             sync.RWMutex
@@ -1089,6 +1158,49 @@ func (mock *SentryClientMock) PeerCountCalls() []struct {
 	return calls
 }
 
+// PeerEvents calls PeerEventsFunc.
+func (mock *SentryClientMock) PeerEvents(ctx context.Context, in *PeerEventsRequest, opts ...grpc.CallOption) (Sentry_PeerEventsClient, error) {
+	callInfo := struct {
+		Ctx  context.Context
+		In   *PeerEventsRequest
+		Opts []grpc.CallOption
+	}{
+		Ctx:  ctx,
+		In:   in,
+		Opts: opts,
+	}
+	mock.lockPeerEvents.Lock()
+	mock.calls.PeerEvents = append(mock.calls.PeerEvents, callInfo)
+	mock.lockPeerEvents.Unlock()
+	if mock.PeerEventsFunc == nil {
+		var (
+			sentry_PeerEventsClientOut Sentry_PeerEventsClient
+			errOut                     error
+		)
+		return sentry_PeerEventsClientOut, errOut
+	}
+	return mock.PeerEventsFunc(ctx, in, opts...)
+}
+
+// PeerEventsCalls gets all the calls that were made to PeerEvents.
+// Check the length with:
+//     len(mockedSentryClient.PeerEventsCalls())
+func (mock *SentryClientMock) PeerEventsCalls() []struct {
+	Ctx  context.Context
+	In   *PeerEventsRequest
+	Opts []grpc.CallOption
+} {
+	var calls []struct {
+		Ctx  context.Context
+		In   *PeerEventsRequest
+		Opts []grpc.CallOption
+	}
+	mock.lockPeerEvents.RLock()
+	calls = mock.calls.PeerEvents
+	mock.lockPeerEvents.RUnlock()
+	return calls
+}
+
 // PeerMinBlock calls PeerMinBlockFunc.
 func (mock *SentryClientMock) PeerMinBlock(ctx context.Context, in *PeerMinBlockRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	callInfo := struct {
@@ -1133,10 +1245,10 @@ func (mock *SentryClientMock) PeerMinBlockCalls() []struct {
 }
 
 // Peers calls PeersFunc.
-func (mock *SentryClientMock) Peers(ctx context.Context, in *PeersRequest, opts ...grpc.CallOption) (Sentry_PeersClient, error) {
+func (mock *SentryClientMock) Peers(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error) {
 	callInfo := struct {
 		Ctx  context.Context
-		In   *PeersRequest
+		In   *emptypb.Empty
 		Opts []grpc.CallOption
 	}{
 		Ctx:  ctx,
@@ -1148,10 +1260,10 @@ func (mock *SentryClientMock) Peers(ctx context.Context, in *PeersRequest, opts 
 	mock.lockPeers.Unlock()
 	if mock.PeersFunc == nil {
 		var (
-			sentry_PeersClientOut Sentry_PeersClient
-			errOut                error
+			peersReplyOut *PeersReply
+			errOut        error
 		)
-		return sentry_PeersClientOut, errOut
+		return peersReplyOut, errOut
 	}
 	return mock.PeersFunc(ctx, in, opts...)
 }
@@ -1161,12 +1273,12 @@ func (mock *SentryClientMock) Peers(ctx context.Context, in *PeersRequest, opts 
 //     len(mockedSentryClient.PeersCalls())
 func (mock *SentryClientMock) PeersCalls() []struct {
 	Ctx  context.Context
-	In   *PeersRequest
+	In   *emptypb.Empty
 	Opts []grpc.CallOption
 } {
 	var calls []struct {
 		Ctx  context.Context
-		In   *PeersRequest
+		In   *emptypb.Empty
 		Opts []grpc.CallOption
 	}
 	mock.lockPeers.RLock()
