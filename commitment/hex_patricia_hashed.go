@@ -843,7 +843,6 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 		if hph.trace {
 			fmt.Printf("needUnfolding root, rootChecked = %t\n", hph.rootChecked)
 		}
-		//hph.activeRows++
 		cell = &hph.root
 		if cell.downHashedLen == 0 && cell.hl == 0 && !hph.rootChecked {
 			// Need to attempt to unfold the root
@@ -885,11 +884,7 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 }
 
 func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
-	key := hph.currentKey[:hph.currentKeyLen]
-	//if len(key) == 0 {
-	//	return nil
-	//}
-	branchData, err := hph.branchFn(hexToCompact(key))
+	branchData, err := hph.branchFn(hexToCompact(hph.currentKey[:hph.currentKeyLen]))
 	if err != nil {
 		return err
 	}
@@ -1042,10 +1037,6 @@ func (hph *HexPatriciaHashed) needFolding(hashedKey []byte) bool {
 // (in other words until the needFolding function returns 0)
 func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 	updateKeyLen := hph.currentKeyLen
-	//if updateKeyLen == 0 {
-	//	hph.activeRows--
-	//	return nil, nil, nil
-	//}
 	if hph.activeRows == 0 {
 		return nil, nil, fmt.Errorf("cannot fold - no active rows")
 	}
@@ -1200,7 +1191,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			if hph.trace {
 				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
 			}
-			if _, err := hph.keccak2.Write(cellHash); err != nil {
+			if _, err = hph.keccak2.Write(cellHash); err != nil {
 				return nil, nil, err
 			}
 			if bitmap&bit != 0 {
@@ -1321,19 +1312,10 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 
 func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
 	var cell *Cell
-	var col int
-	var depth int
+	var col, depth int
 	if hph.activeRows == 0 {
-		//if hph.root.apl == 0 {
 		hph.activeRows++
-		//} else {
-		//	//Update the root
-		//	cell = &hph.root
-		//hph.rootTouched = true
-		//hph.rootPresent = true
-		//}
 	}
-	//} else {
 	row := hph.activeRows - 1
 	depth = hph.depths[hph.activeRows-1]
 	col = int(hashedKey[hph.currentKeyLen])
@@ -1343,7 +1325,6 @@ func (hph *HexPatriciaHashed) updateAccount(plainKey, hashedKey []byte) *Cell {
 	if hph.trace {
 		fmt.Printf("updateAccount setting (%d, %x), depth=%d\n", row, col, depth)
 	}
-	//}
 	if cell.downHashedLen == 0 {
 		copy(cell.downHashedKey[:], hashedKey[depth:])
 		cell.downHashedLen = len(hashedKey) - depth
@@ -1388,16 +1369,10 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey, hashedKey, value []byte) {
 	if hph.trace {
 		fmt.Printf("updateStorage, activeRows = %d\n", hph.activeRows)
 	}
-	var col int
-	var depth int
+	var col, depth int
 	var cell *Cell
 	if hph.activeRows == 0 {
-		// Update the root
 		hph.activeRows++
-		//cell = &hph.root
-		//hph.rootTouched = true
-		//hph.rootPresent = true
-		//} else {
 	}
 	depth = hph.depths[hph.activeRows-1]
 	col = int(hashedKey[hph.currentKeyLen])
@@ -1407,7 +1382,6 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey, hashedKey, value []byte) {
 	if hph.trace {
 		fmt.Printf("updateStorage setting (%d, %x), touchMap[%d]=%016b, depth=%d\n", hph.activeRows-1, col, hph.activeRows-1, hph.touchMap[hph.activeRows-1], depth)
 	}
-	//}
 	if cell.downHashedLen == 0 {
 		copy(cell.downHashedKey[:], hashedKey[depth:])
 		cell.downHashedLen = len(hashedKey) - depth
@@ -1428,10 +1402,6 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey, hashedKey, value []byte) {
 }
 
 func (hph *HexPatriciaHashed) RootHash() ([]byte, error) {
-	//if hph.root.hl > 0 {
-	//	return hph.root.h[:hph.root.hl], nil
-	//}
-
 	hash, err := hph.computeCellHash(&hph.root, 0, nil)
 	if err != nil {
 		return nil, err
