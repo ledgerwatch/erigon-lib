@@ -172,17 +172,17 @@ type StatsReply struct {
 	//   - ensure all pieces hashes available
 	//   - validate files after crush
 	//   - when all metadata ready - can start download/upload
-	MetadataReady    int32  `protobuf:"varint,1,opt,name=metadataReady,proto3" json:"metadataReady,omitempty"`
-	FilesTotal       int32  `protobuf:"varint,2,opt,name=filesTotal,proto3" json:"filesTotal,omitempty"`
-	PeersTotal       int32  `protobuf:"varint,3,opt,name=peersTotal,proto3" json:"peersTotal,omitempty"`
-	PeersUnique      int32  `protobuf:"varint,4,opt,name=peersUnique,proto3" json:"peersUnique,omitempty"`
-	ConnectionsTotal uint64 `protobuf:"varint,5,opt,name=connectionsTotal,proto3" json:"connectionsTotal,omitempty"`
-	Completed        bool   `protobuf:"varint,6,opt,name=completed,proto3" json:"completed,omitempty"`
-	Progress         int32  `protobuf:"varint,7,opt,name=progress,proto3" json:"progress,omitempty"`
-	BytesCompleted   uint64 `protobuf:"varint,8,opt,name=bytesCompleted,proto3" json:"bytesCompleted,omitempty"`
-	BytesTotal       uint64 `protobuf:"varint,9,opt,name=bytesTotal,proto3" json:"bytesTotal,omitempty"`
-	UploadRate       uint64 `protobuf:"varint,10,opt,name=uploadRate,proto3" json:"uploadRate,omitempty"`     // bytes/sec
-	DownloadRate     uint64 `protobuf:"varint,11,opt,name=downloadRate,proto3" json:"downloadRate,omitempty"` // bytes/sec
+	MetadataReady    int32   `protobuf:"varint,1,opt,name=metadataReady,proto3" json:"metadataReady,omitempty"`
+	FilesTotal       int32   `protobuf:"varint,2,opt,name=filesTotal,proto3" json:"filesTotal,omitempty"`
+	PeersTotal       int32   `protobuf:"varint,3,opt,name=peersTotal,proto3" json:"peersTotal,omitempty"`
+	PeersUnique      int32   `protobuf:"varint,4,opt,name=peersUnique,proto3" json:"peersUnique,omitempty"`
+	ConnectionsTotal uint64  `protobuf:"varint,5,opt,name=connectionsTotal,proto3" json:"connectionsTotal,omitempty"`
+	Completed        bool    `protobuf:"varint,6,opt,name=completed,proto3" json:"completed,omitempty"`
+	Progress         float32 `protobuf:"fixed32,7,opt,name=progress,proto3" json:"progress,omitempty"`
+	BytesCompleted   uint64  `protobuf:"varint,8,opt,name=bytesCompleted,proto3" json:"bytesCompleted,omitempty"`
+	BytesTotal       uint64  `protobuf:"varint,9,opt,name=bytesTotal,proto3" json:"bytesTotal,omitempty"`
+	UploadRate       uint64  `protobuf:"varint,10,opt,name=uploadRate,proto3" json:"uploadRate,omitempty"`     // bytes/sec
+	DownloadRate     uint64  `protobuf:"varint,11,opt,name=downloadRate,proto3" json:"downloadRate,omitempty"` // bytes/sec
 }
 
 func (x *StatsReply) Reset() {
@@ -259,7 +259,7 @@ func (x *StatsReply) GetCompleted() bool {
 	return false
 }
 
-func (x *StatsReply) GetProgress() int32 {
+func (x *StatsReply) GetProgress() float32 {
 	if x != nil {
 		return x.Progress
 	}
@@ -328,7 +328,7 @@ var file_downloader_downloader_proto_rawDesc = []byte{
 	0x74, 0x61, 0x6c, 0x12, 0x1c, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x70, 0x6c, 0x65, 0x74, 0x65, 0x64,
 	0x18, 0x06, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x63, 0x6f, 0x6d, 0x70, 0x6c, 0x65, 0x74, 0x65,
 	0x64, 0x12, 0x1a, 0x0a, 0x08, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x65, 0x73, 0x73, 0x18, 0x07, 0x20,
-	0x01, 0x28, 0x05, 0x52, 0x08, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x65, 0x73, 0x73, 0x12, 0x26, 0x0a,
+	0x01, 0x28, 0x02, 0x52, 0x08, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x65, 0x73, 0x73, 0x12, 0x26, 0x0a,
 	0x0e, 0x62, 0x79, 0x74, 0x65, 0x73, 0x43, 0x6f, 0x6d, 0x70, 0x6c, 0x65, 0x74, 0x65, 0x64, 0x18,
 	0x08, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0e, 0x62, 0x79, 0x74, 0x65, 0x73, 0x43, 0x6f, 0x6d, 0x70,
 	0x6c, 0x65, 0x74, 0x65, 0x64, 0x12, 0x1e, 0x0a, 0x0a, 0x62, 0x79, 0x74, 0x65, 0x73, 0x54, 0x6f,
