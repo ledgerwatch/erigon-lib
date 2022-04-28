@@ -727,7 +727,8 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 	depth := hph.depths[hph.activeRows-1]
 	var branchData []byte
 	var bitmapBuf [4]byte
-	updateKey := hexToCompact(hph.currentKey[:updateKeyLen])
+	// updateKey, _ := bitstring(hph.currentKey[:updateKeyLen]).reconstructHex()
+	updateKey := bitstring(hph.currentKey[:updateKeyLen])
 	if hph.trace {
 		fmt.Printf("touchMap[%d]=%016b, afterMap[%d]=%016b\n", row, hph.touchMap[row], row, hph.afterMap[row])
 	}

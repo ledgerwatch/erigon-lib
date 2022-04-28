@@ -644,9 +644,13 @@ func newBitstring(key []byte) bitstring {
 	return bits
 }
 
-func bitstringWithPadding(key []byte, padding int) bitstring {
+func bitstringWithPadding(key []byte, _ int) bitstring {
 	bs := newBitstring(key)
-	bs = bs[:len(bs)-padding]
+	if last := key[len(key)-1]; last&0xf0 != 0 {
+		padding := int(0xf0 ^ last)
+		bs = bs[:len(bs)-8-padding]
+	}
+	// bs = bs[:len(bs)-padding-1]
 	return bs
 }
 
@@ -713,7 +717,8 @@ func (b bitstring) reconstructHex() (re []byte, padding int) {
 	if !ok {
 		panic(fmt.Errorf("reconstruct failed: padding %d padded size %d", padding, len(pd)))
 	}
-	return append(re, last), padding
+	pad := byte(padding | 0xf0)
+	return append(re, last, pad), padding
 }
 
 func (b bitstring) readByte(offsetBits int) (byte, bool) {
