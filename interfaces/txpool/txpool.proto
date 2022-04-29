@@ -32,14 +32,14 @@ message OnAddReply {
 
 message AllRequest {}
 message AllReply {
-  enum Type {
+  enum TxnType {
     PENDING = 0; // All currently processable transactions
     QUEUED = 1;  // Queued but non-processable transactions
     BASE_FEE = 2;  // BaseFee not enough baseFee non-processable transactions
   }
   message Tx {
-    Type type = 1;
-    bytes sender = 2;
+    TxnType txnType = 1;
+    types.H160 sender = 2;
     bytes rlpTx = 3;
   }
   repeated Tx txs = 1;
@@ -47,7 +47,7 @@ message AllReply {
 
 message PendingReply {
   message Tx {
-    bytes sender = 1;
+    types.H160 sender = 1;
     bytes rlpTx = 2;
     bool isLocal = 3;
   }
