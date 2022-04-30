@@ -332,8 +332,9 @@ type RwCursorDupSort interface {
 	CursorDupSort
 	RwCursor
 
-	DeleteCurrentDuplicates() error    // DeleteCurrentDuplicates - deletes all of the data items for the current key
-	AppendDup(key, value []byte) error // AppendDup - same as Append, but for sorted dup data
+	PutNoDupData(key, value []byte) error // PutNoDupData - inserts key without dupsort
+	DeleteCurrentDuplicates() error       // DeleteCurrentDuplicates - deletes all of the data items for the current key
+	AppendDup(key, value []byte) error    // AppendDup - same as Append, but for sorted dup data
 }
 
 var ErrNotSupported = errors.New("not supported")
