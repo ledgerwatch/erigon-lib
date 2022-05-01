@@ -48,9 +48,21 @@ func TestDomian(t *testing.T) {
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
 	defer tx.Rollback()
+	d.SetTx(tx)
 
 	d.SetBlockNum(1)
-	d.SetTxNum(1)
-	d.SetTx(tx)
+	d.SetTxNum(2)
+	err = d.Put([]byte("key1"), []byte("value1"))
+	require.NoError(t, err)
+
+	d.SetBlockNum(1)
+	d.SetTxNum(3)
+	err = d.Put([]byte("key2"), []byte("value2.1"))
+	require.NoError(t, err)
+
+	d.SetBlockNum(2)
+	d.SetTxNum(6)
+	err = d.Put([]byte("key1"), []byte("value1.2"))
+	require.NoError(t, err)
 
 }
