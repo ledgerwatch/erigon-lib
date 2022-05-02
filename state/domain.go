@@ -17,39 +17,54 @@
 package state
 
 import (
+	"context"
 	"encoding/binary"
+	"fmt"
+	"path/filepath"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/recsplit"
+	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
+	"github.com/ledgerwatch/log/v3"
 )
 
 // Domain is a part of the state (examples are Accounts, Storage, Code)
 type Domain struct {
+	dir             string // Directory where static files are created
 	aggregationStep uint64
 	filenameBase    string
 	valuesTable     string
 	keysTable       string // Needs to be table with DupSort
 	historyTable    string
 	indexTable      string // Needs to be table with DupSort
+	blockTxTable    string // Mapping blockNum => start txNum
 	tx              kv.RwTx
 	blockNum        uint64
+	startTxNum      uint64
 	txNum           uint64
 }
 
 func NewDomain(
+	dir string,
 	aggregationStep uint64,
 	filenameBase string,
 	valuesTable string,
 	keysTable string,
 	historyTable string,
 	indexTable string,
+	blockTxTable string,
 ) *Domain {
 	return &Domain{
+		dir:             dir,
 		aggregationStep: aggregationStep,
 		filenameBase:    filenameBase,
 		valuesTable:     valuesTable,
 		keysTable:       keysTable,
 		historyTable:    historyTable,
 		indexTable:      indexTable,
+		blockTxTable:    blockTxTable,
 	}
 }
 
@@ -57,8 +72,17 @@ func (d *Domain) SetTx(tx kv.RwTx) {
 	d.tx = tx
 }
 
-func (d *Domain) SetBlockNum(blockNum uint64) {
+func (d *Domain) SetBlockNum(blockNum uint64, startTxNum uint64) error {
 	d.blockNum = blockNum
+	d.startTxNum = startTxNum
+	var blockKey [8]byte
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(blockKey[:], blockNum)
+	binary.BigEndian.PutUint64(txKey[:], startTxNum)
+	if err := d.tx.Put(d.blockTxTable, blockKey[:], txKey[:]); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *Domain) SetTxNum(txNum uint64) {
@@ -72,6 +96,7 @@ func (d *Domain) get(key []byte) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	defer keyCursor.Close()
 	foundInvStep, err := keyCursor.SeekBothRange(key, invertedStep[:])
 	if err != nil {
 		return nil, false, err
@@ -145,4 +170,241 @@ func (d *Domain) Delete(key []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (d *Domain) IteratePrefix(prefix []byte, it func(k []byte)) error {
+	return nil
+}
+
+// Collation is the set of compressors created after aggregation
+type Collation struct {
+	valuesPath   string
+	valuesComp   *compress.Compressor
+	valuesCount  int
+	blockTxPath  string
+	blockTxEf    *eliasfano32.EliasFano
+	historyPath  string
+	historyComp  *compress.Compressor
+	historyCount int
+	indexPath    string
+	indexBitmaps map[string]*roaring64.Bitmap
+}
+
+// collate gathers domain changes over the specified step, using read-only transaction,
+// and returns compressor, which needs to be compressed and closed later
+// This process can be performed concurrently with modifications of the state domain
+func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
+	var valuesComp, historyComp, indexComp *compress.Compressor
+	var blockTxEf *eliasfano32.EliasFano
+	var err error
+	closeComp := true
+	defer func() {
+		if closeComp {
+			if valuesComp != nil {
+				valuesComp.Close()
+			}
+			if historyComp != nil {
+				historyComp.Close()
+			}
+			if indexComp != nil {
+				indexComp.Close()
+			}
+		}
+	}()
+	blockFrom := step * d.aggregationStep
+	blockTo := (step + 1) * d.aggregationStep
+	valuesPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
+	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+		return Collation{}, fmt.Errorf("create value compressor: %w", err)
+	}
+	keyCursor, err := roTx.CursorDupSort(d.keysTable)
+	if err != nil {
+		return Collation{}, fmt.Errorf("create keys cursor: %w", err)
+	}
+	defer keyCursor.Close()
+	var k []byte
+	valuesCount := 0
+	for k, _, err = keyCursor.First(); err == nil && k != nil; k, _, err = keyCursor.Next() {
+		invertedStep, err := keyCursor.LastDup()
+		if err != nil {
+			return Collation{}, fmt.Errorf("find last key for aggregation step k=[%x]: %w", k, err)
+		}
+		s := ^binary.BigEndian.Uint64(invertedStep)
+		if s == step {
+			keySuffix := make([]byte, len(k)+8)
+			copy(keySuffix, k)
+			copy(keySuffix[len(k):], invertedStep)
+			v, err := roTx.GetOne(d.valuesTable, keySuffix)
+			if err != nil {
+				return Collation{}, fmt.Errorf("find last value for aggregation step k=[%x]: %w", k, err)
+			}
+			if err = valuesComp.AddUncompressedWord(k); err != nil {
+				return Collation{}, fmt.Errorf("add values key [%x]: %w", k, err)
+			}
+			valuesCount++ // Only counting keys, not values
+			if err = valuesComp.AddUncompressedWord(v); err != nil {
+				return Collation{}, fmt.Errorf("add values val [%x]=>[%x]: %w", k, v, err)
+			}
+		}
+	}
+	if err != nil {
+		return Collation{}, fmt.Errorf("iterate over keys cursor: %w", err)
+	}
+	var blockKey [8]byte
+	binary.BigEndian.PutUint64(blockKey[:], blockFrom)
+	blockTxCursor, err := roTx.Cursor(d.blockTxTable)
+	if err != nil {
+		return Collation{}, fmt.Errorf("create blockTx cursor: %w", err)
+	}
+	defer blockTxCursor.Close()
+	var v []byte
+	var txFrom, txTo, maxTxNum uint64
+	// First loop to compute maxTxNum
+	for k, v, err = blockTxCursor.Seek(blockKey[:]); err == nil && k != nil; k, v, err = blockTxCursor.Next() {
+		blockNum := binary.BigEndian.Uint64(k)
+		startTx := binary.BigEndian.Uint64(v)
+		if blockNum == blockFrom {
+			txFrom = startTx
+		}
+		if blockNum == blockTo {
+			txTo = startTx
+		} else if startTx > maxTxNum {
+			maxTxNum = startTx
+		}
+		if blockNum >= blockTo {
+			break
+		}
+	}
+	if err != nil {
+		return Collation{}, fmt.Errorf("iterate over blockTx cursor: %w", err)
+	}
+	blockTxPath := filepath.Join(d.dir, fmt.Sprintf("%s-blocktx.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
+	blockTxEf = eliasfano32.NewEliasFano(blockFrom-blockTo, maxTxNum)
+	// Second loop to fill elias fano
+	for k, v, err = blockTxCursor.Seek(blockKey[:]); err == nil && k != nil; k, v, err = blockTxCursor.Next() {
+		blockNum := binary.BigEndian.Uint64(k)
+		startTx := binary.BigEndian.Uint64(v)
+		if blockNum >= blockTo {
+			break
+		}
+		blockTxEf.AddOffset(startTx)
+	}
+	historyPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
+	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+		return Collation{}, fmt.Errorf("create value compressor: %w", err)
+	}
+	historyCursor, err := roTx.Cursor(d.historyTable)
+	if err != nil {
+		return Collation{}, fmt.Errorf("create history cursor: %w", err)
+	}
+	defer historyCursor.Close()
+	indexBitmaps := map[string]*roaring64.Bitmap{}
+	historyCount := 0
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	for k, v, err = historyCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		if err = historyComp.AddUncompressedWord(k); err != nil {
+			return Collation{}, fmt.Errorf("add history key [%x]: %w", k, err)
+		}
+		if err = historyComp.AddUncompressedWord(v); err != nil {
+			return Collation{}, fmt.Errorf("add history val [%x]=>[%x]: %w", k, v, err)
+		}
+		historyCount++
+		var bitmap *roaring64.Bitmap
+		var ok bool
+		if bitmap, ok = indexBitmaps[string(k)]; !ok {
+			bitmap = roaring64.New()
+			indexBitmaps[string(k)] = bitmap
+		}
+		bitmap.Add(txNum)
+	}
+	if err != nil {
+		return Collation{}, fmt.Errorf("iterate over history cursor: %w", err)
+	}
+	closeComp = false
+	return Collation{
+		valuesPath:   valuesPath,
+		valuesComp:   valuesComp,
+		valuesCount:  valuesCount,
+		blockTxPath:  blockTxPath,
+		blockTxEf:    blockTxEf,
+		historyPath:  historyPath,
+		historyComp:  historyComp,
+		historyCount: historyCount,
+		indexBitmaps: indexBitmaps,
+	}, nil
+
+}
+
+func (d *Domain) aggregate(step uint64, collation Collation) error {
+	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.idx", d.filenameBase, step*d.aggregationStep, step*d.aggregationStep+d.aggregationStep-1))
+	if err := collation.valuesComp.Compress(); err != nil {
+		comp.Close()
+		return err
+	}
+	comp.Close()
+	var dcomp *compress.Decompressor
+	var err error
+	if dcomp, err = compress.NewDecompressor(compPath); err != nil {
+		return fmt.Errorf("aggregateStep %s decompressor: %w", d.filenameBase, err)
+	}
+	defer dcomp.Close()
+	var index *recsplit.Index
+	if index, err = buildIndex(dcomp, idxPath, d.dir, count); err != nil {
+		return fmt.Errorf("createDatAndIndex %s buildIndex: %w", d.filenameBase, err)
+	}
+	defer index.Close()
+	return nil
+}
+
+func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recsplit.Index, error) {
+	var rs *recsplit.RecSplit
+	var err error
+	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
+		KeyCount:   count,
+		Enums:      false,
+		BucketSize: 2000,
+		LeafSize:   8,
+		TmpDir:     dir,
+		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
+			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
+			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
+		IndexFile: idxPath,
+	}); err != nil {
+		return nil, err
+	}
+	defer rs.Close()
+	word := make([]byte, 0, 256)
+	var pos uint64
+	g := d.MakeGetter()
+	for {
+		g.Reset(0)
+		for g.HasNext() {
+			word, _ = g.Next(word[:0])
+			if err = rs.AddKey(word, pos); err != nil {
+				return nil, err
+			}
+			// Skip value
+			pos = g.Skip()
+		}
+		if err = rs.Build(); err != nil {
+			if rs.Collision() {
+				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
+				rs.ResetNextSalt()
+			} else {
+				return nil, err
+			}
+		} else {
+			break
+		}
+	}
+	var idx *recsplit.Index
+	if idx, err = recsplit.OpenIndex(idxPath); err != nil {
+		return nil, err
+	}
+	return idx, nil
 }
