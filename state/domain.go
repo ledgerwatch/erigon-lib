@@ -191,10 +191,9 @@ type Collation struct {
 }
 
 // collate gathers domain changes over the specified step, using read-only transaction,
-// and returns compressor, which needs to be compressed and closed later
-// This process can be performed concurrently with modifications of the state domain
+// and returns compressors, elias fano, and bitmaps
 func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
-	var valuesComp, historyComp, indexComp *compress.Compressor
+	var valuesComp, historyComp *compress.Compressor
 	var blockTxEf *eliasfano32.EliasFano
 	var err error
 	closeComp := true
@@ -206,20 +205,17 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 			if historyComp != nil {
 				historyComp.Close()
 			}
-			if indexComp != nil {
-				indexComp.Close()
-			}
 		}
 	}()
 	blockFrom := step * d.aggregationStep
 	blockTo := (step + 1) * d.aggregationStep
 	valuesPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
 	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
-		return Collation{}, fmt.Errorf("create value compressor: %w", err)
+		return Collation{}, fmt.Errorf("create %s values compressor: %w", d.filenameBase, err)
 	}
 	keyCursor, err := roTx.CursorDupSort(d.keysTable)
 	if err != nil {
-		return Collation{}, fmt.Errorf("create keys cursor: %w", err)
+		return Collation{}, fmt.Errorf("create %s keys cursor: %w", d.filenameBase, err)
 	}
 	defer keyCursor.Close()
 	var k []byte
@@ -227,7 +223,7 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 	for k, _, err = keyCursor.First(); err == nil && k != nil; k, _, err = keyCursor.Next() {
 		invertedStep, err := keyCursor.LastDup()
 		if err != nil {
-			return Collation{}, fmt.Errorf("find last key for aggregation step k=[%x]: %w", k, err)
+			return Collation{}, fmt.Errorf("find last %s key for aggregation step k=[%x]: %w", d.filenameBase, k, err)
 		}
 		s := ^binary.BigEndian.Uint64(invertedStep)
 		if s == step {
@@ -236,25 +232,25 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 			copy(keySuffix[len(k):], invertedStep)
 			v, err := roTx.GetOne(d.valuesTable, keySuffix)
 			if err != nil {
-				return Collation{}, fmt.Errorf("find last value for aggregation step k=[%x]: %w", k, err)
+				return Collation{}, fmt.Errorf("find last %s value for aggregation step k=[%x]: %w", d.filenameBase, k, err)
 			}
 			if err = valuesComp.AddUncompressedWord(k); err != nil {
-				return Collation{}, fmt.Errorf("add values key [%x]: %w", k, err)
+				return Collation{}, fmt.Errorf("add %s values key [%x]: %w", d.filenameBase, k, err)
 			}
 			valuesCount++ // Only counting keys, not values
 			if err = valuesComp.AddUncompressedWord(v); err != nil {
-				return Collation{}, fmt.Errorf("add values val [%x]=>[%x]: %w", k, v, err)
+				return Collation{}, fmt.Errorf("add %s values val [%x]=>[%x]: %w", d.filenameBase, k, v, err)
 			}
 		}
 	}
 	if err != nil {
-		return Collation{}, fmt.Errorf("iterate over keys cursor: %w", err)
+		return Collation{}, fmt.Errorf("iterate over %s keys cursor: %w", d.filenameBase, err)
 	}
 	var blockKey [8]byte
 	binary.BigEndian.PutUint64(blockKey[:], blockFrom)
 	blockTxCursor, err := roTx.Cursor(d.blockTxTable)
 	if err != nil {
-		return Collation{}, fmt.Errorf("create blockTx cursor: %w", err)
+		return Collation{}, fmt.Errorf("create %s blockTx cursor: %w", d.filenameBase, err)
 	}
 	defer blockTxCursor.Close()
 	var v []byte
@@ -276,7 +272,7 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 		}
 	}
 	if err != nil {
-		return Collation{}, fmt.Errorf("iterate over blockTx cursor: %w", err)
+		return Collation{}, fmt.Errorf("iterate over %s blockTx cursor: %w", d.filenameBase, err)
 	}
 	blockTxPath := filepath.Join(d.dir, fmt.Sprintf("%s-blocktx.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
 	blockTxEf = eliasfano32.NewEliasFano(blockFrom-blockTo, maxTxNum)
@@ -291,11 +287,11 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 	}
 	historyPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
 	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
-		return Collation{}, fmt.Errorf("create value compressor: %w", err)
+		return Collation{}, fmt.Errorf("create %s history compressor: %w", d.filenameBase, err)
 	}
 	historyCursor, err := roTx.Cursor(d.historyTable)
 	if err != nil {
-		return Collation{}, fmt.Errorf("create history cursor: %w", err)
+		return Collation{}, fmt.Errorf("create %s history cursor: %w", d.filenameBase, err)
 	}
 	defer historyCursor.Close()
 	indexBitmaps := map[string]*roaring64.Bitmap{}
@@ -308,10 +304,10 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 			break
 		}
 		if err = historyComp.AddUncompressedWord(k); err != nil {
-			return Collation{}, fmt.Errorf("add history key [%x]: %w", k, err)
+			return Collation{}, fmt.Errorf("add %s history key [%x]: %w", d.filenameBase, k, err)
 		}
 		if err = historyComp.AddUncompressedWord(v); err != nil {
-			return Collation{}, fmt.Errorf("add history val [%x]=>[%x]: %w", k, v, err)
+			return Collation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", d.filenameBase, k, v, err)
 		}
 		historyCount++
 		var bitmap *roaring64.Bitmap
@@ -323,7 +319,7 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 		bitmap.Add(txNum)
 	}
 	if err != nil {
-		return Collation{}, fmt.Errorf("iterate over history cursor: %w", err)
+		return Collation{}, fmt.Errorf("iterate over %s history cursor: %w", d.filenameBase, err)
 	}
 	closeComp = false
 	return Collation{
@@ -340,25 +336,57 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 
 }
 
-func (d *Domain) aggregate(step uint64, collation Collation) error {
-	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.idx", d.filenameBase, step*d.aggregationStep, step*d.aggregationStep+d.aggregationStep-1))
-	if err := collation.valuesComp.Compress(); err != nil {
-		comp.Close()
-		return err
+type StaticFiles struct {
+	valuesDecomp  *compress.Decompressor
+	valuesIdxPath string
+	valuesIdx     *recsplit.Index
+}
+
+// buildFiles performs potentially resource intensive operations of creating
+// static files and their indices
+func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
+	valuesComp := collation.valuesComp
+	historyComp := collation.historyComp
+	var valuesDecomp *compress.Decompressor
+	var valuesIdx *recsplit.Index
+	closeComp := true
+	defer func() {
+		if closeComp {
+			if valuesComp != nil {
+				valuesComp.Close()
+			}
+			if historyComp != nil {
+				historyComp.Close()
+			}
+			if valuesDecomp != nil {
+				valuesDecomp.Close()
+			}
+			if valuesIdx != nil {
+				valuesIdx.Close()
+			}
+		}
+	}()
+	blockFrom := step * d.aggregationStep
+	blockTo := (step + 1) * d.aggregationStep
+	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.idx", d.filenameBase, blockFrom, blockTo))
+	if err := valuesComp.Compress(); err != nil {
+		return StaticFiles{}, err
 	}
-	comp.Close()
-	var dcomp *compress.Decompressor
+	valuesComp.Close()
+	valuesComp = nil
 	var err error
-	if dcomp, err = compress.NewDecompressor(compPath); err != nil {
-		return fmt.Errorf("aggregateStep %s decompressor: %w", d.filenameBase, err)
+	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
+		return StaticFiles{}, fmt.Errorf("create %s values decompressor: %w", d.filenameBase, err)
 	}
-	defer dcomp.Close()
-	var index *recsplit.Index
-	if index, err = buildIndex(dcomp, idxPath, d.dir, count); err != nil {
-		return fmt.Errorf("createDatAndIndex %s buildIndex: %w", d.filenameBase, err)
+	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount); err != nil {
+		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
-	defer index.Close()
-	return nil
+	closeComp = false
+	return StaticFiles{
+		valuesDecomp:  valuesDecomp,
+		valuesIdxPath: valuesIdxPath,
+		valuesIdx:     valuesIdx,
+	}, nil
 }
 
 func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recsplit.Index, error) {
@@ -375,7 +403,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
 		IndexFile: idxPath,
 	}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create recsplit: %w", err)
 	}
 	defer rs.Close()
 	word := make([]byte, 0, 256)
@@ -386,7 +414,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 		for g.HasNext() {
 			word, _ = g.Next(word[:0])
 			if err = rs.AddKey(word, pos); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
 			}
 			// Skip value
 			pos = g.Skip()
@@ -396,7 +424,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
 			} else {
-				return nil, err
+				return nil, fmt.Errorf("build idx: %w", err)
 			}
 		} else {
 			break
@@ -404,7 +432,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 	}
 	var idx *recsplit.Index
 	if idx, err = recsplit.OpenIndex(idxPath); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open idx: %w", err)
 	}
 	return idx, nil
 }
