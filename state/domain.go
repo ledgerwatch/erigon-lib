@@ -17,9 +17,11 @@
 package state
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -181,7 +183,6 @@ type Collation struct {
 	valuesPath   string
 	valuesComp   *compress.Compressor
 	valuesCount  int
-	blockTxPath  string
 	blockTxEf    *eliasfano32.EliasFano
 	historyPath  string
 	historyComp  *compress.Compressor
@@ -274,7 +275,6 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 	if err != nil {
 		return Collation{}, fmt.Errorf("iterate over %s blockTx cursor: %w", d.filenameBase, err)
 	}
-	blockTxPath := filepath.Join(d.dir, fmt.Sprintf("%s-blocktx.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
 	blockTxEf = eliasfano32.NewEliasFano(blockFrom-blockTo, maxTxNum)
 	// Second loop to fill elias fano
 	for k, v, err = blockTxCursor.Seek(blockKey[:]); err == nil && k != nil; k, v, err = blockTxCursor.Next() {
@@ -326,7 +326,6 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 		valuesPath:   valuesPath,
 		valuesComp:   valuesComp,
 		valuesCount:  valuesCount,
-		blockTxPath:  blockTxPath,
 		blockTxEf:    blockTxEf,
 		historyPath:  historyPath,
 		historyComp:  historyComp,
@@ -338,8 +337,9 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 
 type StaticFiles struct {
 	valuesDecomp  *compress.Decompressor
-	valuesIdxPath string
 	valuesIdx     *recsplit.Index
+	historyDecomp *compress.Decompressor
+	historyIdx    *recsplit.Index
 }
 
 // buildFiles performs potentially resource intensive operations of creating
@@ -347,16 +347,14 @@ type StaticFiles struct {
 func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
 	valuesComp := collation.valuesComp
 	historyComp := collation.historyComp
-	var valuesDecomp *compress.Decompressor
-	var valuesIdx *recsplit.Index
+	var valuesDecomp, historyDecomp *compress.Decompressor
+	var valuesIdx, historyIdx *recsplit.Index
+	var blockTxFile *os.File
 	closeComp := true
 	defer func() {
 		if closeComp {
 			if valuesComp != nil {
 				valuesComp.Close()
-			}
-			if historyComp != nil {
-				historyComp.Close()
 			}
 			if valuesDecomp != nil {
 				valuesDecomp.Close()
@@ -364,28 +362,68 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 			if valuesIdx != nil {
 				valuesIdx.Close()
 			}
+			if blockTxFile != nil {
+				blockTxFile.Close()
+			}
+			if historyComp != nil {
+				historyComp.Close()
+			}
+			if historyDecomp != nil {
+				historyDecomp.Close()
+			}
+			if historyIdx != nil {
+				historyIdx.Close()
+			}
 		}
 	}()
 	blockFrom := step * d.aggregationStep
 	blockTo := (step + 1) * d.aggregationStep
 	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.idx", d.filenameBase, blockFrom, blockTo))
-	if err := valuesComp.Compress(); err != nil {
-		return StaticFiles{}, err
+	var err error
+	if err = valuesComp.Compress(); err != nil {
+		return StaticFiles{}, fmt.Errorf("compress %s values: %w", d.filenameBase, err)
 	}
 	valuesComp.Close()
 	valuesComp = nil
-	var err error
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
-		return StaticFiles{}, fmt.Errorf("create %s values decompressor: %w", d.filenameBase, err)
+		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
 	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
+	blockTxPath := filepath.Join(d.dir, fmt.Sprintf("%s-blocktx.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
+	if blockTxFile, err = os.Create(blockTxPath); err != nil {
+		return StaticFiles{}, fmt.Errorf("create %s blockTx file: %w", d.filenameBase, err)
+	}
+	blockTxW := bufio.NewWriter(blockTxFile)
+	if err = collation.blockTxEf.Write(blockTxW); err != nil {
+		return StaticFiles{}, fmt.Errorf("write %s blockTx file: %w", d.filenameBase, err)
+	}
+	if err = blockTxW.Flush(); err != nil {
+		return StaticFiles{}, fmt.Errorf("flush %s blockTx file: %w", d.filenameBase, err)
+	}
+	if err = blockTxFile.Close(); err != nil {
+		return StaticFiles{}, fmt.Errorf("close %s blockTx file: %w", d.filenameBase, err)
+	}
+	blockTxFile = nil
+	historyIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.idx", d.filenameBase, blockFrom, blockTo))
+	if err = historyComp.Compress(); err != nil {
+		return StaticFiles{}, fmt.Errorf("compress %s history: %w", d.filenameBase, err)
+	}
+	historyComp.Close()
+	historyComp = nil
+	if historyDecomp, err = compress.NewDecompressor(collation.historyPath); err != nil {
+		return StaticFiles{}, fmt.Errorf("open %s history decompressor: %w", d.filenameBase, err)
+	}
+	if historyIdx, err = buildIndex(historyDecomp, historyIdxPath, d.dir, collation.historyCount); err != nil {
+		return StaticFiles{}, fmt.Errorf("build %s history idx: %w", d.filenameBase, err)
+	}
 	closeComp = false
 	return StaticFiles{
 		valuesDecomp:  valuesDecomp,
-		valuesIdxPath: valuesIdxPath,
 		valuesIdx:     valuesIdx,
+		historyDecomp: historyDecomp,
+		historyIdx:    historyIdx,
 	}, nil
 }
 
