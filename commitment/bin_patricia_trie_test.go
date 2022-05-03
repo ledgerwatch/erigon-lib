@@ -388,7 +388,7 @@ func Test_bitstring_encode_decode_one_padding(t *testing.T) {
 	bs := bitstring{1}
 	re, pad := bs.reconstructHex()
 	require.EqualValues(t, 7, pad)
-	require.EqualValues(t, []byte{1 << 7}, re)
+	require.EqualValues(t, []byte{1 << 7, byte(0xf0 | pad)}, re)
 
 	bs2 := bitstringWithPadding(re, pad)
 	require.EqualValues(t, bs, bs2)

@@ -22,6 +22,7 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
@@ -1417,6 +1418,23 @@ func encodeU64(i uint64, to []byte) []byte {
 	}
 }
 
+var replaceHistory = make(map[string][]string)
+
+func addKeyTransition(from, to string) {
+	v, ok := replaceHistory[from]
+	if !ok {
+		v = make([]string, 0)
+	}
+	v = append(v, to)
+	replaceHistory[from] = v
+}
+
+var spkNotFound = make(map[string]int)
+
+func markKeyNotFound(k string) {
+	spkNotFound[k]++
+}
+
 // commitmentValTransform parses the value of the commitment record to extract references
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
 // the updated references
@@ -1474,7 +1492,10 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			g := cvt.pre[Storage][fileI].getterMerge
 			g.Reset(offset)
 			spkBuf, _ = g.Next(spkBuf[:0])
-			//fmt.Printf("replacing storage [%x] from [%x]\n", spkBuf, storagePlainKey)
+			// fmt.Printf("replacing storage [%x] from [%x]\n", spkBuf, storagePlainKey)
+		}
+		if bytes.Equal(storagePlainKey, wantedOfft) || bytes.Equal(spkBuf, wantedOfft) {
+			fmt.Printf("WantedOffset replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
 		}
 		// Lookup spkBuf in the post storage files
 		for j := len(cvt.post[Storage]); j > 0; j-- {
@@ -1488,8 +1509,26 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
-					//fmt.Printf("replaced storage [%x]=>[%x]\n", spkBuf, storagePlainKey)
+					addKeyTransition(hex.EncodeToString(spkBuf), hex.EncodeToString(storagePlainKey))
+					// fmt.Printf("replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
+					if bytes.Equal(storagePlainKey, wantedOfft) {
+						fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
+					}
 					break
+				} else {
+					if j == 1 {
+						markKeyNotFound(hex.EncodeToString(spkBuf))
+						hist, _ := replaceHistory[hex.EncodeToString(spkBuf)]
+						var str string
+						str = "{ "
+						for _, v := range hist {
+							str += fmt.Sprintf("%v, ", v)
+						}
+						str += "}"
+						if len(spkBuf) == 0 {
+							fmt.Printf("F[%d|%d] spk mismatch '%x' => %v, times %d\n", j-1, offset, spkBuf, str, spkNotFound[hex.EncodeToString(spkBuf)])
+						}
+					}
 				}
 			}
 		}
@@ -1500,6 +1539,14 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 	}
 	return transValBuf, nil
 }
+
+//var wanted = []byte{0, 3, 70,113}
+// var wanted = []byte{138, 1, 88, 39, 36, 194, 18, 220, 117, 172, 221, 139, 208, 27, 186, 172, 217, 9, 154, 251, 240, 124, 16, 228, 140, 98, 195, 47, 222, 155, 131, 231, 90, 114, 61, 225, 14, 230, 104, 165, 113, 52, 4, 143, 167, 207, 154, 237, 244, 218, 83, 204}
+var wanted = []byte{87, 13, 60, 125, 6, 210, 211, 78, 26, 212, 11, 71, 211, 176, 73, 96, 60, 95, 127, 73, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+
+var wantedOfft = encodeU64(6583, []byte{0})
+
+// var wantedOfft = encodeU64(38437, []byte{0})
 
 // commitmentValTransform parses the value of the commitment record to extract references
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
