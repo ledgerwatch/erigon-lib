@@ -26,22 +26,25 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.18.x
-      - name: Install dependencies
-        if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt update && sudo apt install build-essential
-        shell: bash
       - uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
           key: ${{ matrix.os }}-go-${{ hashFiles('**/go.sum') }}
+
+      - name: Install deps
+        if: matrix.os == 'ubuntu-20.04'
+        run: sudo apt update && sudo apt install build-essential
+        shell: bash
+      - name: Install deps
+        if: matrix.os == 'windows-2022'
+        run: choco upgrade mingw cmake -y --no-progress
+
       - name: Lint
         if: matrix.os == 'ubuntu-20.04'
         uses: golangci/golangci-lint-action@v3
         with:
           version: v1.45
-      - name: Install deps
-        if: matrix.os == 'windows-2022'
-        run: choco upgrade mingw cmake -y --no-progress
+          
       - name: Test win
         if: matrix.os == 'windows-2022'
         run: go test ./...
