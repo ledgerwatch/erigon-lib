@@ -1510,7 +1510,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
 					addKeyTransition(hex.EncodeToString(spkBuf), hex.EncodeToString(storagePlainKey))
-					fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String, item.startBlock, item.endBlock)
+					fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String(), item.startBlock, item.endBlock)
 					if bytes.Equal(storagePlainKey, wantedOfft) {
 						fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
 					}
