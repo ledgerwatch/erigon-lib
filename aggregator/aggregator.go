@@ -2089,6 +2089,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		})
 	}
 	var val []byte
+	var ii *byEndBlockItem
 	var startBlock uint64
 	a.files[fType].DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
@@ -2119,6 +2120,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 				}
 				startBlock = item.startBlock
 				atomic.AddUint64(&a.fileHits, 1)
+				ii = item
 				return false
 			}
 		}
@@ -2169,7 +2171,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 					// Optimised key referencing a state file record (file number and offset within the file)
 					fileI := int(storagePlainKey[0])
 					offset := decodeU64(storagePlainKey[1:])
-					fmt.Printf("readbyOffset file=%d offset=%d\n", fileI, offset)
+					fmt.Printf("readbyOffset(comm file %d-%d) file=%d offset=%d\n", ii.startBlock, ii.endBlock, fileI, offset)
 					spkBuf, _ = a.readByOffset(Storage, fileI, offset)
 				}
 				transStoragePks = append(transStoragePks, spkBuf)
