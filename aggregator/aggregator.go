@@ -1510,7 +1510,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
 					addKeyTransition(hex.EncodeToString(spkBuf), hex.EncodeToString(storagePlainKey))
-					// fmt.Printf("replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
+					fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String, item.startBlock, item.endBlock)
 					if bytes.Equal(storagePlainKey, wantedOfft) {
 						fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
 					}
@@ -2169,6 +2169,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 					// Optimised key referencing a state file record (file number and offset within the file)
 					fileI := int(storagePlainKey[0])
 					offset := decodeU64(storagePlainKey[1:])
+					fmt.Printf("readbyOffset file=%d offset=%d\n", fileI, offset)
 					spkBuf, _ = a.readByOffset(Storage, fileI, offset)
 				}
 				transStoragePks = append(transStoragePks, spkBuf)
@@ -2191,6 +2192,7 @@ func (a *Aggregator) readByOffset(fType FileType, fileI int, offset uint64) ([]b
 			return true
 		}
 		item := i.(*byEndBlockItem)
+		fmt.Printf("fileI=%d, file=%s.%d-%d\n", fileI, fType.String(), item.startBlock, item.endBlock)
 		g := item.getter
 		g.Reset(offset)
 		key, _ = g.Next(nil)
