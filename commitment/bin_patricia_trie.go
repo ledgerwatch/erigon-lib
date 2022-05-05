@@ -222,7 +222,7 @@ func (t *BinPatriciaTrie) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates
 	return branchNodeUpdates, nil
 }
 
-func decodeNodeFromUpdate(buf []byte) (touch, after uint16, node Node, err error) {
+func DecodeNodeFromUpdate(buf []byte) (touch, after uint16, node Node, err error) {
 	if len(buf) < 5 {
 		return
 	}
@@ -626,7 +626,7 @@ func (t *BinPatriciaTrie) hash(n *Node, pref bitstring, off int) []byte {
 	return hash
 }
 
-var zero30 = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+var Zero30 = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 type bitstring []uint8
 
