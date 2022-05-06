@@ -2474,114 +2474,6 @@ func (w *Writer) captureCommitmentType(fType FileType, trace bool, f func(commTr
 	}
 }
 
-func (w *Writer) captureCommitmentDataBin(trace bool) {
-	if trace {
-		fmt.Printf("captureCommitmentData start w.commTree.Len()=%d\n", w.commTree.Len())
-	}
-	w.captureCommitmentType(Code, trace, func(commTree *btree.BTree, h hash.Hash, key, val []byte) {
-		h.Reset()
-		h.Write(key)
-		hashedKey := h.Sum(nil)
-		var c = &CommitmentItem{plainKey: common.Copy(key), hashedKey: make([]byte, len(hashedKey)*8)}
-		for i, b := range hashedKey {
-			for bit := 0; bit < 0; bit++ {
-				if b&(byte(1)<<bit) == 0 {
-					c.hashedKey[i*8+bit] = 0
-				} else {
-					c.hashedKey[i*8+bit] = 1
-				}
-			}
-		}
-		c.u.Flags = commitment.CODE_UPDATE
-		item := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
-		if item != nil {
-			itemC := item.(*CommitmentItem)
-			if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
-				c.u.Flags |= commitment.BALANCE_UPDATE
-				c.u.Balance.Set(&itemC.u.Balance)
-			}
-			if itemC.u.Flags&commitment.NONCE_UPDATE != 0 {
-				c.u.Flags |= commitment.NONCE_UPDATE
-				c.u.Nonce = itemC.u.Nonce
-			}
-			if itemC.u.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
-				c.u.Flags = commitment.DELETE_UPDATE
-			} else {
-				h.Reset()
-				h.Write(val)
-				h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
-			}
-		} else {
-			h.Reset()
-			h.Write(val)
-			h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
-		}
-		commTree.ReplaceOrInsert(c)
-	})
-	w.captureCommitmentType(Account, trace, func(commTree *btree.BTree, h hash.Hash, key, val []byte) {
-		h.Reset()
-		h.Write(key)
-		hashedKey := h.Sum(nil)
-		var c = &CommitmentItem{plainKey: common.Copy(key), hashedKey: make([]byte, len(hashedKey)*8)}
-		for i, b := range hashedKey {
-			for bit := 0; bit < 0; bit++ {
-				if b&(byte(1)<<bit) == 0 {
-					c.hashedKey[i*8+bit] = 0
-				} else {
-					c.hashedKey[i*8+bit] = 1
-				}
-			}
-		}
-		if len(val) == 0 {
-			c.u.Flags = commitment.DELETE_UPDATE
-		} else {
-			c.u.DecodeForStorage(val)
-			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
-			item := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
-			if item != nil {
-				itemC := item.(*CommitmentItem)
-				if itemC.u.Flags&commitment.CODE_UPDATE != 0 {
-					c.u.Flags |= commitment.CODE_UPDATE
-					copy(c.u.CodeHashOrStorage[:], itemC.u.CodeHashOrStorage[:])
-				}
-			}
-		}
-		commTree.ReplaceOrInsert(c)
-	})
-	w.captureCommitmentType(Storage, trace, func(commTree *btree.BTree, h hash.Hash, key, val []byte) {
-		hashedKey := make([]byte, 2*length.Hash)
-		h.Reset()
-		h.Write(key[:length.Addr])
-		h.(io.Reader).Read(hashedKey[:length.Hash])
-		h.Reset()
-		h.Write(key[length.Addr:])
-		h.(io.Reader).Read(hashedKey[length.Hash:])
-		var c = &CommitmentItem{plainKey: common.Copy(key), hashedKey: make([]byte, len(hashedKey)*8)}
-		for i, b := range hashedKey {
-			for bit := 0; bit < 0; bit++ {
-				if b&(byte(1)<<bit) == 0 {
-					c.hashedKey[i*8+bit] = 0
-				} else {
-					c.hashedKey[i*8+bit] = 1
-				}
-			}
-		}
-		c.u.ValLength = len(val)
-		if len(val) > 0 {
-			copy(c.u.CodeHashOrStorage[:], val)
-		}
-		if len(val) == 0 {
-			c.u.Flags = commitment.DELETE_UPDATE
-		} else {
-			c.u.Flags = commitment.STORAGE_UPDATE
-		}
-		commTree.ReplaceOrInsert(c)
-	})
-	if trace {
-		fmt.Printf("captureCommitmentData end w.commTree.Len()=%d\n", w.commTree.Len())
-	}
-}
-
 func (w *Writer) captureCommitmentData(trace bool) {
 	if trace {
 		fmt.Printf("captureCommitmentData start w.commTree.Len()=%d\n", w.commTree.Len())
@@ -2781,14 +2673,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 
 func (w *Writer) FinishTx(txNum uint64, trace bool) error {
 	if w.a.commitments {
-		switch w.a.hph.Variant() {
-		case commitment.VariantHexPatriciaTrie, commitment.VariantReducedHexPatriciaTrie:
-			w.captureCommitmentData(trace)
-		case commitment.VariantBinPatriciaTrie:
-			w.captureCommitmentDataBin(trace)
-		default:
-			return fmt.Errorf("unknown commitment variant %s: failed to define how to capture data", w.a.hph.Variant())
-		}
+		w.captureCommitmentData(trace)
 	}
 	var err error
 	for fType := FirstType; fType < Commitment; fType++ {

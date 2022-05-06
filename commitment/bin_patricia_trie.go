@@ -631,10 +631,9 @@ var Zero30 = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
 type bitstring []uint8
 
 func newBitstring(key []byte) bitstring {
-	bits := make([]byte, 8*len(key))
+	bits := make([]byte, 4*len(key))
 	for i := range bits {
-
-		if key[i/8]&(1<<(7-i%8)) == 0 {
+		if key[i/4]&(1<<(3-i%4)) == 0 {
 			bits[i] = 0
 		} else {
 			bits[i] = 1

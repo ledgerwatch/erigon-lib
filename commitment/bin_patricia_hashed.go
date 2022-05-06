@@ -94,10 +94,10 @@ func (hph *BinHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []U
 		hashedKey := newBitstring(hk)
 		plainKey := plainKeys[i]
 		update := updates[i]
-		//if hph.trace {
-		fmt.Printf("plainKey=[%x], hashedKey=[%x], currentKey=[%x], update=%s\n",
-			plainKey, hashedKey, hph.currentKey[:hph.currentKeyLen], update)
-		//}
+		if hph.trace {
+			fmt.Printf("plainKey=[%x], hashedKey=[%x], currentKey=[%x], update=%s\n",
+				plainKey, hashedKey, hph.currentKey[:hph.currentKeyLen], update)
+		}
 		// Keep folding until the currentKey is the prefix of the key we modify
 		for hph.needFolding(hashedKey) {
 			if branchData, updateKey, err := hph.fold(); err != nil {
