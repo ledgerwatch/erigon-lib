@@ -557,6 +557,7 @@ func (hph *BinHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
 		return nil
 	}
 	hph.branchBefore[row] = true
+	fmt.Printf("unfoldBranchNode [%x]=>[%x]\n", hph.currentKey[:hph.currentKeyLen], branchData)
 	bitmap := binary.BigEndian.Uint16(branchData[0:])
 	pos := 2
 	if deleted {
