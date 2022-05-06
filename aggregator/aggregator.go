@@ -3332,9 +3332,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			skip = startBlock == 0 && len(lastVal) == 0
 		}
 		if skip { // Deleted marker can be skipped if we merge into the first file, except for the storage addr marker
-			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
-				fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
-			}
+			//if _, ok := a.tracedKeys[string(keyBuf)]; ok {
+			fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
+			//}
 		} else {
 			// The check `bytes.HasPrefix(lastKey, keyBuf)` is checking whether the `lastKey` is the first item
 			// of some contract's storage, and `keyBuf` (the item just before that) is the special item with the
@@ -3366,9 +3366,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 						return nil, 0, err
 					}
 				}
-				//if fType == AccountHistory {
-				//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
-				//}
+				if fType == Storage {
+					fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
+				}
 			}
 
 			keyBuf = append(keyBuf[:0], lastKey...)
@@ -3401,9 +3401,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				return nil, 0, err
 			}
 		}
-		//if fType == AccountHistory {
-		//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
-		//}
+		if fType == Storage {
+			fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
+		}
 	}
 	if err = comp.Compress(); err != nil {
 		return nil, 0, err
