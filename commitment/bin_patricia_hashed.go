@@ -696,13 +696,25 @@ func (hph *BinHashed) needFolding(hashedKey []byte) bool {
 	return !bytes.HasPrefix(hashedKey, hph.currentKey[:hph.currentKeyLen])
 }
 
-func binToCompact(key []byte) []byte {
-	compact := make([]byte, 2+(len(key)+7)/8)
-	binary.BigEndian.PutUint16(compact, uint16(len(key)))
-	for i := 0; i < len(key); i++ {
+func binToCompact(bin []byte) []byte {
+	compact := make([]byte, 2+(len(bin)+7)/8)
+	binary.BigEndian.PutUint16(compact, uint16(len(bin)))
+	for i := 0; i < len(bin); i++ {
 		compact[2+i/8] |= (byte(1) << (i % 8))
 	}
 	return compact
+}
+
+func compactToBin(compact []byte) []byte {
+	bin := make([]byte, binary.BigEndian.Uint16(compact))
+	for i := 0; i < len(bin); i++ {
+		if compact[2+i/8]&(byte(1)<<(i%8)) == 0 {
+			bin[i] = 0
+		} else {
+			bin[i] = 1
+		}
+	}
+	return bin
 }
 
 // The purpose of fold is to reduce hph.currentKey[:hph.currentKeyLen]. It should be invoked
@@ -938,9 +950,9 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 		}
 	}
 	if branchData != nil {
-		if hph.trace {
-			fmt.Printf("fold: update key: %x, branchData: [%x]\n", CompactToHex(updateKey), branchData)
-		}
+		//if hph.trace {
+		fmt.Printf("fold: update key: %x, branchData: [%x]\n", compactToBin(updateKey), branchData)
+		//}
 	}
 	return branchData, updateKey, nil
 }
