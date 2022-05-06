@@ -1516,19 +1516,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 					}
 					break
 				} else {
-					if j == 1 {
-						markKeyNotFound(hex.EncodeToString(spkBuf))
-						hist, _ := replaceHistory[hex.EncodeToString(spkBuf)]
-						var str string
-						str = "{ "
-						for _, v := range hist {
-							str += fmt.Sprintf("%v, ", v)
-						}
-						str += "}"
-						if len(spkBuf) == 0 {
-							fmt.Printf("F[%d|%d] spk mismatch '%x' => %v, times %d\n", j-1, offset, spkBuf, str, spkNotFound[hex.EncodeToString(spkBuf)])
-						}
-					}
+					fmt.Printf("could not find replacement key [%x], file=%s.%d-%d]\n\n", spkBuf, Storage.String(), item.startBlock, item.endBlock)
 				}
 			}
 		}
