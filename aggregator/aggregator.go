@@ -1516,7 +1516,7 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 						fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
 					}
 					break
-				} else {
+				} else if j == 0 {
 					fmt.Printf("could not find replacement key [%x], file=%s.%d-%d]\n\n", spkBuf, Storage.String(), item.startBlock, item.endBlock)
 				}
 			}
