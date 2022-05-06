@@ -1492,8 +1492,9 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			offset := decodeU64(storagePlainKey[1:])
 			g := cvt.pre[Storage][fileI].getterMerge
 			g.Reset(offset)
+			fmt.Printf("offsetToKey storage [%x] offset=%d, file=%d-%d\n", storagePlainKey, offset, cvt.pre[Storage][fileI].startBlock, cvt.pre[Storage][fileI].endBlock)
 			spkBuf, _ = g.Next(spkBuf[:0])
-			// fmt.Printf("replacing storage [%x] from [%x]\n", spkBuf, storagePlainKey)
+			//
 		}
 		if bytes.Equal(storagePlainKey, wantedOfft) || bytes.Equal(spkBuf, wantedOfft) {
 			fmt.Printf("WantedOffset replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
