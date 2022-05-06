@@ -889,6 +889,7 @@ func btreeToFile(bt *btree.BTree, datPath, tmpdir string, trace bool, workers in
 	count := 0
 	bt.Ascend(func(i btree.Item) bool {
 		item := i.(*AggregateItem)
+		fmt.Printf("btreeToFile %s [%x]=>[%x]\n", datPath, item.k, item.v)
 		if err = comp.AddUncompressedWord(item.k); err != nil {
 			return false
 		}
