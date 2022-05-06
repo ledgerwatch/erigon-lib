@@ -949,11 +949,11 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 			hph.currentKeyLen = 0
 		}
 	}
-	if branchData != nil {
-		//if hph.trace {
-		fmt.Printf("fold: update key: %x, branchData: [%x]\n", compactToBin(updateKey), branchData)
-		//}
-	}
+	//if branchData != nil {
+	//if hph.trace {
+	fmt.Printf("fold: update key: [%x], branchData: [%x]\n", compactToBin(updateKey), branchData)
+	//}
+	//}
 	return branchData, updateKey, nil
 }
 
