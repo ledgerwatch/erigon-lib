@@ -547,7 +547,7 @@ func (hph *BinHashed) needUnfolding(hashedKey []byte) int {
 }
 
 func (hph *BinHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
-	branchData, err := hph.branchFn(hexToCompact(hph.currentKey[:hph.currentKeyLen]))
+	branchData, err := hph.branchFn(binToCompact(hph.currentKey[:hph.currentKeyLen]))
 	if err != nil {
 		return err
 	}
