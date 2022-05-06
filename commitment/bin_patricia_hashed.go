@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	maxKeySize  = 1024
+	maxKeySize  = 512
 	keyHalfSize = maxKeySize / 2
 	maxChild    = 2
 )
