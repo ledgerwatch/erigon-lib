@@ -695,6 +695,15 @@ func (hph *BinHashed) needFolding(hashedKey []byte) bool {
 	return !bytes.HasPrefix(hashedKey, hph.currentKey[:hph.currentKeyLen])
 }
 
+func binToCompact(key []byte) []byte {
+	compact := make([]byte, 2+(len(key)+7)/8)
+	binary.BigEndian.PutUint16(compact, uint16(len(key)))
+	for i := 0; i < len(key); i++ {
+		compact[2+i/8] |= (byte(1) << (i % 8))
+	}
+	return compact
+}
+
 // The purpose of fold is to reduce hph.currentKey[:hph.currentKeyLen]. It should be invoked
 // until that current key becomes a prefix of hashedKey that we will proccess next
 // (in other words until the needFolding function returns 0)
@@ -728,7 +737,7 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 	var branchData []byte
 	var bitmapBuf [4]byte
 	// updateKey, _ := bitstring(hph.currentKey[:updateKeyLen]).reconstructHex()
-	updateKey := bitstring(hph.currentKey[:updateKeyLen])
+	updateKey := binToCompact(hph.currentKey[:updateKeyLen])
 	if hph.trace {
 		fmt.Printf("touchMap[%d]=%016b, afterMap[%d]=%016b\n", row, hph.touchMap[row], row, hph.afterMap[row])
 	}
