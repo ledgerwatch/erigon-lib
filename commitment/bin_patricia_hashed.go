@@ -580,9 +580,9 @@ func (hph *BinHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
 		if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
 			return fmt.Errorf("prefix [%x], branchData[%x]: %w", hph.currentKey[:hph.currentKeyLen], branchData, err)
 		}
-		if hph.trace {
-			fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
-		}
+		//if hph.trace {
+		fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
+		//}
 		if cell.apl > 0 {
 			hph.accountFn(cell.apk[:cell.apl], cell)
 			if hph.trace {
