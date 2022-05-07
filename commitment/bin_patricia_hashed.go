@@ -1220,6 +1220,26 @@ func (cell *BinCell) fillFromLowerCell(lowCell *BinCell, lowDepth int, preExtens
 	}
 }
 
+func binHashKey(keccak keccakState, plainKey []byte, dest []byte, hashedKeyOffset int) error {
+	keccak.Reset()
+	var hashBufBack [32]byte
+	hashBuf := hashBufBack[:]
+	if _, err := keccak.Write(plainKey); err != nil {
+		return err
+	}
+	if _, err := keccak.Read(hashBuf); err != nil {
+		return err
+	}
+	for k := hashedKeyOffset; k < 256; k++ {
+		if hashBuf[k/8]&(1<<(7-k%8)) == 0 {
+			dest[k-hashedKeyOffset] = 0
+		} else {
+			dest[k-hashedKeyOffset] = 1
+		}
+	}
+	return nil
+}
+
 func (cell *BinCell) deriveHashedKeys(depth int, keccak keccakState, accountKeyLen int) error {
 	extraLen := 0
 	if cell.apl > 0 {
@@ -1242,7 +1262,7 @@ func (cell *BinCell) deriveHashedKeys(depth int, keccak keccakState, accountKeyL
 		cell.downHashedLen += extraLen
 		var hashedKeyOffset, downOffset int
 		if cell.apl > 0 {
-			if err := hashKey(keccak, cell.apk[:cell.apl], cell.downHashedKey[:], depth); err != nil {
+			if err := binHashKey(keccak, cell.apk[:cell.apl], cell.downHashedKey[:], depth); err != nil {
 				return err
 			}
 			downOffset = keyHalfSize - depth
@@ -1251,7 +1271,7 @@ func (cell *BinCell) deriveHashedKeys(depth int, keccak keccakState, accountKeyL
 			if depth >= keyHalfSize {
 				hashedKeyOffset = depth - keyHalfSize
 			}
-			if err := hashKey(keccak, cell.spk[accountKeyLen:cell.spl], cell.downHashedKey[downOffset:], hashedKeyOffset); err != nil {
+			if err := binHashKey(keccak, cell.spk[accountKeyLen:cell.spl], cell.downHashedKey[downOffset:], hashedKeyOffset); err != nil {
 				return err
 			}
 		}
