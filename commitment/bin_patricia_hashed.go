@@ -176,11 +176,23 @@ func (hph *BinHashed) Reset() {
 func wrapAccountStorageFn(fn func([]byte, *Cell) error) func(pk []byte, bc *BinCell) error {
 	return func(pk []byte, bc *BinCell) error {
 		cl := &Cell{}
+		cl.Balance = *bc.Balance.Clone()
+		cl.Nonce = bc.Nonce
+		cl.StorageLen = bc.StorageLen
+		cl.apl = bc.apl
+		cl.spl = bc.spl
+		cl.hl = bc.hl
+		copy(cl.apk[:], bc.apk[:])
+		copy(cl.spk[:], bc.spk[:])
+		copy(cl.h[:], bc.h[:])
+		copy(cl.extension[:], bc.extension[:])
+		copy(cl.downHashedKey[:], bc.downHashedKey[:])
+		copy(cl.CodeHash[:], bc.CodeHash[:])
+		copy(cl.Storage[:], bc.Storage[:])
 
 		if err := fn(pk, cl); err != nil {
 			return err
 		}
-		bc.fillEmpty()
 
 		bc.Balance = *cl.Balance.Clone()
 		bc.Nonce = cl.Nonce
