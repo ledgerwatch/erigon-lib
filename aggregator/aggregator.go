@@ -2079,7 +2079,6 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 		})
 	}
 	var val []byte
-	var ii *byEndBlockItem
 	var startBlock uint64
 	a.files[fType].DescendLessOrEqual(&byEndBlockItem{endBlock: blockNum}, func(i btree.Item) bool {
 		item := i.(*byEndBlockItem)
@@ -2110,7 +2109,6 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 				}
 				startBlock = item.startBlock
 				atomic.AddUint64(&a.fileHits, 1)
-				ii = item
 				return false
 			}
 		}
