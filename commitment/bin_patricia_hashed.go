@@ -700,7 +700,9 @@ func binToCompact(bin []byte) []byte {
 	compact := make([]byte, 2+(len(bin)+7)/8)
 	binary.BigEndian.PutUint16(compact, uint16(len(bin)))
 	for i := 0; i < len(bin); i++ {
-		compact[2+i/8] |= (byte(1) << (i % 8))
+		if bin[i] != 0 {
+			compact[2+i/8] |= (byte(1) << (i % 8))
+		}
 	}
 	return compact
 }
