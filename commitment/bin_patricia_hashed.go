@@ -569,7 +569,7 @@ func (hph *BinHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
 		return nil
 	}
 	hph.branchBefore[row] = true
-	fmt.Printf("unfoldBranchNode [%x]=>[%x]\n", hph.currentKey[:hph.currentKeyLen], branchData)
+	//fmt.Printf("unfoldBranchNode [%x]=>[%x]\n", hph.currentKey[:hph.currentKeyLen], branchData)
 	bitmap := binary.BigEndian.Uint16(branchData[0:])
 	pos := 2
 	if deleted {
@@ -592,9 +592,9 @@ func (hph *BinHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
 		if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
 			return fmt.Errorf("prefix [%x], branchData[%x]: %w", hph.currentKey[:hph.currentKeyLen], branchData, err)
 		}
-		//if hph.trace {
-		fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
-		//}
+		if hph.trace {
+			fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
+		}
 		if cell.apl > 0 {
 			hph.accountFn(cell.apk[:cell.apl], cell)
 			if hph.trace {
@@ -613,9 +613,9 @@ func (hph *BinHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
 }
 
 func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
-	//if hph.trace {
-	fmt.Printf("unfold %d: activeRows: %d\n", unfolding, hph.activeRows)
-	//}
+	if hph.trace {
+		fmt.Printf("unfold %d: activeRows: %d\n", unfolding, hph.activeRows)
+	}
 	var upCell *BinCell
 	var touched, present bool
 	var col byte
@@ -666,9 +666,9 @@ func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
 		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, unfolding)
-		//if hph.trace {
-		fmt.Printf("cell (%d, %x) depth=%d, a=[%x], upa=[%x]\n", row, nibble, depth, cell.apk[:cell.apl], upCell.apk[:upCell.apl])
-		//}
+		if hph.trace {
+			fmt.Printf("cell (%d, %x) depth=%d, a=[%x], upa=[%x]\n", row, nibble, depth, cell.apk[:cell.apl], upCell.apk[:upCell.apl])
+		}
 		if row >= keyHalfSize {
 			cell.apl = 0
 		}
@@ -688,9 +688,9 @@ func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
 		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, upCell.downHashedLen)
-		//if hph.trace {
-		fmt.Printf("cell (%d, %x) depth=%d, a=[%x], upa=[%x]\n", row, nibble, depth, cell.apk[:cell.apl], upCell.apk[:upCell.apl])
-		//}
+		if hph.trace {
+			fmt.Printf("cell (%d, %x) depth=%d, a=[%x], upa=[%x]\n", row, nibble, depth, cell.apk[:cell.apl], upCell.apk[:upCell.apl])
+		}
 		if row >= keyHalfSize {
 			cell.apl = 0
 		}
@@ -739,9 +739,9 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 	if hph.activeRows == 0 {
 		return nil, nil, fmt.Errorf("cannot fold - no active rows")
 	}
-	//if hph.trace {
-	fmt.Printf("fold: activeRows: %d, currentKey: [%x], touchMap: %016b, afterMap: %016b\n", hph.activeRows, hph.currentKey[:hph.currentKeyLen], hph.touchMap[hph.activeRows-1], hph.afterMap[hph.activeRows-1])
-	//}
+	if hph.trace {
+		fmt.Printf("fold: activeRows: %d, currentKey: [%x], touchMap: %016b, afterMap: %016b\n", hph.activeRows, hph.currentKey[:hph.currentKeyLen], hph.touchMap[hph.activeRows-1], hph.afterMap[hph.activeRows-1])
+	}
 	// Move information to the row above
 	row := hph.activeRows - 1
 	var upCell *BinCell
@@ -963,11 +963,11 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 			hph.currentKeyLen = 0
 		}
 	}
-	//if branchData != nil {
-	//if hph.trace {
-	fmt.Printf("fold: update key: [%x], branchData: [%x]\n", compactToBin(updateKey), branchData)
-	//}
-	//}
+	if branchData != nil {
+		if hph.trace {
+			fmt.Printf("fold: update key: [%x], branchData: [%x]\n", compactToBin(updateKey), branchData)
+		}
+	}
 	return branchData, updateKey, nil
 }
 

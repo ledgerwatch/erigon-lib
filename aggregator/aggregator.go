@@ -889,7 +889,7 @@ func btreeToFile(bt *btree.BTree, datPath, tmpdir string, trace bool, workers in
 	count := 0
 	bt.Ascend(func(i btree.Item) bool {
 		item := i.(*AggregateItem)
-		fmt.Printf("btreeToFile %s [%x]=>[%x]\n", datPath, item.k, item.v)
+		//fmt.Printf("btreeToFile %s [%x]=>[%x]\n", datPath, item.k, item.v)
 		if err = comp.AddUncompressedWord(item.k); err != nil {
 			return false
 		}
@@ -1492,13 +1492,13 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			offset := decodeU64(storagePlainKey[1:])
 			g := cvt.pre[Storage][fileI].getterMerge
 			g.Reset(offset)
-			fmt.Printf("offsetToKey storage [%x] offset=%d, file=%d-%d\n", storagePlainKey, offset, cvt.pre[Storage][fileI].startBlock, cvt.pre[Storage][fileI].endBlock)
+			//fmt.Printf("offsetToKey storage [%x] offset=%d, file=%d-%d\n", storagePlainKey, offset, cvt.pre[Storage][fileI].startBlock, cvt.pre[Storage][fileI].endBlock)
 			spkBuf, _ = g.Next(spkBuf[:0])
 			//
 		}
-		if bytes.Equal(storagePlainKey, wantedOfft) || bytes.Equal(spkBuf, wantedOfft) {
-			fmt.Printf("WantedOffset replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
-		}
+		//if bytes.Equal(storagePlainKey, wantedOfft) || bytes.Equal(spkBuf, wantedOfft) {
+		//	fmt.Printf("WantedOffset replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
+		//}
 		// Lookup spkBuf in the post storage files
 		for j := len(cvt.post[Storage]); j > 0; j-- {
 			item := cvt.post[Storage][j-1]
@@ -1512,10 +1512,10 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
 					addKeyTransition(hex.EncodeToString(spkBuf), hex.EncodeToString(storagePlainKey))
-					fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String(), item.startBlock, item.endBlock)
-					if bytes.Equal(storagePlainKey, wantedOfft) {
-						fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
-					}
+					//fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String(), item.startBlock, item.endBlock)
+					//if bytes.Equal(storagePlainKey, wantedOfft) {
+					//	fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
+					//}
 					break
 				} else if j == 0 {
 					fmt.Printf("could not find replacement key [%x], file=%s.%d-%d]\n\n", spkBuf, Storage.String(), item.startBlock, item.endBlock)
