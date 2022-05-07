@@ -601,9 +601,9 @@ func (hph *BinHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
 }
 
 func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
-	if hph.trace {
-		fmt.Printf("unfold %d: activeRows: %d\n", unfolding, hph.activeRows)
-	}
+	//if hph.trace {
+	fmt.Printf("unfold %d: activeRows: %d\n", unfolding, hph.activeRows)
+	//}
 	var upCell *BinCell
 	var touched, present bool
 	var col byte
@@ -654,9 +654,9 @@ func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
 		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, unfolding)
-		if hph.trace {
-			fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
-		}
+		//if hph.trace {
+		fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
+		//}
 		if row >= keyHalfSize {
 			cell.apl = 0
 		}
@@ -676,9 +676,9 @@ func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
 		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, upCell.downHashedLen)
-		if hph.trace {
-			fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
-		}
+		//if hph.trace {
+		fmt.Printf("cell (%d, %x) depth=%d\n", row, nibble, depth)
+		//}
 		if row >= keyHalfSize {
 			cell.apl = 0
 		}
