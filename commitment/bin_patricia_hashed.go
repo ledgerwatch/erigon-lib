@@ -655,7 +655,7 @@ func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, unfolding)
 		//if hph.trace {
-		fmt.Printf("cell (%d, %x) depth=%d, a=[%x]\n", row, nibble, depth, cell.apk[:cell.apl])
+		fmt.Printf("cell (%d, %x) depth=%d, a=[%x], upa=[%x]\n", row, nibble, depth, cell.apk[:cell.apl], upCell.apk[:upCell.apl])
 		//}
 		if row >= keyHalfSize {
 			cell.apl = 0
@@ -677,7 +677,7 @@ func (hph *BinHashed) unfold(hashedKey []byte, unfolding int) error {
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, upCell.downHashedLen)
 		//if hph.trace {
-		fmt.Printf("cell (%d, %x) depth=%d, a=[%x]\n", row, nibble, depth, cell.apk[:cell.apl])
+		fmt.Printf("cell (%d, %x) depth=%d, a=[%x], upa=[%x]\n", row, nibble, depth, cell.apk[:cell.apl], upCell.apk[:upCell.apl])
 		//}
 		if row >= keyHalfSize {
 			cell.apl = 0
