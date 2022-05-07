@@ -727,9 +727,9 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 	if hph.activeRows == 0 {
 		return nil, nil, fmt.Errorf("cannot fold - no active rows")
 	}
-	if hph.trace {
-		fmt.Printf("fold: activeRows: %d, currentKey: [%x], touchMap: %016b, afterMap: %016b\n", hph.activeRows, hph.currentKey[:hph.currentKeyLen], hph.touchMap[hph.activeRows-1], hph.afterMap[hph.activeRows-1])
-	}
+	//if hph.trace {
+	fmt.Printf("fold: activeRows: %d, currentKey: [%x], touchMap: %016b, afterMap: %016b\n", hph.activeRows, hph.currentKey[:hph.currentKeyLen], hph.touchMap[hph.activeRows-1], hph.afterMap[hph.activeRows-1])
+	//}
 	// Move information to the row above
 	row := hph.activeRows - 1
 	var upCell *BinCell
