@@ -2161,7 +2161,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 					// Optimised key referencing a state file record (file number and offset within the file)
 					fileI := int(storagePlainKey[0])
 					offset := decodeU64(storagePlainKey[1:])
-					fmt.Printf("readbyOffset(comm file %d-%d) file=%d offset=%d\n", ii.startBlock, ii.endBlock, fileI, offset)
+					//fmt.Printf("readbyOffset(comm file %d-%d) file=%d offset=%d\n", ii.startBlock, ii.endBlock, fileI, offset)
 					spkBuf, _ = a.readByOffset(Storage, fileI, offset)
 				}
 				transStoragePks = append(transStoragePks, spkBuf)
@@ -2184,7 +2184,7 @@ func (a *Aggregator) readByOffset(fType FileType, fileI int, offset uint64) ([]b
 			return true
 		}
 		item := i.(*byEndBlockItem)
-		fmt.Printf("fileI=%d, file=%s.%d-%d\n", fileI, fType.String(), item.startBlock, item.endBlock)
+		//fmt.Printf("fileI=%d, file=%s.%d-%d\n", fileI, fType.String(), item.startBlock, item.endBlock)
 		g := item.getter
 		g.Reset(offset)
 		key, _ = g.Next(nil)
@@ -3333,9 +3333,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 			skip = startBlock == 0 && len(lastVal) == 0
 		}
 		if skip { // Deleted marker can be skipped if we merge into the first file, except for the storage addr marker
-			//if _, ok := a.tracedKeys[string(keyBuf)]; ok {
-			fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
-			//}
+			if _, ok := a.tracedKeys[string(keyBuf)]; ok {
+				fmt.Printf("skipped key %x for [%d-%d]\n", keyBuf, startBlock, endBlock)
+			}
 		} else {
 			// The check `bytes.HasPrefix(lastKey, keyBuf)` is checking whether the `lastKey` is the first item
 			// of some contract's storage, and `keyBuf` (the item just before that) is the special item with the
@@ -3367,9 +3367,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 						return nil, 0, err
 					}
 				}
-				if fType == Storage {
-					fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
-				}
+				//if fType == Storage {
+				//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
+				//}
 			}
 
 			keyBuf = append(keyBuf[:0], lastKey...)
@@ -3402,9 +3402,9 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				return nil, 0, err
 			}
 		}
-		if fType == Storage {
-			fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
-		}
+		//if fType == Storage {
+		//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
+		//}
 	}
 	if err = comp.Compress(); err != nil {
 		return nil, 0, err
