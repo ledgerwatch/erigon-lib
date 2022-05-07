@@ -91,7 +91,7 @@ func NewBinHashed(accountKeyLen int,
 func (hph *BinHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []Update) (map[string][]byte, error) {
 	branchNodeUpdates := make(map[string][]byte)
 	for i, hk := range hashedKeys {
-		hashedKey := newBitstring(hk)
+		hashedKey := hexToBin(hk)
 		plainKey := plainKeys[i]
 		update := updates[i]
 		if hph.trace {
