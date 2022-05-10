@@ -1,4 +1,4 @@
-package common
+package cmp
 
 import (
 	"golang.org/x/exp/constraints"
