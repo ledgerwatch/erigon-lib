@@ -96,7 +96,7 @@ func EnsureNotChangedBool(tx GetPut, bucket string, k []byte, value bool) (ok, e
 	return value == enabled, enabled, nil
 }
 
-func GetBool(tx GetPut, bucket string, k []byte) (enabled bool, err error) {
+func GetBool(tx Getter, bucket string, k []byte) (enabled bool, err error) {
 	vBytes, err := tx.GetOne(bucket, k)
 	if err != nil {
 		return false, err
