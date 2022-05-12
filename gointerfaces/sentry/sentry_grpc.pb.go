@@ -143,7 +143,7 @@ func (c *sentryClient) Messages(ctx context.Context, in *MessagesRequest, opts .
 }
 
 type Sentry_MessagesClient interface {
-	Recv() (*InboundMessage, error)
+	Recv() (*InboundMessages, error)
 	grpc.ClientStream
 }
 
@@ -151,8 +151,8 @@ type sentryMessagesClient struct {
 	grpc.ClientStream
 }
 
-func (x *sentryMessagesClient) Recv() (*InboundMessage, error) {
-	m := new(InboundMessage)
+func (x *sentryMessagesClient) Recv() (*InboundMessages, error) {
+	m := new(InboundMessages)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -455,7 +455,7 @@ func _Sentry_Messages_Handler(srv interface{}, stream grpc.ServerStream) error {
 }
 
 type Sentry_MessagesServer interface {
-	Send(*InboundMessage) error
+	Send(*InboundMessages) error
 	grpc.ServerStream
 }
 
@@ -463,7 +463,7 @@ type sentryMessagesServer struct {
 	grpc.ServerStream
 }
 
-func (x *sentryMessagesServer) Send(m *InboundMessage) error {
+func (x *sentryMessagesServer) Send(m *InboundMessages) error {
 	return x.ServerStream.SendMsg(m)
 }
 
