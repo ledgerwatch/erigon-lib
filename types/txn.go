@@ -197,15 +197,10 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	}
 	// Next follows gas price or tip
 	// Although consensus rules specify that tip can be up to 256 bit long, we narrow it to 64 bit
-	fmt.Printf("before: %d\n", p)
 	p, err = rlp.U256(payload, p, &slot.Tip)
 	if err != nil {
 		return 0, fmt.Errorf("%w: tip: %s", ErrParseTxn, err)
 	}
-	fmt.Printf("isLegacy: %x\n", payload[p:p+10])
-	fmt.Printf("alex: %d\n", slot.Tip.Uint64())
-	panic(1)
-	//slot.Tip =
 	// Next follows feeCap, but only for dynamic fee transactions, for legacy transaction, it is
 	// equal to tip
 	if txType < DynamicFeeTxType {
