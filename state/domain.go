@@ -17,7 +17,7 @@
 package state
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -28,7 +28,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
-	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
 )
 
@@ -41,7 +40,6 @@ type Domain struct {
 	keysTable       string // Needs to be table with DupSort
 	historyTable    string
 	indexTable      string // Needs to be table with DupSort
-	blockTxTable    string // Mapping blockNum => start txNum
 	tx              kv.RwTx
 	blockNum        uint64
 	startTxNum      uint64
@@ -56,7 +54,6 @@ func NewDomain(
 	keysTable string,
 	historyTable string,
 	indexTable string,
-	blockTxTable string,
 ) *Domain {
 	return &Domain{
 		dir:             dir,
@@ -66,7 +63,6 @@ func NewDomain(
 		keysTable:       keysTable,
 		historyTable:    historyTable,
 		indexTable:      indexTable,
-		blockTxTable:    blockTxTable,
 	}
 }
 
@@ -77,13 +73,6 @@ func (d *Domain) SetTx(tx kv.RwTx) {
 func (d *Domain) SetBlockNum(blockNum uint64, startTxNum uint64) error {
 	d.blockNum = blockNum
 	d.startTxNum = startTxNum
-	var blockKey [8]byte
-	var txKey [8]byte
-	binary.BigEndian.PutUint64(blockKey[:], blockNum)
-	binary.BigEndian.PutUint64(txKey[:], startTxNum)
-	if err := d.tx.Put(d.blockTxTable, blockKey[:], txKey[:]); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -123,12 +112,14 @@ func (d *Domain) Get(key []byte) ([]byte, error) {
 }
 
 func (d *Domain) update(key, original []byte) error {
+	var invertedStep [8]byte
+	binary.BigEndian.PutUint64(invertedStep[:], ^(d.blockNum / d.aggregationStep))
+	if err := d.tx.Put(d.keysTable, key, invertedStep[:]); err != nil {
+		return err
+	}
 	historyKey := make([]byte, len(key)+8)
 	binary.BigEndian.PutUint64(historyKey, d.txNum)
 	copy(historyKey[8:], key)
-	if err := d.tx.Put(d.keysTable, key, historyKey[:8]); err != nil {
-		return err
-	}
 	if err := d.tx.Put(d.historyTable, historyKey, original); err != nil {
 		return err
 	}
@@ -175,6 +166,31 @@ func (d *Domain) Delete(key []byte) error {
 }
 
 func (d *Domain) IteratePrefix(prefix []byte, it func(k []byte)) error {
+	keyCursor, err := d.tx.CursorDupSort(d.keysTable)
+	if err != nil {
+		return err
+	}
+	defer keyCursor.Close()
+	var k []byte
+	for k, _, err = keyCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, _, err = keyCursor.Next() {
+		var invertedStep []byte
+		if invertedStep, err = keyCursor.LastDup(); err != nil {
+			return err
+		}
+		keySuffix := make([]byte, len(k)+8)
+		copy(keySuffix, k)
+		copy(keySuffix[len(k):], invertedStep)
+		var v []byte
+		if v, err = d.tx.GetOne(d.valuesTable, keySuffix); err != nil {
+			return err
+		}
+		if len(v) > 0 {
+			it(k)
+		}
+	}
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -183,7 +199,6 @@ type Collation struct {
 	valuesPath   string
 	valuesComp   *compress.Compressor
 	valuesCount  int
-	blockTxEf    *eliasfano32.EliasFano
 	historyPath  string
 	historyComp  *compress.Compressor
 	historyCount int
@@ -193,9 +208,8 @@ type Collation struct {
 
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
-func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
+func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collation, error) {
 	var valuesComp, historyComp *compress.Compressor
-	var blockTxEf *eliasfano32.EliasFano
 	var err error
 	closeComp := true
 	defer func() {
@@ -247,44 +261,6 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 	if err != nil {
 		return Collation{}, fmt.Errorf("iterate over %s keys cursor: %w", d.filenameBase, err)
 	}
-	var blockKey [8]byte
-	binary.BigEndian.PutUint64(blockKey[:], blockFrom)
-	blockTxCursor, err := roTx.Cursor(d.blockTxTable)
-	if err != nil {
-		return Collation{}, fmt.Errorf("create %s blockTx cursor: %w", d.filenameBase, err)
-	}
-	defer blockTxCursor.Close()
-	var v []byte
-	var txFrom, txTo, maxTxNum uint64
-	// First loop to compute maxTxNum
-	for k, v, err = blockTxCursor.Seek(blockKey[:]); err == nil && k != nil; k, v, err = blockTxCursor.Next() {
-		blockNum := binary.BigEndian.Uint64(k)
-		startTx := binary.BigEndian.Uint64(v)
-		if blockNum == blockFrom {
-			txFrom = startTx
-		}
-		if blockNum == blockTo {
-			txTo = startTx
-		} else if startTx > maxTxNum {
-			maxTxNum = startTx
-		}
-		if blockNum >= blockTo {
-			break
-		}
-	}
-	if err != nil {
-		return Collation{}, fmt.Errorf("iterate over %s blockTx cursor: %w", d.filenameBase, err)
-	}
-	blockTxEf = eliasfano32.NewEliasFano(blockFrom-blockTo, maxTxNum)
-	// Second loop to fill elias fano
-	for k, v, err = blockTxCursor.Seek(blockKey[:]); err == nil && k != nil; k, v, err = blockTxCursor.Next() {
-		blockNum := binary.BigEndian.Uint64(k)
-		startTx := binary.BigEndian.Uint64(v)
-		if blockNum >= blockTo {
-			break
-		}
-		blockTxEf.AddOffset(startTx)
-	}
 	historyPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
 	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return Collation{}, fmt.Errorf("create %s history compressor: %w", d.filenameBase, err)
@@ -298,6 +274,7 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 	historyCount := 0
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	var v []byte
 	for k, v, err = historyCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
@@ -326,7 +303,6 @@ func (d *Domain) collate(step uint64, roTx kv.Tx) (Collation, error) {
 		valuesPath:   valuesPath,
 		valuesComp:   valuesComp,
 		valuesCount:  valuesCount,
-		blockTxEf:    blockTxEf,
 		historyPath:  historyPath,
 		historyComp:  historyComp,
 		historyCount: historyCount,
@@ -391,21 +367,6 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
-	blockTxPath := filepath.Join(d.dir, fmt.Sprintf("%s-blocktx.%d-%d.dat", d.filenameBase, blockFrom, blockTo))
-	if blockTxFile, err = os.Create(blockTxPath); err != nil {
-		return StaticFiles{}, fmt.Errorf("create %s blockTx file: %w", d.filenameBase, err)
-	}
-	blockTxW := bufio.NewWriter(blockTxFile)
-	if err = collation.blockTxEf.Write(blockTxW); err != nil {
-		return StaticFiles{}, fmt.Errorf("write %s blockTx file: %w", d.filenameBase, err)
-	}
-	if err = blockTxW.Flush(); err != nil {
-		return StaticFiles{}, fmt.Errorf("flush %s blockTx file: %w", d.filenameBase, err)
-	}
-	if err = blockTxFile.Close(); err != nil {
-		return StaticFiles{}, fmt.Errorf("close %s blockTx file: %w", d.filenameBase, err)
-	}
-	blockTxFile = nil
 	historyIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.idx", d.filenameBase, blockFrom, blockTo))
 	if err = historyComp.Compress(); err != nil {
 		return StaticFiles{}, fmt.Errorf("compress %s history: %w", d.filenameBase, err)
