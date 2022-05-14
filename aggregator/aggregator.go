@@ -22,7 +22,6 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
@@ -1419,17 +1418,6 @@ func encodeU64(i uint64, to []byte) []byte {
 	}
 }
 
-var replaceHistory = make(map[string][]string)
-
-func addKeyTransition(from, to string) {
-	v, ok := replaceHistory[from]
-	if !ok {
-		v = make([]string, 0)
-	}
-	v = append(v, to)
-	replaceHistory[from] = v
-}
-
 var spkNotFound = make(map[string]int)
 
 func MarkKeyNotFound(k string) {
@@ -1511,7 +1499,6 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 			if g.HasNext() {
 				if keyMatch, _ := g.Match(spkBuf); keyMatch {
 					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
-					addKeyTransition(hex.EncodeToString(spkBuf), hex.EncodeToString(storagePlainKey))
 					//fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String(), item.startBlock, item.endBlock)
 					//if bytes.Equal(storagePlainKey, wantedOfft) {
 					//	fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
