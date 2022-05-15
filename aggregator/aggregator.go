@@ -889,6 +889,7 @@ func btreeToFile(bt *btree.BTree, datPath, tmpdir string, trace bool, workers in
 	count := 0
 	bt.Ascend(func(i btree.Item) bool {
 		item := i.(*AggregateItem)
+		//fmt.Printf("btreeToFile %s [%x]=>[%x]\n", datPath, item.k, item.v)
 		if err = comp.AddUncompressedWord(item.k); err != nil {
 			return false
 		}
@@ -1418,20 +1419,9 @@ func encodeU64(i uint64, to []byte) []byte {
 	}
 }
 
-var replaceHistory = make(map[string][]string)
-
-func addKeyTransition(from, to string) {
-	v, ok := replaceHistory[from]
-	if !ok {
-		v = make([]string, 0)
-	}
-	v = append(v, to)
-	replaceHistory[from] = v
-}
-
 var spkNotFound = make(map[string]int)
 
-func markKeyNotFound(k string) {
+func MarkKeyNotFound(k string) {
 	spkNotFound[k]++
 }
 
@@ -1443,6 +1433,110 @@ func (cvt *CommitmentValTransform) commitmentValTransform(val []byte, transValBu
 		return transValBuf, nil
 	}
 	accountPlainKeys, storagePlainKeys, err := commitment.ExtractPlainKeys(val)
+	if err != nil {
+		return nil, err
+	}
+	var transAccountPks [][]byte
+	var transStoragePks [][]byte
+	var apkBuf, spkBuf []byte
+	for _, accountPlainKey := range accountPlainKeys {
+		if len(accountPlainKey) == length.Addr {
+			// Non-optimised key originating from a database record
+			apkBuf = append(apkBuf[:0], accountPlainKey...)
+		} else {
+			// Optimised key referencing a state file record (file number and offset within the file)
+			fileI := int(accountPlainKey[0])
+			offset := decodeU64(accountPlainKey[1:])
+			g := cvt.pre[Account][fileI].getterMerge
+			g.Reset(offset)
+			apkBuf, _ = g.Next(apkBuf[:0])
+			//fmt.Printf("replacing account [%x] from [%x]\n", apkBuf, accountPlainKey)
+		}
+		// Look up apkBuf in the post account files
+		for j := len(cvt.post[Account]); j > 0; j-- {
+			item := cvt.post[Account][j-1]
+			if item.index.Empty() {
+				continue
+			}
+			offset := item.readerMerge.Lookup(apkBuf)
+			g := item.getterMerge
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(apkBuf); keyMatch {
+					accountPlainKey = encodeU64(offset, []byte{byte(j - 1)})
+					//fmt.Printf("replaced account [%x]=>[%x] for file [%d-%d]\n", apkBuf, accountPlainKey, item.startBlock, item.endBlock)
+					break
+				}
+			}
+		}
+		transAccountPks = append(transAccountPks, accountPlainKey)
+	}
+	for _, storagePlainKey := range storagePlainKeys {
+		if len(storagePlainKey) == length.Addr+length.Hash {
+			// Non-optimised key originating from a database record
+			spkBuf = append(spkBuf[:0], storagePlainKey...)
+		} else {
+			// Optimised key referencing a state file record (file number and offset within the file)
+			fileI := int(storagePlainKey[0])
+			offset := decodeU64(storagePlainKey[1:])
+			g := cvt.pre[Storage][fileI].getterMerge
+			g.Reset(offset)
+			//fmt.Printf("offsetToKey storage [%x] offset=%d, file=%d-%d\n", storagePlainKey, offset, cvt.pre[Storage][fileI].startBlock, cvt.pre[Storage][fileI].endBlock)
+			spkBuf, _ = g.Next(spkBuf[:0])
+			//
+		}
+		//if bytes.Equal(storagePlainKey, wantedOfft) || bytes.Equal(spkBuf, wantedOfft) {
+		//	fmt.Printf("WantedOffset replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
+		//}
+		// Lookup spkBuf in the post storage files
+		for j := len(cvt.post[Storage]); j > 0; j-- {
+			item := cvt.post[Storage][j-1]
+			if item.index.Empty() {
+				continue
+			}
+			offset := item.readerMerge.Lookup(spkBuf)
+			g := item.getterMerge
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(spkBuf); keyMatch {
+					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
+					//fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String(), item.startBlock, item.endBlock)
+					//if bytes.Equal(storagePlainKey, wantedOfft) {
+					//	fmt.Printf("OFF replacing storage [%x] => [%x]\n", spkBuf, storagePlainKey)
+					//}
+					break
+				} else if j == 0 {
+					fmt.Printf("could not find replacement key [%x], file=%s.%d-%d]\n\n", spkBuf, Storage.String(), item.startBlock, item.endBlock)
+				}
+			}
+		}
+		transStoragePks = append(transStoragePks, storagePlainKey)
+	}
+	if transValBuf, err = commitment.ReplacePlainKeys(val, transAccountPks, transStoragePks, transValBuf); err != nil {
+		return nil, err
+	}
+	return transValBuf, nil
+}
+
+//var wanted = []byte{0, 3, 70,113}
+// var wanted = []byte{138, 1, 88, 39, 36, 194, 18, 220, 117, 172, 221, 139, 208, 27, 186, 172, 217, 9, 154, 251, 240, 124, 16, 228, 140, 98, 195, 47, 222, 155, 131, 231, 90, 114, 61, 225, 14, 230, 104, 165, 113, 52, 4, 143, 167, 207, 154, 237, 244, 218, 83, 204}
+var Wanted = []byte{87, 13, 60, 125, 6, 210, 211, 78, 26, 212, 11, 71, 211, 176, 73, 96, 60, 95, 127, 73, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
+
+//var wantedOfft = encodeU64(6583, []byte{0})
+
+// var wantedOfft = encodeU64(38437, []byte{0})
+
+// commitmentValTransform parses the value of the commitment record to extract references
+// to accounts and storage items, then looks them up in the new, merged files, and replaces them with
+// the updated references
+//
+// this is copy of the above function, but with a different plainkeys extractor
+func (cvt *CommitmentValTransform) commitmentBinValTransform(val []byte, transValBuf []byte) ([]byte, error) {
+	if len(val) == 0 {
+		return transValBuf, nil
+	}
+
+	accountPlainKeys, storagePlainKeys, err := commitment.ExtractBinPlainKeys(val)
 	if err != nil {
 		return nil, err
 	}
@@ -2169,6 +2263,7 @@ func (a *Aggregator) readFromFiles(fType FileType, lock bool, blockNum uint64, f
 					// Optimised key referencing a state file record (file number and offset within the file)
 					fileI := int(storagePlainKey[0])
 					offset := decodeU64(storagePlainKey[1:])
+					//fmt.Printf("readbyOffset(comm file %d-%d) file=%d offset=%d\n", ii.startBlock, ii.endBlock, fileI, offset)
 					spkBuf, _ = a.readByOffset(Storage, fileI, offset)
 				}
 				transStoragePks = append(transStoragePks, spkBuf)
@@ -2191,6 +2286,7 @@ func (a *Aggregator) readByOffset(fType FileType, fileI int, offset uint64) ([]b
 			return true
 		}
 		item := i.(*byEndBlockItem)
+		//fmt.Printf("fileI=%d, file=%s.%d-%d\n", fileI, fType.String(), item.startBlock, item.endBlock)
 		g := item.getter
 		g.Reset(offset)
 		key, _ = g.Next(nil)
@@ -3373,7 +3469,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 						return nil, 0, err
 					}
 				}
-				//if fType == AccountHistory {
+				//if fType == Storage {
 				//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
 				//}
 			}
@@ -3408,7 +3504,7 @@ func (a *Aggregator) mergeIntoStateFile(cp *CursorHeap, prefixLen int,
 				return nil, 0, err
 			}
 		}
-		//if fType == AccountHistory {
+		//if fType == Storage {
 		//	fmt.Printf("merge %s.%d-%d [%x]=>[%x]\n", fType.String(), startBlock, endBlock, keyBuf, valBuf)
 		//}
 	}
