@@ -1,612 +1,233 @@
 package commitment
 
 import (
-	"bytes"
 	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"testing"
 
-	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
-func Test_Update(t *testing.T) {
+func Test_BinPatriciaTrie_UniqueRepresentation(t *testing.T) {
 	t.Skip()
 
-	tests := []struct {
-		key, value []byte
-	}{
-		{key: []byte{12}, value: []byte("notorious")},
-		{key: []byte{14}, value: []byte("2pac")},
-		{key: []byte{15}, value: []byte("eminem")},
-		{key: []byte{11}, value: []byte("big pun")},
-		{key: []byte{20}, value: []byte("method-man")},
-		{key: []byte{18}, value: []byte("fat-joe")},
-		{key: []byte{30}, value: []byte("jay-z")},
-		{key: []byte{5}, value: []byte("redman")},
+	ms := NewMockState(t)
+	ms2 := NewMockState(t)
+
+	trie := NewBinPatriciaHashed(length.Addr, ms.branchFn, ms.accountFn, ms.storageFn)
+	trieBatch := NewBinPatriciaHashed(length.Addr, ms2.branchFn, ms2.accountFn, ms2.storageFn)
+
+	plainKeys, hashedKeys, updates := NewUpdateBuilder().
+		Balance("e25652aaa6b9417973d325f9a1246b48ff9420bf", 12).
+		Balance("cdd0a12034e978f7eccda72bd1bd89a8142b704e", 120000).
+		Nonce("5bb6abae12c87592b940458437526cb6cad60d50", 152512).
+		Balance("2fcb355beb0ea2b5fcf3b62a24e2faaff1c8d0c0", 100000).
+		Balance("463510be61a7ccde354509c0ab813e599ee3fc8a", 200000).
+		Storage("cd3e804beea486038609f88f399140dfbe059ef3", "02", "98").
+		Balance("82c88c189d5deeba0ad11463b80b44139bd519c1", 300000).
+		Balance("0647e43e8f9ba3fb8b14ad30796b7553d667c858", 400000).
+		Delete("cdd0a12034e978f7eccda72bd1bd89a8142b704e").
+		Balance("06548d648c23b12f2e9bfd1bae274b658be208f4", 500000).
+		Balance("e5417f49640cf8a0b1d6e38f9dfdc00196e99e8b", 600000).
+		Nonce("825ac9fa5d015ec7c6b4cbbc50f78d619d255ea7", 184).
+		Build()
+
+	for i := 0; i < len(updates); i++ {
+		_, err := trie.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
+		require.NoError(t, err)
 	}
 
-	bt := NewBinaryPatriciaTrie()
-	for _, test := range tests {
-		bt.Update(test.key, test.value)
-	}
-
-	require.NotNil(t, bt.root.Node)
-
-	stack := make([]*Node, 0)
-	var stackPtr int
-
-	stack = append(stack, bt.root.Node)
-	stackPtr++
-	visited := make(map[*Node]struct{})
-
-	antipaths := make(map[*Node]string)
-	antipaths[bt.root.Node] = bitstring(bt.root.CommonPrefix).String()
-
-	for len(stack) > 0 {
-		next := stack[stackPtr-1]
-		_, seen := visited[next]
-		if seen {
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
-		}
-		visited[next] = struct{}{}
-
-		if next.Value == nil {
-			//require.Truef(t, next.L != nil || next.R != nil, "if node is not a leaf, at least one child should present")
-			if next.P != nil {
-				require.True(t, next.R != nil && next.L != nil, "bot child should exist L: %p, R: %p", next.L, next.R)
-			}
-		}
-		if next.L != nil || next.R != nil {
-			require.Truef(t, next.Value == nil, "if node has childs, node value should be nil, got %v", next.Value)
-		}
-		if next.L != nil {
-			stack = append(stack, next.L)
-			stackPtr++
-
-			curp := antipaths[next]
-			antipaths[next.L] = curp + bitstring(next.LPrefix).String()
-
-			require.Truef(t, bytes.HasPrefix(next.LPrefix, []byte{0}), "left prefix always begins with 0, got %v", next.LPrefix)
-		}
-		if next.R != nil {
-			stack = append(stack, next.R)
-			stackPtr++
-
-			curp := antipaths[next]
-			antipaths[next.R] = curp + bitstring(next.RPrefix).String()
-
-			require.Truef(t, bytes.HasPrefix(next.RPrefix, []byte{1}), "right prefix always begins with 1, got %v", next.RPrefix)
-		}
-
-		if next.Value != nil {
-			// leaf, go back
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
-		}
-	}
-
-	for node, path := range antipaths {
-		if node.Value == nil {
-			continue
-		}
-
-		if newBitstring(node.Key).String() != path {
-			t.Fatalf("node key %v- %v, path %v", node.Key, newBitstring(node.Key).String(), path)
-		}
-	}
-
-	t.Logf("tree total nodes: %d", len(visited))
-}
-
-func Test_Get(t *testing.T) {
-	t.Skip()
-	bt := NewBinaryPatriciaTrie()
-
-	tests := []struct {
-		key, value []byte
-	}{
-		{key: []byte{12}, value: []byte("notorious")},
-		{key: []byte{14}, value: []byte("2pac")},
-		{key: []byte{15}, value: []byte("eminem")},
-		{key: []byte{11}, value: []byte("big pun")},
-		{key: []byte{20}, value: []byte("method-man")},
-		{key: []byte{18}, value: []byte("fat-joe")},
-		{key: []byte{30}, value: []byte("jay-z")},
-		{key: []byte{5}, value: []byte("redman")},
-	}
-
-	for _, test := range tests {
-		bt.Update(test.key, test.value)
-	}
-
-	require.NotNil(t, bt.root.Node)
-
-	for _, test := range tests {
-		buf, ok := bt.Get(test.key)
-		require.Truef(t, ok, "key %v not found", test.key)
-		require.EqualValues(t, test.value, buf)
-	}
-
-}
-
-func Test_BinaryPatriciaTrie_ProcessUpdates(t *testing.T) {
-	bt := NewBinaryPatriciaTrie()
-
-	builder := NewUpdateBuilder().
-		Balance("9a", 100000).
-		Balance("e8", 200000).
-		Balance("a2", 300000).
-		Balance("f0", 400000).
-		Balance("af", 500000).
-		Balance("33", 600000).
-		Nonce("aa", 184)
-
-	plainKeys, hashedKeys, updates := builder.Build()
-	bt.SetTrace(true)
-	_, err := bt.ProcessUpdates(plainKeys, hashedKeys, updates)
-	require.NoError(t, err)
-
-	require.NotNil(t, bt.root.Node)
-
-	stack := make([]*Node, 0)
-	var stackPtr int
-
-	stack = append(stack, bt.root.Node)
-	stackPtr++
-	visited := make(map[*Node]struct{})
-
-	// validity check
-	for len(stack) > 0 {
-		next := stack[stackPtr-1]
-		_, seen := visited[next]
-		if seen {
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
-		}
-		visited[next] = struct{}{}
-
-		if next.Value == nil {
-			require.Truef(t, next.L != nil || next.R != nil, "if node is not a leaf, at least one child should present")
-			if next.P != nil {
-				require.True(t, next.R != nil && next.L != nil, "bot child should exist L: %p, R: %p", next.L, next.R)
-			}
-		}
-		if next.L != nil || next.R != nil {
-			require.Truef(t, next.Value == nil, "if node has childs, node value should be nil, got %v", next.Value)
-		}
-		if next.L != nil {
-			stack = append(stack, next.L)
-			stackPtr++
-
-			require.Truef(t, bytes.HasPrefix(next.LPrefix, []byte{0}), "left prefix always begins with 0, got %v", next.LPrefix)
-		}
-		if next.R != nil {
-			stack = append(stack, next.R)
-			stackPtr++
-
-			require.Truef(t, bytes.HasPrefix(next.RPrefix, []byte{1}), "right prefix always begins with 1, got %v", next.RPrefix)
-		}
-
-		if next.Value != nil {
-			// leaf, go back
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
-		}
-	}
-	rootHash, _ := bt.RootHash()
-	require.Len(t, rootHash, 32)
-	fmt.Printf("%+v\n", hex.EncodeToString(rootHash))
-	t.Logf("tree total nodes: %d", len(visited))
-}
-
-func Test_BinaryPatriciaTrie_UniqueRepresentation(t *testing.T) {
-	trieSequential := NewBinaryPatriciaTrie()
-
-	builder := NewUpdateBuilder().
-		Balance("9a", 100000).
-		Balance("e8", 200000).
-		Balance("a2", 300000).
-		Balance("f0", 400000).
-		Balance("af", 500000).
-		Balance("33", 600000).
-		Nonce("aa", 184)
-
-	plainKeys, hashedKeys, updates := builder.Build()
-
-	emptyHash, _ := trieSequential.RootHash()
-	require.EqualValues(t, EmptyRootHash, emptyHash)
-
-	for i := 0; i < len(plainKeys); i++ {
-		trieSequential.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
-		sequentialHash, _ := trieSequential.RootHash()
-		require.Len(t, sequentialHash, 32)
-	}
-
-	trieBatch := NewBinaryPatriciaTrie()
-	trieBatch.SetTrace(true)
 	trieBatch.ProcessUpdates(plainKeys, hashedKeys, updates)
 
-	sequentialHash, _ := trieSequential.RootHash()
+	sequentialHash, _ := trie.RootHash()
+	require.Len(t, sequentialHash, 32)
+
 	batchHash, _ := trieBatch.RootHash()
-
-	require.EqualValues(t, batchHash, sequentialHash)
+	require.EqualValues(t, sequentialHash, batchHash)
 }
 
-func Test_BinaryPatriciaTrie_BranchEncoding(t *testing.T) {
-	builder := NewUpdateBuilder().
-		Balance("9a", 100000).
-		Balance("e8", 200000).
-		Balance("a2", 300000).
-		Balance("f0", 400000).
-		Balance("af", 500000).
-		Balance("33", 600000).
-		Nonce("aa", 184)
+func Test_BinPatriciaTrie_EmptyState(t *testing.T) {
+	ms := NewMockState(t)
+	hph := NewBinPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
+	hph.SetTrace(false)
 
-	plainKeys, hashedKeys, updates := builder.Build()
-
-	trie := NewBinaryPatriciaTrie()
-
-	emptyHash, _ := trie.RootHash()
-	require.EqualValues(t, EmptyRootHash, emptyHash)
-
-	trie.SetTrace(true)
-
-	branchUpdates, err := trie.ProcessUpdates(plainKeys, hashedKeys, updates)
-	require.NoError(t, err)
-	require.NotEmpty(t, branchUpdates)
-
-	//sequentialHash, _ := trie.RootHash()
-	//expectedRoot, _ := hex.DecodeString("87809bbb5282c01ac13cac744db5fee083882e93f781d6af2ad028455d5bdaac")
-	//
-	//require.EqualValues(t, expectedRoot, sequentialHash)
-
-	for pref, update := range branchUpdates {
-		account, _, _ := ExtractBinPlainKeys(update)
-		t.Logf("pref %v: accounts:", pref)
-		for _, acc := range account {
-			t.Logf("\t%s\n", hex.EncodeToString(acc))
-		}
+	plainKeys, hashedKeys, updates := NewUpdateBuilder().
+		Balance("00", 4).
+		Balance("01", 5).
+		Balance("02", 6).
+		Balance("03", 7).
+		Balance("04", 8).
+		Storage("04", "01", "0401").
+		Storage("03", "56", "050505").
+		Storage("03", "57", "060606").
+		Balance("05", 9).
+		Storage("05", "02", "8989").
+		Storage("05", "04", "9898").
+		Build()
+	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
+		t.Fatal(err)
+	}
+	branchNodeUpdates, err := hph.ProcessUpdates(plainKeys, hashedKeys, updates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
+	fmt.Printf("1. Generated updates\n")
+	var keys []string
+	for key := range branchNodeUpdates {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		branchNodeUpdate := branchNodeUpdates[key]
+		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
+	}
+	// More updates
+	hph.Reset()
+	hph.SetTrace(false)
+	plainKeys, hashedKeys, updates = NewUpdateBuilder().
+		Storage("03", "58", "050505").
+		Build()
+	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
+		t.Fatal(err)
+	}
+	branchNodeUpdates, err = hph.ProcessUpdates(plainKeys, hashedKeys, updates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
+	fmt.Printf("2. Generated updates\n")
+	keys = keys[:0]
+	for key := range branchNodeUpdates {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		branchNodeUpdate := branchNodeUpdates[key]
+		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
+	}
+	// More updates
+	hph.Reset()
+	hph.SetTrace(false)
+	plainKeys, hashedKeys, updates = NewUpdateBuilder().
+		Storage("03", "58", "070807").
+		Build()
+	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
+		t.Fatal(err)
+	}
+	branchNodeUpdates, err = hph.ProcessUpdates(plainKeys, hashedKeys, updates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
+	fmt.Printf("3. Generated updates\n")
+	keys = keys[:0]
+	for key := range branchNodeUpdates {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		branchNodeUpdate := branchNodeUpdates[key]
+		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
 	}
 }
 
-func Test_ReplaceBinPlainKeys(t *testing.T) {
-	v, err := hex.DecodeString("0000000310ea0300000000000001010000000000000001000100000000010001010000000000010101000000000101000100000000000101000000000000010001000000000100010000000000010000000000000000010000000000000100010000000000000100010000000001000000000000000100000100000000000000010000000000000101000000000100010000000000010001000000000001000000000000000101010000000000010101000000000000000101000000000000000000000000000000000000000001000000000000000001010100000000000100000000000000010001000000000000000000000000010101010000000001010100000000000000000100000000010000010000000001010101000000000100010000000000000101010000000001010000000000000000010100000000010100010000000000000100000000000000010000000000000000000000000001000101000000000101010100000000000001000000000001000001000000000101010000000000010001010000000001010101000000000101010000000000010001000000000000000001000000000001010000000000000001010000000001000100000000000100010000000000010101000000000000010100000000000101010100000000000000000000000001010000ea03010000000000010001000000000000010101000000000000000100000000010001010000000000010101000000000000000000000000010000010000000001010101000000000101010000000000010000000000000001000101000000000000010100000000000101010000000000010100000000000000010100000000010100000000000001010100000000000100010000000000010101010000000001010101000000000001000000000000010000000000000000000001000000000000000100000000000100000000000000000101000000000101000100000000000100000000000000010100000000000001000000000000000001000000000000010101000000000001000100000000000001010000000001010101000000000100000000000000010100010000000001000101000000000101010100000000010001000000000000010100000000000101010100000000000101000000000000000100000000000000000100000000010100010000000000010100000000000000010000000000000001000000000001010100000000000000000000000000010000010000000001010000000000000100000000000000010001010000000000010000000000000100000000000000000100000000000001000100000000000001010000000000010001010214b910f4453d5fa062f828caf3b0e2adff3824407c24e68080a000000000000000000000000000000000000000000000000000000000000000000214d2798468b343c4b104ecc2585e1c1b57b7c1807424e68080a00000000000000000000000000000000000000000000000000000000000000000")
-	require.NoError(t, err)
-
-	accountPlainKeys := make([][]byte, 0)
-	accountPlainKeys = append(accountPlainKeys, []byte("1a"))
-	accountPlainKeys = append(accountPlainKeys, []byte("b1"))
-
-	storageKeys := make([][]byte, 0)
-	buf := make([]byte, 0)
-	fin, err := ReplaceBinPlainKeys(v, accountPlainKeys, storageKeys, buf)
-	require.NoError(t, err)
-	require.NotEmpty(t, fin)
-}
-
-func Test_ReplaceBinPlainKeys2(t *testing.T) {
-	//rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	key := make([]byte, 52)
-
-	_, err := rand.Read(key)
-	require.NoError(t, err)
-
-	L := &Node{Key: key, Value: []byte("aa"), isStorage: true}
-	buf := encodeNodeUpdate(L, 1, 1, nil)
-
-	accountPlainKeys, storageKeys, err := ExtractBinPlainKeys(buf)
-	require.NoError(t, err)
-	require.Empty(t, accountPlainKeys)
-	require.Contains(t, storageKeys, key)
-
-	newStorageKeys := make([][]byte, 0)
-	newStorageKeys = append(newStorageKeys, []byte("1aa0"))
-	//fin, err := ReplacePlainKeys(v, accountPlainKeys, storageKeys, buf)
-
-	fin := make([]byte, 0)
-	fin, err = ReplaceBinPlainKeys(buf, accountPlainKeys, newStorageKeys, fin)
-	require.NoError(t, err)
-	require.NotEmpty(t, fin)
-	require.NotEqualValues(t, fin, buf)
-
-	accountPlainKeys, storageKeys, err = ExtractBinPlainKeys(fin)
-	require.NoError(t, err)
-	require.Empty(t, accountPlainKeys)
-	require.Contains(t, storageKeys, newStorageKeys[0])
-}
-
-func Test_EncodeUpdate_Storage(t *testing.T) {
-	L := &Node{Key: []byte("1aa0"), Value: []byte("aa"), isStorage: true}
-
-	buf := encodeNodeUpdate(L, 1, 1, nil)
-
-	accountPlainKeys, storagePlainKeys, err := ExtractBinPlainKeys(buf)
-	require.NoError(t, err)
-	require.Len(t, storagePlainKeys, 1)
-	require.Len(t, accountPlainKeys, 0)
-	require.Contains(t, storagePlainKeys, L.Key)
-
-	newAccountPlainKeys := make([][]byte, 0)
-	newAccountPlainKeys = append(newAccountPlainKeys, []byte("11a"))
-	newStorageKeys := make([][]byte, 0)
-	newStorageKeys = append(newStorageKeys, []byte("7770"))
-
-	fin, err := ReplaceBinPlainKeys(buf, newAccountPlainKeys, newStorageKeys, []byte{})
-	require.NoError(t, err)
-	require.NotEmpty(t, fin)
-
-	accountPlainKeys, storagePlainKeys, err = ExtractBinPlainKeys(fin)
-	require.NoError(t, err)
-	require.Len(t, storagePlainKeys, 1)
-	require.Len(t, accountPlainKeys, 0)
-	require.Contains(t, storagePlainKeys, newStorageKeys[0])
-
-	// ====================== replace account plain key
-
-	R := &Node{Key: []byte("1a"), Value: []byte("bb")}
-	buf = encodeNodeUpdate(R, 2, 2, nil)
-
-	accountPlainKeys, storagePlainKeys, err = ExtractBinPlainKeys(buf)
-	require.NoError(t, err)
-	require.Len(t, storagePlainKeys, 0)
-	require.Len(t, accountPlainKeys, 1)
-	require.Contains(t, accountPlainKeys, R.Key)
-
-	fin, err = ReplaceBinPlainKeys(buf, newAccountPlainKeys, newStorageKeys, []byte{})
-	require.NoError(t, err)
-	require.NotEmpty(t, fin)
-
-	accountPlainKeys, storagePlainKeys, err = ExtractBinPlainKeys(fin)
-	require.NoError(t, err)
-	require.Len(t, storagePlainKeys, 0)
-	require.Len(t, accountPlainKeys, 1)
-	require.Contains(t, accountPlainKeys, newAccountPlainKeys[0])
-}
-
-func Test_bitstring_encode_decode_padding(t *testing.T) {
+func Test_Bin2PatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	t.Skip()
-	key, err := hex.DecodeString("db3164534fec08b5a86ae5dda0a997a63f2ee408")
-	require.NoError(t, err)
 
-	bs := newBitstring(key)
-	re, padding := bs.reconstructHex()
-	require.Zerof(t, padding, "padding should be zero")
-	require.EqualValues(t, key, re)
-}
+	ms := NewMockState(t)
+	ms2 := NewMockState(t)
 
-func Test_bitstring_encode_decode_empty(t *testing.T) {
-	re, pad := bitstring{}.reconstructHex()
-	require.EqualValues(t, bitstring{}, re)
-	require.EqualValues(t, 0, pad)
-}
+	plainKeys, hashedKeys, updates := NewUpdateBuilder().
+		Balance("f4", 4).
+		Storage("04", "01", "0401").
+		Balance("ba", 065606).
+		Balance("00", 4).
+		Balance("01", 5).
+		Balance("02", 6).
+		Balance("03", 7).
+		Storage("03", "56", "050505").
+		Balance("05", 9).
+		Storage("03", "57", "060606").
+		Balance("b9", 6).
+		Nonce("ff", 169356).
+		Storage("05", "02", "8989").
+		Storage("f5", "04", "9898").
+		Build()
 
-func Test_bitstring_encode_decode_one_padding(t *testing.T) {
-	bs := bitstring{1}
-	re, pad := bs.reconstructHex()
-	require.EqualValues(t, 7, pad)
-	require.EqualValues(t, []byte{1 << 7, byte(0xf0 | pad)}, re)
-
-	bs2 := bitstringWithPadding(re, pad)
-	require.EqualValues(t, bs, bs2)
-}
-
-func Test_bitstring_encode_decode_padding_notzero(t *testing.T) {
-	t.Skip("Failing")
-	key, err := hex.DecodeString("db3164534fec08b5a86ae5dda0a997a63f2ee408")
-	require.NoError(t, err)
-
-	bs := newBitstring(key)
-	offt := 3 // last byte is 08 => 1000, chop last three zeros
-
-	chop := bs[len(bs)-offt:]
-	bs = bs[:len(bs)-offt]
-	_ = chop
-	re, padding := bs.reconstructHex() // during reconstruction padding will be applied - add 3 chopped zero
-	require.EqualValues(t, offt, padding)
-	require.EqualValues(t, key, re)
-}
-
-func Test_BinaryPatriciaTrie_ProcessUpdatesDelete(t *testing.T) {
-	bt := NewBinaryPatriciaTrie()
-
-	builder := NewUpdateBuilder().
-		Balance("ffff", 200000).
-		Balance("feff", 300000).
-		Balance("ffdf", 400000).
-		Balance("fedf", 400000)
-
-	plainKeys, hashedKeys, updates := builder.Build()
-
-	bt.SetTrace(true)
-	_, err := bt.ProcessUpdates(plainKeys, hashedKeys, updates)
-	require.NotNil(t, bt.root.Node)
-	require.NoError(t, err)
-	t.Logf("trie stat: %s", bt.StatString())
-
-	builder = NewUpdateBuilder().
-		Delete("fedf").
-		Delete("ffff")
-
-	plainKeys, hashedKeys, updates = builder.Build()
-	require.NoError(t, err)
-
-	_, err = bt.ProcessUpdates(plainKeys, hashedKeys, updates)
-	require.NotNil(t, bt.root.Node)
-	require.NoError(t, err)
-
-	for i, key := range hashedKeys {
-		v, ok := bt.Get(key) // keys "af" and "e8" should be deleted
-		if len(v) > 0 {
-			t.Logf("key %x: %v", hashedKeys[i], new(Account).decode(v).String())
+	renderUpdates := func(branchNodeUpdates map[string][]byte) {
+		var keys []string
+		for key := range branchNodeUpdates {
+			keys = append(keys, key)
 		}
-		require.Emptyf(t, v, "value for key %x should be not empty", plainKeys[i])
-		require.False(t, ok)
-	}
-
-	stack := make([]*Node, 0)
-	var stackPtr int
-
-	stack = append(stack, bt.root.Node)
-	stackPtr++
-	visited := make(map[*Node]struct{})
-
-	// validity check
-	for len(stack) > 0 {
-		next := stack[stackPtr-1]
-		_, seen := visited[next]
-		if seen {
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
-		}
-		visited[next] = struct{}{}
-
-		if next.Value == nil {
-			require.Truef(t, next.L != nil || next.R != nil, "if node is not a leaf, at least one child should present")
-			if next.P != nil {
-				require.True(t, next.R != nil && next.L != nil, "bot child should exist L: %p, R: %p", next.L, next.R)
-			}
-		}
-		if next.L != nil || next.R != nil {
-			require.Truef(t, next.Value == nil, "if node has childs, node value should be nil, got %v", next.Value)
-		}
-		if next.L != nil {
-			stack = append(stack, next.L)
-			stackPtr++
-
-			require.Truef(t, bytes.HasPrefix(next.LPrefix, []byte{0}), "left prefix always begins with 0, got %v", next.LPrefix)
-		}
-		if next.R != nil {
-			stack = append(stack, next.R)
-			stackPtr++
-
-			require.Truef(t, bytes.HasPrefix(next.RPrefix, []byte{1}), "right prefix always begins with 1, got %v", next.RPrefix)
-		}
-
-		if next.Value != nil {
-			// leaf, go back
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
+		slices.Sort(keys)
+		for _, key := range keys {
+			branchNodeUpdate := branchNodeUpdates[key]
+			fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
 		}
 	}
-	rootHash, _ := bt.RootHash()
-	require.Len(t, rootHash, 32)
-	fmt.Printf("%+v\n", hex.EncodeToString(rootHash))
-	t.Logf("tree total nodes: %d", len(visited))
-}
 
-func Test_BinaryPatriciaTrie_ProcessStorageUpdates(t *testing.T) {
-	bt := NewBinaryPatriciaTrie()
+	trieOne := NewBinPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
+	trieTwo := NewBinPatriciaHashed(1, ms2.branchFn, ms2.accountFn, ms2.storageFn)
 
-	builder := NewUpdateBuilder().
-		Storage("e8", "02", "98").
-		Balance("e8", 1337)
+	trieTwo.Reset()
+	trieOne.Reset()
 
-	plainKeys, hashedKeys, updates := builder.Build()
+	trieOne.SetTrace(true)
+	trieTwo.SetTrace(true)
 
-	bt.SetTrace(true)
-	_, err := bt.ProcessUpdates(plainKeys, hashedKeys, updates)
-	require.NoError(t, err)
-	require.NotNil(t, bt.root.Node)
-
-	checkPlainKeys, checkHashedKeys, _ := NewUpdateBuilder().Delete("e8").Build()
-
-	av, exist := bt.Get(checkHashedKeys[0])
-	require.Truef(t, exist, "key %x should exist", checkPlainKeys[0])
-	acc := new(Account).decode(av)
-	require.Truef(t, acc.Balance.Eq(uint256.NewInt(1337)), "balance should be 1337, got %v", acc.Balance)
-
-	accountPlainKey, accountHashedKey, upd := NewUpdateBuilder().DeleteStorage("e8", "02").Build()
-	_, err = bt.ProcessUpdates(accountPlainKey, accountHashedKey, upd)
-	require.NoError(t, err)
-
-	for i, key := range accountHashedKey {
-		v, ok := bt.Get(key)
-		require.Emptyf(t, v, "value for key %x should be empty", accountPlainKey[i])
-		require.False(t, ok)
-	}
-
-	stack := make([]*Node, 0)
-	var stackPtr int
-
-	stack = append(stack, bt.root.Node)
-	stackPtr++
-	visited := make(map[*Node]struct{})
-
-	// validity check
-	for len(stack) > 0 {
-		next := stack[stackPtr-1]
-		_, seen := visited[next]
-		if seen {
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
+	// single sequential update
+	roots := make([][]byte, 0)
+	branchNodeUpdatesOne := make(map[string][]byte)
+	for i := 0; i < len(updates); i++ {
+		if err := ms.applyPlainUpdates(plainKeys[i:i+1], updates[i:i+1]); err != nil {
+			t.Fatal(err)
 		}
-		visited[next] = struct{}{}
-
-		if next.Value == nil {
-			require.Truef(t, next.L != nil || next.R != nil, "if node is not a leaf, at least one child should present")
-			if next.P != nil {
-				require.True(t, next.R != nil && next.L != nil, "bot child should exist L: %p, R: %p", next.L, next.R)
-			}
-		}
-		if next.L != nil || next.R != nil {
-			require.Truef(t, next.Value == nil, "if node has childs, node value should be nil, got %v", next.Value)
-		}
-		if next.L != nil {
-			stack = append(stack, next.L)
-			stackPtr++
-			if len(next.LPrefix) == 0 {
-				require.NotNilf(t, next.L.Value, "if left prefix is empty, left child MUST be leaf and there MUST be another child down on path, got branch")
-			} else {
-				require.Truef(t, bytes.HasPrefix(next.LPrefix, []byte{0}), "left prefix always begins with 0, got %v", next.LPrefix)
-			}
-		}
-		if next.R != nil {
-			stack = append(stack, next.R)
-			stackPtr++
-			if len(next.RPrefix) == 0 {
-				require.NotNilf(t, next.R.Value, "if right prefix is nil, right child MUST be leaf, got branch")
-			} else {
-				require.Truef(t, bytes.HasPrefix(next.RPrefix, []byte{1}), "right prefix always begins with 1, got %v", next.RPrefix)
-			}
-		}
-
-		if next.Value != nil {
-			// leaf, go back
-			stack = stack[:stackPtr-1]
-			stackPtr--
-			continue
-		}
-	}
-	rootHash, _ := bt.RootHash()
-	require.Len(t, rootHash, 32)
-	fmt.Printf("%+v\n", hex.EncodeToString(rootHash))
-	t.Logf("tree total nodes: %d", len(visited))
-}
-
-func Test_encodeNode(t *testing.T) {
-	t.Skip()
-	builder := NewUpdateBuilder().
-		Balance("ff", 255).
-		Balance("fd", 253).
-		Balance("fe", 254)
-
-	apk, _, upd := builder.Build()
-	trie := NewBinaryPatriciaTrie()
-	trie.trace = true
-	for i := 0; i < len(upd); i++ {
-		updates, err := trie.ProcessUpdates(apk[i:i+1], apk[i:i+1], upd[i:i+1])
+		branchNodeUpdates, err := trieOne.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
 		require.NoError(t, err)
-		require.NotEmpty(t, updates)
-		fmt.Printf("-----\n")
+
+		sequentialRoot, err := trieOne.RootHash()
+		require.NoError(t, err)
+		roots = append(roots, sequentialRoot)
+
+		ms.applyBranchNodeUpdates(branchNodeUpdates)
+
+		for br, upd := range branchNodeUpdates {
+			branchNodeUpdatesOne[br] = upd
+		}
+		renderUpdates(branchNodeUpdatesOne)
 	}
+
+	fmt.Printf("1. Trie sequential update generated following branch updates\n")
+	renderUpdates(branchNodeUpdatesOne)
+
+	err := ms2.applyPlainUpdates(plainKeys, updates)
+	require.NoError(t, err)
+	fmt.Printf("\n\n")
+
+	// batch update
+	branchNodeUpdatesTwo, err := trieTwo.ProcessUpdates(plainKeys, hashedKeys, updates)
+	require.NoError(t, err)
+
+	ms2.applyBranchNodeUpdates(branchNodeUpdatesTwo)
+
+	fmt.Printf("2. Trie batch update generated following branch updates\n")
+	renderUpdates(branchNodeUpdatesTwo)
+
+	sequentialRoot, err := trieOne.RootHash()
+	require.NoError(t, err)
+
+	for i, root := range roots {
+		fmt.Printf("%d [%s]\n", i, hex.EncodeToString(root))
+	}
+	require.NotContainsf(t, roots[:len(roots)-1], sequentialRoot, "sequential root %s found in previous hashes", hex.EncodeToString(sequentialRoot))
+
+	batchRoot, err := trieTwo.RootHash()
+	require.NoError(t, err)
+
+	require.EqualValues(t, batchRoot, sequentialRoot,
+		"expected equal roots, got sequential [%v] != batch [%v]", hex.EncodeToString(sequentialRoot), hex.EncodeToString(batchRoot))
+	require.Lenf(t, batchRoot, 32, "root hash length should be equal to 32 bytes")
 }
