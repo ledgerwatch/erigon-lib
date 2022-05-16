@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/ledgerwatch/log/v3"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCompressEmptyDict(t *testing.T) {
@@ -86,7 +87,7 @@ func prepareDict(t *testing.T) *Decompressor {
 	}
 	defer c.Close()
 	for i := 0; i < 100; i++ {
-		if err = c.AddWord([]byte{}); err != nil {
+		if err = c.AddWord(nil); err != nil {
 			panic(err)
 		}
 		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
@@ -109,10 +110,11 @@ func TestCompressDict1(t *testing.T) {
 	g := d.MakeGetter()
 	i := 0
 	for g.HasNext() {
+		require.False(t, g.MatchPrefix([]byte("long")))
+		require.True(t, g.MatchPrefix([]byte{}))
 		word, _ := g.Next(nil)
-		if string(word) != "" {
-			t.Errorf("expected empty bytes slice, got (hex) [%s]", word)
-		}
+		require.Nil(t, word)
+
 		word, _ = g.Next(nil)
 		expected := fmt.Sprintf("longlongword %d", i)
 		if string(word) != expected {
