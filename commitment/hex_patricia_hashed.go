@@ -467,7 +467,7 @@ func (hph *HexPatriciaHashed) leafHashWithKeyVal(key []byte, val rlp.RlpSerializ
 	return buf[0], *(*[32]byte)(buf[1:]), nil
 }
 
-func (cell *Cell) accountForHashing(buffer, storageRootHash []byte) int {
+func (cell *Cell) accountForHashing(buffer []byte, storageRootHash [32]byte) int {
 	balanceBytes := 0
 	if !cell.Balance.LtUint64(128) {
 		balanceBytes = cell.Balance.ByteLen()
@@ -526,7 +526,7 @@ func (cell *Cell) accountForHashing(buffer, storageRootHash []byte) int {
 	// Encoding Root and CodeHash
 	buffer[pos] = 128 + 32
 	pos++
-	copy(buffer[pos:], storageRootHash[:length.Hash])
+	copy(buffer[pos:], storageRootHash[:])
 	pos += 32
 	buffer[pos] = 128 + 32
 	pos++
@@ -717,7 +717,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int) (uint8, [32
 			}
 		}
 		var valBuf [128]byte
-		valLen := cell.accountForHashing(valBuf[:], storageRootHash[:])
+		valLen := cell.accountForHashing(valBuf[:], storageRootHash)
 		if hph.trace {
 			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.downHashedKey[:65-depth], valBuf[:valLen])
 		}

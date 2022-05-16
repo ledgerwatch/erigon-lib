@@ -479,7 +479,7 @@ func (hph *BinHashed) computeCellHash(cell *BinCell, depth int) (uint8, [32]byte
 			}
 		}
 		var valBuf [128]byte
-		valLen := cell.accountForHashing(valBuf[:], storageRootHash[:])
+		valLen := cell.accountForHashing(valBuf[:], storageRootHash)
 		if hph.trace {
 			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.downHashedKey[:keyHalfSize+1-depth], valBuf[:valLen])
 		}
@@ -1366,7 +1366,7 @@ func (cell *BinCell) fillFromFields(data []byte, pos int, fieldBits PartFlags) (
 	return pos, nil
 }
 
-func (cell *BinCell) accountForHashing(buffer, storageRootHash []byte) int {
+func (cell *BinCell) accountForHashing(buffer []byte, storageRootHash [32]byte) int {
 	balanceBytes := 0
 	if !cell.Balance.LtUint64(128) {
 		balanceBytes = cell.Balance.ByteLen()
@@ -1425,7 +1425,7 @@ func (cell *BinCell) accountForHashing(buffer, storageRootHash []byte) int {
 	// Encoding Root and CodeHash
 	buffer[pos] = 128 + 32
 	pos++
-	copy(buffer[pos:], storageRootHash[:length.Hash])
+	copy(buffer[pos:], storageRootHash[:])
 	pos += 32
 	buffer[pos] = 128 + 32
 	pos++
