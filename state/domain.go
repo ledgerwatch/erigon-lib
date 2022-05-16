@@ -41,8 +41,6 @@ type Domain struct {
 	historyTable    string
 	indexTable      string // Needs to be table with DupSort
 	tx              kv.RwTx
-	blockNum        uint64
-	startTxNum      uint64
 	txNum           uint64
 }
 
@@ -70,19 +68,13 @@ func (d *Domain) SetTx(tx kv.RwTx) {
 	d.tx = tx
 }
 
-func (d *Domain) SetBlockNum(blockNum uint64, startTxNum uint64) error {
-	d.blockNum = blockNum
-	d.startTxNum = startTxNum
-	return nil
-}
-
 func (d *Domain) SetTxNum(txNum uint64) {
 	d.txNum = txNum
 }
 
 func (d *Domain) get(key []byte) ([]byte, bool, error) {
 	var invertedStep [8]byte
-	binary.BigEndian.PutUint64(invertedStep[:], ^(d.blockNum / d.aggregationStep))
+	binary.BigEndian.PutUint64(invertedStep[:], ^(d.txNum / d.aggregationStep))
 	keyCursor, err := d.tx.CursorDupSort(d.keysTable)
 	if err != nil {
 		return nil, false, err
@@ -113,7 +105,7 @@ func (d *Domain) Get(key []byte) ([]byte, error) {
 
 func (d *Domain) update(key, original []byte) error {
 	var invertedStep [8]byte
-	binary.BigEndian.PutUint64(invertedStep[:], ^(d.blockNum / d.aggregationStep))
+	binary.BigEndian.PutUint64(invertedStep[:], ^(d.txNum / d.aggregationStep))
 	if err := d.tx.Put(d.keysTable, key, invertedStep[:]); err != nil {
 		return err
 	}
@@ -134,7 +126,7 @@ func (d *Domain) Put(key, val []byte) error {
 	if err != nil {
 		return err
 	}
-	invertedStep := ^(d.blockNum / d.aggregationStep)
+	invertedStep := ^(d.txNum / d.aggregationStep)
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
@@ -152,7 +144,7 @@ func (d *Domain) Delete(key []byte) error {
 	if err != nil {
 		return err
 	}
-	invertedStep := ^(d.blockNum / d.aggregationStep)
+	invertedStep := ^(d.txNum / d.aggregationStep)
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)

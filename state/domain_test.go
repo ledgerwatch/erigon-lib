@@ -54,7 +54,6 @@ func TestCollation(t *testing.T) {
 	defer tx.Rollback()
 	d.SetTx(tx)
 
-	d.SetBlockNum(1, 1)
 	d.SetTxNum(2)
 	err = d.Put([]byte("key1"), []byte("value1.1"))
 	require.NoError(t, err)
@@ -63,7 +62,6 @@ func TestCollation(t *testing.T) {
 	err = d.Put([]byte("key2"), []byte("value2.1"))
 	require.NoError(t, err)
 
-	d.SetBlockNum(2, 5)
 	d.SetTxNum(6)
 	err = d.Put([]byte("key1"), []byte("value1.2"))
 	require.NoError(t, err)
@@ -84,6 +82,25 @@ func TestCollation(t *testing.T) {
 	require.Equal(t, 2, len(c.indexBitmaps))
 	require.Equal(t, []uint64{3}, c.indexBitmaps["key2"].ToArray())
 	require.Equal(t, []uint64{2, 6}, c.indexBitmaps["key1"].ToArray())
+
+	sf, err := d.buildFiles(0, c)
+	require.NoError(t, err)
+	g := sf.valuesDecomp.MakeGetter()
+	g.Reset(0)
+	var words []string
+	for g.HasNext() {
+		w, _ := g.Next(nil)
+		words = append(words, string(w))
+	}
+	require.Equal(t, []string{"key1", "value1.2", "key2", "value2.1"}, words)
+	g = sf.historyDecomp.MakeGetter()
+	g.Reset(0)
+	words = words[:0]
+	for g.HasNext() {
+		w, _ := g.Next(nil)
+		words = append(words, string(w))
+	}
+	require.Equal(t, []string{"\x00\x00\x00\x00\x00\x00\x00\x02key1", "\x00", "\x00\x00\x00\x00\x00\x00\x00\x03key2", "\x00", "\x00\x00\x00\x00\x00\x00\x00\x06key1", "value1.2"}, words)
 }
 
 func TestIteration(t *testing.T) {
@@ -94,7 +111,6 @@ func TestIteration(t *testing.T) {
 	defer tx.Rollback()
 	d.SetTx(tx)
 
-	d.SetBlockNum(1, 1)
 	d.SetTxNum(2)
 	err = d.Put([]byte("addr1loc1"), []byte("value1"))
 	require.NoError(t, err)
