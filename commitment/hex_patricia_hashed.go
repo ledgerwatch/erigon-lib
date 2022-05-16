@@ -659,7 +659,7 @@ func (hph *HexPatriciaHashed) computeCellHashLen(cell *Cell, depth int) int {
 	return length.Hash + 1
 }
 
-func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte) ([]byte, error) {
+func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int) ([]byte, error) {
 	var err error
 	var storageRootHash []byte
 	if cell.spl > 0 {
@@ -685,6 +685,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 			if hph.trace {
 				fmt.Printf("leafHashWithKeyVal for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
 			}
+			var buf []byte
 			if buf, err = hph.leafHashWithKeyVal(buf, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), false); err != nil {
 				return nil, err
 			}
@@ -720,12 +721,13 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		if hph.trace {
 			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.downHashedKey[:65-depth], valBuf[:valLen])
 		}
+		var buf []byte
 		if buf, err = hph.accountLeafHashWithKey(buf, cell.downHashedKey[:65-depth], rlp.RlpEncodedBytes(valBuf[:valLen])); err != nil {
 			return nil, err
 		}
 		return buf, nil
 	}
-	buf = append(buf, 0x80+32)
+	buf := []byte{0x80 + 32}
 	if cell.extLen > 0 {
 		// Extension
 		if cell.hl > 0 {
@@ -1167,7 +1169,6 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 		}
 		var lastNibble int
 		var b [1]byte
-		var cellHashBuf [33]byte
 		for bitset, j := hph.afterMap[row], 0; bitset != 0; j++ {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
@@ -1183,7 +1184,7 @@ func (hph *HexPatriciaHashed) fold() ([]byte, []byte, error) {
 			lastNibble = nibble + 1
 			cell := &hph.grid[row][nibble]
 
-			cellHash, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
+			cellHash, err := hph.computeCellHash(cell, depth)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1402,7 +1403,7 @@ func (hph *HexPatriciaHashed) updateStorage(plainKey, hashedKey, value []byte) {
 }
 
 func (hph *HexPatriciaHashed) RootHash() ([]byte, error) {
-	hash, err := hph.computeCellHash(&hph.root, 0, nil)
+	hash, err := hph.computeCellHash(&hph.root, 0)
 	if err != nil {
 		return nil, err
 	}
