@@ -661,7 +661,8 @@ func (hph *HexPatriciaHashed) computeCellHashLen(cell *Cell, depth int) int {
 
 func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int) ([]byte, error) {
 	var err error
-	var storageRootHash []byte
+	var storageRootHash [32]byte
+	storageRootHashIsSet := false
 	if cell.spl > 0 {
 		var hashedKeyOffset int
 		if depth >= 64 {
@@ -677,10 +678,12 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int) ([]byte, er
 			if hph.trace {
 				fmt.Printf("leafHashWithKeyVal(singleton) for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
 			}
-			if storageRootHash, err = hph.leafHashWithKeyVal(nil, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), true); err != nil {
+			var storageRootHashBuf []byte
+			if storageRootHashBuf, err = hph.leafHashWithKeyVal(nil, cell.downHashedKey[:64-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), true); err != nil {
 				return nil, err
 			}
-			storageRootHash = storageRootHash[1:]
+			storageRootHash = *(*[32]byte)(storageRootHashBuf[1:])
+			storageRootHashIsSet = true
 		} else {
 			if hph.trace {
 				fmt.Printf("leafHashWithKeyVal for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
@@ -697,29 +700,27 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int) ([]byte, er
 			return nil, err
 		}
 		cell.downHashedKey[64-depth] = 16 // Add terminator
-		if storageRootHash == nil {
+		if !storageRootHashIsSet {
 			if cell.extLen > 0 {
 				// Extension
 				if cell.hl > 0 {
 					if hph.trace {
 						fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.extension[:cell.extLen], cell.h[:cell.hl])
 					}
-					var storageRootHashArr [32]byte
-					if storageRootHashArr, err = hph.extensionHash(cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
+					if storageRootHash, err = hph.extensionHash(cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
 						return nil, err
 					}
-					storageRootHash = storageRootHashArr[:]
 				} else {
 					return nil, fmt.Errorf("computeCellHash extension without hash")
 				}
 			} else if cell.hl > 0 {
-				storageRootHash = cell.h[:cell.hl]
+				storageRootHash = cell.h
 			} else {
-				storageRootHash = EmptyRootHash
+				storageRootHash = *(*[32]byte)(EmptyRootHash)
 			}
 		}
 		var valBuf [128]byte
-		valLen := cell.accountForHashing(valBuf[:], storageRootHash)
+		valLen := cell.accountForHashing(valBuf[:], storageRootHash[:])
 		if hph.trace {
 			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.downHashedKey[:65-depth], valBuf[:valLen])
 		}
