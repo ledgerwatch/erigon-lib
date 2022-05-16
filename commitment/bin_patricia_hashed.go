@@ -146,11 +146,8 @@ func (hph *BinHashed) Variant() TrieVariant {
 }
 
 func (hph *BinHashed) RootHash() ([]byte, error) {
-	hash, err := hph.computeCellHash(&hph.root, 0, nil)
-	if err != nil {
-		return nil, err
-	}
-	return hash[1:], nil // first byte is 128+hash_len
+	_, hash, err := hph.computeCellHash(&hph.root, 0, nil)
+	return hash[:], err
 }
 
 func (hph *BinHashed) SetTrace(trace bool) {
@@ -425,7 +422,7 @@ func (hph *BinHashed) computeCellHashLen(cell *BinCell, depth int) int {
 	return length.Hash + 1
 }
 
-func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) ([]byte, error) {
+func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) (uint8, [32]byte, error) {
 	var err error
 	var storageRootHash [32]byte
 	storageRootHashIsSet := false
@@ -436,7 +433,7 @@ func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) ([]b
 		}
 		singleton := depth <= keyHalfSize
 		if err := hashKey(hph.keccak, cell.spk[hph.accountKeyLen:cell.spl], cell.downHashedKey[:], hashedKeyOffset); err != nil {
-			return nil, err
+			return 0, [32]byte{}, err
 		}
 		cell.downHashedKey[keyHalfSize-hashedKeyOffset] = 16 // Add terminator
 		if singleton {
@@ -445,7 +442,7 @@ func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) ([]b
 			}
 			var storageRootHashBuf []byte
 			if storageRootHashBuf, err = hph.leafHashWithKeyVal(nil, cell.downHashedKey[:keyHalfSize-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), true); err != nil {
-				return nil, err
+				return 0, [32]byte{}, err
 			}
 			storageRootHash = *(*[32]byte)(storageRootHashBuf[1:])
 			storageRootHashIsSet = true
@@ -454,14 +451,14 @@ func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) ([]b
 				fmt.Printf("leafHashWithKeyVal for [%x]=>[%x]\n", cell.downHashedKey[:keyHalfSize-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
 			}
 			if buf, err = hph.leafHashWithKeyVal(buf, cell.downHashedKey[:keyHalfSize-hashedKeyOffset+1], rlp.RlpSerializableBytes(cell.Storage[:cell.StorageLen]), false); err != nil {
-				return nil, err
+				return 0, [32]byte{}, err
 			}
-			return buf, nil
+			return buf[0], *(*[32]byte)(buf[1:]), nil
 		}
 	}
 	if cell.apl > 0 {
 		if err := hashKey(hph.keccak, cell.apk[:cell.apl], cell.downHashedKey[:], depth); err != nil {
-			return nil, err
+			return 0, [32]byte{}, err
 		}
 		cell.downHashedKey[keyHalfSize-depth] = 16 // Add terminator
 		if !storageRootHashIsSet {
@@ -472,10 +469,10 @@ func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) ([]b
 						fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.extension[:cell.extLen], cell.h[:cell.hl])
 					}
 					if storageRootHash, err = hph.extensionHash(cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
-						return nil, err
+						return 0, [32]byte{}, err
 					}
 				} else {
-					return nil, fmt.Errorf("computeCellHash extension without hash")
+					return 0, [32]byte{}, fmt.Errorf("computeCellHash extension without hash")
 				}
 			} else if cell.hl > 0 {
 				storageRootHash = cell.h
@@ -489,9 +486,9 @@ func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) ([]b
 			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.downHashedKey[:keyHalfSize+1-depth], valBuf[:valLen])
 		}
 		if buf, err = hph.accountLeafHashWithKey(buf, cell.downHashedKey[:keyHalfSize+1-depth], rlp.RlpEncodedBytes(valBuf[:valLen])); err != nil {
-			return nil, err
+			return 0, [32]byte{}, err
 		}
-		return buf, nil
+		return buf[0], *(*[32]byte)(buf[1:]), nil
 	}
 	buf = append(buf, 0x80+32)
 	if cell.extLen > 0 {
@@ -502,18 +499,18 @@ func (hph *BinHashed) computeCellHash(cell *BinCell, depth int, buf []byte) ([]b
 			}
 			var hash [32]byte
 			if hash, err = hph.extensionHash(cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
-				return nil, err
+				return 0, [32]byte{}, err
 			}
 			buf = append(buf, hash[:]...)
 		} else {
-			return nil, fmt.Errorf("computeCellHash extension without hash")
+			return 0, [32]byte{}, fmt.Errorf("computeCellHash extension without hash")
 		}
 	} else if cell.hl > 0 {
 		buf = append(buf, cell.h[:cell.hl]...)
 	} else {
 		buf = append(buf, EmptyRootHash...)
 	}
-	return buf, nil
+	return buf[0], *(*[32]byte)(buf[1:]), nil
 }
 
 func (hph *BinHashed) needUnfolding(hashedKey []byte) int {
@@ -888,15 +885,19 @@ func (hph *BinHashed) fold() ([]byte, []byte, error) {
 			lastNibble = nibble + 1
 			cell := &hph.grid[row][nibble]
 
-			cellHash, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
+			pfx, cellHash, err := hph.computeCellHash(cell, depth, cellHashBuf[:0])
 			if err != nil {
 				return nil, nil, err
 			}
 
+			pfxb := [1]byte{pfx}
 			if hph.trace {
-				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
+				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x  %x]\n", nibble, row, nibble, depth, pfxb, cellHash)
 			}
-			if _, err = hph.keccak2.Write(cellHash); err != nil {
+			if _, err = hph.keccak2.Write(pfxb[:]); err != nil {
+				return nil, nil, err
+			}
+			if _, err = hph.keccak2.Write(cellHash[:]); err != nil {
 				return nil, nil, err
 			}
 			if bitmap&bit != 0 {
