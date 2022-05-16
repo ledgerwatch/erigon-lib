@@ -28,6 +28,7 @@ import (
 )
 
 func testDbAndDomain(t *testing.T) (kv.RwDB, *Domain) {
+	t.Helper()
 	path := t.TempDir()
 	logger := log.New()
 	keysTable := "Keys"
