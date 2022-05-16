@@ -122,7 +122,6 @@ func (d *Domain) update(key, original []byte) error {
 		if err := d.tx.Put(d.historyValsTable, historyKey[:8], original); err != nil {
 			return err
 		}
-		fmt.Printf("Write history [%x]=>[%x]\n", historyKey[:8], original)
 	}
 	copy(historyKey[8:], key)
 	if err := d.tx.Put(d.historyKeysTable, txKey[:], historyKey); err != nil {
@@ -279,21 +278,21 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
 	var v, val []byte
+	var historyKey []byte
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
-		fmt.Printf("k=[%x], v=[%x]\n", k, v)
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		if err = historyComp.AddUncompressedWord(k); err != nil {
+		historyKey = append(append(historyKey[:0], k...), v[8:]...)
+		if err = historyComp.AddUncompressedWord(historyKey); err != nil {
 			return Collation{}, fmt.Errorf("add %s history key [%x]: %w", d.filenameBase, k, err)
 		}
 		valNum := binary.BigEndian.Uint64(v)
 		if valNum == 0 {
 			val = nil
 		} else {
-			fmt.Printf("Get history [%x]\n", v[:8])
-			if val, err = d.tx.GetOne(d.historyValsTable, v[:8]); err != nil {
+			if val, err = roTx.GetOne(d.historyValsTable, v[:8]); err != nil {
 				return Collation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", d.filenameBase, k, valNum, err)
 			}
 		}
@@ -303,9 +302,9 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		historyCount++
 		var bitmap *roaring64.Bitmap
 		var ok bool
-		if bitmap, ok = indexBitmaps[string(k[8:])]; !ok {
+		if bitmap, ok = indexBitmaps[string(v[8:])]; !ok {
 			bitmap = roaring64.New()
-			indexBitmaps[string(k[8:])] = bitmap
+			indexBitmaps[string(v[8:])] = bitmap
 		}
 		bitmap.Add(txNum)
 	}

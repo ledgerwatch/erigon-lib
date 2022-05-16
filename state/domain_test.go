@@ -102,7 +102,7 @@ func TestCollation(t *testing.T) {
 		w, _ := g.Next(nil)
 		words = append(words, string(w))
 	}
-	require.Equal(t, []string{"\x00\x00\x00\x00\x00\x00\x00\x02key1", "\x00", "\x00\x00\x00\x00\x00\x00\x00\x03key2", "\x00", "\x00\x00\x00\x00\x00\x00\x00\x06key1", "value1.2"}, words)
+	require.Equal(t, []string{"\x00\x00\x00\x00\x00\x00\x00\x02key1", "", "\x00\x00\x00\x00\x00\x00\x00\x03key2", "", "\x00\x00\x00\x00\x00\x00\x00\x06key1", "value1.2"}, words)
 }
 
 func TestIteration(t *testing.T) {
