@@ -90,6 +90,9 @@ func prepareDict(t *testing.T) *Decompressor {
 		if err = c.AddWord(nil); err != nil {
 			panic(err)
 		}
+		//if err = c.AddWord([]byte("long")); err != nil {
+		//	t.Fatal(err)
+		//}
 		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
 			t.Fatal(err)
 		}
@@ -109,12 +112,18 @@ func TestCompressDict1(t *testing.T) {
 	defer d.Close()
 	g := d.MakeGetter()
 	i := 0
+	g.Reset(0)
 	for g.HasNext() {
 		require.False(t, g.MatchPrefix([]byte("long")))
+		require.False(t, g.MatchPrefix([]byte("longlonglonglonglonglonglonglonglonglonglong")))
 		require.True(t, g.MatchPrefix([]byte{}))
 		word, _ := g.Next(nil)
 		require.Nil(t, word)
 
+		require.True(t, g.MatchPrefix([]byte("long")))
+		require.True(t, g.MatchPrefix([]byte("longlong")))
+		require.False(t, g.MatchPrefix([]byte("longlonglonglonglonglonglonglonglonglonglong")))
+		require.True(t, g.MatchPrefix([]byte{}))
 		word, _ = g.Next(nil)
 		expected := fmt.Sprintf("longlongword %d", i)
 		if string(word) != expected {
