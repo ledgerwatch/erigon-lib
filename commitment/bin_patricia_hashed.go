@@ -395,7 +395,7 @@ func (hph *BinHashed) extensionHash(buf []byte, key []byte, hash []byte) ([]byte
 		return nil, err
 	}
 	// Replace previous hash with the new one
-	var hashBuf [33]byte
+	var hashBuf [length.Hash]byte
 	if _, err := hph.keccak.Read(hashBuf[:length.Hash]); err != nil {
 		return nil, err
 	}
