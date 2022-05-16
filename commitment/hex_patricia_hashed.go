@@ -569,7 +569,9 @@ func (hph *HexPatriciaHashed) accountLeafHashWithKey(buf, key []byte, val rlp.Rl
 	return buf, nil
 }
 
-func (hph *HexPatriciaHashed) extensionHash(buf []byte, key []byte, hash []byte) ([]byte, error) {
+func (hph *HexPatriciaHashed) extensionHash(key []byte, hash []byte) ([32]byte, error) {
+	var hashBuf [32]byte
+
 	// Compute the total length of binary representation
 	var kp, kl int
 	// Write key
@@ -604,37 +606,35 @@ func (hph *HexPatriciaHashed) extensionHash(buf []byte, key []byte, hash []byte)
 	pt := rlp.GenerateStructLen(lenPrefix[:], totalLen)
 	hph.keccak.Reset()
 	if _, err := hph.keccak.Write(lenPrefix[:pt]); err != nil {
-		return nil, err
+		return hashBuf, err
 	}
 	if _, err := hph.keccak.Write(keyPrefix[:kp]); err != nil {
-		return nil, err
+		return hashBuf, err
 	}
 	var b [1]byte
 	b[0] = compact0
 	if _, err := hph.keccak.Write(b[:]); err != nil {
-		return nil, err
+		return hashBuf, err
 	}
 	for i := 1; i < compactLen; i++ {
 		b[0] = key[ni]*16 + key[ni+1]
 		if _, err := hph.keccak.Write(b[:]); err != nil {
-			return nil, err
+			return hashBuf, err
 		}
 		ni += 2
 	}
 	b[0] = 0x80 + length.Hash
 	if _, err := hph.keccak.Write(b[:]); err != nil {
-		return nil, err
+		return hashBuf, err
 	}
 	if _, err := hph.keccak.Write(hash); err != nil {
-		return nil, err
+		return hashBuf, err
 	}
 	// Replace previous hash with the new one
-	var hashBuf [length.Hash]byte
-	if _, err := hph.keccak.Read(hashBuf[:length.Hash]); err != nil {
-		return nil, err
+	if _, err := hph.keccak.Read(hashBuf[:]); err != nil {
+		return hashBuf, err
 	}
-	buf = append(buf, hashBuf[:length.Hash]...)
-	return buf, nil
+	return hashBuf, nil
 }
 
 func (hph *HexPatriciaHashed) computeCellHashLen(cell *Cell, depth int) int {
@@ -704,9 +704,11 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int) ([]byte, er
 					if hph.trace {
 						fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.extension[:cell.extLen], cell.h[:cell.hl])
 					}
-					if storageRootHash, err = hph.extensionHash(nil, cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
+					var storageRootHashArr [32]byte
+					if storageRootHashArr, err = hph.extensionHash(cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
 						return nil, err
 					}
+					storageRootHash = storageRootHashArr[:]
 				} else {
 					return nil, fmt.Errorf("computeCellHash extension without hash")
 				}
@@ -734,9 +736,11 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int) ([]byte, er
 			if hph.trace {
 				fmt.Printf("extensionHash for [%x]=>[%x]\n", cell.extension[:cell.extLen], cell.h[:cell.hl])
 			}
-			if buf, err = hph.extensionHash(buf, cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
+			var hash [32]byte
+			if hash, err = hph.extensionHash(cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
 				return nil, err
 			}
+			buf = append(buf, hash[:]...)
 		} else {
 			return nil, fmt.Errorf("computeCellHash extension without hash")
 		}
