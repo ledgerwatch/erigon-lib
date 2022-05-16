@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -331,6 +330,13 @@ type StaticFiles struct {
 	historyIdx    *recsplit.Index
 }
 
+func (sf StaticFiles) Close() {
+	sf.valuesDecomp.Close()
+	sf.valuesIdx.Close()
+	sf.historyDecomp.Close()
+	sf.historyIdx.Close()
+}
+
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
 func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
@@ -338,7 +344,6 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	historyComp := collation.historyComp
 	var valuesDecomp, historyDecomp *compress.Decompressor
 	var valuesIdx, historyIdx *recsplit.Index
-	var blockTxFile *os.File
 	closeComp := true
 	defer func() {
 		if closeComp {
@@ -350,9 +355,6 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 			}
 			if valuesIdx != nil {
 				valuesIdx.Close()
-			}
-			if blockTxFile != nil {
-				blockTxFile.Close()
 			}
 			if historyComp != nil {
 				historyComp.Close()

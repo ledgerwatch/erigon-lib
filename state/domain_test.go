@@ -88,6 +88,7 @@ func TestCollation(t *testing.T) {
 	require.Equal(t, []uint64{2, 6}, c.indexBitmaps["key1"].ToArray())
 
 	sf, err := d.buildFiles(0, c)
+	defer sf.Close()
 	require.NoError(t, err)
 	g := sf.valuesDecomp.MakeGetter()
 	g.Reset(0)
