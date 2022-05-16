@@ -33,34 +33,38 @@ import (
 
 // Domain is a part of the state (examples are Accounts, Storage, Code)
 type Domain struct {
-	dir             string // Directory where static files are created
-	aggregationStep uint64
-	filenameBase    string
-	valuesTable     string
-	keysTable       string // Needs to be table with DupSort
-	historyTable    string
-	indexTable      string // Needs to be table with DupSort
-	tx              kv.RwTx
-	txNum           uint64
+	dir              string // Directory where static files are created
+	aggregationStep  uint64
+	filenameBase     string
+	keysTable        string // Needs to be table with DupSort
+	valsTable        string
+	historyKeysTable string // Needs to be table with DupSort
+	historyValsTable string
+	indexTable       string // Needs to be table with DupSort
+	tx               kv.RwTx
+	txNum            uint64
+	valNum           uint64 // Counter number, incrementing
 }
 
 func NewDomain(
 	dir string,
 	aggregationStep uint64,
 	filenameBase string,
-	valuesTable string,
 	keysTable string,
-	historyTable string,
+	valsTable string,
+	historyKeysTable string,
+	historyValsTable string,
 	indexTable string,
 ) *Domain {
 	return &Domain{
-		dir:             dir,
-		aggregationStep: aggregationStep,
-		filenameBase:    filenameBase,
-		valuesTable:     valuesTable,
-		keysTable:       keysTable,
-		historyTable:    historyTable,
-		indexTable:      indexTable,
+		dir:              dir,
+		aggregationStep:  aggregationStep,
+		filenameBase:     filenameBase,
+		keysTable:        keysTable,
+		valsTable:        valsTable,
+		historyKeysTable: historyKeysTable,
+		historyValsTable: historyValsTable,
+		indexTable:       indexTable,
 	}
 }
 
@@ -91,7 +95,7 @@ func (d *Domain) get(key []byte) ([]byte, bool, error) {
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	copy(keySuffix[len(key):], foundInvStep)
-	v, err := d.tx.GetOne(d.valuesTable, keySuffix)
+	v, err := d.tx.GetOne(d.valsTable, keySuffix)
 	if err != nil {
 		return nil, false, err
 	}
@@ -109,13 +113,22 @@ func (d *Domain) update(key, original []byte) error {
 	if err := d.tx.Put(d.keysTable, key, invertedStep[:]); err != nil {
 		return err
 	}
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], d.txNum)
 	historyKey := make([]byte, len(key)+8)
-	binary.BigEndian.PutUint64(historyKey, d.txNum)
+	if len(original) > 0 {
+		d.valNum++
+		binary.BigEndian.PutUint64(historyKey, d.valNum)
+		if err := d.tx.Put(d.historyValsTable, historyKey[:8], original); err != nil {
+			return err
+		}
+		fmt.Printf("Write history [%x]=>[%x]\n", historyKey[:8], original)
+	}
 	copy(historyKey[8:], key)
-	if err := d.tx.Put(d.historyTable, historyKey, original); err != nil {
+	if err := d.tx.Put(d.historyKeysTable, txKey[:], historyKey); err != nil {
 		return err
 	}
-	if err := d.tx.Put(d.indexTable, key, historyKey[:8]); err != nil {
+	if err := d.tx.Put(d.indexTable, key, txKey[:]); err != nil {
 		return err
 	}
 	return nil
@@ -130,7 +143,7 @@ func (d *Domain) Put(key, val []byte) error {
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
-	if err = d.tx.Put(d.valuesTable, keySuffix, val); err != nil {
+	if err = d.tx.Put(d.valsTable, keySuffix, val); err != nil {
 		return err
 	}
 	if err = d.update(key, original); err != nil {
@@ -148,7 +161,7 @@ func (d *Domain) Delete(key []byte) error {
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
-	if err = d.tx.Delete(d.valuesTable, keySuffix, nil); err != nil {
+	if err = d.tx.Delete(d.valsTable, keySuffix, nil); err != nil {
 		return err
 	}
 	if err = d.update(key, original); err != nil {
@@ -173,7 +186,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k []byte)) error {
 		copy(keySuffix, k)
 		copy(keySuffix[len(k):], invertedStep)
 		var v []byte
-		if v, err = d.tx.GetOne(d.valuesTable, keySuffix); err != nil {
+		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
 			return err
 		}
 		if len(v) > 0 {
@@ -236,7 +249,7 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 			keySuffix := make([]byte, len(k)+8)
 			copy(keySuffix, k)
 			copy(keySuffix[len(k):], invertedStep)
-			v, err := roTx.GetOne(d.valuesTable, keySuffix)
+			v, err := roTx.GetOne(d.valsTable, keySuffix)
 			if err != nil {
 				return Collation{}, fmt.Errorf("find last %s value for aggregation step k=[%x]: %w", d.filenameBase, k, err)
 			}
@@ -256,17 +269,18 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return Collation{}, fmt.Errorf("create %s history compressor: %w", d.filenameBase, err)
 	}
-	historyCursor, err := roTx.Cursor(d.historyTable)
+	historyKeysCursor, err := roTx.CursorDupSort(d.historyKeysTable)
 	if err != nil {
 		return Collation{}, fmt.Errorf("create %s history cursor: %w", d.filenameBase, err)
 	}
-	defer historyCursor.Close()
+	defer historyKeysCursor.Close()
 	indexBitmaps := map[string]*roaring64.Bitmap{}
 	historyCount := 0
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	var v []byte
-	for k, v, err = historyCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyCursor.Next() {
+	var v, val []byte
+	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+		fmt.Printf("k=[%x], v=[%x]\n", k, v)
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
@@ -274,8 +288,17 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		if err = historyComp.AddUncompressedWord(k); err != nil {
 			return Collation{}, fmt.Errorf("add %s history key [%x]: %w", d.filenameBase, k, err)
 		}
-		if err = historyComp.AddUncompressedWord(v); err != nil {
-			return Collation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", d.filenameBase, k, v, err)
+		valNum := binary.BigEndian.Uint64(v)
+		if valNum == 0 {
+			val = nil
+		} else {
+			fmt.Printf("Get history [%x]\n", v[:8])
+			if val, err = d.tx.GetOne(d.historyValsTable, v[:8]); err != nil {
+				return Collation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", d.filenameBase, k, valNum, err)
+			}
+		}
+		if err = historyComp.AddUncompressedWord(val); err != nil {
+			return Collation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", d.filenameBase, k, val, err)
 		}
 		historyCount++
 		var bitmap *roaring64.Bitmap

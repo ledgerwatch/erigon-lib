@@ -30,19 +30,21 @@ import (
 func testDbAndDomain(t *testing.T) (kv.RwDB, *Domain) {
 	path := t.TempDir()
 	logger := log.New()
-	valuesTable := "Values"
 	keysTable := "Keys"
-	historyTable := "History"
+	valsTable := "Vals"
+	historyKeysTable := "HistoryKeys"
+	historyValsTable := "HistoryVals"
 	indexTable := "Index"
 	db := mdbx.NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
-			valuesTable:  kv.TableCfgItem{},
-			keysTable:    kv.TableCfgItem{Flags: kv.DupSort},
-			historyTable: kv.TableCfgItem{},
-			indexTable:   kv.TableCfgItem{Flags: kv.DupSort},
+			keysTable:        kv.TableCfgItem{Flags: kv.DupSort},
+			valsTable:        kv.TableCfgItem{},
+			historyKeysTable: kv.TableCfgItem{Flags: kv.DupSort},
+			historyValsTable: kv.TableCfgItem{},
+			indexTable:       kv.TableCfgItem{Flags: kv.DupSort},
 		}
 	}).MustOpen()
-	d := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, valuesTable, keysTable, historyTable, indexTable)
+	d := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, indexTable)
 	return db, d
 }
 
