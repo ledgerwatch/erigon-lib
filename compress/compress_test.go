@@ -86,6 +86,9 @@ func prepareDict(t *testing.T) *Decompressor {
 	}
 	defer c.Close()
 	for i := 0; i < 100; i++ {
+		if err = c.AddWord([]byte{}); err != nil {
+			panic(err)
+		}
 		if err = c.AddWord([]byte(fmt.Sprintf("longlongword %d", i))); err != nil {
 			t.Fatal(err)
 		}
@@ -107,6 +110,10 @@ func TestCompressDict1(t *testing.T) {
 	i := 0
 	for g.HasNext() {
 		word, _ := g.Next(nil)
+		if string(word) != "" {
+			t.Errorf("expected empty bytes slice, got (hex) [%s]", word)
+		}
+		word, _ = g.Next(nil)
 		expected := fmt.Sprintf("longlongword %d", i)
 		if string(word) != expected {
 			t.Errorf("expected %s, got (hex) [%s]", expected, word)
@@ -114,7 +121,7 @@ func TestCompressDict1(t *testing.T) {
 		i++
 	}
 
-	if cs := checksum(d.compressedFile); cs != 1233679659 {
+	if cs := checksum(d.compressedFile); cs != 2250069750 {
 		// it's ok if hash changed, but need re-generate all existing snapshot hashes
 		// in https://github.com/ledgerwatch/erigon-snapshot
 		t.Errorf("result file hash changed, %d", cs)
