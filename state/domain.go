@@ -202,7 +202,6 @@ type Collation struct {
 	historyPath  string
 	historyComp  *compress.Compressor
 	historyCount int
-	indexPath    string
 	indexBitmaps map[string]*roaring64.Bitmap
 }
 
@@ -289,9 +288,9 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		historyCount++
 		var bitmap *roaring64.Bitmap
 		var ok bool
-		if bitmap, ok = indexBitmaps[string(k)]; !ok {
+		if bitmap, ok = indexBitmaps[string(k[8:])]; !ok {
 			bitmap = roaring64.New()
-			indexBitmaps[string(k)] = bitmap
+			indexBitmaps[string(k[8:])] = bitmap
 		}
 		bitmap.Add(txNum)
 	}

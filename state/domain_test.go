@@ -18,7 +18,6 @@ package state
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -81,7 +80,10 @@ func TestCollation(t *testing.T) {
 	require.True(t, strings.HasSuffix(c.valuesPath, "base-values.0-16.dat"))
 	require.Equal(t, 2, c.valuesCount)
 	require.True(t, strings.HasSuffix(c.historyPath, "base-history.0-16.dat"))
-	fmt.Printf("%v\n", c)
+	require.Equal(t, 3, c.historyCount)
+	require.Equal(t, 2, len(c.indexBitmaps))
+	require.Equal(t, []uint64{3}, c.indexBitmaps["key2"].ToArray())
+	require.Equal(t, []uint64{2, 6}, c.indexBitmaps["key1"].ToArray())
 }
 
 func TestIteration(t *testing.T) {
