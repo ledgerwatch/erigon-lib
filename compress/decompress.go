@@ -483,6 +483,9 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
 	lenBuf := len(buf)
+	//if int(l) != lenBuf {
+	//	return false, g.dataP // if word shorter than prefix, no reason to compare
+	//}
 	if l == 0 {
 		if g.dataBit > 0 {
 			g.dataP++
