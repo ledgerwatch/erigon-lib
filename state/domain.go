@@ -21,16 +21,74 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
 
+var historyValCountKey = []byte("ValCount")
+
+// filesItem corresponding to a pair of files (.dat and .idx)
+type filesItem struct {
+	startTxNum   uint64
+	endTxNum     uint64
+	decompressor *compress.Decompressor
+	getter       *compress.Getter // reader for the decompressor
+	getterMerge  *compress.Getter // reader for the decompressor used in the background merge thread
+	index        *recsplit.Index
+	indexReader  *recsplit.IndexReader // reader for the index
+	readerMerge  *recsplit.IndexReader // index reader for the background merge thread
+}
+
+func (i *filesItem) Less(than btree.Item) bool {
+	if i.endTxNum == than.(*filesItem).endTxNum {
+		return i.startTxNum > than.(*filesItem).startTxNum
+	}
+	return i.endTxNum < than.(*filesItem).endTxNum
+}
+
+type FileType int
+
+const (
+	Values FileType = iota
+	History
+	NumberOfTypes
+)
+
+func (ft FileType) String() string {
+	switch ft {
+	case Values:
+		return "values"
+	case History:
+		return "history"
+	default:
+		panic(fmt.Sprintf("unknown file type: %d", ft))
+	}
+}
+
+func ParseFileType(s string) (FileType, bool) {
+	switch s {
+	case "values":
+		return Values, true
+	case "history":
+		return History, true
+	default:
+		return NumberOfTypes, false
+	}
+}
+
 // Domain is a part of the state (examples are Accounts, Storage, Code)
+// Domain should not have any go routines or locks
 type Domain struct {
 	dir              string // Directory where static files are created
 	aggregationStep  uint64
@@ -39,10 +97,11 @@ type Domain struct {
 	valsTable        string
 	historyKeysTable string // Needs to be table with DupSort
 	historyValsTable string
+	historyValsCount string // Table containing just one record - counter of value number (keys in the historyValsTable)
 	indexTable       string // Needs to be table with DupSort
 	tx               kv.RwTx
 	txNum            uint64
-	valNum           uint64 // Counter number, incrementing
+	files            [NumberOfTypes]*btree.BTree // Static files pertaining to this domain, items are of type `filesItem`
 }
 
 func NewDomain(
@@ -53,9 +112,14 @@ func NewDomain(
 	valsTable string,
 	historyKeysTable string,
 	historyValsTable string,
+	historyValsCount string,
 	indexTable string,
-) *Domain {
-	return &Domain{
+) (*Domain, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	d := &Domain{
 		dir:              dir,
 		aggregationStep:  aggregationStep,
 		filenameBase:     filenameBase,
@@ -63,7 +127,82 @@ func NewDomain(
 		valsTable:        valsTable,
 		historyKeysTable: historyKeysTable,
 		historyValsTable: historyValsTable,
+		historyValsCount: historyValsCount,
 		indexTable:       indexTable,
+	}
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		d.files[fType] = btree.New(32)
+	}
+	d.scanStateFiles(files)
+	return d, nil
+}
+
+func (d *Domain) scanStateFiles(files []fs.DirEntry) {
+	typeStrings := make([]string, NumberOfTypes)
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		typeStrings[fType] = fType.String()
+	}
+	re := regexp.MustCompile(d.filenameBase + "(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)")
+	var err error
+	for _, f := range files {
+		name := f.Name()
+		subs := re.FindStringSubmatch(name)
+		if len(subs) != 5 {
+			if len(subs) != 0 {
+				log.Warn("File ignored by doman scan, more than 4 submatches", "name", name, "submatches", len(subs))
+			}
+			continue
+		}
+		var startTxNum, endTxNum uint64
+		if startTxNum, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
+			log.Warn("File ignored by domain scan, parsing startTxNum", "error", err, "name", name)
+			continue
+		}
+		if endTxNum, err = strconv.ParseUint(subs[3], 10, 64); err != nil {
+			log.Warn("File ignored by domain scan, parsing endTxNum", "error", err, "name", name)
+			continue
+		}
+		if startTxNum > endTxNum {
+			log.Warn("File ignored by domain scan, startTxNum > endTxNum", "name", name)
+			continue
+		}
+		fType, ok := ParseFileType(subs[1])
+		if !ok {
+			log.Warn("File ignored by domain scan, type unknown", "type", subs[1])
+		}
+		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+		var foundI *filesItem
+		d.files[fType].AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum, endTxNum: endTxNum}, func(i btree.Item) bool {
+			it := i.(*filesItem)
+			if it.endTxNum == endTxNum {
+				foundI = it
+			}
+			return false
+		})
+		if foundI == nil || foundI.startTxNum > startTxNum {
+			log.Info("Load state file", "name", name, "type", fType.String(), "startTxNum", startTxNum, "endTxNum", endTxNum)
+			d.files[fType].ReplaceOrInsert(item)
+		}
+	}
+}
+
+func (d *Domain) closeFiles(fType FileType) {
+	d.files[fType].Ascend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		if item.decompressor != nil {
+			item.decompressor.Close()
+		}
+		if item.index != nil {
+			item.index.Close()
+		}
+		return true
+	})
+}
+
+func (d *Domain) Close() {
+	// Closing state files only after background aggregation goroutine is finished
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		d.closeFiles(fType)
 	}
 }
 
@@ -116,9 +255,20 @@ func (d *Domain) update(key, original []byte) error {
 	binary.BigEndian.PutUint64(txKey[:], d.txNum)
 	historyKey := make([]byte, len(key)+8)
 	if len(original) > 0 {
-		d.valNum++
-		binary.BigEndian.PutUint64(historyKey, d.valNum)
-		if err := d.tx.Put(d.historyValsTable, historyKey[:8], original); err != nil {
+		val, err := d.tx.GetOne(d.historyValsCount, historyValCountKey)
+		if err != nil {
+			return err
+		}
+		var valNum uint64
+		if len(val) > 0 {
+			valNum = binary.BigEndian.Uint64(val)
+		}
+		valNum++
+		binary.BigEndian.PutUint64(historyKey, valNum)
+		if err = d.tx.Put(d.historyValsCount, historyValCountKey, historyKey[:8]); err != nil {
+			return err
+		}
+		if err = d.tx.Put(d.historyValsTable, historyKey[:8], original); err != nil {
 			return err
 		}
 	}

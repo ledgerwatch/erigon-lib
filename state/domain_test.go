@@ -36,6 +36,7 @@ func testDbAndDomain(t *testing.T) (kv.RwDB, *Domain) {
 	valsTable := "Vals"
 	historyKeysTable := "HistoryKeys"
 	historyValsTable := "HistoryVals"
+	historyValsCount := "HistoryValsCount"
 	indexTable := "Index"
 	db := mdbx.NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
@@ -43,16 +44,19 @@ func testDbAndDomain(t *testing.T) (kv.RwDB, *Domain) {
 			valsTable:        kv.TableCfgItem{},
 			historyKeysTable: kv.TableCfgItem{Flags: kv.DupSort},
 			historyValsTable: kv.TableCfgItem{},
+			historyValsCount: kv.TableCfgItem{},
 			indexTable:       kv.TableCfgItem{Flags: kv.DupSort},
 		}
 	}).MustOpen()
-	d := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, indexTable)
+	d, err := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, historyValsCount, indexTable)
+	require.NoError(t, err)
 	return db, d
 }
 
 func TestCollation(t *testing.T) {
 	db, d := testDbAndDomain(t)
 	defer db.Close()
+	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
 	defer tx.Rollback()
@@ -132,6 +136,7 @@ func TestCollation(t *testing.T) {
 func TestIteration(t *testing.T) {
 	db, d := testDbAndDomain(t)
 	defer db.Close()
+	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
 	defer tx.Rollback()
