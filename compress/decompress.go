@@ -590,7 +590,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	postLoopPos := g.dataP
 	g.dataP, g.dataBit = savePos, 0
 	g.nextPos(true /* clean */) // Reset the state of huffman decoder
-
 	// Second pass - we check spaces not covered by the patterns
 	var lastUncovered int
 	prefixPos = 0
@@ -612,24 +611,16 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		}
 		lastUncovered = prefixPos + patternLen
 	}
-	if prefixLen > lastUncovered {
-		//if int(l) < prefixLen-lastUncovered {
-		//	return false // if word shorter than left part of prefix, no reason to compare
-		//}
-		if int(l) > lastUncovered {
-			dif := l - uint64(lastUncovered)
-			var comparisonLen int
-			if prefixLen < int(l) {
-				comparisonLen = prefixLen - lastUncovered
-			} else {
-				comparisonLen = int(dif)
-			}
-			if int(l) < prefixLen {
-				return false // if word shorter than prefix, no reason to compare
-			}
-			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
-				return false
-			}
+	if prefixLen > lastUncovered && int(l) > lastUncovered {
+		dif := l - uint64(lastUncovered)
+		var comparisonLen int
+		if prefixLen < int(l) {
+			comparisonLen = prefixLen - lastUncovered
+		} else {
+			comparisonLen = int(dif)
+		}
+		if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
+			return false
 		}
 	}
 	return true
