@@ -609,12 +609,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		g.dataBit = 0
 	}
 	postLoopPos := g.dataP
-	//for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
-	//	bufPos += int(pos) - 1 // Positions where to insert patterns are encoded relative to one another
-	//	if bufPos > lastUncovered {
-	//		dif := uint64(bufPos - lastUncovered)
-	//		copy(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
-
 	g.dataP, g.dataBit = savePos, 0
 	g.nextPos(true /* clean */) // Reset the state of huffman decoder
 	// Second pass - we check spaces not covered by the patterns
@@ -622,12 +616,12 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	bufPos = 0
 	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
-		if bufPos > prefixLen {
-			if g.trace {
-				fmt.Printf("break2\n")
-			}
-			break
-		}
+		//if bufPos > prefixLen {
+		//	if g.trace {
+		//		fmt.Printf("break2\n")
+		//	}
+		//	break
+		//}
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
 			var comparisonLen int
