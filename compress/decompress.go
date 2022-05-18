@@ -582,25 +582,25 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		return prefixLen == int(l)
 	}
 
-	var prefixPos int
+	var bufPos int
 	// In the first pass, we only check patterns
 	// Only run this loop as far as the prefix goes, there is no need to check further
-	for pos := g.nextPos(false /* clean */); pos != 0 && prefixPos < prefixLen; pos = g.nextPos(false) {
-		prefixPos += int(pos) - 1
-		if prefixPos > prefixLen {
+	for pos := g.nextPos(false /* clean */); pos != 0 && bufPos < prefixLen; pos = g.nextPos(false) {
+		bufPos += int(pos) - 1
+		if bufPos > prefixLen {
 			break
 		}
 		pattern := g.nextPattern()
 		var comparisonLen int
-		if prefixLen < prefixPos+len(pattern) {
-			comparisonLen = prefixLen - prefixPos
+		if prefixLen < bufPos+len(pattern) {
+			comparisonLen = prefixLen - bufPos
 		} else {
 			comparisonLen = len(pattern)
 		}
 		if g.trace {
-			fmt.Printf("loop1: %d, %d, %d, %d, %x, %x, %x\n", prefixPos, comparisonLen, pos, len(pattern), prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen], pattern)
+			fmt.Printf("loop1: %d, %d, %d, %d, %x, %x, %x\n", bufPos, comparisonLen, pos, len(pattern), prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen], pattern)
 		}
-		if !bytes.Equal(prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen]) {
+		if !bytes.Equal(prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen]) {
 			return false
 		}
 	}
@@ -619,17 +619,17 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	g.nextPos(true /* clean */) // Reset the state of huffman decoder
 	// Second pass - we check spaces not covered by the patterns
 	var lastUncovered int
-	prefixPos = 0
+	bufPos = 0
 	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
-		prefixPos += int(pos) - 1
-		if prefixPos > prefixLen {
+		bufPos += int(pos) - 1
+		if bufPos > prefixLen {
 			if g.trace {
 				fmt.Printf("break2\n")
 			}
 			break
 		}
-		if prefixPos > lastUncovered {
-			dif := uint64(prefixPos - lastUncovered)
+		if bufPos > lastUncovered {
+			dif := uint64(bufPos - lastUncovered)
 			var comparisonLen int
 			if prefixLen < lastUncovered+int(dif) {
 				comparisonLen = prefixLen - lastUncovered
@@ -637,14 +637,14 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 				comparisonLen = int(dif)
 			}
 			if g.trace {
-				fmt.Printf("loop2: %d, %d, %x, %x, %x\n", prefixPos, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)], g.data[postLoopPos:postLoopPos+20])
+				fmt.Printf("loop2: %d, %d, %x, %x, %x\n", bufPos, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)], g.data[postLoopPos:postLoopPos+20])
 			}
 			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 				return false
 			}
 			postLoopPos += dif
 		}
-		lastUncovered = prefixPos + len(g.nextPattern())
+		lastUncovered = bufPos + len(g.nextPattern())
 	}
 	if g.trace {
 		fmt.Printf("before loop3: %d\n", lastUncovered)
