@@ -636,10 +636,14 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			}
 			if g.trace {
 				fmt.Printf("loop2: %d, %d, postLoopPos=%d\n", lastUncovered, dif, postLoopPos)
-				fmt.Printf("loop22:  %x, %x, %x\n", prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)], g.data[postLoopPos:postLoopPos+20])
+				_ = prefix[lastUncovered : lastUncovered+comparisonLen]
+				_ = g.data[postLoopPos : postLoopPos+uint64(comparisonLen)]
+				//fmt.Printf("loop22:  %x, %x, %x\n", prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)], g.data[postLoopPos:postLoopPos+20])
 			}
-			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
-				return false
+			if lastUncovered < prefixLen {
+				if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
+					return false
+				}
 			}
 			postLoopPos += dif
 		}
