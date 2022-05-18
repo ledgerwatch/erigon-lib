@@ -623,9 +623,11 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
 		prefixPos += int(pos) - 1
 		if prefixPos > prefixLen {
+			if g.trace {
+				fmt.Printf("break2\n")
+			}
 			break
 		}
-		patternLen := len(g.nextPattern())
 		if prefixPos > lastUncovered {
 			dif := uint64(prefixPos - lastUncovered)
 			var comparisonLen int
@@ -642,7 +644,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			}
 			postLoopPos += dif
 		}
-		lastUncovered = prefixPos + patternLen
+		lastUncovered = prefixPos + len(g.nextPattern())
 	}
 	if g.trace {
 		fmt.Printf("before loop3: %d\n", lastUncovered)
