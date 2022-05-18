@@ -130,7 +130,7 @@ func TestCompressDict1(t *testing.T) {
 		require.False(t, g.MatchPrefix([]byte("wordnotmatch")))
 		require.False(t, g.MatchPrefix([]byte("longnotmatch")))
 		require.True(t, g.MatchPrefix([]byte{}))
-		word, _ = g.Next(nil)
+		_, _ = g.Next(nil)
 
 		// next word is `word`
 		require.False(t, g.MatchPrefix([]byte("long")))
@@ -140,7 +140,7 @@ func TestCompressDict1(t *testing.T) {
 		require.True(t, g.MatchPrefix(nil))
 		require.False(t, g.MatchPrefix([]byte("wordnotmatch")))
 		require.False(t, g.MatchPrefix([]byte("longnotmatch")))
-		word, _ = g.Next(nil)
+		_, _ = g.Next(nil)
 
 		// next word is `longlongword %d`
 		require.True(t, g.MatchPrefix([]byte("long")))
