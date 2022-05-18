@@ -395,9 +395,6 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1 // Positions where to insert patterns are encoded relative to one another
 		copy(buf[bufPos:], g.nextPattern())
-		if g.trace {
-			fmt.Printf("next loop1: %d\n", g.dataP)
-		}
 	}
 	if g.dataBit > 0 {
 		g.dataP++
@@ -414,26 +411,13 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
 			copy(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
-			if g.trace {
-				fmt.Printf("next loop2: %d, %x, postLoopPos=%d\n", lastUncovered, buf, postLoopPos)
-			}
 			postLoopPos += dif
-		} else {
-			if g.trace {
-				fmt.Printf("next loop22 skip: %d, %d\n", bufPos, lastUncovered)
-			}
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
-	}
-	if g.trace {
-		fmt.Printf("before next loop3: %d\n", lastUncovered)
 	}
 	if int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
 		copy(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif])
-		if g.trace {
-			fmt.Printf("next loop3: %d, %x\n", lastUncovered, buf)
-		}
 		postLoopPos += dif
 	}
 	g.dataP = postLoopPos
@@ -598,9 +582,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		} else {
 			comparisonLen = len(pattern)
 		}
-		if g.trace {
-			fmt.Printf("loop1: %d\n", g.dataP)
-		}
 		if bufPos < prefixLen {
 			if !bytes.Equal(prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen]) {
 				return false
@@ -620,12 +601,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	bufPos = 0
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
-		//if bufPos > prefixLen {
-		//	if g.trace {
-		//		fmt.Printf("break2\n")
-		//	}
-		//	break
-		//}
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
 			var comparisonLen int
@@ -635,12 +610,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 				comparisonLen = int(dif)
 			}
 			if lastUncovered < prefixLen {
-				if g.trace {
-					fmt.Printf("loop2: %d, %d, postLoopPos=%d\n", lastUncovered, dif, postLoopPos)
-					_ = prefix[lastUncovered : lastUncovered+comparisonLen]
-					_ = g.data[postLoopPos : postLoopPos+uint64(comparisonLen)]
-					//fmt.Printf("loop22:  %x, %x, %x\n", prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)], g.data[postLoopPos:postLoopPos+20])
-				}
 				if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 					return false
 				}
@@ -649,9 +618,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
 	}
-	if g.trace {
-		fmt.Printf("before loop3: %d\n", lastUncovered)
-	}
 	if prefixLen > lastUncovered && int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
 		var comparisonLen int
@@ -659,9 +625,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			comparisonLen = prefixLen - lastUncovered
 		} else {
 			comparisonLen = int(dif)
-		}
-		if g.trace {
-			fmt.Printf("loop3: %d, %d, %x, %x\n", lastUncovered, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
 		}
 		if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 			return false

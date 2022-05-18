@@ -145,6 +145,7 @@ func TestCompressDict1(t *testing.T) {
 		// next word is `longlongword %d`
 		expectPrefix := fmt.Sprintf("%d long", i)
 
+		require.True(t, g.MatchPrefix([]byte(fmt.Sprintf("%d", i))))
 		require.True(t, g.MatchPrefix([]byte(expectPrefix)))
 		require.True(t, g.MatchPrefix([]byte(expectPrefix+"long")))
 		require.True(t, g.MatchPrefix([]byte(expectPrefix+"longword ")))
