@@ -603,6 +603,8 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 				fmt.Printf("loop12: %d, %d, %d\n", bufPos, comparisonLen, len(pattern))
 			}
 		}
+		_ = prefix[bufPos : bufPos+comparisonLen]
+		_ = pattern[:comparisonLen]
 		if g.trace {
 			fmt.Printf("loop1: %d, %d, %d, %d, %x, %x, %x\n", bufPos, comparisonLen, pos, len(pattern), prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen], pattern)
 		}
