@@ -23,7 +23,6 @@ import (
 	"os"
 
 	"github.com/ledgerwatch/erigon-lib/mmap"
-	"github.com/ledgerwatch/log/v3"
 )
 
 type patternTable struct {
@@ -548,7 +547,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
-func (g *Getter) MatchPrefix(prefix []byte) bool {
+func (g *Getter) MatchPrefix(prefix []byte, trace bool) bool {
 	savePos := g.dataP
 	defer func() {
 		g.dataP, g.dataBit = savePos, 0
@@ -579,10 +578,9 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		} else {
 			comparisonLen = len(pattern)
 		}
-		fmt.Printf("loop1: %d, %d, %x, %x\n", prefixPos, comparisonLen, prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen])
-		log.Error("prefix", "prefixPos", prefixPos, "prefixLen", prefixLen, "comparisonLen", comparisonLen)
-		_ = prefix[prefixPos : prefixPos+comparisonLen]
-		_ = pattern[:comparisonLen]
+		if trace {
+			fmt.Printf("loop1: %d, %d, %x, %x\n", prefixPos, comparisonLen, prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen])
+		}
 		if !bytes.Equal(prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen]) {
 			return false
 		}
@@ -608,7 +606,9 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			} else {
 				comparisonLen = int(dif)
 			}
-			fmt.Printf("loop2: %d, %d, %x, %x\n", prefixPos, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
+			if trace {
+				fmt.Printf("loop2: %d, %d, %x, %x\n", prefixPos, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
+			}
 			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 				return false
 			}
@@ -625,7 +625,9 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		} else {
 			comparisonLen = int(dif)
 		}
-		fmt.Printf("loop3: %d, %d, %x, %x\n", lastUncovered, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
+		if trace {
+			fmt.Printf("loop3: %d, %d, %x, %x\n", lastUncovered, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
+		}
 		if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 			return false
 		}
