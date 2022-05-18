@@ -593,15 +593,15 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		//}
 		var comparisonLen int
 		if prefixLen < bufPos+len(pattern) {
-			if g.trace {
-				fmt.Printf("loop11: %d, %d, %d, %d\n", bufPos, comparisonLen, pos)
-			}
 			comparisonLen = prefixLen - bufPos
-		} else {
 			if g.trace {
-				fmt.Printf("loop11: %d, %d, %d, %d\n", bufPos, comparisonLen, pos)
+				fmt.Printf("loop11: %d, %d, %d\n", bufPos, comparisonLen, prefixLen)
 			}
+		} else {
 			comparisonLen = len(pattern)
+			if g.trace {
+				fmt.Printf("loop12: %d, %d, %d\n", bufPos, comparisonLen, len(pattern))
+			}
 		}
 		if g.trace {
 			fmt.Printf("loop1: %d, %d, %d, %d, %x, %x, %x\n", bufPos, comparisonLen, pos, len(pattern), prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen], pattern)
