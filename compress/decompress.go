@@ -608,6 +608,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			} else {
 				comparisonLen = int(dif)
 			}
+			fmt.Printf("loop2: %d, %d, %x, %x\n", prefixPos, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
 			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 				return false
 			}
@@ -624,6 +625,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		} else {
 			comparisonLen = int(dif)
 		}
+		fmt.Printf("loop3: %d, %d, %x, %x\n", lastUncovered, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
 		if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 			return false
 		}
