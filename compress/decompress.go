@@ -283,7 +283,10 @@ type Getter struct {
 	patternDict *patternTable
 	posDict     *posTable
 	fName       string
+	trace       bool
 }
+
+func (g *Getter) Trace(t bool) { g.trace = t }
 
 func (g *Getter) nextPos(clean bool) uint64 {
 	if clean {
@@ -547,7 +550,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
-func (g *Getter) MatchPrefix(prefix []byte, trace bool) bool {
+func (g *Getter) MatwchPrefix(prefix []byte) bool {
 	savePos := g.dataP
 	defer func() {
 		g.dataP, g.dataBit = savePos, 0
@@ -578,7 +581,7 @@ func (g *Getter) MatchPrefix(prefix []byte, trace bool) bool {
 		} else {
 			comparisonLen = len(pattern)
 		}
-		if trace {
+		if g.trace {
 			fmt.Printf("loop1: %d, %d, %d, %d, %x, %x, %x\n", prefixPos, comparisonLen, pos, len(pattern), prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen], pattern)
 		}
 		if !bytes.Equal(prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen]) {
@@ -606,7 +609,7 @@ func (g *Getter) MatchPrefix(prefix []byte, trace bool) bool {
 			} else {
 				comparisonLen = int(dif)
 			}
-			if trace {
+			if g.trace {
 				fmt.Printf("loop2: %d, %d, %x, %x\n", prefixPos, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
 			}
 			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
@@ -625,7 +628,7 @@ func (g *Getter) MatchPrefix(prefix []byte, trace bool) bool {
 		} else {
 			comparisonLen = int(dif)
 		}
-		if trace {
+		if g.trace {
 			fmt.Printf("loop3: %d, %d, %x, %x\n", lastUncovered, comparisonLen, prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
 		}
 		if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
