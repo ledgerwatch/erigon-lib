@@ -490,7 +490,7 @@ func TestEmptyState(t *testing.T) {
 	}
 }
 
-func Test_BinPatriciaHashed_EmptyUpdateState(t *testing.T) {
+func Test_HexPatriciaHashed_EmptyUpdateState(t *testing.T) {
 	ms := NewMockState(t)
 	hph := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
 	hph.SetTrace(false)
@@ -542,7 +542,7 @@ func Test_BinPatriciaHashed_EmptyUpdateState(t *testing.T) {
 	require.EqualValues(t, hashBeforeEmptyUpdate, hashAfterEmptyUpdate)
 }
 
-func Test_BinPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
+func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	ms := NewMockState(t)
 	ms2 := NewMockState(t)
 
@@ -554,9 +554,9 @@ func Test_BinPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 		Balance("01", 5).
 		Balance("02", 6).
 		Balance("03", 7).
-		Storage("03", "56", "050505").
+		// Storage("03", "56", "050505").
 		Balance("05", 9).
-		Storage("03", "57", "060606").
+		// Storage("03", "57", "060606").
 		Balance("b9", 6).
 		Nonce("ff", 169356).
 		Storage("05", "02", "8989").

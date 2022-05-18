@@ -134,7 +134,7 @@ func Test_BinPatriciaTrie_EmptyState(t *testing.T) {
 	}
 }
 
-func Test_Bin2PatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
+func Test_BinPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	t.Skip()
 
 	ms := NewMockState(t)
