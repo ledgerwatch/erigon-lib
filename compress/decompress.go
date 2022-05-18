@@ -414,6 +414,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
 			copy(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
+			if g.trace {
+				fmt.Printf("next loop2: %x\n", buf)
+			}
 			postLoopPos += dif
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
@@ -421,6 +424,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	if int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
 		copy(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif])
+		if g.trace {
+			fmt.Printf("next loop3: %x\n", buf)
+		}
 		postLoopPos += dif
 	}
 	g.dataP = postLoopPos
