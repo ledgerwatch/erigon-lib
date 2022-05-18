@@ -421,6 +421,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
 	}
+	if g.trace {
+		fmt.Printf("before next loop3: %d\n", lastUncovered)
+	}
 	if int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
 		copy(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif])
@@ -634,7 +637,9 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			postLoopPos += dif
 		}
 		lastUncovered = prefixPos + patternLen
-		prefixPos += int(pos) - 1
+	}
+	if g.trace {
+		fmt.Printf("before loop3: %d\n", lastUncovered)
 	}
 	if prefixLen > lastUncovered && int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
