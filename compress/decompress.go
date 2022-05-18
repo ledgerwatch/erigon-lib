@@ -587,14 +587,20 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	// Only run this loop as far as the prefix goes, there is no need to check further
 	for pos := g.nextPos(false /* clean */); pos != 0 && bufPos < prefixLen; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
-		if bufPos > prefixLen {
-			break
-		}
 		pattern := g.nextPattern()
+		//if bufPos > prefixLen {
+		//	break
+		//}
 		var comparisonLen int
 		if prefixLen < bufPos+len(pattern) {
+			if g.trace {
+				fmt.Printf("loop11: %d, %d, %d, %d\n", bufPos, comparisonLen, pos)
+			}
 			comparisonLen = prefixLen - bufPos
 		} else {
+			if g.trace {
+				fmt.Printf("loop11: %d, %d, %d, %d\n", bufPos, comparisonLen, pos)
+			}
 			comparisonLen = len(pattern)
 		}
 		if g.trace {
