@@ -572,7 +572,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	// In the first pass, we only check patterns
 	// Only run this loop as far as the prefix goes, there is no need to check further
 	for pos := g.nextPos(false /* clean */); pos != 0 && prefixPos < prefixLen; pos = g.nextPos(false) {
-		prefixPos += int(pos) - 1
 		pattern := g.nextPattern()
 		var comparisonLen int
 		if prefixLen < prefixPos+len(pattern) {
@@ -586,6 +585,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		if !bytes.Equal(prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen]) {
 			return false
 		}
+		prefixPos += int(pos) - 1
 	}
 	if g.dataBit > 0 {
 		g.dataP++
@@ -598,7 +598,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	var lastUncovered int
 	prefixPos = 0
 	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
-		prefixPos += int(pos) - 1
 		patternLen := len(g.nextPattern())
 		if prefixPos > lastUncovered {
 			dif := uint64(prefixPos - lastUncovered)
@@ -614,6 +613,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			postLoopPos += dif
 		}
 		lastUncovered = prefixPos + patternLen
+		prefixPos += int(pos) - 1
 	}
 	if prefixLen > lastUncovered && int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
