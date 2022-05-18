@@ -555,6 +555,10 @@ func (g *Getter) MatchPrefix(prefix []byte, trace bool) bool {
 
 	l := g.nextPos(true /* clean */)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
+	pattern := g.nextPattern()
+	if trace {
+		fmt.Printf("loop0: %d, %x\n", l, pattern)
+	}
 	prefixLen := len(prefix)
 	if l == 0 || int(l) < prefixLen {
 		if g.dataBit > 0 {
