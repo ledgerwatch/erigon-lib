@@ -589,7 +589,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	var bufPos int
 	// In the first pass, we only check patterns
 	// Only run this loop as far as the prefix goes, there is no need to check further
-	for pos := g.nextPos(false /* clean */); pos != 0 && bufPos < prefixLen; pos = g.nextPos(false) {
+	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
 		pattern := g.nextPattern()
 		var comparisonLen int
@@ -618,7 +618,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	// Second pass - we check spaces not covered by the patterns
 	var lastUncovered int
 	bufPos = 0
-	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
+	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
 		//if bufPos > prefixLen {
 		//	if g.trace {
