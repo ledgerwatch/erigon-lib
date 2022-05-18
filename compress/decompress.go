@@ -395,6 +395,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1 // Positions where to insert patterns are encoded relative to one another
 		copy(buf[bufPos:], g.nextPattern())
+		if g.trace {
+			fmt.Printf("next loop1: %x\n", buf)
+		}
 	}
 	if g.dataBit > 0 {
 		g.dataP++
