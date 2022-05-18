@@ -64,6 +64,6 @@ func BenchmarkDecompressMatchPrefix(b *testing.B) {
 	g := d.MakeGetter()
 
 	for i := 0; i < b.N; i++ {
-		_ = g.MatchPrefix([]byte("longlongword"))
+		_ = g.MatchPrefix([]byte("longlongword"), false)
 	}
 }

@@ -130,7 +130,7 @@ func TestDecompressMatchPrefix(t *testing.T) {
 		w := loremStrings[i]
 		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
 		expected = expected[:len(expected)/2]
-		if !g.MatchPrefix(expected) {
+		if !g.MatchPrefix(expected, false) {
 			t.Errorf("expexted match with %s", expected)
 		}
 		g.Skip()
@@ -149,7 +149,7 @@ func TestDecompressMatchPrefix(t *testing.T) {
 		expected = expected[:len(expected)/2]
 		if len(expected) > 0 {
 			expected[len(expected)-1]++
-			if g.MatchPrefix(expected) {
+			if g.MatchPrefix(expected, false) {
 				t.Errorf("not expexted match with %s", expected)
 			}
 		}
