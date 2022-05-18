@@ -579,6 +579,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		} else {
 			comparisonLen = len(pattern)
 		}
+		fmt.Printf("loop1: %d, %d, %x, %x\n", prefixPos, comparisonLen, prefix[prefixPos:prefixPos+comparisonLen], pattern[:comparisonLen])
 		log.Error("prefix", "prefixPos", prefixPos, "prefixLen", prefixLen, "comparisonLen", comparisonLen)
 		_ = prefix[prefixPos : prefixPos+comparisonLen]
 		_ = pattern[:comparisonLen]
