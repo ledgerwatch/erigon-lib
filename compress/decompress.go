@@ -631,7 +631,8 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 			//	comparisonLen = int(dif)
 			//}
 			if g.trace {
-				fmt.Printf("loop2: %d, %d, %x, %x, %x\n", lastUncovered, dif, prefix[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif], g.data[postLoopPos:postLoopPos+20])
+				fmt.Printf("loop2: %d, %d, %x, %x, %x\n", lastUncovered, dif)
+				fmt.Printf("loop22:  %x, %x, %x\n", prefix[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif], g.data[postLoopPos:postLoopPos+20])
 			}
 			if !bytes.Equal(prefix[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif]) {
 				return false
