@@ -553,7 +553,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
-func (g *Getter) MatwchPrefix(prefix []byte) bool {
+func (g *Getter) MatchPrefix(prefix []byte) bool {
 	savePos := g.dataP
 	defer func() {
 		g.dataP, g.dataBit = savePos, 0
