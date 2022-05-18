@@ -589,30 +589,24 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		bufPos += int(pos) - 1
 		pattern := g.nextPattern()
 		var comparisonLen int
-		if bufPos > prefixLen {
-			comparisonLen = 0
+		if prefixLen < bufPos+len(pattern) {
+			comparisonLen = prefixLen - bufPos
+			if g.trace {
+				fmt.Printf("loop11: %d, %d, %d\n", bufPos, comparisonLen, prefixLen)
+			}
 		} else {
-			if prefixLen < bufPos+len(pattern) {
-				comparisonLen = prefixLen - bufPos
-				if g.trace {
-					fmt.Printf("loop11: %d, %d, %d\n", bufPos, comparisonLen, prefixLen)
-				}
-			} else {
-				comparisonLen = len(pattern)
-				if g.trace {
-					fmt.Printf("loop12: %d, %d, %d\n", bufPos, comparisonLen, len(pattern))
-				}
+			comparisonLen = len(pattern)
+			if g.trace {
+				fmt.Printf("loop12: %d, %d, %d\n", bufPos, comparisonLen, len(pattern))
 			}
 		}
-		_ = prefix[bufPos : bufPos+comparisonLen]
-		_ = pattern[:comparisonLen]
-		if g.trace {
-			fmt.Printf("loop1: %d, %d, %d, %d, %x, %x, %x\n", bufPos, comparisonLen, pos, len(pattern), prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen], pattern)
-		}
-		if !bytes.Equal(prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen]) {
-			return false
+		if bufPos < prefixLen {
+			if !bytes.Equal(prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen]) {
+				return false
+			}
 		}
 	}
+
 	if g.dataBit > 0 {
 		g.dataP++
 		g.dataBit = 0
