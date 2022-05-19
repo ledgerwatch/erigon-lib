@@ -570,7 +570,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		return prefixLen == int(l)
 	}
 
-	back := g.dataP
 	var bufPos int
 	// In the first pass, we only check patterns
 	// Only run this loop as far as the prefix goes, there is no need to check further
@@ -595,7 +594,6 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		g.dataBit = 0
 	}
 	postLoopPos := g.dataP
-	fmt.Printf("a: %d\n", postLoopPos-back)
 	g.dataP, g.dataBit = savePos, 0
 	g.nextPos(true /* clean */) // Reset the state of huffman decoder
 	// Second pass - we check spaces not covered by the patterns
