@@ -67,7 +67,7 @@ func FlushToDisk(b Buffer, tmpdir string, doFsync bool, lvl log.Lvl) (dataProvid
 	defer func() {
 		b.Reset() // run it after buf.flush and file.sync
 		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
+		common.ReadMemStats(&m)
 		log.Log(lvl,
 			"Flushed buffer file",
 			"name", bufferFile.Name(),

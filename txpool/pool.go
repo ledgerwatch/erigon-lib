@@ -1676,9 +1676,7 @@ func (p *TxPool) logStats() {
 
 	//idsInMem := p.senders.idsCount()
 	var m runtime.MemStats
-	t := time.Now()
-	runtime.ReadMemStats(&m)
-	fmt.Printf("alex: %s\n", time.Since(t))
+	common.ReadMemStats(&m)
 	ctx := []interface{}{
 		//"baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, pendingBaseFee/1_000_000),
 		"block", p.lastSeenBlock.Load(),
