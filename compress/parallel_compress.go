@@ -400,7 +400,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		default:
 		case <-logEvery.C:
 			var m runtime.MemStats
-			common.ReadMemStats(&m)
+			if lvl >= log.LvlInfo {
+				common.ReadMemStats(&m)
+			}
 			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix),
 				"processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(datFile.count)),
 				//"input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()),
