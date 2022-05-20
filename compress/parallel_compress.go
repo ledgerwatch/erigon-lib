@@ -37,6 +37,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/sais"
 	"github.com/ledgerwatch/log/v3"
 	atomic2 "go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 )
 
 // MinPatternScore is minimum score (per superstring) required to consider including pattern into the dictionary
@@ -399,7 +400,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		default:
 		case <-logEvery.C:
 			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
+			if lvl >= log.LvlInfo {
+				common.ReadMemStats(&m)
+			}
 			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix),
 				"processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(datFile.count)),
 				//"input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()),
@@ -447,7 +450,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	}
 
 	//var m runtime.MemStats
-	//runtime.ReadMemStats(&m)
+	//common.ReadMemStats(&m)
 	//log.Info(fmt.Sprintf("[%s] Dictionary build done", logPrefix), "input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	posMap := make(map[uint64]uint64)
 	for _, m := range posMaps {
@@ -826,7 +829,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		}
 		//log.Info("LCP array checked")
 		// Walk over LCP array and compute the scores of the strings
-		var b Int32Sort = inv
+		var b = inv
 		j = 0
 		for i := 0; i < n-1; i++ {
 			// Only when there is a drop in LCP value
@@ -855,7 +858,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 
 				window := i - j + 2
 				copy(b, filtered[j:i+2])
-				sort.Sort(b[:window])
+				slices.Sort(b[:window])
 				repeats := 1
 				lastK := 0
 				for k := 1; k < window; k++ {
@@ -959,9 +962,3 @@ func ReadSimpleFile(fileName string, walker func(v []byte) error) error {
 	}
 	return nil
 }
-
-type Int32Sort []int32
-
-func (f Int32Sort) Len() int           { return len(f) }
-func (f Int32Sort) Less(i, j int) bool { return f[i] < f[j] }
-func (f Int32Sort) Swap(i, j int)      { f[i], f[j] = f[j], f[i] }

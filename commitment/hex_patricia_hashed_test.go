@@ -20,13 +20,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"testing"
 
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
-
 	"golang.org/x/crypto/sha3"
+	"golang.org/x/exp/slices"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 )
@@ -180,7 +179,7 @@ func (ms *MockState) applyBranchNodeUpdates(updates map[string][]byte) {
 	for key, update := range updates {
 		if pre, ok := ms.cm[key]; ok {
 			// Merge
-			merged, err := MergeBranches(pre, update, nil)
+			merged, err := MergeHexBranches(pre, update, nil)
 			if err != nil {
 				panic(err)
 			}
@@ -354,7 +353,7 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 		}
 
 	}
-	sort.Strings(hashed)
+	slices.Sort(hashed)
 	plainKeys = make([][]byte, len(hashed))
 	hashedKeys = make([][]byte, len(hashed))
 	updates = make([]Update, len(hashed))
@@ -382,12 +381,23 @@ func (ub *UpdateBuilder) Build() (plainKeys, hashedKeys [][]byte, updates []Upda
 				u.Flags |= CODE_UPDATE
 				copy(u.CodeHashOrStorage[:], codeHash[:])
 			}
+			if _, del := ub.deletes[string(key)]; del {
+				u.Flags = DELETE_UPDATE
+				continue
+			}
 		} else {
+			if dm, ok1 := ub.deletes2[string(key)]; ok1 {
+				if _, ok2 := dm[string(key2)]; ok2 {
+					u.Flags = DELETE_UPDATE
+					continue
+				}
+			}
 			if sm, ok1 := ub.storages[string(key)]; ok1 {
 				if storage, ok2 := sm[string(key2)]; ok2 {
 					u.Flags |= STORAGE_UPDATE
 					u.CodeHashOrStorage = [32]byte{}
-					copy(u.CodeHashOrStorage[32-len(storage):], storage)
+					u.ValLength = len(storage)
+					copy(u.CodeHashOrStorage[:], storage)
 				}
 			}
 		}
@@ -425,7 +435,7 @@ func TestEmptyState(t *testing.T) {
 	for key := range branchNodeUpdates {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
 		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
@@ -449,7 +459,7 @@ func TestEmptyState(t *testing.T) {
 	for key := range branchNodeUpdates {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
 		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
@@ -473,7 +483,7 @@ func TestEmptyState(t *testing.T) {
 	for key := range branchNodeUpdates {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
 		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
@@ -507,7 +517,7 @@ func Test_HexPatriciaHashed_EmptyUpdateState(t *testing.T) {
 	for key := range branchNodeUpdates {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, key := range keys {
 		branchNodeUpdate := branchNodeUpdates[key]
 		fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))
@@ -532,25 +542,25 @@ func Test_HexPatriciaHashed_EmptyUpdateState(t *testing.T) {
 	require.EqualValues(t, hashBeforeEmptyUpdate, hashAfterEmptyUpdate)
 }
 
-func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
+func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	ms := NewMockState(t)
 	ms2 := NewMockState(t)
 
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("f4", 4).
-		//Storage("04", "01", "0401").
+		Storage("04", "01", "0401").
 		Balance("ba", 065606).
 		Balance("00", 4).
 		Balance("01", 5).
 		Balance("02", 6).
 		Balance("03", 7).
-		//Storage("03", "56", "050505").
+		// Storage("03", "56", "050505").
 		Balance("05", 9).
-		//Storage("03", "57", "060606").
+		// Storage("03", "57", "060606").
 		Balance("b9", 6).
-		//Nonce("ff", 169356).
-		//Storage("05", "02", "8989").
-		//Storage("f5", "04", "9898").
+		Nonce("ff", 169356).
+		Storage("05", "02", "8989").
+		Storage("f5", "04", "9898").
 		Build()
 
 	renderUpdates := func(branchNodeUpdates map[string][]byte) {
@@ -558,7 +568,7 @@ func TestHexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 		for key := range branchNodeUpdates {
 			keys = append(keys, key)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		for _, key := range keys {
 			branchNodeUpdate := branchNodeUpdates[key]
 			fmt.Printf("%x => %s\n", CompactToHex([]byte(key)), branchToString(branchNodeUpdate))

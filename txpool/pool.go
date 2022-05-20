@@ -36,7 +36,9 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
+	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/grpcutil"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
@@ -606,7 +608,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
-	txs.Resize(uint(min(uint64(n), uint64(len(p.pending.best.ms)))))
+	txs.Resize(uint(cmp.Min(int(n), len(p.pending.best.ms))))
 
 	best := p.pending.best
 	for i, j := 0, 0; j < int(n) && i < len(best.ms); i++ {
@@ -1004,9 +1006,11 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
 	found := p.all.get(mt.Tx.SenderID, mt.Tx.Nonce)
 	if found != nil {
-		tipThreshold := found.Tx.Tip * (100 + p.cfg.PriceBump) / 100
+		tipThreshold := uint256.NewInt(0)
+		tipThreshold = tipThreshold.Mul(&found.Tx.Tip, uint256.NewInt(100+p.cfg.PriceBump))
+		tipThreshold.Div(tipThreshold, u256.N100)
 		feecapThreshold := found.Tx.FeeCap * (100 + p.cfg.PriceBump) / 100
-		if mt.Tx.Tip < tipThreshold || mt.Tx.FeeCap < feecapThreshold {
+		if mt.Tx.Tip.Cmp(tipThreshold) < 0 || mt.Tx.FeeCap < feecapThreshold {
 			// Both tip and feecap need to be larger than previously to replace the transaction
 			// In case if the transation is stuck, "poke" it to rebroadcast
 			// TODO refactor to return the list of promoted hashes instead of using added inside the pool
@@ -1160,9 +1164,11 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			toDel = append(toDel, mt)
 			return true
 		}
-		minFeeCap = min(minFeeCap, mt.Tx.FeeCap)
+		minFeeCap = cmp.Min(minFeeCap, mt.Tx.FeeCap)
 		mt.minFeeCap = minFeeCap
-		minTip = min(minTip, mt.Tx.Tip)
+		if mt.Tx.Tip.IsUint64() {
+			minTip = cmp.Min(minTip, mt.Tx.Tip.Uint64())
+		}
 		mt.minTip = minTip
 
 		mt.nonceDistance = 0
@@ -1670,8 +1676,7 @@ func (p *TxPool) logStats() {
 
 	//idsInMem := p.senders.idsCount()
 	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
+	common.ReadMemStats(&m)
 	ctx := []interface{}{
 		//"baseFee", fmt.Sprintf("%d, %dm", protocolBaseFee, pendingBaseFee/1_000_000),
 		"block", p.lastSeenBlock.Load(),
@@ -2188,10 +2193,10 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
 	case PendingSubPool:
 		var effectiveTip, thanEffectiveTip uint64
 		if pendingBaseFee <= mt.minFeeCap {
-			effectiveTip = min(mt.minFeeCap-pendingBaseFee, mt.minTip)
+			effectiveTip = cmp.Min(mt.minFeeCap-pendingBaseFee, mt.minTip)
 		}
 		if pendingBaseFee <= than.minFeeCap {
-			thanEffectiveTip = min(than.minFeeCap-pendingBaseFee, than.minTip)
+			thanEffectiveTip = cmp.Min(than.minFeeCap-pendingBaseFee, than.minTip)
 		}
 		if effectiveTip != thanEffectiveTip {
 			return effectiveTip > thanEffectiveTip
@@ -2298,11 +2303,4 @@ func (p *WorstQueue) Pop() interface{} {
 	item.currentSubPool = 0 // for safety
 	p.ms = old[0 : n-1]
 	return item
-}
-
-func min(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
 }

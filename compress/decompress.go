@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2022 Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import (
 
 type patternTable struct {
 	bitLen   int             // Number of bits to lookup in the table
-	patterns [][]byte        // Patterns corresponding to entries
+	patterns []*word         // Patterns corresponding to entries
 	lens     []byte          // Number of bits in the codes
 	ptrs     []*patternTable // pointers to deeper level tables
 }
@@ -108,7 +108,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		tableSize := 1 << bitLen
 		d.dict = &patternTable{
 			bitLen:   bitLen,
-			patterns: make([][]byte, tableSize),
+			patterns: make([]*word, tableSize),
 			lens:     make([]byte, tableSize),
 			ptrs:     make([]*patternTable, tableSize),
 		}
@@ -154,24 +154,28 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	return d, nil
 }
 
+type word []byte
+
 // returns number of depth and patterns comsumed
 func buildPatternTable(depths []uint64, patterns [][]byte, table *patternTable, code uint16, bits int, depth uint64, maxDepth uint64) int {
 	if len(depths) == 0 {
 		return 0
 	}
 	if depth == depths[0] {
-		pattern := patterns[0]
+		pattern := word(make([]byte, len(patterns[0])))
+		copy(pattern, patterns[0])
 		//fmt.Printf("depth=%d, maxDepth=%d, code=[%b], codeLen=%d, pattern=[%x]\n", depth, maxDepth, code, bits, pattern)
 		if table.bitLen == int(bits) {
-			table.patterns[code] = pattern
+			table.patterns[code] = &pattern
 			table.lens[code] = byte(bits)
 			table.ptrs[code] = nil
 		} else {
 			codeStep := uint16(1) << bits
 			codeFrom := code
 			codeTo := code | (uint16(1) << table.bitLen)
+
 			for c := codeFrom; c < codeTo; c += codeStep {
-				table.patterns[c] = pattern
+				table.patterns[c] = &pattern
 				table.lens[c] = byte(bits)
 				table.ptrs[c] = nil
 			}
@@ -188,7 +192,7 @@ func buildPatternTable(depths []uint64, patterns [][]byte, table *patternTable, 
 		tableSize := 1 << bitLen
 		newTable := &patternTable{
 			bitLen:   bitLen,
-			patterns: make([][]byte, tableSize),
+			patterns: make([]*word, tableSize),
 			lens:     make([]byte, tableSize),
 			ptrs:     make([]*patternTable, tableSize),
 		}
@@ -279,7 +283,10 @@ type Getter struct {
 	patternDict *patternTable
 	posDict     *posTable
 	fName       string
+	trace       bool
 }
+
+func (g *Getter) Trace(t bool) { g.trace = t }
 
 func (g *Getter) nextPos(clean bool) uint64 {
 	if clean {
@@ -317,7 +324,7 @@ func (g *Getter) nextPos(clean bool) uint64 {
 func (g *Getter) nextPattern() []byte {
 	table := g.patternDict
 	if table.bitLen == 0 {
-		return table.patterns[0]
+		return *table.patterns[0]
 	}
 	var l byte
 	var pattern []byte
@@ -333,7 +340,7 @@ func (g *Getter) nextPattern() []byte {
 			g.dataBit += 9
 		} else {
 			g.dataBit += int(l)
-			pattern = table.patterns[code]
+			pattern = *table.patterns[code]
 		}
 		g.dataP += uint64(g.dataBit / 8)
 		g.dataBit = g.dataBit % 8
@@ -483,7 +490,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
 	lenBuf := len(buf)
-	if l == 0 {
+	if l == 0 || int(l) != lenBuf {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
@@ -491,7 +498,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 		if lenBuf != 0 {
 			g.dataP, g.dataBit = savePos, 0
 		}
-		return lenBuf == 0, g.dataP
+		return lenBuf == int(l), g.dataP
 	}
 
 	var bufPos int
@@ -543,7 +550,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
-func (g *Getter) MatchPrefix(buf []byte) bool {
+func (g *Getter) MatchPrefix(prefix []byte) bool {
 	savePos := g.dataP
 	defer func() {
 		g.dataP, g.dataBit = savePos, 0
@@ -551,34 +558,37 @@ func (g *Getter) MatchPrefix(buf []byte) bool {
 
 	l := g.nextPos(true /* clean */)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
-	lenBuf := len(buf)
-	if l == 0 {
+	prefixLen := len(prefix)
+	if l == 0 || int(l) < prefixLen {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		if lenBuf != 0 {
+		if prefixLen != 0 {
 			g.dataP, g.dataBit = savePos, 0
 		}
-		return lenBuf == 0
+		return prefixLen == int(l)
 	}
 
 	var bufPos int
 	// In the first pass, we only check patterns
 	// Only run this loop as far as the prefix goes, there is no need to check further
-	for pos := g.nextPos(false /* clean */); pos != 0 && bufPos < lenBuf; pos = g.nextPos(false) {
+	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
 		pattern := g.nextPattern()
 		var comparisonLen int
-		if lenBuf < bufPos+len(pattern) {
-			comparisonLen = lenBuf - bufPos
+		if prefixLen < bufPos+len(pattern) {
+			comparisonLen = prefixLen - bufPos
 		} else {
 			comparisonLen = len(pattern)
 		}
-		if !bytes.Equal(buf[bufPos:bufPos+comparisonLen], pattern[:comparisonLen]) {
-			return false
+		if bufPos < prefixLen {
+			if !bytes.Equal(prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen]) {
+				return false
+			}
 		}
 	}
+
 	if g.dataBit > 0 {
 		g.dataP++
 		g.dataBit = 0
@@ -589,33 +599,32 @@ func (g *Getter) MatchPrefix(buf []byte) bool {
 	// Second pass - we check spaces not covered by the patterns
 	var lastUncovered int
 	bufPos = 0
-	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < lenBuf; pos = g.nextPos(false) {
+	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
-		patternLen := len(g.nextPattern())
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
 			var comparisonLen int
-			if lenBuf < lastUncovered+int(dif) {
-				comparisonLen = lenBuf - lastUncovered
+			if prefixLen < lastUncovered+int(dif) {
+				comparisonLen = prefixLen - lastUncovered
 			} else {
 				comparisonLen = int(dif)
 			}
-			if !bytes.Equal(buf[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
+			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 				return false
 			}
 			postLoopPos += dif
 		}
-		lastUncovered = bufPos + patternLen
+		lastUncovered = bufPos + len(g.nextPattern())
 	}
-	if lenBuf > lastUncovered && int(l) > lastUncovered {
+	if prefixLen > lastUncovered && int(l) > lastUncovered {
 		dif := l - uint64(lastUncovered)
 		var comparisonLen int
-		if lenBuf < int(l) {
-			comparisonLen = lenBuf - lastUncovered
+		if prefixLen < int(l) {
+			comparisonLen = prefixLen - lastUncovered
 		} else {
 			comparisonLen = int(dif)
 		}
-		if !bytes.Equal(buf[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
+		if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
 			return false
 		}
 	}
