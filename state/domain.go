@@ -415,15 +415,15 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return Collation{}, fmt.Errorf("create %s values compressor: %w", d.filenameBase, err)
 	}
-	keyCursor, err := roTx.CursorDupSort(d.keysTable)
+	keysCursor, err := roTx.CursorDupSort(d.keysTable)
 	if err != nil {
 		return Collation{}, fmt.Errorf("create %s keys cursor: %w", d.filenameBase, err)
 	}
-	defer keyCursor.Close()
+	defer keysCursor.Close()
 	var k []byte
 	valuesCount := 0
-	for k, _, err = keyCursor.First(); err == nil && k != nil; k, _, err = keyCursor.Next() {
-		invertedStep, err := keyCursor.LastDup()
+	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.Next() {
+		invertedStep, err := keysCursor.LastDup()
 		if err != nil {
 			return Collation{}, fmt.Errorf("find last %s key for aggregation step k=[%x]: %w", d.filenameBase, k, err)
 		}
@@ -692,14 +692,49 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 	return idx, nil
 }
 
-func (a *Domain) cleanup(step uint64) error {
+func (d *Domain) cleanup(step uint64) error {
+	// It is important to clean up tables in a specific order
+	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
+	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
+	if err != nil {
+		return fmt.Errorf("%s keys cursor: %w", d.filenameBase, err)
+	}
+	defer keysCursor.Close()
+	var k, v []byte
+	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
+		s := ^binary.BigEndian.Uint64(v)
+		if s == step {
+			if err = keysCursor.DeleteCurrent(); err != nil {
+				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
+			}
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
+	}
+	var valsCursor kv.RwCursor
+	if valsCursor, err = d.tx.RwCursor(d.valsTable); err != nil {
+		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
+	}
+	defer valsCursor.Close()
+	for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
+		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
+		if s == step {
+			if err = valsCursor.DeleteCurrent(); err != nil {
+				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
+			}
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
+	}
 	return nil
 }
 
-func (a *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
+func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 	var val []byte
 	var found bool
-	a.files[fType].Descend(func(i btree.Item) bool {
+	d.files[fType].Descend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		if item.index.Empty() {
 			return true

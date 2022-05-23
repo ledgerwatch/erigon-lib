@@ -24,6 +24,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
+	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 )
@@ -131,6 +132,24 @@ func TestCollation(t *testing.T) {
 		w, _ = g.Next(nil)
 		require.Equal(t, words[i+1], string(w))
 	}
+	g = sf.efHistoryDecomp.MakeGetter()
+	g.Reset(0)
+	words = words[:0]
+	var intArrs [][]uint64
+	for g.HasNext() {
+		w, _ := g.Next(nil)
+		words = append(words, string(w))
+		w, _ = g.Next(w[:0])
+		ef, _ := eliasfano32.ReadEliasFano(w)
+		var ints []uint64
+		it := ef.Iterator()
+		for it.HasNext() {
+			ints = append(ints, it.Next())
+		}
+		intArrs = append(intArrs, ints)
+	}
+	require.Equal(t, []string{"key1", "key2"}, words)
+	require.Equal(t, [][]uint64{{2, 6}, {3}}, intArrs)
 }
 
 func TestIteration(t *testing.T) {
