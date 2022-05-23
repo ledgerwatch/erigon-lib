@@ -34,7 +34,9 @@ import (
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
+	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/exp/slices"
 )
 
 var historyValCountKey = []byte("ValCount")
@@ -63,6 +65,7 @@ type FileType int
 const (
 	Values FileType = iota
 	History
+	EfHistory
 	NumberOfTypes
 )
 
@@ -72,6 +75,8 @@ func (ft FileType) String() string {
 		return "values"
 	case History:
 		return "history"
+	case EfHistory:
+		return "efhistory"
 	default:
 		panic(fmt.Sprintf("unknown file type: %d", ft))
 	}
@@ -504,10 +509,12 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 }
 
 type StaticFiles struct {
-	valuesDecomp  *compress.Decompressor
-	valuesIdx     *recsplit.Index
-	historyDecomp *compress.Decompressor
-	historyIdx    *recsplit.Index
+	valuesDecomp    *compress.Decompressor
+	valuesIdx       *recsplit.Index
+	historyDecomp   *compress.Decompressor
+	historyIdx      *recsplit.Index
+	efHistoryDecomp *compress.Decompressor
+	efHistoryIdx    *recsplit.Index
 }
 
 func (sf StaticFiles) Close() {
@@ -515,6 +522,8 @@ func (sf StaticFiles) Close() {
 	sf.valuesIdx.Close()
 	sf.historyDecomp.Close()
 	sf.historyIdx.Close()
+	sf.efHistoryDecomp.Close()
+	sf.efHistoryIdx.Close()
 }
 
 // buildFiles performs potentially resource intensive operations of creating
@@ -522,8 +531,9 @@ func (sf StaticFiles) Close() {
 func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
 	valuesComp := collation.valuesComp
 	historyComp := collation.historyComp
-	var valuesDecomp, historyDecomp *compress.Decompressor
-	var valuesIdx, historyIdx *recsplit.Index
+	var valuesDecomp, historyDecomp, efHistoryDecomp *compress.Decompressor
+	var valuesIdx, historyIdx, efHistoryIdx *recsplit.Index
+	var efHistoryComp *compress.Compressor
 	closeComp := true
 	defer func() {
 		if closeComp {
@@ -545,11 +555,20 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 			if historyIdx != nil {
 				historyIdx.Close()
 			}
+			if efHistoryComp != nil {
+				efHistoryComp.Close()
+			}
+			if efHistoryDecomp != nil {
+				efHistoryDecomp.Close()
+			}
+			if efHistoryIdx != nil {
+				efHistoryIdx.Close()
+			}
 		}
 	}()
-	blockFrom := step * d.aggregationStep
-	blockTo := (step + 1) * d.aggregationStep
-	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.idx", d.filenameBase, blockFrom, blockTo))
+	txNumFrom := step * d.aggregationStep
+	txNumTo := (step + 1) * d.aggregationStep
+	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.idx", d.filenameBase, txNumFrom, txNumTo))
 	var err error
 	if err = valuesComp.Compress(); err != nil {
 		return StaticFiles{}, fmt.Errorf("compress %s values: %w", d.filenameBase, err)
@@ -562,7 +581,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
-	historyIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.idx", d.filenameBase, blockFrom, blockTo))
+	historyIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.idx", d.filenameBase, txNumFrom, txNumTo))
 	if err = historyComp.Compress(); err != nil {
 		return StaticFiles{}, fmt.Errorf("compress %s history: %w", d.filenameBase, err)
 	}
@@ -574,12 +593,54 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if historyIdx, err = buildIndex(historyDecomp, historyIdxPath, d.dir, collation.historyCount); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s history idx: %w", d.filenameBase, err)
 	}
+	// Build history ef
+	efHistoryPath := filepath.Join(d.dir, fmt.Sprintf("%s-efhistory.%d-%d.dat", d.filenameBase, txNumFrom, txNumTo))
+	efHistoryComp, err = compress.NewCompressor(context.Background(), "ef history", efHistoryPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug)
+	if err != nil {
+		return StaticFiles{}, fmt.Errorf("create %s ef history compressor: %w", d.filenameBase, err)
+	}
+	var buf []byte
+	keys := make([]string, 0, len(collation.indexBitmaps))
+	for key := range collation.indexBitmaps {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		if err = efHistoryComp.AddUncompressedWord([]byte(key)); err != nil {
+			return StaticFiles{}, fmt.Errorf("add %s ef history key [%x]: %w", d.filenameBase, key, err)
+		}
+		bitmap := collation.indexBitmaps[key]
+		ef := eliasfano32.NewEliasFano(bitmap.GetCardinality(), bitmap.Maximum())
+		it := bitmap.Iterator()
+		for it.HasNext() {
+			ef.AddOffset(it.Next())
+		}
+		ef.Build()
+		buf = ef.AppendBytes(buf[:0])
+		if err = efHistoryComp.AddUncompressedWord(buf); err != nil {
+			return StaticFiles{}, fmt.Errorf("add %s ef history val: %w", d.filenameBase, err)
+		}
+	}
+	if err = efHistoryComp.Compress(); err != nil {
+		return StaticFiles{}, fmt.Errorf("compress %s ef history: %w", d.filenameBase, err)
+	}
+	efHistoryComp.Close()
+	efHistoryComp = nil
 	closeComp = false
+	if efHistoryDecomp, err = compress.NewDecompressor(efHistoryPath); err != nil {
+		return StaticFiles{}, fmt.Errorf("open %s ef history decompressor: %w", d.filenameBase, err)
+	}
+	efHistoryIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-efhistory.%d-%d.idx", d.filenameBase, txNumFrom, txNumTo))
+	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, d.dir, len(keys)); err != nil {
+		return StaticFiles{}, fmt.Errorf("build %s ef history idx: %w", d.filenameBase, err)
+	}
 	return StaticFiles{
-		valuesDecomp:  valuesDecomp,
-		valuesIdx:     valuesIdx,
-		historyDecomp: historyDecomp,
-		historyIdx:    historyIdx,
+		valuesDecomp:    valuesDecomp,
+		valuesIdx:       valuesIdx,
+		historyDecomp:   historyDecomp,
+		historyIdx:      historyIdx,
+		efHistoryDecomp: efHistoryDecomp,
+		efHistoryIdx:    efHistoryIdx,
 	}, nil
 }
 
