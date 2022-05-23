@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -134,6 +135,9 @@ func NewDomain(
 		d.files[fType] = btree.New(32)
 	}
 	d.scanStateFiles(files)
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		d.openFiles(fType)
+	}
 	return d, nil
 }
 
@@ -184,6 +188,32 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 			d.files[fType].ReplaceOrInsert(item)
 		}
 	}
+}
+
+func (d *Domain) openFiles(fType FileType) error {
+	var err error
+	var totalKeys uint64
+	d.files[fType].Ascend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		datPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.dat", d.filenameBase, fType.String(), item.startTxNum, item.endTxNum))
+		if item.decompressor, err = compress.NewDecompressor(path.Join(d.dir, datPath)); err != nil {
+			return false
+		}
+		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.idx", d.filenameBase, fType.String(), item.startTxNum, item.endTxNum))
+		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
+			return false
+		}
+		totalKeys += item.index.KeyCount()
+		item.getter = item.decompressor.MakeGetter()
+		item.getterMerge = item.decompressor.MakeGetter()
+		item.indexReader = recsplit.NewIndexReader(item.index)
+		item.readerMerge = recsplit.NewIndexReader(item.index)
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *Domain) closeFiles(fType FileType) {
