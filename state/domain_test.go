@@ -267,5 +267,66 @@ func TestAfterPrune(t *testing.T) {
 	v, err = d.Get([]byte("key2"))
 	require.NoError(t, err)
 	require.Equal(t, []byte("value2.1"), v)
+}
 
+func TestHistory(t *testing.T) {
+	db, d := testDbAndDomain(t)
+	defer db.Close()
+	defer d.Close()
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
+
+	for txNum := uint64(1); txNum < 1000; txNum++ {
+		if txNum%10 == 0 {
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			defer tx.Rollback()
+			d.SetTx(tx)
+		}
+	}
+	d.SetTxNum(2)
+	err = d.Put([]byte("key1"), []byte("value1.1"))
+	require.NoError(t, err)
+
+	d.SetTxNum(3)
+	err = d.Put([]byte("key2"), []byte("value2.1"))
+	require.NoError(t, err)
+
+	d.SetTxNum(6)
+	err = d.Put([]byte("key1"), []byte("value1.2"))
+	require.NoError(t, err)
+
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+
+	c, err := d.collate(0, 0, 7, roTx)
+	require.NoError(t, err)
+
+	sf, err := d.buildFiles(0, c)
+	require.NoError(t, err)
+	defer sf.Close()
+
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
+
+	d.integrateFiles(sf, 0, 7)
+
+	err = d.prune(0, 0, 7)
+	require.NoError(t, err)
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
 }

@@ -289,6 +289,7 @@ func (d *Domain) update(key, original []byte) error {
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], d.txNum)
 	historyKey := make([]byte, len(key)+8)
+	copy(historyKey, key)
 	if len(original) > 0 {
 		val, err := d.tx.GetOne(d.historyValsCount, historyValCountKey)
 		if err != nil {
@@ -299,15 +300,14 @@ func (d *Domain) update(key, original []byte) error {
 			valNum = binary.BigEndian.Uint64(val)
 		}
 		valNum++
-		binary.BigEndian.PutUint64(historyKey, valNum)
-		if err = d.tx.Put(d.historyValsCount, historyValCountKey, historyKey[:8]); err != nil {
+		binary.BigEndian.PutUint64(historyKey[len(key):], valNum)
+		if err = d.tx.Put(d.historyValsCount, historyValCountKey, historyKey[len(key):]); err != nil {
 			return err
 		}
-		if err = d.tx.Put(d.historyValsTable, historyKey[:8], original); err != nil {
+		if err = d.tx.Put(d.historyValsTable, historyKey[len(key):], original); err != nil {
 			return err
 		}
 	}
-	copy(historyKey[8:], key)
 	if err := d.tx.Put(d.historyKeysTable, txKey[:], historyKey); err != nil {
 		return err
 	}
@@ -469,15 +469,15 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		if txNum >= txTo {
 			break
 		}
-		historyKey = append(append(historyKey[:0], k...), v[8:]...)
+		historyKey = append(append(historyKey[:0], k...), v[len(v)-8:]...)
 		if err = historyComp.AddUncompressedWord(historyKey); err != nil {
 			return Collation{}, fmt.Errorf("add %s history key [%x]: %w", d.filenameBase, k, err)
 		}
-		valNum := binary.BigEndian.Uint64(v)
+		valNum := binary.BigEndian.Uint64(v[len(v)-8:])
 		if valNum == 0 {
 			val = nil
 		} else {
-			if val, err = roTx.GetOne(d.historyValsTable, v[:8]); err != nil {
+			if val, err = roTx.GetOne(d.historyValsTable, v[len(v)-8:]); err != nil {
 				return Collation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", d.filenameBase, k, valNum, err)
 			}
 		}
@@ -487,9 +487,9 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		historyCount++
 		var bitmap *roaring64.Bitmap
 		var ok bool
-		if bitmap, ok = indexBitmaps[string(v[8:])]; !ok {
+		if bitmap, ok = indexBitmaps[string(v[:len(v)-8])]; !ok {
 			bitmap = roaring64.New()
-			indexBitmaps[string(v[8:])] = bitmap
+			indexBitmaps[string(v[:len(v)-8])] = bitmap
 		}
 		bitmap.Add(txNum)
 	}
@@ -775,10 +775,10 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if err = d.tx.Delete(d.historyValsTable, v[:8], nil); err != nil {
+		if err = d.tx.Delete(d.historyValsTable, v[len(v)-8:], nil); err != nil {
 			return err
 		}
-		if err = d.tx.Delete(d.indexTable, v[8:], k); err != nil {
+		if err = d.tx.Delete(d.indexTable, v[len(v)-8:], k); err != nil {
 			return err
 		}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
@@ -813,4 +813,77 @@ func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 		return true
 	})
 	return val, found
+}
+
+func (d *Domain) getAfterTxNum(key []byte, txNum uint64) ([]byte, bool, error) {
+	indexCursor, err := d.tx.CursorDupSort(d.indexTable)
+	if err != nil {
+		return nil, false, err
+	}
+	defer indexCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txNum+1)
+	var foundTxNumVal []byte
+	if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
+		return nil, false, err
+	}
+	if foundTxNumVal != nil {
+		var historyKeysCursor kv.CursorDupSort
+		if historyKeysCursor, err = d.tx.CursorDupSort(d.historyKeysTable); err != nil {
+			return nil, false, err
+		}
+		defer historyKeysCursor.Close()
+		var vn []byte
+		if vn, err = historyKeysCursor.SeekBothRange(txKey[:], key); err != nil {
+			return nil, false, err
+		}
+		valNum := binary.BigEndian.Uint64(vn)
+		if valNum == 0 {
+			return nil, true, nil
+		}
+		var v []byte
+		if v, err = d.tx.GetOne(d.historyValsTable, vn); err != nil {
+			return nil, false, err
+		}
+		return v, true, nil
+	}
+	var search filesItem
+	search.endTxNum = txNum + 1
+	var foundTxNum uint64
+	var foundEndTxNum uint64
+	var found bool
+	d.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
+		item := i.(*filesItem)
+		offset := item.indexReader.Lookup(key)
+		g := item.getter
+		g.Reset(offset)
+		if keyMatch, _ := g.Match(key); keyMatch {
+			eliasVal, _ := g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+			if n, ok := ef.Search(txNum + 1); ok {
+				foundTxNum = n
+				foundEndTxNum = n
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	if !found {
+		return nil, true, nil
+	}
+	var lookupKey = make([]byte, len(key)+8)
+	binary.BigEndian.PutUint64(lookupKey, foundTxNum)
+	copy(lookupKey[8:], key)
+	var historyItem *filesItem
+	search.endTxNum = foundEndTxNum
+	if i := d.files[History].Get(&search); i != nil {
+		historyItem = i.(*filesItem)
+	} else {
+		return nil, false, fmt.Errorf("no %s file found for [%x]", d.filenameBase, key)
+	}
+	offset := historyItem.indexReader.Lookup(lookupKey)
+	historyItem.getter.Reset(offset)
+	v, _ := historyItem.getter.Next(nil)
+	return v, true, nil
 }
