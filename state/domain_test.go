@@ -150,6 +150,13 @@ func TestCollation(t *testing.T) {
 	}
 	require.Equal(t, []string{"key1", "key2"}, words)
 	require.Equal(t, [][]uint64{{2, 6}, {3}}, intArrs)
+	r = recsplit.NewIndexReader(sf.efHistoryIdx)
+	for i := 0; i < len(words); i++ {
+		offset := r.Lookup([]byte(words[i]))
+		g.Reset(offset)
+		w, _ := g.Next(nil)
+		require.Equal(t, words[i], string(w))
+	}
 }
 
 func TestIteration(t *testing.T) {
