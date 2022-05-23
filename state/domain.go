@@ -692,6 +692,10 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 	return idx, nil
 }
 
+func (a *Domain) cleanup(step uint64) error {
+	return nil
+}
+
 func (a *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 	var val []byte
 	var found bool
