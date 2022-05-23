@@ -693,6 +693,39 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 	return idx, nil
 }
 
+func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
+	d.files[Values].ReplaceOrInsert(&filesItem{
+		startTxNum:   txNumFrom,
+		endTxNum:     txNumTo,
+		decompressor: sf.valuesDecomp,
+		index:        sf.valuesIdx,
+		getter:       sf.valuesDecomp.MakeGetter(),
+		getterMerge:  sf.valuesDecomp.MakeGetter(),
+		indexReader:  recsplit.NewIndexReader(sf.valuesIdx),
+		readerMerge:  recsplit.NewIndexReader(sf.valuesIdx),
+	})
+	d.files[History].ReplaceOrInsert(&filesItem{
+		startTxNum:   txNumFrom,
+		endTxNum:     txNumTo,
+		decompressor: sf.historyDecomp,
+		index:        sf.historyIdx,
+		getter:       sf.historyDecomp.MakeGetter(),
+		getterMerge:  sf.historyDecomp.MakeGetter(),
+		indexReader:  recsplit.NewIndexReader(sf.historyIdx),
+		readerMerge:  recsplit.NewIndexReader(sf.historyIdx),
+	})
+	d.files[EfHistory].ReplaceOrInsert(&filesItem{
+		startTxNum:   txNumFrom,
+		endTxNum:     txNumTo,
+		decompressor: sf.efHistoryDecomp,
+		index:        sf.efHistoryIdx,
+		getter:       sf.efHistoryDecomp.MakeGetter(),
+		getterMerge:  sf.efHistoryDecomp.MakeGetter(),
+		indexReader:  recsplit.NewIndexReader(sf.efHistoryIdx),
+		readerMerge:  recsplit.NewIndexReader(sf.efHistoryIdx),
+	})
+}
+
 // [txFrom; txTo)
 func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	// It is important to clean up tables in a specific order
@@ -742,13 +775,14 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if err = historyKeysCursor.DeleteCurrent(); err != nil {
-			return err
-		}
 		if err = d.tx.Delete(d.historyValsTable, v[:8], nil); err != nil {
 			return err
 		}
 		if err = d.tx.Delete(d.indexTable, v[8:], k); err != nil {
+			return err
+		}
+		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
+		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
 		}
 	}

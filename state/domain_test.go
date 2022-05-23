@@ -54,7 +54,7 @@ func testDbAndDomain(t *testing.T) (kv.RwDB, *Domain) {
 	return db, d
 }
 
-func TestCollation(t *testing.T) {
+func TestCollationBuild(t *testing.T) {
 	db, d := testDbAndDomain(t)
 	defer db.Close()
 	defer d.Close()
@@ -157,12 +157,6 @@ func TestCollation(t *testing.T) {
 		w, _ := g.Next(nil)
 		require.Equal(t, words[i], string(w))
 	}
-	tx, err = db.BeginRw(context.Background())
-	require.NoError(t, err)
-	defer tx.Rollback()
-	d.SetTx(tx)
-	err = d.prune(0, 0, 7)
-	require.NoError(t, err)
 }
 
 func TestIteration(t *testing.T) {
@@ -196,4 +190,82 @@ func TestIteration(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"addr2loc1", "addr2loc2"}, keys)
+}
+
+func TestAfterPrune(t *testing.T) {
+	db, d := testDbAndDomain(t)
+	defer db.Close()
+	defer d.Close()
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
+
+	d.SetTxNum(2)
+	err = d.Put([]byte("key1"), []byte("value1.1"))
+	require.NoError(t, err)
+
+	d.SetTxNum(3)
+	err = d.Put([]byte("key2"), []byte("value2.1"))
+	require.NoError(t, err)
+
+	d.SetTxNum(6)
+	err = d.Put([]byte("key1"), []byte("value1.2"))
+	require.NoError(t, err)
+
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+
+	c, err := d.collate(0, 0, 7, roTx)
+	require.NoError(t, err)
+
+	sf, err := d.buildFiles(0, c)
+	require.NoError(t, err)
+	defer sf.Close()
+
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
+
+	d.integrateFiles(sf, 0, 7)
+	var v []byte
+	v, err = d.Get([]byte("key1"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value1.2"), v)
+	v, err = d.Get([]byte("key2"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value2.1"), v)
+
+	err = d.prune(0, 0, 7)
+	require.NoError(t, err)
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
+
+	for _, table := range []string{d.keysTable, d.valsTable, d.historyKeysTable, d.historyValsTable, d.indexTable} {
+		var cur kv.Cursor
+		cur, err = tx.Cursor(table)
+		require.NoError(t, err)
+		defer cur.Close()
+		var k []byte
+		k, _, err = cur.First()
+		require.NoError(t, err)
+		require.Nil(t, k, table)
+	}
+
+	v, err = d.Get([]byte("key1"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value1.2"), v)
+	v, err = d.Get([]byte("key2"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value2.1"), v)
+
 }
