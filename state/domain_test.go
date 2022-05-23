@@ -157,6 +157,12 @@ func TestCollation(t *testing.T) {
 		w, _ := g.Next(nil)
 		require.Equal(t, words[i], string(w))
 	}
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
+	err = d.prune(0, 0, 7)
+	require.NoError(t, err)
 }
 
 func TestIteration(t *testing.T) {

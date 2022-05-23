@@ -395,6 +395,7 @@ type Collation struct {
 
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
+// [txFrom; txTo)
 func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collation, error) {
 	var valuesComp, historyComp *compress.Compressor
 	var err error
@@ -692,7 +693,8 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 	return idx, nil
 }
 
-func (d *Domain) cleanup(step uint64) error {
+// [txFrom; txTo)
+func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	// It is important to clean up tables in a specific order
 	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
 	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
@@ -727,6 +729,31 @@ func (d *Domain) cleanup(step uint64) error {
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
+	}
+	historyKeysCursor, err := d.tx.RwCursorDupSort(d.historyKeysTable)
+	if err != nil {
+		return fmt.Errorf("create %s history cursor: %w", d.filenameBase, err)
+	}
+	defer historyKeysCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		if err = historyKeysCursor.DeleteCurrent(); err != nil {
+			return err
+		}
+		if err = d.tx.Delete(d.historyValsTable, v[:8], nil); err != nil {
+			return err
+		}
+		if err = d.tx.Delete(d.indexTable, v[8:], k); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s history keys: %w", d.filenameBase, err)
 	}
 	return nil
 }
