@@ -257,8 +257,8 @@ func (d *Domain) get(key []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	if foundInvStep == nil {
-		// TODO connect search in files here
-		return nil, false, nil
+		v, found := d.readFromFiles(Values, key)
+		return v, found, nil
 	}
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
@@ -629,4 +629,27 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 		return nil, fmt.Errorf("open idx: %w", err)
 	}
 	return idx, nil
+}
+
+func (a *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
+	var val []byte
+	var found bool
+	a.files[fType].Descend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		if item.index.Empty() {
+			return true
+		}
+		offset := item.indexReader.Lookup(filekey)
+		g := item.getter
+		g.Reset(offset)
+		if g.HasNext() {
+			if keyMatch, _ := g.Match(filekey); keyMatch {
+				val, _ = g.Next(nil)
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return val, found
 }
