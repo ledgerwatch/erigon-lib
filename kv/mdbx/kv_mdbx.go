@@ -383,13 +383,13 @@ func (db *MdbxKV) Close() {
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
+	if db.closed.Load() {
+		return nil, fmt.Errorf("db closed")
+	}
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case db.roTxsLimiter <- struct{}{}:
-	}
-	if db.closed.Load() {
-		return nil, fmt.Errorf("db closed")
 	}
 
 	defer func() {
