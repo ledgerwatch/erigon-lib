@@ -123,7 +123,7 @@ func TestCollationBuild(t *testing.T) {
 		w, _ := g.Next(nil)
 		words = append(words, string(w))
 	}
-	require.Equal(t, []string{"\x00\x00\x00\x00\x00\x00\x00\x02key1", "", "\x00\x00\x00\x00\x00\x00\x00\x03key2", "", "\x00\x00\x00\x00\x00\x00\x00\x06key1", "value1.2"}, words)
+	require.Equal(t, []string{"\x00\x00\x00\x00\x00\x00\x00\x02key1", "", "\x00\x00\x00\x00\x00\x00\x00\x03key2", "", "\x00\x00\x00\x00\x00\x00\x00\x06key1", "value1.1"}, words)
 	require.Equal(t, 3, int(sf.historyIdx.KeyCount()))
 	r = recsplit.NewIndexReader(sf.historyIdx)
 	for i := 0; i < len(words); i += 2 {
@@ -285,11 +285,10 @@ func TestHistory(t *testing.T) {
 		}
 	}()
 	d.SetTx(tx)
-	txs := uint64(2)
+	txs := uint64(1000)
 	// keys are encodings of numbers 1..31
 	// each key changes value on every txNum which is multiple of the key
 	for txNum := uint64(1); txNum <= txs; txNum++ {
-		fmt.Printf("txNum=%d\n", txNum)
 		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			if txNum%keyNum == 0 {
@@ -342,11 +341,12 @@ func TestHistory(t *testing.T) {
 				valNum := txNum / keyNum
 				var k [8]byte
 				var v [8]byte
+				label := fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum)
 				binary.BigEndian.PutUint64(k[:], keyNum)
 				binary.BigEndian.PutUint64(v[:], valNum)
 				val, err := d.getAfterTxNum(k[:], txNum)
-				require.NoError(t, err)
-				require.Equal(t, v[:], val, fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum))
+				require.NoError(t, err, label)
+				require.Equal(t, v[:], val, label)
 			}
 		}
 	}

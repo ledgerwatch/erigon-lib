@@ -644,7 +644,6 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 }
 
 func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recsplit.Index, error) {
-	fmt.Printf("buildIndex %s\n", idxPath)
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -671,7 +670,6 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 			if err = rs.AddKey(word, pos); err != nil {
 				return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
 			}
-			fmt.Printf("add key [%x]=>%d\n", word, pos)
 			// Skip value
 			pos = g.Skip()
 		}
@@ -829,7 +827,6 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 	if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
 		return nil, false, err
 	}
-	fmt.Printf("historyAfterTxNum key=[%x], txNum=%d, foundTxNumVal=[%x]\n", key, txNum, foundTxNumVal)
 	if foundTxNumVal != nil {
 		var historyKeysCursor kv.CursorDupSort
 		if historyKeysCursor, err = d.tx.CursorDupSort(d.historyKeysTable); err != nil {
@@ -841,7 +838,6 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 			return nil, false, err
 		}
 		valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
-		fmt.Printf("txKey=[%x], key=[%x], vn=[%x], valNum=%d\n", txKey[:], key, vn, valNum)
 		if valNum == 0 {
 			// This is special valNum == 0, which is empty value
 			return nil, true, nil
@@ -856,10 +852,10 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 	search.endTxNum = txNum + 1
 	var foundTxNum uint64
 	var foundEndTxNum uint64
+	var foundStartTxNum uint64
 	var found bool
 	d.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
-		fmt.Printf("item %d-%d\n", item.startTxNum, item.endTxNum)
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
@@ -868,7 +864,8 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 			if n, ok := ef.Search(txNum + 1); ok {
 				foundTxNum = n
-				foundEndTxNum = n
+				foundEndTxNum = item.endTxNum
+				foundStartTxNum = item.startTxNum
 				found = true
 				return false
 			}
@@ -883,6 +880,7 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 	binary.BigEndian.PutUint64(lookupKey, foundTxNum)
 	copy(lookupKey[8:], key)
 	var historyItem *filesItem
+	search.startTxNum = foundStartTxNum
 	search.endTxNum = foundEndTxNum
 	if i := d.files[History].Get(&search); i != nil {
 		historyItem = i.(*filesItem)
@@ -890,8 +888,13 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 		return nil, false, fmt.Errorf("no %s file found for [%x]", d.filenameBase, key)
 	}
 	offset := historyItem.indexReader.Lookup(lookupKey)
-	historyItem.getter.Reset(offset)
-	v, _ := historyItem.getter.Next(nil)
+	g := historyItem.getter
+	g.Reset(offset)
+	// TODO: for the case of file where keys are removed, do not form key comparison
+	if keyMatch, _ := g.Match(lookupKey); !keyMatch {
+		return nil, false, fmt.Errorf("%s key does not match with file [%x]", d.filenameBase, lookupKey)
+	}
+	v, _ := g.Next(nil)
 	return v, true, nil
 }
 
