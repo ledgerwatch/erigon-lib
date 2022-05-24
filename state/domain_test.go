@@ -19,7 +19,6 @@ package state
 import (
 	"context"
 	"encoding/binary"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -272,7 +271,6 @@ func TestAfterPrune(t *testing.T) {
 }
 
 func TestHistory(t *testing.T) {
-	t.Skip("no working yet")
 	db, d := testDbAndDomain(t)
 	defer db.Close()
 	defer d.Close()
@@ -311,11 +309,9 @@ func TestHistory(t *testing.T) {
 	defer roTx.Rollback()
 
 	for step := uint64(0); step <= uint64(1000/16); step++ {
-		fmt.Printf("step %d\n", step)
 		func() {
 			c, err := d.collate(step, step*16, step*16+15, roTx)
 			require.NoError(t, err)
-			fmt.Printf("values count = %d, history count = %d\n", c.valuesCount, c.historyCount)
 			sf, err := d.buildFiles(step, c)
 			require.NoError(t, err)
 			defer sf.Close()

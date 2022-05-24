@@ -286,7 +286,6 @@ func (d *Domain) update(key, original []byte) error {
 	if err := d.tx.Put(d.keysTable, key, invertedStep[:]); err != nil {
 		return err
 	}
-	fmt.Printf("Put [%x]=>[%x]\n", key, invertedStep[:])
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], d.txNum)
 	historyKey := make([]byte, len(key)+8)
@@ -354,27 +353,28 @@ func (d *Domain) Delete(key []byte) error {
 	return nil
 }
 
+// TODO also iterate over files
 func (d *Domain) IteratePrefix(prefix []byte, it func(k []byte)) error {
 	keyCursor, err := d.tx.CursorDupSort(d.keysTable)
 	if err != nil {
 		return err
 	}
 	defer keyCursor.Close()
-	var k []byte
-	for k, _, err = keyCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, _, err = keyCursor.Next() {
-		var invertedStep []byte
-		if invertedStep, err = keyCursor.LastDup(); err != nil {
-			return err
-		}
-		keySuffix := make([]byte, len(k)+8)
-		copy(keySuffix, k)
-		copy(keySuffix[len(k):], invertedStep)
-		var v []byte
-		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
-			return err
-		}
-		if len(v) > 0 {
-			it(k)
+	step := d.txNum / d.aggregationStep
+	var k, v []byte
+	for k, v, err = keyCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, v, err = keyCursor.Next() {
+		s := ^binary.BigEndian.Uint64(v)
+		if s == step {
+			keySuffix := make([]byte, len(k)+8)
+			copy(keySuffix, k)
+			copy(keySuffix[len(k):], v)
+			var v []byte
+			if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
+				return err
+			}
+			if len(v) > 0 {
+				it(k)
+			}
 		}
 	}
 	if err != nil {
@@ -424,12 +424,7 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 	defer keysCursor.Close()
 	var k, v []byte
 	valuesCount := 0
-	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.NextNoDup() {
-		fmt.Printf("k = %x, v = %x\n", k, v)
-		v, err = keysCursor.LastDup()
-		if err != nil {
-			return Collation{}, fmt.Errorf("find last %s aggregation step k=[%x]: %w", d.filenameBase, k, err)
-		}
+	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		s := ^binary.BigEndian.Uint64(v)
 		if s == step {
 			keySuffix := make([]byte, len(k)+8)
@@ -475,7 +470,6 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		if err = historyComp.AddUncompressedWord(historyKey); err != nil {
 			return Collation{}, fmt.Errorf("add %s history key [%x]: %w", d.filenameBase, k, err)
 		}
-		fmt.Printf("historyComp key: [%x], k=[%x], v=[%x]\n", historyKey, k, v)
 		valNum := binary.BigEndian.Uint64(v[len(v)-8:])
 		if valNum == 0 {
 			val = nil
