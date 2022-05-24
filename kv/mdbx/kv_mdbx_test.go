@@ -97,7 +97,7 @@ func TestLastDup(t *testing.T) {
 
 	var keys, vals []string
 	var k, v []byte
-	for k, v, err = roC.First(); err == nil && k != nil; k, v, err = roC.NextNoDup() {
+	for k, _, err = roC.First(); err == nil && k != nil; k, _, err = roC.NextNoDup() {
 		v, err = roC.LastDup()
 		require.NoError(t, err)
 		keys = append(keys, string(k))
