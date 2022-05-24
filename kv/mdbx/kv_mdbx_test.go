@@ -92,6 +92,7 @@ func TestLastDup(t *testing.T) {
 	defer roTx.Rollback()
 
 	roC, err := roTx.CursorDupSort(table)
+	require.NoError(t, err)
 	defer roC.Close()
 
 	var keys, vals []string
