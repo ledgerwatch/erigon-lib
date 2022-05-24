@@ -200,7 +200,11 @@ func TestAfterPrune(t *testing.T) {
 	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
 	d.SetTx(tx)
 
 	d.SetTxNum(2)
@@ -222,7 +226,7 @@ func TestAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	defer roTx.Rollback()
 
-	c, err := d.collate(0, 0, 7, roTx)
+	c, err := d.collate(0, 0, 16, roTx)
 	require.NoError(t, err)
 
 	sf, err := d.buildFiles(0, c)
@@ -231,10 +235,9 @@ func TestAfterPrune(t *testing.T) {
 
 	tx, err = db.BeginRw(context.Background())
 	require.NoError(t, err)
-	defer tx.Rollback()
 	d.SetTx(tx)
 
-	d.integrateFiles(sf, 0, 7)
+	d.integrateFiles(sf, 0, 16)
 	var v []byte
 	v, err = d.Get([]byte("key1"))
 	require.NoError(t, err)
@@ -243,13 +246,12 @@ func TestAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("value2.1"), v)
 
-	err = d.prune(0, 0, 7)
+	err = d.prune(0, 0, 16)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx, err = db.BeginRw(context.Background())
 	require.NoError(t, err)
-	defer tx.Rollback()
 	d.SetTx(tx)
 
 	for _, table := range []string{d.keysTable, d.valsTable, d.historyKeysTable, d.historyValsTable, d.indexTable} {
@@ -277,11 +279,17 @@ func TestHistory(t *testing.T) {
 	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
 	d.SetTx(tx)
+	txs := uint64(2)
 	// keys are encodings of numbers 1..31
 	// each key changes value on every txNum which is multiple of the key
-	for txNum := uint64(1); txNum <= 1000; txNum++ {
+	for txNum := uint64(1); txNum <= txs; txNum++ {
+		fmt.Printf("txNum=%d\n", txNum)
 		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			if txNum%keyNum == 0 {
@@ -299,32 +307,35 @@ func TestHistory(t *testing.T) {
 			require.NoError(t, err)
 			tx, err = db.BeginRw(context.Background())
 			require.NoError(t, err)
-			defer tx.Rollback()
 			d.SetTx(tx)
 		}
 	}
 	err = tx.Commit()
-	require.NoError(t, err)
-	roTx, err := db.BeginRo(context.Background())
-	require.NoError(t, err)
-	defer roTx.Rollback()
 
-	for step := uint64(0); step <= uint64(1000/16); step++ {
+	for step := uint64(0); step <= txs/d.aggregationStep; step++ {
 		func() {
-			c, err := d.collate(step, step*16, step*16+15, roTx)
+			require.NoError(t, err)
+			roTx, err := db.BeginRo(context.Background())
+			require.NoError(t, err)
+			c, err := d.collate(step, step*d.aggregationStep, (step+1)*d.aggregationStep, roTx)
+			roTx.Rollback()
 			require.NoError(t, err)
 			sf, err := d.buildFiles(step, c)
 			require.NoError(t, err)
-			defer sf.Close()
-			d.integrateFiles(sf, step*16, step*16+15)
+			d.integrateFiles(sf, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			d.SetTx(tx)
+			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			err = tx.Commit()
+			require.NoError(t, err)
 		}()
 	}
 	// Check the history
 	tx, err = db.BeginRw(context.Background())
 	require.NoError(t, err)
-	defer tx.Rollback()
 	d.SetTx(tx)
-	for txNum := uint64(1); txNum <= 1000; txNum++ {
+	for txNum := uint64(1); txNum <= txs; txNum++ {
 		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			if txNum%keyNum == 0 {
@@ -335,7 +346,7 @@ func TestHistory(t *testing.T) {
 				binary.BigEndian.PutUint64(v[:], valNum)
 				val, err := d.getAfterTxNum(k[:], txNum)
 				require.NoError(t, err)
-				require.Equal(t, v, val, fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum))
+				require.Equal(t, v[:], val, fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum))
 			}
 		}
 	}

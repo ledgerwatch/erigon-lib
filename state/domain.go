@@ -322,14 +322,15 @@ func (d *Domain) Put(key, val []byte) error {
 	if err != nil {
 		return err
 	}
+	// This call to update needs to happen before d.tx.Put() later, because otherwise the content of `original`` slice is invalidated
+	if err = d.update(key, original); err != nil {
+		return err
+	}
 	invertedStep := ^(d.txNum / d.aggregationStep)
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
 	if err = d.tx.Put(d.valsTable, keySuffix, val); err != nil {
-		return err
-	}
-	if err = d.update(key, original); err != nil {
 		return err
 	}
 	return nil
@@ -340,14 +341,15 @@ func (d *Domain) Delete(key []byte) error {
 	if err != nil {
 		return err
 	}
+	// This call to update needs to happen before d.tx.Delete() later, because otherwise the content of `original`` slice is invalidated
+	if err = d.update(key, original); err != nil {
+		return err
+	}
 	invertedStep := ^(d.txNum / d.aggregationStep)
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
 	if err = d.tx.Delete(d.valsTable, keySuffix, nil); err != nil {
-		return err
-	}
-	if err = d.update(key, original); err != nil {
 		return err
 	}
 	return nil
@@ -360,24 +362,17 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k []byte)) error {
 		return err
 	}
 	defer keysCursor.Close()
-	step := d.txNum / d.aggregationStep
 	var k, v []byte
-	for k, _, err = keysCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, _, err = keysCursor.NextNoDup() {
-		if v, err = keysCursor.LastDup(); err != nil {
+	for k, v, err = keysCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, v, err = keysCursor.NextNoDup() {
+		keySuffix := make([]byte, len(k)+8)
+		copy(keySuffix, k)
+		copy(keySuffix[len(k):], v)
+		var v []byte
+		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
 			return err
 		}
-		s := ^binary.BigEndian.Uint64(v)
-		if s == step {
-			keySuffix := make([]byte, len(k)+8)
-			copy(keySuffix, k)
-			copy(keySuffix[len(k):], v)
-			var v []byte
-			if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
-				return err
-			}
-			if len(v) > 0 {
-				it(k)
-			}
+		if len(v) > 0 {
+			it(k)
 		}
 	}
 	if err != nil {
@@ -630,7 +625,6 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	}
 	efHistoryComp.Close()
 	efHistoryComp = nil
-	closeComp = false
 	if efHistoryDecomp, err = compress.NewDecompressor(efHistoryPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s ef history decompressor: %w", d.filenameBase, err)
 	}
@@ -638,6 +632,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, d.dir, len(keys)); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s ef history idx: %w", d.filenameBase, err)
 	}
+	closeComp = false
 	return StaticFiles{
 		valuesDecomp:    valuesDecomp,
 		valuesIdx:       valuesIdx,
@@ -649,6 +644,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 }
 
 func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recsplit.Index, error) {
+	fmt.Printf("buildIndex %s\n", idxPath)
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -675,6 +671,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 			if err = rs.AddKey(word, pos); err != nil {
 				return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
 			}
+			fmt.Printf("add key [%x]=>%d\n", word, pos)
 			// Skip value
 			pos = g.Skip()
 		}
@@ -843,8 +840,8 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 		if vn, err = historyKeysCursor.SeekBothRange(txKey[:], key); err != nil {
 			return nil, false, err
 		}
-		fmt.Printf("txKey=[%x], key=[%x], vn=[%x]\n", txKey[:], key, vn)
 		valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
+		fmt.Printf("txKey=[%x], key=[%x], vn=[%x], valNum=%d\n", txKey[:], key, vn, valNum)
 		if valNum == 0 {
 			// This is special valNum == 0, which is empty value
 			return nil, true, nil
@@ -862,6 +859,7 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 	var found bool
 	d.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
+		fmt.Printf("item %d-%d\n", item.startTxNum, item.endTxNum)
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
