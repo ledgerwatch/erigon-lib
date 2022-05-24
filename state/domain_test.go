@@ -19,6 +19,7 @@ package state
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -317,5 +318,25 @@ func TestHistory(t *testing.T) {
 			defer sf.Close()
 			d.integrateFiles(sf, step*16, step*16+15)
 		}()
+	}
+	// Check the history
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+	d.SetTx(tx)
+	for txNum := uint64(1); txNum <= 1000; txNum++ {
+		d.SetTxNum(txNum)
+		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+			if txNum%keyNum == 0 {
+				valNum := txNum / keyNum
+				var k [8]byte
+				var v [8]byte
+				binary.BigEndian.PutUint64(k[:], keyNum)
+				binary.BigEndian.PutUint64(v[:], valNum)
+				val, err := d.getAfterTxNum(k[:], txNum)
+				require.NoError(t, err)
+				require.Equal(t, v, val, fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum))
+			}
+		}
 	}
 }

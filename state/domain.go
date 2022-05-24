@@ -355,14 +355,17 @@ func (d *Domain) Delete(key []byte) error {
 
 // TODO also iterate over files
 func (d *Domain) IteratePrefix(prefix []byte, it func(k []byte)) error {
-	keyCursor, err := d.tx.CursorDupSort(d.keysTable)
+	keysCursor, err := d.tx.CursorDupSort(d.keysTable)
 	if err != nil {
 		return err
 	}
-	defer keyCursor.Close()
+	defer keysCursor.Close()
 	step := d.txNum / d.aggregationStep
 	var k, v []byte
-	for k, v, err = keyCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, v, err = keyCursor.Next() {
+	for k, _, err = keysCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, _, err = keysCursor.NextNoDup() {
+		if v, err = keysCursor.LastDup(); err != nil {
+			return err
+		}
 		s := ^binary.BigEndian.Uint64(v)
 		if s == step {
 			keySuffix := make([]byte, len(k)+8)
@@ -424,7 +427,10 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 	defer keysCursor.Close()
 	var k, v []byte
 	valuesCount := 0
-	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
+	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.NextNoDup() {
+		if v, err = keysCursor.LastDup(); err != nil {
+			return Collation{}, fmt.Errorf("find last %s key for aggregation step k=[%x]: %w", d.filenameBase, k, err)
+		}
 		s := ^binary.BigEndian.Uint64(v)
 		if s == step {
 			keySuffix := make([]byte, len(k)+8)
@@ -812,7 +818,9 @@ func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 	return val, found
 }
 
-func (d *Domain) getAfterTxNum(key []byte, txNum uint64) ([]byte, bool, error) {
+// historyAfterTxNum searches history for a value of specified key after txNum
+// second return value is true if the value is found in the history (even if it is nil)
+func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, error) {
 	indexCursor, err := d.tx.CursorDupSort(d.indexTable)
 	if err != nil {
 		return nil, false, err
@@ -836,6 +844,7 @@ func (d *Domain) getAfterTxNum(key []byte, txNum uint64) ([]byte, bool, error) {
 		}
 		valNum := binary.BigEndian.Uint64(vn)
 		if valNum == 0 {
+			// This is special valNum == 0, which is empty value
 			return nil, true, nil
 		}
 		var v []byte
@@ -867,7 +876,8 @@ func (d *Domain) getAfterTxNum(key []byte, txNum uint64) ([]byte, bool, error) {
 		return true
 	})
 	if !found {
-		return nil, true, nil
+		// Value not found in history
+		return nil, false, nil
 	}
 	var lookupKey = make([]byte, len(key)+8)
 	binary.BigEndian.PutUint64(lookupKey, foundTxNum)
@@ -883,4 +893,18 @@ func (d *Domain) getAfterTxNum(key []byte, txNum uint64) ([]byte, bool, error) {
 	historyItem.getter.Reset(offset)
 	v, _ := historyItem.getter.Next(nil)
 	return v, true, nil
+}
+
+func (d *Domain) getAfterTxNum(key []byte, txNum uint64) ([]byte, error) {
+	v, hOk, err := d.historyAfterTxNum(key, txNum)
+	if err != nil {
+		return nil, err
+	}
+	if hOk {
+		return v, nil
+	}
+	if v, _, err = d.get(key); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
