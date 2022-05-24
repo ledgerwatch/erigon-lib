@@ -18,6 +18,7 @@ package state
 
 import (
 	"bytes"
+	"container/heap"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -355,28 +357,145 @@ func (d *Domain) Delete(key []byte) error {
 	return nil
 }
 
+type CursorType uint8
+
+const (
+	FILE_CURSOR CursorType = iota
+	DB_CURSOR
+)
+
+// CursorItem is the item in the priority queue used to do merge interation
+// over storage of a given account
+type CursorItem struct {
+	t        CursorType // Whether this item represents state file or DB record, or tree
+	endTxNum uint64
+	key, val []byte
+	dg       *compress.Getter
+	c        kv.CursorDupSort
+}
+
+type CursorHeap []*CursorItem
+
+func (ch CursorHeap) Len() int {
+	return len(ch)
+}
+
+func (ch CursorHeap) Less(i, j int) bool {
+	cmp := bytes.Compare(ch[i].key, ch[j].key)
+	if cmp == 0 {
+		// when keys match, the items with later blocks are preferred
+		return ch[i].endTxNum > ch[j].endTxNum
+	}
+	return cmp < 0
+}
+
+func (ch *CursorHeap) Swap(i, j int) {
+	(*ch)[i], (*ch)[j] = (*ch)[j], (*ch)[i]
+}
+
+func (ch *CursorHeap) Push(x interface{}) {
+	*ch = append(*ch, x.(*CursorItem))
+}
+
+func (ch *CursorHeap) Pop() interface{} {
+	old := *ch
+	n := len(old)
+	x := old[n-1]
+	*ch = old[0 : n-1]
+	return x
+}
+
 // TODO also iterate over files
-func (d *Domain) IteratePrefix(prefix []byte, it func(k []byte)) error {
+func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
+	var cp CursorHeap
+	heap.Init(&cp)
 	keysCursor, err := d.tx.CursorDupSort(d.keysTable)
 	if err != nil {
 		return err
 	}
 	defer keysCursor.Close()
 	var k, v []byte
-	for k, v, err = keysCursor.Seek(prefix); err == nil && bytes.HasPrefix(k, prefix); k, v, err = keysCursor.NextNoDup() {
+	if k, v, err = keysCursor.Seek(prefix); err != nil {
+		return err
+	}
+	if bytes.HasPrefix(k, prefix) {
 		keySuffix := make([]byte, len(k)+8)
 		copy(keySuffix, k)
 		copy(keySuffix[len(k):], v)
-		var v []byte
 		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
 			return err
 		}
-		if len(v) > 0 {
-			it(k)
-		}
+		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: d.txNum})
+		fmt.Printf("Push DB_CURSOR [%x]=[%x]\n", k, v)
 	}
-	if err != nil {
-		return err
+	d.files[Values].Ascend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		if item.index.Empty() {
+			return true
+		}
+		offset := item.indexReader.Lookup(prefix)
+		g := item.getter
+		g.Reset(offset)
+		if g.HasNext() {
+			if keyMatch, _ := g.Match(prefix); !keyMatch {
+				return true
+			}
+			g.Skip()
+		}
+		if g.HasNext() {
+			key, _ := g.Next(nil)
+			if bytes.HasPrefix(key, prefix) {
+				val, _ := g.Next(nil)
+				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum})
+				fmt.Printf("Push FILE_CURSOR [%x]=[%x]\n", key, val)
+			}
+		}
+		return true
+	})
+	for cp.Len() > 0 {
+		lastKey := common.Copy(cp[0].key)
+		lastVal := common.Copy(cp[0].val)
+		// Advance all the items that have this key (including the top)
+		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
+			ci1 := cp[0]
+			switch ci1.t {
+			case FILE_CURSOR:
+				if ci1.dg.HasNext() {
+					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
+					if bytes.HasPrefix(ci1.key, prefix) {
+						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
+						fmt.Printf("Next FILE_CURSOR [%x]=>[%x]\n", ci1.key, ci1.val)
+						heap.Fix(&cp, 0)
+					} else {
+						heap.Pop(&cp)
+					}
+				} else {
+					heap.Pop(&cp)
+				}
+			case DB_CURSOR:
+				k, v, err = ci1.c.NextNoDup()
+				if err != nil {
+					return err
+				}
+				if k != nil && bytes.HasPrefix(k, prefix) {
+					ci1.key = common.Copy(k)
+					keySuffix := make([]byte, len(k)+8)
+					copy(keySuffix, k)
+					copy(keySuffix[len(k):], v)
+					if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
+						return err
+					}
+					ci1.val = common.Copy(v)
+					fmt.Printf("Next DB_CURDOR [%x]=>[%x]\n", ci1.key, ci1.val)
+					heap.Fix(&cp, 0)
+				} else {
+					heap.Pop(&cp)
+				}
+			}
+		}
+		if len(lastVal) > 0 {
+			it(lastKey, lastVal)
+		}
 	}
 	return nil
 }

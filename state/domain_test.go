@@ -161,7 +161,7 @@ func TestCollationBuild(t *testing.T) {
 	}
 }
 
-func TestIteration(t *testing.T) {
+func TestIterationBasic(t *testing.T) {
 	db, d := testDbAndDomain(t)
 	defer db.Close()
 	defer d.Close()
@@ -186,12 +186,14 @@ func TestIteration(t *testing.T) {
 	err = d.Put([]byte("addr3loc2"), []byte("value1"))
 	require.NoError(t, err)
 
-	var keys []string
-	err = d.IteratePrefix([]byte("addr2"), func(k []byte) {
+	var keys, vals []string
+	err = d.IteratePrefix([]byte("addr2"), func(k, v []byte) {
 		keys = append(keys, string(k))
+		vals = append(vals, string(v))
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"addr2loc1", "addr2loc2"}, keys)
+	require.Equal(t, []string{"value1", "value1"}, vals)
 }
 
 func TestAfterPrune(t *testing.T) {
@@ -310,6 +312,7 @@ func TestHistory(t *testing.T) {
 		}
 	}
 	err = tx.Commit()
+	require.NoError(t, err)
 
 	for step := uint64(0); step <= txs/d.aggregationStep; step++ {
 		func() {
@@ -350,4 +353,85 @@ func TestHistory(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestIterationMultistep(t *testing.T) {
+	db, d := testDbAndDomain(t)
+	defer db.Close()
+	defer d.Close()
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	d.SetTx(tx)
+
+	d.SetTxNum(2)
+	err = d.Put([]byte("addr1loc1"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr1loc2"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr1loc3"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr2loc1"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr2loc2"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr3loc1"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr3loc2"), []byte("value1"))
+	require.NoError(t, err)
+
+	d.SetTxNum(2 + 16)
+	err = d.Put([]byte("addr2loc1"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr2loc2"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr2loc3"), []byte("value1"))
+	require.NoError(t, err)
+	err = d.Put([]byte("addr3loc4"), []byte("value1"))
+	require.NoError(t, err)
+
+	d.SetTxNum(2 + 16 + 16)
+	err = d.Delete([]byte("addr2loc1"))
+	require.NoError(t, err)
+
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	for step := uint64(0); step <= 2; step++ {
+		func() {
+			require.NoError(t, err)
+			roTx, err := db.BeginRo(context.Background())
+			require.NoError(t, err)
+			c, err := d.collate(step, step*d.aggregationStep, (step+1)*d.aggregationStep, roTx)
+			roTx.Rollback()
+			require.NoError(t, err)
+			sf, err := d.buildFiles(step, c)
+			require.NoError(t, err)
+			d.integrateFiles(sf, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			d.SetTx(tx)
+			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			err = tx.Commit()
+			require.NoError(t, err)
+		}()
+	}
+
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	d.SetTx(tx)
+
+	var keys []string
+	var vals []string
+	err = d.IteratePrefix([]byte("addr2"), func(k, v []byte) {
+		keys = append(keys, string(k))
+		vals = append(vals, string(v))
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"addr2loc2", "addr2loc3", "addr2loc4"}, keys)
+	require.Equal(t, []string{"value1", "value1", "value1"}, vals)
 }
