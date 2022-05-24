@@ -832,6 +832,7 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 	if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
 		return nil, false, err
 	}
+	fmt.Printf("historyAfterTxNum key=[%x], txNum=%d, foundTxNumVal=[%x]\n", key, txNum, foundTxNumVal)
 	if foundTxNumVal != nil {
 		var historyKeysCursor kv.CursorDupSort
 		if historyKeysCursor, err = d.tx.CursorDupSort(d.historyKeysTable); err != nil {
@@ -842,13 +843,14 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 		if vn, err = historyKeysCursor.SeekBothRange(txKey[:], key); err != nil {
 			return nil, false, err
 		}
-		valNum := binary.BigEndian.Uint64(vn)
+		fmt.Printf("txKey=[%x], key=[%x], vn=[%x]\n", txKey[:], key, vn)
+		valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
 		if valNum == 0 {
 			// This is special valNum == 0, which is empty value
 			return nil, true, nil
 		}
 		var v []byte
-		if v, err = d.tx.GetOne(d.historyValsTable, vn); err != nil {
+		if v, err = d.tx.GetOne(d.historyValsTable, vn[len(vn)-8:]); err != nil {
 			return nil, false, err
 		}
 		return v, true, nil
