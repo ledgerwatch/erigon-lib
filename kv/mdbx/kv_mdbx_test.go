@@ -59,3 +59,50 @@ func TestSeekBothRange(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "value3.3", string(v))
 }
+
+func TestLastDup(t *testing.T) {
+	path := t.TempDir()
+	logger := log.New()
+	table := "Table"
+	db := NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+		return kv.TableCfg{
+			table: kv.TableCfgItem{Flags: kv.DupSort},
+		}
+	}).MustOpen()
+	defer db.Close()
+
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+
+	c, err := tx.RwCursorDupSort(table)
+	require.NoError(t, err)
+	defer c.Close()
+
+	// Insert some dupsorted records
+	require.NoError(t, c.Put([]byte("key1"), []byte("value1.1")))
+	require.NoError(t, c.Put([]byte("key3"), []byte("value3.1")))
+	require.NoError(t, c.Put([]byte("key1"), []byte("value1.3")))
+	require.NoError(t, c.Put([]byte("key3"), []byte("value3.3")))
+
+	err = tx.Commit()
+	require.NoError(t, err)
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+
+	roC, err := roTx.CursorDupSort(table)
+	defer roC.Close()
+
+	var keys, vals []string
+	var k, v []byte
+	for k, v, err = roC.First(); err == nil && k != nil; k, v, err = roC.NextNoDup() {
+		v, err = roC.LastDup()
+		require.NoError(t, err)
+		keys = append(keys, string(k))
+		vals = append(vals, string(v))
+	}
+	require.NoError(t, err)
+	require.Equal(t, []string{"key1", "key3"}, keys)
+	require.Equal(t, []string{"value1.3", "value3.3"}, vals)
+}

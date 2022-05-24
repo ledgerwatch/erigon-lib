@@ -286,6 +286,7 @@ func (d *Domain) update(key, original []byte) error {
 	if err := d.tx.Put(d.keysTable, key, invertedStep[:]); err != nil {
 		return err
 	}
+	fmt.Printf("Put [%x]=>[%x]\n", key, invertedStep[:])
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], d.txNum)
 	historyKey := make([]byte, len(key)+8)
@@ -421,18 +422,19 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		return Collation{}, fmt.Errorf("create %s keys cursor: %w", d.filenameBase, err)
 	}
 	defer keysCursor.Close()
-	var k []byte
+	var k, v []byte
 	valuesCount := 0
-	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.Next() {
-		invertedStep, err := keysCursor.LastDup()
+	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.NextNoDup() {
+		fmt.Printf("k = %x, v = %x\n", k, v)
+		v, err = keysCursor.LastDup()
 		if err != nil {
-			return Collation{}, fmt.Errorf("find last %s key for aggregation step k=[%x]: %w", d.filenameBase, k, err)
+			return Collation{}, fmt.Errorf("find last %s aggregation step k=[%x]: %w", d.filenameBase, k, err)
 		}
-		s := ^binary.BigEndian.Uint64(invertedStep)
+		s := ^binary.BigEndian.Uint64(v)
 		if s == step {
 			keySuffix := make([]byte, len(k)+8)
 			copy(keySuffix, k)
-			copy(keySuffix[len(k):], invertedStep)
+			copy(keySuffix[len(k):], v)
 			v, err := roTx.GetOne(d.valsTable, keySuffix)
 			if err != nil {
 				return Collation{}, fmt.Errorf("find last %s value for aggregation step k=[%x]: %w", d.filenameBase, k, err)
@@ -462,7 +464,7 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 	historyCount := 0
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	var v, val []byte
+	var val []byte
 	var historyKey []byte
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
@@ -473,6 +475,7 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		if err = historyComp.AddUncompressedWord(historyKey); err != nil {
 			return Collation{}, fmt.Errorf("add %s history key [%x]: %w", d.filenameBase, k, err)
 		}
+		fmt.Printf("historyComp key: [%x], k=[%x], v=[%x]\n", historyKey, k, v)
 		valNum := binary.BigEndian.Uint64(v[len(v)-8:])
 		if valNum == 0 {
 			val = nil

@@ -272,7 +272,7 @@ func TestAfterPrune(t *testing.T) {
 }
 
 func TestHistory(t *testing.T) {
-	t.Skip("does not work yet")
+	t.Skip("no working yet")
 	db, d := testDbAndDomain(t)
 	defer db.Close()
 	defer d.Close()
@@ -283,6 +283,7 @@ func TestHistory(t *testing.T) {
 	// keys are encodings of numbers 1..31
 	// each key changes value on every txNum which is multiple of the key
 	for txNum := uint64(1); txNum <= 1000; txNum++ {
+		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			if txNum%keyNum == 0 {
 				valNum := txNum / keyNum
@@ -314,6 +315,7 @@ func TestHistory(t *testing.T) {
 		func() {
 			c, err := d.collate(step, step*16, step*16+15, roTx)
 			require.NoError(t, err)
+			fmt.Printf("values count = %d, history count = %d\n", c.valuesCount, c.historyCount)
 			sf, err := d.buildFiles(step, c)
 			require.NoError(t, err)
 			defer sf.Close()
