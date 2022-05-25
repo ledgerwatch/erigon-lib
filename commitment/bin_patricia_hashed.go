@@ -100,6 +100,10 @@ func NewBinPatriciaHashed(accountKeyLen int,
 	}
 }
 
+func (hph *BinHashed) ReviewKeys(pk, hk [][]byte) (rootHash []byte, branchNodeUpdates map[string][]byte, err error) {
+	return nil, nil, nil
+}
+
 func (hph *BinHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []Update) (map[string][]byte, error) {
 	branchNodeUpdates := make(map[string][]byte)
 	for i, hk := range hashedKeys {

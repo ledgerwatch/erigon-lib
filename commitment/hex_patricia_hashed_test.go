@@ -58,8 +58,8 @@ func (ms MockState) branchFn(prefix []byte) ([]byte, error) {
 func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
 	exBytes, ok := ms.sm[string(plainKey)]
 	if !ok {
-		ms.t.Fatalf("accountFn not found key [%x]", plainKey)
-		return nil
+		ms.t.Logf("accountFn not found key [%x]", plainKey)
+		return ErrAccountStateNotFound
 	}
 	var ex Update
 	pos, err := ex.decode(exBytes, 0)
@@ -72,7 +72,8 @@ func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
 		return nil
 	}
 	if ex.Flags&STORAGE_UPDATE != 0 {
-		ms.t.Fatalf("accountFn reading storage item for key [%x]", plainKey)
+		ms.t.Logf("accountFn reading storage item for key [%x]", plainKey)
+		return fmt.Errorf("storage read by accountFn")
 	}
 	if ex.Flags&DELETE_UPDATE != 0 {
 		ms.t.Fatalf("accountFn reading deleted account for key [%x]", plainKey)
@@ -99,8 +100,8 @@ func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
 func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
 	exBytes, ok := ms.sm[string(plainKey)]
 	if !ok {
-		ms.t.Fatalf("storageFn not found key [%x]", plainKey)
-		return nil
+		ms.t.Logf("storageFn not found key [%x]", plainKey)
+		return ErrStorageStateNotFound
 	}
 	var ex Update
 	pos, err := ex.decode(exBytes, 0)
@@ -113,7 +114,7 @@ func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
 		return nil
 	}
 	if ex.Flags&BALANCE_UPDATE != 0 {
-		ms.t.Fatalf("storageFn reading balance for key [%x]", plainKey)
+		ms.t.Logf("storageFn reading balance for key [%x]", plainKey)
 		return nil
 	}
 	if ex.Flags&NONCE_UPDATE != 0 {
@@ -241,10 +242,21 @@ func (ub *UpdateBuilder) Nonce(addr string, nonce uint64) *UpdateBuilder {
 	return ub
 }
 
-func (ub *UpdateBuilder) CodeHash(addr string, hash [length.Hash]byte) *UpdateBuilder {
+func (ub *UpdateBuilder) CodeHash(addr string, hash string) *UpdateBuilder {
 	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
-	ub.codeHashes[sk] = hash
+	hcode, err := hex.DecodeString(hash)
+	if err != nil {
+		panic(fmt.Errorf("invalid code hash provided: %w", err))
+	}
+	if len(hcode) != length.Hash {
+		panic(fmt.Errorf("code hash should be %d bytes long, got %d", length.Hash, len(hcode)))
+	}
+
+	dst := [length.Hash]byte{}
+	copy(dst[:32], hcode)
+
+	ub.codeHashes[sk] = dst
 	ub.keyset[sk] = struct{}{}
 	return ub
 }
@@ -497,7 +509,10 @@ func Test_HexPatriciaHashed_EmptyUpdateState(t *testing.T) {
 	hph.SetTrace(false)
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
 		Balance("00", 4).
+		Nonce("00", 246462653).
 		Balance("01", 5).
+		CodeHash("03", "aaaaaaaaaaf7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a870").
+		Delete("00").
 		Storage("04", "01", "0401").
 		Storage("03", "56", "050505").
 		Build()
@@ -505,11 +520,12 @@ func Test_HexPatriciaHashed_EmptyUpdateState(t *testing.T) {
 	if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
 		t.Fatal(err)
 	}
-	branchNodeUpdates, err := hph.ProcessUpdates(plainKeys, hashedKeys, updates)
+	hashBeforeEmptyUpdate, branchNodeUpdates, err := hph.ReviewKeys(plainKeys, hashedKeys)
 	require.NoError(t, err)
+	require.NotEmpty(t, hashBeforeEmptyUpdate)
 
-	hashBeforeEmptyUpdate, err := hph.RootHash()
-	require.NoError(t, err)
+	// hashBeforeEmptyUpdate, err := hph.RootHash()
+	// require.NoError(t, err)
 
 	ms.applyBranchNodeUpdates(branchNodeUpdates)
 
@@ -592,11 +608,14 @@ func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 		if err := ms.applyPlainUpdates(plainKeys[i:i+1], updates[i:i+1]); err != nil {
 			t.Fatal(err)
 		}
-		branchNodeUpdates, err := trieOne.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
-		require.NoError(t, err)
 
-		sequentialRoot, err := trieOne.RootHash()
+		sequentialRoot, branchNodeUpdates, err := trieOne.ReviewKeys(plainKeys[i:i+1], hashedKeys[i:i+1])
 		require.NoError(t, err)
+		// branchNodeUpdates, err := trieOne.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
+		// require.NoError(t, err)
+
+		// sequentialRoot, err := trieOne.RootHash()
+		// require.NoError(t, err)
 		roots = append(roots, sequentialRoot)
 
 		ms.applyBranchNodeUpdates(branchNodeUpdates)
@@ -604,7 +623,7 @@ func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 		for br, upd := range branchNodeUpdates {
 			branchNodeUpdatesOne[br] = upd
 		}
-		renderUpdates(branchNodeUpdatesOne)
+		// renderUpdates(branchNodeUpdatesOne)
 	}
 
 	fmt.Printf("1. Trie sequential update generated following branch updates\n")
@@ -621,7 +640,7 @@ func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	ms2.applyBranchNodeUpdates(branchNodeUpdatesTwo)
 
 	fmt.Printf("2. Trie batch update generated following branch updates\n")
-	renderUpdates(branchNodeUpdatesTwo)
+	// renderUpdates(branchNodeUpdatesTwo)
 
 	sequentialRoot, err := trieOne.RootHash()
 	require.NoError(t, err)

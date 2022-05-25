@@ -2330,30 +2330,30 @@ func (w *Writer) captureCommitmentData(trace bool) {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
 		}
-		c.u.Flags = commitment.CODE_UPDATE
-		item := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
-		if item != nil {
-			itemC := item.(*CommitmentItem)
-			if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
-				c.u.Flags |= commitment.BALANCE_UPDATE
-				c.u.Balance.Set(&itemC.u.Balance)
-			}
-			if itemC.u.Flags&commitment.NONCE_UPDATE != 0 {
-				c.u.Flags |= commitment.NONCE_UPDATE
-				c.u.Nonce = itemC.u.Nonce
-			}
-			if itemC.u.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
-				c.u.Flags = commitment.DELETE_UPDATE
-			} else {
-				h.Reset()
-				h.Write(val)
-				h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
-			}
-		} else {
-			h.Reset()
-			h.Write(val)
-			h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
-		}
+		// c.u.Flags = commitment.CODE_UPDATE
+		// item := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
+		// if item != nil {
+		// 	itemC := item.(*CommitmentItem)
+		// 	if itemC.u.Flags&commitment.BALANCE_UPDATE != 0 {
+		// 		c.u.Flags |= commitment.BALANCE_UPDATE
+		// 		c.u.Balance.Set(&itemC.u.Balance)
+		// 	}
+		// 	if itemC.u.Flags&commitment.NONCE_UPDATE != 0 {
+		// 		c.u.Flags |= commitment.NONCE_UPDATE
+		// 		c.u.Nonce = itemC.u.Nonce
+		// 	}
+		// 	if itemC.u.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
+		// 		c.u.Flags = commitment.DELETE_UPDATE
+		// 	} else {
+		// 		h.Reset()
+		// 		h.Write(val)
+		// 		h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+		// 	}
+		// } else {
+		// 	h.Reset()
+		// 	h.Write(val)
+		// 	h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+		// }
 		commTree.ReplaceOrInsert(c)
 	})
 	w.captureCommitmentType(Account, trace, func(commTree *btree.BTree, h hash.Hash, key, val []byte) {
@@ -2365,20 +2365,20 @@ func (w *Writer) captureCommitmentData(trace bool) {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
 		}
-		if len(val) == 0 {
-			c.u.Flags = commitment.DELETE_UPDATE
-		} else {
-			c.u.DecodeForStorage(val)
-			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
-			item := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
-			if item != nil {
-				itemC := item.(*CommitmentItem)
-				if itemC.u.Flags&commitment.CODE_UPDATE != 0 {
-					c.u.Flags |= commitment.CODE_UPDATE
-					copy(c.u.CodeHashOrStorage[:], itemC.u.CodeHashOrStorage[:])
-				}
-			}
-		}
+		// if len(val) == 0 {
+		// 	c.u.Flags = commitment.DELETE_UPDATE
+		// } else {
+		// 	c.u.DecodeForStorage(val)
+		// 	c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
+		// 	item := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
+		// 	if item != nil {
+		// 		itemC := item.(*CommitmentItem)
+		// 		if itemC.u.Flags&commitment.CODE_UPDATE != 0 {
+		// 			c.u.Flags |= commitment.CODE_UPDATE
+		// 			copy(c.u.CodeHashOrStorage[:], itemC.u.CodeHashOrStorage[:])
+		// 		}
+		// 	}
+		// }
 		commTree.ReplaceOrInsert(c)
 	})
 	w.captureCommitmentType(Storage, trace, func(commTree *btree.BTree, h hash.Hash, key, val []byte) {
@@ -2394,15 +2394,15 @@ func (w *Writer) captureCommitmentData(trace bool) {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
 		}
-		c.u.ValLength = len(val)
-		if len(val) > 0 {
-			copy(c.u.CodeHashOrStorage[:], val)
-		}
-		if len(val) == 0 {
-			c.u.Flags = commitment.DELETE_UPDATE
-		} else {
-			c.u.Flags = commitment.STORAGE_UPDATE
-		}
+		// c.u.ValLength = len(val)
+		// if len(val) > 0 {
+		// 	copy(c.u.CodeHashOrStorage[:], val)
+		// }
+		// if len(val) == 0 {
+		// 	c.u.Flags = commitment.DELETE_UPDATE
+		// } else {
+		// 	c.u.Flags = commitment.STORAGE_UPDATE
+		// }
 		commTree.ReplaceOrInsert(c)
 	})
 	if trace {
@@ -2423,25 +2423,26 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 
 	plainKeys := make([][]byte, w.commTree.Len())
 	hashedKeys := make([][]byte, w.commTree.Len())
-	updates := make([]commitment.Update, w.commTree.Len())
+	// updates := make([]commitment.Update, w.commTree.Len())
 	j := 0
 	w.commTree.Ascend(func(i btree.Item) bool {
 		item := i.(*CommitmentItem)
 		plainKeys[j] = item.plainKey
 		hashedKeys[j] = item.hashedKey
-		updates[j] = item.u
+		// updates[j] = item.u
 		j++
 		return true
 	})
 
-	if len(updates) == 0 {
+	if len(plainKeys) == 0 {
 		return w.a.hph.RootHash()
 	}
 
 	w.a.hph.Reset()
 	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn)
 	w.a.hph.SetTrace(trace)
-	branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
+	rootHash, branchNodeUpdates, err := w.a.hph.ReviewKeys(plainKeys, hashedKeys)
+	// branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
 		return nil, err
 	}
@@ -2496,10 +2497,10 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 		}
 	}
 
-	var rootHash []byte
-	if rootHash, err = w.a.hph.RootHash(); err != nil {
-		return nil, err
-	}
+	// var rootHash []byte
+	// if rootHash, err = w.a.hph.RootHash(); err != nil {
+	// 	return nil, err
+	// }
 	return rootHash, nil
 }
 

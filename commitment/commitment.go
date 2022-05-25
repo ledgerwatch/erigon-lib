@@ -17,6 +17,8 @@ type Trie interface {
 	// Reset Drops everything from the trie
 	Reset()
 
+	ReviewKeys(pk, hk [][]byte) (rootHash []byte, branchNodeUpdates map[string][]byte, err error)
+
 	ResetFns(
 		branchFn func(prefix []byte) ([]byte, error),
 		accountFn func(plainKey []byte, cell *Cell) error,
@@ -38,8 +40,8 @@ const (
 
 func InitializeTrie(tv TrieVariant) Trie {
 	switch tv {
-	case VariantBinPatriciaTrie:
-		return NewBinPatriciaHashed(length.Addr, nil, nil, nil)
+	// case VariantBinPatriciaTrie:
+	// 	return NewBinPatriciaHashed(length.Addr, nil, nil, nil)
 	case VariantHexPatriciaTrie:
 		fallthrough
 	default:
