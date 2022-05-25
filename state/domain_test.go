@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testDbAndDomain(t *testing.T) (kv.RwDB, *Domain) {
+func testDbAndDomain(t *testing.T, prefixLen int) (kv.RwDB, *Domain) {
 	t.Helper()
 	path := t.TempDir()
 	logger := log.New()
@@ -51,13 +51,13 @@ func testDbAndDomain(t *testing.T) (kv.RwDB, *Domain) {
 			indexTable:       kv.TableCfgItem{Flags: kv.DupSort},
 		}
 	}).MustOpen()
-	d, err := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, historyValsCount, indexTable)
+	d, err := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, historyValsCount, indexTable, prefixLen)
 	require.NoError(t, err)
 	return db, d
 }
 
 func TestCollationBuild(t *testing.T) {
-	db, d := testDbAndDomain(t)
+	db, d := testDbAndDomain(t, 0 /* prefixLen */)
 	defer db.Close()
 	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
@@ -162,7 +162,7 @@ func TestCollationBuild(t *testing.T) {
 }
 
 func TestIterationBasic(t *testing.T) {
-	db, d := testDbAndDomain(t)
+	db, d := testDbAndDomain(t, 5 /* prefixLen */)
 	defer db.Close()
 	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
@@ -197,7 +197,7 @@ func TestIterationBasic(t *testing.T) {
 }
 
 func TestAfterPrune(t *testing.T) {
-	db, d := testDbAndDomain(t)
+	db, d := testDbAndDomain(t, 0 /* prefixLen */)
 	defer db.Close()
 	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
@@ -276,7 +276,7 @@ func TestAfterPrune(t *testing.T) {
 }
 
 func TestHistory(t *testing.T) {
-	db, d := testDbAndDomain(t)
+	db, d := testDbAndDomain(t, 0 /* prefixLen */)
 	defer db.Close()
 	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
@@ -356,7 +356,7 @@ func TestHistory(t *testing.T) {
 }
 
 func TestIterationMultistep(t *testing.T) {
-	db, d := testDbAndDomain(t)
+	db, d := testDbAndDomain(t, 5 /* prefixLen */)
 	defer db.Close()
 	defer d.Close()
 	tx, err := db.BeginRw(context.Background())
@@ -391,7 +391,7 @@ func TestIterationMultistep(t *testing.T) {
 	require.NoError(t, err)
 	err = d.Put([]byte("addr2loc3"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr3loc4"), []byte("value1"))
+	err = d.Put([]byte("addr2loc4"), []byte("value1"))
 	require.NoError(t, err)
 
 	d.SetTxNum(2 + 16 + 16)

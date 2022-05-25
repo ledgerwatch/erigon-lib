@@ -110,6 +110,7 @@ type Domain struct {
 	tx               kv.RwTx
 	txNum            uint64
 	files            [NumberOfTypes]*btree.BTree // Static files pertaining to this domain, items are of type `filesItem`
+	prefixLen        int                         // Number of bytes in the keys that can be used for prefix iteration
 }
 
 func NewDomain(
@@ -122,6 +123,7 @@ func NewDomain(
 	historyValsTable string,
 	historyValsCount string,
 	indexTable string,
+	prefixLen int,
 ) (*Domain, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -137,6 +139,7 @@ func NewDomain(
 		historyValsTable: historyValsTable,
 		historyValsCount: historyValsCount,
 		indexTable:       indexTable,
+		prefixLen:        prefixLen,
 	}
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
 		d.files[fType] = btree.New(32)
@@ -407,6 +410,9 @@ func (ch *CursorHeap) Pop() interface{} {
 
 // TODO also iterate over files
 func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
+	if len(prefix) != d.prefixLen {
+		return fmt.Errorf("wrong prefix length, this %s domain supports prefixLen %d, given [%x]", d.filenameBase, d.prefixLen, prefix)
+	}
 	var cp CursorHeap
 	heap.Init(&cp)
 	keysCursor, err := d.tx.CursorDupSort(d.keysTable)
@@ -426,7 +432,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 			return err
 		}
 		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: d.txNum})
-		fmt.Printf("Push DB_CURSOR [%x]=[%x]\n", k, v)
 	}
 	d.files[Values].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
@@ -438,6 +443,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(prefix); !keyMatch {
+				fmt.Printf("Could not find prefix in %d-%d\n", item.startTxNum, item.endTxNum)
 				return true
 			}
 			g.Skip()
@@ -447,7 +453,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 			if bytes.HasPrefix(key, prefix) {
 				val, _ := g.Next(nil)
 				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum})
-				fmt.Printf("Push FILE_CURSOR [%x]=[%x]\n", key, val)
 			}
 		}
 		return true
@@ -464,7 +469,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
 					if bytes.HasPrefix(ci1.key, prefix) {
 						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
-						fmt.Printf("Next FILE_CURSOR [%x]=>[%x]\n", ci1.key, ci1.val)
 						heap.Fix(&cp, 0)
 					} else {
 						heap.Pop(&cp)
@@ -486,7 +490,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 						return err
 					}
 					ci1.val = common.Copy(v)
-					fmt.Printf("Next DB_CURDOR [%x]=>[%x]\n", ci1.key, ci1.val)
 					heap.Fix(&cp, 0)
 				} else {
 					heap.Pop(&cp)
@@ -539,6 +542,7 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		return Collation{}, fmt.Errorf("create %s keys cursor: %w", d.filenameBase, err)
 	}
 	defer keysCursor.Close()
+	var prefix []byte // Track prefix to insert it before entries
 	var k, v []byte
 	valuesCount := 0
 	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.NextNoDup() {
@@ -553,6 +557,16 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 			v, err := roTx.GetOne(d.valsTable, keySuffix)
 			if err != nil {
 				return Collation{}, fmt.Errorf("find last %s value for aggregation step k=[%x]: %w", d.filenameBase, k, err)
+			}
+			if d.prefixLen > 0 && (prefix == nil || !bytes.HasPrefix(k, prefix)) {
+				prefix = append(prefix[:0], k[:d.prefixLen]...)
+				if err = valuesComp.AddUncompressedWord(prefix); err != nil {
+					return Collation{}, fmt.Errorf("add %s values prefix [%x]: %w", d.filenameBase, prefix, err)
+				}
+				if err = valuesComp.AddUncompressedWord(nil); err != nil {
+					return Collation{}, fmt.Errorf("add %s values prefix val [%x]: %w", d.filenameBase, prefix, err)
+				}
+				valuesCount++
 			}
 			if err = valuesComp.AddUncompressedWord(k); err != nil {
 				return Collation{}, fmt.Errorf("add %s values key [%x]: %w", d.filenameBase, k, err)
