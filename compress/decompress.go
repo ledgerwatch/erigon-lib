@@ -62,6 +62,13 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	d := &Decompressor{
 		compressedFile: compressedFile,
 	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Printf("decompressing file %v: %v\n", compressedFile, err)
+		}
+	}()
+
 	var err error
 	d.f, err = os.Open(compressedFile)
 	if err != nil {
@@ -378,9 +385,9 @@ func (g *Getter) HasNext() bool {
 // After extracting next word, it moves to the beginning of the next one
 func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	savePos := g.dataP
-	nextPos := g.nextPos(true)
-	nextPos-- // because when create huffman tree we do ++ , because 0 is terminator
-	if nextPos == 0 {
+	wordLen := g.nextPos(true)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	if wordLen == 0 {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
@@ -389,13 +396,13 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	}
 	bufPos := len(buf) // Tracking position in buf where to insert part of the word
 	lastUncovered := len(buf)
-	if len(buf)+int(nextPos) > cap(buf) {
-		newBuf := make([]byte, len(buf)+int(nextPos))
+	if len(buf)+int(wordLen) > cap(buf) {
+		newBuf := make([]byte, len(buf)+int(wordLen))
 		copy(newBuf, buf)
 		buf = newBuf
 	} else {
 		// Expand buffer
-		buf = buf[:len(buf)+int(nextPos)]
+		buf = buf[:len(buf)+int(wordLen)]
 	}
 	// Loop below fills in the patterns
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
@@ -421,9 +428,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
 	}
-	if int(nextPos) > lastUncovered {
-		dif := nextPos - uint64(lastUncovered)
-		copy(buf[lastUncovered:nextPos], g.data[postLoopPos:postLoopPos+dif])
+	if int(wordLen) > lastUncovered {
+		dif := wordLen - uint64(lastUncovered)
+		copy(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
 		postLoopPos += dif
 	}
 	g.dataP = postLoopPos
@@ -432,9 +439,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 }
 
 func (g *Getter) NextUncompressed() ([]byte, uint64) {
-	l := g.nextPos(true)
-	l-- // because when create huffman tree we do ++ , because 0 is terminator
-	if l == 0 {
+	wordLen := g.nextPos(true)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	if wordLen == 0 {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
@@ -447,7 +454,7 @@ func (g *Getter) NextUncompressed() ([]byte, uint64) {
 		g.dataBit = 0
 	}
 	pos := g.dataP
-	g.dataP += l
+	g.dataP += wordLen
 	return g.data[pos:g.dataP], g.dataP
 }
 
@@ -493,10 +500,10 @@ func (g *Getter) Skip() uint64 {
 // returns false and current offset otherwise.
 func (g *Getter) Match(buf []byte) (bool, uint64) {
 	savePos := g.dataP
-	l := g.nextPos(true)
-	l-- // because when create huffman tree we do ++ , because 0 is terminator
+	wordLen := g.nextPos(true)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
 	lenBuf := len(buf)
-	if l == 0 || int(l) != lenBuf {
+	if wordLen == 0 || int(wordLen) != lenBuf {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
@@ -504,7 +511,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 		if lenBuf != 0 {
 			g.dataP, g.dataBit = savePos, 0
 		}
-		return lenBuf == int(l), g.dataP
+		return lenBuf == int(wordLen), g.dataP
 	}
 
 	var bufPos int
@@ -539,15 +546,15 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
 	}
-	if int(l) > lastUncovered {
-		dif := l - uint64(lastUncovered)
-		if lenBuf < int(l) || !bytes.Equal(buf[lastUncovered:l], g.data[postLoopPos:postLoopPos+dif]) {
+	if int(wordLen) > lastUncovered {
+		dif := wordLen - uint64(lastUncovered)
+		if lenBuf < int(wordLen) || !bytes.Equal(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif]) {
 			g.dataP, g.dataBit = savePos, 0
 			return false, savePos
 		}
 		postLoopPos += dif
 	}
-	if lenBuf != int(l) {
+	if lenBuf != int(wordLen) {
 		g.dataP, g.dataBit = savePos, 0
 		return false, savePos
 	}
@@ -562,10 +569,10 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		g.dataP, g.dataBit = savePos, 0
 	}()
 
-	l := g.nextPos(true /* clean */)
-	l-- // because when create huffman tree we do ++ , because 0 is terminator
+	wordLen := g.nextPos(true /* clean */)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
 	prefixLen := len(prefix)
-	if l == 0 || int(l) < prefixLen {
+	if wordLen == 0 || int(wordLen) < prefixLen {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
@@ -573,7 +580,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		if prefixLen != 0 {
 			g.dataP, g.dataBit = savePos, 0
 		}
-		return prefixLen == int(l)
+		return prefixLen == int(wordLen)
 	}
 
 	var bufPos int
@@ -622,10 +629,10 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
 	}
-	if prefixLen > lastUncovered && int(l) > lastUncovered {
-		dif := l - uint64(lastUncovered)
+	if prefixLen > lastUncovered && int(wordLen) > lastUncovered {
+		dif := wordLen - uint64(lastUncovered)
 		var comparisonLen int
-		if prefixLen < int(l) {
+		if prefixLen < int(wordLen) {
 			comparisonLen = prefixLen - lastUncovered
 		} else {
 			comparisonLen = int(dif)
