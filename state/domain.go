@@ -408,7 +408,6 @@ func (ch *CursorHeap) Pop() interface{} {
 	return x
 }
 
-// TODO also iterate over files
 func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 	if len(prefix) != d.prefixLen {
 		return fmt.Errorf("wrong prefix length, this %s domain supports prefixLen %d, given [%x]", d.filenameBase, d.prefixLen, prefix)
@@ -637,7 +636,6 @@ func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collatio
 		historyCount: historyCount,
 		indexBitmaps: indexBitmaps,
 	}, nil
-
 }
 
 type StaticFiles struct {
@@ -920,6 +918,11 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", d.filenameBase, err)
 	}
+	return nil
+}
+
+func (d *Domain) staticFilesInRange(fType FileType, startTxNum, endTxNum uint64) []StaticFiles {
+	d.files[]
 	return nil
 }
 
