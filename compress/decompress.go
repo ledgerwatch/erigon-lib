@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
 )
 
@@ -63,13 +64,13 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		compressedFile: compressedFile,
 	}
 
+	var err error
 	defer func() {
-		if err := recover(); err != nil {
-			fmt.Printf("decompressing file %v: %v\n", compressedFile, err)
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("decompressing file: %s, %+v, trace: %s", compressedFile, rec, dbg.Stack())
 		}
 	}()
 
-	var err error
 	d.f, err = os.Open(compressedFile)
 	if err != nil {
 		return nil, err
