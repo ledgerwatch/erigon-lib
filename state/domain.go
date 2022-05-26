@@ -921,9 +921,61 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
-func (d *Domain) staticFilesInRange(fType FileType, startTxNum, endTxNum uint64) []StaticFiles {
-	d.files[]
+// staticFilesInRange returns list of static files with txNum in specified range [startTxNum; endTxNum)
+// files are in the descending order of endTxNum
+func (d *Domain) staticFilesInRange(startTxNum, endTxNum uint64) [][NumberOfTypes]*filesItem {
+	var files [][NumberOfTypes]*filesItem
+	var greaterThan, lessOrEqual filesItem
+	greaterThan.endTxNum = startTxNum
+	lessOrEqual.endTxNum = endTxNum
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		j := 0
+		d.files[fType].DescendRange(&lessOrEqual, &greaterThan, func(i btree.Item) bool {
+			item := i.(*filesItem)
+			for j >= len(files) {
+				files = append(files, [NumberOfTypes]*filesItem{})
+			}
+			files[j][fType] = item
+			j++
+			return true
+		})
+	}
 	return nil
+}
+
+// findMergeRange assumes that all fTypes in d.files have items at least as far as maxEndTxNum
+// That is why only Values type is inspected
+func (d *Domain) findMergeRange(maxEndTxNum uint64, maxSpan uint64) (bool, uint64, uint64) {
+	var minFound bool
+	var startTxNum, endTxNum uint64
+	d.files[Values].Ascend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		endStep := item.endTxNum / d.aggregationStep
+		startStep := endStep & (endStep - 1) // Remove rightmost bit in the binary representation of endStep, this corresponds to the starting point of maximally possible merge ending at endStep
+		start := startStep * d.aggregationStep
+		if start < item.startTxNum {
+			if !minFound || start < startTxNum {
+				minFound = true
+				startTxNum = start
+				endTxNum = item.endTxNum
+			}
+		}
+		return true
+	})
+	return minFound, startTxNum, endTxNum
+}
+
+func (d *Domain) endTxNumMinimax() uint64 {
+	var minimax uint64
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		if d.files[fType].Len() > 0 {
+			endTxNum := d.files[fType].Max().(*filesItem).endTxNum
+			if minimax == 0 || endTxNum < minimax {
+				minimax = endTxNum
+			}
+		}
+	}
+	return minimax
 }
 
 func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
