@@ -1181,7 +1181,7 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 			if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 				return nil, fmt.Errorf("merge %s decompressor %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
 			}
-			if outItem.index, err = buildIndex(outItem.decompressor, idxPath, d.dir, count, true /* values */); err != nil {
+			if outItem.index, err = buildIndex(outItem.decompressor, idxPath, d.dir, count, fType == History /* values */); err != nil {
 				return nil, fmt.Errorf("merge %s buildIndex %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
 			}
 		}
