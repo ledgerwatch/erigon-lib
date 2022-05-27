@@ -130,8 +130,6 @@ func TestCollationBuild(t *testing.T) {
 		offset := r.Lookup([]byte(words[i]))
 		g.Reset(offset)
 		w, _ := g.Next(nil)
-		require.Equal(t, words[i], string(w))
-		w, _ = g.Next(nil)
 		require.Equal(t, words[i+1], string(w))
 	}
 	g = sf.efHistoryDecomp.MakeGetter()

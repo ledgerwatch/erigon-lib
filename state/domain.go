@@ -709,7 +709,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
-	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount); err != nil {
+	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount, false /* values */); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
 	historyIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.idx", d.filenameBase, txNumFrom, txNumTo))
@@ -721,7 +721,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if historyDecomp, err = compress.NewDecompressor(collation.historyPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s history decompressor: %w", d.filenameBase, err)
 	}
-	if historyIdx, err = buildIndex(historyDecomp, historyIdxPath, d.dir, collation.historyCount); err != nil {
+	if historyIdx, err = buildIndex(historyDecomp, historyIdxPath, d.dir, collation.historyCount, true /* values */); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s history idx: %w", d.filenameBase, err)
 	}
 	// Build history ef
@@ -761,7 +761,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 		return StaticFiles{}, fmt.Errorf("open %s ef history decompressor: %w", d.filenameBase, err)
 	}
 	efHistoryIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-efhistory.%d-%d.idx", d.filenameBase, txNumFrom, txNumTo))
-	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, d.dir, len(keys)); err != nil {
+	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, d.dir, len(keys), false /* values */); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s ef history idx: %w", d.filenameBase, err)
 	}
 	closeComp = false
@@ -775,7 +775,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	}, nil
 }
 
-func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recsplit.Index, error) {
+func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values bool) (*recsplit.Index, error) {
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -793,17 +793,23 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int) (*recs
 	}
 	defer rs.Close()
 	word := make([]byte, 0, 256)
-	var pos uint64
+	var keyPos, valPos uint64
 	g := d.MakeGetter()
 	for {
 		g.Reset(0)
 		for g.HasNext() {
-			word, _ = g.Next(word[:0])
-			if err = rs.AddKey(word, pos); err != nil {
-				return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
+			word, valPos = g.Next(word[:0])
+			if values {
+				if err = rs.AddKey(word, valPos); err != nil {
+					return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
+				}
+			} else {
+				if err = rs.AddKey(word, keyPos); err != nil {
+					return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
+				}
 			}
 			// Skip value
-			pos = g.Skip()
+			keyPos = g.Skip()
 		}
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
@@ -952,8 +958,12 @@ func (d *Domain) findMergeRange(maxEndTxNum uint64, maxSpan uint64) (bool, uint6
 	d.files[Values].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		endStep := item.endTxNum / d.aggregationStep
-		startStep := endStep & (endStep - 1) // Remove rightmost bit in the binary representation of endStep, this corresponds to the starting point of maximally possible merge ending at endStep
-		start := startStep * d.aggregationStep
+		spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
+		span := spanStep * d.aggregationStep
+		if span > maxSpan {
+			span = maxSpan
+		}
+		start := item.endTxNum - span
 		if start < item.startTxNum {
 			if !minFound || start < startTxNum {
 				minFound = true
@@ -979,15 +989,19 @@ func (d *Domain) endTxNumMinimax() uint64 {
 	return minimax
 }
 
-func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTxNum uint64) (*filesItem, error) {
+func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTxNum uint64, maxSpan uint64) (*filesItem, error) {
 	outItem := &filesItem{}
 	var comp *compress.Compressor
+	var decomp *compress.Decompressor
 	var err error
 	var closeItem bool = true
 	defer func() {
 		if closeItem {
 			if comp != nil {
 				comp.Close()
+			}
+			if decomp != nil {
+				decomp.Close()
 			}
 			if outItem.decompressor != nil {
 				outItem.decompressor.Close()
@@ -996,9 +1010,17 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 	}()
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
 		valCompressed := fType != EfHistory
-		datPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.idx", d.filenameBase, fType.String(), startTxNum, endTxNum))
-		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
-			return nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
+		removeVals := fType == History && (endTxNum-startTxNum) == maxSpan
+		tmpPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.tmp", d.filenameBase, fType.String(), startTxNum, endTxNum))
+		datPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.dat", d.filenameBase, fType.String(), startTxNum, endTxNum))
+		if removeVals {
+			if comp, err = compress.NewCompressor(context.Background(), "merge", tmpPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+				return nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
+			}
+		} else {
+			if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+				return nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
+			}
 		}
 		var cp CursorHeap
 		heap.Init(&cp)
@@ -1032,9 +1054,9 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 					} else {
 						ci1.val, _ = ci1.dg.NextUncompressed()
 					}
-					heap.Fix(cp, 0)
+					heap.Fix(&cp, 0)
 				} else {
-					heap.Pop(cp)
+					heap.Pop(&cp)
 				}
 			}
 			var skip bool
@@ -1086,9 +1108,90 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 		}
 		comp.Close()
 		comp = nil
-		if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-			return nil, fmt.Errorf("decompressor: %w", err)
+		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.idx", d.filenameBase, fType.String(), startTxNum, endTxNum))
+		if removeVals {
+			if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+				return nil, fmt.Errorf("merge %s remove vals compressor: %w", d.filenameBase, err)
+			}
+			if decomp, err = compress.NewDecompressor(tmpPath); err != nil {
+				return nil, fmt.Errorf("merge %s remove vals decompressor %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+			}
+			g := decomp.MakeGetter()
+			var val []byte
+			var count int
+			g.Reset(0)
+			for g.HasNext() {
+				g.Skip() // Skip key on on the first pass
+				val, _ = g.Next(val[:0])
+				if err = comp.AddWord(val); err != nil {
+					return nil, fmt.Errorf("merge %s remove vals add val %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+				}
+				count++
+			}
+			if err = comp.Compress(); err != nil {
+				return nil, err
+			}
+			comp = nil
+			if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+				return nil, fmt.Errorf("merge %s remove vals decompressor(no val) %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+			}
+			var rs *recsplit.RecSplit
+			if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
+				KeyCount:   count,
+				Enums:      false,
+				BucketSize: 2000,
+				LeafSize:   8,
+				TmpDir:     d.dir,
+				StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
+					0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
+					0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
+				IndexFile: idxPath,
+			}); err != nil {
+				return nil, fmt.Errorf("merge %s remove vals recsplit %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+			}
+			g1 := outItem.decompressor.MakeGetter()
+			var key []byte
+			for {
+				g.Reset(0)
+				g1.Reset(0)
+				var lastOffset uint64
+				for g.HasNext() {
+					key, _ = g.Next(key[:0])
+					g.Skip() // Skip value
+					_, pos := g1.Next(nil)
+					if err = rs.AddKey(key, lastOffset); err != nil {
+						return nil, fmt.Errorf("merge %s remove vals recsplit add key %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+					}
+					lastOffset = pos
+				}
+				if err = rs.Build(); err != nil {
+					if rs.Collision() {
+						log.Info("Building reduceHistoryFiles. Collision happened. It's ok. Restarting...")
+						rs.ResetNextSalt()
+					} else {
+						return nil, fmt.Errorf("merge %s remove vals recsplit build %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+					}
+				} else {
+					break
+				}
+			}
+			decomp.Close()
+			decomp = nil
+		} else {
+			if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+				return nil, fmt.Errorf("merge %s decompressor %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+			}
+			if outItem.index, err = buildIndex(outItem.decompressor, idxPath, d.dir, count, true /* values */); err != nil {
+				return nil, fmt.Errorf("merge %s buildIndex %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+			}
 		}
+		outItem.getter = outItem.decompressor.MakeGetter()
+		outItem.getterMerge = outItem.decompressor.MakeGetter()
+		if outItem.index, err = recsplit.OpenIndex(idxPath); err != nil {
+			return nil, fmt.Errorf("merge %s open index %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+		}
+		outItem.indexReader = recsplit.NewIndexReader(outItem.index)
+		outItem.readerMerge = recsplit.NewIndexReader(outItem.index)
 	}
 	closeItem = false
 	return outItem, nil
@@ -1194,10 +1297,6 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 	offset := historyItem.indexReader.Lookup(lookupKey)
 	g := historyItem.getter
 	g.Reset(offset)
-	// TODO: for the case of file where keys are removed, do not form key comparison
-	if keyMatch, _ := g.Match(lookupKey); !keyMatch {
-		return nil, false, fmt.Errorf("%s key does not match with file [%x]", d.filenameBase, lookupKey)
-	}
 	v, _ := g.Next(nil)
 	return v, true, nil
 }
