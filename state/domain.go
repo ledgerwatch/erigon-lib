@@ -427,10 +427,12 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		keySuffix := make([]byte, len(k)+8)
 		copy(keySuffix, k)
 		copy(keySuffix[len(k):], v)
+		step := ^binary.BigEndian.Uint64(v)
+		txNum := step * d.aggregationStep
 		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
 			return err
 		}
-		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: d.txNum})
+		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum})
 	}
 	d.files[Values].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
@@ -442,7 +444,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(prefix); !keyMatch {
-				fmt.Printf("Could not find prefix in %d-%d\n", item.startTxNum, item.endTxNum)
 				return true
 			}
 			g.Skip()
@@ -976,6 +977,121 @@ func (d *Domain) endTxNumMinimax() uint64 {
 		}
 	}
 	return minimax
+}
+
+func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTxNum uint64) (*filesItem, error) {
+	outItem := &filesItem{}
+	var comp *compress.Compressor
+	var err error
+	var closeItem bool = true
+	defer func() {
+		if closeItem {
+			if comp != nil {
+				comp.Close()
+			}
+			if outItem.decompressor != nil {
+				outItem.decompressor.Close()
+			}
+		}
+	}()
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		valCompressed := fType != EfHistory
+		datPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.idx", d.filenameBase, fType.String(), startTxNum, endTxNum))
+		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+			return nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
+		}
+		var cp CursorHeap
+		heap.Init(&cp)
+		for _, filesByType := range files {
+			item := filesByType[fType]
+			g := item.decompressor.MakeGetter()
+			g.Reset(0)
+			if g.HasNext() {
+				key, _ := g.Next(nil)
+				val, _ := g.Next(nil)
+				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, dg: g, key: key, val: val, endTxNum: item.endTxNum})
+			}
+		}
+		count := 0
+		// In the loop below, the pair `keyBuf=>valBuf` is always 1 item behind `lastKey=>lastVal`.
+		// `lastKey` and `lastVal` are taken from the top of the multi-way merge (assisted by the CursorHeap cp), but not processed right away
+		// instead, the pair from the previous iteration is processed first - `keyBuf=>valBuf`. After that, `keyBuf` and `valBuf` are assigned
+		// to `lastKey` and `lastVal` correspondingly, and the next step of multi-way merge happens. Therefore, after the multi-way merge loop
+		// (when CursorHeap cp is empty), there is a need to process the last pair `keyBuf=>valBuf`, because it was one step behind
+		var keyBuf, valBuf []byte
+		for cp.Len() > 0 {
+			lastKey := common.Copy(cp[0].key)
+			lastVal := common.Copy(cp[0].val)
+			// Advance all the items that have this key (including the top)
+			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
+				ci1 := cp[0]
+				if ci1.dg.HasNext() {
+					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
+					if valCompressed {
+						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
+					} else {
+						ci1.val, _ = ci1.dg.NextUncompressed()
+					}
+					heap.Fix(cp, 0)
+				} else {
+					heap.Pop(cp)
+				}
+			}
+			var skip bool
+			if fType == Values {
+				if d.prefixLen > 0 {
+					skip = startTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
+				} else {
+					// For the rest of types, empty value means deletion
+					skip = startTxNum == 0 && len(lastVal) == 0
+				}
+			}
+			if !skip {
+				if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
+					if err = comp.AddWord(keyBuf); err != nil {
+						return nil, err
+					}
+					count++ // Only counting keys, not values
+					if valCompressed {
+						if err = comp.AddWord(valBuf); err != nil {
+							return nil, err
+						}
+					} else {
+						if err = comp.AddUncompressedWord(valBuf); err != nil {
+							return nil, err
+						}
+					}
+				}
+				keyBuf = append(keyBuf[:0], lastKey...)
+				valBuf = append(valBuf[:0], lastVal...)
+			}
+		}
+		if keyBuf != nil {
+			if err = comp.AddWord(keyBuf); err != nil {
+				return nil, err
+			}
+			count++ // Only counting keys, not values
+			if valCompressed {
+				if err = comp.AddWord(valBuf); err != nil {
+					return nil, err
+				}
+			} else {
+				if err = comp.AddUncompressedWord(valBuf); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if err = comp.Compress(); err != nil {
+			return nil, err
+		}
+		comp.Close()
+		comp = nil
+		if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+			return nil, fmt.Errorf("decompressor: %w", err)
+		}
+	}
+	closeItem = false
+	return outItem, nil
 }
 
 func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
