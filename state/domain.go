@@ -41,7 +41,9 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var historyValCountKey = []byte("ValCount")
+var (
+	historyValCountKey = []byte("ValCount")
+)
 
 // filesItem corresponding to a pair of files (.dat and .idx)
 type filesItem struct {
@@ -105,7 +107,7 @@ type Domain struct {
 	valsTable        string
 	historyKeysTable string // Needs to be table with DupSort
 	historyValsTable string
-	historyValsCount string // Table containing just one record - counter of value number (keys in the historyValsTable)
+	settingsTable    string // Table containing just one record - counter of value number (keys in the historyValsTable)
 	indexTable       string // Needs to be table with DupSort
 	tx               kv.RwTx
 	txNum            uint64
@@ -121,7 +123,7 @@ func NewDomain(
 	valsTable string,
 	historyKeysTable string,
 	historyValsTable string,
-	historyValsCount string,
+	settingsTable string,
 	indexTable string,
 	prefixLen int,
 ) (*Domain, error) {
@@ -137,7 +139,7 @@ func NewDomain(
 		valsTable:        valsTable,
 		historyKeysTable: historyKeysTable,
 		historyValsTable: historyValsTable,
-		historyValsCount: historyValsCount,
+		settingsTable:    settingsTable,
 		indexTable:       indexTable,
 		prefixLen:        prefixLen,
 	}
@@ -296,7 +298,7 @@ func (d *Domain) update(key, original []byte) error {
 	historyKey := make([]byte, len(key)+8)
 	copy(historyKey, key)
 	if len(original) > 0 {
-		val, err := d.tx.GetOne(d.historyValsCount, historyValCountKey)
+		val, err := d.tx.GetOne(d.settingsTable, historyValCountKey)
 		if err != nil {
 			return err
 		}
@@ -306,7 +308,7 @@ func (d *Domain) update(key, original []byte) error {
 		}
 		valNum++
 		binary.BigEndian.PutUint64(historyKey[len(key):], valNum)
-		if err = d.tx.Put(d.historyValsCount, historyValCountKey, historyKey[len(key):]); err != nil {
+		if err = d.tx.Put(d.settingsTable, historyValCountKey, historyKey[len(key):]); err != nil {
 			return err
 		}
 		if err = d.tx.Put(d.historyValsTable, historyKey[len(key):], original); err != nil {
@@ -1223,38 +1225,6 @@ func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 // historyAfterTxNum searches history for a value of specified key after txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, error) {
-	indexCursor, err := d.tx.CursorDupSort(d.indexTable)
-	if err != nil {
-		return nil, false, err
-	}
-	defer indexCursor.Close()
-	var txKey [8]byte
-	binary.BigEndian.PutUint64(txKey[:], txNum+1)
-	var foundTxNumVal []byte
-	if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
-		return nil, false, err
-	}
-	if foundTxNumVal != nil {
-		var historyKeysCursor kv.CursorDupSort
-		if historyKeysCursor, err = d.tx.CursorDupSort(d.historyKeysTable); err != nil {
-			return nil, false, err
-		}
-		defer historyKeysCursor.Close()
-		var vn []byte
-		if vn, err = historyKeysCursor.SeekBothRange(txKey[:], key); err != nil {
-			return nil, false, err
-		}
-		valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
-		if valNum == 0 {
-			// This is special valNum == 0, which is empty value
-			return nil, true, nil
-		}
-		var v []byte
-		if v, err = d.tx.GetOne(d.historyValsTable, vn[len(vn)-8:]); err != nil {
-			return nil, false, err
-		}
-		return v, true, nil
-	}
 	var search filesItem
 	search.endTxNum = txNum + 1
 	var foundTxNum uint64
@@ -1280,7 +1250,39 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64) ([]byte, bool, erro
 		return true
 	})
 	if !found {
-		// Value not found in history
+		// Value not found in history files, look in the recent history
+		indexCursor, err := d.tx.CursorDupSort(d.indexTable)
+		if err != nil {
+			return nil, false, err
+		}
+		defer indexCursor.Close()
+		var txKey [8]byte
+		binary.BigEndian.PutUint64(txKey[:], txNum+1)
+		var foundTxNumVal []byte
+		if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
+			return nil, false, err
+		}
+		if foundTxNumVal != nil {
+			var historyKeysCursor kv.CursorDupSort
+			if historyKeysCursor, err = d.tx.CursorDupSort(d.historyKeysTable); err != nil {
+				return nil, false, err
+			}
+			defer historyKeysCursor.Close()
+			var vn []byte
+			if vn, err = historyKeysCursor.SeekBothRange(foundTxNumVal, key); err != nil {
+				return nil, false, err
+			}
+			valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
+			if valNum == 0 {
+				// This is special valNum == 0, which is empty value
+				return nil, true, nil
+			}
+			var v []byte
+			if v, err = d.tx.GetOne(d.historyValsTable, vn[len(vn)-8:]); err != nil {
+				return nil, false, err
+			}
+			return v, true, nil
+		}
 		return nil, false, nil
 	}
 	var lookupKey = make([]byte, len(key)+8)

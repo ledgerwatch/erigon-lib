@@ -39,7 +39,7 @@ func testDbAndDomain(t *testing.T, prefixLen int) (kv.RwDB, *Domain) {
 	valsTable := "Vals"
 	historyKeysTable := "HistoryKeys"
 	historyValsTable := "HistoryVals"
-	historyValsCount := "HistoryValsCount"
+	settingsTable := "Settings"
 	indexTable := "Index"
 	db := mdbx.NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
@@ -47,11 +47,11 @@ func testDbAndDomain(t *testing.T, prefixLen int) (kv.RwDB, *Domain) {
 			valsTable:        kv.TableCfgItem{},
 			historyKeysTable: kv.TableCfgItem{Flags: kv.DupSort},
 			historyValsTable: kv.TableCfgItem{},
-			historyValsCount: kv.TableCfgItem{},
+			settingsTable:    kv.TableCfgItem{},
 			indexTable:       kv.TableCfgItem{Flags: kv.DupSort},
 		}
 	}).MustOpen()
-	d, err := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, historyValsCount, indexTable, prefixLen)
+	d, err := NewDomain(path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, settingsTable, indexTable, prefixLen)
 	require.NoError(t, err)
 	return db, d
 }
@@ -312,7 +312,8 @@ func TestHistory(t *testing.T) {
 	err = tx.Commit()
 	require.NoError(t, err)
 
-	for step := uint64(0); step <= txs/d.aggregationStep; step++ {
+	// Leave the last 2 aggregation steps un-collated
+	for step := uint64(0); step < txs/d.aggregationStep-1; step++ {
 		func() {
 			require.NoError(t, err)
 			roTx, err := db.BeginRo(context.Background())
