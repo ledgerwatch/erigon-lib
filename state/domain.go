@@ -932,7 +932,7 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 
 // staticFilesInRange returns list of static files with txNum in specified range [startTxNum; endTxNum)
 // files are in the descending order of endTxNum
-func (d *Domain) staticFilesInRange(startTxNum, endTxNum uint64) [][NumberOfTypes]*filesItem {
+func (d *Domain) staticFilesInRange(startTxNum, endTxNum uint64) ([][NumberOfTypes]*filesItem, int) {
 	var files [][NumberOfTypes]*filesItem
 	var greaterThan, lessOrEqual filesItem
 	greaterThan.endTxNum = startTxNum
@@ -949,7 +949,12 @@ func (d *Domain) staticFilesInRange(startTxNum, endTxNum uint64) [][NumberOfType
 			return true
 		})
 	}
-	return nil
+	// Reverse the order because it has been produced by Descend
+	l := len(files)
+	for i := 0; i < l/2; i++ {
+		files[i], files[l-i-1] = files[l-i-1], files[i]
+	}
+	return files
 }
 
 // findMergeRange assumes that all fTypes in d.files have items at least as far as maxEndTxNum
@@ -1007,6 +1012,9 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 			}
 			if outItem.decompressor != nil {
 				outItem.decompressor.Close()
+			}
+			if outItem.index != nil {
+				outItem.index.Close()
 			}
 		}
 	}()

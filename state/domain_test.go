@@ -434,3 +434,84 @@ func TestIterationMultistep(t *testing.T) {
 	require.Equal(t, []string{"addr2loc2", "addr2loc3", "addr2loc4"}, keys)
 	require.Equal(t, []string{"value1", "value1", "value1"}, vals)
 }
+
+func TestMergeFiles(t *testing.T) {
+	db, d := testDbAndDomain(t, 0 /* prefixLen */)
+	defer db.Close()
+	defer d.Close()
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	d.SetTx(tx)
+	txs := uint64(1000)
+	// keys are encodings of numbers 1..31
+	// each key changes value on every txNum which is multiple of the key
+	for txNum := uint64(1); txNum <= txs; txNum++ {
+		d.SetTxNum(txNum)
+		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+			if txNum%keyNum == 0 {
+				valNum := txNum / keyNum
+				var k [8]byte
+				var v [8]byte
+				binary.BigEndian.PutUint64(k[:], keyNum)
+				binary.BigEndian.PutUint64(v[:], valNum)
+				err = d.Put(k[:], v[:])
+				require.NoError(t, err)
+			}
+		}
+		if txNum%10 == 0 {
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			d.SetTx(tx)
+		}
+	}
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	// Leave the last 2 aggregation steps un-collated
+	for step := uint64(0); step < txs/d.aggregationStep-1; step++ {
+		func() {
+			require.NoError(t, err)
+			roTx, err := db.BeginRo(context.Background())
+			require.NoError(t, err)
+			c, err := d.collate(step, step*d.aggregationStep, (step+1)*d.aggregationStep, roTx)
+			roTx.Rollback()
+			require.NoError(t, err)
+			sf, err := d.buildFiles(step, c)
+			require.NoError(t, err)
+			d.integrateFiles(sf, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			d.SetTx(tx)
+			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			err = tx.Commit()
+			require.NoError(t, err)
+		}()
+	}
+	// Check the history
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	d.SetTx(tx)
+	for txNum := uint64(1); txNum <= txs; txNum++ {
+		d.SetTxNum(txNum)
+		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+			if txNum%keyNum == 0 {
+				valNum := txNum / keyNum
+				var k [8]byte
+				var v [8]byte
+				label := fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum)
+				binary.BigEndian.PutUint64(k[:], keyNum)
+				binary.BigEndian.PutUint64(v[:], valNum)
+				val, err := d.getAfterTxNum(k[:], txNum)
+				require.NoError(t, err, label)
+				require.Equal(t, v[:], val, label)
+			}
+		}
+	}
+}
