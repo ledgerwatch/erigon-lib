@@ -324,6 +324,9 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 			}
 			decomp.Close()
 			decomp = nil
+			if outItem.index, err = recsplit.OpenIndex(idxPath); err != nil {
+				return outItems, fmt.Errorf("merge %s open index %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
+			}
 		} else {
 			if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 				return outItems, fmt.Errorf("merge %s decompressor %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
@@ -334,9 +337,6 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 		}
 		outItem.getter = outItem.decompressor.MakeGetter()
 		outItem.getterMerge = outItem.decompressor.MakeGetter()
-		if outItem.index, err = recsplit.OpenIndex(idxPath); err != nil {
-			return outItems, fmt.Errorf("merge %s open index %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
-		}
 		outItem.indexReader = recsplit.NewIndexReader(outItem.index)
 		outItem.readerMerge = recsplit.NewIndexReader(outItem.index)
 	}
@@ -351,7 +351,6 @@ func (d *Domain) integrateMergedFiles(outs [][NumberOfTypes]*filesItem, in [Numb
 			d.files[fType].Delete(out[fType])
 			out[fType].decompressor.Close()
 			out[fType].index.Close()
-			fmt.Printf("Closed %s %d-%d\n", fType, out[fType].startTxNum, out[fType].endTxNum)
 		}
 	}
 }
