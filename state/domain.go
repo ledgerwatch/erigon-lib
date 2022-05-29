@@ -165,7 +165,7 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 5 {
 			if len(subs) != 0 {
-				log.Warn("File ignored by doman scan, more than 4 submatches", "name", name, "submatches", len(subs))
+				log.Warn("File ignored by doman scan, more than 5 submatches", "name", name, "submatches", len(subs))
 			}
 			continue
 		}
