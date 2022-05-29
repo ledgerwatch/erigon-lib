@@ -351,6 +351,7 @@ func (d *Domain) integrateMergedFiles(outs [][NumberOfTypes]*filesItem, in [Numb
 			d.files[fType].Delete(out[fType])
 			out[fType].decompressor.Close()
 			out[fType].index.Close()
+			fmt.Printf("Closed %s %d-%d\n", fType, out[fType].startTxNum, out[fType].endTxNum)
 		}
 	}
 }
