@@ -1245,10 +1245,12 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, startTxNum, endTx
 
 func (d *Domain) integrateMergedFiles(outs [][NumberOfTypes]*filesItem, in [NumberOfTypes]*filesItem) {
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		d.files[fType].ReplaceOrInsert(in[fType])
 		for _, out := range outs {
 			d.files[fType].Delete(out[fType])
+			out[fType].decompressor.Close()
+			out[fType].index.Close()
 		}
-		d.files[fType].ReplaceOrInsert(in[fType])
 	}
 }
 
