@@ -492,6 +492,16 @@ func TestMergeFiles(t *testing.T) {
 			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
 			err = tx.Commit()
 			require.NoError(t, err)
+			var found bool
+			var startTxNum, endTxNum uint64
+			maxEndTxNum := d.endTxNumMinimax()
+			maxSpan := uint64(16 * 16)
+			for found, startTxNum, endTxNum = d.findMergeRange(maxEndTxNum, maxSpan); found; found, startTxNum, endTxNum = d.findMergeRange(maxEndTxNum, maxSpan) {
+				outs, _ := d.staticFilesInRange(startTxNum, endTxNum)
+				in, err := d.mergeFiles(outs, startTxNum, endTxNum, maxSpan)
+				require.NoError(t, err)
+				d.integrateMergedFiles(outs, in)
+			}
 		}()
 	}
 	// Check the history
