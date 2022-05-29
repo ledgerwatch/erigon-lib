@@ -17,6 +17,8 @@
 package state
 
 import (
+	"context"
+	"encoding/binary"
 	"fmt"
 	"io/fs"
 	"os"
@@ -25,17 +27,21 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
+	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/exp/slices"
 )
 
 type InvertedIndex struct {
 	dir             string // Directory where static files are created
 	aggregationStep uint64
 	filenameBase    string
+	keysTable       string
 	indexTable      string // Needs to be table with DupSort
 	tx              kv.RwTx
 	txNum           uint64
@@ -46,6 +52,7 @@ func NewInvertedIndex(
 	dir string,
 	aggregationStep uint64,
 	filenameBase string,
+	keysTable string,
 	indexTable string,
 ) (*InvertedIndex, error) {
 	files, err := os.ReadDir(dir)
@@ -56,6 +63,7 @@ func NewInvertedIndex(
 		dir:             dir,
 		aggregationStep: aggregationStep,
 		filenameBase:    filenameBase,
+		keysTable:       keysTable,
 		indexTable:      indexTable,
 	}
 	ii.files = btree.New(32)
@@ -154,4 +162,156 @@ func (ii *InvertedIndex) SetTx(tx kv.RwTx) {
 
 func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 	ii.txNum = txNum
+}
+
+func (ii *InvertedIndex) Add(key []byte) error {
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], ii.txNum)
+	if err := ii.tx.Put(ii.keysTable, txKey[:], key); err != nil {
+		return err
+	}
+	if err := ii.tx.Put(ii.indexTable, key, txKey[:]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {
+	keysCursor, err := roTx.CursorDupSort(ii.keysTable)
+	if err != nil {
+		return nil, fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
+	}
+	defer keysCursor.Close()
+	indexBitmaps := map[string]*roaring64.Bitmap{}
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	var k, v []byte
+	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		var bitmap *roaring64.Bitmap
+		var ok bool
+		if bitmap, ok = indexBitmaps[string(v)]; !ok {
+			bitmap = roaring64.New()
+			indexBitmaps[string(v[:len(v)-8])] = bitmap
+		}
+		bitmap.Add(txNum)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("iterate over %s keys cursor: %w", ii.filenameBase, err)
+	}
+	return indexBitmaps, nil
+}
+
+type InvertedFiles struct {
+	decomp *compress.Decompressor
+	index  *recsplit.Index
+}
+
+func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.Bitmap) (InvertedFiles, error) {
+	var decomp *compress.Decompressor
+	var index *recsplit.Index
+	var comp *compress.Compressor
+	var err error
+	closeComp := true
+	defer func() {
+		if closeComp {
+			if comp != nil {
+				comp.Close()
+			}
+			if decomp != nil {
+				decomp.Close()
+			}
+			if index != nil {
+				index.Close()
+			}
+		}
+	}()
+	txNumFrom := step * ii.aggregationStep
+	txNumTo := (step + 1) * ii.aggregationStep
+	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, txNumFrom, txNumTo))
+	comp, err = compress.NewCompressor(context.Background(), "ef", datPath, ii.dir, compress.MinPatternScore, 1, log.LvlDebug)
+	if err != nil {
+		return InvertedFiles{}, fmt.Errorf("create %s compressor: %w", ii.filenameBase, err)
+	}
+	var buf []byte
+	keys := make([]string, 0, len(bitmaps))
+	for key := range bitmaps {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		if err = comp.AddUncompressedWord([]byte(key)); err != nil {
+			return InvertedFiles{}, fmt.Errorf("add %s key [%x]: %w", ii.filenameBase, key, err)
+		}
+		bitmap := bitmaps[key]
+		ef := eliasfano32.NewEliasFano(bitmap.GetCardinality(), bitmap.Maximum())
+		it := bitmap.Iterator()
+		for it.HasNext() {
+			ef.AddOffset(it.Next())
+		}
+		ef.Build()
+		buf = ef.AppendBytes(buf[:0])
+		if err = comp.AddUncompressedWord(buf); err != nil {
+			return InvertedFiles{}, fmt.Errorf("add %s val: %w", ii.filenameBase, err)
+		}
+	}
+	if err = comp.Compress(); err != nil {
+		return InvertedFiles{}, fmt.Errorf("compress %s: %w", ii.filenameBase, err)
+	}
+	comp.Close()
+	comp = nil
+	if decomp, err = compress.NewDecompressor(datPath); err != nil {
+		return InvertedFiles{}, fmt.Errorf("open %s decompressor: %w", ii.filenameBase, err)
+	}
+	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, txNumFrom, txNumTo))
+	if index, err = buildIndex(decomp, idxPath, ii.dir, len(keys), false /* values */); err != nil {
+		return InvertedFiles{}, fmt.Errorf("build %s idx: %w", ii.filenameBase, err)
+	}
+	closeComp = false
+	return InvertedFiles{decomp: decomp, index: index}, nil
+}
+
+func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uint64) {
+	ii.files.ReplaceOrInsert(&filesItem{
+		startTxNum:   txNumFrom,
+		endTxNum:     txNumTo,
+		decompressor: sf.decomp,
+		index:        sf.index,
+		getter:       sf.decomp.MakeGetter(),
+		getterMerge:  sf.decomp.MakeGetter(),
+		indexReader:  recsplit.NewIndexReader(sf.index),
+		readerMerge:  recsplit.NewIndexReader(sf.index),
+	})
+}
+
+// [txFrom; txTo)
+func (ii *InvertedIndex) prune(step uint64, txFrom, txTo uint64) error {
+	keysCursor, err := ii.tx.RwCursorDupSort(ii.keysTable)
+	if err != nil {
+		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
+	}
+	defer keysCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	var k, v []byte
+	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		if err = ii.tx.Delete(ii.indexTable, v, k); err != nil {
+			return err
+		}
+		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
+		if err = keysCursor.DeleteCurrent(); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
+	}
+	return nil
 }
