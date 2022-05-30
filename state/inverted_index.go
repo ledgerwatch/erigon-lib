@@ -195,7 +195,7 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*r
 		var ok bool
 		if bitmap, ok = indexBitmaps[string(v)]; !ok {
 			bitmap = roaring64.New()
-			indexBitmaps[string(v[:len(v)-8])] = bitmap
+			indexBitmaps[string(v)] = bitmap
 		}
 		bitmap.Add(txNum)
 	}
@@ -208,6 +208,15 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*r
 type InvertedFiles struct {
 	decomp *compress.Decompressor
 	index  *recsplit.Index
+}
+
+func (sf InvertedFiles) Close() {
+	if sf.decomp != nil {
+		sf.decomp.Close()
+	}
+	if sf.index != nil {
+		sf.index.Close()
+	}
 }
 
 func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.Bitmap) (InvertedFiles, error) {
@@ -288,7 +297,7 @@ func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uin
 }
 
 // [txFrom; txTo)
-func (ii *InvertedIndex) prune(step uint64, txFrom, txTo uint64) error {
+func (ii *InvertedIndex) prune(txFrom, txTo uint64) error {
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.keysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
