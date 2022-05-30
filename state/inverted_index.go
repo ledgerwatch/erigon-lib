@@ -176,6 +176,27 @@ func (ii *InvertedIndex) Add(key []byte) error {
 	return nil
 }
 
+// InvertedIterator allows iteration over range of tx numbers
+// Iteration is not implmented via callback function, because there is often
+// a requirement for interators to be composable (for example, to implement AND and OR for indices)
+type InvertedIterator struct {
+	roTx kv.Tx
+}
+
+func (it *InvertedIterator) HasNext() bool {
+	return false
+}
+
+func (it *InvertedIterator) Next() uint64 {
+	return 0
+}
+
+// IterateRange is to be used in public API, therefore it relies on read-only transaction
+// so that iteration can be done even when the inverted index is being updated.
+func (ii *InvertedIndex) IterateRange(startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return InvertedIterator{roTx: roTx}
+}
+
 func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {
 	keysCursor, err := roTx.CursorDupSort(ii.keysTable)
 	if err != nil {
