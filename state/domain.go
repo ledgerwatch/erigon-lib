@@ -962,13 +962,16 @@ func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 // second return value is true if the value is found in the history (even if it is nil)
 func (d *Domain) historyAfterTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
 	var search filesItem
+	search.startTxNum = txNum + 1
 	search.endTxNum = txNum + 1
 	var foundTxNum uint64
 	var foundEndTxNum uint64
 	var foundStartTxNum uint64
 	var found bool
+	var anyItem bool // Whether any filesItem has been looked at in the loop below
 	d.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
+		anyItem = true
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
@@ -986,7 +989,37 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte
 		return true
 	})
 	if !found {
+		if anyItem {
+			// If there were no changes but there were history files, the value can be obtained from value files
+			var topState *filesItem
+			d.files[Values].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
+				topState = i.(*filesItem)
+				return false
+			})
+			var val []byte
+			d.files[Values].DescendLessOrEqual(topState, func(i btree.Item) bool {
+				item := i.(*filesItem)
+				if item.index.Empty() {
+					return true
+				}
+				offset := item.indexReader.Lookup(key)
+				g := item.getter
+				g.Reset(offset)
+				if g.HasNext() {
+					if keyMatch, _ := g.Match(key); keyMatch {
+						val, _ = g.Next(nil)
+						found = true
+						return false
+					}
+				}
+				return true
+			})
+			return val, found, nil
+		}
 		// Value not found in history files, look in the recent history
+		if roTx == nil {
+			return nil, false, fmt.Errorf("roTx is nil")
+		}
 		indexCursor, err := roTx.CursorDupSort(d.indexTable)
 		if err != nil {
 			return nil, false, err
@@ -1039,6 +1072,7 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte
 	return v, true, nil
 }
 
+// TODO - make the use of roTx optional, and replace it with the function creating roTx
 func (d *Domain) GetAfterTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
 	v, hOk, err := d.historyAfterTxNum(key, txNum, roTx)
 	if err != nil {

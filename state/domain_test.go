@@ -333,22 +333,29 @@ func TestHistory(t *testing.T) {
 		}()
 	}
 	// Check the history
-	roTx, err := db.BeginRo(context.Background())
-	defer roTx.Rollback()
-	require.NoError(t, err)
-	for txNum := uint64(1); txNum <= txs; txNum++ {
+	var roTx kv.Tx
+	for txNum := uint64(0); txNum <= txs; txNum++ {
+		if txNum == 976 {
+			// Create roTx obnly for the last several txNum, because all history before that
+			// we should be able to read without any DB access
+			roTx, err = db.BeginRo(context.Background())
+			require.NoError(t, err)
+			defer roTx.Rollback()
+		}
 		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
-			if txNum%keyNum == 0 {
-				valNum := txNum / keyNum
-				var k [8]byte
-				var v [8]byte
-				label := fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum)
-				binary.BigEndian.PutUint64(k[:], keyNum)
-				binary.BigEndian.PutUint64(v[:], valNum)
-				val, err := d.GetAfterTxNum(k[:], txNum, roTx)
-				require.NoError(t, err, label)
+			valNum := txNum / keyNum
+			var k [8]byte
+			var v [8]byte
+			label := fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum)
+			binary.BigEndian.PutUint64(k[:], keyNum)
+			binary.BigEndian.PutUint64(v[:], valNum)
+			val, err := d.GetAfterTxNum(k[:], txNum, roTx)
+			require.NoError(t, err, label)
+			if txNum >= keyNum {
 				require.Equal(t, v[:], val, label)
+			} else {
+				require.Nil(t, val, label)
 			}
 		}
 	}
@@ -507,22 +514,29 @@ func TestMergeFiles(t *testing.T) {
 		}()
 	}
 	// Check the history
-	roTx, err := db.BeginRo(context.Background())
-	require.NoError(t, err)
-	defer roTx.Rollback()
+	var roTx kv.Tx
 	for txNum := uint64(1); txNum <= txs; txNum++ {
+		if txNum == 976 {
+			// Create roTx obnly for the last several txNum, because all history before that
+			// we should be able to read without any DB access
+			roTx, err = db.BeginRo(context.Background())
+			require.NoError(t, err)
+			defer roTx.Rollback()
+		}
 		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
-			if txNum%keyNum == 0 {
-				valNum := txNum / keyNum
-				var k [8]byte
-				var v [8]byte
-				label := fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum)
-				binary.BigEndian.PutUint64(k[:], keyNum)
-				binary.BigEndian.PutUint64(v[:], valNum)
-				val, err := d.GetAfterTxNum(k[:], txNum, roTx)
-				require.NoError(t, err, label)
+			valNum := txNum / keyNum
+			var k [8]byte
+			var v [8]byte
+			label := fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum)
+			binary.BigEndian.PutUint64(k[:], keyNum)
+			binary.BigEndian.PutUint64(v[:], valNum)
+			val, err := d.GetAfterTxNum(k[:], txNum, roTx)
+			require.NoError(t, err, label)
+			if txNum >= keyNum {
 				require.Equal(t, v[:], val, label)
+			} else {
+				require.Nil(t, val, label)
 			}
 		}
 	}
