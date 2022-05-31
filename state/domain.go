@@ -1072,7 +1072,8 @@ func (d *Domain) historyAfterTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte
 	return v, true, nil
 }
 
-// TODO - make the use of roTx optional, and replace it with the function creating roTx
+// GetAfterTxNum does not always require usage of roTx. If it is possible to determine
+// historical value based only on static files, roTx will not be used.
 func (d *Domain) GetAfterTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
 	v, hOk, err := d.historyAfterTxNum(key, txNum, roTx)
 	if err != nil {

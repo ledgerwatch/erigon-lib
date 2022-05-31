@@ -180,10 +180,22 @@ func (ii *InvertedIndex) Add(key []byte) error {
 // Iteration is not implmented via callback function, because there is often
 // a requirement for interators to be composable (for example, to implement AND and OR for indices)
 type InvertedIterator struct {
-	roTx kv.Tx
+	key                  []byte
+	startTxNum, endTxNum uint64
+	stack                [][]byte
+	ef                   *eliasfano32.EliasFano
+	next                 uint64
+	roTx                 kv.Tx
 }
 
 func (it *InvertedIterator) HasNext() bool {
+	if it.ef == nil {
+		if len(it.stack) == 0 {
+			return false
+		}
+		it.ef, _ = eliasfano32.ReadEliasFano(it.stack[len(it.stack)-1])
+		it.stack = it.stack[:len(it.stack)-1]
+	}
 	return false
 }
 
@@ -193,8 +205,38 @@ func (it *InvertedIterator) Next() uint64 {
 
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
-func (ii *InvertedIndex) IterateRange(startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return InvertedIterator{roTx: roTx}
+// [startTxNum; endNumTx)
+func (ii *InvertedIndex) IterateRange(key []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	it := InvertedIterator{
+		startTxNum: startTxNum,
+		endTxNum:   endTxNum,
+		roTx:       roTx,
+	}
+	var search filesItem
+	search.startTxNum = endTxNum
+	search.endTxNum = endTxNum
+	var topItem *filesItem
+	ii.files.AscendGreaterOrEqual(&search, func(i btree.Item) bool {
+		topItem = i.(*filesItem)
+		return false
+	})
+	search.startTxNum = 0
+	search.endTxNum = startTxNum
+	ii.files.DescendGreaterThan(&search, func(i btree.Item) bool {
+		item := i.(*filesItem)
+		offset := item.indexReader.Lookup(key)
+		g := item.getter
+		g.Reset(offset)
+		if keyMatch, _ := g.Match(key); keyMatch {
+			eliasVal, _ := g.NextUncompressed()
+			it.stack = append(it.stack, eliasVal)
+		}
+		if item == topItem {
+			return false
+		}
+		return true
+	})
+	return it
 }
 
 func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {
