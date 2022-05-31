@@ -269,3 +269,103 @@ func TestInvIndexRanges(t *testing.T) {
 		require.False(t, it.HasNext())
 	}
 }
+
+func TestInvIndexMerge(t *testing.T) {
+	db, ii := testDbAndInvertedIndex(t)
+	defer db.Close()
+	defer ii.Close()
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	ii.SetTx(tx)
+	txs := uint64(1000)
+	// keys are encodings of numbers 1..31
+	// each key changes value on every txNum which is multiple of the key
+	for txNum := uint64(1); txNum <= txs; txNum++ {
+		ii.SetTxNum(txNum)
+		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+			if txNum%keyNum == 0 {
+				var k [8]byte
+				binary.BigEndian.PutUint64(k[:], keyNum)
+				err = ii.Add(k[:])
+				require.NoError(t, err)
+			}
+		}
+		if txNum%10 == 0 {
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			ii.SetTx(tx)
+		}
+	}
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	// Leave the last 2 aggregation steps un-collated
+	for step := uint64(0); step < txs/ii.aggregationStep-1; step++ {
+		func() {
+			require.NoError(t, err)
+			roTx, err := db.BeginRo(context.Background())
+			require.NoError(t, err)
+			bs, err := ii.collate(step*ii.aggregationStep, (step+1)*ii.aggregationStep, roTx)
+			roTx.Rollback()
+			require.NoError(t, err)
+			sf, err := ii.buildFiles(step, bs)
+			require.NoError(t, err)
+			ii.integrateFiles(sf, step*ii.aggregationStep, (step+1)*ii.aggregationStep)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			ii.SetTx(tx)
+			ii.prune(step*ii.aggregationStep, (step+1)*ii.aggregationStep)
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx = nil
+			var found bool
+			var startTxNum, endTxNum uint64
+			maxEndTxNum := ii.endTxNumMinimax()
+			maxSpan := uint64(16 * 16)
+			for found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan); found; found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan) {
+				outs, _ := ii.staticFilesInRange(startTxNum, endTxNum)
+				in, err := ii.mergeFiles(outs, startTxNum, endTxNum, maxSpan)
+				require.NoError(t, err)
+				ii.integrateMergedFiles(outs, in)
+			}
+		}()
+	}
+	// Check the iterator ranges first without roTx
+	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+		var k [8]byte
+		binary.BigEndian.PutUint64(k[:], keyNum)
+		it := ii.IterateRange(k[:], 0, 976, nil)
+		defer it.Close()
+		for i := keyNum; i < 976; i += keyNum {
+			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
+			require.True(t, it.HasNext(), label)
+			n := it.Next()
+			require.Equal(t, i, n, label)
+		}
+		require.False(t, it.HasNext())
+	}
+	// Now check ranges that require access to DB
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+		var k [8]byte
+		binary.BigEndian.PutUint64(k[:], keyNum)
+		it := ii.IterateRange(k[:], 400, 1000, roTx)
+		defer it.Close()
+		for i := keyNum * ((400 + keyNum - 1) / keyNum); i < txs; i += keyNum {
+			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
+			require.True(t, it.HasNext(), label)
+			n := it.Next()
+			require.Equal(t, i, n, label)
+		}
+		require.False(t, it.HasNext())
+	}
+}

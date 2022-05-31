@@ -330,6 +330,7 @@ func TestHistory(t *testing.T) {
 			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
 			err = tx.Commit()
 			require.NoError(t, err)
+			tx = nil
 		}()
 	}
 	// Check the history
@@ -423,6 +424,7 @@ func TestIterationMultistep(t *testing.T) {
 			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
 			err = tx.Commit()
 			require.NoError(t, err)
+			tx = nil
 		}()
 	}
 
