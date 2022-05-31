@@ -142,7 +142,6 @@ func (d *Domain) staticFilesInRange(startTxNum, endTxNum uint64) ([][NumberOfTyp
 func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64) ([]*filesItem, int) {
 	var files []*filesItem
 	var startJ int
-	startJ = 0
 	j := 0
 	ii.files.Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
