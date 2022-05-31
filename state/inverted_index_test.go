@@ -182,6 +182,7 @@ func TestInvIndexAfterPrune(t *testing.T) {
 }
 
 func filledInvIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex, uint64) {
+	t.Helper()
 	path, db, ii := testDbAndInvertedIndex(t)
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
