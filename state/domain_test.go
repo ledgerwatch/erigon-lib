@@ -342,7 +342,6 @@ func TestHistory(t *testing.T) {
 			require.NoError(t, err)
 			defer roTx.Rollback()
 		}
-		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			valNum := txNum / keyNum
 			var k [8]byte
@@ -523,7 +522,6 @@ func TestMergeFiles(t *testing.T) {
 			require.NoError(t, err)
 			defer roTx.Rollback()
 		}
-		d.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			valNum := txNum / keyNum
 			var k [8]byte

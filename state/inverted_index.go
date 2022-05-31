@@ -201,32 +201,36 @@ func (it *InvertedIterator) Close() {
 }
 
 func (it *InvertedIterator) advanceInFiles() {
-	for it.efIt == nil {
-		if len(it.stack) == 0 {
-			it.hasNextInFiles = false
-			return
+	for {
+		for it.efIt == nil {
+			if len(it.stack) == 0 {
+				it.hasNextInFiles = false
+				return
+			}
+			item := it.stack[len(it.stack)-1]
+			it.stack = it.stack[:len(it.stack)-1]
+			offset := item.indexReader.Lookup(it.key)
+			g := item.getter
+			g.Reset(offset)
+			if keyMatch, _ := g.Match(it.key); keyMatch {
+				eliasVal, _ := g.NextUncompressed()
+				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+				it.efIt = ef.Iterator()
+			}
 		}
-		item := it.stack[len(it.stack)-1]
-		it.stack = it.stack[:len(it.stack)-1]
-		offset := item.indexReader.Lookup(it.key)
-		g := item.getter
-		g.Reset(offset)
-		if keyMatch, _ := g.Match(it.key); keyMatch {
-			eliasVal, _ := g.NextUncompressed()
-			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			it.efIt = ef.Iterator()
+		for it.efIt.HasNext() {
+			n := it.efIt.Next()
+			if n >= it.endTxNum {
+				it.hasNextInFiles = false
+				return
+			}
+			if n >= it.startTxNum {
+				it.hasNextInFiles = true
+				it.next = n
+				return
+			}
 		}
-	}
-	for it.efIt.HasNext() {
-		n := it.efIt.Next()
-		if n >= it.endTxNum {
-			it.hasNextInFiles = false
-			return
-		}
-		if n >= it.startTxNum {
-			it.hasNextInFiles = true
-			it.next = n
-		}
+		it.efIt = nil // Exhausted this iterator
 	}
 }
 
@@ -303,25 +307,20 @@ func (ii *InvertedIndex) IterateRange(key []byte, startTxNum, endTxNum uint64, r
 		roTx:       roTx,
 	}
 	var search filesItem
-	search.startTxNum = endTxNum
-	search.endTxNum = endTxNum
-	var topItem *filesItem
-	ii.files.AscendGreaterOrEqual(&search, func(i btree.Item) bool {
-		topItem = i.(*filesItem)
-		return false
-	})
+	it.hasNextInDb = true
 	search.startTxNum = 0
 	search.endTxNum = startTxNum
 	ii.files.DescendGreaterThan(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
-		it.stack = append(it.stack, item)
-		if item == topItem {
-			return false
+		if item.startTxNum < endTxNum {
+			it.stack = append(it.stack, item)
+			it.hasNextInFiles = true
+		}
+		if item.endTxNum >= endTxNum {
+			it.hasNextInDb = false
 		}
 		return true
 	})
-	it.hasNextInFiles = true
-	it.hasNextInDb = topItem == nil
 	it.advance()
 	return it
 }
