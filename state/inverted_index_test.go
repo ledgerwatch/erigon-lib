@@ -242,12 +242,14 @@ func TestInvIndexRanges(t *testing.T) {
 		var k [8]byte
 		binary.BigEndian.PutUint64(k[:], keyNum)
 		it := ii.IterateRange(k[:], 0, 976, nil)
+		defer it.Close()
 		for i := keyNum; i < 976; i += keyNum {
 			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
 			require.True(t, it.HasNext(), label)
 			n := it.Next()
 			require.Equal(t, i, n, label)
 		}
+		require.False(t, it.HasNext())
 	}
 	// Now check ranges that require access to DB
 	roTx, err := db.BeginRo(context.Background())
@@ -257,11 +259,13 @@ func TestInvIndexRanges(t *testing.T) {
 		var k [8]byte
 		binary.BigEndian.PutUint64(k[:], keyNum)
 		it := ii.IterateRange(k[:], 400, 1000, roTx)
+		defer it.Close()
 		for i := keyNum * ((400 + keyNum - 1) / keyNum); i < txs; i += keyNum {
 			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
 			require.True(t, it.HasNext(), label)
 			n := it.Next()
 			require.Equal(t, i, n, label)
 		}
+		require.False(t, it.HasNext())
 	}
 }
