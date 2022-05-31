@@ -17,6 +17,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -179,28 +180,115 @@ func (ii *InvertedIndex) Add(key []byte) error {
 // InvertedIterator allows iteration over range of tx numbers
 // Iteration is not implmented via callback function, because there is often
 // a requirement for interators to be composable (for example, to implement AND and OR for indices)
+// InvertedIterator must be closed after use to prevent leaking of resources like cursor
 type InvertedIterator struct {
 	key                  []byte
 	startTxNum, endTxNum uint64
-	stack                [][]byte
-	ef                   *eliasfano32.EliasFano
+	stack                []*filesItem
+	efIt                 *eliasfano32.EliasFanoIter
 	next                 uint64
+	hasNextInFiles       bool
+	hasNextInDb          bool
 	roTx                 kv.Tx
+	indexTable           string
+	cursor               kv.CursorDupSort
+}
+
+func (it *InvertedIterator) Close() {
+	if it.cursor != nil {
+		it.cursor.Close()
+	}
+}
+
+func (it *InvertedIterator) advanceInFiles() {
+	for it.efIt == nil {
+		if len(it.stack) == 0 {
+			it.hasNextInFiles = false
+			return
+		}
+		item := it.stack[len(it.stack)-1]
+		it.stack = it.stack[:len(it.stack)-1]
+		offset := item.indexReader.Lookup(it.key)
+		g := item.getter
+		g.Reset(offset)
+		if keyMatch, _ := g.Match(it.key); keyMatch {
+			eliasVal, _ := g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+			it.efIt = ef.Iterator()
+		}
+	}
+	for it.efIt.HasNext() {
+		n := it.efIt.Next()
+		if n >= it.endTxNum {
+			it.hasNextInFiles = false
+			return
+		}
+		if n >= it.startTxNum {
+			it.hasNextInFiles = true
+			it.next = n
+		}
+	}
+}
+
+func (it *InvertedIterator) advanceInDb() {
+	var v []byte
+	var err error
+	if it.cursor == nil {
+		if it.cursor, err = it.roTx.CursorDupSort(it.indexTable); err != nil {
+			// TODO pass error properly around
+			panic(err)
+		}
+		var k []byte
+		if k, v, err = it.cursor.Seek(it.key); err != nil {
+			// TODO pass error properly around
+			panic(err)
+		}
+		if !bytes.Equal(k, it.key) {
+			it.cursor.Close()
+			it.hasNextInDb = false
+			return
+		}
+	} else {
+		_, v, err = it.cursor.NextDup()
+	}
+	for ; err == nil && v != nil; _, v, err = it.cursor.NextDup() {
+		n := binary.BigEndian.Uint64(v)
+		if n >= it.endTxNum {
+			it.cursor.Close()
+			it.hasNextInDb = false
+			return
+		}
+		if n >= it.startTxNum {
+			it.hasNextInDb = true
+			it.next = n
+			return
+		}
+	}
+	if err != nil {
+		// TODO pass error properly around
+		panic(err)
+	}
+	it.cursor.Close()
+	it.hasNextInDb = false
+}
+
+func (it *InvertedIterator) advance() {
+	if it.hasNextInFiles {
+		it.advanceInFiles()
+	}
+	if it.hasNextInDb && !it.hasNextInFiles {
+		it.advanceInDb()
+	}
 }
 
 func (it *InvertedIterator) HasNext() bool {
-	if it.ef == nil {
-		if len(it.stack) == 0 {
-			return false
-		}
-		it.ef, _ = eliasfano32.ReadEliasFano(it.stack[len(it.stack)-1])
-		it.stack = it.stack[:len(it.stack)-1]
-	}
-	return false
+	return it.hasNextInFiles || it.hasNextInDb
 }
 
 func (it *InvertedIterator) Next() uint64 {
-	return 0
+	n := it.next
+	it.advance()
+	return n
 }
 
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
@@ -208,8 +296,10 @@ func (it *InvertedIterator) Next() uint64 {
 // [startTxNum; endNumTx)
 func (ii *InvertedIndex) IterateRange(key []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
 	it := InvertedIterator{
+		key:        key,
 		startTxNum: startTxNum,
 		endTxNum:   endTxNum,
+		indexTable: ii.indexTable,
 		roTx:       roTx,
 	}
 	var search filesItem
@@ -224,18 +314,15 @@ func (ii *InvertedIndex) IterateRange(key []byte, startTxNum, endTxNum uint64, r
 	search.endTxNum = startTxNum
 	ii.files.DescendGreaterThan(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
-		offset := item.indexReader.Lookup(key)
-		g := item.getter
-		g.Reset(offset)
-		if keyMatch, _ := g.Match(key); keyMatch {
-			eliasVal, _ := g.NextUncompressed()
-			it.stack = append(it.stack, eliasVal)
-		}
+		it.stack = append(it.stack, item)
 		if item == topItem {
 			return false
 		}
 		return true
 	})
+	it.hasNextInFiles = true
+	it.hasNextInDb = topItem == nil
+	it.advance()
 	return it
 }
 
