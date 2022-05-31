@@ -328,6 +328,38 @@ const (
 	// Downloader
 	BittorrentCompletion = "BittorrentCompletion"
 	BittorrentInfo       = "BittorrentInfo"
+
+	// Domains and Inverted Indices
+	AccountKeys        = "AccountKeys"
+	AccountVals        = "AccountVals"
+	AccountHistoryKeys = "AccountHistoryKeys"
+	AccountHistoryVals = "AccountHistoryVals"
+	AccountSettings    = "AccountSettings"
+	AccountIdx         = "AccountIdx"
+
+	StorageKeys        = "StorageKeys"
+	StorageVals        = "StorageVals"
+	StorageHistoryKeys = "StorageHistoryKeys"
+	StorageHistoryVals = "StorageHistoryVals"
+	StorageSettings    = "StorageSettings"
+	StorageIdx         = "StorageIdx"
+
+	CodeKeys        = "CodeKeys"
+	CodeVals        = "CodeVals"
+	CodeHistoryKeys = "CodeHistoryKeys"
+	CodeHistoryVals = "CodeHistoryVals"
+	CodeSettings    = "CodeSettings"
+	CodeIdx         = "CodeIdx"
+
+	LogAddressKeys = "LogAddressKeys"
+	LogAddressIdx  = "LogAddressIdx"
+	LogTopicsKeys  = "LogTopicsKeys"
+	LogTopicsIdx   = "LogTopicsIdx"
+
+	TracesFromKeys = "TracesFromKeys"
+	TracesFromIdx  = "TracesFromIdx"
+	TracesToKeys   = "TracesToKeys"
+	TracesToIdx    = "TracesToIdx"
 )
 
 // Keys
