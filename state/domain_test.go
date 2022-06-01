@@ -424,6 +424,7 @@ func TestIterationMultistep(t *testing.T) {
 
 	err = tx.Commit()
 	require.NoError(t, err)
+	tx = nil
 
 	for step := uint64(0); step <= 2; step++ {
 		func() {
@@ -473,9 +474,10 @@ func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 		func() {
 			roTx, err := db.BeginRo(context.Background())
 			require.NoError(t, err)
+			defer roTx.Rollback()
 			c, err := d.collate(step, step*d.aggregationStep, (step+1)*d.aggregationStep, roTx)
-			roTx.Rollback()
 			require.NoError(t, err)
+			roTx.Rollback()
 			sf, err := d.buildFiles(step, c)
 			require.NoError(t, err)
 			d.integrateFiles(sf, step*d.aggregationStep, (step+1)*d.aggregationStep)
@@ -534,4 +536,50 @@ func TestScanFiles(t *testing.T) {
 	d.SetTxNum(txNum)
 	// Check the history
 	checkHistory(t, db, d, txs)
+}
+
+func TestDelete(t *testing.T) {
+	_, db, d := testDbAndDomain(t, 0 /* prefixLen */)
+	defer db.Close()
+	defer d.Close()
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	d.SetTx(tx)
+
+	// Put on even txNum, delete on odd txNum
+	for txNum := uint64(0); txNum < uint64(1000); txNum++ {
+		d.SetTxNum(txNum)
+		if txNum%2 == 0 {
+			err = d.Put([]byte("key1"), []byte("value1"))
+		} else {
+			err = d.Delete([]byte("key1"))
+		}
+		require.NoError(t, err)
+	}
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx = nil
+	collateAndMerge(t, db, d, 1000)
+	// Check the history
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+	for txNum := uint64(0); txNum < 1000; txNum++ {
+		val, err := d.GetAfterTxNum([]byte("key1"), txNum, roTx)
+		require.NoError(t, err)
+		label := fmt.Sprintf("txNum=%d", txNum)
+		if txNum%2 == 0 {
+			require.Equal(t, []byte("value1"), val, label)
+		} else {
+			require.Nil(t, val, label)
+		}
+		val, err = d.GetAfterTxNum([]byte("key2"), txNum, roTx)
+		require.NoError(t, err)
+		require.Nil(t, val, label)
+	}
 }

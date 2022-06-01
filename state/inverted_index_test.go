@@ -267,9 +267,10 @@ func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		func() {
 			roTx, err := db.BeginRo(context.Background())
 			require.NoError(t, err)
+			defer roTx.Rollback()
 			bs, err := ii.collate(step*ii.aggregationStep, (step+1)*ii.aggregationStep, roTx)
-			roTx.Rollback()
 			require.NoError(t, err)
+			roTx.Rollback()
 			sf, err := ii.buildFiles(step, bs)
 			require.NoError(t, err)
 			ii.integrateFiles(sf, step*ii.aggregationStep, (step+1)*ii.aggregationStep)

@@ -89,3 +89,37 @@ func NewAggregator(
 	closeAgg = false
 	return a, nil
 }
+
+func (a *Aggregator) Close() {
+	if a.accounts != nil {
+		a.accounts.Close()
+	}
+	if a.storage != nil {
+		a.storage.Close()
+	}
+	if a.code != nil {
+		a.code.Close()
+	}
+	if a.logAccounts != nil {
+		a.logAccounts.Close()
+	}
+	if a.logTopics != nil {
+		a.logTopics.Close()
+	}
+	if a.tracesFrom != nil {
+		a.tracesFrom.Close()
+	}
+	if a.tracesTo != nil {
+		a.tracesTo.Close()
+	}
+}
+
+func (a *Aggregator) SetTx(tx kv.RwTx) {
+	a.accounts.SetTx(tx)
+	a.storage.SetTx(tx)
+	a.code.SetTx(tx)
+	a.logAccounts.SetTx(tx)
+	a.logTopics.SetTx(tx)
+	a.tracesFrom.SetTx(tx)
+	a.tracesTo.SetTx(tx)
+}
