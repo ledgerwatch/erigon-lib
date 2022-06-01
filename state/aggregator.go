@@ -167,6 +167,169 @@ func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggC
 	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
 		return AggCollation{}, err
 	}
+	if ac.logAccounts, err = a.logAccounts.collate(txFrom, txTo, roTx); err != nil {
+		return AggCollation{}, err
+	}
+	if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx); err != nil {
+		return AggCollation{}, err
+	}
+	if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx); err != nil {
+		return AggCollation{}, err
+	}
+	if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx); err != nil {
+		return AggCollation{}, err
+	}
 	closeColl = false
-	return AggCollation{}, nil
+	return ac, nil
+}
+
+type AggStaticFiles struct {
+	accounts    StaticFiles
+	storage     StaticFiles
+	code        StaticFiles
+	logAccounts InvertedFiles
+	logTopics   InvertedFiles
+	tracesFrom  InvertedFiles
+	tracesTo    InvertedFiles
+}
+
+func (sf AggStaticFiles) Close() {
+	sf.accounts.Close()
+	sf.storage.Close()
+	sf.code.Close()
+	sf.logAccounts.Close()
+	sf.logTopics.Close()
+	sf.tracesFrom.Close()
+	sf.tracesTo.Close()
+}
+
+func (a *Aggregator) buildFiles(step uint64, collation AggCollation) (AggStaticFiles, error) {
+	var sf AggStaticFiles
+	var err error
+	closeFiles := true
+	defer func() {
+		if closeFiles {
+			sf.accounts.Close()
+			sf.storage.Close()
+			sf.code.Close()
+			sf.logAccounts.Close()
+			sf.logTopics.Close()
+			sf.tracesFrom.Close()
+			sf.tracesTo.Close()
+		}
+	}()
+	if sf.accounts, err = a.accounts.buildFiles(step, collation.accounts); err != nil {
+		return AggStaticFiles{}, err
+	}
+	if sf.storage, err = a.storage.buildFiles(step, collation.storage); err != nil {
+		return AggStaticFiles{}, err
+	}
+	if sf.code, err = a.code.buildFiles(step, collation.code); err != nil {
+		return AggStaticFiles{}, err
+	}
+	if sf.logAccounts, err = a.logAccounts.buildFiles(step, collation.logAccounts); err != nil {
+		return AggStaticFiles{}, err
+	}
+	if sf.logTopics, err = a.logTopics.buildFiles(step, collation.logTopics); err != nil {
+		return AggStaticFiles{}, err
+	}
+	if sf.tracesFrom, err = a.tracesFrom.buildFiles(step, collation.tracesFrom); err != nil {
+		return AggStaticFiles{}, err
+	}
+	if sf.tracesTo, err = a.tracesTo.buildFiles(step, collation.tracesTo); err != nil {
+		return AggStaticFiles{}, err
+	}
+	closeFiles = false
+	return sf, nil
+}
+
+func (a *Aggregator) integrateFiles(sf AggStaticFiles, txNumFrom, txNumTo uint64) {
+	a.accounts.integrateFiles(sf.accounts, txNumFrom, txNumTo)
+	a.storage.integrateFiles(sf.storage, txNumFrom, txNumTo)
+	a.code.integrateFiles(sf.code, txNumFrom, txNumTo)
+	a.logAccounts.integrateFiles(sf.logAccounts, txNumFrom, txNumTo)
+	a.logTopics.integrateFiles(sf.logTopics, txNumFrom, txNumTo)
+	a.tracesFrom.integrateFiles(sf.tracesFrom, txNumFrom, txNumTo)
+	a.tracesTo.integrateFiles(sf.tracesTo, txNumFrom, txNumTo)
+}
+
+func (a *Aggregator) prune(step uint64, txFrom, txTo uint64) error {
+	if err := a.accounts.prune(step, txFrom, txTo); err != nil {
+		return err
+	}
+	if err := a.storage.prune(step, txFrom, txTo); err != nil {
+		return err
+	}
+	if err := a.code.prune(step, txFrom, txTo); err != nil {
+		return err
+	}
+	if err := a.logAccounts.prune(txFrom, txTo); err != nil {
+		return err
+	}
+	if err := a.logTopics.prune(txFrom, txTo); err != nil {
+		return err
+	}
+	if err := a.tracesFrom.prune(txFrom, txTo); err != nil {
+		return err
+	}
+	if err := a.tracesTo.prune(txFrom, txTo); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (a *Aggregator) endTxNumMinimax() uint64 {
+	min := a.accounts.endTxNumMinimax()
+	if txNum := a.storage.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	if txNum := a.code.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	if txNum := a.logAccounts.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	if txNum := a.logTopics.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	if txNum := a.tracesFrom.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	if txNum := a.tracesTo.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	return min
+}
+
+type SelectedStaticFiles struct {
+	accounts     [][NumberOfTypes]*filesItem
+	accountsI    int
+	storage      [][NumberOfTypes]*filesItem
+	storageI     int
+	code         [][NumberOfTypes]*filesItem
+	codeI        int
+	logAccounts  []*filesItem
+	logAccountsI int
+	logTopics    []*filesItem
+	logTopicsI   int
+	tracesFrom   []*filesItem
+	tracesFromI  int
+	tracesTo     []*filesItem
+	tracesToI    int
+}
+
+func (a *Aggregator) staticFilesInRange(startTxNum, endTxNum uint64) SelectedStaticFiles {
+	var sf SelectedStaticFiles
+	sf.accounts, sf.accountsI = a.accounts.staticFilesInRange(startTxNum, endTxNum)
+	sf.storage, sf.storageI = a.storage.staticFilesInRange(startTxNum, endTxNum)
+	sf.code, sf.codeI = a.code.staticFilesInRange(startTxNum, endTxNum)
+	sf.logAccounts, sf.logAccountsI = a.logAccounts.staticFilesInRange(startTxNum, endTxNum)
+	sf.logTopics, sf.logTopicsI = a.logTopics.staticFilesInRange(startTxNum, endTxNum)
+	sf.tracesFrom, sf.tracesFromI = a.tracesFrom.staticFilesInRange(startTxNum, endTxNum)
+	sf.tracesTo, sf.tracesToI = a.tracesTo.staticFilesInRange(startTxNum, endTxNum)
+	return sf
+}
+
+func (a *Aggregator) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
+	return a.accounts.Get(addr, roTx)
 }
