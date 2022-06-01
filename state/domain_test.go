@@ -514,7 +514,9 @@ func TestMergeFiles(t *testing.T) {
 func TestScanFiles(t *testing.T) {
 	path, db, d, txs := filledDomain(t)
 	defer db.Close()
-	defer d.Close()
+	defer func() {
+		d.Close()
+	}()
 	var err error
 	var tx kv.RwTx
 	defer func() {

@@ -341,8 +341,9 @@ func TestInvIndexMerge(t *testing.T) {
 func TestInvIndexScanFiles(t *testing.T) {
 	path, db, ii, txs := filledInvIndex(t)
 	defer db.Close()
-	defer ii.Close()
-
+	defer func() {
+		ii.Close()
+	}()
 	ii.Close()
 	// Recreate InvertedIndex to scan the files
 	var err error
