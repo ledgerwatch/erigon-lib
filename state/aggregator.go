@@ -16,7 +16,10 @@
 
 package state
 
-import "github.com/ledgerwatch/erigon-lib/kv"
+import (
+	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/ledgerwatch/erigon-lib/kv"
+)
 
 // Reconstruction of the aggregator in another package, `aggregator`
 
@@ -122,4 +125,48 @@ func (a *Aggregator) SetTx(tx kv.RwTx) {
 	a.logTopics.SetTx(tx)
 	a.tracesFrom.SetTx(tx)
 	a.tracesTo.SetTx(tx)
+}
+
+func (a *Aggregator) SetTxNum(txNum uint64) {
+	a.accounts.SetTxNum(txNum)
+	a.storage.SetTxNum(txNum)
+	a.code.SetTxNum(txNum)
+	a.logAccounts.SetTxNum(txNum)
+	a.logTopics.SetTxNum(txNum)
+	a.tracesFrom.SetTxNum(txNum)
+	a.tracesTo.SetTxNum(txNum)
+}
+
+type AggCollation struct {
+	accounts    Collation
+	storage     Collation
+	code        Collation
+	logAccounts map[string]*roaring64.Bitmap
+	logTopics   map[string]*roaring64.Bitmap
+	tracesFrom  map[string]*roaring64.Bitmap
+	tracesTo    map[string]*roaring64.Bitmap
+}
+
+func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggCollation, error) {
+	var ac AggCollation
+	var err error
+	closeColl := true
+	defer func() {
+		if closeColl {
+			ac.accounts.Close()
+			ac.storage.Close()
+			ac.code.Close()
+		}
+	}()
+	if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx); err != nil {
+		return AggCollation{}, err
+	}
+	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
+		return AggCollation{}, err
+	}
+	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
+		return AggCollation{}, err
+	}
+	closeColl = false
+	return AggCollation{}, nil
 }

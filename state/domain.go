@@ -524,6 +524,15 @@ type Collation struct {
 	indexBitmaps map[string]*roaring64.Bitmap
 }
 
+func (c Collation) Close() {
+	if c.valuesComp != nil {
+		c.valuesComp.Close()
+	}
+	if c.historyComp != nil {
+		c.historyComp.Close()
+	}
+}
+
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
