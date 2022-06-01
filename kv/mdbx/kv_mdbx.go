@@ -193,7 +193,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			}
 		}
 
-		const MAX_AUGMENT_LIMIT = 0x7fffFFFF
+		//const MAX_AUGMENT_LIMIT = 0x7fffFFFF
+		const MAX_AUGMENT_LIMIT = 128 * 256 * 1024 // mdbx's default 256 * 1024
 		if err = env.SetOption(mdbx.OptRpAugmentLimit, MAX_AUGMENT_LIMIT); err != nil {
 			return nil, err
 		}
