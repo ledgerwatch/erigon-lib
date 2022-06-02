@@ -599,3 +599,36 @@ func (a *Aggregator) FinishTx() error {
 	closeAll = false
 	return nil
 }
+
+func (a *Aggregator) UpdateAccountData(addr []byte, account []byte) error {
+	return a.accounts.Put(addr, account)
+}
+
+func (a *Aggregator) UpdateAccountCode(addr []byte, code []byte) error {
+	return a.code.Put(addr, code)
+}
+
+func (a *Aggregator) DeleteAccount(addr []byte) error {
+	if err := a.accounts.Delete(addr); err != nil {
+		return err
+	}
+	if err := a.code.Delete(addr); err != nil {
+		return err
+	}
+	var e error
+	if err := a.storage.IteratePrefix(addr, func(k, _ []byte) {
+		if e == nil {
+			e = a.storage.Delete(k)
+		}
+	}); err != nil {
+		return err
+	}
+	return e
+}
+
+func (a *Aggregator) WriteAccountStorage(addr, loc []byte, value []byte) error {
+	dbkey := make([]byte, len(addr)+len(loc))
+	copy(dbkey[0:], addr)
+	copy(dbkey[len(addr):], loc)
+	return a.storage.Put(dbkey, value)
+}
