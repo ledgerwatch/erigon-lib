@@ -370,7 +370,8 @@ func TestHistory(t *testing.T) {
 			tx, err = db.BeginRw(context.Background())
 			require.NoError(t, err)
 			d.SetTx(tx)
-			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			err = d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			require.NoError(t, err)
 			err = tx.Commit()
 			require.NoError(t, err)
 			tx = nil
@@ -439,7 +440,8 @@ func TestIterationMultistep(t *testing.T) {
 			tx, err = db.BeginRw(context.Background())
 			require.NoError(t, err)
 			d.SetTx(tx)
-			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			err = d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			require.NoError(t, err)
 			err = tx.Commit()
 			require.NoError(t, err)
 			tx = nil
@@ -484,7 +486,8 @@ func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 			tx, err = db.BeginRw(context.Background())
 			require.NoError(t, err)
 			d.SetTx(tx)
-			d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			err = d.prune(step, step*d.aggregationStep, (step+1)*d.aggregationStep)
+			require.NoError(t, err)
 			err = tx.Commit()
 			require.NoError(t, err)
 			tx = nil

@@ -32,6 +32,8 @@ type Aggregator struct {
 	logTopics       *InvertedIndex
 	tracesFrom      *InvertedIndex
 	tracesTo        *InvertedIndex
+	txNum           uint64
+	rwTx            kv.RwTx
 }
 
 func NewAggregator(
@@ -118,6 +120,7 @@ func (a *Aggregator) Close() {
 }
 
 func (a *Aggregator) SetTx(tx kv.RwTx) {
+	a.rwTx = tx
 	a.accounts.SetTx(tx)
 	a.storage.SetTx(tx)
 	a.code.SetTx(tx)
@@ -128,6 +131,7 @@ func (a *Aggregator) SetTx(tx kv.RwTx) {
 }
 
 func (a *Aggregator) SetTxNum(txNum uint64) {
+	a.txNum = txNum
 	a.accounts.SetTxNum(txNum)
 	a.storage.SetTxNum(txNum)
 	a.code.SetTxNum(txNum)
@@ -145,6 +149,12 @@ type AggCollation struct {
 	logTopics  map[string]*roaring64.Bitmap
 	tracesFrom map[string]*roaring64.Bitmap
 	tracesTo   map[string]*roaring64.Bitmap
+}
+
+func (c AggCollation) Close() {
+	c.accounts.Close()
+	c.storage.Close()
+	c.code.Close()
 }
 
 func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggCollation, error) {
@@ -517,4 +527,78 @@ func (a *Aggregator) deleteFiles(outs SelectedStaticFiles) error {
 
 func (a *Aggregator) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
 	return a.accounts.Get(addr, roTx)
+}
+
+func (a *Aggregator) ReadAccountStorage(addr []byte, loc []byte, roTx kv.Tx) ([]byte, error) {
+	dbkey := make([]byte, len(addr)+len(loc))
+	copy(dbkey[0:], addr)
+	copy(dbkey[len(addr):], loc)
+	return a.storage.Get(dbkey, roTx)
+}
+
+func (a *Aggregator) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, error) {
+	return a.code.Get(addr, roTx)
+}
+
+func (a *Aggregator) ReadAccountCodeSize(addr []byte, roTx kv.Tx) (int, error) {
+	code, err := a.code.Get(addr, roTx)
+	if err != nil {
+		return 0, err
+	}
+	return len(code), nil
+}
+
+func (a *Aggregator) FinishTx() error {
+	if (a.txNum+1)%a.aggregationStep != 0 {
+		return nil
+	}
+	closeAll := true
+	step := a.txNum / a.aggregationStep
+	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeAll {
+			collation.Close()
+		}
+	}()
+	sf, err := a.buildFiles(step, collation)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeAll {
+			sf.Close()
+		}
+	}()
+	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
+	if err = a.prune(step, step*a.aggregationStep, (step+1)*a.aggregationStep); err != nil {
+		return err
+	}
+	maxEndTxNum := a.endTxNumMinimax()
+	maxSpan := uint64(16 * 16)
+	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
+		outs := a.staticFilesInRange(r)
+		defer func() {
+			if closeAll {
+				outs.Close()
+			}
+		}()
+		in, err := a.mergeFiles(outs, r, maxSpan)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if closeAll {
+				in.Close()
+			}
+		}()
+		a.integrateMergedFiles(outs, in)
+		if err = a.deleteFiles(outs); err != nil {
+			return err
+		}
+	}
+	closeAll = false
+	return nil
 }
