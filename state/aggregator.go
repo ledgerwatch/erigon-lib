@@ -361,6 +361,35 @@ type SelectedStaticFiles struct {
 	tracesToI   int
 }
 
+func (sf SelectedStaticFiles) Close() {
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		for _, group := range [][][NumberOfTypes]*filesItem{sf.accounts, sf.storage, sf.code} {
+			for _, items := range group {
+				if items[fType] != nil {
+					if items[fType].decompressor != nil {
+						items[fType].decompressor.Close()
+					}
+					if items[fType].decompressor != nil {
+						items[fType].index.Close()
+					}
+				}
+			}
+		}
+		for _, group := range [][]*filesItem{sf.logAddrs, sf.logTopics, sf.tracesFrom, sf.tracesTo} {
+			for _, item := range group {
+				if item != nil {
+					if item.decompressor != nil {
+						item.decompressor.Close()
+					}
+					if item.decompressor != nil {
+						item.index.Close()
+					}
+				}
+			}
+		}
+	}
+}
+
 func (a *Aggregator) staticFilesInRange(r Ranges) SelectedStaticFiles {
 	var sf SelectedStaticFiles
 	if r.accounts {
@@ -397,69 +426,37 @@ type MergedFiles struct {
 	tracesTo   *filesItem
 }
 
+func (mf MergedFiles) Close() {
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		for _, items := range [][NumberOfTypes]*filesItem{mf.accounts, mf.storage, mf.code} {
+			if items[fType] != nil {
+				if items[fType].decompressor != nil {
+					items[fType].decompressor.Close()
+				}
+				if items[fType].decompressor != nil {
+					items[fType].index.Close()
+				}
+			}
+		}
+		for _, item := range []*filesItem{mf.logAddrs, mf.logTopics, mf.tracesFrom, mf.tracesTo} {
+			if item != nil {
+				if item.decompressor != nil {
+					item.decompressor.Close()
+				}
+				if item.decompressor != nil {
+					item.index.Close()
+				}
+			}
+		}
+	}
+}
+
 func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uint64) (MergedFiles, error) {
 	var mf MergedFiles
 	closeFiles := true
 	defer func() {
 		if closeFiles {
-			for fType := FileType(0); fType < NumberOfTypes; fType++ {
-				if mf.accounts[fType] != nil {
-					if mf.accounts[fType].decompressor != nil {
-						mf.accounts[fType].decompressor.Close()
-					}
-					if mf.accounts[fType].index != nil {
-						mf.accounts[fType].index.Close()
-					}
-				}
-				if mf.storage[fType] != nil {
-					if mf.storage[fType].decompressor != nil {
-						mf.storage[fType].decompressor.Close()
-					}
-					if mf.storage[fType].index != nil {
-						mf.storage[fType].index.Close()
-					}
-				}
-				if mf.code[fType] != nil {
-					if mf.code[fType].decompressor != nil {
-						mf.code[fType].decompressor.Close()
-					}
-					if mf.code[fType].index != nil {
-						mf.code[fType].index.Close()
-					}
-				}
-			}
-			if mf.logAddrs != nil {
-				if mf.logAddrs.decompressor != nil {
-					mf.logAddrs.decompressor.Close()
-				}
-				if mf.logAddrs.index != nil {
-					mf.logAddrs.index.Close()
-				}
-			}
-			if mf.logTopics != nil {
-				if mf.logTopics.decompressor != nil {
-					mf.logTopics.decompressor.Close()
-				}
-				if mf.logTopics.index != nil {
-					mf.logTopics.index.Close()
-				}
-			}
-			if mf.tracesFrom != nil {
-				if mf.tracesFrom.decompressor != nil {
-					mf.tracesFrom.decompressor.Close()
-				}
-				if mf.tracesFrom.index != nil {
-					mf.tracesFrom.index.Close()
-				}
-			}
-			if mf.tracesTo != nil {
-				if mf.tracesTo.decompressor != nil {
-					mf.tracesTo.decompressor.Close()
-				}
-				if mf.tracesTo.index != nil {
-					mf.tracesTo.index.Close()
-				}
-			}
+			mf.Close()
 		}
 	}()
 	var err error
