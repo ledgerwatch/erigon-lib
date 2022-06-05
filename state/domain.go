@@ -814,10 +814,12 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values
 	word := make([]byte, 0, 256)
 	var keyPos, valPos uint64
 	g := d.MakeGetter()
+	fmt.Printf("buildIndex %s\n", idxPath)
 	for {
 		g.Reset(0)
 		for g.HasNext() {
 			word, valPos = g.Next(word[:0])
+			fmt.Printf("[%x]\n", word)
 			if values {
 				if err = rs.AddKey(word, valPos); err != nil {
 					return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
@@ -841,6 +843,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values
 			break
 		}
 	}
+	fmt.Printf("-------------\n")
 	var idx *recsplit.Index
 	if idx, err = recsplit.OpenIndex(idxPath); err != nil {
 		return nil, fmt.Errorf("open idx: %w", err)
