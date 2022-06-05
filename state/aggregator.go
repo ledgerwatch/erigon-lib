@@ -174,7 +174,7 @@ func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggC
 	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.code, err = a.code.collate(step, txFrom, txTo, roTx); err != nil {
 		return AggCollation{}, err
 	}
 	if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx); err != nil {
