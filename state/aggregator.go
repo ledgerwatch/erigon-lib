@@ -577,7 +577,7 @@ func (a *Aggregator) FinishTx() error {
 		return err
 	}
 	maxEndTxNum := a.endTxNumMinimax()
-	maxSpan := uint64(16*16) * a.aggregationStep
+	maxSpan := uint64(32) * a.aggregationStep
 	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
 		outs := a.staticFilesInRange(r)
 		defer func() {
