@@ -800,12 +800,17 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots)
 		return nil, err
 	}
 
-	if !p.Started() {
-		return nil, fmt.Errorf("pool not started yet")
-	}
-
 	p.lock.Lock()
 	defer p.lock.Unlock()
+
+	if !p.Started() {
+		if err := p.fromDB(ctx, coreTx, coreTx); err != nil {
+			return nil, fmt.Errorf("loading txs from DB: %w", err)
+		}
+		if p.started.CAS(false, true) {
+			log.Info("[txpool] Started")
+		}
+	}
 
 	if err = p.senders.registerNewSenders(&newTransactions); err != nil {
 		return nil, err
@@ -1521,7 +1526,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 	}
 
 	// clean - in-memory data structure as later as possible - because if during this Tx will happen error,
-	// DB will stay consitant but some in-memory structures may be alread cleaned, and retry will not work
+	// DB will stay consistent but some in-memory structures may be already cleaned, and retry will not work
 	// failed write transaction must not create side-effects
 	p.deletedTxs = p.deletedTxs[:0]
 	return nil
