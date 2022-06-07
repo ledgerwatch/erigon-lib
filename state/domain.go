@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -92,6 +91,8 @@ func ParseFileType(s string) (FileType, bool) {
 		return Values, true
 	case "history":
 		return History, true
+	case "efhistory":
+		return EfHistory, true
 	default:
 		return NumberOfTypes, false
 	}
@@ -148,7 +149,9 @@ func NewDomain(
 	}
 	d.scanStateFiles(files)
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
-		d.openFiles(fType)
+		if err = d.openFiles(fType); err != nil {
+			return nil, err
+		}
 	}
 	return d, nil
 }
@@ -158,7 +161,7 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
 		typeStrings[fType] = fType.String()
 	}
-	re := regexp.MustCompile(d.filenameBase + "(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)")
+	re := regexp.MustCompile(d.filenameBase + "-(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)")
 	var err error
 	for _, f := range files {
 		name := f.Name()
@@ -208,7 +211,7 @@ func (d *Domain) openFiles(fType FileType) error {
 	d.files[fType].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		datPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.dat", d.filenameBase, fType.String(), item.startTxNum, item.endTxNum))
-		if item.decompressor, err = compress.NewDecompressor(path.Join(d.dir, datPath)); err != nil {
+		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
 		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.idx", d.filenameBase, fType.String(), item.startTxNum, item.endTxNum))
@@ -521,6 +524,15 @@ type Collation struct {
 	indexBitmaps map[string]*roaring64.Bitmap
 }
 
+func (c Collation) Close() {
+	if c.valuesComp != nil {
+		c.valuesComp.Close()
+	}
+	if c.historyComp != nil {
+		c.historyComp.Close()
+	}
+}
+
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
@@ -656,12 +668,24 @@ type StaticFiles struct {
 }
 
 func (sf StaticFiles) Close() {
-	sf.valuesDecomp.Close()
-	sf.valuesIdx.Close()
-	sf.historyDecomp.Close()
-	sf.historyIdx.Close()
-	sf.efHistoryDecomp.Close()
-	sf.efHistoryIdx.Close()
+	if sf.valuesDecomp != nil {
+		sf.valuesDecomp.Close()
+	}
+	if sf.valuesIdx != nil {
+		sf.valuesIdx.Close()
+	}
+	if sf.historyDecomp != nil {
+		sf.historyDecomp.Close()
+	}
+	if sf.historyIdx != nil {
+		sf.historyIdx.Close()
+	}
+	if sf.efHistoryDecomp != nil {
+		sf.efHistoryDecomp.Close()
+	}
+	if sf.efHistoryIdx != nil {
+		sf.efHistoryIdx.Close()
+	}
 }
 
 // buildFiles performs potentially resource intensive operations of creating

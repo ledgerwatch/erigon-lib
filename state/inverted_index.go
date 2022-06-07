@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -69,7 +68,9 @@ func NewInvertedIndex(
 	}
 	ii.files = btree.New(32)
 	ii.scanStateFiles(files)
-	ii.openFiles()
+	if err = ii.openFiles(); err != nil {
+		return nil, err
+	}
 	return ii, nil
 }
 
@@ -120,7 +121,7 @@ func (ii *InvertedIndex) openFiles() error {
 	ii.files.Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, item.startTxNum, item.endTxNum))
-		if item.decompressor, err = compress.NewDecompressor(path.Join(ii.dir, datPath)); err != nil {
+		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, item.startTxNum, item.endTxNum))
