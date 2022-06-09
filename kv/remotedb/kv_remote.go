@@ -113,8 +113,7 @@ func (db *RemoteKV) EnsureVersionCompatibility() bool {
 	return true
 }
 
-func (db *RemoteKV) Close() {
-}
+func (db *RemoteKV) Close() {}
 
 func (db *RemoteKV) BeginRo(ctx context.Context) (kv.Tx, error) {
 	select {
