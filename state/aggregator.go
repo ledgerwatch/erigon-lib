@@ -539,7 +539,7 @@ func (a *Aggregator) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
 }
 
 func (a *Aggregator) ReadAccountDataAfterTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	return a.accounts.GetAfterTxNum(addr, txNum, roTx)
+	return a.accounts.GetBeforeTxNum(addr, txNum, roTx)
 }
 
 func (a *Aggregator) ReadAccountStorage(addr []byte, loc []byte, roTx kv.Tx) ([]byte, error) {
@@ -553,7 +553,7 @@ func (a *Aggregator) ReadAccountStorageAfterTxNum(addr []byte, loc []byte, txNum
 	dbkey := make([]byte, len(addr)+len(loc))
 	copy(dbkey[0:], addr)
 	copy(dbkey[len(addr):], loc)
-	return a.storage.GetAfterTxNum(dbkey, txNum, roTx)
+	return a.storage.GetBeforeTxNum(dbkey, txNum, roTx)
 }
 
 func (a *Aggregator) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, error) {
@@ -561,7 +561,7 @@ func (a *Aggregator) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, error) {
 }
 
 func (a *Aggregator) ReadAccountCodeAfterTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	return a.code.GetAfterTxNum(addr, txNum, roTx)
+	return a.code.GetBeforeTxNum(addr, txNum, roTx)
 }
 
 func (a *Aggregator) ReadAccountCodeSize(addr []byte, roTx kv.Tx) (int, error) {
@@ -573,7 +573,7 @@ func (a *Aggregator) ReadAccountCodeSize(addr []byte, roTx kv.Tx) (int, error) {
 }
 
 func (a *Aggregator) ReadAccountCodeSizeAfterTxNum(addr []byte, txNum uint64, roTx kv.Tx) (int, error) {
-	code, err := a.code.GetAfterTxNum(addr, txNum, roTx)
+	code, err := a.code.GetBeforeTxNum(addr, txNum, roTx)
 	if err != nil {
 		return 0, err
 	}
