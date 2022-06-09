@@ -1009,7 +1009,7 @@ func (tx *MdbxTx) BucketStat(name string) (*mdbx.Stat, error) {
 	return st, nil
 }
 
-func (tx *MdbxDb) DBSize() (uint64, error) {
+func (tx *MdbxTx) DBSize() (uint64, error) {
 	info, err := tx.db.env.Info(tx.tx)
 	if err != nil {
 		return 0, err
