@@ -1009,6 +1009,14 @@ func (tx *MdbxTx) BucketStat(name string) (*mdbx.Stat, error) {
 	return st, nil
 }
 
+func (tx *MdbxDb) DBSize() (uint64, error) {
+	info, err := tx.db.env.Info(tx.tx)
+	if err != nil {
+		return 0, err
+	}
+	return info.Geo.Current, err
+}
+
 func (tx *MdbxTx) RwCursor(bucket string) (kv.RwCursor, error) {
 	b := tx.db.buckets[bucket]
 	if b.AutoDupSortKeysConversion {
