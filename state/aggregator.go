@@ -681,7 +681,7 @@ func (a *Aggregator) AddLogAddr(addr []byte) error {
 }
 
 func (a *Aggregator) AddLogTopic(topic []byte) error {
-	return a.logTopics.Addr(topic)
+	return a.logTopics.Add(topic)
 }
 
 type FilesStats struct {
