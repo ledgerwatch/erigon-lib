@@ -572,7 +572,7 @@ func (a *Aggregator) ReadAccountCodeSize(addr []byte, roTx kv.Tx) (int, error) {
 	return len(code), nil
 }
 
-func (a *Aggregator) ReadAccountCodeSizeBeforexNum(addr []byte, txNum uint64, roTx kv.Tx) (int, error) {
+func (a *Aggregator) ReadAccountCodeSizeBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) (int, error) {
 	code, err := a.code.GetBeforeTxNum(addr, txNum, roTx)
 	if err != nil {
 		return 0, err
