@@ -94,9 +94,8 @@ func NewRemote(v gointerfaces.Version, logger log.Logger, remoteKV remote.KVClie
 	return remoteOpts{bucketsCfg: mdbx.WithChaindataTables, version: v, log: logger, remoteKV: remoteKV}
 }
 
-func (db *RemoteKV) AllBuckets() kv.TableCfg {
-	return db.buckets
-}
+func (db *RemoteKV) PageSize() uint64        { panic("not implemented") }
+func (db *RemoteKV) AllBuckets() kv.TableCfg { return db.buckets }
 
 func (db *RemoteKV) EnsureVersionCompatibility() bool {
 	versionReply, err := db.remoteKV.Version(context.Background(), &emptypb.Empty{}, grpc.WaitForReady(true))

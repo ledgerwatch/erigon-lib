@@ -332,6 +332,8 @@ type MdbxKV struct {
 	closed       atomic.Bool
 }
 
+func (db *MdbxKV) PageSize() uint64 { return db.opts.pageSize }
+
 // openDBIs - first trying to open existing DBI's in RO transaction
 // otherwise re-try by RW transaction
 // it allow open DB from another process - even if main process holding long RW transaction
