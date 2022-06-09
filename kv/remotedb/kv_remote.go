@@ -175,6 +175,7 @@ func (tx *remoteTx) Rollback() {
 	// don't close opened cursors - just close stream, server will cleanup everything well
 	tx.closeGrpcStream()
 }
+func (tx *remoteTx) DBSize() (uint64, error) { panic("not implemented") }
 
 func (tx *remoteTx) statelessCursor(bucket string) (kv.Cursor, error) {
 	if tx.statelessCursors == nil {
