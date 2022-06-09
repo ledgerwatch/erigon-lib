@@ -985,6 +985,7 @@ func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 // historyBeforeTxNum searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
+	fmt.Printf("historyBeforeTxNum %s key=[%x] txNum=%d\n", d.filenameBase, key, txNum)
 	var search filesItem
 	search.startTxNum = txNum
 	search.endTxNum = txNum
@@ -1038,6 +1039,7 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 				}
 				return true
 			})
+			fmt.Printf("not found\n")
 			return val, found, nil
 		}
 		// Value not found in history files, look in the recent history
