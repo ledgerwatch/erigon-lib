@@ -1033,14 +1033,12 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 				if g.HasNext() {
 					if keyMatch, _ := g.Match(key); keyMatch {
 						val, _ = g.Next(nil)
-						found = true
 						return false
 					}
 				}
 				return true
 			})
-			fmt.Printf("not found\n")
-			return val, found, nil
+			return val, true, nil
 		}
 		// Value not found in history files, look in the recent history
 		if roTx == nil {
