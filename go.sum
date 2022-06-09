@@ -109,8 +109,8 @@ github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.7.1 h1:5TQK59W5E3v0r2duFAb7P95B6hEeOyEnHRa8MjYSMTY=
 github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/torquem-ch/mdbx-go v0.24.3-0.20220609031401-d4f37d42ed67 h1:IUiXgn2nLv37Sdn+S+T5iA+7s/FG3cTR9FEETG3/WUg=
-github.com/torquem-ch/mdbx-go v0.24.3-0.20220609031401-d4f37d42ed67/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
+github.com/torquem-ch/mdbx-go v0.24.3-0.20220609031703-ed9f9e0424cb h1:bC7G1w85Dc8F3LsCUqL+YV2vjGeSenHEa5PD0NpcNBI=
+github.com/torquem-ch/mdbx-go v0.24.3-0.20220609031703-ed9f9e0424cb/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
 github.com/valyala/fastrand v1.1.0 h1:f+5HkLW4rsgzdNoleUOB69hyT9IlD2ZQh9GyDMfb5G8=
 github.com/valyala/fastrand v1.1.0/go.mod h1:HWqCzkrkg6QXT8V2EXWvXCoow7vLwOFN002oeRzjapQ=
 github.com/valyala/histogram v1.2.0 h1:wyYGAZZt3CpwUiIb9AU/Zbllg1llXyrtApRS815OLoQ=
