@@ -378,6 +378,16 @@ func (ub *UpdateBuilder) Balance(addr string, balance uint64) *UpdateBuilder {
 	return ub
 }
 
+func (ub *UpdateBuilder) Balance256(addr string, balance []byte) *UpdateBuilder {
+	sk := string(decodeHex(addr))
+	delete(ub.deletes, sk)
+	b := uint256.NewInt(0)
+	b.SetBytes(balance)
+	ub.balances[sk] = b
+	ub.keyset[sk] = struct{}{}
+	return ub
+}
+
 func (ub *UpdateBuilder) Nonce(addr string, nonce uint64) *UpdateBuilder {
 	sk := string(decodeHex(addr))
 	delete(ub.deletes, sk)
