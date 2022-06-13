@@ -29,6 +29,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -461,7 +462,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if err = ii.tx.Delete(ii.indexTable, v, k); err != nil {
+		if err = ii.tx.Delete(ii.indexTable, common.Copy(v), common.Copy(k)); err != nil {
 			return err
 		}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
