@@ -178,7 +178,7 @@ func (ii *InvertedIndex) Add(key []byte) error {
 		return err
 	}
 	if trace {
-		fmt.Printf("Put key=[%x], txNum=%d\b", key, ii.txNum)
+		fmt.Printf("Put key=[%x], txNum=%d\n", key, ii.txNum)
 	}
 	return nil
 }
