@@ -940,10 +940,10 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if err = d.tx.Delete(d.historyValsTable, common.Copy(v[len(v)-8:]), nil); err != nil {
+		if err = d.tx.Delete(d.historyValsTable, v[len(v)-8:], nil); err != nil {
 			return err
 		}
-		if err = d.tx.Delete(d.indexTable, common.Copy(v[:len(v)-8]), common.Copy(k)); err != nil {
+		if err = d.tx.Delete(d.indexTable, v[:len(v)-8], k); err != nil {
 			return err
 		}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
