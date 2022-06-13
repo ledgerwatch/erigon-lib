@@ -168,7 +168,6 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 }
 
 func (ii *InvertedIndex) Add(key []byte) error {
-	trace := ii.filenameBase == "tracesto"
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], ii.txNum)
 	if err := ii.tx.Put(ii.keysTable, txKey[:], key); err != nil {
@@ -176,9 +175,6 @@ func (ii *InvertedIndex) Add(key []byte) error {
 	}
 	if err := ii.tx.Put(ii.indexTable, key, txKey[:]); err != nil {
 		return err
-	}
-	if trace {
-		fmt.Printf("Put key=[%x], txNum=%d\n", key, ii.txNum)
 	}
 	return nil
 }
@@ -332,10 +328,6 @@ func (ii *InvertedIndex) IterateRange(key []byte, startTxNum, endTxNum uint64, r
 }
 
 func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {
-	trace := ii.filenameBase == "tracesto"
-	if trace {
-		fmt.Printf("collate %d-%d\n", txFrom/ii.aggregationStep, txTo/ii.aggregationStep)
-	}
 	keysCursor, err := roTx.CursorDupSort(ii.keysTable)
 	if err != nil {
 		return nil, fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -347,7 +339,6 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*r
 	var k, v []byte
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
-		fmt.Printf("cursor %d=>[%x]\n", txNum, v)
 		if txNum >= txTo {
 			break
 		}
