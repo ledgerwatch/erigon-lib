@@ -114,6 +114,7 @@ type Domain struct {
 	txNum            uint64
 	files            [NumberOfTypes]*btree.BTree // Static files pertaining to this domain, items are of type `filesItem`
 	prefixLen        int                         // Number of bytes in the keys that can be used for prefix iteration
+	lookupKey        []byte
 }
 
 func NewDomain(
@@ -1075,9 +1076,13 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 		}
 		return nil, false, nil
 	}
-	var lookupKey = make([]byte, len(key)+8)
-	binary.BigEndian.PutUint64(lookupKey, foundTxNum)
-	copy(lookupKey[8:], key)
+	if cap(d.lookupKey) < len(key)+8 {
+		d.lookupKey = make([]byte, len(key)+8)
+	} else if len(d.lookupKey) != len(key)+8 {
+		d.lookupKey = d.lookupKey[:len(key)+8]
+	}
+	binary.BigEndian.PutUint64(d.lookupKey, foundTxNum)
+	copy(d.lookupKey[8:], key)
 	var historyItem *filesItem
 	search.startTxNum = foundStartTxNum
 	search.endTxNum = foundEndTxNum
@@ -1086,7 +1091,7 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 	} else {
 		return nil, false, fmt.Errorf("no %s file found for [%x]", d.filenameBase, key)
 	}
-	offset := historyItem.indexReader.Lookup(lookupKey)
+	offset := historyItem.indexReader.Lookup(d.lookupKey)
 	g := historyItem.getter
 	g.Reset(offset)
 	v, _ := g.Next(nil)

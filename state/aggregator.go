@@ -38,6 +38,7 @@ type Aggregator struct {
 	tracesTo        *InvertedIndex
 	txNum           uint64
 	rwTx            kv.RwTx
+	keyBuf          []byte
 }
 
 func NewAggregator(
@@ -625,17 +626,25 @@ func (a *Aggregator) ReadAccountDataBeforeTxNum(addr []byte, txNum uint64, roTx 
 }
 
 func (a *Aggregator) ReadAccountStorage(addr []byte, loc []byte, roTx kv.Tx) ([]byte, error) {
-	dbkey := make([]byte, len(addr)+len(loc))
-	copy(dbkey[0:], addr)
-	copy(dbkey[len(addr):], loc)
-	return a.storage.Get(dbkey, roTx)
+	if cap(a.keyBuf) < len(addr)+len(loc) {
+		a.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(a.keyBuf) != len(addr)+len(loc) {
+		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(a.keyBuf, addr)
+	copy(a.keyBuf[len(addr):], loc)
+	return a.storage.Get(a.keyBuf, roTx)
 }
 
 func (a *Aggregator) ReadAccountStorageBeforeTxNum(addr []byte, loc []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	dbkey := make([]byte, len(addr)+len(loc))
-	copy(dbkey[0:], addr)
-	copy(dbkey[len(addr):], loc)
-	return a.storage.GetBeforeTxNum(dbkey, txNum, roTx)
+	if cap(a.keyBuf) < len(addr)+len(loc) {
+		a.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(a.keyBuf) != len(addr)+len(loc) {
+		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(a.keyBuf, addr)
+	copy(a.keyBuf[len(addr):], loc)
+	return a.storage.GetBeforeTxNum(a.keyBuf, txNum, roTx)
 }
 
 func (a *Aggregator) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, error) {
@@ -748,10 +757,14 @@ func (a *Aggregator) DeleteAccount(addr []byte) error {
 }
 
 func (a *Aggregator) WriteAccountStorage(addr, loc []byte, value []byte) error {
-	dbkey := make([]byte, len(addr)+len(loc))
-	copy(dbkey[0:], addr)
-	copy(dbkey[len(addr):], loc)
-	return a.storage.Put(dbkey, value)
+	if cap(a.keyBuf) < len(addr)+len(loc) {
+		a.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(a.keyBuf) != len(addr)+len(loc) {
+		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(a.keyBuf, addr)
+	copy(a.keyBuf[len(addr):], loc)
+	return a.storage.Put(a.keyBuf, value)
 }
 
 func (a *Aggregator) AddTraceFrom(addr []byte) error {
