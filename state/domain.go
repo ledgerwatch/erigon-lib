@@ -114,7 +114,7 @@ type Domain struct {
 	txNum            uint64
 	files            [NumberOfTypes]*btree.BTree // Static files pertaining to this domain, items are of type `filesItem`
 	prefixLen        int                         // Number of bytes in the keys that can be used for prefix iteration
-	lookupKey        []byte
+	compressVals     bool
 }
 
 func NewDomain(
@@ -128,6 +128,7 @@ func NewDomain(
 	settingsTable string,
 	indexTable string,
 	prefixLen int,
+	compressVals bool,
 ) (*Domain, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -144,6 +145,7 @@ func NewDomain(
 		settingsTable:    settingsTable,
 		indexTable:       indexTable,
 		prefixLen:        prefixLen,
+		compressVals:     compressVals,
 	}
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
 		d.files[fType] = btree.New(32)
@@ -381,7 +383,6 @@ type CursorItem struct {
 	key, val      []byte
 	dg            *compress.Getter
 	c             kv.CursorDupSort
-	keyCompressed bool
 	valCompressed bool
 }
 
@@ -1029,8 +1030,12 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 				g := item.getter
 				g.Reset(offset)
 				if g.HasNext() {
-					if keyMatch, _ := g.Match(key); keyMatch {
-						val, _ = g.Next(nil)
+					if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+						if d.compressVals {
+							val, _ = g.Next(nil)
+						} else {
+							val, _ = g.NextUncompressed()
+						}
 						return false
 					}
 				}
@@ -1076,13 +1081,8 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 		}
 		return nil, false, nil
 	}
-	if cap(d.lookupKey) < len(key)+8 {
-		d.lookupKey = make([]byte, len(key)+8)
-	} else if len(d.lookupKey) != len(key)+8 {
-		d.lookupKey = d.lookupKey[:len(key)+8]
-	}
-	binary.BigEndian.PutUint64(d.lookupKey, foundTxNum)
-	copy(d.lookupKey[8:], key)
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], foundTxNum)
 	var historyItem *filesItem
 	search.startTxNum = foundStartTxNum
 	search.endTxNum = foundEndTxNum
@@ -1091,7 +1091,7 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 	} else {
 		return nil, false, fmt.Errorf("no %s file found for [%x]", d.filenameBase, key)
 	}
-	offset := historyItem.indexReader.Lookup(d.lookupKey)
+	offset := historyItem.indexReader.Lookup2(txKey[:], key)
 	g := historyItem.getter
 	g.Reset(offset)
 	v, _ := g.Next(nil)

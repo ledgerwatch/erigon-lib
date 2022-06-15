@@ -242,6 +242,9 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	return binary.BigEndian.Uint64(idx.data[1+8+idx.bytesPerRec*(rec+1):]) & idx.recMask
 }
 
-func (idx *Index) Lookup2(i uint64) uint64 {
+// OrdinalLookup returns the offset of i-th element in the index
+// Perfect hash table lookup is not performed, only access to the
+// Elias-Fano structure containing all offsets.
+func (idx *Index) OrdinalLookup(i uint64) uint64 {
 	return idx.offsetEf.Get(i)
 }
