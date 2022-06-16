@@ -1334,9 +1334,13 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			return
 		case <-logEvery.C:
 			var txs types.TxsRlp
-			db.View(ctx, func(tx kv.Tx) error {
+			if err := db.View(ctx, func(tx kv.Tx) error {
 				return p.Best(200, &txs, tx)
-			})
+			}); err != nil {
+				fmt.Printf("Error Best: %v\n", err)
+			} else {
+				fmt.Printf("Best(200) returned %d txs\n", len(txs.Txs))
+			}
 			p.logStats()
 		case <-processRemoteTxsEvery.C:
 			if !p.Started() {
