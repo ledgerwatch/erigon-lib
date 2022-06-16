@@ -297,7 +297,7 @@ func (idx *Index) RewriteWithOffsets(w *bufio.Writer, m map[uint64]uint64) error
 			return err
 		}
 	}
-	pos += 8
+	pos += 8 - bytesPerRec
 	// Write the rest as it is (TODO - wrong for indices with enums)
 	if _, err := w.Write(idx.data[pos:]); err != nil {
 		return err
