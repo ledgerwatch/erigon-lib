@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2022 Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -297,9 +297,8 @@ func (idx *Index) RewriteWithOffsets(w *bufio.Writer, m map[uint64]uint64) error
 			return err
 		}
 	}
-	pos += 8 - bytesPerRec
 	// Write the rest as it is (TODO - wrong for indices with enums)
-	if _, err := w.Write(idx.data[pos:]); err != nil {
+	if _, err := w.Write(idx.data[16+1+int(idx.keyCount)*idx.bytesPerRec:]); err != nil {
 		return err
 	}
 	return nil
