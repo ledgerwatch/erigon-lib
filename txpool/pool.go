@@ -615,6 +615,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 	for i := 0; j < int(n) && i < len(best.ms); i++ {
 		if best.ms[i].Tx.Gas >= p.blockGasLimit.Load() {
 			// Skip transactions with very large gas limit
+			fmt.Printf("Skipped tx due to very large gas limit: [%x], gas %d >= %d\n", best.ms[i].Tx.IDHash, best.ms[i].Tx.Gas, p.blockGasLimit.Load())
 			continue
 		}
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best.ms[i].Tx.IDHash[:])
@@ -1332,6 +1333,10 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			_, _ = p.flush(ctx, db)
 			return
 		case <-logEvery.C:
+			var txs types.TxsRlp
+			db.View(ctx, func(tx kv.Tx) error {
+				return p.Best(200, &txs, tx)
+			})
 			p.logStats()
 		case <-processRemoteTxsEvery.C:
 			if !p.Started() {
