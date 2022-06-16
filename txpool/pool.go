@@ -623,6 +623,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 			return err
 		}
 		if len(rlpTx) == 0 {
+			fmt.Printf("Skipped tx because it is empty: [%x]\n", best.ms[i].Tx.IDHash)
 			continue
 		}
 		txs.Txs[j] = rlpTx
