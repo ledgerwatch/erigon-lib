@@ -613,17 +613,19 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 	best := p.pending.best
 	j := 0
 	for i := 0; j < int(n) && i < len(best.ms); i++ {
-		if best.ms[i].Tx.Gas >= p.blockGasLimit.Load() {
+		mt := best.ms[i]
+		if mt.Tx.Gas >= p.blockGasLimit.Load() {
 			// Skip transactions with very large gas limit
 			fmt.Printf("Skipped tx due to very large gas limit: [%x], gas %d >= %d\n", best.ms[i].Tx.IDHash, best.ms[i].Tx.Gas, p.blockGasLimit.Load())
 			continue
 		}
-		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, best.ms[i].Tx.IDHash[:])
+		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
 		if err != nil {
 			return err
 		}
 		if len(rlpTx) == 0 {
-			fmt.Printf("Skipped tx because it is empty: [%x]\n", best.ms[i].Tx.IDHash)
+			fmt.Printf("Skipped tx because it is empty: [%x]\n", mt.Tx.IDHash)
+			p.pending.Remove(mt)
 			continue
 		}
 		txs.Txs[j] = rlpTx
@@ -1114,9 +1116,9 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*types.TxSlot, pending *P
 			if mt.Tx.Nonce > nonce {
 				return false
 			}
-			//if mt.Tx.Traced {
-			log.Info(fmt.Sprintf("TX TRACING: removeMined idHash=%x senderId=%d, currentSubPool=%s", mt.Tx.IDHash, mt.Tx.SenderID, mt.currentSubPool))
-			//}
+			if mt.Tx.Traced {
+				log.Info(fmt.Sprintf("TX TRACING: removeMined idHash=%x senderId=%d, currentSubPool=%s", mt.Tx.IDHash, mt.Tx.SenderID, mt.currentSubPool))
+			}
 			toDel = append(toDel, mt)
 			// del from sub-pool
 			switch mt.currentSubPool {
