@@ -999,7 +999,7 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
-		if keyMatch, _ := g.Match(key); keyMatch {
+		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 			if n, ok := ef.Search(txNum); ok {
@@ -1094,7 +1094,11 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 	offset := historyItem.indexReader.Lookup2(txKey[:], key)
 	g := historyItem.getter
 	g.Reset(offset)
-	v, _ := g.Next(nil)
+	if d.compressVals {
+		v, _ := g.Next(nil)
+		return v, true, nil
+	}
+	v, _ := g.NextUncompressed()
 	return v, true, nil
 }
 
