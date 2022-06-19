@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -69,7 +68,9 @@ func NewInvertedIndex(
 	}
 	ii.files = btree.New(32)
 	ii.scanStateFiles(files)
-	ii.openFiles()
+	if err = ii.openFiles(); err != nil {
+		return nil, err
+	}
 	return ii, nil
 }
 
@@ -98,9 +99,9 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 			log.Warn("File ignored by inverted index scan, startTxNum > endTxNum", "name", name)
 			continue
 		}
-		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+		var item = &filesItem{startTxNum: startTxNum * ii.aggregationStep, endTxNum: endTxNum * ii.aggregationStep}
 		var foundI *filesItem
-		ii.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum, endTxNum: endTxNum}, func(i btree.Item) bool {
+		ii.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * ii.aggregationStep, endTxNum: endTxNum * ii.aggregationStep}, func(i btree.Item) bool {
 			it := i.(*filesItem)
 			if it.endTxNum == endTxNum {
 				foundI = it
@@ -108,7 +109,7 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 			return false
 		})
 		if foundI == nil || foundI.startTxNum > startTxNum {
-			log.Info("Load state file", "name", name, "startTxNum", startTxNum, "endTxNum", endTxNum)
+			log.Info("Load state file", "name", name, "startTxNum", startTxNum*ii.aggregationStep, "endTxNum", endTxNum*ii.aggregationStep)
 			ii.files.ReplaceOrInsert(item)
 		}
 	}
@@ -119,11 +120,11 @@ func (ii *InvertedIndex) openFiles() error {
 	var totalKeys uint64
 	ii.files.Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
-		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, item.startTxNum, item.endTxNum))
-		if item.decompressor, err = compress.NewDecompressor(path.Join(ii.dir, datPath)); err != nil {
+		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
+		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
-		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, item.startTxNum, item.endTxNum))
+		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 			return false
 		}
@@ -212,7 +213,7 @@ func (it *InvertedIterator) advanceInFiles() {
 			offset := item.indexReader.Lookup(it.key)
 			g := item.getter
 			g.Reset(offset)
-			if keyMatch, _ := g.Match(it.key); keyMatch {
+			if k, _ := g.NextUncompressed(); bytes.Equal(k, it.key) {
 				eliasVal, _ := g.NextUncompressed()
 				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 				it.efIt = ef.Iterator()
@@ -389,7 +390,7 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 	}()
 	txNumFrom := step * ii.aggregationStep
 	txNumTo := (step + 1) * ii.aggregationStep
-	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, txNumFrom, txNumTo))
+	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
 	comp, err = compress.NewCompressor(context.Background(), "ef", datPath, ii.dir, compress.MinPatternScore, 1, log.LvlDebug)
 	if err != nil {
 		return InvertedFiles{}, fmt.Errorf("create %s compressor: %w", ii.filenameBase, err)
@@ -424,7 +425,7 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 	if decomp, err = compress.NewDecompressor(datPath); err != nil {
 		return InvertedFiles{}, fmt.Errorf("open %s decompressor: %w", ii.filenameBase, err)
 	}
-	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, txNumFrom, txNumTo))
+	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
 	if index, err = buildIndex(decomp, idxPath, ii.dir, len(keys), false /* values */); err != nil {
 		return InvertedFiles{}, fmt.Errorf("build %s idx: %w", ii.filenameBase, err)
 	}

@@ -77,6 +77,10 @@ func NewMDBX(log log.Logger) MdbxOpts {
 	}
 }
 
+func (opts MdbxOpts) GetLabel() kv.Label  { return opts.label }
+func (opts MdbxOpts) GetInMem() bool      { return opts.inMem }
+func (opts MdbxOpts) GetPageSize() uint64 { return opts.pageSize }
+
 func (opts MdbxOpts) Label(label kv.Label) MdbxOpts {
 	opts.label = label
 	return opts
@@ -327,6 +331,8 @@ type MdbxKV struct {
 	roTxsLimiter chan struct{} // does limit amount of concurrent Ro transactions - in most casess runtime.NumCPU() is good value for this channel capacity - this channel can be shared with other components (like Decompressor)
 	closed       atomic.Bool
 }
+
+func (db *MdbxKV) PageSize() uint64 { return db.opts.pageSize }
 
 // openDBIs - first trying to open existing DBI's in RO transaction
 // otherwise re-try by RW transaction
@@ -1003,6 +1009,14 @@ func (tx *MdbxTx) BucketStat(name string) (*mdbx.Stat, error) {
 		return nil, fmt.Errorf("bucket: %s, %w", name, err)
 	}
 	return st, nil
+}
+
+func (tx *MdbxTx) DBSize() (uint64, error) {
+	info, err := tx.db.env.Info(tx.tx)
+	if err != nil {
+		return 0, err
+	}
+	return info.Geo.Current, err
 }
 
 func (tx *MdbxTx) RwCursor(bucket string) (kv.RwCursor, error) {
