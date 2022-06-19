@@ -1020,9 +1020,9 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 				found = true
 				return false
 			}
-		} else if item.endTxNum > txNum {
-			return false
-		}
+		} //else if item.endTxNum > txNum {
+		//	return false
+		//}
 		return true
 	})
 	if !found {
