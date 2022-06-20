@@ -15,7 +15,6 @@ package memdb
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/ledgerwatch/log/v3"
@@ -56,6 +55,10 @@ func NewMemoryBatch(tx kv.Tx) *MemoryMutation {
 	}
 }
 
+func (m *MemoryMutation) UpdateTxn(tx kv.Tx) {
+	m.db = tx
+}
+
 func (m *MemoryMutation) isTableCleared(table string) bool {
 	_, ok := m.clearedTables[table]
 	return ok
@@ -79,46 +82,35 @@ func (m *MemoryMutation) getMem(table string, key []byte) ([]byte, bool) {
 	return val, val != nil
 }
 
-func (m *MemoryMutation) DBSize() (uint64, error) { panic("not implemented") }
-func (m *MemoryMutation) PageSize() uint64        { panic("not implemented") }
+func (m *MemoryMutation) DBSize() (uint64, error) { return 0, nil }
+func (m *MemoryMutation) PageSize() uint64        { return 0 }
 
-func (m *MemoryMutation) IncrementSequence(bucket string, amount uint64) (res uint64, err error) {
-	v, ok := m.getMem(kv.Sequence, []byte(bucket))
-	if !ok && m.db != nil {
-		v, err = m.db.GetOne(kv.Sequence, []byte(bucket))
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	var currentV uint64 = 0
-	if len(v) > 0 {
-		currentV = binary.BigEndian.Uint64(v)
-	}
-
-	newVBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(newVBytes, currentV+amount)
-	if err = m.Put(kv.Sequence, []byte(bucket), newVBytes); err != nil {
+func (m *MemoryMutation) IncrementSequence(bucket string, amount uint64) (uint64, error) {
+	memRes, err := m.memTx.ReadSequence(bucket)
+	if err != nil {
 		return 0, err
 	}
-
-	return currentV, nil
-}
-
-func (m *MemoryMutation) ReadSequence(bucket string) (res uint64, err error) {
-	v, ok := m.getMem(kv.Sequence, []byte(bucket))
-	if !ok && m.db != nil {
-		v, err = m.db.GetOne(kv.Sequence, []byte(bucket))
+	if memRes == 0 {
+		base, err := m.db.ReadSequence(bucket)
 		if err != nil {
 			return 0, err
 		}
+		if _, err := m.memTx.IncrementSequence(bucket, base); err != nil {
+			return 0, err
+		}
 	}
-	var currentV uint64 = 0
-	if len(v) > 0 {
-		currentV = binary.BigEndian.Uint64(v)
-	}
+	return m.memTx.IncrementSequence(bucket, amount)
+}
 
-	return currentV, nil
+func (m *MemoryMutation) ReadSequence(bucket string) (uint64, error) {
+	memRes, err := m.memTx.ReadSequence(bucket)
+	if err != nil {
+		return 0, err
+	}
+	if memRes == 0 {
+		return m.db.ReadSequence(bucket)
+	}
+	return memRes, nil
 }
 
 // Can only be called from the worker thread
@@ -175,7 +167,7 @@ func (m *MemoryMutation) Put(table string, key []byte, value []byte) error {
 }
 
 func (m *MemoryMutation) Append(table string, key []byte, value []byte) error {
-	return m.Put(table, key, value)
+	return m.memTx.Append(table, key, value)
 }
 
 func (m *MemoryMutation) AppendDup(table string, key []byte, value []byte) error {
@@ -198,7 +190,10 @@ func (m *MemoryMutation) ForPrefix(bucket string, prefix []byte, walker func(k, 
 
 func (m *MemoryMutation) ForAmount(bucket string, prefix []byte, amount uint32, walker func(k, v []byte) error) error {
 	m.panicOnEmptyDB()
-	return m.db.ForAmount(bucket, prefix, amount, walker)
+	if err := m.db.ForAmount(bucket, prefix, amount, walker); err != nil {
+		return err
+	}
+	return m.memTx.ForAmount(bucket, prefix, amount, walker)
 }
 
 func (m *MemoryMutation) Delete(table string, k, v []byte) error {

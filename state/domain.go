@@ -98,6 +98,10 @@ func ParseFileType(s string) (FileType, bool) {
 	}
 }
 
+type DomainStats struct {
+	HistoryQueries int
+}
+
 // Domain is a part of the state (examples are Accounts, Storage, Code)
 // Domain should not have any go routines or locks
 type Domain struct {
@@ -115,6 +119,7 @@ type Domain struct {
 	files            [NumberOfTypes]*btree.BTree // Static files pertaining to this domain, items are of type `filesItem`
 	prefixLen        int                         // Number of bytes in the keys that can be used for prefix iteration
 	compressVals     bool
+	stats            DomainStats
 }
 
 func NewDomain(
@@ -157,6 +162,12 @@ func NewDomain(
 		}
 	}
 	return d, nil
+}
+
+func (d *Domain) GetAndResetStats() DomainStats {
+	r := d.stats
+	d.stats = DomainStats{}
+	return r
 }
 
 func (d *Domain) scanStateFiles(files []fs.DirEntry) {
@@ -378,12 +389,11 @@ const (
 // CursorItem is the item in the priority queue used to do merge interation
 // over storage of a given account
 type CursorItem struct {
-	t             CursorType // Whether this item represents state file or DB record, or tree
-	endTxNum      uint64
-	key, val      []byte
-	dg            *compress.Getter
-	c             kv.CursorDupSort
-	valCompressed bool
+	t        CursorType // Whether this item represents state file or DB record, or tree
+	endTxNum uint64
+	key, val []byte
+	dg       *compress.Getter
+	c        kv.CursorDupSort
 }
 
 type CursorHeap []*CursorItem
@@ -985,6 +995,7 @@ func (d *Domain) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
 // historyBeforeTxNum searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
+	d.stats.HistoryQueries++
 	var search filesItem
 	search.startTxNum = txNum
 	search.endTxNum = txNum
@@ -993,6 +1004,11 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 	var foundStartTxNum uint64
 	var found bool
 	var anyItem bool // Whether any filesItem has been looked at in the loop below
+	var topState *filesItem
+	d.files[Values].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
+		topState = i.(*filesItem)
+		return false
+	})
 	d.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
 		anyItem = true
@@ -1008,6 +1024,8 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 				foundStartTxNum = item.startTxNum
 				found = true
 				return false
+			} else if item.endTxNum > txNum && item.endTxNum >= topState.endTxNum {
+				return false
 			}
 		}
 		return true
@@ -1015,11 +1033,6 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 	if !found {
 		if anyItem {
 			// If there were no changes but there were history files, the value can be obtained from value files
-			var topState *filesItem
-			d.files[Values].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
-				topState = i.(*filesItem)
-				return false
-			})
 			var val []byte
 			d.files[Values].DescendLessOrEqual(topState, func(i btree.Item) bool {
 				item := i.(*filesItem)
