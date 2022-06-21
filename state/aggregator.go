@@ -837,14 +837,14 @@ func (a *Aggregator) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int,
 	return len(code), noState, stateTxNum, nil
 }
 
-func (a *Aggregator) MaxAccountTxNum() (bool, uint64) {
-	return a.accounts.MaxTxNum()
+func (a *Aggregator) MaxAccountTxNum(key []byte) (bool, uint64) {
+	return a.accounts.MaxTxNum(key)
 }
 
-func (a *Aggregator) MaxStorageTxNum() (bool, uint64) {
-	return a.storage.MaxTxNum()
+func (a *Aggregator) MaxStorageTxNum(key []byte) (bool, uint64) {
+	return a.storage.MaxTxNum(key)
 }
 
-func (a *Aggregator) MaxCodeTxNum() (bool, uint64) {
-	return a.code.MaxTxNum()
+func (a *Aggregator) MaxCodeTxNum(key []byte) (bool, uint64) {
+	return a.code.MaxTxNum(key)
 }
