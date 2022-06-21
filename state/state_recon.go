@@ -88,6 +88,29 @@ func (d *Domain) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, err
 	}
 }
 
+func (d *Domain) MaxTxNum(key []byte) (bool, uint64) {
+	var found bool
+	var foundTxNum uint64
+	d.files[EfHistory].Descend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		offset := item.indexReader.Lookup(key)
+		g := item.getter
+		g.Reset(offset)
+		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+			eliasVal, _ := g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+			found = true
+			foundTxNum = ef.Max()
+			return false
+		}
+		return true
+	})
+	if !found {
+		return false, 0
+	}
+	return true, foundTxNum
+}
+
 type ReconItem struct {
 	key   []byte
 	txNum uint64

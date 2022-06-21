@@ -830,9 +830,21 @@ func (a *Aggregator) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, 
 }
 
 func (a *Aggregator) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, uint64, error) {
-	code, stateRequired, stateTxNum, err := a.code.GetNoState(addr, txNum)
+	code, noState, stateTxNum, err := a.code.GetNoState(addr, txNum)
 	if err != nil {
 		return 0, false, 0, err
 	}
-	return len(code), stateRequired, stateTxNum, nil
+	return len(code), noState, stateTxNum, nil
+}
+
+func (a *Aggregator) MaxAccountTxNum() (bool, uint64) {
+	return a.accounts.MaxTxNum()
+}
+
+func (a *Aggregator) MaxStorageTxNum() (bool, uint64) {
+	return a.storage.MaxTxNum()
+}
+
+func (a *Aggregator) MaxCodeTxNum() (bool, uint64) {
+	return a.code.MaxTxNum()
 }
