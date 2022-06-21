@@ -837,14 +837,21 @@ func (a *Aggregator) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int,
 	return len(code), noState, stateTxNum, nil
 }
 
-func (a *Aggregator) MaxAccountTxNum(key []byte) (bool, uint64) {
-	return a.accounts.MaxTxNum(key)
+func (a *Aggregator) MaxAccountTxNum(addr []byte) (bool, uint64) {
+	return a.accounts.MaxTxNum(addr)
 }
 
-func (a *Aggregator) MaxStorageTxNum(key []byte) (bool, uint64) {
-	return a.storage.MaxTxNum(key)
+func (a *Aggregator) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
+	if cap(a.keyBuf) < len(addr)+len(loc) {
+		a.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(a.keyBuf) != len(addr)+len(loc) {
+		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(a.keyBuf, addr)
+	copy(a.keyBuf[len(addr):], loc)
+	return a.storage.MaxTxNum(a.keyBuf)
 }
 
-func (a *Aggregator) MaxCodeTxNum(key []byte) (bool, uint64) {
-	return a.code.MaxTxNum(key)
+func (a *Aggregator) MaxCodeTxNum(addr []byte) (bool, uint64) {
+	return a.code.MaxTxNum(addr)
 }
