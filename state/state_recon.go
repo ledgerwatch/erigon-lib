@@ -154,7 +154,7 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 	for h.Len() > 0 {
 		top := heap.Pop(&h).(ReconItem)
 		count++
-		if count%1_000_000 == 0 {
+		if count%10_000_000 == 0 {
 			fmt.Printf("Processed %d m records, bitmap cardinality: %d\n", count/1_000_000, bitmap.GetCardinality())
 		}
 		if !bytes.Equal(top.key, lastKey) {
