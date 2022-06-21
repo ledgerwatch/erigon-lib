@@ -798,3 +798,14 @@ func (a *Aggregator) Stats() FilesStats {
 	var fs FilesStats
 	return fs
 }
+
+func (a *Aggregator) ReconBitmap(uptoTxNum uint64) *roaring64.Bitmap {
+	var bitmap roaring64.Bitmap
+	fmt.Printf("recon bitmap for accounts\n")
+	a.accounts.addToReconBitmap(&bitmap, uptoTxNum)
+	fmt.Printf("recon bitmap for storage\n")
+	a.storage.addToReconBitmap(&bitmap, uptoTxNum)
+	fmt.Printf("recon bitmap for code\n")
+	a.code.addToReconBitmap(&bitmap, uptoTxNum)
+	return &bitmap
+}
