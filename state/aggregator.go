@@ -809,3 +809,30 @@ func (a *Aggregator) ReconBitmap(uptoTxNum uint64) *roaring64.Bitmap {
 	a.code.addToReconBitmap(&bitmap, uptoTxNum)
 	return &bitmap
 }
+
+func (a *Aggregator) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	return a.accounts.GetNoState(addr, txNum)
+}
+
+func (a *Aggregator) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	if cap(a.keyBuf) < len(addr)+len(loc) {
+		a.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(a.keyBuf) != len(addr)+len(loc) {
+		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(a.keyBuf, addr)
+	copy(a.keyBuf[len(addr):], loc)
+	return a.storage.GetNoState(a.keyBuf, txNum)
+}
+
+func (a *Aggregator) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	return a.code.GetNoState(addr, txNum)
+}
+
+func (a *Aggregator) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, uint64, error) {
+	code, stateRequired, stateTxNum, err := a.code.GetNoState(addr, txNum)
+	if err != nil {
+		return 0, false, 0, err
+	}
+	return len(code), stateRequired, stateTxNum, nil
+}

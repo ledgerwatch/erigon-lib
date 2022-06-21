@@ -30,7 +30,7 @@ import (
 
 // Algorithms for reconstituting the state from state history
 
-func (d *Domain) GetBeforeTxNumNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
+func (d *Domain) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
 	var search filesItem
 	search.startTxNum = txNum
 	search.endTxNum = txNum
