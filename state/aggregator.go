@@ -837,7 +837,7 @@ func (a *Aggregator) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int,
 	return len(code), noState, stateTxNum, nil
 }
 
-func (a *Aggregator) MaxAccountTxNum(addr []byte) (bool, uint64) {
+func (a *Aggregator) MaxAccountsTxNum(addr []byte) (bool, uint64) {
 	return a.accounts.MaxTxNum(addr)
 }
 
