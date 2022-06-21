@@ -325,7 +325,7 @@ func (a *Aggregator) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
-func (a *Aggregator) endTxNumMinimax() uint64 {
+func (a *Aggregator) EndTxNumMinimax() uint64 {
 	min := a.accounts.endTxNumMinimax()
 	if txNum := a.storage.endTxNumMinimax(); txNum < min {
 		min = txNum
@@ -695,7 +695,7 @@ func (a *Aggregator) FinishTx() error {
 	if err = a.prune(step, step*a.aggregationStep, (step+1)*a.aggregationStep); err != nil {
 		return err
 	}
-	maxEndTxNum := a.endTxNumMinimax()
+	maxEndTxNum := a.EndTxNumMinimax()
 	maxSpan := uint64(32) * a.aggregationStep
 	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
 		outs := a.staticFilesInRange(r)
