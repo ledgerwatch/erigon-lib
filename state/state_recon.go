@@ -199,3 +199,51 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 		bitmap.Add(lastTxNum)
 	}
 }
+
+type HistoryIterator struct {
+	h        ReconHeap
+	txNum    uint64
+	foundTxNum bool
+	lastKey  []byte
+	key, val []byte
+}
+
+func (hi *HistoryIterator) advance() {
+	for hi.h.Len() > 0 {
+		top := heap.Pop(&hi.h).(ReconItem)
+		if !bytes.Equal(top.key, hi.lastKey) {
+			hi.lastKey = top.key
+		}
+		if top.g.HasNext() {
+			top.key = top.g.NextUncompressed()
+			val, _ 
+		}
+	}
+}
+
+func (HistoryIterator) HasNext() bool {
+	return false
+}
+
+func (HistoryIterator) Next() ([]byte, []byte) {
+	return nil, nil
+}
+
+// Creates iterator that provides history values for the state just before transaction txNum
+func (d *Domain) iterateHistoryBeforeTxNum(txNum uint64) *HistoryIterator {
+	var hi HistoryIterator
+	d.files[EfHistory].Ascend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		g := item.decompressor.MakeGetter()
+		if g.HasNext() {
+			key, _ := g.NextUncompressed()
+			val, _ := g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(val)
+			if n, ok := ef.Search(txNum); ok {
+				heap.Push(&hi.h, ReconItem{g: g, txNum: n, key: key})
+			}
+		}
+		return true
+	})
+	return &hi
+}
