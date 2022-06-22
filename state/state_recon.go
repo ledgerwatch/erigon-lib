@@ -114,6 +114,7 @@ func (d *Domain) MaxTxNum(key []byte) (bool, uint64) {
 type ReconItem struct {
 	key   []byte
 	txNum uint64
+	item  *filesItem
 	g     *compress.Getter
 }
 
@@ -167,7 +168,7 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 			key, _ := g.NextUncompressed()
 			val, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			heap.Push(&h, ReconItem{g: g, txNum: ef.Max(), key: key})
+			heap.Push(&h, ReconItem{item: item, g: g, txNum: ef.Max(), key: key})
 		}
 		return true
 	})
@@ -201,32 +202,60 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 }
 
 type HistoryIterator struct {
+	d        *Domain
 	h        ReconHeap
 	txNum    uint64
-	foundTxNum bool
-	lastKey  []byte
 	key, val []byte
+	hasNext  bool
 }
 
 func (hi *HistoryIterator) advance() {
 	for hi.h.Len() > 0 {
 		top := heap.Pop(&hi.h).(ReconItem)
-		if !bytes.Equal(top.key, hi.lastKey) {
-			hi.lastKey = top.key
-		}
 		if top.g.HasNext() {
-			top.key = top.g.NextUncompressed()
-			val, _ 
+			top.key, _ = top.g.NextUncompressed()
+			val, _ := top.g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(val)
+			top.txNum = ef.Max()
+			if !bytes.Equal(hi.key, top.key) {
+				if n, ok := ef.Search(hi.txNum); ok {
+					hi.key = top.key
+					var txKey [8]byte
+					binary.BigEndian.PutUint64(txKey[:], n)
+					var historyItem *filesItem
+					var search filesItem
+					search.startTxNum = top.item.startTxNum
+					search.endTxNum = top.item.endTxNum
+					if i := hi.d.files[History].Get(&search); i != nil {
+						historyItem = i.(*filesItem)
+					} else {
+						panic(fmt.Errorf("no %s file found for [%x]", hi.d.filenameBase, hi.key))
+					}
+					offset := historyItem.indexReader.Lookup2(txKey[:], hi.key)
+					g := historyItem.getter
+					g.Reset(offset)
+					if hi.d.compressVals {
+						hi.val, _ = g.Next(nil)
+					}
+					hi.val, _ = g.NextUncompressed()
+					hi.hasNext = true
+					return
+				}
+			}
+			heap.Push(&hi.h, top)
 		}
 	}
+	hi.hasNext = false
 }
 
-func (HistoryIterator) HasNext() bool {
-	return false
+func (hi *HistoryIterator) HasNext() bool {
+	return hi.hasNext
 }
 
-func (HistoryIterator) Next() ([]byte, []byte) {
-	return nil, nil
+func (hi *HistoryIterator) Next() ([]byte, []byte) {
+	k, v := hi.key, hi.val
+	hi.advance()
+	return k, v
 }
 
 // Creates iterator that provides history values for the state just before transaction txNum
@@ -235,15 +264,11 @@ func (d *Domain) iterateHistoryBeforeTxNum(txNum uint64) *HistoryIterator {
 	d.files[EfHistory].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		g := item.decompressor.MakeGetter()
-		if g.HasNext() {
-			key, _ := g.NextUncompressed()
-			val, _ := g.NextUncompressed()
-			ef, _ := eliasfano32.ReadEliasFano(val)
-			if n, ok := ef.Search(txNum); ok {
-				heap.Push(&hi.h, ReconItem{g: g, txNum: n, key: key})
-			}
-		}
+		heap.Push(&hi.h, ReconItem{g: g, item: item})
 		return true
 	})
+	hi.d = d
+	hi.txNum = txNum
+	hi.advance()
 	return &hi
 }
