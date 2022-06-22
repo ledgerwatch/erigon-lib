@@ -855,3 +855,15 @@ func (a *Aggregator) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
 func (a *Aggregator) MaxCodeTxNum(addr []byte) (bool, uint64) {
 	return a.code.MaxTxNum(addr)
 }
+
+func (a *Aggregator) IterateAccountsHistory(txNum uint64) *HistoryIterator {
+	return a.accounts.iterateHistoryBeforeTxNum(txNum)
+}
+
+func (a *Aggregator) IterateStorageHistory(txNum uint64) *HistoryIterator {
+	return a.storage.iterateHistoryBeforeTxNum(txNum)
+}
+
+func (a *Aggregator) IterateCodeHistory(txNum uint64) *HistoryIterator {
+	return a.code.iterateHistoryBeforeTxNum(txNum)
+}
