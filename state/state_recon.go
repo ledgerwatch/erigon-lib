@@ -216,7 +216,6 @@ func (hi *HistoryIterator) advance() {
 			top.key, _ = top.g.NextUncompressed()
 			val, _ := top.g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			top.txNum = ef.Max()
 			if !bytes.Equal(hi.key, top.key) {
 				if n, ok := ef.Search(hi.txNum); ok {
 					hi.key = top.key
@@ -266,7 +265,7 @@ func (d *Domain) iterateHistoryBeforeTxNum(txNum uint64) *HistoryIterator {
 	d.files[EfHistory].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		g := item.decompressor.MakeGetter()
-		heap.Push(&hi.h, ReconItem{g: g, item: item})
+		heap.Push(&hi.h, ReconItem{g: g, item: item, txNum: item.endTxNum})
 		return true
 	})
 	hi.d = d
