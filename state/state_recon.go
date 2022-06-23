@@ -237,8 +237,9 @@ func (hi *HistoryIterator) advance() {
 					g.Reset(offset)
 					if hi.d.compressVals {
 						hi.val, _ = g.Next(nil)
+					} else {
+						hi.val, _ = g.NextUncompressed()
 					}
-					hi.val, _ = g.NextUncompressed()
 					hi.hasNext = true
 					return
 				}
