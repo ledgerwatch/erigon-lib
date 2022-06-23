@@ -212,38 +212,39 @@ type HistoryIterator struct {
 func (hi *HistoryIterator) advance() {
 	for hi.h.Len() > 0 {
 		top := heap.Pop(&hi.h).(ReconItem)
+		key := top.key
+		val, _ := top.g.NextUncompressed()
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
-			val, _ := top.g.NextUncompressed()
-			ef, _ := eliasfano32.ReadEliasFano(val)
-			if !bytes.Equal(hi.key, top.key) {
-				if n, ok := ef.Search(hi.txNum); ok {
-					hi.key = top.key
-					var txKey [8]byte
-					binary.BigEndian.PutUint64(txKey[:], n)
-					var historyItem *filesItem
-					var search filesItem
-					search.startTxNum = top.item.startTxNum
-					search.endTxNum = top.item.endTxNum
-					if i := hi.d.files[History].Get(&search); i != nil {
-						historyItem = i.(*filesItem)
-					} else {
-						panic(fmt.Errorf("no %s file found for [%x]", hi.d.filenameBase, hi.key))
-					}
-					offset := historyItem.indexReader.Lookup2(txKey[:], hi.key)
-					g := historyItem.getter
-					g.Reset(offset)
-					if hi.d.compressVals {
-						hi.val, _ = g.Next(nil)
-					} else {
-						hi.val, _ = g.NextUncompressed()
-					}
-					fmt.Printf("%s [%x]=>%d [%x]\n", hi.d.filenameBase, top.key, n, hi.val)
-					hi.hasNext = true
-					return
-				}
-			}
 			heap.Push(&hi.h, top)
+		}
+		ef, _ := eliasfano32.ReadEliasFano(val)
+		if !bytes.Equal(hi.key, key) {
+			if n, ok := ef.Search(hi.txNum); ok {
+				hi.key = key
+				var txKey [8]byte
+				binary.BigEndian.PutUint64(txKey[:], n)
+				var historyItem *filesItem
+				var search filesItem
+				search.startTxNum = top.item.startTxNum
+				search.endTxNum = top.item.endTxNum
+				if i := hi.d.files[History].Get(&search); i != nil {
+					historyItem = i.(*filesItem)
+				} else {
+					panic(fmt.Errorf("no %s file found for [%x]", hi.d.filenameBase, hi.key))
+				}
+				offset := historyItem.indexReader.Lookup2(txKey[:], hi.key)
+				g := historyItem.getter
+				g.Reset(offset)
+				if hi.d.compressVals {
+					hi.val, _ = g.Next(nil)
+				} else {
+					hi.val, _ = g.NextUncompressed()
+				}
+				fmt.Printf("%s [%x]=>%d [%x]\n", hi.d.filenameBase, hi.key, n, hi.val)
+				hi.hasNext = true
+				return
+			}
 		}
 	}
 	hi.hasNext = false
@@ -265,7 +266,10 @@ func (d *Domain) iterateHistoryBeforeTxNum(txNum uint64) *HistoryIterator {
 	d.files[EfHistory].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		g := item.decompressor.MakeGetter()
-		heap.Push(&hi.h, ReconItem{g: g, item: item, txNum: item.endTxNum})
+		if g.HasNext() {
+			key, _ := g.NextUncompressed()
+			heap.Push(&hi.h, ReconItem{g: g, key: key, item: item, txNum: item.endTxNum})
+		}
 		return true
 	})
 	hi.d = d
