@@ -241,9 +241,11 @@ func (hi *HistoryIterator) advance() {
 				} else {
 					hi.val, _ = g.NextUncompressed()
 				}
-				fmt.Printf("%s [%x]=>%d [%x]\n", hi.d.filenameBase, hi.key, n, hi.val)
-				hi.hasNext = true
-				return
+				if len(hi.val) > 0 {
+					fmt.Printf("%s [%x]=>%d [%x]\n", hi.d.filenameBase, hi.key, n, hi.val)
+					hi.hasNext = true
+					return
+				}
 			}
 		}
 	}
