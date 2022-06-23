@@ -218,10 +218,10 @@ func (hi *HistoryIterator) advance() {
 			top.key, _ = top.g.NextUncompressed()
 			heap.Push(&hi.h, top)
 		}
-		ef, _ := eliasfano32.ReadEliasFano(val)
 		if !bytes.Equal(hi.key, key) {
+			hi.key = key
+			ef, _ := eliasfano32.ReadEliasFano(val)
 			if n, ok := ef.Search(hi.txNum); ok {
-				hi.key = key
 				var txKey [8]byte
 				binary.BigEndian.PutUint64(txKey[:], n)
 				var historyItem *filesItem
