@@ -219,7 +219,6 @@ func (hi *HistoryIterator) advance() {
 			top.txNum = ef.Max()
 			if !bytes.Equal(hi.key, top.key) {
 				if n, ok := ef.Search(hi.txNum); ok {
-					fmt.Printf("%s [%x]=>%d\n", hi.d.filenameBase, top.key, n)
 					hi.key = top.key
 					var txKey [8]byte
 					binary.BigEndian.PutUint64(txKey[:], n)
@@ -240,6 +239,7 @@ func (hi *HistoryIterator) advance() {
 					} else {
 						hi.val, _ = g.NextUncompressed()
 					}
+					fmt.Printf("%s [%x]=>%d [%x]\n", hi.d.filenameBase, top.key, n, hi.val)
 					hi.hasNext = true
 					return
 				}
