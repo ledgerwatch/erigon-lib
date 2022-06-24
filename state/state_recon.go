@@ -226,8 +226,9 @@ func (hi *HistoryIterator) advance() {
 		if !bytes.Equal(hi.key, key) {
 			hi.key = key
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			//fmt.Printf("ef max = %d\n", ef.Max())
+			fmt.Printf("%x ef max = %d\n", key, ef.Max())
 			if n, ok := ef.Search(hi.txNum); ok {
+				fmt.Printf("%x n=%d\n", key, n)
 				var txKey [8]byte
 				binary.BigEndian.PutUint64(txKey[:], n)
 				var historyItem *filesItem
