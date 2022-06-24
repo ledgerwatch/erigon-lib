@@ -42,6 +42,9 @@ func (d *Domain) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, err
 	var maxTxNum uint64
 	d.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
+		if item.index.Empty() {
+			return true
+		}
 		anyItem = true
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
