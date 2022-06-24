@@ -172,9 +172,7 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 		g := item.decompressor.MakeGetter()
 		if g.HasNext() {
 			key, _ := g.NextUncompressed()
-			val, _ := g.NextUncompressed()
-			ef, _ := eliasfano32.ReadEliasFano(val)
-			heap.Push(&h, &ReconItem{item: item, g: g, txNum: ef.Max(), key: key})
+			heap.Push(&h, &ReconItem{item: item, g: g, txNum: item.endTxNum, key: key})
 		}
 		return true
 	})
@@ -183,24 +181,24 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 	var lastTxNum uint64
 	for h.Len() > 0 {
 		top := heap.Pop(&h).(*ReconItem)
+		key := top.key
+		val, _ := top.g.NextUncompressed()
+		if top.g.HasNext() {
+			top.key, _ = top.g.NextUncompressed()
+			heap.Push(&h, top)
+		}
 		count++
 		if count%10_000_000 == 0 {
 			fmt.Printf("Processed %d m records, bitmap cardinality: %d\n", count/1_000_000, bitmap.GetCardinality())
 		}
-		if !bytes.Equal(top.key, lastKey) {
+		if !bytes.Equal(key, lastKey) {
 			if lastKey != nil && lastTxNum < uptoTxNum {
 				bitmap.Add(lastTxNum)
 			}
-			lastKey = top.key
+			lastKey = key
 		}
-		lastTxNum = top.txNum
-		if top.g.HasNext() {
-			top.key, _ = top.g.NextUncompressed()
-			val, _ := top.g.NextUncompressed()
-			ef, _ := eliasfano32.ReadEliasFano(val)
-			top.txNum = ef.Max()
-			heap.Push(&h, top)
-		}
+		ef, _ := eliasfano32.ReadEliasFano(val)
+		lastTxNum = ef.Max()
 	}
 	if lastKey != nil && lastTxNum < uptoTxNum {
 		bitmap.Add(lastTxNum)
