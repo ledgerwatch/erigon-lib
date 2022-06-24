@@ -93,6 +93,9 @@ func (d *Domain) MaxTxNum(key []byte) (bool, uint64) {
 	var foundTxNum uint64
 	d.files[EfHistory].Descend(func(i btree.Item) bool {
 		item := i.(*filesItem)
+		if item.index.Empty() {
+			return true
+		}
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
