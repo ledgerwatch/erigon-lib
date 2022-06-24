@@ -278,7 +278,6 @@ func (d *Domain) iterateHistoryBeforeTxNum(txNum uint64) *HistoryIterator {
 		g := item.decompressor.MakeGetter()
 		if g.HasNext() {
 			key, _ := g.NextUncompressed()
-			fmt.Printf("Key to heap: [%x]\n", key)
 			heap.Push(&hi.h, &ReconItem{g: g, key: key, item: item, txNum: item.endTxNum})
 		}
 		return true
