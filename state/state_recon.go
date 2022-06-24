@@ -214,6 +214,7 @@ func (hi *HistoryIterator) advance() {
 		top := heap.Pop(&hi.h).(ReconItem)
 		key := top.key
 		val, _ := top.g.NextUncompressed()
+		fmt.Printf("popped [%x] %d-%d\n", top.key, top.item.startTxNum, top.item.endTxNum)
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
 			heap.Push(&hi.h, top)
@@ -221,6 +222,7 @@ func (hi *HistoryIterator) advance() {
 		if !bytes.Equal(hi.key, key) {
 			hi.key = key
 			ef, _ := eliasfano32.ReadEliasFano(val)
+			fmt.Printf("ef max = %d\n", ef.Max())
 			if n, ok := ef.Search(hi.txNum); ok {
 				var txKey [8]byte
 				binary.BigEndian.PutUint64(txKey[:], n)
