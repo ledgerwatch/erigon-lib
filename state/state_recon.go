@@ -118,7 +118,7 @@ type ReconItem struct {
 	g     *compress.Getter
 }
 
-type ReconHeap []ReconItem
+type ReconHeap []*ReconItem
 
 func (rh ReconHeap) Len() int {
 	return len(rh)
@@ -146,7 +146,7 @@ func (rh ReconHeap) Swap(i, j int) {
 func (rh *ReconHeap) Push(x interface{}) {
 	// Push and Pop use pointer receivers because they modify the slice's length,
 	// not just its contents.
-	l := x.(ReconItem)
+	l := x.(*ReconItem)
 	*rh = append(*rh, l)
 }
 
@@ -168,7 +168,7 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 			key, _ := g.NextUncompressed()
 			val, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			heap.Push(&h, ReconItem{item: item, g: g, txNum: ef.Max(), key: key})
+			heap.Push(&h, &ReconItem{item: item, g: g, txNum: ef.Max(), key: key})
 		}
 		return true
 	})
@@ -176,7 +176,7 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 	var lastKey []byte
 	var lastTxNum uint64
 	for h.Len() > 0 {
-		top := heap.Pop(&h).(ReconItem)
+		top := heap.Pop(&h).(*ReconItem)
 		count++
 		if count%10_000_000 == 0 {
 			fmt.Printf("Processed %d m records, bitmap cardinality: %d\n", count/1_000_000, bitmap.GetCardinality())
@@ -211,7 +211,7 @@ type HistoryIterator struct {
 
 func (hi *HistoryIterator) advance() {
 	for hi.h.Len() > 0 {
-		top := heap.Pop(&hi.h).(ReconItem)
+		top := heap.Pop(&hi.h).(*ReconItem)
 		key := top.key
 		val, _ := top.g.NextUncompressed()
 		fmt.Printf("popped [%x] %d-%d\n", top.key, top.item.startTxNum, top.item.endTxNum)
@@ -272,7 +272,7 @@ func (d *Domain) iterateHistoryBeforeTxNum(txNum uint64) *HistoryIterator {
 		g := item.decompressor.MakeGetter()
 		if g.HasNext() {
 			key, _ := g.NextUncompressed()
-			heap.Push(&hi.h, ReconItem{g: g, key: key, item: item, txNum: item.endTxNum})
+			heap.Push(&hi.h, &ReconItem{g: g, key: key, item: item, txNum: item.endTxNum})
 		}
 		return true
 	})
