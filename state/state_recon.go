@@ -218,7 +218,7 @@ func (hi *HistoryIterator) advance() {
 		top := heap.Pop(&hi.h).(*ReconItem)
 		key := top.key
 		val, _ := top.g.NextUncompressed()
-		//fmt.Printf("popped [%x] %d: %d-%d\n", top.key, top.txNum, top.item.startTxNum, top.item.endTxNum)
+		fmt.Printf("popped [%x] %d: %d-%d\n", top.key, top.txNum, top.item.startTxNum, top.item.endTxNum)
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
 			heap.Push(&hi.h, top)
