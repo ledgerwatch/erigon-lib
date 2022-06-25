@@ -1025,9 +1025,9 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			start := time.Now()
+			//start := time.Now()
 			n, ok := ef.Search(txNum)
-			d.stats.EfSearchTime += time.Since(start)
+			//d.stats.EfSearchTime += time.Since(start)
 			if ok {
 				foundTxNum = n
 				foundEndTxNum = item.endTxNum
