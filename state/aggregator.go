@@ -881,14 +881,14 @@ func (ac *AggregatorContext) MaxCodeTxNum(addr []byte) (bool, uint64) {
 	return ac.code.MaxTxNum(addr)
 }
 
-func (a *Aggregator) IterateAccountsHistory(txNum uint64) *HistoryIterator {
-	return a.accounts.iterateHistoryBeforeTxNum(txNum)
+func (ac *AggregatorContext) IterateAccountsHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
+	return ac.accounts.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
 }
 
-func (a *Aggregator) IterateStorageHistory(txNum uint64) *HistoryIterator {
-	return a.storage.iterateHistoryBeforeTxNum(txNum)
+func (ac *AggregatorContext) IterateStorageHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
+	return ac.storage.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
 }
 
-func (a *Aggregator) IterateCodeHistory(txNum uint64) *HistoryIterator {
-	return a.code.iterateHistoryBeforeTxNum(txNum)
+func (ac *AggregatorContext) IterateCodeHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
+	return ac.code.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
 }
