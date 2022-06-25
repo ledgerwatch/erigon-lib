@@ -250,7 +250,7 @@ func (hi *HistoryIterator) advance() {
 		val, _ := top.g.NextUncompressed()
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
-			if hi.toKey == nil && bytes.Compare(top.key, hi.toKey) <= 0 {
+			if hi.toKey == nil || bytes.Compare(top.key, hi.toKey) <= 0 {
 				heap.Push(&hi.h, top)
 			} else {
 				hi.hasNext = false
