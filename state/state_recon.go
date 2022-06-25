@@ -25,12 +25,40 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
 
 // Algorithms for reconstituting the state from state history
 
-func (d *Domain) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
+// DomainContext allows accesing the same domain from multiple go-routines
+type DomainContext struct {
+	d     *Domain
+	files [NumberOfTypes]*btree.BTree
+}
+
+func (d *Domain) MakeContext() *DomainContext {
+	dc := &DomainContext{d: d}
+	for fType := FileType(0); fType < NumberOfTypes; fType++ {
+		bt := btree.New(32)
+		dc.files[fType] = bt
+		d.files[fType].Ascend(func(i btree.Item) bool {
+			item := i.(*filesItem)
+			bt.ReplaceOrInsert(&filesItem{
+				startTxNum:   item.startTxNum,
+				endTxNum:     item.endTxNum,
+				decompressor: item.decompressor,
+				index:        item.index,
+				getter:       item.decompressor.MakeGetter(),
+				indexReader:  recsplit.NewIndexReader(item.index),
+			})
+			return true
+		})
+	}
+	return dc
+}
+
+func (dc *DomainContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
 	var search filesItem
 	search.startTxNum = txNum
 	search.endTxNum = txNum
@@ -40,7 +68,7 @@ func (d *Domain) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, err
 	var found bool
 	var anyItem bool
 	var maxTxNum uint64
-	d.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
+	dc.files[EfHistory].AscendGreaterOrEqual(&search, func(i btree.Item) bool {
 		item := i.(*filesItem)
 		if item.index.Empty() {
 			return true
@@ -70,15 +98,15 @@ func (d *Domain) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, err
 		var historyItem *filesItem
 		search.startTxNum = foundStartTxNum
 		search.endTxNum = foundEndTxNum
-		if i := d.files[History].Get(&search); i != nil {
+		if i := dc.files[History].Get(&search); i != nil {
 			historyItem = i.(*filesItem)
 		} else {
-			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", d.filenameBase, key)
+			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", dc.d.filenameBase, key)
 		}
 		offset := historyItem.indexReader.Lookup2(txKey[:], key)
 		g := historyItem.getter
 		g.Reset(offset)
-		if d.compressVals {
+		if dc.d.compressVals {
 			v, _ := g.Next(nil)
 			return v, true, 0, nil
 		}
@@ -91,10 +119,10 @@ func (d *Domain) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, err
 	}
 }
 
-func (d *Domain) MaxTxNum(key []byte) (bool, uint64) {
+func (dc *DomainContext) MaxTxNum(key []byte) (bool, uint64) {
 	var found bool
 	var foundTxNum uint64
-	d.files[EfHistory].Descend(func(i btree.Item) bool {
+	dc.files[EfHistory].Descend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		if item.index.Empty() {
 			return true

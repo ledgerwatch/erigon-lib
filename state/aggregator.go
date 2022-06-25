@@ -818,50 +818,67 @@ func (a *Aggregator) ReconBitmap(uptoTxNum uint64) *roaring64.Bitmap {
 	return &bitmap
 }
 
-func (a *Aggregator) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
-	return a.accounts.GetNoState(addr, txNum)
+type AggregatorContext struct {
+	a        *Aggregator
+	accounts *DomainContext
+	storage  *DomainContext
+	code     *DomainContext
+	keyBuf   []byte
 }
 
-func (a *Aggregator) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, uint64, error) {
-	if cap(a.keyBuf) < len(addr)+len(loc) {
-		a.keyBuf = make([]byte, len(addr)+len(loc))
-	} else if len(a.keyBuf) != len(addr)+len(loc) {
-		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+func (a *Aggregator) MakeContext() *AggregatorContext {
+	return &AggregatorContext{
+		a:        a,
+		accounts: a.accounts.MakeContext(),
+		storage:  a.storage.MakeContext(),
+		code:     a.storage.MakeContext(),
 	}
-	copy(a.keyBuf, addr)
-	copy(a.keyBuf[len(addr):], loc)
-	return a.storage.GetNoState(a.keyBuf, txNum)
 }
 
-func (a *Aggregator) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
-	return a.code.GetNoState(addr, txNum)
+func (ac *AggregatorContext) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	return ac.accounts.GetNoState(addr, txNum)
 }
 
-func (a *Aggregator) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, uint64, error) {
-	code, noState, stateTxNum, err := a.code.GetNoState(addr, txNum)
+func (ac *AggregatorContext) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	if cap(ac.keyBuf) < len(addr)+len(loc) {
+		ac.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(ac.keyBuf) != len(addr)+len(loc) {
+		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(ac.keyBuf, addr)
+	copy(ac.keyBuf[len(addr):], loc)
+	return ac.storage.GetNoState(ac.keyBuf, txNum)
+}
+
+func (ac *AggregatorContext) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	return ac.code.GetNoState(addr, txNum)
+}
+
+func (ac *AggregatorContext) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, uint64, error) {
+	code, noState, stateTxNum, err := ac.code.GetNoState(addr, txNum)
 	if err != nil {
 		return 0, false, 0, err
 	}
 	return len(code), noState, stateTxNum, nil
 }
 
-func (a *Aggregator) MaxAccountsTxNum(addr []byte) (bool, uint64) {
-	return a.accounts.MaxTxNum(addr)
+func (ac *AggregatorContext) MaxAccountsTxNum(addr []byte) (bool, uint64) {
+	return ac.accounts.MaxTxNum(addr)
 }
 
-func (a *Aggregator) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
-	if cap(a.keyBuf) < len(addr)+len(loc) {
-		a.keyBuf = make([]byte, len(addr)+len(loc))
-	} else if len(a.keyBuf) != len(addr)+len(loc) {
-		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+func (ac *AggregatorContext) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
+	if cap(ac.keyBuf) < len(addr)+len(loc) {
+		ac.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(ac.keyBuf) != len(addr)+len(loc) {
+		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
 	}
-	copy(a.keyBuf, addr)
-	copy(a.keyBuf[len(addr):], loc)
-	return a.storage.MaxTxNum(a.keyBuf)
+	copy(ac.keyBuf, addr)
+	copy(ac.keyBuf[len(addr):], loc)
+	return ac.storage.MaxTxNum(ac.keyBuf)
 }
 
-func (a *Aggregator) MaxCodeTxNum(addr []byte) (bool, uint64) {
-	return a.code.MaxTxNum(addr)
+func (ac *AggregatorContext) MaxCodeTxNum(addr []byte) (bool, uint64) {
+	return ac.code.MaxTxNum(addr)
 }
 
 func (a *Aggregator) IterateAccountsHistory(txNum uint64) *HistoryIterator {
