@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -100,6 +101,12 @@ func ParseFileType(s string) (FileType, bool) {
 
 type DomainStats struct {
 	HistoryQueries int
+	EfSearchTime   time.Duration
+}
+
+func (ds *DomainStats) Accumulate(other DomainStats) {
+	ds.HistoryQueries += other.HistoryQueries
+	ds.EfSearchTime += other.EfSearchTime
 }
 
 // Domain is a part of the state (examples are Accounts, Storage, Code)
@@ -1018,7 +1025,10 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			if n, ok := ef.Search(txNum); ok {
+			start := time.Now()
+			n, ok := ef.Search(txNum)
+			d.stats.EfSearchTime += time.Since(start)
+			if ok {
 				foundTxNum = n
 				foundEndTxNum = item.endTxNum
 				foundStartTxNum = item.startTxNum

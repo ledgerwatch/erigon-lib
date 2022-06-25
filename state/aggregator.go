@@ -100,6 +100,14 @@ func NewAggregator(
 	return a, nil
 }
 
+func (a *Aggregator) GetAndResetStats() DomainStats {
+	stats := DomainStats{}
+	stats.Accumulate(a.accounts.GetAndResetStats())
+	stats.Accumulate(a.storage.GetAndResetStats())
+	stats.Accumulate(a.code.GetAndResetStats())
+	return stats
+}
+
 func (a *Aggregator) Close() {
 	if a.accounts != nil {
 		a.accounts.Close()
