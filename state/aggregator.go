@@ -835,6 +835,18 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 	}
 }
 
+func (ac *AggregatorContext) IterateAccountsReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
+	return ac.accounts.iterateReconTxs(fromKey, toKey, txNum)
+}
+
+func (ac *AggregatorContext) IterateStorageReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
+	return ac.storage.iterateReconTxs(fromKey, toKey, txNum)
+}
+
+func (ac *AggregatorContext) IterateCodeReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
+	return ac.code.iterateReconTxs(fromKey, toKey, txNum)
+}
+
 func (ac *AggregatorContext) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
 	return ac.accounts.GetNoState(addr, txNum)
 }
