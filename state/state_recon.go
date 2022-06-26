@@ -194,14 +194,19 @@ func (rh *ReconHeap) Pop() interface{} {
 	return x
 }
 
-func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
+func (dc *DomainContext) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64, fromKey, toKey []byte) {
 	var h ReconHeap
-	d.files[EfHistory].Ascend(func(i btree.Item) bool {
+	dc.files[EfHistory].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
-		g := item.decompressor.MakeGetter()
-		if g.HasNext() {
+		g := item.getter
+		for g.HasNext() {
 			key, _ := g.NextUncompressed()
-			heap.Push(&h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: item.endTxNum, key: key})
+			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
+				heap.Push(&h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: item.endTxNum, key: key})
+				break
+			} else {
+				g.SkipUncompressed()
+			}
 		}
 		return true
 	})
@@ -214,7 +219,9 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 		val, _ := top.g.NextUncompressed()
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
-			heap.Push(&h, top)
+			if toKey == nil || bytes.Compare(top.key, toKey) <= 0 {
+				heap.Push(&h, top)
+			}
 		}
 		count++
 		if count%10_000_000 == 0 {

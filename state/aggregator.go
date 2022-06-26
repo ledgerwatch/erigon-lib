@@ -807,14 +807,14 @@ func (a *Aggregator) Stats() FilesStats {
 	return fs
 }
 
-func (a *Aggregator) ReconBitmap(uptoTxNum uint64) *roaring64.Bitmap {
+func (a *AggregatorContext) ReconBitmap(fromKey, toKey []byte, uptoTxNum uint64) *roaring64.Bitmap {
 	var bitmap roaring64.Bitmap
 	fmt.Printf("recon bitmap for accounts\n")
-	a.accounts.addToReconBitmap(&bitmap, uptoTxNum)
+	a.accounts.addToReconBitmap(&bitmap, uptoTxNum, fromKey, toKey)
 	fmt.Printf("recon bitmap for storage\n")
-	a.storage.addToReconBitmap(&bitmap, uptoTxNum)
+	a.storage.addToReconBitmap(&bitmap, uptoTxNum, fromKey, toKey)
 	fmt.Printf("recon bitmap for code\n")
-	a.code.addToReconBitmap(&bitmap, uptoTxNum)
+	a.code.addToReconBitmap(&bitmap, uptoTxNum, fromKey, toKey)
 	return &bitmap
 }
 
