@@ -146,10 +146,11 @@ func (dc *DomainContext) MaxTxNum(key []byte) (bool, uint64) {
 }
 
 type ReconItem struct {
-	key   []byte
-	txNum uint64
-	item  *filesItem
-	g     *compress.Getter
+	key        []byte
+	txNum      uint64
+	startTxNum uint64
+	endTxNum   uint64
+	g          *compress.Getter
 }
 
 type ReconHeap []*ReconItem
@@ -200,7 +201,7 @@ func (d *Domain) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64) {
 		g := item.decompressor.MakeGetter()
 		if g.HasNext() {
 			key, _ := g.NextUncompressed()
-			heap.Push(&h, &ReconItem{item: item, g: g, txNum: item.endTxNum, key: key})
+			heap.Push(&h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: item.endTxNum, key: key})
 		}
 		return true
 	})
@@ -262,8 +263,8 @@ func (hi *HistoryIterator) advance() {
 				binary.BigEndian.PutUint64(txKey[:], n)
 				var historyItem *filesItem
 				var search filesItem
-				search.startTxNum = top.item.startTxNum
-				search.endTxNum = top.item.endTxNum
+				search.startTxNum = top.startTxNum
+				search.endTxNum = top.endTxNum
 				if i := hi.dc.files[History].Get(&search); i != nil {
 					historyItem = i.(*filesItem)
 				} else {
@@ -303,14 +304,15 @@ func (dc *DomainContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum 
 	heap.Init(&hi.h)
 	dc.files[EfHistory].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
-		g := item.decompressor.MakeGetter()
+		g := item.getter
+		g.Reset(0)
 		for g.HasNext() {
 			key, _ := g.NextUncompressed()
 			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
-				heap.Push(&hi.h, &ReconItem{g: g, key: key, item: item, txNum: item.endTxNum})
+				heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum})
 				break
 			} else {
-				g.SkipUncompressed()
+				g.NextUncompressed()
 			}
 		}
 		return true
