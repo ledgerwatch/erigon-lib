@@ -213,7 +213,7 @@ func (si *ScanIterator) advance() {
 		top := heap.Pop(&si.h).(*ReconItem)
 		key := top.key
 		val, offset := top.g.NextUncompressed()
-		si.progress += (offset - top.lastOffset)
+		si.progress += offset - top.lastOffset
 		top.lastOffset = offset
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
@@ -239,10 +239,14 @@ func (si *ScanIterator) HasNext() bool {
 	return si.hasNext
 }
 
-func (si *ScanIterator) Next() uint64 {
-	n := si.nextTxNum
+func (si *ScanIterator) Next() (uint64, uint64) {
+	n, p := si.nextTxNum, si.progress
 	si.advance()
-	return n
+	return n, p
+}
+
+func (si *ScanIterator) Total() uint64 {
+	return si.total
 }
 
 func (dc *DomainContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64) *ScanIterator {
@@ -335,7 +339,7 @@ func (hi *HistoryIterator) advance() {
 		fmt.Printf("popped [%x] key range [%x]-[%x], item %d-%d\n", top.key, hi.fromKey, hi.toKey, top.startTxNum, top.endTxNum)
 		key := top.key
 		val, offset := top.g.NextUncompressed()
-		hi.progress += (offset - top.lastOffset)
+		hi.progress += offset - top.lastOffset
 		top.lastOffset = offset
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
@@ -379,18 +383,14 @@ func (hi *HistoryIterator) HasNext() bool {
 	return hi.hasNext
 }
 
-func (hi *HistoryIterator) Next() ([]byte, []byte) {
-	k, v := hi.key, hi.val
+func (hi *HistoryIterator) Next() ([]byte, []byte, uint64) {
+	k, v, p := hi.key, hi.val, hi.progress
 	hi.advance()
-	return k, v
+	return k, v, p
 }
 
 func (hi *HistoryIterator) Total() uint64 {
 	return hi.total
-}
-
-func (hi *HistoryIterator) Progress() uint64 {
-	return hi.progress
 }
 
 // Creates iterator that provides history values for the state just before transaction txNum
