@@ -831,7 +831,7 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 		a:        a,
 		accounts: a.accounts.MakeContext(),
 		storage:  a.storage.MakeContext(),
-		code:     a.storage.MakeContext(),
+		code:     a.code.MakeContext(),
 	}
 }
 
