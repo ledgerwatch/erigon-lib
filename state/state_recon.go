@@ -21,7 +21,6 @@ import (
 	"container/heap"
 	"encoding/binary"
 	"fmt"
-	"strings"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -75,18 +74,12 @@ func (dc *DomainContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, uin
 			return true
 		}
 		anyItem = true
-		if strings.HasPrefix(fmt.Sprintf("%x", key), "6e38a457c722c6011b2dfa06d49240e797844d66") {
-			fmt.Printf("item %s %d-%d\n", dc.d.filenameBase, item.startTxNum, item.endTxNum)
-		}
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
 		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			if strings.HasPrefix(fmt.Sprintf("%x", key), "6e38a457c722c6011b2dfa06d49240e797844d66") {
-				fmt.Printf("ef max %d\n", ef.Max())
-			}
 			if n, ok := ef.Search(txNum); ok {
 				foundTxNum = n
 				foundEndTxNum = item.endTxNum
@@ -344,9 +337,6 @@ func (hi *HistoryIterator) advance() {
 	for hi.h.Len() > 0 {
 		top := heap.Pop(&hi.h).(*ReconItem)
 		key := top.key
-		if strings.HasPrefix(fmt.Sprintf("%x", key), "6e38a457c722c6011b2dfa06d49240e797844d66") {
-			fmt.Printf("popped [%x] key range [%x]-[%x], item %d-%d\n", top.key, hi.fromKey, hi.toKey, top.startTxNum, top.endTxNum)
-		}
 		val, offset := top.g.NextUncompressed()
 		hi.progress += offset - top.lastOffset
 		top.lastOffset = offset
@@ -358,9 +348,6 @@ func (hi *HistoryIterator) advance() {
 		}
 		if !bytes.Equal(hi.key, key) {
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			if strings.HasPrefix(fmt.Sprintf("%x", key), "6e38a457c722c6011b2dfa06d49240e797844d66") {
-				fmt.Printf("ef max = %d, hi.txNum = %d\n", ef.Max(), hi.txNum)
-			}
 			if n, ok := ef.Search(hi.txNum); ok {
 				hi.key = key
 				var txKey [8]byte
