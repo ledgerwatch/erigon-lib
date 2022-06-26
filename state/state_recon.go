@@ -146,11 +146,13 @@ func (dc *DomainContext) MaxTxNum(key []byte) (bool, uint64) {
 }
 
 type ReconItem struct {
-	key        []byte
-	txNum      uint64
-	startTxNum uint64
-	endTxNum   uint64
-	g          *compress.Getter
+	key         []byte
+	txNum       uint64
+	startTxNum  uint64
+	endTxNum    uint64
+	g           *compress.Getter
+	startOffset uint64
+	lastOffset  uint64
 }
 
 type ReconHeap []*ReconItem
@@ -194,15 +196,89 @@ func (rh *ReconHeap) Pop() interface{} {
 	return x
 }
 
+type ScanIterator struct {
+	dc             *DomainContext
+	h              ReconHeap
+	uptoTxNum      uint64
+	hasNext        bool
+	nextTxNum      uint64
+	fromKey, toKey []byte
+	key            []byte
+	progress       uint64
+	total          uint64
+}
+
+func (si *ScanIterator) advance() {
+	for si.h.Len() > 0 {
+		top := heap.Pop(&si.h).(*ReconItem)
+		key := top.key
+		val, offset := top.g.NextUncompressed()
+		si.progress += (offset - top.lastOffset)
+		top.lastOffset = offset
+		if top.g.HasNext() {
+			top.key, _ = top.g.NextUncompressed()
+			if si.toKey == nil || bytes.Compare(top.key, si.toKey) <= 0 {
+				heap.Push(&si.h, top)
+			}
+		}
+		if !bytes.Equal(key, si.key) {
+			si.key = key
+			ef, _ := eliasfano32.ReadEliasFano(val)
+			max := ef.Max()
+			if max < si.uptoTxNum {
+				si.nextTxNum = max
+				si.hasNext = true
+				return
+			}
+		}
+	}
+	si.hasNext = false
+}
+
+func (si *ScanIterator) HasNext() bool {
+	return si.hasNext
+}
+
+func (si *ScanIterator) Next() uint64 {
+	n := si.nextTxNum
+	si.advance()
+	return n
+}
+
+func (dc *DomainContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64) *ScanIterator {
+	var si ScanIterator
+	dc.files[EfHistory].Ascend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		g := item.getter
+		for g.HasNext() {
+			key, offset := g.NextUncompressed()
+			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
+				heap.Push(&si.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
+				break
+			} else {
+				g.SkipUncompressed()
+			}
+		}
+		si.total += uint64(item.decompressor.Size())
+		return true
+	})
+	si.dc = dc
+	si.fromKey = fromKey
+	si.toKey = toKey
+	si.uptoTxNum = uptoTxNum
+	si.advance()
+	return &si
+}
+
 func (dc *DomainContext) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64, fromKey, toKey []byte) {
 	var h ReconHeap
 	dc.files[EfHistory].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		g := item.getter
 		for g.HasNext() {
-			key, _ := g.NextUncompressed()
+			key, offset := g.NextUncompressed()
 			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
-				heap.Push(&h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: item.endTxNum, key: key})
+				heap.Push(&h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
 				break
 			} else {
 				g.SkipUncompressed()
@@ -249,14 +325,18 @@ type HistoryIterator struct {
 	hasNext        bool
 	compressVals   bool
 	fromKey, toKey []byte
+	progress       uint64
+	total          uint64
 }
 
 func (hi *HistoryIterator) advance() {
 	for hi.h.Len() > 0 {
 		top := heap.Pop(&hi.h).(*ReconItem)
-		//fmt.Printf("popped [%x] key range [%x]-[%x], item %d-%d\n", top.key, hi.fromKey, hi.toKey, top.startTxNum, top.endTxNum)
+		fmt.Printf("popped [%x] key range [%x]-[%x], item %d-%d\n", top.key, hi.fromKey, hi.toKey, top.startTxNum, top.endTxNum)
 		key := top.key
-		val, _ := top.g.NextUncompressed()
+		val, offset := top.g.NextUncompressed()
+		hi.progress += (offset - top.lastOffset)
+		top.lastOffset = offset
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
 			if hi.toKey == nil || bytes.Compare(top.key, hi.toKey) <= 0 {
@@ -265,7 +345,7 @@ func (hi *HistoryIterator) advance() {
 		}
 		if !bytes.Equal(hi.key, key) {
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			//fmt.Printf("ef max = %d\n", ef.Max())
+			fmt.Printf("ef max = %d, hi.txNum = %d\n", ef.Max(), hi.txNum)
 			if n, ok := ef.Search(hi.txNum); ok {
 				hi.key = key
 				var txKey [8]byte
@@ -305,6 +385,14 @@ func (hi *HistoryIterator) Next() ([]byte, []byte) {
 	return k, v
 }
 
+func (hi *HistoryIterator) Total() uint64 {
+	return hi.total
+}
+
+func (hi *HistoryIterator) Progress() uint64 {
+	return hi.progress
+}
+
 // Creates iterator that provides history values for the state just before transaction txNum
 func (dc *DomainContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
 	var hi HistoryIterator
@@ -314,14 +402,15 @@ func (dc *DomainContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum 
 		g := item.getter
 		g.Reset(0)
 		for g.HasNext() {
-			key, _ := g.NextUncompressed()
+			key, offset := g.NextUncompressed()
 			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
-				heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum})
+				heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
 				break
 			} else {
 				g.SkipUncompressed()
 			}
 		}
+		hi.total += uint64(item.decompressor.Size())
 		return true
 	})
 	hi.dc = dc
