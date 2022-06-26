@@ -247,7 +247,7 @@ type HistoryIterator struct {
 func (hi *HistoryIterator) advance() {
 	for hi.h.Len() > 0 {
 		top := heap.Pop(&hi.h).(*ReconItem)
-		fmt.Printf("popped [%x] key range [%x]-[%x], item %d-%d\n", top.key, hi.fromKey, hi.toKey, top.startTxNum, top.endTxNum)
+		//fmt.Printf("popped [%x] key range [%x]-[%x], item %d-%d\n", top.key, hi.fromKey, hi.toKey, top.startTxNum, top.endTxNum)
 		key := top.key
 		val, _ := top.g.NextUncompressed()
 		if top.g.HasNext() {
@@ -258,7 +258,7 @@ func (hi *HistoryIterator) advance() {
 		}
 		if !bytes.Equal(hi.key, key) {
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			fmt.Printf("ef max = %d\n", ef.Max())
+			//fmt.Printf("ef max = %d\n", ef.Max())
 			if n, ok := ef.Search(hi.txNum); ok {
 				hi.key = key
 				var txKey [8]byte
