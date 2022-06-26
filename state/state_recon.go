@@ -280,10 +280,8 @@ func (hi *HistoryIterator) advance() {
 				} else {
 					hi.val, _ = g.NextUncompressed()
 				}
-				if len(hi.val) > 0 {
-					hi.hasNext = true
-					return
-				}
+				hi.hasNext = true
+				return
 			}
 		}
 	}
