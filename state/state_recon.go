@@ -75,12 +75,18 @@ func (dc *DomainContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, uin
 			return true
 		}
 		anyItem = true
+		if strings.HasPrefix(fmt.Sprintf("%x", key), "6e38a457c722c6011b2dfa06d49240e797844d66") {
+			fmt.Printf("item %s %d-%d\n", dc.d.filenameBase, item.startTxNum, item.endTxNum)
+		}
 		offset := item.indexReader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
 		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+			if strings.HasPrefix(fmt.Sprintf("%x", key), "6e38a457c722c6011b2dfa06d49240e797844d66") {
+				fmt.Printf("ef max %d\n", ef.Max())
+			}
 			if n, ok := ef.Search(txNum); ok {
 				foundTxNum = n
 				foundEndTxNum = item.endTxNum
