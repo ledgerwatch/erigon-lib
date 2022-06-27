@@ -36,18 +36,18 @@ const (
 
 var ProtoIds = map[uint]map[sentry.MessageId]struct{}{
 	ETH67: {
-		sentry.MessageId_GET_BLOCK_HEADERS_66:             struct{}{},
-		sentry.MessageId_BLOCK_HEADERS_66:                 struct{}{},
-		sentry.MessageId_GET_BLOCK_BODIES_66:              struct{}{},
-		sentry.MessageId_BLOCK_BODIES_66:                  struct{}{},
-		sentry.MessageId_GET_RECEIPTS_66:                  struct{}{},
-		sentry.MessageId_RECEIPTS_66:                      struct{}{},
-		sentry.MessageId_NEW_BLOCK_HASHES_64:              struct{}{},
-		sentry.MessageId_NEW_BLOCK_64:                     struct{}{},
-		sentry.MessageId_TRANSACTIONS_64:                  struct{}{},
-		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65: struct{}{},
-		sentry.MessageId_GET_POOLED_TRANSACTIONS_66:       struct{}{},
-		sentry.MessageId_POOLED_TRANSACTIONS_66:           struct{}{},
+		sentry.MessageId_GET_BLOCK_HEADERS:             struct{}{},
+		sentry.MessageId_BLOCK_HEADERS:                 struct{}{},
+		sentry.MessageId_GET_BLOCK_BODIES:              struct{}{},
+		sentry.MessageId_BLOCK_BODIES:                  struct{}{},
+		sentry.MessageId_GET_RECEIPTS:                  struct{}{},
+		sentry.MessageId_RECEIPTS:                      struct{}{},
+		sentry.MessageId_NEW_BLOCK_HASHES:              struct{}{},
+		sentry.MessageId_NEW_BLOCK:                     struct{}{},
+		sentry.MessageId_TRANSACTIONS:                  struct{}{},
+		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES: struct{}{},
+		sentry.MessageId_GET_POOLED_TRANSACTIONS:       struct{}{},
+		sentry.MessageId_POOLED_TRANSACTIONS:           struct{}{},
 	},
 }
 

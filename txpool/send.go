@@ -87,7 +87,7 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte) (txSentTo []int) {
 					if txs67 == nil {
 						txs67 = &sentry.SendMessageToRandomPeersRequest{
 							Data: &sentry.OutboundMessageData{
-								Id:   sentry.MessageId_TRANSACTIONS_64,
+								Id:   sentry.MessageId_TRANSACTIONS,
 								Data: txsData,
 							},
 							MaxPeers: 100,
@@ -135,7 +135,7 @@ func (f *Send) AnnouncePooledTxs(hashes types2.Hashes) (hashSentTo []int) {
 			case direct.ETH67:
 				if hashes67 == nil {
 					hashes67 = &sentry.OutboundMessageData{
-						Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65,
+						Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES,
 						Data: hashesData,
 					}
 				}
@@ -184,7 +184,7 @@ func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, txs []byte) 
 					req67 := &sentry.SendMessageByIdRequest{
 						PeerId: peer,
 						Data: &sentry.OutboundMessageData{
-							Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65,
+							Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES,
 							Data: data,
 						},
 					}

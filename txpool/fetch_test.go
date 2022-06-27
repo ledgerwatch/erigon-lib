@@ -54,7 +54,7 @@ func TestFetch(t *testing.T) {
 	// Send one transaction id
 	wg.Add(1)
 	errs := m.Send(&sentry.InboundMessage{
-		Id:     sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65,
+		Id:     sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES,
 		Data:   decodeHex("e1a0595e27a835cd79729ff1eeacec3120eeb6ed1464a04ec727aaca734ead961328"),
 		PeerId: peerID,
 	})
@@ -81,10 +81,10 @@ func TestSendTxPropagate(t *testing.T) {
 		calls2 := m.SendMessageToAllCalls()
 		require.Equal(t, 1, len(calls2))
 		first := calls1[0].SendMessageToRandomPeersRequest.Data
-		assert.Equal(t, sentry.MessageId_TRANSACTIONS_64, first.Id)
+		assert.Equal(t, sentry.MessageId_TRANSACTIONS, first.Id)
 		assert.Equal(t, 5, len(first.Data))
 		second := calls2[0].OutboundMessageData
-		assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65, second.Id)
+		assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES, second.Id)
 		assert.Equal(t, 68, len(second.Data))
 	})
 	t.Run("much remote byHash", func(t *testing.T) {
@@ -102,11 +102,11 @@ func TestSendTxPropagate(t *testing.T) {
 		calls2 := m.SendMessageToAllCalls()
 		require.Equal(t, 3, len(calls2))
 		call1 := calls1[0].SendMessageToRandomPeersRequest.Data
-		require.Equal(t, sentry.MessageId_TRANSACTIONS_64, call1.Id)
+		require.Equal(t, sentry.MessageId_TRANSACTIONS, call1.Id)
 		require.True(t, len(call1.Data) > 0)
 		for i := 0; i < 3; i++ {
 			call2 := calls2[i].OutboundMessageData
-			require.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65, call2.Id)
+			require.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES, call2.Id)
 			require.True(t, len(call2.Data) > 0)
 		}
 	})
@@ -122,7 +122,7 @@ func TestSendTxPropagate(t *testing.T) {
 		calls := m.SendMessageToAllCalls()
 		require.Equal(t, 1, len(calls))
 		first := calls[0].OutboundMessageData
-		assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65, first.Id)
+		assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES, first.Id)
 		assert.Equal(t, 68, len(first.Data))
 	})
 	t.Run("sync with new peer", func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestSendTxPropagate(t *testing.T) {
 		for i, call := range calls {
 			req := call.SendMessageByIdRequest
 			assert.Equal(t, expectPeers[i], types3.PeerID(req.PeerId))
-			assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65, req.Data.Id)
+			assert.Equal(t, sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES, req.Data.Id)
 			assert.True(t, len(req.Data.Data) > 0)
 		}
 	})
