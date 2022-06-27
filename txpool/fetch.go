@@ -36,7 +36,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-// Fetch connects to sentry and implements eth/66 protocol regarding the transaction
+// Fetch connects to sentry and implements eth/67 protocol regarding the transaction
 // messages. It tries to "prime" the sentry with StatusData message containing given
 // genesis hash and list of forks, but with zero max block and total difficulty
 // Sentry should have a logic not to overwrite statusData with messages from tx pool
@@ -156,9 +156,9 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := sentryClient.Messages(streamCtx, &sentry.MessagesRequest{Ids: []sentry.MessageId{
-		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65,
 		sentry.MessageId_GET_POOLED_TRANSACTIONS_66,
-		sentry.MessageId_TRANSACTIONS_66,
+		sentry.MessageId_TRANSACTIONS_64,
 		sentry.MessageId_POOLED_TRANSACTIONS_66,
 	}}, grpc.WaitForReady(true))
 	if err != nil {
@@ -218,7 +218,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 	defer tx.Rollback()
 
 	switch req.Id {
-	case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66:
+	case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65:
 		hashCount, pos, err := types2.ParseHashesCount(req.Data, 0)
 		if err != nil {
 			return fmt.Errorf("parsing NewPooledTransactionHashes: %w", err)
@@ -242,7 +242,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 			var encodedRequest []byte
 			var messageID sentry.MessageId
 			switch req.Id {
-			case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66:
+			case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_65:
 				if encodedRequest, err = types2.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
 					return err
 				}
@@ -292,7 +292,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}, &grpc.EmptyCallOption{}); err != nil {
 			return err
 		}
-	case sentry.MessageId_POOLED_TRANSACTIONS_66, sentry.MessageId_TRANSACTIONS_66:
+	case sentry.MessageId_POOLED_TRANSACTIONS_66, sentry.MessageId_TRANSACTIONS_64:
 		txs := types2.TxSlots{}
 		if err := f.threadSafeParsePooledTxn(func(parseContext *types2.TxParseContext) error {
 			return nil
@@ -301,7 +301,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		}
 
 		switch req.Id {
-		case sentry.MessageId_TRANSACTIONS_66:
+		case sentry.MessageId_TRANSACTIONS_64:
 			if err := f.threadSafeParsePooledTxn(func(parseContext *types2.TxParseContext) error {
 				if _, err := types2.ParseTransactions(req.Data, 0, parseContext, &txs, func(hash []byte) error {
 					known, err := f.pool.IdHashKnown(tx, hash)
