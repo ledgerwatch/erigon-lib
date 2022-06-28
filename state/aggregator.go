@@ -773,6 +773,9 @@ func (a *Aggregator) WriteAccountStorage(addr, loc []byte, value []byte) error {
 	}
 	copy(a.keyBuf, addr)
 	copy(a.keyBuf[len(addr):], loc)
+	if len(value) == 0 {
+		return a.storage.Delete(a.keyBuf)
+	}
 	return a.storage.Put(a.keyBuf, value)
 }
 
