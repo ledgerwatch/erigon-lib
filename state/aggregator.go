@@ -739,6 +739,10 @@ func (a *Aggregator) UpdateAccountCode(addr []byte, code []byte) error {
 }
 
 func (a *Aggregator) DeleteAccount(addr []byte) error {
+	trace := fmt.Sprintf("%x", addr) == "000000000000006f6502b7f2bbac8c30a3f67e9a"
+	if trace {
+		fmt.Printf("DeleteAccount [%x]\n", addr)
+	}
 	if err := a.accounts.Delete(addr); err != nil {
 		return err
 	}
@@ -747,8 +751,13 @@ func (a *Aggregator) DeleteAccount(addr []byte) error {
 	}
 	var e error
 	if err := a.storage.IteratePrefix(addr, func(k, _ []byte) {
+		if trace {
+			fmt.Printf("storage [%x]\n", k)
+		}
 		if e == nil {
 			e = a.storage.Delete(k)
+		} else {
+			fmt.Printf("error = %v\n", e)
 		}
 	}); err != nil {
 		return err
