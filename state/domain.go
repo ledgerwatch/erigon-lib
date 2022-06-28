@@ -476,6 +476,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(prefix); !keyMatch {
+				fmt.Printf("Skip file %d-%d\n", item.startTxNum, item.endTxNum)
 				return true
 			}
 			g.Skip()
@@ -483,9 +484,14 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		if g.HasNext() {
 			key, _ := g.Next(nil)
 			if bytes.HasPrefix(key, prefix) {
+				fmt.Printf("added file %d-%d with first key [%x]\n", item.startTxNum, item.endTxNum, key)
 				val, _ := g.Next(nil)
 				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum})
+			} else {
+				fmt.Printf("file %d-%d first key [%x] does not match prefix\n", item.startTxNum, item.endTxNum, key)
 			}
+		} else {
+			fmt.Printf("file %d-%d no keys after prefix\n", item.startTxNum, item.endTxNum)
 		}
 		return true
 	})
@@ -499,6 +505,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 			case FILE_CURSOR:
 				if ci1.dg.HasNext() {
 					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
+					fmt.Printf("file X-%d next key [%x]\n", ci1.endTxNum, ci1.key)
 					if bytes.HasPrefix(ci1.key, prefix) {
 						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
 						heap.Fix(&cp, 0)
