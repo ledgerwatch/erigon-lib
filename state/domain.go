@@ -466,7 +466,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 			return err
 		}
 		if trace {
-			fmt.Printf("added DB key [%x] with keySuffix\n", k, keySuffix)
+			fmt.Printf("added DB key [%x] with keySuffix [%x]\n", k, keySuffix)
 		}
 		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum})
 	} else if trace {
@@ -478,7 +478,8 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 			return true
 		}
 		offset := item.indexReader.Lookup(prefix)
-		g := item.getter
+		// Creating dedicated getter because the one in the item may be used to delete storage, for example
+		g := item.decompressor.MakeGetter()
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(prefix); !keyMatch {
