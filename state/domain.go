@@ -446,6 +446,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 	var cp CursorHeap
 	heap.Init(&cp)
 	var k, v []byte
+	var err error
 	if d.tx != nil {
 		keysCursor, err := d.tx.CursorDupSort(d.keysTable)
 		if err != nil {
