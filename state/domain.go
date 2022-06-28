@@ -447,26 +447,24 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 	heap.Init(&cp)
 	var k, v []byte
 	var err error
-	if d.tx != nil {
-		keysCursor, err := d.tx.CursorDupSort(d.keysTable)
-		if err != nil {
+	keysCursor, err := d.tx.CursorDupSort(d.keysTable)
+	if err != nil {
+		return err
+	}
+	defer keysCursor.Close()
+	if k, v, err = keysCursor.Seek(prefix); err != nil {
+		return err
+	}
+	if bytes.HasPrefix(k, prefix) {
+		keySuffix := make([]byte, len(k)+8)
+		copy(keySuffix, k)
+		copy(keySuffix[len(k):], v)
+		step := ^binary.BigEndian.Uint64(v)
+		txNum := step * d.aggregationStep
+		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
 			return err
 		}
-		defer keysCursor.Close()
-		if k, v, err = keysCursor.Seek(prefix); err != nil {
-			return err
-		}
-		if bytes.HasPrefix(k, prefix) {
-			keySuffix := make([]byte, len(k)+8)
-			copy(keySuffix, k)
-			copy(keySuffix[len(k):], v)
-			step := ^binary.BigEndian.Uint64(v)
-			txNum := step * d.aggregationStep
-			if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
-				return err
-			}
-			heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum})
-		}
+		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum})
 	}
 	d.files[Values].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
