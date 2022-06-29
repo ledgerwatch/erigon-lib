@@ -353,6 +353,9 @@ func (d *Domain) Put(key, val []byte) error {
 	if err != nil {
 		return err
 	}
+	if bytes.Equal(original, val) {
+		return nil
+	}
 	// This call to update needs to happen before d.tx.Put() later, because otherwise the content of `original`` slice is invalidated
 	if err = d.update(key, original); err != nil {
 		return err
@@ -368,9 +371,12 @@ func (d *Domain) Put(key, val []byte) error {
 }
 
 func (d *Domain) Delete(key []byte) error {
-	original, _, err := d.get(key, d.tx)
+	original, found, err := d.get(key, d.tx)
 	if err != nil {
 		return err
+	}
+	if !found {
+		return nil
 	}
 	// This call to update needs to happen before d.tx.Delete() later, because otherwise the content of `original`` slice is invalidated
 	if err = d.update(key, original); err != nil {
