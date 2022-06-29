@@ -22,7 +22,6 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -272,53 +271,6 @@ func (dc *DomainContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64
 	si.uptoTxNum = uptoTxNum
 	si.advance()
 	return &si
-}
-
-func (dc *DomainContext) addToReconBitmap(bitmap *roaring64.Bitmap, uptoTxNum uint64, fromKey, toKey []byte) {
-	var h ReconHeap
-	dc.files[EfHistory].Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
-		g := item.getter
-		for g.HasNext() {
-			key, offset := g.NextUncompressed()
-			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
-				heap.Push(&h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
-				break
-			} else {
-				g.SkipUncompressed()
-			}
-		}
-		return true
-	})
-	count := 0
-	var lastKey []byte
-	var lastTxNum uint64
-	for h.Len() > 0 {
-		top := heap.Pop(&h).(*ReconItem)
-		key := top.key
-		val, _ := top.g.NextUncompressed()
-		if top.g.HasNext() {
-			top.key, _ = top.g.NextUncompressed()
-			if toKey == nil || bytes.Compare(top.key, toKey) <= 0 {
-				heap.Push(&h, top)
-			}
-		}
-		count++
-		if count%10_000_000 == 0 {
-			fmt.Printf("Processed %d m records, bitmap cardinality: %d\n", count/1_000_000, bitmap.GetCardinality())
-		}
-		if !bytes.Equal(key, lastKey) {
-			if lastKey != nil && lastTxNum < uptoTxNum {
-				bitmap.Add(lastTxNum)
-			}
-			lastKey = key
-		}
-		ef, _ := eliasfano32.ReadEliasFano(val)
-		lastTxNum = ef.Max()
-	}
-	if lastKey != nil && lastTxNum < uptoTxNum {
-		bitmap.Add(lastTxNum)
-	}
 }
 
 type HistoryIterator struct {

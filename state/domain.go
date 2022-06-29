@@ -440,7 +440,7 @@ func (ch *CursorHeap) Pop() interface{} {
 // inside the domain. Another version of this for public API use needs to be created, that uses
 // roTx instead and supports ending the iterations before it reaches the end.
 func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
-	trace := fmt.Sprintf("%x", prefix) == "000000000000006f6502b7f2bbac8c30a3f67e9a"
+	//trace := fmt.Sprintf("%x", prefix) == "000000000000006f6502b7f2bbac8c30a3f67e9a"
 	if len(prefix) != d.prefixLen {
 		return fmt.Errorf("wrong prefix length, this %s domain supports prefixLen %d, given [%x]", d.filenameBase, d.prefixLen, prefix)
 	}
@@ -465,12 +465,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
 			return err
 		}
-		if trace {
-			fmt.Printf("added DB key [%x] with keySuffix [%x]\n", k, keySuffix)
-		}
 		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum})
-	} else if trace {
-		fmt.Printf("prefix DB seek got key [%x]\n", k)
 	}
 	d.files[Values].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
@@ -483,9 +478,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(prefix); !keyMatch {
-				if trace {
-					fmt.Printf("Skip file %d-%d\n", item.startTxNum, item.endTxNum)
-				}
 				return true
 			}
 			g.Skip()
@@ -493,19 +485,8 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		if g.HasNext() {
 			key, _ := g.Next(nil)
 			if bytes.HasPrefix(key, prefix) {
-				if trace {
-					fmt.Printf("added file %d-%d with first key [%x]\n", item.startTxNum, item.endTxNum, key)
-				}
 				val, _ := g.Next(nil)
 				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum})
-			} else {
-				if trace {
-					fmt.Printf("file %d-%d first key [%x] does not match prefix\n", item.startTxNum, item.endTxNum, key)
-				}
-			}
-		} else {
-			if trace {
-				fmt.Printf("file %d-%d no keys after prefix\n", item.startTxNum, item.endTxNum)
 			}
 		}
 		return true
@@ -520,9 +501,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 			case FILE_CURSOR:
 				if ci1.dg.HasNext() {
 					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
-					if trace {
-						fmt.Printf("file X-%d next key [%x]\n", ci1.endTxNum, ci1.key)
-					}
 					if bytes.HasPrefix(ci1.key, prefix) {
 						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
 						heap.Fix(&cp, 0)
@@ -537,9 +515,6 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 				if err != nil {
 					return err
 				}
-				if trace {
-					fmt.Printf("NextNoDup returned [%x]\n", k)
-				}
 				if k != nil && bytes.HasPrefix(k, prefix) {
 					ci1.key = common.Copy(k)
 					keySuffix := make([]byte, len(k)+8)
@@ -550,23 +525,13 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 					}
 					ci1.val = common.Copy(v)
 					heap.Fix(&cp, 0)
-					if trace {
-						fmt.Printf("db key added [%x] with keySuffix [%x]\n", k, keySuffix)
-					}
 				} else {
-					if trace {
-						fmt.Printf("db next key does not match prefix [%x]\n", k)
-					}
 					heap.Pop(&cp)
 				}
 			}
 		}
 		if len(lastVal) > 0 {
 			it(lastKey, lastVal)
-		} else {
-			if trace {
-				fmt.Printf("lastKey not added because val is empty [%x]\n", lastKey)
-			}
 		}
 	}
 	return nil

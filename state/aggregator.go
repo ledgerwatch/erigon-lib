@@ -735,14 +735,13 @@ func (a *Aggregator) UpdateAccountData(addr []byte, account []byte) error {
 }
 
 func (a *Aggregator) UpdateAccountCode(addr []byte, code []byte) error {
+	if len(code) == 0 {
+		return a.code.Delete(addr)
+	}
 	return a.code.Put(addr, code)
 }
 
 func (a *Aggregator) DeleteAccount(addr []byte) error {
-	trace := fmt.Sprintf("%x", addr) == "000000000000006f6502b7f2bbac8c30a3f67e9a"
-	if trace {
-		fmt.Printf("DeleteAccount [%x]\n", addr)
-	}
 	if err := a.accounts.Delete(addr); err != nil {
 		return err
 	}
@@ -751,13 +750,8 @@ func (a *Aggregator) DeleteAccount(addr []byte) error {
 	}
 	var e error
 	if err := a.storage.IteratePrefix(addr, func(k, _ []byte) {
-		if trace {
-			fmt.Printf("storage [%x]\n", k)
-		}
 		if e == nil {
 			e = a.storage.Delete(k)
-		} else {
-			fmt.Printf("error = %v\n", e)
 		}
 	}); err != nil {
 		return err
@@ -817,17 +811,6 @@ type FilesStats struct {
 func (a *Aggregator) Stats() FilesStats {
 	var fs FilesStats
 	return fs
-}
-
-func (a *AggregatorContext) ReconBitmap(fromKey, toKey []byte, uptoTxNum uint64) *roaring64.Bitmap {
-	var bitmap roaring64.Bitmap
-	fmt.Printf("recon bitmap for accounts\n")
-	a.accounts.addToReconBitmap(&bitmap, uptoTxNum, fromKey, toKey)
-	fmt.Printf("recon bitmap for storage\n")
-	a.storage.addToReconBitmap(&bitmap, uptoTxNum, fromKey, toKey)
-	fmt.Printf("recon bitmap for code\n")
-	a.code.addToReconBitmap(&bitmap, uptoTxNum, fromKey, toKey)
-	return &bitmap
 }
 
 type AggregatorContext struct {
