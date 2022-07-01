@@ -1,0 +1,4 @@
+cargo:rustc-env=PROTOC=/usr/local/bin/protoc
+cargo:rustc-env=PROTOC_INCLUDE=/Users/alex.sharov/.cargo/registry/src/github.com-1ecc6299db9ec823/prost-build-0.10.3/third-party/include
+cargo:rerun-if-env-changed=PROTOC
+cargo:rerun-if-env-changed=PROTOC_INCLUDE
