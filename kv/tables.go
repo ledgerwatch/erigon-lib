@@ -367,6 +367,8 @@ const (
 	RStorageIdx  = "RStorageIdx"
 	RCodeKeys    = "RCodeKeys"
 	RCodeIdx     = "RCodeIdx"
+
+	PlainStateR = "PlainStateR" // temporary table for PlainState reconstitution
 )
 
 // Keys
@@ -491,6 +493,8 @@ var ChaindataTables = []string{
 	RStorageIdx,
 	RCodeKeys,
 	RCodeIdx,
+
+	PlainStateR,
 }
 
 const (
