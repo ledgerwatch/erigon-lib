@@ -233,7 +233,7 @@ func fakeRlpTx(slot *types.TxSlot, data []byte) []byte {
 	p += rlp.EncodeU64(slot.Nonce, buf[p:])
 	p += rlp.U256Len(&slot.Value)
 	bb := bytes.NewBuffer(buf[p:p])
-	_ = slot.Value.EncodeRLP(bb)
+	_ = slot.Tip.EncodeRLP(bb)
 	p += rlp.EncodeU64(slot.FeeCap, buf[p:])
 	p += rlp.EncodeU64(0, buf[p:])           //gas
 	p += rlp.EncodeString([]byte{}, buf[p:]) //destrination addr
