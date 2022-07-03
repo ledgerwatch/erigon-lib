@@ -1,3 +1,5 @@
+//go:build !nofuzz
+
 package commitment
 
 import (
