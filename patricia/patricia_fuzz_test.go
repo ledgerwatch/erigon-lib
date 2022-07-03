@@ -71,8 +71,6 @@ func FuzzPatricia(f *testing.F) {
 				if !bytes.Equal(vals, v.([]byte)) {
 					t.Errorf("for key %x expected value %x, got %x", key, vals, v.([]byte))
 				}
-			} else {
-				//t.Errorf("expected key not found %x", key)
 			}
 		}
 		// Test for non-existent keys
