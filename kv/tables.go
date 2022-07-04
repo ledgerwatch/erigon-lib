@@ -361,6 +361,8 @@ const (
 	TracesToKeys   = "TracesToKeys"
 	TracesToIdx    = "TracesToIdx"
 
+	Snapshots = "Snapshots" // name -> hash
+
 	RAccountKeys = "RAccountKeys"
 	RAccountIdx  = "RAccountIdx"
 	RStorageKeys = "RStorageKeys"
@@ -488,6 +490,8 @@ var ChaindataTables = []string{
 	TracesFromIdx,
 	TracesToKeys,
 	TracesToIdx,
+
+	Snapshots,
 
 	RAccountKeys,
 	RAccountIdx,
