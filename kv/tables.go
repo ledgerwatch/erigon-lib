@@ -361,7 +361,7 @@ const (
 	TracesToKeys   = "TracesToKeys"
 	TracesToIdx    = "TracesToIdx"
 
-	Snapshots = "Snapshots"
+	Snapshots = "Snapshots" // name -> hash
 
 	RAccountKeys = "RAccountKeys"
 	RAccountIdx  = "RAccountIdx"
