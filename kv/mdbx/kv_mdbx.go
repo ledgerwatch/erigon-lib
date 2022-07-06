@@ -401,8 +401,10 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	defer func() {
 		if err == nil {
 			db.wg.Add(1)
-		} else {
-			// on error, we need to free up the limiter slot
+		}
+		if txn == nil {
+			// on error, or if there is whatever reason that we don't return a tx,
+			// we need to free up the limiter slot, otherwise it could lead to deadlocks
 			<-db.roTxsLimiter
 		}
 	}()
