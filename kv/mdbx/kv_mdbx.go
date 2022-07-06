@@ -401,6 +401,9 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	defer func() {
 		if err == nil {
 			db.wg.Add(1)
+		} else {
+			// on error, we need to free up the limiter slot
+			<-db.roTxsLimiter
 		}
 	}()
 
