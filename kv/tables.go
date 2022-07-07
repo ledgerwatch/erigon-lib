@@ -361,12 +361,18 @@ const (
 	TracesToKeys   = "TracesToKeys"
 	TracesToIdx    = "TracesToIdx"
 
+	Snapshots = "Snapshots" // name -> hash
+
 	RAccountKeys = "RAccountKeys"
 	RAccountIdx  = "RAccountIdx"
 	RStorageKeys = "RStorageKeys"
 	RStorageIdx  = "RStorageIdx"
 	RCodeKeys    = "RCodeKeys"
 	RCodeIdx     = "RCodeIdx"
+
+	PlainStateR    = "PlainStateR"    // temporary table for PlainState reconstitution
+	CodeR          = "CodeR"          // temporary table for Code reconstitution
+	PlainContractR = "PlainContractR" // temporary table for PlainContract reconstitution
 )
 
 // Keys
@@ -485,12 +491,18 @@ var ChaindataTables = []string{
 	TracesToKeys,
 	TracesToIdx,
 
+	Snapshots,
+
 	RAccountKeys,
 	RAccountIdx,
 	RStorageKeys,
 	RStorageIdx,
 	RCodeKeys,
 	RCodeIdx,
+
+	PlainStateR,
+	CodeR,
+	PlainContractR,
 }
 
 const (
