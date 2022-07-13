@@ -348,8 +348,8 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 
 func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	memKey, memValue, _ := m.memCursor.Last()
-
-	dbKey, dbValue, err := m.cursor.Last()
+	dbKey, dbValue, _ := m.cursor.Last()
+	var err error
 
 	dbKey, dbValue, err = m.skipIntersection(memKey, memValue, dbKey, dbValue, false)
 	if err != nil {
