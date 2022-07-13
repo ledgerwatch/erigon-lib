@@ -251,7 +251,7 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 // Seek move pointer to a key at a certain position.
 func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 	memKey, memValue, _ := m.memCursor.SeekExact(seek)
-
+	var err error
 	if memKey != nil {
 		m.currentMemEntry.key = memKey
 		m.currentMemEntry.value = memValue
