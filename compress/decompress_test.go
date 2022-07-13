@@ -211,9 +211,10 @@ Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserun
 var loremStrings = strings.Split(lorem, " ")
 
 func TestDecompressTorrent(t *testing.T) {
-	t.Skip()
+	// t.Skip()
 
-	fpath := "./v1-006000-006500-transactions.seg"
+	// fpath := "./v1-006000-006500-transactions.seg"
+	fpath := "./v1-000000-000500-transactions.seg"
 	st, err := os.Stat(fpath)
 	require.NoError(t, err)
 	fmt.Printf("stat: %+v\n", st)
@@ -223,9 +224,11 @@ func TestDecompressTorrent(t *testing.T) {
 	defer d.Close()
 
 	getter := d.MakeGetter()
+	_ = getter
 
-	for getter.HasNext() {
-		_, sz := getter.Next(nil)
-		require.NotZero(t, sz)
-	}
+	// for getter.HasNext() {
+	// 	buf, sz := getter.Next(nil)
+	// 	fmt.Printf("%x\n", buf)
+	// 	require.NotZero(t, sz)
+	// }
 }
