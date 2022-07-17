@@ -142,6 +142,45 @@ func TestPutGet(t *testing.T) {
 	require.Nil(t, v)
 }
 
+func TestIncrementRead(t *testing.T) {
+	path := t.TempDir()
+	logger := log.New()
+	table := "Table"
+	db := NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+		return kv.TableCfg{
+			table:       kv.TableCfgItem{Flags: kv.DupSort},
+			kv.Sequence: kv.TableCfgItem{},
+		}
+	}).MustOpen()
+	defer db.Close()
+
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback()
+
+	c, err := tx.RwCursorDupSort(table)
+	require.NoError(t, err)
+	defer c.Close()
+
+	// Insert some dupsorted records
+	require.NoError(t, tx.Put(table, []byte("key1"), []byte("value1.1")))
+	require.NoError(t, tx.Put(table, []byte("key2"), []byte("value2.1")))
+	require.NoError(t, tx.Put(table, []byte("key3"), []byte("value3.1")))
+	require.NoError(t, tx.Put(table, []byte("key4"), []byte("value4.1")))
+	require.NoError(t, tx.Put(table, []byte("key5"), []byte("value5.1")))
+
+	_, err = tx.IncrementSequence(table, uint64(12))
+	require.Nil(t, err)
+	chaV, err := tx.ReadSequence(table)
+	require.Nil(t, err)
+	require.Equal(t, chaV, uint64(0xc))
+	_, err = tx.IncrementSequence(table, uint64(240))
+	require.Nil(t, err)
+	chaV, err = tx.ReadSequence(table)
+	require.Nil(t, err)
+	require.Equal(t, chaV, uint64(0xfc))
+}
+
 func TestHasDelete(t *testing.T) {
 	path := t.TempDir()
 	logger := log.New()
@@ -186,45 +225,6 @@ func TestHasDelete(t *testing.T) {
 	res, err = tx.Has(table, []byte("k"))
 	require.Nil(t, err)
 	require.False(t, res)
-}
-
-func TestIncrementRead(t *testing.T) {
-	path := t.TempDir()
-	logger := log.New()
-	table := "Table"
-	db := NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
-		return kv.TableCfg{
-			table:       kv.TableCfgItem{Flags: kv.DupSort},
-			kv.Sequence: kv.TableCfgItem{},
-		}
-	}).MustOpen()
-	defer db.Close()
-
-	tx, err := db.BeginRw(context.Background())
-	require.NoError(t, err)
-	defer tx.Rollback()
-
-	c, err := tx.RwCursorDupSort(table)
-	require.NoError(t, err)
-	defer c.Close()
-
-	// Insert some dupsorted records
-	require.NoError(t, tx.Put(table, []byte("key1"), []byte("value1.1")))
-	require.NoError(t, tx.Put(table, []byte("key2"), []byte("value2.1")))
-	require.NoError(t, tx.Put(table, []byte("key3"), []byte("value3.1")))
-	require.NoError(t, tx.Put(table, []byte("key4"), []byte("value4.1")))
-	require.NoError(t, tx.Put(table, []byte("key5"), []byte("value5.1")))
-
-	_, err = tx.IncrementSequence(table, uint64(12))
-	require.Nil(t, err)
-	chaV, err := tx.ReadSequence(table)
-	require.Nil(t, err)
-	require.Equal(t, chaV, uint64(0xc))
-	_, err = tx.IncrementSequence(table, uint64(240))
-	require.Nil(t, err)
-	chaV, err = tx.ReadSequence(table)
-	require.Nil(t, err)
-	require.Equal(t, chaV, uint64(0xfc))
 }
 
 func TestForAmount(t *testing.T) {
