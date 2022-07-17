@@ -38,6 +38,7 @@ import (
 )
 
 type InvertedIndex struct {
+	initialised     bool
 	dir             string // Directory where static files are created
 	aggregationStep uint64
 	filenameBase    string
@@ -54,12 +55,13 @@ func NewInvertedIndex(
 	filenameBase string,
 	keysTable string,
 	indexTable string,
-) (*InvertedIndex, error) {
+) (InvertedIndex, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return InvertedIndex{}, err
 	}
-	ii := &InvertedIndex{
+	ii := InvertedIndex{
+		initialised:     true,
 		dir:             dir,
 		aggregationStep: aggregationStep,
 		filenameBase:    filenameBase,
@@ -69,13 +71,13 @@ func NewInvertedIndex(
 	ii.files = btree.New(32)
 	ii.scanStateFiles(files)
 	if err = ii.openFiles(); err != nil {
-		return nil, err
+		return InvertedIndex{}, err
 	}
 	return ii, nil
 }
 
 func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
-	re := regexp.MustCompile(ii.filenameBase + ".([0-9]+)-([0-9]+).(dat|idx)")
+	re := regexp.MustCompile(ii.filenameBase + ".([0-9]+)-([0-9]+).(ef|efi)")
 	var err error
 	for _, f := range files {
 		name := f.Name()
@@ -120,11 +122,11 @@ func (ii *InvertedIndex) openFiles() error {
 	var totalKeys uint64
 	ii.files.Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
-		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
+		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
-		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
+		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 			return false
 		}
@@ -155,6 +157,9 @@ func (ii *InvertedIndex) closeFiles() {
 }
 
 func (ii *InvertedIndex) Close() {
+	if !ii.initialised {
+		return
+	}
 	ii.closeFiles()
 }
 
@@ -166,16 +171,20 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 	ii.txNum = txNum
 }
 
-func (ii *InvertedIndex) Add(key []byte) error {
+func (ii *InvertedIndex) add(key, indexKey []byte) error {
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], ii.txNum)
 	if err := ii.tx.Put(ii.keysTable, txKey[:], key); err != nil {
 		return err
 	}
-	if err := ii.tx.Put(ii.indexTable, key, txKey[:]); err != nil {
+	if err := ii.tx.Put(ii.indexTable, indexKey, txKey[:]); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (ii *InvertedIndex) Add(key []byte) error {
+	return ii.add(key, key)
 }
 
 // InvertedIterator allows iteration over range of tx numbers
@@ -390,7 +399,7 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 	}()
 	txNumFrom := step * ii.aggregationStep
 	txNumTo := (step + 1) * ii.aggregationStep
-	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.dat", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
+	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
 	comp, err = compress.NewCompressor(context.Background(), "ef", datPath, ii.dir, compress.MinPatternScore, 1, log.LvlDebug)
 	if err != nil {
 		return InvertedFiles{}, fmt.Errorf("create %s compressor: %w", ii.filenameBase, err)
@@ -425,9 +434,9 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 	if decomp, err = compress.NewDecompressor(datPath); err != nil {
 		return InvertedFiles{}, fmt.Errorf("open %s decompressor: %w", ii.filenameBase, err)
 	}
-	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.idx", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
+	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
 	if index, err = buildIndex(decomp, idxPath, ii.dir, len(keys), false /* values */); err != nil {
-		return InvertedFiles{}, fmt.Errorf("build %s idx: %w", ii.filenameBase, err)
+		return InvertedFiles{}, fmt.Errorf("build %s efi: %w", ii.filenameBase, err)
 	}
 	closeComp = false
 	return InvertedFiles{decomp: decomp, index: index}, nil

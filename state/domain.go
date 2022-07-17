@@ -68,7 +68,7 @@ type FileType int
 
 const (
 	Values FileType = iota
-	History
+	History1
 	EfHistory
 	NumberOfTypes
 )
@@ -77,7 +77,7 @@ func (ft FileType) String() string {
 	switch ft {
 	case Values:
 		return "values"
-	case History:
+	case History1:
 		return "history"
 	case EfHistory:
 		return "efhistory"
@@ -91,7 +91,7 @@ func ParseFileType(s string) (FileType, bool) {
 	case "values":
 		return Values, true
 	case "history":
-		return History, true
+		return History1, true
 	case "efhistory":
 		return EfHistory, true
 	default:
@@ -446,7 +446,6 @@ func (ch *CursorHeap) Pop() interface{} {
 // inside the domain. Another version of this for public API use needs to be created, that uses
 // roTx instead and supports ending the iterations before it reaches the end.
 func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
-	//trace := fmt.Sprintf("%x", prefix) == "000000000000006f6502b7f2bbac8c30a3f67e9a"
 	if len(prefix) != d.prefixLen {
 		return fmt.Errorf("wrong prefix length, this %s domain supports prefixLen %d, given [%x]", d.filenameBase, d.prefixLen, prefix)
 	}
@@ -566,7 +565,7 @@ func (c Collation) Close() {
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
-func (d *Domain) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Collation, error) {
+func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx) (Collation, error) {
 	var valuesComp, historyComp *compress.Compressor
 	var err error
 	closeComp := true
@@ -897,7 +896,7 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 		indexReader:  recsplit.NewIndexReader(sf.valuesIdx),
 		readerMerge:  recsplit.NewIndexReader(sf.valuesIdx),
 	})
-	d.files[History].ReplaceOrInsert(&filesItem{
+	d.files[History1].ReplaceOrInsert(&filesItem{
 		startTxNum:   txNumFrom,
 		endTxNum:     txNumTo,
 		decompressor: sf.historyDecomp,
@@ -1118,7 +1117,7 @@ func (d *Domain) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byt
 	var historyItem *filesItem
 	search.startTxNum = foundStartTxNum
 	search.endTxNum = foundEndTxNum
-	if i := d.files[History].Get(&search); i != nil {
+	if i := d.files[History1].Get(&search); i != nil {
 		historyItem = i.(*filesItem)
 	} else {
 		return nil, false, fmt.Errorf("no %s file found for [%x]", d.filenameBase, key)

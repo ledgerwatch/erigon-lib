@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testDbAndInvertedIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex) {
+func testDbAndInvertedIndex(t *testing.T) (string, kv.RwDB, InvertedIndex) {
 	t.Helper()
 	path := t.TempDir()
 	logger := log.New()
@@ -181,7 +181,7 @@ func TestInvIndexAfterPrune(t *testing.T) {
 	}
 }
 
-func filledInvIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex, uint64) {
+func filledInvIndex(t *testing.T) (string, kv.RwDB, InvertedIndex, uint64) {
 	t.Helper()
 	path, db, ii := testDbAndInvertedIndex(t)
 	tx, err := db.BeginRw(context.Background())
@@ -218,7 +218,7 @@ func filledInvIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex, uint64) {
 	return path, db, ii, txs
 }
 
-func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
+func checkRanges(t *testing.T, db kv.RwDB, ii InvertedIndex, txs uint64) {
 	t.Helper()
 	// Check the iterator ranges first without roTx
 	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
@@ -253,7 +253,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	}
 }
 
-func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
+func mergeInverted(t *testing.T, db kv.RwDB, ii InvertedIndex, txs uint64) {
 	t.Helper()
 	// Leave the last 2 aggregation steps un-collated
 	var tx kv.RwTx

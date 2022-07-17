@@ -32,10 +32,10 @@ type Aggregator struct {
 	accounts        *Domain
 	storage         *Domain
 	code            *Domain
-	logAddrs        *InvertedIndex
-	logTopics       *InvertedIndex
-	tracesFrom      *InvertedIndex
-	tracesTo        *InvertedIndex
+	logAddrs        InvertedIndex
+	logTopics       InvertedIndex
+	tracesFrom      InvertedIndex
+	tracesTo        InvertedIndex
 	txNum           uint64
 	rwTx            kv.RwTx
 	keyBuf          []byte
@@ -60,18 +60,10 @@ func NewAggregator(
 			if a.code != nil {
 				a.code.Close()
 			}
-			if a.logAddrs != nil {
-				a.logAddrs.Close()
-			}
-			if a.logTopics != nil {
-				a.logTopics.Close()
-			}
-			if a.tracesFrom != nil {
-				a.tracesFrom.Close()
-			}
-			if a.tracesTo != nil {
-				a.tracesTo.Close()
-			}
+			a.logAddrs.Close()
+			a.logTopics.Close()
+			a.tracesFrom.Close()
+			a.tracesTo.Close()
 		}
 	}()
 	var err error
@@ -118,18 +110,10 @@ func (a *Aggregator) Close() {
 	if a.code != nil {
 		a.code.Close()
 	}
-	if a.logAddrs != nil {
-		a.logAddrs.Close()
-	}
-	if a.logTopics != nil {
-		a.logTopics.Close()
-	}
-	if a.tracesFrom != nil {
-		a.tracesFrom.Close()
-	}
-	if a.tracesTo != nil {
-		a.tracesTo.Close()
-	}
+	a.logAddrs.Close()
+	a.logTopics.Close()
+	a.tracesFrom.Close()
+	a.tracesTo.Close()
 }
 
 func (a *Aggregator) SetTx(tx kv.RwTx) {

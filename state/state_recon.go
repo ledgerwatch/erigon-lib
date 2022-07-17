@@ -95,7 +95,7 @@ func (dc *DomainContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, uin
 		var search filesItem
 		search.startTxNum = foundStartTxNum
 		search.endTxNum = foundEndTxNum
-		if i := dc.files[History].Get(&search); i != nil {
+		if i := dc.files[History1].Get(&search); i != nil {
 			historyItem = i.(*filesItem)
 		} else {
 			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", dc.d.filenameBase, key)
@@ -306,7 +306,7 @@ func (hi *HistoryIterator) advance() {
 				var search filesItem
 				search.startTxNum = top.startTxNum
 				search.endTxNum = top.endTxNum
-				if i := hi.dc.files[History].Get(&search); i != nil {
+				if i := hi.dc.files[History1].Get(&search); i != nil {
 					historyItem = i.(*filesItem)
 				} else {
 					panic(fmt.Errorf("no %s file found for [%x]", hi.dc.d.filenameBase, hi.key))

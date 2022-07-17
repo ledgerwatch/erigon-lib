@@ -26,9 +26,9 @@ import (
 
 type ReadIndices struct {
 	aggregationStep uint64
-	accounts        *InvertedIndex
-	storage         *InvertedIndex
-	code            *InvertedIndex
+	accounts        InvertedIndex
+	storage         InvertedIndex
+	code            InvertedIndex
 	txNum           uint64
 	rwTx            kv.RwTx
 	keyBuf          []byte
@@ -44,15 +44,7 @@ func NewReadIndices(
 	closeIndices := true
 	defer func() {
 		if closeIndices {
-			if ri.accounts != nil {
-				ri.accounts.Close()
-			}
-			if ri.storage != nil {
-				ri.storage.Close()
-			}
-			if ri.code != nil {
-				ri.code.Close()
-			}
+			ri.Close()
 		}
 	}()
 	var err error
@@ -70,15 +62,9 @@ func NewReadIndices(
 }
 
 func (ri *ReadIndices) Close() {
-	if ri.accounts != nil {
-		ri.accounts.Close()
-	}
-	if ri.storage != nil {
-		ri.storage.Close()
-	}
-	if ri.code != nil {
-		ri.code.Close()
-	}
+	ri.accounts.Close()
+	ri.storage.Close()
+	ri.code.Close()
 }
 
 func (ri *ReadIndices) SetTx(tx kv.RwTx) {
