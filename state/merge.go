@@ -56,6 +56,17 @@ func (ii *InvertedIndex) endTxNumMinimax() uint64 {
 	return minimax
 }
 
+func (h *History) endTxNumMinimax() uint64 {
+	minimax := h.InvertedIndex.endTxNumMinimax()
+	if h.files.Len() > 0 {
+		endTxNum := h.files.Max().(*filesItem).endTxNum
+		if minimax == 0 || endTxNum < minimax {
+			minimax = endTxNum
+		}
+	}
+	return minimax
+}
+
 type DomainRanges struct {
 	valuesStartTxNum  uint64
 	valuesEndTxNum    uint64

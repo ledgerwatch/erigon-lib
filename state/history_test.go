@@ -149,3 +149,76 @@ func TestHisyoryCollationBuild(t *testing.T) {
 		}
 	}
 }
+
+func TestHisoryAfterPrune(t *testing.T) {
+	_, db, h := testDbAndHistory(t)
+	defer db.Close()
+	defer h.Close()
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	h.SetTx(tx)
+
+	h.SetTxNum(2)
+	err = h.AddPrevValue([]byte("key1"), nil)
+	require.NoError(t, err)
+
+	h.SetTxNum(3)
+	err = h.AddPrevValue([]byte("key2"), nil)
+	require.NoError(t, err)
+
+	h.SetTxNum(6)
+	err = h.AddPrevValue([]byte("key1"), []byte("value1.1"))
+	require.NoError(t, err)
+	err = h.AddPrevValue([]byte("key2"), []byte("value2.1"))
+	require.NoError(t, err)
+
+	h.SetTxNum(7)
+	err = h.AddPrevValue([]byte("key2"), []byte("value2.2"))
+	require.NoError(t, err)
+	err = h.AddPrevValue([]byte("key3"), nil)
+	require.NoError(t, err)
+
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+
+	c, err := h.collate(0, 0, 16, roTx)
+	require.NoError(t, err)
+
+	sf, err := h.buildFiles(0, c)
+	require.NoError(t, err)
+	defer sf.Close()
+
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	h.SetTx(tx)
+
+	h.integrateFiles(sf, 0, 16)
+
+	err = h.prune(0, 0, 16)
+	require.NoError(t, err)
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+	h.SetTx(tx)
+
+	for _, table := range []string{h.keysTable, h.valsTable, h.indexTable} {
+		var cur kv.Cursor
+		cur, err = tx.Cursor(table)
+		require.NoError(t, err)
+		defer cur.Close()
+		var k []byte
+		k, _, err = cur.First()
+		require.NoError(t, err)
+		require.Nil(t, k, table)
+	}
+}

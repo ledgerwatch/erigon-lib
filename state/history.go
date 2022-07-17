@@ -59,12 +59,13 @@ func NewHistory(
 	}
 	h.valsTable = valsTable
 	h.settingsTable = settingsTable
+	h.files = btree.New(32)
 	return h, nil
 }
 
 func (h *History) scanStateFiles(files []fs.DirEntry) {
 	h.InvertedIndex.scanStateFiles(files)
-	re := regexp.MustCompile(h.InvertedIndex.filenameBase + ".([0-9]+)-([0-9]+).(v|vi)")
+	re := regexp.MustCompile(h.InvertedIndex.filenameBase + ".([0-9]+)-([0-9]+).(v|vi|ef|efi)")
 	var err error
 	for _, f := range files {
 		name := f.Name()
@@ -106,6 +107,9 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 
 func (h *History) openFiles() error {
 	var err error
+	if err = h.InvertedIndex.openFiles(); err != nil {
+		return err
+	}
 	var totalKeys uint64
 	h.files.Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
@@ -131,6 +135,7 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
+	h.InvertedIndex.closeFiles()
 	h.files.Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
 		if item.decompressor != nil {
@@ -418,4 +423,53 @@ func (h *History) buildFiles(step uint64, collation HistoryCollation) (HistoryFi
 		efHistoryDecomp: efHistoryDecomp,
 		efHistoryIdx:    efHistoryIdx,
 	}, nil
+}
+
+func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
+	h.InvertedIndex.integrateFiles(InvertedFiles{
+		decomp: sf.efHistoryDecomp,
+		index:  sf.efHistoryIdx,
+	}, txNumFrom, txNumTo)
+	h.files.ReplaceOrInsert(&filesItem{
+		startTxNum:   txNumFrom,
+		endTxNum:     txNumTo,
+		decompressor: sf.historyDecomp,
+		index:        sf.historyIdx,
+		getter:       sf.historyDecomp.MakeGetter(),
+		getterMerge:  sf.historyDecomp.MakeGetter(),
+		indexReader:  recsplit.NewIndexReader(sf.historyIdx),
+		readerMerge:  recsplit.NewIndexReader(sf.historyIdx),
+	})
+}
+
+// [txFrom; txTo)
+func (h *History) prune(step uint64, txFrom, txTo uint64) error {
+	historyKeysCursor, err := h.InvertedIndex.tx.RwCursorDupSort(h.InvertedIndex.keysTable)
+	if err != nil {
+		return fmt.Errorf("create %s history cursor: %w", h.InvertedIndex.filenameBase, err)
+	}
+	defer historyKeysCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	var k, v []byte
+	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		if err = h.InvertedIndex.tx.Delete(h.valsTable, v[len(v)-8:], nil); err != nil {
+			return err
+		}
+		if err = h.InvertedIndex.tx.Delete(h.InvertedIndex.indexTable, v[:len(v)-8], k); err != nil {
+			return err
+		}
+		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
+		if err = historyKeysCursor.DeleteCurrent(); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s history keys: %w", h.InvertedIndex.filenameBase, err)
+	}
+	return nil
 }
