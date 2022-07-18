@@ -18,7 +18,6 @@ package etl
 
 import (
 	"bytes"
-	"container/heap"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
+	"github.com/lispad/go-generics-tools/binheap"
 )
 
 const TmpDirName = "etl-temp"
@@ -153,15 +153,20 @@ func (c *Collector) Close() {
 	}
 }
 
+func heapElemLess(i, j HeapElem) bool {
+	if c := bytes.Compare(i.Key, j.Key); c != 0 {
+		return c < 0
+	}
+	return i.TimeIdx < j.TimeIdx
+}
+
 func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType int, providers []dataProvider, loadFunc LoadFunc, args TransformArgs) error {
 	var m runtime.MemStats
 
-	h := &Heap{comparator: args.Comparator}
-	heap.Init(h)
+	h := binheap.EmptyHeap[HeapElem](heapElemLess)
 	for i, provider := range providers {
 		if key, value, err := provider.Next(nil, nil); err == nil {
-			he := HeapElem{key, i, value}
-			heap.Push(h, he)
+			h.Push(HeapElem{key, i, value})
 		} else /* we must have at least one entry per file */ {
 			eee := fmt.Errorf("%s: error reading first readers: n=%d current=%d provider=%s err=%w",
 				logPrefix, len(providers), i, provider, err)
@@ -260,14 +265,14 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 			return err
 		}
 
-		element := (heap.Pop(h)).(HeapElem)
+		element := h.Pop()
 		provider := providers[element.TimeIdx]
 		err := loadFunc(element.Key, element.Value, currentTable, loadNextFunc)
 		if err != nil {
 			return err
 		}
 		if element.Key, element.Value, err = provider.Next(element.Key[:0], element.Value[:0]); err == nil {
-			heap.Push(h, element)
+			h.Push(element)
 		} else if !errors.Is(err, io.EOF) {
 			return fmt.Errorf("%s: error while reading next element from disk: %w", logPrefix, err)
 		}

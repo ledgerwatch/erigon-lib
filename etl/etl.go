@@ -73,8 +73,6 @@ type TransformArgs struct {
 
 	LogDetailsExtract AdditionalLogArguments
 	LogDetailsLoad    AdditionalLogArguments
-
-	Comparator kv.CmpFunc
 }
 
 func Transform(
