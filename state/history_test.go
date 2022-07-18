@@ -19,6 +19,7 @@ package state
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -46,12 +47,12 @@ func testDbAndHistory(t *testing.T) (string, kv.RwDB, History) {
 			settingsTable: kv.TableCfgItem{},
 		}
 	}).MustOpen()
-	ii, err := NewHistory(path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable)
+	ii, err := NewHistory(path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */)
 	require.NoError(t, err)
 	return path, db, ii
 }
 
-func TestHisyoryCollationBuild(t *testing.T) {
+func TestHistoryCollationBuild(t *testing.T) {
 	_, db, h := testDbAndHistory(t)
 	defer db.Close()
 	defer h.Close()
@@ -150,7 +151,7 @@ func TestHisyoryCollationBuild(t *testing.T) {
 	}
 }
 
-func TestHisoryAfterPrune(t *testing.T) {
+func TestHistoryAfterPrune(t *testing.T) {
 	_, db, h := testDbAndHistory(t)
 	defer db.Close()
 	defer h.Close()
@@ -221,4 +222,108 @@ func TestHisoryAfterPrune(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, k, table)
 	}
+}
+
+func filledHistory(t *testing.T) (string, kv.RwDB, History, uint64) {
+	t.Helper()
+	path, db, h := testDbAndHistory(t)
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	h.SetTx(tx)
+	txs := uint64(1000)
+	// keys are encodings of numbers 1..31
+	// each key changes value on every txNum which is multiple of the key
+	var prevVal [32][]byte
+	for txNum := uint64(1); txNum <= txs; txNum++ {
+		h.SetTxNum(txNum)
+		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+			if txNum%keyNum == 0 {
+				valNum := txNum / keyNum
+				var k [8]byte
+				var v [8]byte
+				binary.BigEndian.PutUint64(k[:], keyNum)
+				binary.BigEndian.PutUint64(v[:], valNum)
+				err = h.AddPrevValue(k[:], prevVal[keyNum])
+				require.NoError(t, err)
+				fmt.Printf("AddPrevValue %d [%x], [%x]\n", txNum, k[:], prevVal[keyNum])
+				prevVal[keyNum] = v[:]
+			}
+		}
+		if txNum%10 == 0 {
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			h.SetTx(tx)
+		}
+	}
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx = nil
+	return path, db, h, txs
+}
+
+func checkHistoryHistory(t *testing.T, db kv.RwDB, h History, txs uint64) {
+	t.Helper()
+	// Check the history
+	for txNum := uint64(0); txNum <= txs; txNum++ {
+		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+			valNum := txNum / keyNum
+			var k [8]byte
+			var v [8]byte
+			label := fmt.Sprintf("txNum=%d, keyNum=%d", txNum, keyNum)
+			fmt.Printf("label=%s\n", label)
+			binary.BigEndian.PutUint64(k[:], keyNum)
+			binary.BigEndian.PutUint64(v[:], valNum)
+			val, ok, _, err := h.GetNoState(k[:], txNum+1)
+			require.Equal(t, ok, txNum < 976)
+			if ok {
+				require.NoError(t, err, label)
+				if txNum >= keyNum {
+					require.Equal(t, v[:], val, label)
+				} else {
+					require.Equal(t, []byte{}, val, label)
+				}
+			}
+		}
+	}
+}
+
+func TestHistoryHistory(t *testing.T) {
+	_, db, h, txs := filledHistory(t)
+	defer db.Close()
+	defer h.Close()
+	var tx kv.RwTx
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	// Leave the last 2 aggregation steps un-collated
+	for step := uint64(0); step < txs/h.aggregationStep-1; step++ {
+		func() {
+			roTx, err := db.BeginRo(context.Background())
+			require.NoError(t, err)
+			c, err := h.collate(step, step*h.aggregationStep, (step+1)*h.aggregationStep, roTx)
+			roTx.Rollback()
+			require.NoError(t, err)
+			sf, err := h.buildFiles(step, c)
+			require.NoError(t, err)
+			h.integrateFiles(sf, step*h.aggregationStep, (step+1)*h.aggregationStep)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			h.SetTx(tx)
+			err = h.prune(step, step*h.aggregationStep, (step+1)*h.aggregationStep)
+			require.NoError(t, err)
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx = nil
+		}()
+	}
+	checkHistoryHistory(t, db, h, txs)
 }

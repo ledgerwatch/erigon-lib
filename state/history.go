@@ -17,6 +17,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -41,6 +42,7 @@ type History struct {
 	settingsTable string
 	files         *btree.BTree
 	initialised   bool
+	compressVals  bool
 }
 
 func NewHistory(
@@ -51,6 +53,7 @@ func NewHistory(
 	indexTable string,
 	valsTable string,
 	settingsTable string,
+	compressVals bool,
 ) (History, error) {
 	var h History
 	var err error
@@ -60,6 +63,7 @@ func NewHistory(
 	h.valsTable = valsTable
 	h.settingsTable = settingsTable
 	h.files = btree.New(32)
+	h.compressVals = compressVals
 	return h, nil
 }
 
@@ -472,4 +476,66 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 		return fmt.Errorf("iterate over %s history keys: %w", h.InvertedIndex.filenameBase, err)
 	}
 	return nil
+}
+
+func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	var foundTxNum uint64
+	var foundEndTxNum uint64
+	var foundStartTxNum uint64
+	var found bool
+	var anyItem bool
+	var maxTxNum uint64
+	h.InvertedIndex.files.Ascend(func(i btree.Item) bool {
+		item := i.(*filesItem)
+		fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
+		if item.index.Empty() {
+			return true
+		}
+		offset := item.indexReader.Lookup(key)
+		g := item.getter
+		g.Reset(offset)
+		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+			fmt.Printf("Found key=%x\n", k)
+			eliasVal, _ := g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+			if n, ok := ef.Search(txNum); ok {
+				foundTxNum = n
+				foundEndTxNum = item.endTxNum
+				foundStartTxNum = item.startTxNum
+				found = true
+				fmt.Printf("Found n=%d\n", n)
+				return false
+			} else {
+				maxTxNum = ef.Max()
+			}
+			anyItem = true
+		}
+		return true
+	})
+	if found {
+		var txKey [8]byte
+		binary.BigEndian.PutUint64(txKey[:], foundTxNum)
+		var historyItem *filesItem
+		var search filesItem
+		search.startTxNum = foundStartTxNum
+		search.endTxNum = foundEndTxNum
+		if i := h.files.Get(&search); i != nil {
+			historyItem = i.(*filesItem)
+		} else {
+			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", h.InvertedIndex.filenameBase, key)
+		}
+		offset := historyItem.indexReader.Lookup2(txKey[:], key)
+		g := historyItem.getter
+		g.Reset(offset)
+		if h.compressVals {
+			v, _ := g.Next(nil)
+			return v, true, 0, nil
+		}
+		v, _ := g.NextUncompressed()
+		return v, true, 0, nil
+	} else if anyItem {
+		return nil, false, maxTxNum, nil
+	} else {
+		return nil, true, 0, nil
+	}
 }
