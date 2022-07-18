@@ -125,3 +125,59 @@ func TestFlush(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, value, []byte("value5"))
 }
+
+func TestIncreaseSequence(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDB(rwTx)
+	batch := NewMemoryBatch(rwTx)
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("BAAA"), []byte("value4")))
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("AAAA"), []byte("value5")))
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("FCAA"), []byte("value5")))
+
+	_, err = batch.IncrementSequence(kv.HashedAccounts, uint64(12))
+	require.Nil(t, err)
+	chaV, err := batch.ReadSequence(kv.HashedAccounts)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0xc), chaV)
+	_, err = batch.IncrementSequence(kv.HashedAccounts, uint64(240))
+	require.Nil(t, err)
+	chaV, err = batch.ReadSequence(kv.HashedAccounts)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0xfc), chaV)
+}
+
+func TestHasDelete(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDB(rwTx)
+	batch := NewMemoryBatch(rwTx)
+
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("key1"), []byte("value1.1")))
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("key2"), []byte("value2.1")))
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("key3"), []byte("value3.1")))
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("key4"), []byte("value4.1")))
+	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("key5"), []byte("value5.1")))
+
+	require.NoError(t, batch.Delete(kv.HashedAccounts, []byte("key1"), []byte("value1.1")))
+	require.NoError(t, batch.Delete(kv.HashedAccounts, []byte("key1"), []byte("value1.1"))) //valid but already deleted
+	require.NoError(t, batch.Delete(kv.HashedAccounts, []byte("key2"), []byte("value1.1"))) //valid key but wrong value
+
+	res, err := batch.Has(kv.HashedAccounts, []byte("key1"))
+	require.Nil(t, err)
+	require.False(t, res)
+
+	res, err = batch.Has(kv.HashedAccounts, []byte("key2"))
+	require.Nil(t, err)
+	require.True(t, res)
+
+	res, err = batch.Has(kv.HashedAccounts, []byte("key3"))
+	require.Nil(t, err)
+	require.True(t, res)
+
+	res, err = batch.Has(kv.HashedAccounts, []byte("k"))
+	require.Nil(t, err)
+	require.False(t, res)
+}
