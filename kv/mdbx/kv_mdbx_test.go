@@ -116,7 +116,7 @@ func TestPutGet(t *testing.T) {
 
 func TestIncrementRead(t *testing.T) {
 	db, tx, c := BaseCase(t)
-  
+
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
