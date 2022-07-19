@@ -210,8 +210,17 @@ func (m *MemoryMutation) Delete(table string, k, v []byte) error {
 	if _, ok := m.deletedEntries[table]; !ok {
 		m.deletedEntries[table] = make(map[string]struct{})
 	}
-	m.deletedEntries[table][string(k)] = struct{}{}
-	return m.memTx.Delete(table, k, v)
+	m.memTx.Delete(table, k, v)
+
+	// we check if we actually deleted the entry before adding it to deleteEntries
+	isNotDeleted, err := m.memTx.Has(table, k)
+	if err != nil {
+		return err
+	}
+	if !isNotDeleted {
+		m.deletedEntries[table][string(k)] = struct{}{}
+	}
+	return nil
 }
 
 func (m *MemoryMutation) Commit() error {
