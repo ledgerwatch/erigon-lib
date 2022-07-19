@@ -222,7 +222,6 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 	}
 	defer keysCursor.Close()
 	indexBitmaps := map[string]*roaring64.Bitmap{}
-	historyCount := 0
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
 	var val []byte
@@ -232,18 +231,6 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 		if txNum >= txTo {
 			break
 		}
-		valNum := binary.BigEndian.Uint64(v[len(v)-8:])
-		if valNum == 0 {
-			val = nil
-		} else {
-			if val, err = roTx.GetOne(h.valsTable, v[len(v)-8:]); err != nil {
-				return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.InvertedIndex.filenameBase, k, valNum, err)
-			}
-		}
-		if err = historyComp.AddUncompressedWord(val); err != nil {
-			return HistoryCollation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", h.InvertedIndex.filenameBase, k, val, err)
-		}
-		historyCount++
 		var bitmap *roaring64.Bitmap
 		var ok bool
 		if bitmap, ok = indexBitmaps[string(v[:len(v)-8])]; !ok {
@@ -254,6 +241,38 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 	}
 	if err != nil {
 		return HistoryCollation{}, fmt.Errorf("iterate over %s history cursor: %w", h.InvertedIndex.filenameBase, err)
+	}
+	keys := make([]string, 0, len(indexBitmaps))
+	for key := range indexBitmaps {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	historyCount := 0
+	for _, key := range keys {
+		bitmap := indexBitmaps[key]
+		it := bitmap.Iterator()
+		for it.HasNext() {
+			txNum := it.Next()
+			binary.BigEndian.PutUint64(txKey[:], txNum)
+			v, err := keysCursor.SeekBothRange(txKey[:], []byte(key))
+			if err != nil {
+				return HistoryCollation{}, err
+			}
+			if bytes.HasPrefix(v, []byte(key)) {
+				valNum := binary.BigEndian.Uint64(v[len(v)-8:])
+				if valNum == 0 {
+					val = nil
+				} else {
+					if val, err = roTx.GetOne(h.valsTable, v[len(v)-8:]); err != nil {
+						return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.InvertedIndex.filenameBase, k, valNum, err)
+					}
+				}
+				if err = historyComp.AddUncompressedWord(val); err != nil {
+					return HistoryCollation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", h.InvertedIndex.filenameBase, k, val, err)
+				}
+				historyCount++
+			}
+		}
 	}
 	closeComp = false
 	return HistoryCollation{
@@ -479,6 +498,7 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 }
 
 func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
+	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
 	var foundEndTxNum uint64
 	var foundStartTxNum uint64
@@ -487,7 +507,7 @@ func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, er
 	var maxTxNum uint64
 	h.InvertedIndex.files.Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
-		fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
+		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
 		if item.index.Empty() {
 			return true
 		}
@@ -495,7 +515,7 @@ func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, er
 		g := item.getter
 		g.Reset(offset)
 		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
-			fmt.Printf("Found key=%x\n", k)
+			//fmt.Printf("Found key=%x\n", k)
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 			if n, ok := ef.Search(txNum); ok {
@@ -503,7 +523,7 @@ func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, er
 				foundEndTxNum = item.endTxNum
 				foundStartTxNum = item.startTxNum
 				found = true
-				fmt.Printf("Found n=%d\n", n)
+				//fmt.Printf("Found n=%d\n", n)
 				return false
 			} else {
 				maxTxNum = ef.Max()
@@ -525,6 +545,7 @@ func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, er
 			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", h.InvertedIndex.filenameBase, key)
 		}
 		offset := historyItem.indexReader.Lookup2(txKey[:], key)
+		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
 		g := historyItem.getter
 		g.Reset(offset)
 		if h.compressVals {
