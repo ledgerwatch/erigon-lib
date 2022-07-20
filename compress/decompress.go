@@ -21,22 +21,98 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
+	"github.com/ledgerwatch/log/v3"
 )
+
+type word []byte // plain text word associated with code from dictionary
 
 type codeword struct {
 	code    uint16        // code associated with that word
 	len     byte          // Number of bits in the codes
 	pattern *word         // Pattern corresponding to entries
 	ptr     *patternTable // pointer to deeper level tables
+	next    *codeword     // points to next word in condensed table
 }
 
 type patternTable struct {
 	bitLen   int // Number of bits to lookup in the table
 	patterns []*codeword
+	head     *codeword
+}
+
+func newPatternTable(bitLen int) *patternTable {
+	pt := &patternTable{
+		bitLen: int(bitLen),
+	}
+	if bitLen <= condensePatternTableBitThreshold {
+		pt.patterns = make([]*codeword, 1<<pt.bitLen)
+	}
+	return pt
+}
+
+func (pt *patternTable) insertWord(cw *codeword) {
+	if pt.bitLen <= condensePatternTableBitThreshold {
+		codeStep := uint16(1) << uint16(cw.len)
+		codeFrom, codeTo := cw.code, cw.code+codeStep
+		if pt.bitLen != int(cw.len) && cw.len > 0 {
+			codeTo = codeFrom | (uint16(1) << pt.bitLen)
+		}
+
+		// cw := &codeword{code: codeFrom, pattern: &pattern, len: byte(bits), ptr: nil}
+		for c := codeFrom; c < codeTo; c += codeStep {
+			if p := pt.patterns[c]; p == nil {
+				pt.patterns[c] = cw
+			} else {
+				p.pattern, p.len, p.ptr, p.code = cw.pattern, cw.len, nil, c
+			}
+		}
+		return
+	}
+
+	if pt.head == nil {
+		cw.next = nil
+		pt.head = cw
+		return
+	}
+
+	var prev *codeword
+	for cur := pt.head; cur != nil; prev, cur = cur, cur.next {
+	}
+	cw.next = nil
+	prev.next = cw
+}
+
+func (pt *patternTable) condensedTableSearch(code uint16) *codeword {
+	if pt.bitLen <= condensePatternTableBitThreshold {
+		return pt.patterns[code]
+	}
+	var prev *codeword
+	for cur := pt.head; cur != nil; prev, cur = cur, cur.next {
+		if cur.code == code {
+			if prev != nil {
+				prev.next = cur.next
+				cur.next = pt.head
+				pt.head = cur
+			}
+			return cur
+		}
+		d := code - cur.code
+		if d&1 != 0 {
+			continue
+		}
+		if checkDistance(int(cur.len), int(d)) {
+			if prev != nil {
+				prev.next = cur.next
+				cur.next = pt.head
+				pt.head = cur
+			}
+			return cur
+		}
+	}
+	return nil
 }
 
 type posTable struct {
@@ -54,7 +130,6 @@ type Decompressor struct {
 	mmapHandle2    *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
 	data           []byte                 // slice of correct size for the decompressor to work with
 	dict           *patternTable
-	dictCondensed  *patternTable
 	posDict        *posTable
 	wordsStart     uint64 // Offset of whether the superstrings actually start
 	size           int64
@@ -62,7 +137,16 @@ type Decompressor struct {
 	wordsCount, emptyWordsCount uint64
 }
 
-var EXPERIMENTAL bool
+// Tables with bitlen greater than threshold will be condensed.
+// To disable condesning at all use 9 (we dont use tables larger than 2^9)
+// To enable condensing for tables > 64 set to 6
+// Condensing reduces memory consumption but co
+// Should be set before calling NewDecompression
+var condensePatternTableBitThreshold = 9
+
+func SetDecompressionTableCondensity(fromBitSize int) {
+	condensePatternTableBitThreshold = fromBitSize
+}
 
 func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	d := &Decompressor{
@@ -98,12 +182,13 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	d.emptyWordsCount = binary.BigEndian.Uint64(d.data[8:16])
 	dictSize := binary.BigEndian.Uint64(d.data[16:24])
 	data := d.data[24 : 24+dictSize]
+	log.Debug("decompress dictionary", "size", dictSize)
+
 	var depths []uint64
 	var patterns [][]byte
 	var i uint64
 	var patternMaxDepth uint64
 
-	//fmt.Printf("[decomp] dictSize = %d\n", dictSize)
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
 		depths = append(depths, d)
@@ -118,7 +203,6 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		i += l
 	}
 
-	distances = buildDist()
 	if dictSize > 0 {
 		var bitLen int
 		if patternMaxDepth > 9 {
@@ -126,38 +210,21 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		} else {
 			bitLen = int(patternMaxDepth)
 		}
-		//fmt.Printf("pattern maxDepth=%d\n", tree.maxDepth)
-		if EXPERIMENTAL {
-			d.dict = &patternTable{
-				bitLen:   bitLen,
-				patterns: make([]*codeword, 0),
-			}
-			buildCondensedPatternTable(d.dict, depths, patterns, 0, 0, 0, patternMaxDepth)
-		} else {
-			tableSize := 1 << bitLen
-			d.dict = &patternTable{
-				bitLen:   bitLen,
-				patterns: make([]*codeword, tableSize),
-			}
-			buildPatternTable(d.dict, depths, patterns, 0, 0, 0, patternMaxDepth)
-		}
+		// fmt.Printf("pattern maxDepth=%d\n", tree.maxDepth)
+		d.dict = newPatternTable(bitLen)
+		buildCondensedPatternTable(d.dict, depths, patterns, 0, 0, 0, patternMaxDepth)
 	}
-
-	// if err := compareDictionaries(1, d.dict, d.dictCondensed); err != nil {
-	// 	return nil, err
-	// }
-
-	// orig, con := sizeDict(d.dict), sizeDict(d.dictCondensed)
-	// fmt.Printf("origin %d condensed %d delta %d %.2f%%\n", orig, con, orig-con, -100.0*(float64(orig-con)/float64(orig)))
 
 	// read positions
 	pos := 24 + dictSize
 	dictSize = binary.BigEndian.Uint64(d.data[pos : pos+8])
 	data = d.data[pos+8 : pos+8+dictSize]
+	log.Debug("decompress positions dictionary", "size", dictSize)
+
 	var posDepths []uint64
 	var poss []uint64
 	var posMaxDepth uint64
-	//fmt.Printf("[decomp] posDictSize = %d\n", dictSize)
+
 	i = 0
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
@@ -171,7 +238,6 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		poss = append(poss, pos)
 	}
 
-	fmt.Printf("dictSize: %v\n", dictSize)
 	if dictSize > 0 {
 		var bitLen int
 		if posMaxDepth > 9 {
@@ -189,104 +255,21 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		}
 		buildPosTable(posDepths, poss, d.posDict, 0, 0, 0, posMaxDepth)
 	}
-	// posSize := sizePosDict(d.posDict)
-	// fmt.Printf("origin %d poss %d delta %d\n", orig, posSize, orig-posSize)
 	d.wordsStart = pos + 8 + dictSize
 	return d, nil
 }
-
-func sizeDict(origin *patternTable) int64 {
-	var sz int64
-	for _, pt := range origin.patterns {
-		sz++
-		if pt.ptr != nil {
-			sz += sizeDict(pt.ptr)
-		}
-	}
-	return sz
-}
-
-func sizePosDict(origin *posTable) int64 {
-	var sz int64
-	for i := 0; i < len(origin.pos); i++ {
-		sz++
-		if origin.ptrs[i] != nil {
-			sz += sizePosDict(origin.ptrs[i])
-		}
-	}
-	return sz
-}
-
-func compareDictionaries(d int, origin, comp *patternTable) error {
-	for code := 0; code < len(origin.patterns); code++ {
-		cw := origin.patterns[code]
-		ccw := condensedTableSearch2(comp.patterns, uint16(code), int16(cw.len))
-		if cw.pattern != nil {
-			if ccw.pattern == nil {
-				return fmt.Errorf("%d - empty pattern for code %d", d, code)
-			}
-			if !bytes.Equal(*cw.pattern, *ccw.pattern) {
-				return (fmt.Errorf("%d - inequal patterns for code %b", d, code))
-			}
-			if cw.len != ccw.len {
-				return (fmt.Errorf("%d code len mismatch: %d!=%d", d, cw.len, ccw.len))
-			}
-		}
-		if cw.ptr != nil {
-			if ccw.ptr == nil {
-				return (fmt.Errorf("%d ccw has no ptr to next elvel", d))
-			}
-			if err := compareDictionaries(d+1, cw.ptr, ccw.ptr); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-var distances map[int]map[int]struct{}
-
-func buildDist() map[int]map[int]struct{} {
-	distances := make(map[int]map[int]struct{})
-	for i := 1; i <= 9; i++ {
-		distances[i] = make(map[int]struct{})
-		for j := 1 << i; j < 512; j += 1 << i {
-			distances[i][j] = struct{}{}
-		}
-	}
-	return distances
-}
-
-type word []byte // plain text word associated with code from dictionary
 
 func buildCondensedPatternTable(table *patternTable, depths []uint64, patterns [][]byte, code uint16, bits int, depth uint64, maxDepth uint64) int {
 	if len(depths) == 0 {
 		return 0
 	}
-	defer func() {
-		sort.Slice(table.patterns, func(i, j int) bool {
-			return table.patterns[i].code < table.patterns[j].code
-		})
-	}()
 	if depth == depths[0] {
 		pattern := word(patterns[0])
 		//fmt.Printf("depth=%d, maxDepth=%d, code=[%b], codeLen=%d, pattern=[%x]\n", depth, maxDepth, code, bits, pattern)
-
-		// codeStep := uint16(1) << bits
-		// codeFrom, codeTo := code, code+codeStep
-		// if table.bitLen != bits {
-		// 	codeTo = code | (uint16(1) << table.bitLen)
-		// }
-
 		cw := &codeword{code: code, pattern: &pattern, len: byte(bits), ptr: nil}
-		table.patterns = append(table.patterns, cw)
-		// for c := codeFrom; c < codeTo; c += codeStep {
-		// 	if p := table.patterns[c]; p == nil {
-		// 		table.patterns[c] = cw
-		// 	} else {
-		// 		p.pattern, p.len, p.ptr = cw.pattern, byte(bits), nil
-		// 	}
-		// }
+
+		// table.patterns = append(table.patterns, cw)
+		table.insertWord(cw)
 		return 1
 	}
 	if bits == 9 {
@@ -296,77 +279,15 @@ func buildCondensedPatternTable(table *patternTable, depths []uint64, patterns [
 		} else {
 			bitLen = int(maxDepth)
 		}
-		// tableSize := 1 << bitLen
-		tableSize := 0
-		// if bitLen > 3 {
-		// 	tableSize = 0
-		// }
-		newTable := &patternTable{
-			bitLen:   bitLen,
-			patterns: make([]*codeword, tableSize),
-		}
+		newTable := newPatternTable(bitLen)
+		cw := &codeword{code: code, pattern: nil, len: byte(0), ptr: newTable}
 
-		table.patterns = append(table.patterns, &codeword{code: code, pattern: nil, len: byte(0), ptr: newTable})
-		// table.patterns[code] = &codeword{pattern: nil, len: byte(0), ptr: newTable}
+		// table.patterns = append(table.patterns, &codeword{code: code, pattern: nil, len: byte(0), ptr: newTable})
+		table.insertWord(cw)
 		return buildCondensedPatternTable(newTable, depths, patterns, 0, 0, depth, maxDepth)
 	}
 	b0 := buildCondensedPatternTable(table, depths, patterns, code, bits+1, depth+1, maxDepth-1)
 	return b0 + buildCondensedPatternTable(table, depths[b0:], patterns[b0:], (uint16(1)<<bits)|code, bits+1, depth+1, maxDepth-1)
-}
-
-// returns number of depth and patterns comsumed
-func buildPatternTable(table *patternTable, depths []uint64, patterns [][]byte, code uint16, bits int, depth uint64, maxDepth uint64) (int, error) {
-	if len(depths) == 0 {
-		return 0, nil
-	}
-	if depth == depths[0] {
-		pattern := word(patterns[0])
-		//fmt.Printf("depth=%d, maxDepth=%d, code=[%b], codeLen=%d, pattern=[%x]\n", depth, maxDepth, code, bits, pattern)
-
-		codeStep := uint16(1) << bits
-		codeFrom, codeTo := code, code+codeStep
-		if table.bitLen != bits {
-			codeTo = code | (uint16(1) << table.bitLen)
-		}
-
-		cw := &codeword{code: codeFrom, pattern: &pattern, len: byte(bits), ptr: nil}
-		for c := codeFrom; c < codeTo; c += codeStep {
-			if p := table.patterns[c]; p == nil {
-				table.patterns[c] = cw
-			} else {
-				p.pattern, p.len, p.ptr, p.code = cw.pattern, byte(bits), nil, c
-			}
-		}
-		return 1, nil
-	}
-	if bits == 9 {
-		var bitLen int
-		if maxDepth > 9 {
-			bitLen = 9
-		} else {
-			bitLen = int(maxDepth)
-		}
-		tableSize := 1 << bitLen
-		newTable := &patternTable{
-			bitLen:   bitLen,
-			patterns: make([]*codeword, tableSize),
-		}
-
-		table.patterns[code] = &codeword{code: code, pattern: nil, len: byte(0), ptr: newTable}
-		return buildPatternTable(newTable, depths, patterns, 0, 0, depth, maxDepth)
-	}
-	if maxDepth == 0 {
-		return 0, fmt.Errorf("invalid snapshot format. decompress.buildPatternTable faced maxDepth underflow")
-	}
-	b0, err := buildPatternTable(table, depths, patterns, code, bits+1, depth+1, maxDepth-1)
-	if err != nil {
-		return 0, err
-	}
-	b1, err := buildPatternTable(table, depths[b0:], patterns[b0:], (uint16(1)<<bits)|code, bits+1, depth+1, maxDepth-1)
-	if err != nil {
-		return 0, err
-	}
-	return b0 + b1, nil
 }
 
 func buildPosTable(depths []uint64, poss []uint64, table *posTable, code uint16, bits int, depth uint64, maxDepth uint64) int {
@@ -445,7 +366,6 @@ type Getter struct {
 	dataP       uint64
 	dataBit     int // Value 0..7 - position of the bit
 	patternDict *patternTable
-	refPattern  *patternTable
 	posDict     *posTable
 	fName       string
 	trace       bool
@@ -486,61 +406,8 @@ func (g *Getter) nextPos(clean bool) uint64 {
 	return pos
 }
 
-func condensedTableSearch(table []*codeword, code uint16, codeBitLen int) (*codeword, int) {
-	for i := 0; i < len(table); i++ {
-		ci := table[i].code
-		switch {
-		case ci == code:
-			return table[i], 0
-		case table[i].code < code:
-			if i < len(table)-1 {
-				continue
-			}
-			// d := code - table[i].code
-			// pos := d & ((uint16(1) << table[i].len) - 1)
-			Li := codeBitLen - int(table[i].len)
-			code >>= codeBitLen - Li
-			return condensedTableSearch(table, code, Li)
-		case table[i].code > code:
-			Li := codeBitLen - int(table[i-1].len)
-			code >>= codeBitLen - Li
-			// d := code - table[i-1].code
-			// pos := (d>> & ((uint16(1) << table[i-1].len) - 1)
-			return condensedTableSearch(table, code, Li)
-		default:
-			panic("what")
-		}
-	}
-	return nil, 0
-}
-
-func condensedTableSearch2(table []*codeword, code uint16, codeLen int16) *codeword {
-	for i := 0; i < len(table); i++ {
-		ci := table[i].code
-		if code == ci {
-			return table[i]
-		}
-
-		// if int16(table[i].len) != codeLen {
-		// 	continue
-		// }
-
-		d := code - ci
-		if _, ok := distances[int(table[i].len)][int(d)]; ok {
-			return table[i]
-		}
-
-		// if d%uint16(1<<table[i].len) == 0 {
-		// 	// if d>>uint16(table[i].len) == 0 {
-		// 	return table[i]
-		// }
-	}
-	return nil
-}
-
 func (g *Getter) nextPattern() []byte {
 	table := g.patternDict
-	// refTable := g.refPattern
 
 	if table.bitLen == 0 {
 		return *table.patterns[0].pattern
@@ -554,24 +421,11 @@ func (g *Getter) nextPattern() []byte {
 			code |= uint16(g.data[g.dataP+1]) << (8 - g.dataBit)
 		}
 		code &= (uint16(1) << table.bitLen) - 1
-		var cw *codeword
-		if EXPERIMENTAL {
-			cw = condensedTableSearch2(table.patterns, code, 0)
-		} else {
-			cw = table.patterns[code]
-		}
 
-		// if ccw == nil {
-		// 	fmt.Printf("iters %d db %d bl %d mask %d\n", iters, db, bl, mask)
-		// 	panic(fmt.Errorf("empty ccw for code %d: expected %+v p: %x", code, *cw, *cw.pattern))
-		// }
-		// if cw.pattern != nil && !bytes.Equal(*cw.pattern, *ccw.pattern) {
-		// 	panic(fmt.Errorf("ne %x %x", *cw.pattern, *ccw.pattern))
-		// }
+		cw := table.condensedTableSearch(code)
 		l = cw.len
 		if l == 0 {
 			table = cw.ptr
-			// refTable = cw.ptr
 			g.dataBit += 9
 		} else {
 			g.dataBit += int(l)
@@ -581,6 +435,29 @@ func (g *Getter) nextPattern() []byte {
 		g.dataBit = g.dataBit % 8
 	}
 	return pattern
+}
+
+var condensedWordDistances = buildCondensedWordDistances()
+
+func checkDistance(power int, d int) bool {
+	for _, dist := range condensedWordDistances[power] {
+		if dist == d {
+			return true
+		}
+	}
+	return false
+}
+
+func buildCondensedWordDistances() [][]int {
+	dist2 := make([][]int, 10)
+	for i := 1; i <= 9; i++ {
+		dl := make([]int, 0)
+		for j := 1 << i; j < 512; j += 1 << i {
+			dl = append(dl, j)
+		}
+		dist2[i] = dl
+	}
+	return dist2
 }
 
 func (g *Getter) Size() int {
@@ -594,7 +471,12 @@ func (d *Decompressor) EmptyWordsCount() int { return int(d.emptyWordsCount) }
 // Getter is not thread-safe, but there can be multiple getters used simultaneously and concurrently
 // for the same decompressor
 func (d *Decompressor) MakeGetter() *Getter {
-	return &Getter{patternDict: d.dict /*refPattern: d.dictCondensed,*/, posDict: d.posDict, data: d.data[d.wordsStart:], fName: d.compressedFile}
+	return &Getter{
+		posDict:     d.posDict,
+		data:        d.data[d.wordsStart:],
+		patternDict: d.dict,
+		fName:       d.compressedFile,
+	}
 }
 
 func (g *Getter) Reset(offset uint64) {
@@ -633,7 +515,8 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	// Loop below fills in the patterns
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1 // Positions where to insert patterns are encoded relative to one another
-		copy(buf[bufPos:], g.nextPattern())
+		pt := g.nextPattern()
+		copy(buf[bufPos:], pt)
 	}
 	if g.dataBit > 0 {
 		g.dataP++

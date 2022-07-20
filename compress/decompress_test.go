@@ -211,14 +211,15 @@ Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserun
 var loremStrings = strings.Split(lorem, " ")
 
 func TestDecompressTorrent(t *testing.T) {
-	// t.Skip()
+	t.Skip()
 
-	fpath := "./v1-006000-006500-transactions.seg"
-	// fpath := "./v1-000000-000500-transactions.seg"
+	fpath := "/mnt/data/chains/mainnet/snapshots/v1-014000-014500-transactions.seg"
 	st, err := os.Stat(fpath)
 	require.NoError(t, err)
-	fmt.Printf("stat: %+v\n", st)
+	fmt.Printf("file: %v, size: %d\n", st.Name(), st.Size())
 
+	condensePatternTableBitThreshold = 9
+	fmt.Printf("bit threshold: %d\n", condensePatternTableBitThreshold)
 	d, err := NewDecompressor(fpath)
 
 	require.NoError(t, err)
