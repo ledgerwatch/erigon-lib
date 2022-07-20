@@ -223,6 +223,15 @@ func (m *MemoryMutation) Delete(table string, k, v []byte) error {
 	return nil
 }
 
+// puts an entry into deleted entries map assuring deletion in flush
+func (m *MemoryMutation) DeleteEntry(table string, k []byte) {
+	if _, ok := m.deletedEntries[table]; !ok {
+		m.deletedEntries[table] = make(map[string]struct{})
+	}
+
+	m.deletedEntries[table][string(k)] = struct{}{}
+}
+
 func (m *MemoryMutation) Commit() error {
 	return nil
 }
