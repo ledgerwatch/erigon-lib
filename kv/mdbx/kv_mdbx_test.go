@@ -311,15 +311,13 @@ func TestNextPrevCurrent(t *testing.T) {
 	defer c.Close()
 
 	k, v, err := c.First()
-	c1 := c
 	require.Nil(t, err)
-	keys, values := iteration(t, c1, k, v)
+	keys, values := iteration(t, c, k, v)
 	require.Equal(t, []string{"key1", "key1", "key3", "key3"}, keys)
 	require.Equal(t, []string{"value1.1", "value1.3", "value3.1", "value3.3"}, values)
 
 	k, v, err = c.Next()
 	require.Equal(t, []byte("key1"), k)
-	c1 = c
 	require.Nil(t, err)
 	keys, values = iteration(t, c, k, v)
 	require.Equal(t, []string{"key1", "key3", "key3"}, keys)
