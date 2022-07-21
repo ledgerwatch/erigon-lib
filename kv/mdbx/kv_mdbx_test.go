@@ -343,7 +343,7 @@ func TestNextPrevCurrent(t *testing.T) {
 	keys, values = iteration(t, c, k, v)
 	require.Equal(t, []string{"key1", "key3", "key3"}, keys)
 	require.Equal(t, []string{"value1.3", "value3.1", "value3.3"}, values)
-  
+
 	k, v, err = c.Current()
 	require.Nil(t, err)
 	keys, values = iteration(t, c, k, v)
@@ -523,68 +523,4 @@ func TestCurrentDup(t *testing.T) {
 
 	require.Equal(t, []string{"key1", "key1"}, keys)
 	require.Equal(t, []string{"value1.1", "value1.3"}, values)
-}
-
-func TestSeek(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
-
-	var keys []string
-	var values []string
-	for k, v, err := c.Seek([]byte("k")); k != nil; k, v, err = c.Next() {
-		require.Nil(t, err)
-		keys = append(keys, string(k))
-		values = append(values, string(v))
-	}
-	require.Equal(t, []string{"key1", "key1", "key3", "key3"}, keys)
-	require.Equal(t, []string{"value1.1", "value1.3", "value3.1", "value3.3"}, values)
-
-	var keys1 []string
-	var values1 []string
-	for k, v, err := c.Seek([]byte("key3")); k != nil; k, v, err = c.Next() {
-		require.Nil(t, err)
-		keys1 = append(keys1, string(k))
-		values1 = append(values1, string(v))
-	}
-	require.Equal(t, []string{"key3", "key3"}, keys1)
-	require.Equal(t, []string{"value3.1", "value3.3"}, values1)
-
-	var keys2 []string
-	var values2 []string
-	for k, v, err := c.Seek([]byte("xy")); k != nil; k, v, err = c.Next() {
-		require.Nil(t, err)
-		keys2 = append(keys2, string(k))
-		values2 = append(values2, string(v))
-	}
-	require.Nil(t, keys2)
-	require.Nil(t, values2)
-}
-
-func TestSeekExact(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
-
-	var keys []string
-	var values []string
-	for k, v, err := c.SeekExact([]byte("key3")); k != nil; k, v, err = c.Next() {
-		require.Nil(t, err)
-		keys = append(keys, string(k))
-		values = append(values, string(v))
-	}
-	require.Equal(t, []string{"key3", "key3"}, keys)
-	require.Equal(t, []string{"value3.1", "value3.3"}, values)
-
-	var keys1 []string
-	var values1 []string
-	for k, v, err := c.SeekExact([]byte("key")); k != nil; k, v, err = c.Next() {
-		require.Nil(t, err)
-		keys1 = append(keys, string(k))
-		values1 = append(values, string(v))
-	}
-	require.Nil(t, keys1)
-	require.Nil(t, values1)
 }
