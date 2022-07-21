@@ -326,3 +326,55 @@ func TestHistoryHistory(t *testing.T) {
 	}
 	checkHistoryHistory(t, db, h, txs)
 }
+
+func collateAndMergeHistory(t *testing.T, db kv.RwDB, h History, txs uint64) {
+	t.Helper()
+	var tx kv.RwTx
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	// Leave the last 2 aggregation steps un-collated
+	for step := uint64(0); step < txs/h.aggregationStep-1; step++ {
+		func() {
+			roTx, err := db.BeginRo(context.Background())
+			require.NoError(t, err)
+			defer roTx.Rollback()
+			c, err := h.collate(step, step*h.aggregationStep, (step+1)*h.aggregationStep, roTx)
+			require.NoError(t, err)
+			roTx.Rollback()
+			sf, err := h.buildFiles(step, c)
+			require.NoError(t, err)
+			h.integrateFiles(sf, step*h.aggregationStep, (step+1)*h.aggregationStep)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			h.SetTx(tx)
+			err = h.prune(step, step*h.aggregationStep, (step+1)*h.aggregationStep)
+			require.NoError(t, err)
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx = nil
+			var r HistoryRanges
+			maxEndTxNum := h.endTxNumMinimax()
+			maxSpan := uint64(16 * 16)
+			for r = h.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = h.findMergeRange(maxEndTxNum, maxSpan) {
+				indexOuts, historyOuts, _ := h.staticFilesInRange(r)
+				indexIn, historyIn, err := h.mergeFiles(indexOuts, historyOuts, r, maxSpan)
+				require.NoError(t, err)
+				h.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
+				err = h.deleteFiles(indexOuts, historyOuts)
+				require.NoError(t, err)
+			}
+		}()
+	}
+}
+
+func TestHistoryMergeFiles(t *testing.T) {
+	_, db, h, txs := filledHistory(t)
+	defer db.Close()
+	defer h.Close()
+
+	collateAndMergeHistory(t, db, h, txs)
+	checkHistoryHistory(t, db, h, txs)
+}

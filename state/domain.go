@@ -403,9 +403,10 @@ const (
 // over storage of a given account
 type CursorItem struct {
 	t        CursorType // Whether this item represents state file or DB record, or tree
+	reverse  bool
 	endTxNum uint64
 	key, val []byte
-	dg       *compress.Getter
+	dg, dg2  *compress.Getter
 	c        kv.CursorDupSort
 }
 
@@ -419,7 +420,10 @@ func (ch CursorHeap) Less(i, j int) bool {
 	cmp := bytes.Compare(ch[i].key, ch[j].key)
 	if cmp == 0 {
 		// when keys match, the items with later blocks are preferred
-		return ch[i].endTxNum > ch[j].endTxNum
+		if ch[i].reverse {
+			return ch[i].endTxNum > ch[j].endTxNum
+		}
+		return ch[i].endTxNum < ch[j].endTxNum
 	}
 	return cmp < 0
 }
@@ -470,7 +474,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 		if v, err = d.tx.GetOne(d.valsTable, keySuffix); err != nil {
 			return err
 		}
-		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum})
+		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum, reverse: true})
 	}
 	d.files[Values].Ascend(func(i btree.Item) bool {
 		item := i.(*filesItem)
@@ -491,7 +495,7 @@ func (d *Domain) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
 			key, _ := g.Next(nil)
 			if bytes.HasPrefix(key, prefix) {
 				val, _ := g.Next(nil)
-				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum})
+				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum, reverse: true})
 			}
 		}
 		return true
