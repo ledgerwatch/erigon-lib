@@ -378,3 +378,28 @@ func TestHistoryMergeFiles(t *testing.T) {
 	collateAndMergeHistory(t, db, h, txs)
 	checkHistoryHistory(t, db, h, txs)
 }
+
+func TestHistoryScanFiles(t *testing.T) {
+	path, db, h, txs := filledHistory(t)
+	defer db.Close()
+	defer func() {
+		h.Close()
+	}()
+	var err error
+	var tx kv.RwTx
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+
+	collateAndMergeHistory(t, db, h, txs)
+	// Recreate domain and re-scan the files
+	txNum := h.txNum
+	h.Close()
+	h, err = NewHistory(path, h.aggregationStep, h.filenameBase, h.keysTable, h.indexTable, h.valsTable, h.settingsTable, h.compressVals)
+	require.NoError(t, err)
+	h.SetTxNum(txNum)
+	// Check the history
+	checkHistoryHistory(t, db, h, txs)
+}
