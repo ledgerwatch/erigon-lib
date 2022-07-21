@@ -138,10 +138,13 @@ type Decompressor struct {
 }
 
 // Tables with bitlen greater than threshold will be condensed.
-// To disable condesning at all use 9 (we dont use tables larger than 2^9)
-// To enable condensing for tables > 64 set to 6
-// Condensing reduces memory consumption but co
-// Should be set before calling NewDecompression
+// Condensing reduces size of decompression table but leads to slower reads.
+// To disable condesning at all set to 9 (we dont use tables larger than 2^9)
+// To enable condensing for tables of size larger 64 = 6
+//					 					  for all tables               = 0
+// There is no sense to condense tables of size [1 - 64] in terms of performance
+//
+// Should be set before calling NewDecompression.
 var condensePatternTableBitThreshold = 9
 
 func SetDecompressionTableCondensity(fromBitSize int) {
