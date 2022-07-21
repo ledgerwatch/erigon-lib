@@ -82,6 +82,7 @@ type TxSlot struct {
 	Tip            uint256.Int // Maximum tip that transaction is giving to miner/block proposer
 	FeeCap         uint64      // Maximum fee that transaction burns and gives to the miner/block proposer
 	Gas            uint64      // Gas limit of the transaction
+	ChainID        uint64      // ChainId of the transaction.
 	Value          uint256.Int // Value transferred by the transaction
 	IDHash         [32]byte    // Transaction hash for the purposes of using it as a transaction Id
 	SenderID       uint64      // SenderID - require external mapping to it's address
@@ -314,31 +315,25 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			return 0, fmt.Errorf("%w: V: %s", ErrParseTxn, err)
 		}
 		ctx.IsProtected = ctx.V.Eq(u256.N27) || ctx.V.Eq(u256.N28)
-		// Compute chainId from V
-		if ctx.IsProtected {
-			// Do not add chain id and two extra zeros
-			vByte = byte(ctx.V.Uint64() - 27)
-			ctx.ChainID.Set(&ctx.cfg.ChainID)
-		} else {
-			ctx.ChainID.Sub(&ctx.V, u256.N35)
-			ctx.ChainID.Rsh(&ctx.ChainID, 1)
-			if ctx.ChainID.Cmp(&ctx.cfg.ChainID) != 0 {
-				return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
-			}
 
-			chainIDBits = ctx.ChainID.BitLen()
-			if chainIDBits <= 7 {
-				chainIDLen = 1
-			} else {
-				chainIDLen = (chainIDBits + 7) / 8 // It is always < 56 bytes
-				sigHashLen++                       // For chainId len Prefix
-			}
-			sigHashLen += uint(chainIDLen) // For chainId
-			sigHashLen += 2                // For two extra zeros
-
-			ctx.DeriveChainID.Sub(&ctx.V, &ctx.ChainIDMul)
-			vByte = byte(ctx.DeriveChainID.Sub(&ctx.DeriveChainID, u256.N8).Uint64() - 27)
+		ctx.ChainID.Sub(&ctx.V, u256.N35)
+		ctx.ChainID.Rsh(&ctx.ChainID, 1)
+		if ctx.ChainID.Cmp(&ctx.cfg.ChainID) != 0 {
+			return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
 		}
+
+		chainIDBits = ctx.ChainID.BitLen()
+		if chainIDBits <= 7 {
+			chainIDLen = 1
+		} else {
+			chainIDLen = (chainIDBits + 7) / 8 // It is always < 56 bytes
+			sigHashLen++                       // For chainId len Prefix
+		}
+		sigHashLen += uint(chainIDLen) // For chainId
+		sigHashLen += 2                // For two extra zeros
+
+		ctx.DeriveChainID.Sub(&ctx.V, &ctx.ChainIDMul)
+		vByte = byte(ctx.DeriveChainID.Sub(&ctx.DeriveChainID, u256.N8).Uint64() - 27)
 	} else {
 		var v uint64
 		p, v, err = rlp.U64(payload, p)
