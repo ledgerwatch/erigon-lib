@@ -65,6 +65,7 @@ func iteration(t *testing.T, c kv.RwCursorDupSort, start []byte, val []byte) ([]
 	for ind := i; ind > 1; ind-- {
 		c.Prev()
 	}
+
 	return keys, values
 }
 
