@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -48,7 +49,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/types"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -2041,7 +2041,7 @@ func (p *PendingPool) EnforceWorstInvariants() {
 	heap.Init(p.worst)
 }
 func (p *PendingPool) EnforceBestInvariants() {
-	slices.SortFunc(p.best.ms, func(i, j *metaTx) bool { return i.better(j, p.best.pendingBaseFee) })
+	sort.Sort(p.best)
 }
 
 func (p *PendingPool) Best() *metaTx { //nolint
@@ -2069,6 +2069,7 @@ func (p *PendingPool) Len() int { return len(p.best.ms) }
 func (p *PendingPool) Remove(i *metaTx) {
 	heap.Remove(p.worst, i.worstIndex)
 	p.best.UnsafeRemove(i)
+	i.currentSubPool = 0
 }
 
 func (p *PendingPool) Add(i *metaTx) {
