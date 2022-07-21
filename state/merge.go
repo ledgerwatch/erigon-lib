@@ -37,9 +37,12 @@ func (d *Domain) endTxNumMinimax() uint64 {
 	var minimax uint64
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
 		if d.files[fType].Len() > 0 {
-			endTxNum := d.files[fType].Max().(*filesItem).endTxNum
-			if minimax == 0 || endTxNum < minimax {
-				minimax = endTxNum
+			max, ok := d.files[fType].Max()
+			if ok {
+				endTxNum := max.endTxNum
+				if minimax == 0 || endTxNum < minimax {
+					minimax = endTxNum
+				}
 			}
 		}
 	}
@@ -85,8 +88,7 @@ func (r DomainRanges) any() bool {
 // That is why only Values type is inspected
 func (d *Domain) findMergeRange(maxEndTxNum, maxSpan uint64) DomainRanges {
 	var r DomainRanges
-	d.files[Values].Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	d.files[Values].Ascend(func(item *filesItem) bool {
 		if item.endTxNum > maxEndTxNum {
 			return false
 		}
@@ -103,8 +105,7 @@ func (d *Domain) findMergeRange(maxEndTxNum, maxSpan uint64) DomainRanges {
 		}
 		return true
 	})
-	d.files[History1].Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	d.files[History1].Ascend(func(item *filesItem) bool {
 		if item.endTxNum > maxEndTxNum {
 			return false
 		}
@@ -216,8 +217,7 @@ func (d *Domain) staticFilesInRange(r DomainRanges) ([][NumberOfTypes]*filesItem
 		}
 		startJ = 0
 		j := 0
-		d.files[fType].Ascend(func(i btree.Item) bool {
-			item := i.(*filesItem)
+		d.files[fType].Ascend(func(item *filesItem) bool {
 			if item.startTxNum < startTxNum {
 				startJ++
 				return true
