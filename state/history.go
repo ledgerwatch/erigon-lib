@@ -193,6 +193,12 @@ type HistoryCollation struct {
 	indexBitmaps map[string]*roaring64.Bitmap
 }
 
+func (c HistoryCollation) Close() {
+	if c.historyComp != nil {
+		c.Close()
+	}
+}
+
 func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollation, error) {
 	var historyComp *compress.Compressor
 	var err error
