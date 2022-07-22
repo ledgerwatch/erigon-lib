@@ -26,13 +26,13 @@ import (
 
 type Aggregator22 struct {
 	aggregationStep uint64
-	accounts        History
-	storage         History
-	code            History
-	logAddrs        InvertedIndex
-	logTopics       InvertedIndex
-	tracesFrom      InvertedIndex
-	tracesTo        InvertedIndex
+	accounts        *History
+	storage         *History
+	code            *History
+	logAddrs        *InvertedIndex
+	logTopics       *InvertedIndex
+	tracesFrom      *InvertedIndex
+	tracesTo        *InvertedIndex
 	txNum           uint64
 	rwTx            kv.RwTx
 }
@@ -77,13 +77,27 @@ func NewAggregator22(
 }
 
 func (a *Aggregator22) Close() {
-	a.accounts.Close()
-	a.storage.Close()
-	a.code.Close()
-	a.logAddrs.Close()
-	a.logTopics.Close()
-	a.tracesFrom.Close()
-	a.tracesTo.Close()
+	if a.accounts != nil {
+		a.accounts.Close()
+	}
+	if a.storage != nil {
+		a.storage.Close()
+	}
+	if a.code != nil {
+		a.code.Close()
+	}
+	if a.logAddrs != nil {
+		a.logAddrs.Close()
+	}
+	if a.logTopics != nil {
+		a.logTopics.Close()
+	}
+	if a.tracesFrom != nil {
+		a.tracesFrom.Close()
+	}
+	if a.tracesTo != nil {
+		a.tracesTo.Close()
+	}
 }
 
 func (a *Aggregator22) SetTx(tx kv.RwTx) {

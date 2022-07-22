@@ -55,10 +55,10 @@ func NewInvertedIndex(
 	filenameBase string,
 	keysTable string,
 	indexTable string,
-) (InvertedIndex, error) {
+) (*InvertedIndex, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		return InvertedIndex{}, err
+		return nil, err
 	}
 	ii := InvertedIndex{
 		initialised:     true,
@@ -71,9 +71,9 @@ func NewInvertedIndex(
 	ii.files = btree.NewG[*filesItem](32, filesItemLess)
 	ii.scanStateFiles(files)
 	if err = ii.openFiles(); err != nil {
-		return InvertedIndex{}, err
+		return nil, err
 	}
-	return ii, nil
+	return &ii, nil
 }
 
 func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {

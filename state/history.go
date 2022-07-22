@@ -55,25 +55,26 @@ func NewHistory(
 	valsTable string,
 	settingsTable string,
 	compressVals bool,
-) (History, error) {
+) (*History, error) {
 	var h History
-	var err error
-	if h.InvertedIndex, err = NewInvertedIndex(dir, aggregationStep, filenameBase, keysTable, indexTable); err != nil {
-		return History{}, err
+	ii, err := NewInvertedIndex(dir, aggregationStep, filenameBase, keysTable, indexTable)
+	if err != nil {
+		return nil, err
 	}
+	h.InvertedIndex = *ii
 	h.valsTable = valsTable
 	h.settingsTable = settingsTable
 	h.files = btree.NewG[*filesItem](32, filesItemLess)
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		return History{}, err
+		return nil, err
 	}
 	h.scanStateFiles(files)
 	if err = h.openFiles(); err != nil {
-		return History{}, err
+		return nil, err
 	}
 	h.compressVals = compressVals
-	return h, nil
+	return &h, nil
 }
 
 func (h *History) scanStateFiles(files []fs.DirEntry) {

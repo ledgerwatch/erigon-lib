@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testDbAndHistory(t *testing.T) (string, kv.RwDB, History) {
+func testDbAndHistory(t *testing.T) (string, kv.RwDB, *History) {
 	t.Helper()
 	path := t.TempDir()
 	logger := log.New()
@@ -224,7 +224,7 @@ func TestHistoryAfterPrune(t *testing.T) {
 	}
 }
 
-func filledHistory(t *testing.T) (string, kv.RwDB, History, uint64) {
+func filledHistory(t *testing.T) (string, kv.RwDB, *History, uint64) {
 	t.Helper()
 	path, db, h := testDbAndHistory(t)
 	tx, err := db.BeginRw(context.Background())
@@ -267,7 +267,7 @@ func filledHistory(t *testing.T) (string, kv.RwDB, History, uint64) {
 	return path, db, h, txs
 }
 
-func checkHistoryHistory(t *testing.T, db kv.RwDB, h History, txs uint64) {
+func checkHistoryHistory(t *testing.T, db kv.RwDB, h *History, txs uint64) {
 	t.Helper()
 	// Check the history
 	hc := h.MakeContext()
@@ -328,7 +328,7 @@ func TestHistoryHistory(t *testing.T) {
 	checkHistoryHistory(t, db, h, txs)
 }
 
-func collateAndMergeHistory(t *testing.T, db kv.RwDB, h History, txs uint64) {
+func collateAndMergeHistory(t *testing.T, db kv.RwDB, h *History, txs uint64) {
 	t.Helper()
 	var tx kv.RwTx
 	defer func() {

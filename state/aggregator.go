@@ -32,10 +32,10 @@ type Aggregator struct {
 	accounts        *Domain
 	storage         *Domain
 	code            *Domain
-	logAddrs        InvertedIndex
-	logTopics       InvertedIndex
-	tracesFrom      InvertedIndex
-	tracesTo        InvertedIndex
+	logAddrs        *InvertedIndex
+	logTopics       *InvertedIndex
+	tracesFrom      *InvertedIndex
+	tracesTo        *InvertedIndex
 	txNum           uint64
 	rwTx            kv.RwTx
 	keyBuf          []byte
@@ -110,10 +110,18 @@ func (a *Aggregator) Close() {
 	if a.code != nil {
 		a.code.Close()
 	}
-	a.logAddrs.Close()
-	a.logTopics.Close()
-	a.tracesFrom.Close()
-	a.tracesTo.Close()
+	if a.logAddrs != nil {
+		a.logAddrs.Close()
+	}
+	if a.logTopics != nil {
+		a.logTopics.Close()
+	}
+	if a.tracesFrom != nil {
+		a.tracesFrom.Close()
+	}
+	if a.tracesTo != nil {
+		a.tracesTo.Close()
+	}
 }
 
 func (a *Aggregator) SetTx(tx kv.RwTx) {
@@ -319,24 +327,31 @@ func (a *Aggregator) prune(step uint64, txFrom, txTo uint64) error {
 
 func (a *Aggregator) EndTxNumMinimax() uint64 {
 	min := a.accounts.endTxNumMinimax()
+	fmt.Printf("after account min=%d\n", min)
 	if txNum := a.storage.endTxNumMinimax(); txNum < min {
 		min = txNum
 	}
+	fmt.Printf("after storage min=%d\n", min)
 	if txNum := a.code.endTxNumMinimax(); txNum < min {
 		min = txNum
 	}
+	fmt.Printf("after code min=%d\n", min)
 	if txNum := a.logAddrs.endTxNumMinimax(); txNum < min {
 		min = txNum
 	}
+	fmt.Printf("after logAddrs min=%d\n", min)
 	if txNum := a.logTopics.endTxNumMinimax(); txNum < min {
 		min = txNum
 	}
+	fmt.Printf("after logTopics min=%d\n", min)
 	if txNum := a.tracesFrom.endTxNumMinimax(); txNum < min {
 		min = txNum
 	}
+	fmt.Printf("after tracesFrom min=%d\n", min)
 	if txNum := a.tracesTo.endTxNumMinimax(); txNum < min {
 		min = txNum
 	}
+	fmt.Printf("after tracesTo min=%d\n", min)
 	return min
 }
 
