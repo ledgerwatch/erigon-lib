@@ -42,7 +42,6 @@ type History struct {
 	valsTable     string
 	settingsTable string
 	files         *btree.BTreeG[*filesItem]
-	initialised   bool
 	compressVals  bool
 }
 
@@ -156,9 +155,6 @@ func (h *History) closeFiles() {
 }
 
 func (h *History) Close() {
-	if !h.initialised {
-		return
-	}
 	h.InvertedIndex.Close()
 	h.closeFiles()
 }

@@ -38,7 +38,6 @@ import (
 )
 
 type InvertedIndex struct {
-	initialised     bool
 	dir             string // Directory where static files are created
 	aggregationStep uint64
 	filenameBase    string
@@ -61,7 +60,6 @@ func NewInvertedIndex(
 		return nil, err
 	}
 	ii := InvertedIndex{
-		initialised:     true,
 		dir:             dir,
 		aggregationStep: aggregationStep,
 		filenameBase:    filenameBase,
@@ -150,9 +148,6 @@ func (ii *InvertedIndex) closeFiles() {
 }
 
 func (ii *InvertedIndex) Close() {
-	if !ii.initialised {
-		return
-	}
 	ii.closeFiles()
 }
 
