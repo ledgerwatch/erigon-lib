@@ -22,10 +22,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"os"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
