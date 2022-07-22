@@ -51,6 +51,7 @@ type TxParseContext struct {
 	Sighash          [32]byte
 	Sig              [65]byte
 	withSender       bool
+	chainIDRequired  bool
 	IsProtected      bool
 	validateRlp      func([]byte) error
 
@@ -113,6 +114,10 @@ var ErrRlpTooBig = errors.New("txn rlp too big")
 
 func (ctx *TxParseContext) ValidateRLP(f func(txnRlp []byte) error) { ctx.validateRlp = f }
 func (ctx *TxParseContext) WithSender(v bool)                       { ctx.withSender = v }
+func (ctx *TxParseContext) ChainIDReuired() *TxParseContext {
+	ctx.chainIDRequired = true
+	return ctx
+}
 
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
@@ -188,6 +193,9 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			return 0, fmt.Errorf("%w: chainId len: %s", ErrParseTxn, err)
 		}
 		if ctx.ChainID.IsZero() { // zero indicates that the chain ID was not specified in the tx.
+			if ctx.chainIDRequired {
+				return 0, fmt.Errorf("%w: chainID is required", ErrParseTxn)
+			}
 			ctx.ChainID.Set(&ctx.cfg.ChainID)
 		}
 		if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
@@ -326,7 +334,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		} else {
 			ctx.ChainID.Sub(&ctx.V, u256.N35)
 			ctx.ChainID.Rsh(&ctx.ChainID, 1)
-			if ctx.ChainID.Cmp(&ctx.cfg.ChainID) != 0 {
+			if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
 				return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
 			}
 
@@ -342,9 +350,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 			ctx.DeriveChainID.Sub(&ctx.V, &ctx.ChainIDMul)
 			vByte = byte(ctx.DeriveChainID.Sub(&ctx.DeriveChainID, u256.N8).Uint64() - 27)
-		}
-		if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
-			return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
 		}
 	} else {
 		var v uint64
