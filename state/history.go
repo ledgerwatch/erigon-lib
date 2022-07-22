@@ -142,7 +142,6 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
-	h.InvertedIndex.closeFiles()
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
@@ -155,7 +154,7 @@ func (h *History) closeFiles() {
 }
 
 func (h *History) Close() {
-	h.InvertedIndex.Close()
+	h.InvertedIndex.closeFiles()
 	h.closeFiles()
 }
 

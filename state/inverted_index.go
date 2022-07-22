@@ -122,10 +122,12 @@ func (ii *InvertedIndex) openFiles() error {
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
+		fmt.Printf("Opened %s\n", datPath)
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 			return false
 		}
+		fmt.Printf("Opened %s\n", idxPath)
 		totalKeys += item.index.KeyCount()
 		return true
 	})
@@ -139,9 +141,11 @@ func (ii *InvertedIndex) closeFiles() {
 	ii.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
+			fmt.Printf("Closed decomp %d-%d\n", item.startTxNum, item.endTxNum)
 		}
 		if item.index != nil {
 			item.index.Close()
+			fmt.Printf("Closed index %d-%d\n", item.startTxNum, item.endTxNum)
 		}
 		return true
 	})
