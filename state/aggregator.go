@@ -729,17 +729,17 @@ func (a *Aggregator) UpdateAccountCode(addr []byte, code []byte) error {
 	return a.code.Put(addr, code)
 }
 
-func (a *AggregatorContext) DeleteAccount(addr []byte) error {
-	if err := a.accounts.d.Delete(addr); err != nil {
+func (a *Aggregator) DeleteAccount(addr []byte) error {
+	if err := a.accounts.Delete(addr); err != nil {
 		return err
 	}
-	if err := a.code.d.Delete(addr); err != nil {
+	if err := a.code.Delete(addr); err != nil {
 		return err
 	}
 	var e error
-	if err := a.storage.IteratePrefix(addr, func(k, _ []byte) {
+	if err := a.storage.defaultDc.IteratePrefix(addr, func(k, _ []byte) {
 		if e == nil {
-			e = a.storage.d.Delete(k)
+			e = a.storage.Delete(k)
 		}
 	}); err != nil {
 		return err
