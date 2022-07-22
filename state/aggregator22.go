@@ -35,7 +35,6 @@ type Aggregator22 struct {
 	tracesTo        InvertedIndex
 	txNum           uint64
 	rwTx            kv.RwTx
-	keyBuf          []byte
 }
 
 func NewAggregator22(
@@ -660,7 +659,6 @@ type Aggregator22Context struct {
 	logTopics  *InvertedIndexContext
 	tracesFrom *InvertedIndexContext
 	tracesTo   *InvertedIndexContext
-	keyBuf     []byte
 }
 
 func (a *Aggregator22) MakeContext() *Aggregator22Context {
