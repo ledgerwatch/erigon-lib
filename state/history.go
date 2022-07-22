@@ -63,6 +63,14 @@ func NewHistory(
 	h.valsTable = valsTable
 	h.settingsTable = settingsTable
 	h.files = btree.NewG[*filesItem](32, filesItemLess)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return History{}, err
+	}
+	h.scanStateFiles(files)
+	if err = h.openFiles(); err != nil {
+		return History{}, err
+	}
 	h.compressVals = compressVals
 	return h, nil
 }

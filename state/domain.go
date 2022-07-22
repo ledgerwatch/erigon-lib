@@ -123,7 +123,7 @@ type Domain struct {
 	prefixLen        int                                      // Number of bytes in the keys that can be used for prefix iteration
 	compressVals     bool
 	stats            DomainStats
-	defaultDc *DomainContext
+	defaultDc        *DomainContext
 }
 
 func NewDomain(
@@ -437,10 +437,10 @@ func (ch *CursorHeap) Pop() interface{} {
 
 // filesItem corresponding to a pair of files (.dat and .idx)
 type ctxItem struct {
-	startTxNum   uint64
-	endTxNum     uint64
-	getter *compress.Getter
-	reader *recsplit.IndexReader
+	startTxNum uint64
+	endTxNum   uint64
+	getter     *compress.Getter
+	reader     *recsplit.IndexReader
 }
 
 func ctxItemLess(i, j *ctxItem) bool {
@@ -463,10 +463,10 @@ func (d *Domain) MakeContext() *DomainContext {
 		dc.files[fType] = bt
 		d.files[fType].Ascend(func(item *filesItem) bool {
 			bt.ReplaceOrInsert(&ctxItem{
-				startTxNum:   item.startTxNum,
-				endTxNum:     item.endTxNum,
-				getter:       item.decompressor.MakeGetter(),
-				reader:  recsplit.NewIndexReader(item.index),
+				startTxNum: item.startTxNum,
+				endTxNum:   item.endTxNum,
+				getter:     item.decompressor.MakeGetter(),
+				reader:     recsplit.NewIndexReader(item.index),
 			})
 			return true
 		})
