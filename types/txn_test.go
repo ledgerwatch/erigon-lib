@@ -18,21 +18,37 @@ package types
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 	"testing"
 
+	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func TestParseHash12(t *testing.T) {
+	// 095e7baea6a6c7c4c2dfeb977efac326af552d87
+	str := ""
+	payload := decodeHex(str)
+
+	chI := u256.N2
+	ctx := NewTxParseContext(*chI)
+	tx, txSender := &TxSlot{}, [20]byte{}
+	parseEnd, err := ctx.ParseTransaction(payload, 0, tx, txSender[:], false /* hasEnvelope */, nil)
+	_, _ = parseEnd, err
+	fmt.Printf("alex: %s\n", err)
+}
+
 func TestParseTransactionRLP(t *testing.T) {
 	for _, testSet := range allNetsTestCases {
+		testSet := testSet
 		t.Run(strconv.Itoa(int(testSet.chainID.Uint64())), func(t *testing.T) {
-			ctx := NewTxParseContext(testSet.chainID)
 			require := require.New(t)
-
+			ctx := NewTxParseContext(testSet.chainID)
 			tx, txSender := &TxSlot{}, [20]byte{}
 			for i, tt := range testSet.tests {
+				tt := tt
 				t.Run(strconv.Itoa(i), func(t *testing.T) {
 					payload := decodeHex(tt.PayloadStr)
 					parseEnd, err := ctx.ParseTransaction(payload, 0, tx, txSender[:], false /* hasEnvelope */, nil)

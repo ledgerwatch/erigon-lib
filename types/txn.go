@@ -182,13 +182,17 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 	// Remember where signing hash data begins (it will need to be wrapped in an RLP list)
 	sigHashPos := p
-	// If it is non-legacy tx, chainId follows, but we skip it
 	if !legacy {
-		dataPos, dataLen, err = rlp.String(payload, p)
+		p, err = rlp.U256(payload, p, &ctx.ChainID)
 		if err != nil {
 			return 0, fmt.Errorf("%w: chainId len: %s", ErrParseTxn, err)
 		}
-		p = dataPos + dataLen
+		if ctx.ChainID.IsZero() { // zero indicates that the chain ID was not specified in the tx.
+			ctx.ChainID.Set(&ctx.cfg.ChainID)
+		}
+		if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
+			return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+		}
 	}
 	// Next follows the nonce, which we need to parse
 	p, slot.Nonce, err = rlp.U64(payload, p)
@@ -339,6 +343,9 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			ctx.DeriveChainID.Sub(&ctx.V, &ctx.ChainIDMul)
 			vByte = byte(ctx.DeriveChainID.Sub(&ctx.DeriveChainID, u256.N8).Uint64() - 27)
 		}
+		if !ctx.ChainID.Eq(&ctx.cfg.ChainID) {
+			return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
+		}
 	} else {
 		var v uint64
 		p, v, err = rlp.U64(payload, p)
@@ -350,10 +357,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		}
 		vByte = byte(v)
 		ctx.IsProtected = true
-		ctx.ChainID.Set(&ctx.cfg.ChainID)
-	}
-	if ctx.ChainID.Cmp(&ctx.cfg.ChainID) != 0 {
-		return 0, fmt.Errorf("%w: %s, %d (expected %d)", ErrParseTxn, "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
 	}
 
 	// Next follows R of the signature
