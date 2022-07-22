@@ -159,6 +159,7 @@ func (h *History) Close() {
 	if !h.initialised {
 		return
 	}
+	h.InvertedIndex.Close()
 	h.closeFiles()
 }
 
