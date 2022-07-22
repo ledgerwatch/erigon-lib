@@ -270,6 +270,7 @@ func filledHistory(t *testing.T) (string, kv.RwDB, History, uint64) {
 func checkHistoryHistory(t *testing.T, db kv.RwDB, h History, txs uint64) {
 	t.Helper()
 	// Check the history
+	hc := h.MakeContext()
 	for txNum := uint64(0); txNum <= txs; txNum++ {
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			valNum := txNum / keyNum
@@ -279,7 +280,7 @@ func checkHistoryHistory(t *testing.T, db kv.RwDB, h History, txs uint64) {
 			//fmt.Printf("label=%s\n", label)
 			binary.BigEndian.PutUint64(k[:], keyNum)
 			binary.BigEndian.PutUint64(v[:], valNum)
-			val, ok, _, err := h.GetNoState(k[:], txNum+1)
+			val, ok, _, err := hc.GetNoState(k[:], txNum+1)
 			//require.Equal(t, ok, txNum < 976)
 			if ok {
 				require.NoError(t, err, label)

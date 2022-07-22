@@ -40,7 +40,7 @@ type History struct {
 	InvertedIndex
 	valsTable     string
 	settingsTable string
-	files         *btree.BTree
+	files         *btree.BTreeG[*filesItem]
 	initialised   bool
 	compressVals  bool
 }
@@ -62,7 +62,7 @@ func NewHistory(
 	}
 	h.valsTable = valsTable
 	h.settingsTable = settingsTable
-	h.files = btree.New(32)
+	h.files = btree.NewG[*filesItem](32, filesItemLess)
 	h.compressVals = compressVals
 	return h, nil
 }
@@ -95,8 +95,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 		}
 		var item = &filesItem{startTxNum: startTxNum * h.aggregationStep, endTxNum: endTxNum * h.aggregationStep}
 		var foundI *filesItem
-		h.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * h.aggregationStep, endTxNum: endTxNum * h.aggregationStep}, func(i btree.Item) bool {
-			it := i.(*filesItem)
+		h.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * h.aggregationStep, endTxNum: endTxNum * h.aggregationStep}, func(it *filesItem) bool {
 			if it.endTxNum == endTxNum {
 				foundI = it
 			}
@@ -115,8 +114,7 @@ func (h *History) openFiles() error {
 		return err
 	}
 	var totalKeys uint64
-	h.files.Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	h.files.Ascend(func(item *filesItem) bool {
 		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
@@ -126,10 +124,6 @@ func (h *History) openFiles() error {
 			return false
 		}
 		totalKeys += item.index.KeyCount()
-		item.getter = item.decompressor.MakeGetter()
-		item.getterMerge = item.decompressor.MakeGetter()
-		item.indexReader = recsplit.NewIndexReader(item.index)
-		item.readerMerge = recsplit.NewIndexReader(item.index)
 		return true
 	})
 	if err != nil {
@@ -140,8 +134,7 @@ func (h *History) openFiles() error {
 
 func (h *History) closeFiles() {
 	h.InvertedIndex.closeFiles()
-	h.files.Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
 		}
@@ -456,10 +449,6 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 		endTxNum:     txNumTo,
 		decompressor: sf.historyDecomp,
 		index:        sf.historyIdx,
-		getter:       sf.historyDecomp.MakeGetter(),
-		getterMerge:  sf.historyDecomp.MakeGetter(),
-		indexReader:  recsplit.NewIndexReader(sf.historyIdx),
-		readerMerge:  recsplit.NewIndexReader(sf.historyIdx),
 	})
 }
 
@@ -495,7 +484,37 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
-func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
+type HistoryContext struct {
+	h                        *History
+	indexFiles, historyFiles *btree.BTreeG[*ctxItem]
+}
+
+func (h *History) MakeContext() *HistoryContext {
+	var hc = HistoryContext{h: h}
+	hc.indexFiles = btree.NewG[*ctxItem](32, ctxItemLess)
+	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
+		hc.indexFiles.ReplaceOrInsert(&ctxItem{
+			startTxNum: item.startTxNum,
+			endTxNum:   item.endTxNum,
+			getter:     item.decompressor.MakeGetter(),
+			reader:     recsplit.NewIndexReader(item.index),
+		})
+		return true
+	})
+	hc.historyFiles = btree.NewG[*ctxItem](32, ctxItemLess)
+	h.files.Ascend(func(item *filesItem) bool {
+		hc.historyFiles.ReplaceOrInsert(&ctxItem{
+			startTxNum: item.startTxNum,
+			endTxNum:   item.endTxNum,
+			getter:     item.decompressor.MakeGetter(),
+			reader:     recsplit.NewIndexReader(item.index),
+		})
+		return true
+	})
+	return &hc
+}
+
+func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
 	var foundEndTxNum uint64
@@ -503,13 +522,12 @@ func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, er
 	var found bool
 	var anyItem bool
 	var maxTxNum uint64
-	h.InvertedIndex.files.Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	hc.indexFiles.Ascend(func(item *ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
-		if item.index.Empty() {
+		if item.reader.Empty() {
 			return true
 		}
-		offset := item.indexReader.Lookup(key)
+		offset := item.reader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
 		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
@@ -533,20 +551,19 @@ func (h *History) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, er
 	if found {
 		var txKey [8]byte
 		binary.BigEndian.PutUint64(txKey[:], foundTxNum)
-		var historyItem *filesItem
-		var search filesItem
+		var historyItem *ctxItem
+		var ok bool
+		var search ctxItem
 		search.startTxNum = foundStartTxNum
 		search.endTxNum = foundEndTxNum
-		if i := h.files.Get(&search); i != nil {
-			historyItem = i.(*filesItem)
-		} else {
-			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", h.filenameBase, key)
+		if historyItem, ok = hc.historyFiles.Get(&search); !ok {
+			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
 		}
-		offset := historyItem.indexReader.Lookup2(txKey[:], key)
+		offset := historyItem.reader.Lookup2(txKey[:], key)
 		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
 		g := historyItem.getter
 		g.Reset(offset)
-		if h.compressVals {
+		if hc.h.compressVals {
 			v, _ := g.Next(nil)
 			return v, true, 0, nil
 		}

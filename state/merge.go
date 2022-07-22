@@ -25,7 +25,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -36,13 +35,10 @@ import (
 func (d *Domain) endTxNumMinimax() uint64 {
 	var minimax uint64
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
-		if d.files[fType].Len() > 0 {
-			max, ok := d.files[fType].Max()
-			if ok {
-				endTxNum := max.endTxNum
-				if minimax == 0 || endTxNum < minimax {
-					minimax = endTxNum
-				}
+		if max, ok := d.files[fType].Max(); ok {
+			endTxNum := max.endTxNum
+			if minimax == 0 || endTxNum < minimax {
+				minimax = endTxNum
 			}
 		}
 	}
@@ -51,8 +47,8 @@ func (d *Domain) endTxNumMinimax() uint64 {
 
 func (ii *InvertedIndex) endTxNumMinimax() uint64 {
 	var minimax uint64
-	if ii.files.Len() > 0 {
-		endTxNum := ii.files.Max().(*filesItem).endTxNum
+	if max, ok := ii.files.Max(); ok {
+		endTxNum := max.endTxNum
 		if minimax == 0 || endTxNum < minimax {
 			minimax = endTxNum
 		}
@@ -62,8 +58,8 @@ func (ii *InvertedIndex) endTxNumMinimax() uint64 {
 
 func (h *History) endTxNumMinimax() uint64 {
 	minimax := h.InvertedIndex.endTxNumMinimax()
-	if h.files.Len() > 0 {
-		endTxNum := h.files.Max().(*filesItem).endTxNum
+	if max, ok := h.files.Max(); ok {
+		endTxNum := max.endTxNum
 		if minimax == 0 || endTxNum < minimax {
 			minimax = endTxNum
 		}
@@ -131,8 +127,7 @@ func (d *Domain) findMergeRange(maxEndTxNum, maxSpan uint64) DomainRanges {
 func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint64, uint64) {
 	var minFound bool
 	var startTxNum, endTxNum uint64
-	ii.files.Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	ii.files.Ascend(func(item *filesItem) bool {
 		if item.endTxNum > maxEndTxNum {
 			return false
 		}
@@ -171,8 +166,7 @@ func (r HistoryRanges) any() bool {
 func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 	var r HistoryRanges
 	r.index, r.indexStartTxNum, r.indexEndTxNum = h.InvertedIndex.findMergeRange(maxEndTxNum, maxSpan)
-	h.files.Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	h.files.Ascend(func(item *filesItem) bool {
 		if item.endTxNum > maxEndTxNum {
 			return false
 		}
@@ -239,8 +233,7 @@ func (d *Domain) staticFilesInRange(r DomainRanges) ([][NumberOfTypes]*filesItem
 func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64) ([]*filesItem, int) {
 	var files []*filesItem
 	var startJ int
-	ii.files.Ascend(func(i btree.Item) bool {
-		item := i.(*filesItem)
+	ii.files.Ascend(func(item *filesItem) bool {
 		if item.startTxNum < startTxNum {
 			startJ++
 			return true
@@ -260,8 +253,7 @@ func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles []*filesItem, 
 	}
 	if r.history {
 		startJ = 0
-		h.files.Ascend(func(i btree.Item) bool {
-			item := i.(*filesItem)
+		h.files.Ascend(func(item *filesItem) bool {
 			if item.startTxNum < r.historyStartTxNum {
 				startJ++
 				return true
@@ -550,10 +542,6 @@ func (d *Domain) mergeFiles(files [][NumberOfTypes]*filesItem, r DomainRanges, m
 				return outItems, fmt.Errorf("merge %s buildIndex %s [%d-%d]: %w", d.filenameBase, fType.String(), startTxNum, endTxNum, err)
 			}
 		}
-		outItem.getter = outItem.decompressor.MakeGetter()
-		outItem.getterMerge = outItem.decompressor.MakeGetter()
-		outItem.indexReader = recsplit.NewIndexReader(outItem.index)
-		outItem.readerMerge = recsplit.NewIndexReader(outItem.index)
 	}
 	closeItem = false
 	return outItems, nil
@@ -669,10 +657,6 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 	if outItem.index, err = buildIndex(outItem.decompressor, idxPath, ii.dir, count, false /* values */); err != nil {
 		return nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
-	outItem.getter = outItem.decompressor.MakeGetter()
-	outItem.getterMerge = outItem.decompressor.MakeGetter()
-	outItem.indexReader = recsplit.NewIndexReader(outItem.index)
-	outItem.readerMerge = recsplit.NewIndexReader(outItem.index)
 	closeItem = false
 	return outItem, nil
 }
@@ -850,10 +834,6 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 		return nil, nil, fmt.Errorf("open %s idx: %w", h.filenameBase, err)
 	}
 	historyIn = &filesItem{startTxNum: r.historyStartTxNum, endTxNum: r.historyEndTxNum, decompressor: decomp, index: index}
-	historyIn.getter = historyIn.decompressor.MakeGetter()
-	historyIn.getterMerge = historyIn.decompressor.MakeGetter()
-	historyIn.indexReader = recsplit.NewIndexReader(historyIn.index)
-	historyIn.readerMerge = recsplit.NewIndexReader(historyIn.index)
 	closeItem = false
 	closeIndex = false
 	return

@@ -601,54 +601,54 @@ func (a *Aggregator) deleteFiles(outs SelectedStaticFiles) error {
 	return nil
 }
 
-func (a *Aggregator) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
-	return a.accounts.Get(addr, roTx)
+func (ac *AggregatorContext) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
+	return ac.accounts.Get(addr, roTx)
 }
 
-func (a *Aggregator) ReadAccountDataBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	return a.accounts.GetBeforeTxNum(addr, txNum, roTx)
+func (ac *AggregatorContext) ReadAccountDataBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
+	return ac.accounts.GetBeforeTxNum(addr, txNum, roTx)
 }
 
-func (a *Aggregator) ReadAccountStorage(addr []byte, loc []byte, roTx kv.Tx) ([]byte, error) {
-	if cap(a.keyBuf) < len(addr)+len(loc) {
-		a.keyBuf = make([]byte, len(addr)+len(loc))
-	} else if len(a.keyBuf) != len(addr)+len(loc) {
-		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+func (ac *AggregatorContext) ReadAccountStorage(addr []byte, loc []byte, roTx kv.Tx) ([]byte, error) {
+	if cap(ac.keyBuf) < len(addr)+len(loc) {
+		ac.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(ac.keyBuf) != len(addr)+len(loc) {
+		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
 	}
-	copy(a.keyBuf, addr)
-	copy(a.keyBuf[len(addr):], loc)
-	return a.storage.Get(a.keyBuf, roTx)
+	copy(ac.keyBuf, addr)
+	copy(ac.keyBuf[len(addr):], loc)
+	return ac.storage.Get(ac.keyBuf, roTx)
 }
 
-func (a *Aggregator) ReadAccountStorageBeforeTxNum(addr []byte, loc []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	if cap(a.keyBuf) < len(addr)+len(loc) {
-		a.keyBuf = make([]byte, len(addr)+len(loc))
-	} else if len(a.keyBuf) != len(addr)+len(loc) {
-		a.keyBuf = a.keyBuf[:len(addr)+len(loc)]
+func (ac *AggregatorContext) ReadAccountStorageBeforeTxNum(addr []byte, loc []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
+	if cap(ac.keyBuf) < len(addr)+len(loc) {
+		ac.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(ac.keyBuf) != len(addr)+len(loc) {
+		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
 	}
-	copy(a.keyBuf, addr)
-	copy(a.keyBuf[len(addr):], loc)
-	return a.storage.GetBeforeTxNum(a.keyBuf, txNum, roTx)
+	copy(ac.keyBuf, addr)
+	copy(ac.keyBuf[len(addr):], loc)
+	return ac.storage.GetBeforeTxNum(ac.keyBuf, txNum, roTx)
 }
 
-func (a *Aggregator) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, error) {
-	return a.code.Get(addr, roTx)
+func (ac *AggregatorContext) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, error) {
+	return ac.code.Get(addr, roTx)
 }
 
-func (a *Aggregator) ReadAccountCodeBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	return a.code.GetBeforeTxNum(addr, txNum, roTx)
+func (ac *AggregatorContext) ReadAccountCodeBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
+	return ac.code.GetBeforeTxNum(addr, txNum, roTx)
 }
 
-func (a *Aggregator) ReadAccountCodeSize(addr []byte, roTx kv.Tx) (int, error) {
-	code, err := a.code.Get(addr, roTx)
+func (ac *AggregatorContext) ReadAccountCodeSize(addr []byte, roTx kv.Tx) (int, error) {
+	code, err := ac.code.Get(addr, roTx)
 	if err != nil {
 		return 0, err
 	}
 	return len(code), nil
 }
 
-func (a *Aggregator) ReadAccountCodeSizeBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) (int, error) {
-	code, err := a.code.GetBeforeTxNum(addr, txNum, roTx)
+func (ac *AggregatorContext) ReadAccountCodeSizeBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) (int, error) {
+	code, err := ac.code.GetBeforeTxNum(addr, txNum, roTx)
 	if err != nil {
 		return 0, err
 	}
@@ -729,17 +729,17 @@ func (a *Aggregator) UpdateAccountCode(addr []byte, code []byte) error {
 	return a.code.Put(addr, code)
 }
 
-func (a *Aggregator) DeleteAccount(addr []byte) error {
-	if err := a.accounts.Delete(addr); err != nil {
+func (a *AggregatorContext) DeleteAccount(addr []byte) error {
+	if err := a.accounts.d.Delete(addr); err != nil {
 		return err
 	}
-	if err := a.code.Delete(addr); err != nil {
+	if err := a.code.d.Delete(addr); err != nil {
 		return err
 	}
 	var e error
 	if err := a.storage.IteratePrefix(addr, func(k, _ []byte) {
 		if e == nil {
-			e = a.storage.Delete(k)
+			e = a.storage.d.Delete(k)
 		}
 	}); err != nil {
 		return err
@@ -777,20 +777,20 @@ func (a *Aggregator) AddLogTopic(topic []byte) error {
 	return a.logTopics.Add(topic)
 }
 
-func (a *Aggregator) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.logAddrs.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (a *Aggregator) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.logTopics.IterateRange(topic, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, roTx)
 }
 
-func (a *Aggregator) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.tracesFrom.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (a *Aggregator) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
 type FilesStats struct {
@@ -802,19 +802,27 @@ func (a *Aggregator) Stats() FilesStats {
 }
 
 type AggregatorContext struct {
-	a        *Aggregator
-	accounts *DomainContext
-	storage  *DomainContext
-	code     *DomainContext
-	keyBuf   []byte
+	a          *Aggregator
+	accounts   *DomainContext
+	storage    *DomainContext
+	code       *DomainContext
+	logAddrs   *InvertedIndexContext
+	logTopics  *InvertedIndexContext
+	tracesFrom *InvertedIndexContext
+	tracesTo   *InvertedIndexContext
+	keyBuf     []byte
 }
 
 func (a *Aggregator) MakeContext() *AggregatorContext {
 	return &AggregatorContext{
-		a:        a,
-		accounts: a.accounts.MakeContext(),
-		storage:  a.storage.MakeContext(),
-		code:     a.code.MakeContext(),
+		a:          a,
+		accounts:   a.accounts.MakeContext(),
+		storage:    a.storage.MakeContext(),
+		code:       a.code.MakeContext(),
+		logAddrs:   a.logAddrs.MakeContext(),
+		logTopics:  a.logTopics.MakeContext(),
+		tracesFrom: a.tracesFrom.MakeContext(),
+		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
 

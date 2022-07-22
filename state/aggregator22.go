@@ -627,18 +627,51 @@ func (a *Aggregator22) AddLogTopic(topic []byte) error {
 	return a.logTopics.Add(topic)
 }
 
-func (a *Aggregator22) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.logAddrs.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *Aggregator22Context) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (a *Aggregator22) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.logTopics.IterateRange(topic, startTxNum, endTxNum, roTx)
+func (ac *Aggregator22Context) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, roTx)
 }
 
-func (a *Aggregator22) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.tracesFrom.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *Aggregator22Context) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (a *Aggregator22) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	return a.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *Aggregator22Context) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
+}
+
+type FilesStats22 struct {
+}
+
+func (a *Aggregator22) Stats() FilesStats22 {
+	var fs FilesStats22
+	return fs
+}
+
+type Aggregator22Context struct {
+	a          *Aggregator22
+	accounts   *HistoryContext
+	storage    *HistoryContext
+	code       *HistoryContext
+	logAddrs   *InvertedIndexContext
+	logTopics  *InvertedIndexContext
+	tracesFrom *InvertedIndexContext
+	tracesTo   *InvertedIndexContext
+	keyBuf     []byte
+}
+
+func (a *Aggregator22) MakeContext() *Aggregator22Context {
+	return &Aggregator22Context{
+		a:          a,
+		accounts:   a.accounts.MakeContext(),
+		storage:    a.storage.MakeContext(),
+		code:       a.code.MakeContext(),
+		logAddrs:   a.logAddrs.MakeContext(),
+		logTopics:  a.logTopics.MakeContext(),
+		tracesFrom: a.tracesFrom.MakeContext(),
+		tracesTo:   a.tracesTo.MakeContext(),
+	}
 }
