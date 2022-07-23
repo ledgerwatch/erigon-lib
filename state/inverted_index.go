@@ -55,10 +55,6 @@ func NewInvertedIndex(
 	keysTable string,
 	indexTable string,
 ) (*InvertedIndex, error) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
 	ii := InvertedIndex{
 		dir:             dir,
 		aggregationStep: aggregationStep,
@@ -67,6 +63,10 @@ func NewInvertedIndex(
 		indexTable:      indexTable,
 	}
 	ii.files = btree.NewG[*filesItem](32, filesItemLess)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
 	ii.scanStateFiles(files)
 	if err = ii.openFiles(); err != nil {
 		return nil, err

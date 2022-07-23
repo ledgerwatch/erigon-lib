@@ -77,7 +77,6 @@ func NewHistory(
 }
 
 func (h *History) scanStateFiles(files []fs.DirEntry) {
-	h.InvertedIndex.scanStateFiles(files)
 	re := regexp.MustCompile(h.filenameBase + ".([0-9]+)-([0-9]+).(v|vi)")
 	var err error
 	for _, f := range files {
@@ -118,11 +117,8 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 }
 
 func (h *History) openFiles() error {
-	var err error
-	if err = h.InvertedIndex.openFiles(); err != nil {
-		return err
-	}
 	var totalKeys uint64
+	var err error
 	h.files.Ascend(func(item *filesItem) bool {
 		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
