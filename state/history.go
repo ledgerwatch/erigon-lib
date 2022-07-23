@@ -38,7 +38,7 @@ import (
 )
 
 type History struct {
-	InvertedIndex
+	*InvertedIndex
 	valsTable     string
 	settingsTable string
 	files         *btree.BTreeG[*filesItem]
@@ -56,11 +56,11 @@ func NewHistory(
 	compressVals bool,
 ) (*History, error) {
 	var h History
-	ii, err := NewInvertedIndex(dir, aggregationStep, filenameBase, keysTable, indexTable)
+	var err error
+	h.InvertedIndex, err = NewInvertedIndex(dir, aggregationStep, filenameBase, keysTable, indexTable)
 	if err != nil {
 		return nil, err
 	}
-	h.InvertedIndex = *ii
 	h.valsTable = valsTable
 	h.settingsTable = settingsTable
 	h.files = btree.NewG[*filesItem](32, filesItemLess)
