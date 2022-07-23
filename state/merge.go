@@ -858,7 +858,9 @@ func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) 
 	for _, out := range outs {
 		ii.files.Delete(out)
 		out.decompressor.Close()
+		fmt.Printf("Closed decomp1 %d-%d\n", out.startTxNum, out.endTxNum)
 		out.index.Close()
+		fmt.Printf("Closed index1 %d-%d\n", out.startTxNum, out.endTxNum)
 	}
 }
 
