@@ -858,9 +858,7 @@ func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) 
 	for _, out := range outs {
 		ii.files.Delete(out)
 		out.decompressor.Close()
-		fmt.Printf("Closed decomp1 %d-%d\n", out.startTxNum, out.endTxNum)
 		out.index.Close()
-		fmt.Printf("Closed index1 %d-%d\n", out.startTxNum, out.endTxNum)
 	}
 }
 
@@ -899,12 +897,10 @@ func (ii *InvertedIndex) deleteFiles(outs []*filesItem) error {
 		if err := os.Remove(datPath); err != nil {
 			return err
 		}
-		fmt.Printf("Removed %s\n", datPath)
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
 		if err := os.Remove(idxPath); err != nil {
 			return err
 		}
-		fmt.Printf("Removed %s\n", idxPath)
 	}
 	return nil
 }
