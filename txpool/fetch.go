@@ -70,8 +70,8 @@ func NewFetch(ctx context.Context, sentryClients []direct.SentryClient, pool Poo
 		coreDB:               coreDB,
 		db:                   db,
 		stateChangesClient:   stateChangesClient,
-		stateChangesParseCtx: types2.NewTxParseContext(chainID).ChainIDReuired(), //TODO: change ctx if rules changed
-		pooledTxsParseCtx:    types2.NewTxParseContext(chainID).ChainIDReuired(),
+		stateChangesParseCtx: types2.NewTxParseContext(chainID).ChainIDRequired(), //TODO: change ctx if rules changed
+		pooledTxsParseCtx:    types2.NewTxParseContext(chainID).ChainIDRequired(),
 	}
 	f.pooledTxsParseCtx.ValidateRLP(f.pool.ValidateSerializedTxn)
 	f.stateChangesParseCtx.ValidateRLP(f.pool.ValidateSerializedTxn)

@@ -114,7 +114,7 @@ var ErrRlpTooBig = errors.New("txn rlp too big")
 
 func (ctx *TxParseContext) ValidateRLP(f func(txnRlp []byte) error) { ctx.validateRlp = f }
 func (ctx *TxParseContext) WithSender(v bool)                       { ctx.withSender = v }
-func (ctx *TxParseContext) ChainIDReuired() *TxParseContext {
+func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 	ctx.chainIDRequired = true
 	return ctx
 }
