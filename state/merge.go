@@ -899,10 +899,12 @@ func (ii *InvertedIndex) deleteFiles(outs []*filesItem) error {
 		if err := os.Remove(datPath); err != nil {
 			return err
 		}
+		fmt.Printf("Removed %s\n", datPath)
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
 		if err := os.Remove(idxPath); err != nil {
 			return err
 		}
+		fmt.Printf("Removed %s\n", idxPath)
 	}
 	return nil
 }
