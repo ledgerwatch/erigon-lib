@@ -54,7 +54,7 @@ jobs:
 
       - name: Test win
         if: matrix.os == 'windows-2022'
-        run: go test --tags nofuzz --count 1 -p 2 ./state -v --run TestHistoryScanFiles
+        run: go test --tags nofuzz --count 1 -p 2 ./...
       - name: Test
         if: matrix.os != 'windows-2022'
         run: go test --count 1 -p 2 ./...
