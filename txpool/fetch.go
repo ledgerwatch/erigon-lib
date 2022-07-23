@@ -317,6 +317,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				}
 				return nil
 			}); err != nil {
+				log.Warn("alex1", "err", err, "data", fmt.Sprintf("%x", req.Data))
 				return err
 			}
 		case sentry.MessageId_POOLED_TRANSACTIONS_66:
@@ -335,6 +336,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				}
 				return nil
 			}); err != nil {
+				log.Warn("alex2", "err", err, "data", fmt.Sprintf("%x", req.Data))
 				return err
 			}
 		default:
@@ -447,6 +449,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 						_, err := parseContext.ParseTransaction(change.Txs[i], 0, minedTxs.Txs[i], minedTxs.Senders.At(i), false /* hasEnvelope */, nil)
 						return err
 					}); err != nil {
+						log.Warn("alex4", "err", err, "data", fmt.Sprintf("%x", req.Data))
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}
@@ -460,6 +463,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 						_, err = parseContext.ParseTransaction(change.Txs[i], 0, unwindTxs.Txs[i], unwindTxs.Senders.At(i), false /* hasEnvelope */, nil)
 						return err
 					}); err != nil {
+						log.Warn("alex3", "err", err, "data", fmt.Sprintf("%x", req.Data))
 						log.Warn("stream.Recv", "err", err)
 						continue
 					}
