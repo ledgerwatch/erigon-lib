@@ -48,6 +48,10 @@ func TestPutAppendHas(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, exist, true)
 
+	val, err := batch.Get(kv.HashedAccounts, []byte("AAAA"))
+	require.Nil(t, err)
+	require.Equal(t, val, []byte("value1.3"))
+
 	exist, err = batch.Has(kv.HashedAccounts, []byte("KKKK"))
 	require.Nil(t, err)
 	require.Equal(t, exist, false)
@@ -289,14 +293,6 @@ func TestGetClearBucket(t *testing.T) {
 	val, err := batch.GetOne(kv.HashedAccounts, []byte("A"))
 	require.Nil(t, err)
 	require.Nil(t, val)
-
-	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("AAAA"), []byte("value1")))
-	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("AAAB"), []byte("value2")))
-	require.NoError(t, batch.Flush(rwTx))
-
-	val, err = batch.Get(kv.HashedAccounts, []byte("AAAA"))
-	require.Nil(t, err)
-	require.Equal(t, []byte("value1"), val)
 }
 
 func TestIncReadSequence(t *testing.T) {
