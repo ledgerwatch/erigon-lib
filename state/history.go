@@ -154,9 +154,13 @@ func (h *History) Close() {
 	h.closeFiles()
 }
 
-func (h *History) AddPrevValue(key, original []byte) error {
-	historyKey := make([]byte, len(key)+8)
-	copy(historyKey, key)
+func (h *History) AddPrevValue(key1, key2, original []byte) error {
+	lk := len(key1) + len(key2)
+	historyKey := make([]byte, lk + 8)
+	copy(historyKey, key1)
+	if len(key2) > 0 {
+		copy(historyKey[len(key1):], key2)
+	}
 	if len(original) > 0 {
 		val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
 		if err != nil {
@@ -167,15 +171,15 @@ func (h *History) AddPrevValue(key, original []byte) error {
 			valNum = binary.BigEndian.Uint64(val)
 		}
 		valNum++
-		binary.BigEndian.PutUint64(historyKey[len(key):], valNum)
-		if err = h.tx.Put(h.settingsTable, historyValCountKey, historyKey[len(key):]); err != nil {
+		binary.BigEndian.PutUint64(historyKey[lk:], valNum)
+		if err = h.tx.Put(h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
 			return err
 		}
-		if err = h.tx.Put(h.valsTable, historyKey[len(key):], original); err != nil {
+		if err = h.tx.Put(h.valsTable, historyKey[lk:], original); err != nil {
 			return err
 		}
 	}
-	if err := h.add(historyKey, key); err != nil {
+	if err := h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
 		return err
 	}
 	return nil

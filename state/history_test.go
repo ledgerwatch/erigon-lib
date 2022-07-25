@@ -62,23 +62,23 @@ func TestHistoryCollationBuild(t *testing.T) {
 	h.SetTx(tx)
 
 	h.SetTxNum(2)
-	err = h.AddPrevValue([]byte("key1"), nil)
+	err = h.AddPrevValue([]byte("key1"), nil, nil)
 	require.NoError(t, err)
 
 	h.SetTxNum(3)
-	err = h.AddPrevValue([]byte("key2"), nil)
+	err = h.AddPrevValue([]byte("key2"), nil, nil)
 	require.NoError(t, err)
 
 	h.SetTxNum(6)
-	err = h.AddPrevValue([]byte("key1"), []byte("value1.1"))
+	err = h.AddPrevValue([]byte("key1"), nil, []byte("value1.1"))
 	require.NoError(t, err)
-	err = h.AddPrevValue([]byte("key2"), []byte("value2.1"))
+	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.1"))
 	require.NoError(t, err)
 
 	h.SetTxNum(7)
-	err = h.AddPrevValue([]byte("key2"), []byte("value2.2"))
+	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.2"))
 	require.NoError(t, err)
-	err = h.AddPrevValue([]byte("key3"), nil)
+	err = h.AddPrevValue([]byte("key3"), nil, nil)
 	require.NoError(t, err)
 
 	err = tx.Commit()
@@ -165,23 +165,23 @@ func TestHistoryAfterPrune(t *testing.T) {
 	h.SetTx(tx)
 
 	h.SetTxNum(2)
-	err = h.AddPrevValue([]byte("key1"), nil)
+	err = h.AddPrevValue([]byte("key1"), nil, nil)
 	require.NoError(t, err)
 
 	h.SetTxNum(3)
-	err = h.AddPrevValue([]byte("key2"), nil)
+	err = h.AddPrevValue([]byte("key2"), nil, nil)
 	require.NoError(t, err)
 
 	h.SetTxNum(6)
-	err = h.AddPrevValue([]byte("key1"), []byte("value1.1"))
+	err = h.AddPrevValue([]byte("key1"), nil, []byte("value1.1"))
 	require.NoError(t, err)
-	err = h.AddPrevValue([]byte("key2"), []byte("value2.1"))
+	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.1"))
 	require.NoError(t, err)
 
 	h.SetTxNum(7)
-	err = h.AddPrevValue([]byte("key2"), []byte("value2.2"))
+	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.2"))
 	require.NoError(t, err)
-	err = h.AddPrevValue([]byte("key3"), nil)
+	err = h.AddPrevValue([]byte("key3"), nil, nil)
 	require.NoError(t, err)
 
 	err = tx.Commit()
@@ -248,7 +248,7 @@ func filledHistory(t *testing.T) (string, kv.RwDB, *History, uint64) {
 				var v [8]byte
 				binary.BigEndian.PutUint64(k[:], keyNum)
 				binary.BigEndian.PutUint64(v[:], valNum)
-				err = h.AddPrevValue(k[:], prevVal[keyNum])
+				err = h.AddPrevValue(k[:], nil, prevVal[keyNum])
 				require.NoError(t, err)
 				prevVal[keyNum] = v[:]
 			}
