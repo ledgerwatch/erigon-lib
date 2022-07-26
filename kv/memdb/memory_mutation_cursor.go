@@ -301,6 +301,9 @@ func (m *memoryMutationCursor) Delete(k []byte) error {
 func (m *memoryMutationCursor) DeleteCurrent() error {
 	panic("DeleteCurrent Not implemented")
 }
+func (m *memoryMutationCursor) DeleteExact(k1, k2 []byte) error {
+	panic("DeleteExact Not implemented")
+}
 
 func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
 	k, _, err := m.dupCursor.Current()

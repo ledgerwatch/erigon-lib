@@ -337,6 +337,7 @@ type RwCursorDupSort interface {
 
 	PutNoDupData(key, value []byte) error // PutNoDupData - inserts key without dupsort
 	DeleteCurrentDuplicates() error       // DeleteCurrentDuplicates - deletes all of the data items for the current key
+	DeleteExact(k1, k2 []byte) error      // DeleteExact - delete 1 value from given key
 	AppendDup(key, value []byte) error    // AppendDup - same as Append, but for sorted dup data
 }
 
