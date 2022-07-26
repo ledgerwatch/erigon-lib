@@ -935,7 +935,7 @@ func (tx *MdbxTx) Delete(bucket string, k, v []byte) error {
 	if err != nil {
 		return err
 	}
-	return c.Delete(k, v)
+	return c.Delete(k)
 }
 
 func (tx *MdbxTx) GetOne(bucket string, k []byte) ([]byte, error) {
@@ -1304,7 +1304,7 @@ func (c *MdbxCursor) Current() ([]byte, []byte, error) {
 	return k, v, nil
 }
 
-func (c *MdbxCursor) Delete(k, v []byte) error {
+func (c *MdbxCursor) Delete(k []byte) error {
 	if c.bucketCfg.AutoDupSortKeysConversion {
 		return c.deleteDupSort(k)
 	}

@@ -306,7 +306,7 @@ type RwCursor interface {
 
 	Put(k, v []byte) error           // Put - based on order
 	Append(k []byte, v []byte) error // Append - append the given key/data pair to the end of the database. This option allows fast bulk loading when keys are already known to be in the correct order.
-	Delete(k, v []byte) error        // Delete - short version of SeekExact+DeleteCurrent or SeekBothExact+DeleteCurrent
+	Delete(k []byte) error           // Delete - short version of SeekExact+DeleteCurrent or SeekBothExact+DeleteCurrent
 
 	// DeleteCurrent This function deletes the key/data pair to which the cursor refers.
 	// This does not invalidate the cursor, so operations such as MDB_NEXT
