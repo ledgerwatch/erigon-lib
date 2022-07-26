@@ -723,6 +723,30 @@ func (ac *Aggregator22Context) ReadAccountCodeSizeNoState(addr []byte, txNum uin
 	return len(code), noState, stateTxNum, nil
 }
 
+func (ac *Aggregator22Context) IterateAccountsHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
+	return ac.accounts.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
+}
+
+func (ac *Aggregator22Context) IterateStorageHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
+	return ac.storage.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
+}
+
+func (ac *Aggregator22Context) IterateCodeHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
+	return ac.code.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
+}
+
+func (ac *Aggregator22Context) IterateAccountsReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
+	return ac.accounts.iterateReconTxs(fromKey, toKey, txNum)
+}
+
+func (ac *Aggregator22Context) IterateStorageReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
+	return ac.storage.iterateReconTxs(fromKey, toKey, txNum)
+}
+
+func (ac *Aggregator22Context) IterateCodeReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
+	return ac.code.iterateReconTxs(fromKey, toKey, txNum)
+}
+
 type FilesStats22 struct {
 }
 

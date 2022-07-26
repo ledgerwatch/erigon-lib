@@ -187,7 +187,7 @@ func (rh *ReconHeap) Pop() interface{} {
 }
 
 type ScanIterator struct {
-	dc             *DomainContext
+	hc             *HistoryContext
 	h              ReconHeap
 	uptoTxNum      uint64
 	hasNext        bool
@@ -239,9 +239,9 @@ func (si *ScanIterator) Total() uint64 {
 	return si.total
 }
 
-func (dc *DomainContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64) *ScanIterator {
+func (hc *HistoryContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64) *ScanIterator {
 	var si ScanIterator
-	dc.files[EfHistory].Ascend(func(item *ctxItem) bool {
+	hc.indexFiles.Ascend(func(item *ctxItem) bool {
 		g := item.getter
 		for g.HasNext() {
 			key, offset := g.NextUncompressed()
@@ -255,7 +255,7 @@ func (dc *DomainContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64
 		si.total += uint64(item.getter.Size())
 		return true
 	})
-	si.dc = dc
+	si.hc = hc
 	si.fromKey = fromKey
 	si.toKey = toKey
 	si.uptoTxNum = uptoTxNum
@@ -264,7 +264,7 @@ func (dc *DomainContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64
 }
 
 type HistoryIterator struct {
-	dc             *DomainContext
+	hc             *HistoryContext
 	h              ReconHeap
 	txNum          uint64
 	key, val       []byte
@@ -299,8 +299,8 @@ func (hi *HistoryIterator) advance() {
 				var search ctxItem
 				search.startTxNum = top.startTxNum
 				search.endTxNum = top.endTxNum
-				if historyItem, ok = hi.dc.files[History1].Get(&search); !ok {
-					panic(fmt.Errorf("no %s file found for [%x]", hi.dc.d.filenameBase, hi.key))
+				if historyItem, ok = hi.hc.historyFiles.Get(&search); !ok {
+					panic(fmt.Errorf("no %s file found for [%x]", hi.hc.h.filenameBase, hi.key))
 				}
 				offset := historyItem.reader.Lookup2(txKey[:], hi.key)
 				g := historyItem.getter
@@ -333,10 +333,10 @@ func (hi *HistoryIterator) Total() uint64 {
 }
 
 // Creates iterator that provides history values for the state just before transaction txNum
-func (dc *DomainContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
+func (hc *HistoryContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
 	var hi HistoryIterator
 	heap.Init(&hi.h)
-	dc.files[EfHistory].Ascend(func(item *ctxItem) bool {
+	hc.indexFiles.Ascend(func(item *ctxItem) bool {
 		g := item.getter
 		g.Reset(0)
 		for g.HasNext() {
@@ -351,8 +351,8 @@ func (dc *DomainContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum 
 		hi.total += uint64(item.getter.Size())
 		return true
 	})
-	hi.dc = dc
-	hi.compressVals = dc.d.compressVals
+	hi.hc = hc
+	hi.compressVals = hc.h.compressVals
 	hi.txNum = txNum
 	hi.fromKey = fromKey
 	hi.toKey = toKey
