@@ -473,7 +473,7 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 	if err != nil {
 		return err
 	}
-	defer idxC.Close()
+	defer valsC.Close()
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
