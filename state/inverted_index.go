@@ -473,7 +473,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if err = ii.tx.Delete(ii.indexTable, v, k); err != nil {
+		if err = ii.tx.Delete(ii.indexTable, v); err != nil {
 			return err
 		}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v

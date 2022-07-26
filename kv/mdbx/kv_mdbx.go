@@ -930,7 +930,7 @@ func (tx *MdbxTx) Put(bucket string, k, v []byte) error {
 	return c.Put(k, v)
 }
 
-func (tx *MdbxTx) Delete(bucket string, k, v []byte) error {
+func (tx *MdbxTx) Delete(bucket string, k []byte) error {
 	c, err := tx.statelessCursor(bucket)
 	if err != nil {
 		return err
@@ -1310,7 +1310,7 @@ func (c *MdbxCursor) Delete(k []byte) error {
 	}
 
 	if c.bucketCfg.Flags&mdbx.DupSort != 0 {
-		_, err := c.getBoth(k, v)
+		_, err := c.getBoth(k, nil)
 		if err != nil {
 			if mdbx.IsNotFound(err) {
 				return nil

@@ -137,7 +137,7 @@ type Putter interface {
 // Deleter wraps the database delete operations.
 type Deleter interface {
 	// Delete removes a single entry.
-	Delete(bucket string, k, v []byte) error
+	Delete(bucket string, k []byte) error
 }
 
 type Closer interface {

@@ -469,10 +469,10 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if err = h.tx.Delete(h.valsTable, v[len(v)-8:], nil); err != nil {
+		if err = h.tx.Delete(h.valsTable, v[len(v)-8:]); err != nil {
 			return err
 		}
-		if err = h.tx.Delete(h.indexTable, v[:len(v)-8], k); err != nil {
+		if err = h.tx.Delete(h.indexTable, v[:len(v)-8]); err != nil {
 			return err
 		}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v

@@ -295,7 +295,7 @@ func (m *memoryMutationCursor) PutNoDupData(key, value []byte) error {
 }
 
 func (m *memoryMutationCursor) Delete(k []byte) error {
-	return m.mutation.Delete(m.table, k, v)
+	return m.mutation.Delete(m.table, k)
 }
 
 func (m *memoryMutationCursor) DeleteCurrent() error {
