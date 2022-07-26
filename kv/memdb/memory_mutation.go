@@ -180,8 +180,8 @@ func (m *MemoryMutation) Has(table string, key []byte) (bool, error) {
 }
 
 // Put insert a new entry in the database, if it is hashed storage it will add it to a slice instead of a map.
-func (m *MemoryMutation) Put(table string, key []byte, value []byte) error {
-	return m.memTx.Put(table, key, value)
+func (m *MemoryMutation) Put(table string, k, v []byte) error {
+	return m.memTx.Put(table, k, v)
 }
 
 func (m *MemoryMutation) Append(table string, key []byte, value []byte) error {

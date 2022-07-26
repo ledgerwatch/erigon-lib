@@ -131,13 +131,13 @@ type Getter interface {
 // Putter wraps the database write operations.
 type Putter interface {
 	// Put inserts or updates a single entry.
-	Put(bucket string, key, value []byte) error
+	Put(table string, k, v []byte) error
 }
 
 // Deleter wraps the database delete operations.
 type Deleter interface {
 	// Delete removes a single entry.
-	Delete(bucket string, k []byte) error
+	Delete(table string, k []byte) error
 }
 
 type Closer interface {

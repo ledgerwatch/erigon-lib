@@ -922,16 +922,16 @@ func (tx *MdbxTx) statelessCursor(bucket string) (kv.RwCursor, error) {
 	return c.(kv.RwCursor), nil
 }
 
-func (tx *MdbxTx) Put(bucket string, k, v []byte) error {
-	c, err := tx.statelessCursor(bucket)
+func (tx *MdbxTx) Put(table string, k, v []byte) error {
+	c, err := tx.statelessCursor(table)
 	if err != nil {
 		return err
 	}
 	return c.Put(k, v)
 }
 
-func (tx *MdbxTx) Delete(bucket string, k []byte) error {
-	c, err := tx.statelessCursor(bucket)
+func (tx *MdbxTx) Delete(table string, k []byte) error {
+	c, err := tx.statelessCursor(table)
 	if err != nil {
 		return err
 	}
