@@ -469,12 +469,17 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 		return err
 	}
 	defer idxC.Close()
+	valsC, err := h.tx.RwCursor(h.valsTable)
+	if err != nil {
+		return err
+	}
+	defer idxC.Close()
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		if err = h.tx.Delete(h.valsTable, v[len(v)-8:]); err != nil {
+		if err = valsC.Delete(v[len(v)-8:]); err != nil {
 			return err
 		}
 		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
