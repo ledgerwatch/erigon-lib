@@ -110,6 +110,31 @@ func (dc *DomainContext) MaxTxNum(key []byte) (bool, uint64) {
 	return true, foundTxNum
 }
 
+func (hc *HistoryContext) MaxTxNum(key []byte) (bool, uint64) {
+	var found bool
+	var foundTxNum uint64
+	hc.indexFiles.Descend(func(item *ctxItem) bool {
+		if item.reader.Empty() {
+			return true
+		}
+		offset := item.reader.Lookup(key)
+		g := item.getter
+		g.Reset(offset)
+		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+			eliasVal, _ := g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+			found = true
+			foundTxNum = ef.Max()
+			return false
+		}
+		return true
+	})
+	if !found {
+		return false, 0
+	}
+	return true, foundTxNum
+}
+
 type ReconItem struct {
 	key         []byte
 	txNum       uint64

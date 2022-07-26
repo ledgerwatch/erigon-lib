@@ -677,6 +677,25 @@ func (ac *Aggregator22Context) TraceToIterator(addr []byte, startTxNum, endTxNum
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
+func (ac *Aggregator22Context) MaxAccountsTxNum(addr []byte) (bool, uint64) {
+	return ac.accounts.MaxTxNum(addr)
+}
+
+func (ac *Aggregator22Context) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
+	if cap(ac.keyBuf) < len(addr)+len(loc) {
+		ac.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(ac.keyBuf) != len(addr)+len(loc) {
+		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(ac.keyBuf, addr)
+	copy(ac.keyBuf[len(addr):], loc)
+	return ac.storage.MaxTxNum(ac.keyBuf)
+}
+
+func (ac *Aggregator22Context) MaxCodeTxNum(addr []byte) (bool, uint64) {
+	return ac.code.MaxTxNum(addr)
+}
+
 type FilesStats22 struct {
 }
 
@@ -687,6 +706,7 @@ func (a *Aggregator22) Stats() FilesStats22 {
 
 type Aggregator22Context struct {
 	a          *Aggregator22
+	keyBuf     []byte
 	accounts   *HistoryContext
 	storage    *HistoryContext
 	code       *HistoryContext
