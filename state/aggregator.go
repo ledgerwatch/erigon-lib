@@ -32,6 +32,9 @@ type Aggregator struct {
 	accounts        *Domain
 	storage         *Domain
 	code            *Domain
+	accountsHistory *History
+	storageHistory  *History
+	codeHistory     *History
 	logAddrs        *InvertedIndex
 	logTopics       *InvertedIndex
 	tracesFrom      *InvertedIndex
@@ -62,6 +65,15 @@ func NewAggregator(
 		return nil, err
 	}
 	if a.code, err = NewDomain(dir, aggregationStep, "code", kv.CodeKeys, kv.CodeVals, kv.CodeHistoryKeys, kv.CodeHistoryVals, kv.CodeSettings, kv.CodeIdx, 0 /* prefixLen */, true /* compressVals */); err != nil {
+		return nil, err
+	}
+	if a.accountsHistory, err = NewHistory(dir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */); err != nil {
+		return nil, err
+	}
+	if a.storageHistory, err = NewHistory(dir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */); err != nil {
+		return nil, err
+	}
+	if a.codeHistory, err = NewHistory(dir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */); err != nil {
 		return nil, err
 	}
 	if a.logAddrs, err = NewInvertedIndex(dir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx); err != nil {
@@ -97,6 +109,15 @@ func (a *Aggregator) Close() {
 	}
 	if a.code != nil {
 		a.code.Close()
+	}
+	if a.accountsHistory != nil {
+		a.accountsHistory.Close()
+	}
+	if a.storageHistory != nil {
+		a.storageHistory.Close()
+	}
+	if a.codeHistory != nil {
+		a.codeHistory.Close()
 	}
 	if a.logAddrs != nil {
 		a.logAddrs.Close()
@@ -798,32 +819,38 @@ func (a *Aggregator) Stats() FilesStats {
 }
 
 type AggregatorContext struct {
-	a          *Aggregator
-	accounts   *DomainContext
-	storage    *DomainContext
-	code       *DomainContext
-	logAddrs   *InvertedIndexContext
-	logTopics  *InvertedIndexContext
-	tracesFrom *InvertedIndexContext
-	tracesTo   *InvertedIndexContext
-	keyBuf     []byte
+	a               *Aggregator
+	accounts        *DomainContext
+	storage         *DomainContext
+	code            *DomainContext
+	accountsHistory *HistoryContext
+	storageHistory  *HistoryContext
+	codeHistory     *HistoryContext
+	logAddrs        *InvertedIndexContext
+	logTopics       *InvertedIndexContext
+	tracesFrom      *InvertedIndexContext
+	tracesTo        *InvertedIndexContext
+	keyBuf          []byte
 }
 
 func (a *Aggregator) MakeContext() *AggregatorContext {
 	return &AggregatorContext{
-		a:          a,
-		accounts:   a.accounts.MakeContext(),
-		storage:    a.storage.MakeContext(),
-		code:       a.code.MakeContext(),
-		logAddrs:   a.logAddrs.MakeContext(),
-		logTopics:  a.logTopics.MakeContext(),
-		tracesFrom: a.tracesFrom.MakeContext(),
-		tracesTo:   a.tracesTo.MakeContext(),
+		a:               a,
+		accounts:        a.accounts.MakeContext(),
+		storage:         a.storage.MakeContext(),
+		code:            a.code.MakeContext(),
+		accountsHistory: a.accountsHistory.MakeContext(),
+		storageHistory:  a.storageHistory.MakeContext(),
+		codeHistory:     a.codeHistory.MakeContext(),
+		logAddrs:        a.logAddrs.MakeContext(),
+		logTopics:       a.logTopics.MakeContext(),
+		tracesFrom:      a.tracesFrom.MakeContext(),
+		tracesTo:        a.tracesTo.MakeContext(),
 	}
 }
 
 func (ac *AggregatorContext) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
-	return ac.accounts.GetNoState(addr, txNum)
+	return ac.accountsHistory.GetNoState(addr, txNum)
 }
 
 func (ac *AggregatorContext) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, uint64, error) {
@@ -834,15 +861,15 @@ func (ac *AggregatorContext) ReadAccountStorageNoState(addr []byte, loc []byte, 
 	}
 	copy(ac.keyBuf, addr)
 	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storage.GetNoState(ac.keyBuf, txNum)
+	return ac.storageHistory.GetNoState(ac.keyBuf, txNum)
 }
 
 func (ac *AggregatorContext) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {
-	return ac.code.GetNoState(addr, txNum)
+	return ac.codeHistory.GetNoState(addr, txNum)
 }
 
 func (ac *AggregatorContext) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, uint64, error) {
-	code, noState, stateTxNum, err := ac.code.GetNoState(addr, txNum)
+	code, noState, stateTxNum, err := ac.codeHistory.GetNoState(addr, txNum)
 	if err != nil {
 		return 0, false, 0, err
 	}
@@ -850,7 +877,7 @@ func (ac *AggregatorContext) ReadAccountCodeSizeNoState(addr []byte, txNum uint6
 }
 
 func (ac *AggregatorContext) MaxAccountsTxNum(addr []byte) (bool, uint64) {
-	return ac.accounts.MaxTxNum(addr)
+	return ac.accountsHistory.MaxTxNum(addr)
 }
 
 func (ac *AggregatorContext) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
@@ -861,9 +888,9 @@ func (ac *AggregatorContext) MaxStorageTxNum(addr []byte, loc []byte) (bool, uin
 	}
 	copy(ac.keyBuf, addr)
 	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storage.MaxTxNum(ac.keyBuf)
+	return ac.storageHistory.MaxTxNum(ac.keyBuf)
 }
 
 func (ac *AggregatorContext) MaxCodeTxNum(addr []byte) (bool, uint64) {
-	return ac.code.MaxTxNum(addr)
+	return ac.codeHistory.MaxTxNum(addr)
 }
