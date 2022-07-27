@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"container/heap"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/compress"
@@ -192,14 +191,6 @@ type HistoryIterator struct {
 	fromKey, toKey []byte
 	progress       uint64
 	total          uint64
-}
-
-func decodeHex(in string) []byte {
-	payload, err := hex.DecodeString(in)
-	if err != nil {
-		panic(err)
-	}
-	return payload
 }
 
 func (hi *HistoryIterator) advance() {
