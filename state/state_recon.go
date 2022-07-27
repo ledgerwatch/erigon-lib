@@ -217,14 +217,6 @@ func (hi *HistoryIterator) advance() {
 		}
 		if !bytes.Equal(hi.key, key) {
 			ef, _ := eliasfano32.ReadEliasFano(val)
-			if bytes.Equal(key, decodeHex("008fc7cbadffbd0d7fe44f8dfd60a79d721a1c9c")) {
-				fmt.Printf("[%x] hi.txNum=%d =>", key, hi.txNum)
-				it := ef.Iterator()
-				for it.HasNext() {
-					fmt.Printf("%d ", it.Next())
-				}
-				fmt.Printf("\n")
-			}
 			if n, ok := ef.Search(hi.txNum); ok {
 				hi.key = key
 				var txKey [8]byte
@@ -244,9 +236,6 @@ func (hi *HistoryIterator) advance() {
 					hi.val, _ = g.Next(nil)
 				} else {
 					hi.val, _ = g.NextUncompressed()
-				}
-				if bytes.Equal(key, decodeHex("008fc7cbadffbd0d7fe44f8dfd60a79d721a1c9c")) {
-					fmt.Printf("[%x] n=%d => [%x]", key, n, hi.val)
 				}
 				hi.hasNext = true
 				return

@@ -26,7 +26,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
-	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 )
@@ -115,47 +114,6 @@ func TestCollationBuild(t *testing.T) {
 		require.Equal(t, words[i], string(w))
 		w, _ = g.Next(nil)
 		require.Equal(t, words[i+1], string(w))
-	}
-	g = sf.historyDecomp.MakeGetter()
-	g.Reset(0)
-	words = words[:0]
-	for g.HasNext() {
-		w, _ := g.Next(nil)
-		words = append(words, string(w))
-	}
-	require.Equal(t, []string{"\x00\x00\x00\x00\x00\x00\x00\x02key1", "", "\x00\x00\x00\x00\x00\x00\x00\x03key2", "", "\x00\x00\x00\x00\x00\x00\x00\x06key1", "value1.1"}, words)
-	require.Equal(t, 3, int(sf.historyIdx.KeyCount()))
-	r = recsplit.NewIndexReader(sf.historyIdx)
-	for i := 0; i < len(words); i += 2 {
-		offset := r.Lookup([]byte(words[i]))
-		g.Reset(offset)
-		w, _ := g.Next(nil)
-		require.Equal(t, words[i+1], string(w))
-	}
-	g = sf.efHistoryDecomp.MakeGetter()
-	g.Reset(0)
-	words = words[:0]
-	var intArrs [][]uint64
-	for g.HasNext() {
-		w, _ := g.Next(nil)
-		words = append(words, string(w))
-		w, _ = g.Next(w[:0])
-		ef, _ := eliasfano32.ReadEliasFano(w)
-		var ints []uint64
-		it := ef.Iterator()
-		for it.HasNext() {
-			ints = append(ints, it.Next())
-		}
-		intArrs = append(intArrs, ints)
-	}
-	require.Equal(t, []string{"key1", "key2"}, words)
-	require.Equal(t, [][]uint64{{2, 6}, {3}}, intArrs)
-	r = recsplit.NewIndexReader(sf.efHistoryIdx)
-	for i := 0; i < len(words); i++ {
-		offset := r.Lookup([]byte(words[i]))
-		g.Reset(offset)
-		w, _ := g.Next(nil)
-		require.Equal(t, words[i], string(w))
 	}
 }
 

@@ -37,7 +37,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -515,20 +514,21 @@ func (c Collation) Close() {
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
 func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx) (Collation, error) {
-	var valuesComp, historyComp *compress.Compressor
-	var err error
+	hCollation, err := d.History.collate(step, txFrom, txTo, roTx)
+	if err != nil {
+		return Collation{}, err
+	}
+	var valuesComp *compress.Compressor
 	closeComp := true
 	defer func() {
 		if closeComp {
+			hCollation.Close()
 			if valuesComp != nil {
 				valuesComp.Close()
 			}
-			if historyComp != nil {
-				historyComp.Close()
-			}
 		}
 	}()
-	valuesPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.dat", d.filenameBase, step, step+1))
+	valuesPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, step, step+1))
 	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return Collation{}, fmt.Errorf("create %s values compressor: %w", d.filenameBase, err)
 	}
@@ -575,62 +575,15 @@ func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx) (Collation, erro
 	if err != nil {
 		return Collation{}, fmt.Errorf("iterate over %s keys cursor: %w", d.filenameBase, err)
 	}
-	historyPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.dat", d.filenameBase, step, step+1))
-	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
-		return Collation{}, fmt.Errorf("create %s history compressor: %w", d.filenameBase, err)
-	}
-	historyKeysCursor, err := roTx.CursorDupSort(d.indexKeysTable)
-	if err != nil {
-		return Collation{}, fmt.Errorf("create %s history cursor: %w", d.filenameBase, err)
-	}
-	defer historyKeysCursor.Close()
-	indexBitmaps := map[string]*roaring64.Bitmap{}
-	historyCount := 0
-	var txKey [8]byte
-	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	var val []byte
-	var historyKey []byte
-	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
-		txNum := binary.BigEndian.Uint64(k)
-		if txNum >= txTo {
-			break
-		}
-		historyKey = append(append(historyKey[:0], k...), v[:len(v)-8]...)
-		if err = historyComp.AddUncompressedWord(historyKey); err != nil {
-			return Collation{}, fmt.Errorf("add %s history key [%x]: %w", d.filenameBase, k, err)
-		}
-		valNum := binary.BigEndian.Uint64(v[len(v)-8:])
-		if valNum == 0 {
-			val = nil
-		} else {
-			if val, err = roTx.GetOne(d.historyValsTable, v[len(v)-8:]); err != nil {
-				return Collation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", d.filenameBase, k, valNum, err)
-			}
-		}
-		if err = historyComp.AddUncompressedWord(val); err != nil {
-			return Collation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", d.filenameBase, k, val, err)
-		}
-		historyCount++
-		var bitmap *roaring64.Bitmap
-		var ok bool
-		if bitmap, ok = indexBitmaps[string(v[:len(v)-8])]; !ok {
-			bitmap = roaring64.New()
-			indexBitmaps[string(v[:len(v)-8])] = bitmap
-		}
-		bitmap.Add(txNum)
-	}
-	if err != nil {
-		return Collation{}, fmt.Errorf("iterate over %s history cursor: %w", d.filenameBase, err)
-	}
 	closeComp = false
 	return Collation{
 		valuesPath:   valuesPath,
 		valuesComp:   valuesComp,
 		valuesCount:  valuesCount,
-		historyPath:  historyPath,
-		historyComp:  historyComp,
-		historyCount: historyCount,
-		indexBitmaps: indexBitmaps,
+		historyPath:  hCollation.historyPath,
+		historyComp:  hCollation.historyComp,
+		historyCount: hCollation.historyCount,
+		indexBitmaps: hCollation.indexBitmaps,
 	}, nil
 }
 
@@ -667,14 +620,22 @@ func (sf StaticFiles) Close() {
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
 func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
+	hStaticFiles, err := d.History.buildFiles(step, HistoryCollation{
+		historyPath: collation.historyPath,
+		historyComp: collation.historyComp,
+		historyCount: collation.historyCount,
+		indexBitmaps: collation.indexBitmaps,
+	})
+	if err != nil {
+		return StaticFiles{}, err
+	}
 	valuesComp := collation.valuesComp
-	historyComp := collation.historyComp
-	var valuesDecomp, historyDecomp, efHistoryDecomp *compress.Decompressor
-	var valuesIdx, historyIdx, efHistoryIdx *recsplit.Index
-	var efHistoryComp *compress.Compressor
+	var valuesDecomp *compress.Decompressor
+	var valuesIdx *recsplit.Index
 	closeComp := true
 	defer func() {
 		if closeComp {
+			hStaticFiles.Close()
 			if valuesComp != nil {
 				valuesComp.Close()
 			}
@@ -684,28 +645,9 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 			if valuesIdx != nil {
 				valuesIdx.Close()
 			}
-			if historyComp != nil {
-				historyComp.Close()
-			}
-			if historyDecomp != nil {
-				historyDecomp.Close()
-			}
-			if historyIdx != nil {
-				historyIdx.Close()
-			}
-			if efHistoryComp != nil {
-				efHistoryComp.Close()
-			}
-			if efHistoryDecomp != nil {
-				efHistoryDecomp.Close()
-			}
-			if efHistoryIdx != nil {
-				efHistoryIdx.Close()
-			}
 		}
 	}()
-	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-values.%d-%d.idx", d.filenameBase, step, step+1))
-	var err error
+	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, step, step+1))
 	if err = valuesComp.Compress(); err != nil {
 		return StaticFiles{}, fmt.Errorf("compress %s values: %w", d.filenameBase, err)
 	}
@@ -717,66 +659,14 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount, false /* values */); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
-	historyIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-history.%d-%d.idx", d.filenameBase, step, step+1))
-	if err = historyComp.Compress(); err != nil {
-		return StaticFiles{}, fmt.Errorf("compress %s history: %w", d.filenameBase, err)
-	}
-	historyComp.Close()
-	historyComp = nil
-	if historyDecomp, err = compress.NewDecompressor(collation.historyPath); err != nil {
-		return StaticFiles{}, fmt.Errorf("open %s history decompressor: %w", d.filenameBase, err)
-	}
-	if historyIdx, err = buildIndex(historyDecomp, historyIdxPath, d.dir, collation.historyCount, true /* values */); err != nil {
-		return StaticFiles{}, fmt.Errorf("build %s history idx: %w", d.filenameBase, err)
-	}
-	// Build history ef
-	efHistoryPath := filepath.Join(d.dir, fmt.Sprintf("%s-efhistory.%d-%d.dat", d.filenameBase, step, step+1))
-	efHistoryComp, err = compress.NewCompressor(context.Background(), "ef history", efHistoryPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug)
-	if err != nil {
-		return StaticFiles{}, fmt.Errorf("create %s ef history compressor: %w", d.filenameBase, err)
-	}
-	var buf []byte
-	keys := make([]string, 0, len(collation.indexBitmaps))
-	for key := range collation.indexBitmaps {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		if err = efHistoryComp.AddUncompressedWord([]byte(key)); err != nil {
-			return StaticFiles{}, fmt.Errorf("add %s ef history key [%x]: %w", d.filenameBase, key, err)
-		}
-		bitmap := collation.indexBitmaps[key]
-		ef := eliasfano32.NewEliasFano(bitmap.GetCardinality(), bitmap.Maximum())
-		it := bitmap.Iterator()
-		for it.HasNext() {
-			ef.AddOffset(it.Next())
-		}
-		ef.Build()
-		buf = ef.AppendBytes(buf[:0])
-		if err = efHistoryComp.AddUncompressedWord(buf); err != nil {
-			return StaticFiles{}, fmt.Errorf("add %s ef history val: %w", d.filenameBase, err)
-		}
-	}
-	if err = efHistoryComp.Compress(); err != nil {
-		return StaticFiles{}, fmt.Errorf("compress %s ef history: %w", d.filenameBase, err)
-	}
-	efHistoryComp.Close()
-	efHistoryComp = nil
-	if efHistoryDecomp, err = compress.NewDecompressor(efHistoryPath); err != nil {
-		return StaticFiles{}, fmt.Errorf("open %s ef history decompressor: %w", d.filenameBase, err)
-	}
-	efHistoryIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s-efhistory.%d-%d.idx", d.filenameBase, step, step+1))
-	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, d.dir, len(keys), false /* values */); err != nil {
-		return StaticFiles{}, fmt.Errorf("build %s ef history idx: %w", d.filenameBase, err)
-	}
 	closeComp = false
 	return StaticFiles{
 		valuesDecomp:    valuesDecomp,
 		valuesIdx:       valuesIdx,
-		historyDecomp:   historyDecomp,
-		historyIdx:      historyIdx,
-		efHistoryDecomp: efHistoryDecomp,
-		efHistoryIdx:    efHistoryIdx,
+		historyDecomp:   hStaticFiles.historyDecomp,
+		historyIdx:      hStaticFiles.historyIdx,
+		efHistoryDecomp: hStaticFiles.efHistoryDecomp,
+		efHistoryIdx:    hStaticFiles.efHistoryIdx,
 	}, nil
 }
 
@@ -886,31 +776,8 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
 	}
-	historyKeysCursor, err := d.tx.RwCursorDupSort(d.indexKeysTable)
-	if err != nil {
-		return fmt.Errorf("create %s history cursor: %w", d.filenameBase, err)
-	}
-	defer historyKeysCursor.Close()
-	var txKey [8]byte
-	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
-		txNum := binary.BigEndian.Uint64(k)
-		if txNum >= txTo {
-			break
-		}
-		if err = d.tx.Delete(d.historyValsTable, v[len(v)-8:], nil); err != nil {
-			return err
-		}
-		if err = d.tx.Delete(d.indexTable, v[:len(v)-8], k); err != nil {
-			return err
-		}
-		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
-		if err = historyKeysCursor.DeleteCurrent(); err != nil {
-			return err
-		}
-	}
-	if err != nil {
-		return fmt.Errorf("iterate over %s history keys: %w", d.filenameBase, err)
+	if err = d.History.prune(step, txFrom, txTo); err != nil {
+		return err
 	}
 	return nil
 }
