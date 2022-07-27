@@ -41,7 +41,6 @@ type Aggregator struct {
 	tracesTo        *InvertedIndex
 	txNum           uint64
 	rwTx            kv.RwTx
-	keyBuf          []byte
 }
 
 func NewAggregator(
