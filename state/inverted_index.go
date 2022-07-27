@@ -59,7 +59,7 @@ func NewInvertedIndex(
 		dir:             dir,
 		aggregationStep: aggregationStep,
 		filenameBase:    filenameBase,
-		indexKeysTable:       indexKeysTable,
+		indexKeysTable:  indexKeysTable,
 		indexTable:      indexTable,
 	}
 	ii.files = btree.NewG[*filesItem](32, filesItemLess)

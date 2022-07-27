@@ -39,10 +39,10 @@ import (
 
 type History struct {
 	*InvertedIndex
-	historyValsTable     string
-	settingsTable string
-	files         *btree.BTreeG[*filesItem]
-	compressVals  bool
+	historyValsTable string
+	settingsTable    string
+	files            *btree.BTreeG[*filesItem]
+	compressVals     bool
 }
 
 func NewHistory(
@@ -156,7 +156,7 @@ func (h *History) Close() {
 
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
-	historyKey := make([]byte, lk + 8)
+	historyKey := make([]byte, lk+8)
 	copy(historyKey, key1)
 	if len(key2) > 0 {
 		copy(historyKey[len(key1):], key2)

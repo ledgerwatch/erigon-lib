@@ -72,12 +72,12 @@ func (ds *DomainStats) Accumulate(other DomainStats) {
 // Domain should not have any go routines or locks
 type Domain struct {
 	*History
-	keysTable        string // Needs to be table with DupSort
-	valsTable        string
-	files            *btree.BTreeG[*filesItem] // Static files pertaining to this domain, items are of type `filesItem`
-	prefixLen        int                       // Number of bytes in the keys that can be used for prefix iteration
-	stats            DomainStats
-	defaultDc        *DomainContext
+	keysTable string // Needs to be table with DupSort
+	valsTable string
+	files     *btree.BTreeG[*filesItem] // Static files pertaining to this domain, items are of type `filesItem`
+	prefixLen int                       // Number of bytes in the keys that can be used for prefix iteration
+	stats     DomainStats
+	defaultDc *DomainContext
 }
 
 func NewDomain(
@@ -98,9 +98,9 @@ func NewDomain(
 		return nil, err
 	}
 	d := &Domain{
-		keysTable:        keysTable,
-		valsTable:        valsTable,
-		prefixLen:        prefixLen,
+		keysTable: keysTable,
+		valsTable: valsTable,
+		prefixLen: prefixLen,
 	}
 	if d.History, err = NewHistory(dir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals); err != nil {
 		return nil, err
@@ -226,7 +226,7 @@ func (dc *DomainContext) get(key []byte, roTx kv.Tx) ([]byte, bool, error) {
 }
 
 func (dc *DomainContext) Get(key1, key2 []byte, roTx kv.Tx) ([]byte, error) {
-	key := make([]byte, len(key1) + len(key2))
+	key := make([]byte, len(key1)+len(key2))
 	copy(key, key1)
 	copy(key[len(key1):], key2)
 	v, _, err := dc.get(key, roTx)
@@ -243,7 +243,7 @@ func (d *Domain) update(key, original []byte) error {
 }
 
 func (d *Domain) Put(key1, key2, val []byte) error {
-	key := make([]byte, len(key1) + len(key2))
+	key := make([]byte, len(key1)+len(key2))
 	copy(key, key1)
 	copy(key[len(key1):], key2)
 	original, _, err := d.defaultDc.get(key, d.tx)
@@ -271,7 +271,7 @@ func (d *Domain) Put(key1, key2, val []byte) error {
 }
 
 func (d *Domain) Delete(key1, key2 []byte) error {
-	key := make([]byte, len(key1) + len(key2))
+	key := make([]byte, len(key1)+len(key2))
 	copy(key, key1)
 	copy(key[len(key1):], key2)
 	original, found, err := d.defaultDc.get(key, d.tx)
@@ -369,7 +369,7 @@ func ctxItemLess(i, j *ctxItem) bool {
 type DomainContext struct {
 	d     *Domain
 	files *btree.BTreeG[*ctxItem]
-	hc *HistoryContext
+	hc    *HistoryContext
 }
 
 func (d *Domain) MakeContext() *DomainContext {
@@ -621,8 +621,8 @@ func (sf StaticFiles) Close() {
 // static files and their indices
 func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
 	hStaticFiles, err := d.History.buildFiles(step, HistoryCollation{
-		historyPath: collation.historyPath,
-		historyComp: collation.historyComp,
+		historyPath:  collation.historyPath,
+		historyComp:  collation.historyComp,
 		historyCount: collation.historyCount,
 		indexBitmaps: collation.indexBitmaps,
 	})
@@ -726,10 +726,10 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values
 
 func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 	d.History.integrateFiles(HistoryFiles{
-		historyDecomp: sf.historyDecomp,
-		historyIdx: sf.historyIdx,
+		historyDecomp:   sf.historyDecomp,
+		historyIdx:      sf.historyIdx,
 		efHistoryDecomp: sf.efHistoryDecomp,
-		efHistoryIdx: sf.efHistoryIdx,
+		efHistoryIdx:    sf.efHistoryIdx,
 	}, txNumFrom, txNumTo)
 	d.files.ReplaceOrInsert(&filesItem{
 		startTxNum:   txNumFrom,
