@@ -292,7 +292,7 @@ func (d *Domain) Delete(key1, key2 []byte) error {
 	keySuffix := make([]byte, len(key)+8)
 	copy(keySuffix, key)
 	binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
-	if err = d.tx.Delete(d.valsTable, keySuffix, nil); err != nil {
+	if err = d.tx.Delete(d.valsTable, keySuffix); err != nil {
 		return err
 	}
 	return nil

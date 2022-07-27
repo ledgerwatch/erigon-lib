@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -48,11 +49,16 @@ type KvServer struct {
 
 	kv                 kv.RoDB
 	stateChangeStreams *StateChangePubSub
+	snapsthots         Snapsthots
 	ctx                context.Context
 }
 
-func NewKvServer(ctx context.Context, kv kv.RoDB) *KvServer {
-	return &KvServer{kv: kv, stateChangeStreams: newStateChangeStreams(), ctx: ctx}
+type Snapsthots interface {
+	Files() []string
+}
+
+func NewKvServer(ctx context.Context, kv kv.RoDB, snapshots Snapsthots) *KvServer {
+	return &KvServer{kv: kv, stateChangeStreams: newStateChangeStreams(), ctx: ctx, snapsthots: snapshots}
 }
 
 // Version returns the service-side interface version number
@@ -281,6 +287,13 @@ func (s *KvServer) SendStateChanges(ctx context.Context, sc *remote.StateChangeB
 	s.stateChangeStreams.Pub(sc)
 }
 
+func (s *KvServer) Snapshots(ctx context.Context, _ *remote.SnapshotsRequest) (*remote.SnapshotsReply, error) {
+	if s.snapsthots == nil {
+		return &remote.SnapshotsReply{Files: []string{}}, nil
+	}
+	return &remote.SnapshotsReply{Files: s.snapsthots.Files()}, nil
+}
+
 type StateChangePubSub struct {
 	mu    sync.RWMutex
 	id    uint
@@ -308,17 +321,7 @@ func (s *StateChangePubSub) Pub(reply *remote.StateChangeBatch) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, ch := range s.chans {
-		select {
-		case ch <- reply:
-		default: //if channel is full (slow consumer), drop old messages
-			for i := 0; i < cap(ch)/2; i++ {
-				select {
-				case <-ch:
-				default:
-				}
-			}
-			ch <- reply
-		}
+		common.PrioritizedSend(ch, reply)
 	}
 }
 

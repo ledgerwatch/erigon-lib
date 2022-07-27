@@ -451,7 +451,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 		}
 	}()
 	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, startTxNum/ii.aggregationStep, endTxNum/ii.aggregationStep))
-	if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, ii.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+	if comp, err = compress.NewCompressor(context.Background(), "Snapshots merge", datPath, ii.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return nil, fmt.Errorf("merge %s inverted index compressor: %w", ii.filenameBase, err)
 	}
 	var cp CursorHeap
