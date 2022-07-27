@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -60,41 +59,6 @@ func filesItemLess(i, j *filesItem) bool {
 	return i.endTxNum < j.endTxNum
 }
 
-type FileType int
-
-const (
-	Values FileType = iota
-	History1
-	EfHistory
-	NumberOfTypes
-)
-
-func (ft FileType) String() string {
-	switch ft {
-	case Values:
-		return "values"
-	case History1:
-		return "history"
-	case EfHistory:
-		return "efhistory"
-	default:
-		panic(fmt.Sprintf("unknown file type: %d", ft))
-	}
-}
-
-func ParseFileType(s string) (FileType, bool) {
-	switch s {
-	case "values":
-		return Values, true
-	case "history":
-		return History1, true
-	case "efhistory":
-		return EfHistory, true
-	default:
-		return NumberOfTypes, false
-	}
-}
-
 type DomainStats struct {
 	HistoryQueries int
 	EfSearchTime   time.Duration
@@ -108,20 +72,11 @@ func (ds *DomainStats) Accumulate(other DomainStats) {
 // Domain is a part of the state (examples are Accounts, Storage, Code)
 // Domain should not have any go routines or locks
 type Domain struct {
-	dir              string // Directory where static files are created
-	aggregationStep  uint64
-	filenameBase     string
+	*History
 	keysTable        string // Needs to be table with DupSort
 	valsTable        string
-	historyKeysTable string // Needs to be table with DupSort
-	historyValsTable string
-	settingsTable    string // Table containing just one record - counter of value number (keys in the historyValsTable)
-	indexTable       string // Needs to be table with DupSort
-	tx               kv.RwTx
-	txNum            uint64
-	files            [NumberOfTypes]*btree.BTreeG[*filesItem] // Static files pertaining to this domain, items are of type `filesItem`
-	prefixLen        int                                      // Number of bytes in the keys that can be used for prefix iteration
-	compressVals     bool
+	files            *btree.BTreeG[*filesItem] // Static files pertaining to this domain, items are of type `filesItem`
+	prefixLen        int                       // Number of bytes in the keys that can be used for prefix iteration
 	stats            DomainStats
 	defaultDc        *DomainContext
 }
@@ -132,7 +87,7 @@ func NewDomain(
 	filenameBase string,
 	keysTable string,
 	valsTable string,
-	historyKeysTable string,
+	indexKeysTable string,
 	historyValsTable string,
 	settingsTable string,
 	indexTable string,
@@ -144,26 +99,17 @@ func NewDomain(
 		return nil, err
 	}
 	d := &Domain{
-		dir:              dir,
-		aggregationStep:  aggregationStep,
-		filenameBase:     filenameBase,
 		keysTable:        keysTable,
 		valsTable:        valsTable,
-		historyKeysTable: historyKeysTable,
-		historyValsTable: historyValsTable,
-		settingsTable:    settingsTable,
-		indexTable:       indexTable,
 		prefixLen:        prefixLen,
-		compressVals:     compressVals,
 	}
-	for fType := FileType(0); fType < NumberOfTypes; fType++ {
-		d.files[fType] = btree.NewG[*filesItem](32, filesItemLess)
+	if d.History, err = NewHistory(dir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals); err != nil {
+		return nil, err
 	}
+	d.files = btree.NewG[*filesItem](32, filesItemLess)
 	d.scanStateFiles(files)
-	for fType := FileType(0); fType < NumberOfTypes; fType++ {
-		if err = d.openFiles(fType); err != nil {
-			return nil, err
-		}
+	if err = d.openFiles(); err != nil {
+		return nil, err
 	}
 	d.defaultDc = d.MakeContext()
 	return d, nil
@@ -176,27 +122,23 @@ func (d *Domain) GetAndResetStats() DomainStats {
 }
 
 func (d *Domain) scanStateFiles(files []fs.DirEntry) {
-	typeStrings := make([]string, NumberOfTypes)
-	for fType := FileType(0); fType < NumberOfTypes; fType++ {
-		typeStrings[fType] = fType.String()
-	}
-	re := regexp.MustCompile(d.filenameBase + "-(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)")
+	re := regexp.MustCompile(d.filenameBase + ".([0-9]+)-([0-9]+).(kv|kvi)")
 	var err error
 	for _, f := range files {
 		name := f.Name()
 		subs := re.FindStringSubmatch(name)
-		if len(subs) != 5 {
+		if len(subs) != 4 {
 			if len(subs) != 0 {
-				log.Warn("File ignored by doman scan, more than 5 submatches", "name", name, "submatches", len(subs))
+				log.Warn("File ignored by doman scan, more than 4 submatches", "name", name, "submatches", len(subs))
 			}
 			continue
 		}
 		var startTxNum, endTxNum uint64
-		if startTxNum, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
+		if startTxNum, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
 			log.Warn("File ignored by domain scan, parsing startTxNum", "error", err, "name", name)
 			continue
 		}
-		if endTxNum, err = strconv.ParseUint(subs[3], 10, 64); err != nil {
+		if endTxNum, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
 			log.Warn("File ignored by domain scan, parsing endTxNum", "error", err, "name", name)
 			continue
 		}
@@ -204,34 +146,30 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 			log.Warn("File ignored by domain scan, startTxNum > endTxNum", "name", name)
 			continue
 		}
-		fType, ok := ParseFileType(subs[1])
-		if !ok {
-			log.Warn("File ignored by domain scan, type unknown", "type", subs[1])
-		}
 		var item = &filesItem{startTxNum: startTxNum * d.aggregationStep, endTxNum: endTxNum * d.aggregationStep}
 		var foundI *filesItem
-		d.files[fType].AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * d.aggregationStep, endTxNum: endTxNum * d.aggregationStep}, func(it *filesItem) bool {
+		d.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * d.aggregationStep, endTxNum: endTxNum * d.aggregationStep}, func(it *filesItem) bool {
 			if it.endTxNum == endTxNum {
 				foundI = it
 			}
 			return false
 		})
 		if foundI == nil || foundI.startTxNum > startTxNum {
-			//log.Info("Load state file", "name", name, "type", fType.String(), "startTxNum", startTxNum*d.aggregationStep, "endTxNum", endTxNum*d.aggregationStep)
-			d.files[fType].ReplaceOrInsert(item)
+			//log.Info("Load state file", "name", name, "startTxNum", startTxNum*d.aggregationStep, "endTxNum", endTxNum*d.aggregationStep)
+			d.files.ReplaceOrInsert(item)
 		}
 	}
 }
 
-func (d *Domain) openFiles(fType FileType) error {
+func (d *Domain) openFiles() error {
 	var err error
 	var totalKeys uint64
-	d.files[fType].Ascend(func(item *filesItem) bool {
-		datPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.dat", d.filenameBase, fType.String(), item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep))
+	d.files.Ascend(func(item *filesItem) bool {
+		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep))
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
-		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s-%s.%d-%d.idx", d.filenameBase, fType.String(), item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep))
+		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep))
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 			return false
 		}
@@ -244,8 +182,8 @@ func (d *Domain) openFiles(fType FileType) error {
 	return nil
 }
 
-func (d *Domain) closeFiles(fType FileType) {
-	d.files[fType].Ascend(func(item *filesItem) bool {
+func (d *Domain) closeFiles() {
+	d.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
 		}
@@ -258,17 +196,8 @@ func (d *Domain) closeFiles(fType FileType) {
 
 func (d *Domain) Close() {
 	// Closing state files only after background aggregation goroutine is finished
-	for fType := FileType(0); fType < NumberOfTypes; fType++ {
-		d.closeFiles(fType)
-	}
-}
-
-func (d *Domain) SetTx(tx kv.RwTx) {
-	d.tx = tx
-}
-
-func (d *Domain) SetTxNum(txNum uint64) {
-	d.txNum = txNum
+	d.History.closeFiles()
+	d.closeFiles()
 }
 
 func (dc *DomainContext) get(key []byte, roTx kv.Tx) ([]byte, bool, error) {
@@ -284,7 +213,7 @@ func (dc *DomainContext) get(key []byte, roTx kv.Tx) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	if foundInvStep == nil {
-		v, found := dc.readFromFiles(Values, key)
+		v, found := dc.readFromFiles(key)
 		return v, found, nil
 	}
 	keySuffix := make([]byte, len(key)+8)
@@ -297,7 +226,10 @@ func (dc *DomainContext) get(key []byte, roTx kv.Tx) ([]byte, bool, error) {
 	return v, true, nil
 }
 
-func (dc *DomainContext) Get(key []byte, roTx kv.Tx) ([]byte, error) {
+func (dc *DomainContext) Get(key1, key2 []byte, roTx kv.Tx) ([]byte, error) {
+	key := make([]byte, len(key1) + len(key2))
+	copy(key, key1)
+	copy(key[len(key1):], key2)
 	v, _, err := dc.get(key, roTx)
 	return v, err
 }
@@ -308,38 +240,13 @@ func (d *Domain) update(key, original []byte) error {
 	if err := d.tx.Put(d.keysTable, key, invertedStep[:]); err != nil {
 		return err
 	}
-	var txKey [8]byte
-	binary.BigEndian.PutUint64(txKey[:], d.txNum)
-	historyKey := make([]byte, len(key)+8)
-	copy(historyKey, key)
-	if len(original) > 0 {
-		val, err := d.tx.GetOne(d.settingsTable, historyValCountKey)
-		if err != nil {
-			return err
-		}
-		var valNum uint64
-		if len(val) > 0 {
-			valNum = binary.BigEndian.Uint64(val)
-		}
-		valNum++
-		binary.BigEndian.PutUint64(historyKey[len(key):], valNum)
-		if err = d.tx.Put(d.settingsTable, historyValCountKey, historyKey[len(key):]); err != nil {
-			return err
-		}
-		if err = d.tx.Put(d.historyValsTable, historyKey[len(key):], original); err != nil {
-			return err
-		}
-	}
-	if err := d.tx.Put(d.historyKeysTable, txKey[:], historyKey); err != nil {
-		return err
-	}
-	if err := d.tx.Put(d.indexTable, key, txKey[:]); err != nil {
-		return err
-	}
 	return nil
 }
 
-func (d *Domain) Put(key, val []byte) error {
+func (d *Domain) Put(key1, key2, val []byte) error {
+	key := make([]byte, len(key1) + len(key2))
+	copy(key, key1)
+	copy(key[len(key1):], key2)
 	original, _, err := d.defaultDc.get(key, d.tx)
 	if err != nil {
 		return err
@@ -348,6 +255,9 @@ func (d *Domain) Put(key, val []byte) error {
 		return nil
 	}
 	// This call to update needs to happen before d.tx.Put() later, because otherwise the content of `original`` slice is invalidated
+	if err = d.History.AddPrevValue(key1, key2, original); err != nil {
+		return err
+	}
 	if err = d.update(key, original); err != nil {
 		return err
 	}
@@ -361,7 +271,10 @@ func (d *Domain) Put(key, val []byte) error {
 	return nil
 }
 
-func (d *Domain) Delete(key []byte) error {
+func (d *Domain) Delete(key1, key2 []byte) error {
+	key := make([]byte, len(key1) + len(key2))
+	copy(key, key1)
+	copy(key[len(key1):], key2)
 	original, found, err := d.defaultDc.get(key, d.tx)
 	if err != nil {
 		return err
@@ -370,6 +283,9 @@ func (d *Domain) Delete(key []byte) error {
 		return nil
 	}
 	// This call to update needs to happen before d.tx.Delete() later, because otherwise the content of `original`` slice is invalidated
+	if err = d.History.AddPrevValue(key1, key2, original); err != nil {
+		return err
+	}
 	if err = d.update(key, original); err != nil {
 		return err
 	}
@@ -453,24 +369,24 @@ func ctxItemLess(i, j *ctxItem) bool {
 // DomainContext allows accesing the same domain from multiple go-routines
 type DomainContext struct {
 	d     *Domain
-	files [NumberOfTypes]*btree.BTreeG[*ctxItem]
+	files *btree.BTreeG[*ctxItem]
+	hc *HistoryContext
 }
 
 func (d *Domain) MakeContext() *DomainContext {
 	dc := &DomainContext{d: d}
-	for fType := FileType(0); fType < NumberOfTypes; fType++ {
-		bt := btree.NewG[*ctxItem](32, ctxItemLess)
-		dc.files[fType] = bt
-		d.files[fType].Ascend(func(item *filesItem) bool {
-			bt.ReplaceOrInsert(&ctxItem{
-				startTxNum: item.startTxNum,
-				endTxNum:   item.endTxNum,
-				getter:     item.decompressor.MakeGetter(),
-				reader:     recsplit.NewIndexReader(item.index),
-			})
-			return true
+	dc.hc = d.History.MakeContext()
+	bt := btree.NewG[*ctxItem](32, ctxItemLess)
+	dc.files = bt
+	d.files.Ascend(func(item *filesItem) bool {
+		bt.ReplaceOrInsert(&ctxItem{
+			startTxNum: item.startTxNum,
+			endTxNum:   item.endTxNum,
+			getter:     item.decompressor.MakeGetter(),
+			reader:     recsplit.NewIndexReader(item.index),
 		})
-	}
+		return true
+	})
 	return dc
 }
 
@@ -506,7 +422,7 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 		}
 		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum, reverse: true})
 	}
-	dc.files[Values].Ascend(func(item *ctxItem) bool {
+	dc.files.Ascend(func(item *ctxItem) bool {
 		if item.reader.Empty() {
 			return true
 		}
@@ -663,7 +579,7 @@ func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx) (Collation, erro
 	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return Collation{}, fmt.Errorf("create %s history compressor: %w", d.filenameBase, err)
 	}
-	historyKeysCursor, err := roTx.CursorDupSort(d.historyKeysTable)
+	historyKeysCursor, err := roTx.CursorDupSort(d.indexKeysTable)
 	if err != nil {
 		return Collation{}, fmt.Errorf("create %s history cursor: %w", d.filenameBase, err)
 	}
@@ -919,23 +835,17 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values
 }
 
 func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
-	d.files[Values].ReplaceOrInsert(&filesItem{
+	d.History.integrateFiles(HistoryFiles{
+		historyDecomp: sf.historyDecomp,
+		historyIdx: sf.historyIdx,
+		efHistoryDecomp: sf.efHistoryDecomp,
+		efHistoryIdx: sf.efHistoryIdx,
+	}, txNumFrom, txNumTo)
+	d.files.ReplaceOrInsert(&filesItem{
 		startTxNum:   txNumFrom,
 		endTxNum:     txNumTo,
 		decompressor: sf.valuesDecomp,
 		index:        sf.valuesIdx,
-	})
-	d.files[History1].ReplaceOrInsert(&filesItem{
-		startTxNum:   txNumFrom,
-		endTxNum:     txNumTo,
-		decompressor: sf.historyDecomp,
-		index:        sf.historyIdx,
-	})
-	d.files[EfHistory].ReplaceOrInsert(&filesItem{
-		startTxNum:   txNumFrom,
-		endTxNum:     txNumTo,
-		decompressor: sf.efHistoryDecomp,
-		index:        sf.efHistoryIdx,
 	})
 }
 
@@ -976,7 +886,7 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
 	}
-	historyKeysCursor, err := d.tx.RwCursorDupSort(d.historyKeysTable)
+	historyKeysCursor, err := d.tx.RwCursorDupSort(d.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", d.filenameBase, err)
 	}
@@ -1005,10 +915,10 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
-func (dc *DomainContext) readFromFiles(fType FileType, filekey []byte) ([]byte, bool) {
+func (dc *DomainContext) readFromFiles(filekey []byte) ([]byte, bool) {
 	var val []byte
 	var found bool
-	dc.files[fType].Descend(func(item *ctxItem) bool {
+	dc.files.Descend(func(item *ctxItem) bool {
 		if item.reader.Empty() {
 			return true
 		}
@@ -1039,11 +949,11 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 	var found bool
 	var anyItem bool // Whether any filesItem has been looked at in the loop below
 	var topState *ctxItem
-	dc.files[Values].AscendGreaterOrEqual(&search, func(i *ctxItem) bool {
+	dc.files.AscendGreaterOrEqual(&search, func(i *ctxItem) bool {
 		topState = i
 		return false
 	})
-	dc.files[EfHistory].AscendGreaterOrEqual(&search, func(item *ctxItem) bool {
+	dc.hc.indexFiles.AscendGreaterOrEqual(&search, func(item *ctxItem) bool {
 		anyItem = true
 		offset := item.reader.Lookup(key)
 		g := item.getter
@@ -1070,7 +980,7 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 		if anyItem {
 			// If there were no changes but there were history files, the value can be obtained from value files
 			var val []byte
-			dc.files[Values].DescendLessOrEqual(topState, func(item *ctxItem) bool {
+			dc.files.DescendLessOrEqual(topState, func(item *ctxItem) bool {
 				if item.reader.Empty() {
 					return true
 				}
@@ -1108,7 +1018,7 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 		}
 		if foundTxNumVal != nil {
 			var historyKeysCursor kv.CursorDupSort
-			if historyKeysCursor, err = roTx.CursorDupSort(dc.d.historyKeysTable); err != nil {
+			if historyKeysCursor, err = roTx.CursorDupSort(dc.d.indexKeysTable); err != nil {
 				return nil, false, err
 			}
 			defer historyKeysCursor.Close()
@@ -1134,7 +1044,7 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 	var historyItem *ctxItem
 	search.startTxNum = foundStartTxNum
 	search.endTxNum = foundEndTxNum
-	historyItem, ok := dc.files[History1].Get(&search)
+	historyItem, ok := dc.hc.historyFiles.Get(&search)
 	if !ok || historyItem == nil {
 		return nil, false, fmt.Errorf("no %s file found for [%x]", dc.d.filenameBase, key)
 	}

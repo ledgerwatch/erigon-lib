@@ -66,15 +66,15 @@ func TestCollationBuild(t *testing.T) {
 	d.SetTx(tx)
 
 	d.SetTxNum(2)
-	err = d.Put([]byte("key1"), []byte("value1.1"))
+	err = d.Put([]byte("key1"), nil, []byte("value1.1"))
 	require.NoError(t, err)
 
 	d.SetTxNum(3)
-	err = d.Put([]byte("key2"), []byte("value2.1"))
+	err = d.Put([]byte("key2"), nil, []byte("value2.1"))
 	require.NoError(t, err)
 
 	d.SetTxNum(6)
-	err = d.Put([]byte("key1"), []byte("value1.2"))
+	err = d.Put([]byte("key1"), nil, []byte("value1.2"))
 	require.NoError(t, err)
 
 	err = tx.Commit()
@@ -86,9 +86,9 @@ func TestCollationBuild(t *testing.T) {
 
 	c, err := d.collate(0, 0, 7, roTx)
 	require.NoError(t, err)
-	require.True(t, strings.HasSuffix(c.valuesPath, "base-values.0-1.dat"))
+	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
 	require.Equal(t, 2, c.valuesCount)
-	require.True(t, strings.HasSuffix(c.historyPath, "base-history.0-1.dat"))
+	require.True(t, strings.HasSuffix(c.historyPath, "base.0-1.v"))
 	require.Equal(t, 3, c.historyCount)
 	require.Equal(t, 2, len(c.indexBitmaps))
 	require.Equal(t, []uint64{3}, c.indexBitmaps["key2"].ToArray())
@@ -169,19 +169,19 @@ func TestIterationBasic(t *testing.T) {
 	d.SetTx(tx)
 
 	d.SetTxNum(2)
-	err = d.Put([]byte("addr1loc1"), []byte("value1"))
+	err = d.Put([]byte("addr1"), []byte("loc1"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr1loc2"), []byte("value1"))
+	err = d.Put([]byte("addr1"), []byte("loc2"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr1loc3"), []byte("value1"))
+	err = d.Put([]byte("addr1"), []byte("loc3"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr2loc1"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc1"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr2loc2"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc2"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr3loc1"), []byte("value1"))
+	err = d.Put([]byte("addr3"), []byte("loc1"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr3loc2"), []byte("value1"))
+	err = d.Put([]byte("addr3"), []byte("loc2"), []byte("value1"))
 	require.NoError(t, err)
 
 	var keys, vals []string
@@ -208,15 +208,15 @@ func TestAfterPrune(t *testing.T) {
 	d.SetTx(tx)
 
 	d.SetTxNum(2)
-	err = d.Put([]byte("key1"), []byte("value1.1"))
+	err = d.Put([]byte("key1"), nil, []byte("value1.1"))
 	require.NoError(t, err)
 
 	d.SetTxNum(3)
-	err = d.Put([]byte("key2"), []byte("value2.1"))
+	err = d.Put([]byte("key2"), nil, []byte("value2.1"))
 	require.NoError(t, err)
 
 	d.SetTxNum(6)
-	err = d.Put([]byte("key1"), []byte("value1.2"))
+	err = d.Put([]byte("key1"), nil, []byte("value1.2"))
 	require.NoError(t, err)
 
 	err = tx.Commit()
@@ -240,10 +240,10 @@ func TestAfterPrune(t *testing.T) {
 	d.integrateFiles(sf, 0, 16)
 	var v []byte
 	dc := d.MakeContext()
-	v, err = dc.Get([]byte("key1"), tx)
+	v, err = dc.Get([]byte("key1"), nil, tx)
 	require.NoError(t, err)
 	require.Equal(t, []byte("value1.2"), v)
-	v, err = dc.Get([]byte("key2"), tx)
+	v, err = dc.Get([]byte("key2"), nil, tx)
 	require.NoError(t, err)
 	require.Equal(t, []byte("value2.1"), v)
 
@@ -255,7 +255,7 @@ func TestAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	d.SetTx(tx)
 
-	for _, table := range []string{d.keysTable, d.valsTable, d.historyKeysTable, d.historyValsTable, d.indexTable} {
+	for _, table := range []string{d.keysTable, d.valsTable, d.indexKeysTable, d.historyValsTable, d.indexTable} {
 		var cur kv.Cursor
 		cur, err = tx.Cursor(table)
 		require.NoError(t, err)
@@ -266,10 +266,10 @@ func TestAfterPrune(t *testing.T) {
 		require.Nil(t, k, table)
 	}
 
-	v, err = dc.Get([]byte("key1"), tx)
+	v, err = dc.Get([]byte("key1"), nil, tx)
 	require.NoError(t, err)
 	require.Equal(t, []byte("value1.2"), v)
-	v, err = dc.Get([]byte("key2"), tx)
+	v, err = dc.Get([]byte("key2"), nil, tx)
 	require.NoError(t, err)
 	require.Equal(t, []byte("value2.1"), v)
 }
@@ -297,7 +297,7 @@ func filledDomain(t *testing.T) (string, kv.RwDB, *Domain, uint64) {
 				var v [8]byte
 				binary.BigEndian.PutUint64(k[:], keyNum)
 				binary.BigEndian.PutUint64(v[:], valNum)
-				err = d.Put(k[:], v[:])
+				err = d.Put(k[:], nil, v[:])
 				require.NoError(t, err)
 			}
 		}
@@ -396,33 +396,33 @@ func TestIterationMultistep(t *testing.T) {
 	d.SetTx(tx)
 
 	d.SetTxNum(2)
-	err = d.Put([]byte("addr1loc1"), []byte("value1"))
+	err = d.Put([]byte("addr1"), []byte("loc1"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr1loc2"), []byte("value1"))
+	err = d.Put([]byte("addr1"), []byte("loc2"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr1loc3"), []byte("value1"))
+	err = d.Put([]byte("addr1"), []byte("loc3"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr2loc1"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc1"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr2loc2"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc2"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr3loc1"), []byte("value1"))
+	err = d.Put([]byte("addr3"), []byte("loc1"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr3loc2"), []byte("value1"))
+	err = d.Put([]byte("addr3"), []byte("loc2"), []byte("value1"))
 	require.NoError(t, err)
 
 	d.SetTxNum(2 + 16)
-	err = d.Put([]byte("addr2loc1"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc1"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr2loc2"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc2"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr2loc3"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc3"), []byte("value1"))
 	require.NoError(t, err)
-	err = d.Put([]byte("addr2loc4"), []byte("value1"))
+	err = d.Put([]byte("addr2"), []byte("loc4"), []byte("value1"))
 	require.NoError(t, err)
 
 	d.SetTxNum(2 + 16 + 16)
-	err = d.Delete([]byte("addr2loc1"))
+	err = d.Delete([]byte("addr2"), []byte("loc1"))
 	require.NoError(t, err)
 
 	err = tx.Commit()
@@ -497,11 +497,11 @@ func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 			maxEndTxNum := d.endTxNumMinimax()
 			maxSpan := uint64(16 * 16)
 			for r = d.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = d.findMergeRange(maxEndTxNum, maxSpan) {
-				outs, _ := d.staticFilesInRange(r)
-				in, err := d.mergeFiles(outs, r, maxSpan)
+				valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r)
+				valuesIn, indexIn, historyIn, err := d.mergeFiles(valuesOuts, indexOuts, historyOuts, r, maxSpan)
 				require.NoError(t, err)
-				d.integrateMergedFiles(outs, in)
-				err = d.deleteFiles(outs)
+				d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
+				err = d.deleteFiles(valuesOuts, indexOuts, historyOuts)
 				require.NoError(t, err)
 			}
 		}()
@@ -535,7 +535,7 @@ func TestScanFiles(t *testing.T) {
 	// Recreate domain and re-scan the files
 	txNum := d.txNum
 	d.Close()
-	d, err = NewDomain(path, d.aggregationStep, d.filenameBase, d.keysTable, d.valsTable, d.historyKeysTable, d.historyValsTable, d.settingsTable, d.indexTable, d.prefixLen, d.compressVals)
+	d, err = NewDomain(path, d.aggregationStep, d.filenameBase, d.keysTable, d.valsTable, d.indexKeysTable, d.historyValsTable, d.settingsTable, d.indexTable, d.prefixLen, d.compressVals)
 	require.NoError(t, err)
 	d.SetTxNum(txNum)
 	// Check the history
@@ -559,9 +559,9 @@ func TestDelete(t *testing.T) {
 	for txNum := uint64(0); txNum < uint64(1000); txNum++ {
 		d.SetTxNum(txNum)
 		if txNum%2 == 0 {
-			err = d.Put([]byte("key1"), []byte("value1"))
+			err = d.Put([]byte("key1"), nil, []byte("value1"))
 		} else {
-			err = d.Delete([]byte("key1"))
+			err = d.Delete([]byte("key1"), nil)
 		}
 		require.NoError(t, err)
 	}

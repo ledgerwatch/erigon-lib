@@ -212,7 +212,7 @@ func TestHistoryAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	h.SetTx(tx)
 
-	for _, table := range []string{h.keysTable, h.valsTable, h.indexTable} {
+	for _, table := range []string{h.indexKeysTable, h.historyValsTable, h.indexTable} {
 		var cur kv.Cursor
 		cur, err = tx.Cursor(table)
 		require.NoError(t, err)
@@ -398,7 +398,7 @@ func TestHistoryScanFiles(t *testing.T) {
 	// Recreate domain and re-scan the files
 	txNum := h.txNum
 	h.Close()
-	h, err = NewHistory(path, h.aggregationStep, h.filenameBase, h.keysTable, h.indexTable, h.valsTable, h.settingsTable, h.compressVals)
+	h, err = NewHistory(path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals)
 	require.NoError(t, err)
 	h.SetTxNum(txNum)
 	// Check the history

@@ -39,7 +39,7 @@ import (
 
 type History struct {
 	*InvertedIndex
-	valsTable     string
+	historyValsTable     string
 	settingsTable string
 	files         *btree.BTreeG[*filesItem]
 	compressVals  bool
@@ -49,19 +49,19 @@ func NewHistory(
 	dir string,
 	aggregationStep uint64,
 	filenameBase string,
-	keysTable string,
+	indexKeysTable string,
 	indexTable string,
-	valsTable string,
+	historyValsTable string,
 	settingsTable string,
 	compressVals bool,
 ) (*History, error) {
 	var h History
 	var err error
-	h.InvertedIndex, err = NewInvertedIndex(dir, aggregationStep, filenameBase, keysTable, indexTable)
+	h.InvertedIndex, err = NewInvertedIndex(dir, aggregationStep, filenameBase, indexKeysTable, indexTable)
 	if err != nil {
 		return nil, err
 	}
-	h.valsTable = valsTable
+	h.historyValsTable = historyValsTable
 	h.settingsTable = settingsTable
 	h.files = btree.NewG[*filesItem](32, filesItemLess)
 	files, err := os.ReadDir(dir)
@@ -175,7 +175,7 @@ func (h *History) AddPrevValue(key1, key2, original []byte) error {
 		if err = h.tx.Put(h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
 			return err
 		}
-		if err = h.tx.Put(h.valsTable, historyKey[lk:], original); err != nil {
+		if err = h.tx.Put(h.historyValsTable, historyKey[lk:], original); err != nil {
 			return err
 		}
 	}
@@ -213,7 +213,7 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, h.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return HistoryCollation{}, fmt.Errorf("create %s history compressor: %w", h.filenameBase, err)
 	}
-	keysCursor, err := roTx.CursorDupSort(h.keysTable)
+	keysCursor, err := roTx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return HistoryCollation{}, fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
 	}
@@ -260,7 +260,7 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 				if valNum == 0 {
 					val = nil
 				} else {
-					if val, err = roTx.GetOne(h.valsTable, v[len(v)-8:]); err != nil {
+					if val, err = roTx.GetOne(h.historyValsTable, v[len(v)-8:]); err != nil {
 						return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.filenameBase, k, valNum, err)
 					}
 				}
@@ -460,7 +460,7 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 
 // [txFrom; txTo)
 func (h *History) prune(step uint64, txFrom, txTo uint64) error {
-	historyKeysCursor, err := h.tx.RwCursorDupSort(h.keysTable)
+	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
 	}
@@ -473,7 +473,7 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if err = h.tx.Delete(h.valsTable, v[len(v)-8:], nil); err != nil {
+		if err = h.tx.Delete(h.historyValsTable, v[len(v)-8:], nil); err != nil {
 			return err
 		}
 		if err = h.tx.Delete(h.indexTable, v[:len(v)-8], k); err != nil {
