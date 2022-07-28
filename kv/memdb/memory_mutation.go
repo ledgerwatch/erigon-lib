@@ -378,6 +378,6 @@ func (m *MemoryMutation) ViewID() uint64 {
 	panic("ViewID Not implemented")
 }
 
-func (m *MemoryMutation) Reset() uint64 {
+func (m *MemoryMutation) Reset() {
 	panic("Reset Not implemented")
 }
