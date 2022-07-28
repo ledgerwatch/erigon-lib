@@ -382,6 +382,6 @@ func (m *MemoryMutation) Reset() {
 	panic("Reset Not implemented")
 }
 
-func (m *MemoryMutation) Renew() {
+func (m *MemoryMutation) Renew() error {
 	panic("Reset Not implemented")
 }
