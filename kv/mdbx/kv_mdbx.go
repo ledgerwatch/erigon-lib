@@ -1046,8 +1046,13 @@ func (tx *MdbxTx) DBSize() (uint64, error) {
 	return info.Geo.Current, err
 }
 
-func (tx *MdbxTx) Reset() {
-	tx.tx.Reset()
+func (tx *MdbxTx) Reset() error {
+	tx.closeCursors()
+	//tx.printDebugInfo()
+	tx.tx.Abort()
+	var err error
+	tx.tx, err = tx.db.env.BeginTxn(nil, 0)
+	return err
 }
 
 func (tx *MdbxTx) Renew() error {

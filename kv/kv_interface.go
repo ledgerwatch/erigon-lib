@@ -264,7 +264,7 @@ type RwTx interface {
 	// CollectMetrics - does collect all DB-related and Tx-related metrics
 	// this method exists only in RwTx to avoid concurrency
 	CollectMetrics()
-	Reset()
+	Reset() error
 	Renew() error
 }
 
