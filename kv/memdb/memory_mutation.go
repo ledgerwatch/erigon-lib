@@ -215,7 +215,7 @@ func (m *MemoryMutation) Delete(table string, k []byte) error {
 }
 
 func (m *MemoryMutation) Commit() error {
-	panic("Commit not implemented!")
+	return nil
 }
 
 func (m *MemoryMutation) Rollback() {
