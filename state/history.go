@@ -150,7 +150,7 @@ func (h *History) closeFiles() {
 }
 
 func (h *History) Close() {
-	h.InvertedIndex.closeFiles()
+	h.InvertedIndex.Close()
 	h.closeFiles()
 }
 

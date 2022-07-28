@@ -195,7 +195,7 @@ func (d *Domain) closeFiles() {
 
 func (d *Domain) Close() {
 	// Closing state files only after background aggregation goroutine is finished
-	d.History.closeFiles()
+	d.History.Close()
 	d.closeFiles()
 }
 
