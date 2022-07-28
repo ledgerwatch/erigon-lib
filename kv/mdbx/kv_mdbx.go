@@ -1050,6 +1050,10 @@ func (tx *MdbxTx) Reset() {
 	tx.tx.Reset()
 }
 
+func (tx *MdbxTx) Renew() error {
+	return tx.tx.Renew()
+}
+
 func (tx *MdbxTx) RwCursor(bucket string) (kv.RwCursor, error) {
 	b := tx.db.buckets[bucket]
 	if b.AutoDupSortKeysConversion {

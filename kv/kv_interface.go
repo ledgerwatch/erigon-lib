@@ -265,6 +265,7 @@ type RwTx interface {
 	// this method exists only in RwTx to avoid concurrency
 	CollectMetrics()
 	Reset()
+	Renew() error
 }
 
 // BucketMigrator used for buckets migration, don't use it in usual app code
