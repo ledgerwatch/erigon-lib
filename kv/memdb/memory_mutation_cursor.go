@@ -230,6 +230,10 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 
 // Seek move pointer to a key at a certain position.
 func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
+	if m.mutation.isTableCleared(m.table) {
+		return m.memCursor.Seek(seek)
+	}
+
 	dbKey, dbValue, err := m.cursor.Seek(seek)
 	if err != nil {
 		return nil, nil, err

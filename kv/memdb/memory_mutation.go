@@ -167,13 +167,15 @@ func (m *MemoryMutation) Last(table string) ([]byte, []byte, error) {
 
 // Has return whether a key is present in a certain table.
 func (m *MemoryMutation) Has(table string, key []byte) (bool, error) {
-	if _, ok := m.getMem(table, key); ok {
-		return ok, nil
+	c, err := m.statelessCursor(table)
+	if err != nil {
+		return false, err
 	}
-	if m.db != nil {
-		return m.db.Has(table, key)
+	k, _, err := c.Seek(key)
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	return bytes.Equal(key, k), nil
 }
 
 // Put insert a new entry in the database, if it is hashed storage it will add it to a slice instead of a map.
