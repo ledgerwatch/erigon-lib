@@ -77,17 +77,9 @@ func (m *MemoryMutation) isEntryDeleted(table string, key []byte) bool {
 	return ok
 }
 
-// getMem Retrieve database entry from memory (hashed storage will be left out for now because it is the only non auto-DupSorted table)
-func (m *MemoryMutation) getMem(table string, key []byte) ([]byte, bool) {
-	val, err := m.memTx.GetOne(table, key)
-	if err != nil {
-		panic(err)
-	}
-	return val, val != nil
+func (m *MemoryMutation) DBSize() (uint64, error) {
+	panic("not implemented")
 }
-
-func (m *MemoryMutation) DBSize() (uint64, error) { return 0, nil }
-func (m *MemoryMutation) PageSize() uint64        { return 0 }
 
 func initSequences(db kv.Tx, memTx kv.RwTx) error {
 	cursor, err := db.Cursor(kv.Sequence)
@@ -191,10 +183,6 @@ func (m *MemoryMutation) AppendDup(table string, key []byte, value []byte) error
 	return m.Put(table, key, value)
 }
 
-func (m *MemoryMutation) BatchSize() int {
-	return 0
-}
-
 func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
 	c, err := m.Cursor(bucket)
 	if err != nil {
@@ -258,7 +246,7 @@ func (m *MemoryMutation) Close() {
 }
 
 func (m *MemoryMutation) BucketSize(bucket string) (uint64, error) {
-	return 0, nil
+	return m.memTx.BucketSize(bucket)
 }
 
 func (m *MemoryMutation) DropBucket(bucket string) error {

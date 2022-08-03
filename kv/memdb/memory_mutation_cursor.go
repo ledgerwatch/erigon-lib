@@ -286,7 +286,7 @@ func (m *memoryMutationCursor) Put(k, v []byte) error {
 }
 
 func (m *memoryMutationCursor) Append(k []byte, v []byte) error {
-	return m.mutation.Put(m.table, common.Copy(k), common.Copy(v))
+	return m.mutation.Append(m.table, common.Copy(k), common.Copy(v))
 
 }
 
