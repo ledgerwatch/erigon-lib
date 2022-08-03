@@ -266,7 +266,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	if dbKey != nil && !m.mutation.isEntryDeleted(m.table, seek) {
+	if dbKey != nil && !m.mutation.isTableCleared(m.table) && !m.mutation.isEntryDeleted(m.table, seek) {
 		m.currentDbEntry.key = dbKey
 		m.currentDbEntry.value = dbValue
 		m.currentMemEntry.key, m.currentMemEntry.value, _ = m.memCursor.Seek(seek)

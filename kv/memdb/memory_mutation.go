@@ -24,12 +24,12 @@ import (
 )
 
 type MemoryMutation struct {
-	// Bucket => Key => Value
-	memTx          kv.RwTx
-	memDb          kv.RwDB
-	deletedEntries map[string]map[string]struct{}
-	clearedTables  map[string]struct{}
-	db             kv.Tx
+	memTx            kv.RwTx
+	memDb            kv.RwDB
+	deletedEntries   map[string]map[string]struct{}
+	clearedTables    map[string]struct{}
+	db               kv.Tx
+	statelessCursors map[string]kv.Cursor
 }
 
 // NewBatch - starts in-mem batch
@@ -135,23 +135,30 @@ func (m *MemoryMutation) ForAmount(bucket string, fromPrefix []byte, amount uint
 	return nil
 }
 
-// Can only be called from the worker thread
-func (m *MemoryMutation) GetOne(table string, key []byte) ([]byte, error) {
-	if value, ok := m.getMem(table, key); ok {
-		if value == nil {
-			return nil, nil
-		}
-		return value, nil
+func (m *MemoryMutation) statelessCursor(table string) (kv.RwCursor, error) {
+	if m.statelessCursors == nil {
+		m.statelessCursors = make(map[string]kv.Cursor)
 	}
-	if m.db != nil && !m.isTableCleared(table) && !m.isEntryDeleted(table, key) {
-		// TODO: simplify when tx can no longer be parent of mutation
-		value, err := m.db.GetOne(table, key)
+	c, ok := m.statelessCursors[table]
+	if !ok {
+		var err error
+		c, err = m.Cursor(table)
 		if err != nil {
 			return nil, err
 		}
-		return value, nil
+		m.statelessCursors[table] = c
 	}
-	return nil, nil
+	return c.(kv.RwCursor), nil
+}
+
+// Can only be called from the worker thread
+func (m *MemoryMutation) GetOne(table string, key []byte) ([]byte, error) {
+	c, err := m.statelessCursor(table)
+	if err != nil {
+		return nil, err
+	}
+	_, v, err := c.SeekExact(key)
+	return v, err
 }
 
 func (m *MemoryMutation) Last(table string) ([]byte, []byte, error) {
@@ -234,22 +241,18 @@ func (m *MemoryMutation) Delete(table string, k []byte) error {
 }
 
 func (m *MemoryMutation) Commit() error {
+	m.statelessCursors = nil
 	return nil
 }
 
 func (m *MemoryMutation) Rollback() {
 	m.memTx.Rollback()
 	m.memDb.Close()
+	m.statelessCursors = nil
 }
 
 func (m *MemoryMutation) Close() {
 	m.Rollback()
-}
-
-func (m *MemoryMutation) panicOnEmptyDB() {
-	if m.db == nil {
-		panic("Not implemented")
-	}
 }
 
 func (m *MemoryMutation) BucketSize(bucket string) (uint64, error) {
