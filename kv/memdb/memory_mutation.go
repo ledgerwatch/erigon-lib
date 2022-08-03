@@ -112,20 +112,24 @@ func (m *MemoryMutation) ReadSequence(bucket string) (uint64, error) {
 	return m.memTx.ReadSequence(bucket)
 }
 
-func (m *MemoryMutation) ForAmount(bucket string, prefix []byte, amount uint32, walker func(k, v []byte) error) error {
-	cursor, err := m.Cursor(bucket)
+func (m *MemoryMutation) ForAmount(bucket string, fromPrefix []byte, amount uint32, walker func(k, v []byte) error) error {
+	if amount == 0 {
+		return nil
+	}
+	c, err := m.Cursor(bucket)
 	if err != nil {
 		return err
 	}
-	count := uint32(0)
-	for k, v, err := cursor.Seek(prefix); k != nil && count < amount; k, v, err = cursor.Next() {
+	defer c.Close()
+
+	for k, v, err := c.Seek(fromPrefix); k != nil && amount > 0; k, v, err = c.Next() {
 		if err != nil {
 			return err
 		}
 		if err := walker(k, v); err != nil {
 			return err
 		}
-		count++
+		amount--
 	}
 	return nil
 }
