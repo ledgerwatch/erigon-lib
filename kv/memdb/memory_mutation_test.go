@@ -48,7 +48,7 @@ func TestPutAppendHas(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, exist, true)
 
-	val, err := batch.Get(kv.HashedAccounts, []byte("AAAA"))
+	val, err := batch.GetOne(kv.HashedAccounts, []byte("AAAA"))
 	require.Nil(t, err)
 	require.Equal(t, val, []byte("value1.3"))
 

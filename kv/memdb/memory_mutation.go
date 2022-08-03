@@ -15,7 +15,6 @@ package memdb
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ledgerwatch/log/v3"
 
@@ -148,20 +147,6 @@ func (m *MemoryMutation) GetOne(table string, key []byte) ([]byte, error) {
 		return value, nil
 	}
 	return nil, nil
-}
-
-// Can only be called from the worker thread
-func (m *MemoryMutation) Get(table string, key []byte) ([]byte, error) {
-	value, err := m.GetOne(table, key)
-	if err != nil {
-		return nil, err
-	}
-
-	if value == nil {
-		return nil, fmt.Errorf("Get: key not found.")
-	}
-
-	return value, nil
 }
 
 func (m *MemoryMutation) Last(table string) ([]byte, []byte, error) {
