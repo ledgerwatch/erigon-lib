@@ -14,6 +14,7 @@
 package memdb
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/ledgerwatch/log/v3"
@@ -186,13 +187,42 @@ func (m *MemoryMutation) BatchSize() int {
 }
 
 func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
-	m.panicOnEmptyDB()
-	return m.db.ForEach(bucket, fromPrefix, walker)
+	c, err := m.Cursor(bucket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
+		if err != nil {
+			return err
+		}
+		if err := walker(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *MemoryMutation) ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error {
-	m.panicOnEmptyDB()
-	return m.db.ForPrefix(bucket, prefix, walker)
+	c, err := m.Cursor(bucket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	for k, v, err := c.Seek(prefix); k != nil; k, v, err = c.Next() {
+		if err != nil {
+			return err
+		}
+		if !bytes.HasPrefix(k, prefix) {
+			break
+		}
+		if err := walker(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *MemoryMutation) Delete(table string, k []byte) error {
