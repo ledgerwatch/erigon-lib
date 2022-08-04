@@ -61,6 +61,7 @@ func NewMemoryBatch(tx kv.Tx) *MemoryMutation {
 
 func (m *MemoryMutation) UpdateTxn(tx kv.Tx) {
 	m.db = tx
+	m.statelessCursors = nil
 }
 
 func (m *MemoryMutation) isTableCleared(table string) bool {
