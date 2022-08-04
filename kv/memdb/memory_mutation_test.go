@@ -301,6 +301,35 @@ func TestGetClearBucket(t *testing.T) {
 	require.Nil(t, val)
 }
 
+func TestFirstAfterClearBucket(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDB(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	err = batch.ClearBucket(kv.HashedAccounts)
+	require.Nil(t, err)
+
+	err = batch.Put(kv.HashedAccounts, []byte("BBBB"), []byte("value5"))
+	require.Nil(t, err)
+
+	cursor, err := batch.Cursor(kv.HashedAccounts)
+	require.NoError(t, err)
+
+	key, val, err := cursor.First()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("BBBB"), key)
+	assert.Equal(t, []byte("value5"), val)
+
+	key, val, err = cursor.Next()
+	require.Nil(t, err)
+	assert.Nil(t, key)
+	assert.Nil(t, val)
+}
+
 func TestIncReadSequence(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)

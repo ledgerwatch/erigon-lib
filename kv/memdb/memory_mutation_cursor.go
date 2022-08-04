@@ -56,11 +56,13 @@ type memoryMutationCursor struct {
 
 // First move cursor to first position and return key and value accordingly.
 func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
-	// TODO(yperbasis): cleared tables
-
 	memKey, memValue, err := m.memCursor.First()
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if m.mutation.isTableCleared(m.table) {
+		return memKey, memValue, err
 	}
 
 	dbKey, dbValue, err := m.cursor.First()
