@@ -559,6 +559,7 @@ func (rs *RecSplit) Build() error {
 
 	rs.currentBucketIdx = math.MaxUint64 // To make sure 0 bucket is detected
 	defer rs.bucketCollector.Close()
+	log.Log(rs.lvl, "[index] calculating", "file", rs.indexFileName)
 	if err := rs.bucketCollector.Load(nil, "", rs.loadFuncBucket, etl.TransformArgs{}); err != nil {
 		return err
 	}
@@ -577,7 +578,7 @@ func (rs *RecSplit) Build() error {
 		}
 	}
 
-	log.Log(rs.lvl, "[index] build", "file", rs.indexFileName)
+	log.Log(rs.lvl, "[index] write", "file", rs.indexFileName)
 	if rs.enums {
 		rs.offsetEf = eliasfano32.NewEliasFano(rs.keysAdded, rs.maxOffset)
 		defer rs.offsetCollector.Close()
