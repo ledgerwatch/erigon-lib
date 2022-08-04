@@ -18,14 +18,22 @@ import (
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func initializeDB(rwTx kv.RwTx) {
+	// non-DupSort
 	rwTx.Put(kv.HashedAccounts, []byte("AAAA"), []byte("value"))
 	rwTx.Put(kv.HashedAccounts, []byte("CAAA"), []byte("value1"))
 	rwTx.Put(kv.HashedAccounts, []byte("CBAA"), []byte("value2"))
 	rwTx.Put(kv.HashedAccounts, []byte("CCAA"), []byte("value3"))
+
+	// DupSort
+	rwTx.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.1"))
+	rwTx.Put(kv.AccountChangeSet, []byte("key3"), []byte("value3.1"))
+	rwTx.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.3"))
+	rwTx.Put(kv.AccountChangeSet, []byte("key3"), []byte("value3.3"))
 }
 
 func TestPutAppendHas(t *testing.T) {
@@ -307,4 +315,32 @@ func TestIncReadSequence(t *testing.T) {
 	val, err := batch.ReadSequence(kv.HashedAccounts)
 	require.Nil(t, err)
 	require.Equal(t, val, uint64(12))
+}
+
+func TestNextNoDup(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDB(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	batch.Put(kv.AccountChangeSet, []byte("key2"), []byte("value2.1"))
+	batch.Put(kv.AccountChangeSet, []byte("key2"), []byte("value2.2"))
+
+	cursor, err := batch.CursorDupSort(kv.AccountChangeSet)
+	require.NoError(t, err)
+
+	k, _, err := cursor.First()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key1"), k)
+
+	k, _, err = cursor.NextNoDup()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key2"), k)
+
+	k, _, err = cursor.NextNoDup()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key3"), k)
 }

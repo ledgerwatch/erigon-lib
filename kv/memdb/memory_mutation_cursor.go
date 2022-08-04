@@ -436,7 +436,7 @@ func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
 		return m.goForward(m.currentMemEntry.key, m.currentMemEntry.value, k, v, false)
 	}
 
-	memK, memV, _ := m.memCursor.Next()
+	memK, memV, _ := m.memDupCursor.NextNoDup()
 
 	return m.goForward(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, false)
 }
