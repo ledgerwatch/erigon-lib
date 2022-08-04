@@ -125,7 +125,7 @@ func (ii *InvertedIndex) openFiles() error {
 		}
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		if !dir.Exist(idxPath) {
-			if _, err = buildIndex(item.decompressor, idxPath, ii.dir, item.decompressor.Count(), false /* values */); err != nil {
+			if _, err = buildIndex(item.decompressor, idxPath, ii.dir, item.decompressor.Count()/2, false /* values */); err != nil {
 				return false
 			}
 		}
