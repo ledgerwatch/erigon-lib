@@ -25,6 +25,7 @@ import (
 	"math"
 	"math/bits"
 	"os"
+	"path/filepath"
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/etl"
@@ -68,6 +69,7 @@ type RecSplit struct {
 	bucketCount       uint64          // Number of buckets
 	hasher            murmur3.Hash128 // Salted hash function to use for splitting into initial buckets and mapping to 64-bit fingerprints
 	etlBufLimit       datasize.ByteSize
+	lvl               log.Lvl
 	bucketCollector   *etl.Collector // Collector that sorts by buckets
 	enums             bool           // Whether to build two level index with perfect hash table pointing to enumeration and enumeration pointing to offsets
 	offsetCollector   *etl.Collector // Collector that sorts by offsets
@@ -147,9 +149,11 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 		rs.etlBufLimit = etl.BufferOptimalSize
 	}
 	rs.bucketCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
+	rs.bucketCollector.LogLvl(log.LvlDebug)
 	rs.enums = args.Enums
 	if args.Enums {
 		rs.offsetCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
+		rs.offsetCollector.LogLvl(log.LvlDebug)
 	}
 	rs.currentBucket = make([]uint64, 0, args.BucketSize)
 	rs.currentBucketOffs = make([]uint64, 0, args.BucketSize)
@@ -183,14 +187,7 @@ func (rs *RecSplit) Close() {
 	}
 }
 
-func (rs *RecSplit) LogLvl(lvl log.Lvl) {
-	if rs.bucketCollector != nil {
-		rs.bucketCollector.LogLvl(lvl)
-	}
-	if rs.offsetCollector != nil {
-		rs.offsetCollector.LogLvl(lvl)
-	}
-}
+func (rs *RecSplit) LogLvl(lvl log.Lvl) { rs.lvl = lvl }
 
 func (rs *RecSplit) SetTrace(trace bool) {
 	rs.trace = trace
@@ -583,9 +580,17 @@ func (rs *RecSplit) Build() error {
 		if err := rs.offsetCollector.Load(nil, "", rs.loadFuncOffset, etl.TransformArgs{}); err != nil {
 			return err
 		}
+		if rs.lvl >= log.LvlInfo {
+			_, fname := filepath.Split(rs.indexFile)
+			log.Info("[index] build", "file", fname)
+		}
 		rs.offsetEf.Build()
 	}
 	rs.gr.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
+	if rs.lvl >= log.LvlInfo {
+		_, fname := filepath.Split(rs.indexFile)
+		log.Info("[index] build", "file", fname)
+	}
 	// Construct Elias Fano index
 	rs.ef.Build(rs.bucketSizeAcc, rs.bucketPosAcc)
 	rs.built = true
