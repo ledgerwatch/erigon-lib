@@ -17,9 +17,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
 func initializeDB(rwTx kv.RwTx) {
@@ -315,6 +316,51 @@ func TestIncReadSequence(t *testing.T) {
 	val, err := batch.ReadSequence(kv.HashedAccounts)
 	require.Nil(t, err)
 	require.Equal(t, val, uint64(12))
+}
+
+func TestNext(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDB(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	batch.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.2"))
+
+	cursor, err := batch.CursorDupSort(kv.AccountChangeSet)
+	require.NoError(t, err)
+
+	k, v, err := cursor.First()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key1"), k)
+	assert.Equal(t, []byte("value1.1"), v)
+
+	k, v, err = cursor.Next()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key1"), k)
+	assert.Equal(t, []byte("value1.2"), v)
+
+	k, v, err = cursor.Next()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key1"), k)
+	assert.Equal(t, []byte("value1.3"), v)
+
+	k, v, err = cursor.Next()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key3"), k)
+	assert.Equal(t, []byte("value3.1"), v)
+
+	k, v, err = cursor.Next()
+	require.Nil(t, err)
+	assert.Equal(t, []byte("key3"), k)
+	assert.Equal(t, []byte("value3.3"), v)
+
+	k, v, err = cursor.Next()
+	require.Nil(t, err)
+	assert.Nil(t, k)
+	assert.Nil(t, v)
 }
 
 func TestNextNoDup(t *testing.T) {
