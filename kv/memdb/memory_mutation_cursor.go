@@ -30,7 +30,7 @@ const (
 )
 
 // entry for the cursor
-type cursorentry struct {
+type cursorEntry struct {
 	key   []byte
 	value []byte
 }
@@ -46,9 +46,9 @@ type memoryMutationCursor struct {
 	// we keep the index in the slice of pairs we are at.
 	isPrevFromDb bool
 	// entry history
-	currentPair     cursorentry
-	currentDbEntry  cursorentry
-	currentMemEntry cursorentry
+	currentPair     cursorEntry
+	currentDbEntry  cursorEntry
+	currentMemEntry cursorEntry
 	// we keep the mining mutation so that we can insert new elements in db
 	mutation *MemoryMutation
 	table    string
@@ -174,8 +174,8 @@ func (m *memoryMutationCursor) goForward(memKey, memValue, dbKey, dbValue []byte
 		return nil, nil, err
 	}
 
-	m.currentDbEntry = cursorentry{dbKey, dbValue}
-	m.currentMemEntry = cursorentry{memKey, memValue}
+	m.currentDbEntry = cursorEntry{dbKey, dbValue}
+	m.currentMemEntry = cursorEntry{memKey, memValue}
 	// compare entries
 	if bytes.Equal(memKey, dbKey) {
 		m.isPrevFromDb = dbValue != nil && (memValue == nil || bytes.Compare(memValue, dbValue) > 0)
@@ -183,17 +183,17 @@ func (m *memoryMutationCursor) goForward(memKey, memValue, dbKey, dbValue []byte
 		m.isPrevFromDb = dbValue != nil && (memKey == nil || bytes.Compare(memKey, dbKey) > 0)
 	}
 	if dbValue == nil {
-		m.currentDbEntry = cursorentry{}
+		m.currentDbEntry = cursorEntry{}
 	}
 	if memValue == nil {
-		m.currentMemEntry = cursorentry{}
+		m.currentMemEntry = cursorEntry{}
 	}
 	if m.isPrevFromDb {
-		m.currentPair = cursorentry{dbKey, dbValue}
+		m.currentPair = cursorEntry{dbKey, dbValue}
 		return dbKey, dbValue, nil
 	}
 
-	m.currentPair = cursorentry{memKey, memValue}
+	m.currentPair = cursorEntry{memKey, memValue}
 	return memKey, memValue, nil
 }
 
@@ -261,7 +261,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		m.currentMemEntry.value = memValue
 		m.currentDbEntry.key, m.currentDbEntry.value, err = m.cursor.Seek(seek)
 		m.isPrevFromDb = false
-		m.currentPair = cursorentry{memKey, memValue}
+		m.currentPair = cursorEntry{memKey, memValue}
 		return memKey, memValue, err
 	}
 
@@ -275,7 +275,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		m.currentDbEntry.value = dbValue
 		m.currentMemEntry.key, m.currentMemEntry.value, _ = m.memCursor.Seek(seek)
 		m.isPrevFromDb = true
-		m.currentPair = cursorentry{dbKey, dbValue}
+		m.currentPair = cursorEntry{dbKey, dbValue}
 		return dbKey, dbValue, err
 	}
 	return nil, nil, nil
@@ -363,12 +363,12 @@ func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	m.currentDbEntry = cursorentry{dbKey, dbValue}
-	m.currentMemEntry = cursorentry{memKey, memValue}
+	m.currentDbEntry = cursorEntry{dbKey, dbValue}
+	m.currentMemEntry = cursorEntry{memKey, memValue}
 
 	// Basic checks
 	if dbKey != nil && m.mutation.isEntryDeleted(m.table, dbKey) {
-		m.currentDbEntry = cursorentry{}
+		m.currentDbEntry = cursorEntry{}
 		m.isPrevFromDb = false
 		return memKey, memValue, nil
 	}
@@ -386,22 +386,22 @@ func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	keyCompare := bytes.Compare(memKey, dbKey)
 	if keyCompare == 0 {
 		if bytes.Compare(memValue, dbValue) > 0 {
-			m.currentDbEntry = cursorentry{}
+			m.currentDbEntry = cursorEntry{}
 			m.isPrevFromDb = false
 			return memKey, memValue, nil
 		}
-		m.currentMemEntry = cursorentry{}
+		m.currentMemEntry = cursorEntry{}
 		m.isPrevFromDb = true
 		return dbKey, dbValue, nil
 	}
 
 	if keyCompare > 0 {
-		m.currentDbEntry = cursorentry{}
+		m.currentDbEntry = cursorEntry{}
 		m.isPrevFromDb = false
 		return memKey, memValue, nil
 	}
 
-	m.currentMemEntry = cursorentry{}
+	m.currentMemEntry = cursorEntry{}
 	m.isPrevFromDb = true
 	return dbKey, dbValue, nil
 }
