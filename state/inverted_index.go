@@ -136,6 +136,8 @@ func (ii *InvertedIndex) openFiles() error {
 }
 
 func (ii *InvertedIndex) closeFiles() {
+	ii.filesLock.Lock()
+	defer ii.filesLock.Unlock()
 	ii.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
@@ -173,6 +175,21 @@ func (ii *InvertedIndex) add(key, indexKey []byte) error {
 
 func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
+}
+
+func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
+	var ic = InvertedIndexContext{ii: ii}
+	ic.files = btree.NewG[*ctxItem](32, ctxItemLess)
+	ii.files.Ascend(func(item *filesItem) bool {
+		ic.files.ReplaceOrInsert(&ctxItem{
+			startTxNum: item.startTxNum,
+			endTxNum:   item.endTxNum,
+			getter:     item.decompressor.MakeGetter(),
+			reader:     recsplit.NewIndexReader(item.index),
+		})
+		return true
+	})
+	return &ic
 }
 
 // InvertedIterator allows iteration over range of tx numbers
@@ -298,20 +315,17 @@ type InvertedIndexContext struct {
 	files *btree.BTreeG[*ctxItem]
 }
 
-func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
-	var ic = InvertedIndexContext{ii: ii}
-	ic.files = btree.NewG[*ctxItem](32, ctxItemLess)
-	ii.files.Ascend(func(item *filesItem) bool {
-		ic.files.ReplaceOrInsert(&ctxItem{
-			startTxNum: item.startTxNum,
-			endTxNum:   item.endTxNum,
-			getter:     item.decompressor.MakeGetter(),
-			reader:     recsplit.NewIndexReader(item.index),
-		})
-		return true
-	})
-	return &ic
+func (ic *InvertedIndexContext) endTxNumMinimax() uint64 {
+	var minimax uint64
+	if max, ok := ic.files.Max(); ok {
+		endTxNum := max.endTxNum
+		if minimax == 0 || endTxNum < minimax {
+			minimax = endTxNum
+		}
+	}
+	return minimax
 }
+
 
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
@@ -339,6 +353,52 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum ui
 		return true
 	})
 	it.advance()
+	return it
+}
+
+type InvertedIterator1 struct {
+	hasNextInFiles bool
+	hasNextInDb bool
+	cursor               kv.CursorDupSort
+}
+
+func (it *InvertedIterator1) Close() {
+	if it.cursor != nil {
+		it.cursor.Close()
+	}
+}
+
+func (it *InvertedIterator1) advanceInFiles() {
+}
+
+func (it *InvertedIterator1) advanceInDb() {
+}
+
+func (it *InvertedIterator1) advance() {
+	if it.hasNextInFiles {
+		it.advanceInFiles()
+	}
+	if it.hasNextInDb && !it.hasNextInFiles {
+		it.advanceInDb()
+	}
+}
+
+func (it *InvertedIterator1) HasNext() bool {
+	return it.hasNextInFiles || it.hasNextInDb
+}
+
+func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
+	return nil
+}
+
+func (ic *InvertedIndexContext) IterateRange1(startTxNum, endTxNum uint64, roTx kv.Tx) (InvertedIterator1, error) {
+	minimax := ic.endTxNumMinimax()
+	if startTxNum >= minimax {
+		// All data can be obtained from the DB
+		
+	}
+	it := InvertedIterator1{
+	}
 	return it
 }
 
