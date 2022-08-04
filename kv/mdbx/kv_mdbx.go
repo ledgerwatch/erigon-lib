@@ -419,12 +419,6 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		return nil, semErr
 	}
 
-	// if context cancelled as we acquire the sempahore, it may succeed without blocking
-	// in this case we should return
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
 	defer func() {
 		if err == nil {
 			db.wg.Add(1)
@@ -1127,7 +1121,7 @@ func (c *MdbxCursor) prevDup() ([]byte, []byte, error)     { return c.c.Get(nil,
 func (c *MdbxCursor) prevNoDup() ([]byte, []byte, error)   { return c.c.Get(nil, nil, mdbx.PrevNoDup) }
 func (c *MdbxCursor) last() ([]byte, []byte, error)        { return c.c.Get(nil, nil, mdbx.Last) }
 func (c *MdbxCursor) delCurrent() error                    { return c.c.Del(mdbx.Current) }
-func (c *MdbxCursor) delNoDupData() error                  { return c.c.Del(mdbx.NoDupData) }
+func (c *MdbxCursor) delAllDupData() error                 { return c.c.Del(mdbx.AllDups) }
 func (c *MdbxCursor) put(k, v []byte) error                { return c.c.Put(k, v, 0) }
 func (c *MdbxCursor) putCurrent(k, v []byte) error         { return c.c.Put(k, v, mdbx.Current) }
 func (c *MdbxCursor) putNoOverwrite(k, v []byte) error     { return c.c.Put(k, v, mdbx.NoOverwrite) }
@@ -1330,17 +1324,6 @@ func (c *MdbxCursor) Delete(k []byte) error {
 		return c.deleteDupSort(k)
 	}
 
-	if c.bucketCfg.Flags&mdbx.DupSort != 0 {
-		_, err := c.getBoth(k, nil)
-		if err != nil {
-			if mdbx.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-		return c.delCurrent()
-	}
-
 	_, _, err := c.set(k)
 	if err != nil {
 		if mdbx.IsNotFound(err) {
@@ -1349,6 +1332,9 @@ func (c *MdbxCursor) Delete(k []byte) error {
 		return err
 	}
 
+	if c.bucketCfg.Flags&mdbx.DupSort != 0 {
+		return c.delAllDupData()
+	}
 	return c.delCurrent()
 }
 
@@ -1664,7 +1650,7 @@ func (c *MdbxDupSortCursor) PutNoDupData(key, value []byte) error {
 
 // DeleteCurrentDuplicates - delete all of the data items for the current key.
 func (c *MdbxDupSortCursor) DeleteCurrentDuplicates() error {
-	if err := c.delNoDupData(); err != nil {
+	if err := c.delAllDupData(); err != nil {
 		return fmt.Errorf("in DeleteCurrentDuplicates: %w", err)
 	}
 	return nil
