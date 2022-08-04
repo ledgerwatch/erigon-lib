@@ -97,6 +97,7 @@ type RecSplit struct {
 	collision          bool
 	tmpDir             string
 	indexFile          string
+	indexFileName      string
 	indexF             *os.File
 	indexW             *bufio.Writer
 	bytesPerRec        int
@@ -143,6 +144,8 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	rs.hasher = murmur3.New128WithSeed(rs.salt)
 	rs.tmpDir = args.TmpDir
 	rs.indexFile = args.IndexFile
+	_, fname := filepath.Split(rs.indexFile)
+	rs.indexFileName = fname
 	rs.baseDataID = args.BaseDataID
 	rs.etlBufLimit = args.EtlBufLimit
 	if rs.etlBufLimit == 0 {
@@ -574,23 +577,16 @@ func (rs *RecSplit) Build() error {
 		}
 	}
 
+	log.Log(rs.lvl, "[index] build", "file", rs.indexFileName)
 	if rs.enums {
 		rs.offsetEf = eliasfano32.NewEliasFano(rs.keysAdded, rs.maxOffset)
 		defer rs.offsetCollector.Close()
 		if err := rs.offsetCollector.Load(nil, "", rs.loadFuncOffset, etl.TransformArgs{}); err != nil {
 			return err
 		}
-		if rs.lvl >= log.LvlInfo {
-			_, fname := filepath.Split(rs.indexFile)
-			log.Info("[index] build", "file", fname)
-		}
 		rs.offsetEf.Build()
 	}
 	rs.gr.appendFixed(1, 1) // Sentinel (avoids checking for parts of size 1)
-	if rs.lvl >= log.LvlInfo {
-		_, fname := filepath.Split(rs.indexFile)
-		log.Info("[index] build", "file", fname)
-	}
 	// Construct Elias Fano index
 	rs.ef.Build(rs.bucketSizeAcc, rs.bucketPosAcc)
 	rs.built = true
