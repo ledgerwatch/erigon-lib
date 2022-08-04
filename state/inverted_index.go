@@ -136,8 +136,6 @@ func (ii *InvertedIndex) openFiles() error {
 }
 
 func (ii *InvertedIndex) closeFiles() {
-	ii.filesLock.Lock()
-	defer ii.filesLock.Unlock()
 	ii.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
@@ -389,17 +387,6 @@ func (it *InvertedIterator1) HasNext() bool {
 
 func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
 	return nil
-}
-
-func (ic *InvertedIndexContext) IterateRange1(startTxNum, endTxNum uint64, roTx kv.Tx) (InvertedIterator1, error) {
-	minimax := ic.endTxNumMinimax()
-	if startTxNum >= minimax {
-		// All data can be obtained from the DB
-		
-	}
-	it := InvertedIterator1{
-	}
-	return it
 }
 
 func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {
