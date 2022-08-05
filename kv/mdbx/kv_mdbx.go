@@ -152,7 +152,7 @@ func (opts MdbxOpts) WriteMap() MdbxOpts {
 	return opts
 }
 
-func (opts MdbxOpts) WithTablesCfg(f TableCfgFunc) MdbxOpts {
+func (opts MdbxOpts) WithTableCfg(f TableCfgFunc) MdbxOpts {
 	opts.bucketsCfg = f
 	return opts
 }
