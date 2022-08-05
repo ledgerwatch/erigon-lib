@@ -446,6 +446,8 @@ func TestAutoDupSort(t *testing.T) {
 	require.Error(t, c.Put([]byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAA"), []byte("?")))
 
 	require.NoError(t, c.Delete([]byte("A..........................................................A")))
+	rwTx.Put(kv.PlainState, []byte("B"), []byte("7"))
+	rwTx.Put(kv.PlainState, []byte("C..........................................................C"), []byte("6"))
 	require.NoError(t, c.Put([]byte("C..........................................................E"), []byte("5")))
 
 	k, v, err := c.First()
@@ -461,7 +463,7 @@ func TestAutoDupSort(t *testing.T) {
 	k, v, err = c.Next()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("B"), k)
-	assert.Equal(t, []byte("8"), v)
+	assert.Equal(t, []byte("7"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
@@ -471,7 +473,7 @@ func TestAutoDupSort(t *testing.T) {
 	k, v, err = c.Next()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("C..........................................................C"), k)
-	assert.Equal(t, []byte("4"), v)
+	assert.Equal(t, []byte("6"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
