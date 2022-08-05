@@ -27,16 +27,18 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
 )
 
 var (
@@ -59,13 +61,19 @@ func filesItemLess(i, j *filesItem) bool {
 }
 
 type DomainStats struct {
-	HistoryQueries int
+	HistoryQueries uint64
 	EfSearchTime   time.Duration
+	DataSize       uint64
+	IndexSize      uint64
+	FilesCount     uint64
 }
 
 func (ds *DomainStats) Accumulate(other DomainStats) {
 	ds.HistoryQueries += other.HistoryQueries
 	ds.EfSearchTime += other.EfSearchTime
+	ds.IndexSize += other.IndexSize
+	ds.DataSize += other.DataSize
+	ds.FilesCount += other.FilesCount
 }
 
 // Domain is a part of the state (examples are Accounts, Storage, Code)
@@ -213,6 +221,7 @@ func (dc *DomainContext) get(key []byte, roTx kv.Tx) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	if foundInvStep == nil {
+		atomic.AddUint64(&dc.d.stats.HistoryQueries, 1)
 		v, found := dc.readFromFiles(key)
 		return v, found, nil
 	}
@@ -378,15 +387,23 @@ func (d *Domain) MakeContext() *DomainContext {
 	dc.hc = d.History.MakeContext()
 	bt := btree.NewG[*ctxItem](32, ctxItemLess)
 	dc.files = bt
+	var datsz, idxsz, files uint64
+
 	d.files.Ascend(func(item *filesItem) bool {
+		getter := item.decompressor.MakeGetter()
+		datsz += uint64(getter.Size())
+		idxsz += uint64(item.index.Size())
+		files += 2
+
 		bt.ReplaceOrInsert(&ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
-			getter:     item.decompressor.MakeGetter(),
+			getter:     getter,
 			reader:     recsplit.NewIndexReader(item.index),
 		})
 		return true
 	})
+	d.stats.DataSize, d.stats.IndexSize, d.stats.FilesCount = datsz, idxsz, files
 	return dc
 }
 
@@ -750,9 +767,47 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	}
 	defer keysCursor.Close()
 	var k, v []byte
+	pruneKeysToStep := make(map[string][]uint64)
+
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		s := ^binary.BigEndian.Uint64(v)
-		if s == step {
+		list, seen := pruneKeysToStep[string(k)]
+		if !seen {
+			list = make([]uint64, 0)
+		}
+		pruneKeysToStep[string(k)] = append(list, s)
+	}
+	if err != nil {
+		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
+	}
+
+	for k, steps := range pruneKeysToStep {
+		if len(steps) == 1 {
+			if steps[0] != step {
+				delete(pruneKeysToStep, k)
+			}
+			continue
+		}
+
+		var maxStep uint64
+		for _, s := range steps {
+			if s > maxStep {
+				maxStep = s
+			}
+		}
+		steps = steps[:1]
+		steps[0] = maxStep
+
+		pruneKeysToStep[k] = steps
+	}
+
+	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
+		s := ^binary.BigEndian.Uint64(v)
+		list, toDelete := pruneKeysToStep[string(k)]
+		if !toDelete {
+			continue
+		}
+		if list[0] != s {
 			if err = keysCursor.DeleteCurrent(); err != nil {
 				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
 			}
@@ -761,14 +816,19 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
 	}
+
 	var valsCursor kv.RwCursor
 	if valsCursor, err = d.tx.RwCursor(d.valsTable); err != nil {
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
-	for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
+	for k, v, err = valsCursor.First(); err == nil && k != nil; k, v, err = valsCursor.Next() {
 		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
-		if s == step {
+		list, toDelete := pruneKeysToStep[string(k)]
+		if !toDelete {
+			continue
+		}
+		if list[0] != s {
 			if err = valsCursor.DeleteCurrent(); err != nil {
 				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
 			}

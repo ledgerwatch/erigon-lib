@@ -28,9 +28,10 @@ import (
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/rlp"
-	"github.com/ledgerwatch/log/v3"
 )
 
 // keccakState wraps sha3.state. In addition to the usual hash methods, it also supports

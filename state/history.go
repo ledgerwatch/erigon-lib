@@ -30,21 +30,22 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/exp/slices"
+
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/slices"
 )
 
 type History struct {
 	*InvertedIndex
 	historyValsTable string // key1+key2+txnNum -> oldValue , stores values BEFORE change
 	settingsTable    string
-
-	files        *btree.BTreeG[*filesItem]
-	compressVals bool
+	files            *btree.BTreeG[*filesItem]
+	valueMergeFn     func(prev, last []byte) ([]byte, error)
+	compressVals     bool
 }
 
 func NewHistory(
@@ -156,6 +157,9 @@ func (h *History) Close() {
 	h.closeFiles()
 }
 
+func (h *History) SetMergeFn(fn func([]byte, []byte) ([]byte, error)) {
+	h.valueMergeFn = fn
+}
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
 	historyKey := make([]byte, lk+8)
