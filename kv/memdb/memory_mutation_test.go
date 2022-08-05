@@ -419,3 +419,67 @@ func TestNextNoDup(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(t, []byte("key3"), k)
 }
+
+func initializeAutoDupsortDB(rwTx kv.RwTx) {
+	// Insert some records
+	rwTx.Put(kv.PlainState, []byte("A"), []byte("0"))
+	rwTx.Put(kv.PlainState, []byte("A..........................................................A"), []byte("1"))
+	rwTx.Put(kv.PlainState, []byte("A..........................................................C"), []byte("2"))
+	rwTx.Put(kv.PlainState, []byte("B"), []byte("8"))
+	rwTx.Put(kv.PlainState, []byte("C..........................................................A"), []byte("3"))
+	rwTx.Put(kv.PlainState, []byte("C..........................................................C"), []byte("4"))
+}
+
+func TestAutoDupSort(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeAutoDupsortDB(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	c, err := batch.RwCursor(kv.PlainState)
+	require.NoError(t, err)
+
+	// key length conflict
+	require.Error(t, c.Put([]byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAA"), []byte("?")))
+
+	require.NoError(t, c.Delete([]byte("A..........................................................A")))
+	require.NoError(t, c.Put([]byte("C..........................................................E"), []byte("5")))
+
+	k, v, err := c.First()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("A"), k)
+	assert.Equal(t, []byte("0"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("A..........................................................C"), k)
+	assert.Equal(t, []byte("2"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("B"), k)
+	assert.Equal(t, []byte("8"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("C..........................................................A"), k)
+	assert.Equal(t, []byte("3"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("C..........................................................C"), k)
+	assert.Equal(t, []byte("4"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("C..........................................................E"), k)
+	assert.Equal(t, []byte("5"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Nil(t, k)
+	assert.Nil(t, v)
+}
