@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func BaseCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursorDupSort) {
+func baseCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursorDupSort) {
 	path := t.TempDir()
 	logger := log.New()
 	table := "Table"
@@ -71,7 +71,7 @@ func iteration(t *testing.T, c kv.RwCursorDupSort, start []byte, val []byte) ([]
 }
 
 func TestSeekBothRange(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -87,7 +87,7 @@ func TestSeekBothRange(t *testing.T) {
 }
 
 func TestLastDup(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -116,7 +116,7 @@ func TestLastDup(t *testing.T) {
 }
 
 func TestPutGet(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -134,7 +134,7 @@ func TestPutGet(t *testing.T) {
 }
 
 func TestIncrementRead(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 
 	defer db.Close()
 	defer tx.Rollback()
@@ -155,7 +155,7 @@ func TestIncrementRead(t *testing.T) {
 }
 
 func TestHasDelete(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -192,7 +192,7 @@ func TestHasDelete(t *testing.T) {
 }
 
 func TestForAmount(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -241,7 +241,7 @@ func TestForAmount(t *testing.T) {
 }
 
 func TestForPrefix(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -277,7 +277,7 @@ func TestForPrefix(t *testing.T) {
 }
 
 func TestAppendFirstLast(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -309,7 +309,7 @@ func TestAppendFirstLast(t *testing.T) {
 }
 
 func TestNextPrevCurrent(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -370,7 +370,7 @@ func TestNextPrevCurrent(t *testing.T) {
 }
 
 func TestSeek(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -395,7 +395,7 @@ func TestSeek(t *testing.T) {
 }
 
 func TestSeekExact(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -414,7 +414,7 @@ func TestSeekExact(t *testing.T) {
 }
 
 func TestSeekBothExact(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -445,7 +445,7 @@ func TestSeekBothExact(t *testing.T) {
 }
 
 func TestNextDups(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -509,7 +509,7 @@ func TestNextDups(t *testing.T) {
 }
 
 func TestCurrentDup(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -532,7 +532,7 @@ func TestCurrentDup(t *testing.T) {
 }
 
 func TestDupDelete(t *testing.T) {
-	db, tx, c := BaseCase(t)
+	db, tx, c := baseCase(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
@@ -550,4 +550,84 @@ func TestDupDelete(t *testing.T) {
 	count, err := c.Count()
 	require.Nil(t, err)
 	assert.Zero(t, count)
+}
+
+func baseAutoDupsortCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursor) {
+	path := t.TempDir()
+	logger := log.New()
+	table := "Table"
+	db := NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+		return kv.TableCfg{
+			table: kv.TableCfgItem{
+				Flags:                     kv.DupSort,
+				AutoDupSortKeysConversion: true,
+				DupFromLen:                3,
+				DupToLen:                  2,
+			},
+		}
+	}).MustOpen()
+
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+
+	c, err := tx.RwCursor(table)
+	require.NoError(t, err)
+
+	// Insert some records
+	require.NoError(t, c.Put([]byte("A"), []byte("0")))
+	require.NoError(t, c.Put([]byte("AxA"), []byte("1")))
+	require.NoError(t, c.Put([]byte("AxC"), []byte("2")))
+	require.NoError(t, c.Put([]byte("B"), []byte("8")))
+	require.NoError(t, c.Put([]byte("CxA"), []byte("3")))
+	require.NoError(t, c.Put([]byte("CxC"), []byte("4")))
+
+	return db, tx, c
+}
+
+func TestAutoDupSort(t *testing.T) {
+	db, tx, c := baseAutoDupsortCase(t)
+	defer db.Close()
+	defer tx.Rollback()
+	defer c.Close()
+
+	// key length conflict
+	require.Error(t, c.Put([]byte("AA"), []byte("?")))
+
+	require.NoError(t, c.Delete([]byte("AxA")))
+	require.NoError(t, c.Put([]byte("CxE"), []byte("5")))
+
+	k, v, err := c.First()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("A"), k)
+	assert.Equal(t, []byte("0"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("AxC"), k)
+	assert.Equal(t, []byte("2"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("B"), k)
+	assert.Equal(t, []byte("8"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("CxA"), k)
+	assert.Equal(t, []byte("3"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("CxC"), k)
+	assert.Equal(t, []byte("4"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("CxE"), k)
+	assert.Equal(t, []byte("5"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Nil(t, k)
+	assert.Nil(t, v)
 }
