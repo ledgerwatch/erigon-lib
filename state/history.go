@@ -538,7 +538,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 	var found bool
 	var anyItem bool
 	var maxTxNum uint64
-	hc.indexFiles.Ascend(func(item *ctxItem) bool {
+	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{endTxNum: txNum}, func(item *ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
 		if item.reader.Empty() {
 			return true
