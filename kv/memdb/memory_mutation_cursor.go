@@ -72,7 +72,7 @@ func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 		}
 	}
 
-	return m.goForward(memKey, memValue, dbKey, dbValue, Normal)
+	return m.resolveCursorPriority(memKey, memValue, dbKey, dbValue, Normal)
 }
 
 func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte, err error) {
@@ -170,7 +170,7 @@ func (m *memoryMutationCursor) skipIntersection(memKey, memValue, dbKey, dbValue
 	return
 }
 
-func (m *memoryMutationCursor) goForward(memKey, memValue, dbKey, dbValue []byte, t NextType) ([]byte, []byte, error) {
+func (m *memoryMutationCursor) resolveCursorPriority(memKey, memValue, dbKey, dbValue []byte, t NextType) ([]byte, []byte, error) {
 	var err error
 	if memValue == nil && dbValue == nil {
 		return nil, nil, nil
@@ -209,7 +209,7 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return m.goForward(m.currentMemEntry.key, m.currentMemEntry.value, k, v, Normal)
+		return m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, Normal)
 	}
 
 	memK, memV, err := m.memCursor.Next()
@@ -217,7 +217,7 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	return m.goForward(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, Normal)
+	return m.resolveCursorPriority(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, Normal)
 }
 
 // NextDup returns the next element of the mutation.
@@ -228,7 +228,7 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return m.goForward(m.currentMemEntry.key, m.currentMemEntry.value, k, v, Dup)
+		return m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, Dup)
 	}
 
 	memK, memV, err := m.memCursor.NextDup()
@@ -236,7 +236,7 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	return m.goForward(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, Dup)
+	return m.resolveCursorPriority(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, Dup)
 }
 
 // Seek move pointer to a key at a certain position.
@@ -263,7 +263,7 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	return m.goForward(memKey, memValue, dbKey, dbValue, Normal)
+	return m.resolveCursorPriority(memKey, memValue, dbKey, dbValue, Normal)
 }
 
 // Seek move pointer to a key at a certain position.
@@ -371,7 +371,7 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	_, retValue, err := m.goForward(key, memValue, key, dbValue, Normal)
+	_, retValue, err := m.resolveCursorPriority(key, memValue, key, dbValue, Normal)
 	return retValue, err
 }
 
@@ -460,7 +460,7 @@ func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return m.goForward(m.currentMemEntry.key, m.currentMemEntry.value, k, v, NoDup)
+		return m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, NoDup)
 	}
 
 	memK, memV, err := m.memCursor.NextNoDup()
@@ -468,7 +468,7 @@ func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	return m.goForward(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, NoDup)
+	return m.resolveCursorPriority(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, NoDup)
 }
 
 func (m *memoryMutationCursor) LastDup() ([]byte, error) {
