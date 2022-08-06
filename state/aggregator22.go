@@ -676,11 +676,11 @@ func (ac *Aggregator22Context) TraceToIterator(addr []byte, startTxNum, endTxNum
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (ac *Aggregator22Context) MaxAccountsTxNum(addr []byte) (bool, uint64) {
-	return ac.accounts.MaxTxNum(addr)
+func (ac *Aggregator22Context) IsMaxAccountsTxNum(addr []byte, txNum uint64) bool {
+	return ac.accounts.IsMaxTxNum(addr, txNum)
 }
 
-func (ac *Aggregator22Context) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
+func (ac *Aggregator22Context) IsMaxStorageTxNum(addr []byte, loc []byte, txNum uint64) bool {
 	if cap(ac.keyBuf) < len(addr)+len(loc) {
 		ac.keyBuf = make([]byte, len(addr)+len(loc))
 	} else if len(ac.keyBuf) != len(addr)+len(loc) {
@@ -688,11 +688,11 @@ func (ac *Aggregator22Context) MaxStorageTxNum(addr []byte, loc []byte) (bool, u
 	}
 	copy(ac.keyBuf, addr)
 	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storage.MaxTxNum(ac.keyBuf)
+	return ac.storage.IsMaxTxNum(ac.keyBuf, txNum)
 }
 
-func (ac *Aggregator22Context) MaxCodeTxNum(addr []byte) (bool, uint64) {
-	return ac.code.MaxTxNum(addr)
+func (ac *Aggregator22Context) IsMaxCodeTxNum(addr []byte, txNum uint64) bool {
+	return ac.code.IsMaxTxNum(addr, txNum)
 }
 
 func (ac *Aggregator22Context) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64, error) {

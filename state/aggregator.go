@@ -849,22 +849,3 @@ func (ac *AggregatorContext) ReadAccountCodeSizeNoState(addr []byte, txNum uint6
 	}
 	return len(code), noState, stateTxNum, nil
 }
-
-func (ac *AggregatorContext) MaxAccountsTxNum(addr []byte) (bool, uint64) {
-	return ac.accountsHistory.MaxTxNum(addr)
-}
-
-func (ac *AggregatorContext) MaxStorageTxNum(addr []byte, loc []byte) (bool, uint64) {
-	if cap(ac.keyBuf) < len(addr)+len(loc) {
-		ac.keyBuf = make([]byte, len(addr)+len(loc))
-	} else if len(ac.keyBuf) != len(addr)+len(loc) {
-		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
-	}
-	copy(ac.keyBuf, addr)
-	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storageHistory.MaxTxNum(ac.keyBuf)
-}
-
-func (ac *AggregatorContext) MaxCodeTxNum(addr []byte) (bool, uint64) {
-	return ac.codeHistory.MaxTxNum(addr)
-}

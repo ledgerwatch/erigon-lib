@@ -538,7 +538,8 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 	var found bool
 	var anyItem bool
 	var maxTxNum uint64
-	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{endTxNum: txNum}, func(item *ctxItem) bool {
+	//hc.indexFiles.Ascend(func(item *ctxItem) bool {
+	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item *ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
 		if item.reader.Empty() {
 			return true
@@ -588,6 +589,26 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 	} else if anyItem {
 		return nil, false, maxTxNum, nil
 	} else {
+		hc.indexFiles.DescendLessOrEqual(&ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item *ctxItem) bool {
+			if item.reader.Empty() {
+				return true
+			}
+			offset := item.reader.Lookup(key)
+			g := item.getter
+			g.Reset(offset)
+			if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+				//fmt.Printf("Found key=%x\n", k)
+				eliasVal, _ := g.NextUncompressed()
+				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+				maxTxNum = ef.Max()
+				anyItem = true
+				return false
+			}
+			return true
+		})
+		if anyItem {
+			return nil, false, maxTxNum, nil
+		}
 		return nil, true, 0, nil
 	}
 }

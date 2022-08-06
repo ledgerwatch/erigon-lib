@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"container/heap"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -364,6 +365,7 @@ type InvertedIterator1 struct {
 	hasNextInFiles bool
 	hasNextInDb bool
 	cursor               kv.CursorDupSort
+	h              ReconHeap
 }
 
 func (it *InvertedIterator1) Close() {
@@ -393,6 +395,25 @@ func (it *InvertedIterator1) HasNext() bool {
 
 func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
 	return nil
+}
+
+func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator1 {
+	var ii1 InvertedIterator1
+	ic.files.AscendGreaterOrEqual(&ctxItem{endTxNum: startTxNum}, func(item *ctxItem) bool {
+		if item.endTxNum <= startTxNum {
+			return true
+		}
+		if item.startTxNum >= endTxNum {
+			return false
+		}
+		g := item.getter
+		for g.HasNext() {
+			key, offset := g.NextUncompressed()
+			heap.Push(&ii1.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
+		}
+		return true
+	})
+	return ii1
 }
 
 func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {

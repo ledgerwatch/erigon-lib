@@ -28,10 +28,16 @@ import (
 
 // Algorithms for reconstituting the state from state history
 
-func (hc *HistoryContext) MaxTxNum(key []byte) (bool, uint64) {
+func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 	var found bool
 	var foundTxNum uint64
-	hc.indexFiles.Descend(func(item *ctxItem) bool {
+	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{endTxNum: txNum}, func(item *ctxItem) bool {
+		if item.endTxNum <= txNum {
+			return true
+		}
+		if item.startTxNum >= txNum {
+			return false
+		}
 		if item.reader.Empty() {
 			return true
 		}
@@ -48,9 +54,9 @@ func (hc *HistoryContext) MaxTxNum(key []byte) (bool, uint64) {
 		return true
 	})
 	if !found {
-		return false, 0
+		return false
 	}
-	return true, foundTxNum
+	return txNum == foundTxNum
 }
 
 type ReconItem struct {
