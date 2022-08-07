@@ -31,11 +31,11 @@ import (
 func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 	var found bool
 	var foundTxNum uint64
-	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{endTxNum: txNum}, func(item *ctxItem) bool {
+	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item *ctxItem) bool {
 		if item.endTxNum <= txNum {
 			return true
 		}
-		if item.startTxNum >= txNum {
+		if item.startTxNum > txNum {
 			return false
 		}
 		if item.reader.Empty() {
