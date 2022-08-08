@@ -41,7 +41,8 @@ type memoryMutationCursor struct {
 	memCursor kv.RwCursorDupSort
 
 	isPrevFromDb bool
-	// entry history TODO(yperbasis): remove
+	// entry history
+	currentPair     cursorEntry
 	currentDbEntry  cursorEntry
 	currentMemEntry cursorEntry
 	// we keep the mining mutation so that we can insert new elements in db
@@ -57,7 +58,6 @@ func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 	}
 
 	if m.mutation.isTableCleared(m.table) {
-		m.isPrevFromDb = false
 		return memKey, memValue, err
 	}
 
@@ -137,11 +137,7 @@ func (m *memoryMutationCursor) convertAutoDupsort(key []byte, value []byte) []by
 
 // Current return the current key and values the cursor is on.
 func (m *memoryMutationCursor) Current() ([]byte, []byte, error) {
-	if m.isPrevFromDb {
-		return m.cursor.Current()
-	} else {
-		return m.memCursor.Current()
-	}
+	return common.Copy(m.currentPair.key), common.Copy(m.currentPair.value), nil
 }
 
 func (m *memoryMutationCursor) skipIntersection(memKey, memValue, dbKey, dbValue []byte, t NextType) (newDbKey []byte, newDbValue []byte, err error) {
@@ -191,9 +187,11 @@ func (m *memoryMutationCursor) resolveCursorPriority(memKey, memValue, dbKey, db
 		m.currentMemEntry = cursorEntry{}
 	}
 	if m.isPrevFromDb {
+		m.currentPair = cursorEntry{dbKey, dbValue}
 		return dbKey, dbValue, nil
 	}
 
+	m.currentPair = cursorEntry{memKey, memValue}
 	return memKey, memValue, nil
 }
 
@@ -273,6 +271,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		m.currentMemEntry.value = memValue
 		m.currentDbEntry.key, m.currentDbEntry.value, err = m.cursor.Seek(seek)
 		m.isPrevFromDb = false
+		m.currentPair = cursorEntry{memKey, memValue}
 		return memKey, memValue, err
 	}
 
@@ -286,6 +285,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		m.currentDbEntry.value = dbValue
 		m.currentMemEntry.key, m.currentMemEntry.value, err = m.memCursor.Seek(seek)
 		m.isPrevFromDb = true
+		m.currentPair = cursorEntry{dbKey, dbValue}
 		return dbKey, dbValue, err
 	}
 	return nil, nil, nil
