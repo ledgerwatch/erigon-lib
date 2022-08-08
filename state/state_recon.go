@@ -35,7 +35,8 @@ func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 		if item.endTxNum <= txNum {
 			return true
 		}
-		if item.startTxNum > txNum {
+		if item.startTxNum > txNum && found && foundTxNum == txNum {
+			found = false
 			return false
 		}
 		if item.reader.Empty() {
@@ -49,14 +50,12 @@ func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 			found = true
 			foundTxNum = ef.Max()
-			return false
+			// if there is still chance to find higher ef.Max() than txNum, we continue
+			return foundTxNum == txNum
 		}
 		return true
 	})
-	if !found {
-		return false
-	}
-	return txNum == foundTxNum
+	return found && txNum == foundTxNum
 }
 
 type ReconItem struct {

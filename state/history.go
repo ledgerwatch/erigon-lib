@@ -586,9 +586,8 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 		}
 		v, _ := g.NextUncompressed()
 		return v, true, 0, nil
-	} else if anyItem {
-		return nil, false, maxTxNum, nil
-	} else {
+	}
+	if !anyItem {
 		hc.indexFiles.DescendLessOrEqual(&ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item *ctxItem) bool {
 			if item.reader.Empty() {
 				return true
@@ -606,9 +605,9 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 			}
 			return true
 		})
-		if anyItem {
-			return nil, false, maxTxNum, nil
-		}
-		return nil, true, 0, nil
 	}
+	if anyItem {
+		return nil, false, maxTxNum, nil
+	}
+	return nil, true, 0, nil
 }
