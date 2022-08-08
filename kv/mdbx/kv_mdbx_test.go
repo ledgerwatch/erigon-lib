@@ -578,8 +578,9 @@ func baseAutoDupsortCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursor) {
 	require.NoError(t, c.Put([]byte("AxA"), []byte("1")))
 	require.NoError(t, c.Put([]byte("AxC"), []byte("2")))
 	require.NoError(t, c.Put([]byte("B"), []byte("8")))
-	require.NoError(t, c.Put([]byte("CxA"), []byte("3")))
-	require.NoError(t, c.Put([]byte("CxC"), []byte("4")))
+	require.NoError(t, c.Put([]byte("C"), []byte("9")))
+	require.NoError(t, c.Put([]byte("DxA"), []byte("3")))
+	require.NoError(t, c.Put([]byte("DxC"), []byte("4")))
 
 	return db, tx, c
 }
@@ -594,7 +595,10 @@ func TestAutoDupSort(t *testing.T) {
 	require.Error(t, c.Put([]byte("AA"), []byte("?")))
 
 	require.NoError(t, c.Delete([]byte("AxA")))
-	require.NoError(t, c.Put([]byte("CxE"), []byte("5")))
+	require.NoError(t, c.Put([]byte("B"), []byte("6")))
+	require.NoError(t, c.Delete([]byte("C")))
+	require.NoError(t, c.Put([]byte("DxA"), []byte("7")))
+	require.NoError(t, c.Put([]byte("DxE"), []byte("5")))
 
 	k, v, err := c.First()
 	require.NoError(t, err)
@@ -609,21 +613,21 @@ func TestAutoDupSort(t *testing.T) {
 	k, v, err = c.Next()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("B"), k)
-	assert.Equal(t, []byte("8"), v)
+	assert.Equal(t, []byte("6"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("CxA"), k)
-	assert.Equal(t, []byte("3"), v)
+	assert.Equal(t, []byte("DxA"), k)
+	assert.Equal(t, []byte("7"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("CxC"), k)
+	assert.Equal(t, []byte("DxC"), k)
 	assert.Equal(t, []byte("4"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("CxE"), k)
+	assert.Equal(t, []byte("DxE"), k)
 	assert.Equal(t, []byte("5"), v)
 
 	k, v, err = c.Next()
