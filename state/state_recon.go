@@ -35,9 +35,10 @@ func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 		if item.endTxNum <= txNum {
 			return true
 		}
-		if item.startTxNum > txNum && found && foundTxNum == txNum {
-			found = false
-			return false
+		if item.startTxNum > txNum {
+			if !found || foundTxNum != txNum {
+				return false
+			}
 		}
 		if item.reader.Empty() {
 			return true
