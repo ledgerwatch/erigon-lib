@@ -122,6 +122,7 @@ func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte
 	return
 }
 
+// TODO(yperbasis): probably remove
 func (m *memoryMutationCursor) convertAutoDupsort(key []byte, value []byte) []byte {
 	config, ok := kv.ChaindataTablesCfg[m.table]
 	// If we do not have the configuration we assume it is not dupsorted
@@ -147,21 +148,15 @@ func (m *memoryMutationCursor) skipIntersection(memKey, memValue, dbKey, dbValue
 	newDbKey = dbKey
 	newDbValue = dbValue
 	config, ok := kv.ChaindataTablesCfg[m.table]
-	dupsortOffset := 0
-	if ok && config.AutoDupSortKeysConversion {
-		dupsortOffset = config.DupFromLen - config.DupToLen
-	}
+	dupSort := ok && ((config.Flags & kv.DupSort) != 0)
+	autoKeyConversion := ok && config.AutoDupSortKeysConversion
 	// Check for duplicates
 	if bytes.Equal(memKey, dbKey) {
-		if (config.Flags & kv.DupSort) == 0 {
+		if !dupSort || autoKeyConversion {
 			if newDbKey, newDbValue, err = m.getNextOnDb(t); err != nil {
 				return
 			}
 		} else if bytes.Equal(memValue, dbValue) {
-			if newDbKey, newDbValue, err = m.getNextOnDb(t); err != nil {
-				return
-			}
-		} else if dupsortOffset != 0 && len(memValue) >= dupsortOffset && len(dbValue) >= dupsortOffset && bytes.Equal(memValue[:dupsortOffset], dbValue[:dupsortOffset]) {
 			if newDbKey, newDbValue, err = m.getNextOnDb(t); err != nil {
 				return
 			}
