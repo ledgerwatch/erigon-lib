@@ -1036,6 +1036,8 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 					}
 				}
 			}
+			fmt.Println(found.Tx.IDHash[:])
+			fmt.Println(mt.Tx.IDHash[:])
 			if bytes.Equal(found.Tx.IDHash[:], mt.Tx.IDHash[:]) {
 				return NotSet
 			}
