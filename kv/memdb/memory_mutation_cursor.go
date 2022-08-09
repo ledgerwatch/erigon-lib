@@ -50,14 +50,14 @@ type memoryMutationCursor struct {
 	table    string
 }
 
+func (m *memoryMutationCursor) isTableCleared() bool {
+	return m.mutation.isTableCleared(m.table)
+}
+
 // First move cursor to first position and return key and value accordingly.
 func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 	memKey, memValue, err := m.memCursor.First()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if m.mutation.isTableCleared(m.table) {
+	if err != nil || m.isTableCleared() {
 		return memKey, memValue, err
 	}
 
@@ -137,6 +137,9 @@ func (m *memoryMutationCursor) convertAutoDupsort(key []byte, value []byte) []by
 
 // Current return the current key and values the cursor is on.
 func (m *memoryMutationCursor) Current() ([]byte, []byte, error) {
+	if m.isTableCleared() {
+		return m.memCursor.Current()
+	}
 	return common.Copy(m.currentPair.key), common.Copy(m.currentPair.value), nil
 }
 
@@ -197,6 +200,10 @@ func (m *memoryMutationCursor) resolveCursorPriority(memKey, memValue, dbKey, db
 
 // Next returns the next element of the mutation.
 func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
+	if m.isTableCleared() {
+		return m.memCursor.Next()
+	}
+
 	if m.isPrevFromDb {
 		k, v, err := m.getNextOnDb(Normal)
 		if err != nil {
@@ -215,6 +222,10 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 
 // NextDup returns the next element of the mutation.
 func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
+	if m.isTableCleared() {
+		return m.memCursor.NextDup()
+	}
+
 	if m.isPrevFromDb {
 		k, v, err := m.getNextOnDb(Dup)
 
@@ -234,7 +245,7 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 
 // Seek move pointer to a key at a certain position.
 func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
-	if m.mutation.isTableCleared(m.table) {
+	if m.isTableCleared() {
 		return m.memCursor.Seek(seek)
 	}
 
@@ -243,7 +254,7 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	// If the entry is marked as DB find one that is not
+	// If the entry is marked as deleted find one that is not
 	if dbKey != nil && m.mutation.isEntryDeleted(m.table, dbKey) {
 		dbKey, dbValue, err = m.getNextOnDb(Normal)
 		if err != nil {
@@ -262,8 +273,8 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 // Seek move pointer to a key at a certain position.
 func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 	memKey, memValue, err := m.memCursor.SeekExact(seek)
-	if err != nil {
-		return nil, nil, err
+	if err != nil || m.isTableCleared() {
+		return memKey, memValue, err
 	}
 
 	if memKey != nil {
@@ -280,7 +291,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	if dbKey != nil && !m.mutation.isTableCleared(m.table) && !m.mutation.isEntryDeleted(m.table, seek) {
+	if dbKey != nil && !m.mutation.isEntryDeleted(m.table, seek) {
 		m.currentDbEntry.key = dbKey
 		m.currentDbEntry.value = dbValue
 		m.currentMemEntry.key, m.currentMemEntry.value, err = m.memCursor.Seek(seek)
@@ -345,6 +356,10 @@ func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
 
 // Seek move pointer to a key at a certain position.
 func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) {
+	if m.isTableCleared() {
+		return m.memCursor.SeekBothRange(key, value)
+	}
+
 	if value == nil {
 		_, v, err := m.SeekExact(key)
 		return v, err
@@ -372,9 +387,10 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 
 func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	memKey, memValue, err := m.memCursor.Last()
-	if err != nil {
-		return nil, nil, err
+	if err != nil || m.isTableCleared() {
+		return memKey, memValue, err
 	}
+
 	dbKey, dbValue, err := m.cursor.Last()
 	if err != nil {
 		return nil, nil, err
@@ -450,6 +466,10 @@ func (m *memoryMutationCursor) FirstDup() ([]byte, error) {
 }
 
 func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
+	if m.isTableCleared() {
+		return m.memCursor.NextNoDup()
+	}
+
 	if m.isPrevFromDb {
 		k, v, err := m.getNextOnDb(NoDup)
 		if err != nil {

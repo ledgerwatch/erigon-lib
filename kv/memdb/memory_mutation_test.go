@@ -281,7 +281,7 @@ func TestForAmount(t *testing.T) {
 	require.Equal(t, []string{"value1", "value2", "value3"}, values1)
 }
 
-func TestGetClearBucket(t *testing.T) {
+func TestGetOneAfterClearBucket(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
@@ -294,11 +294,48 @@ func TestGetClearBucket(t *testing.T) {
 	require.Nil(t, err)
 
 	cond := batch.isTableCleared(kv.HashedAccounts)
-	require.Equal(t, cond, true)
+	require.True(t, cond)
 
 	val, err := batch.GetOne(kv.HashedAccounts, []byte("AAAA"))
 	require.Nil(t, err)
 	require.Nil(t, val)
+}
+
+func TestSeekExactAfterClearBucket(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDB(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	err = batch.ClearBucket(kv.HashedAccounts)
+	require.Nil(t, err)
+
+	cond := batch.isTableCleared(kv.HashedAccounts)
+	require.True(t, cond)
+
+	cursor, err := batch.RwCursor(kv.HashedAccounts)
+	require.NoError(t, err)
+
+	key, val, err := cursor.SeekExact([]byte("AAAA"))
+	require.Nil(t, err)
+	assert.Nil(t, key)
+	assert.Nil(t, val)
+
+	err = cursor.Put([]byte("AAAA"), []byte("valueX"))
+	require.Nil(t, err)
+
+	key, val, err = cursor.SeekExact([]byte("AAAA"))
+	require.Nil(t, err)
+	assert.Equal(t, []byte("AAAA"), key)
+	assert.Equal(t, []byte("valueX"), val)
+
+	key, val, err = cursor.SeekExact([]byte("BBBB"))
+	require.Nil(t, err)
+	assert.Nil(t, key)
+	assert.Nil(t, val)
 }
 
 func TestFirstAfterClearBucket(t *testing.T) {
