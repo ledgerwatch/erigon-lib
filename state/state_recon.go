@@ -116,6 +116,7 @@ type ScanIterator struct {
 	uptoTxNum      uint64
 	hasNext        bool
 	nextTxNum      uint64
+	nextKey        []byte
 	fromKey, toKey []byte
 	key            []byte
 	progress       uint64
@@ -141,6 +142,7 @@ func (si *ScanIterator) advance() {
 			max := ef.Max()
 			if max < si.uptoTxNum {
 				si.nextTxNum = max
+				si.nextKey = key
 				si.hasNext = true
 				return
 			}
@@ -153,10 +155,10 @@ func (si *ScanIterator) HasNext() bool {
 	return si.hasNext
 }
 
-func (si *ScanIterator) Next() (uint64, uint64) {
-	n, p := si.nextTxNum, si.progress
+func (si *ScanIterator) Next() ([]byte, uint64, uint64) {
+	k, n, p := si.nextKey, si.nextTxNum, si.progress
 	si.advance()
-	return n, p
+	return k, n, p
 }
 
 func (si *ScanIterator) Total() uint64 {
