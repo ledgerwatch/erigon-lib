@@ -289,7 +289,11 @@ func TestGetOneAfterClearBucket(t *testing.T) {
 	cond := batch.isTableCleared(kv.HashedAccounts)
 	require.True(t, cond)
 
-	val, err := batch.GetOne(kv.HashedAccounts, []byte("AAAA"))
+	val, err := batch.GetOne(kv.HashedAccounts, []byte("A"))
+	require.Nil(t, err)
+	require.Nil(t, val)
+
+	val, err = batch.GetOne(kv.HashedAccounts, []byte("AAAA"))
 	require.Nil(t, err)
 	require.Nil(t, val)
 }
