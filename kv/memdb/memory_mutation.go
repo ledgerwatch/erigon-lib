@@ -29,7 +29,7 @@ type MemoryMutation struct {
 	deletedEntries   map[string]map[string]struct{}
 	clearedTables    map[string]struct{}
 	db               kv.Tx
-	statelessCursors map[string]kv.Cursor
+	statelessCursors map[string]kv.RwCursor
 }
 
 // NewBatch - starts in-mem batch
@@ -130,18 +130,18 @@ func (m *MemoryMutation) ForAmount(bucket string, fromPrefix []byte, amount uint
 
 func (m *MemoryMutation) statelessCursor(table string) (kv.RwCursor, error) {
 	if m.statelessCursors == nil {
-		m.statelessCursors = make(map[string]kv.Cursor)
+		m.statelessCursors = make(map[string]kv.RwCursor)
 	}
 	c, ok := m.statelessCursors[table]
 	if !ok {
 		var err error
-		c, err = m.Cursor(table)
+		c, err = m.RwCursor(table)
 		if err != nil {
 			return nil, err
 		}
 		m.statelessCursors[table] = c
 	}
-	return c.(kv.RwCursor), nil
+	return c, nil
 }
 
 // Can only be called from the worker thread
@@ -171,7 +171,6 @@ func (m *MemoryMutation) Has(table string, key []byte) (bool, error) {
 	return bytes.Equal(key, k), nil
 }
 
-// Put insert a new entry in the database, if it is hashed storage it will add it to a slice instead of a map.
 func (m *MemoryMutation) Put(table string, k, v []byte) error {
 	return m.memTx.Put(table, k, v)
 }
@@ -181,7 +180,11 @@ func (m *MemoryMutation) Append(table string, key []byte, value []byte) error {
 }
 
 func (m *MemoryMutation) AppendDup(table string, key []byte, value []byte) error {
-	return m.Put(table, key, value)
+	c, err := m.statelessCursor(table)
+	if err != nil {
+		return err
+	}
+	return c.(*memoryMutationCursor).AppendDup(key, value)
 }
 
 func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
