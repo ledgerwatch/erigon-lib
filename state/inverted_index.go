@@ -18,6 +18,7 @@ package state
 
 import (
 	"bytes"
+	"container/heap"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -26,7 +27,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"container/heap"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -331,7 +331,6 @@ func (ic *InvertedIndexContext) endTxNumMinimax() uint64 {
 	return minimax
 }
 
-
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
@@ -363,8 +362,10 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum ui
 
 type InvertedIterator1 struct {
 	hasNextInFiles bool
-	hasNextInDb bool
-	cursor               kv.CursorDupSort
+	hasNextInDb    bool
+	startTxKey [8]byte
+	endTxNum uint64
+	cursor         kv.CursorDupSort
 	h              ReconHeap
 }
 
@@ -378,6 +379,40 @@ func (it *InvertedIterator1) advanceInFiles() {
 }
 
 func (it *InvertedIterator1) advanceInDb() {
+	var v []byte
+	var err error
+	if it.cursor == nil {
+		if it.cursor, err = it.roTx.CursorDupSort(it.indexTable); err != nil {
+			// TODO pass error properly around
+			panic(err)
+		}
+		var k []byte
+		if k, v, err = it.cursor.First(); err != nil {
+			// TODO pass error properly around
+			panic(err)
+		}
+		if k == nil {
+			it.cursor.Close()
+			it.hasNextInDb = false
+			return
+		}
+		if v, err = it.cursor.SeekBothRange(k, it.startTxKey[:]); err != nil {
+			panic(err)
+		}
+		if v == nil {
+			it.cursor.Close()
+			it.hasNextInDb = false
+			return
+		}
+		txNum := binary.BigEndian.Uint64(v)
+		if txNum >= it.endTxNum {
+			it.cursor.Close()
+			it.hasNextInDb = false
+			return
+		}
+	} else {
+		_, v, err = it.cursor.NextDup()
+	}
 }
 
 func (it *InvertedIterator1) advance() {
@@ -399,7 +434,11 @@ func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
 
 func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator1 {
 	var ii1 InvertedIterator1
+	ii1.hasNextInDb = true
 	ic.files.AscendGreaterOrEqual(&ctxItem{endTxNum: startTxNum}, func(item *ctxItem) bool {
+		if item.endTxNum >= endTxNum {
+			ii1.hasNextInDb = false
+		}
 		if item.endTxNum <= startTxNum {
 			return true
 		}
@@ -407,12 +446,16 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 			return false
 		}
 		g := item.getter
-		for g.HasNext() {
+		if g.HasNext() {
 			key, offset := g.NextUncompressed()
-			heap.Push(&ii1.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
+			heap.Push(&ii1.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key})
+			ii1.hasNextInFiles = true
 		}
 		return true
 	})
+	binary.BigEndian.PutUint64(ii1.startTxKey[:], startTxNum)
+	ii1.endTxNum = endTxNum
+	ii1.advance()
 	return ii1
 }
 
