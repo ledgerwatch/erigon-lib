@@ -354,18 +354,14 @@ func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursorDupSort, error) {
 	c.table = bucket
 
 	var err error
-	// Initialize db cursors
-	c.dupCursor, err = m.db.CursorDupSort(bucket)
+	c.cursor, err = m.db.CursorDupSort(bucket)
 	if err != nil {
 		return nil, err
 	}
-	c.cursor = c.dupCursor
-	// Initialize memory cursors
-	c.memDupCursor, err = m.memTx.RwCursorDupSort(bucket)
+	c.memCursor, err = m.memTx.RwCursorDupSort(bucket)
 	if err != nil {
 		return nil, err
 	}
-	c.memCursor = c.memDupCursor
 	c.mutation = m
 	return c, err
 }

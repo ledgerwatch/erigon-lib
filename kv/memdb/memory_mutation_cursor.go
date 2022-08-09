@@ -37,13 +37,9 @@ type cursorEntry struct {
 
 // cursor
 type memoryMutationCursor struct {
-	// we can keep one cursor type if we store 2 of each kind.
-	cursor    kv.Cursor
-	dupCursor kv.CursorDupSort
-	// Mem cursors
-	memCursor    kv.RwCursor
-	memDupCursor kv.RwCursorDupSort
-	// we keep the index in the slice of pairs we are at.
+	cursor    kv.CursorDupSort
+	memCursor kv.RwCursorDupSort
+
 	isPrevFromDb bool
 	// entry history
 	currentPair     cursorEntry
@@ -87,12 +83,12 @@ func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte
 			return
 		}
 	case Dup:
-		key, value, err = m.dupCursor.NextDup()
+		key, value, err = m.cursor.NextDup()
 		if err != nil {
 			return
 		}
 	case NoDup:
-		key, value, err = m.dupCursor.NextNoDup()
+		key, value, err = m.cursor.NextNoDup()
 		if err != nil {
 			return
 		}
@@ -109,12 +105,12 @@ func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte
 				return
 			}
 		case Dup:
-			key, value, err = m.dupCursor.NextDup()
+			key, value, err = m.cursor.NextDup()
 			if err != nil {
 				return
 			}
 		case NoDup:
-			key, value, err = m.dupCursor.NextNoDup()
+			key, value, err = m.cursor.NextNoDup()
 			if err != nil {
 				return
 			}
@@ -228,7 +224,7 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 		return m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, Dup)
 	}
 
-	memK, memV, err := m.memDupCursor.NextDup()
+	memK, memV, err := m.memCursor.NextDup()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -305,7 +301,7 @@ func (m *memoryMutationCursor) Append(k []byte, v []byte) error {
 }
 
 func (m *memoryMutationCursor) AppendDup(k []byte, v []byte) error {
-	return m.memDupCursor.AppendDup(common.Copy(k), common.Copy(v))
+	return m.memCursor.AppendDup(common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursor) PutNoDupData(key, value []byte) error {
@@ -323,12 +319,13 @@ func (m *memoryMutationCursor) DeleteExact(k1, k2 []byte) error {
 	panic("DeleteExact Not implemented")
 }
 
+// TODO(yperbasis): FIXME
 func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
-	k, _, err := m.dupCursor.Current()
+	k, _, err := m.cursor.Current()
 	if err != nil {
 		return err
 	}
-	for v, err := m.dupCursor.SeekBothRange(k, nil); v != nil; k, v, err = m.dupCursor.NextDup() {
+	for v, err := m.cursor.SeekBothRange(k, nil); v != nil; k, v, err = m.cursor.NextDup() {
 		if err != nil {
 			return err
 		}
@@ -336,12 +333,12 @@ func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
 			return err
 		}
 	}
-	dbK, _, err := m.memDupCursor.Current()
+	dbK, _, err := m.memCursor.Current()
 	if err != nil {
 		return err
 	}
 	if len(dbK) > 0 {
-		return m.memDupCursor.DeleteCurrentDuplicates()
+		return m.memCursor.DeleteCurrentDuplicates()
 	}
 	return nil
 }
@@ -353,7 +350,7 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 		return v, err
 	}
 
-	dbValue, err := m.dupCursor.SeekBothRange(key, value)
+	dbValue, err := m.cursor.SeekBothRange(key, value)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +362,7 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 		}
 	}
 
-	memValue, err := m.memDupCursor.SeekBothRange(key, value)
+	memValue, err := m.memCursor.SeekBothRange(key, value)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +458,7 @@ func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
 		return m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, NoDup)
 	}
 
-	memK, memV, err := m.memDupCursor.NextNoDup()
+	memK, memV, err := m.memCursor.NextNoDup()
 	if err != nil {
 		return nil, nil, err
 	}
