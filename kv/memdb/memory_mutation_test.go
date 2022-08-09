@@ -23,25 +23,18 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
-func initializeDB(rwTx kv.RwTx) {
-	// non-DupSort
+func initializeDbNonDupSort(rwTx kv.RwTx) {
 	rwTx.Put(kv.HashedAccounts, []byte("AAAA"), []byte("value"))
 	rwTx.Put(kv.HashedAccounts, []byte("CAAA"), []byte("value1"))
 	rwTx.Put(kv.HashedAccounts, []byte("CBAA"), []byte("value2"))
 	rwTx.Put(kv.HashedAccounts, []byte("CCAA"), []byte("value3"))
-
-	// DupSort
-	rwTx.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.1"))
-	rwTx.Put(kv.AccountChangeSet, []byte("key3"), []byte("value3.1"))
-	rwTx.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.3"))
-	rwTx.Put(kv.AccountChangeSet, []byte("key3"), []byte("value3.3"))
 }
 
 func TestPutAppendHas(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.Nil(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	require.NoError(t, batch.Append(kv.HashedAccounts, []byte("AAAA"), []byte("value1.5")))
@@ -70,7 +63,7 @@ func TestLastMiningDB(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	batch.Put(kv.HashedAccounts, []byte("BAAA"), []byte("value4"))
@@ -95,7 +88,7 @@ func TestLastMiningMem(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	batch.Put(kv.HashedAccounts, []byte("BAAA"), []byte("value4"))
@@ -120,7 +113,7 @@ func TestDeleteMining(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 	batch := NewMemoryBatch(rwTx)
 	batch.Put(kv.HashedAccounts, []byte("BAAA"), []byte("value4"))
 	batch.Put(kv.HashedAccounts, []byte("DCAA"), []byte("value5"))
@@ -147,7 +140,7 @@ func TestFlush(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 	batch := NewMemoryBatch(rwTx)
 	batch.Put(kv.HashedAccounts, []byte("BAAA"), []byte("value4"))
 	batch.Put(kv.HashedAccounts, []byte("AAAA"), []byte("value5"))
@@ -168,7 +161,7 @@ func TestForEach(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	batch.Put(kv.HashedAccounts, []byte("FCAA"), []byte("value5"))
@@ -211,7 +204,7 @@ func TestForPrefix(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	var keys1 []string
@@ -251,7 +244,7 @@ func TestForAmount(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -285,7 +278,7 @@ func TestGetOneAfterClearBucket(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -305,7 +298,7 @@ func TestSeekExactAfterClearBucket(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -342,7 +335,7 @@ func TestFirstAfterClearBucket(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -371,7 +364,7 @@ func TestIncReadSequence(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbNonDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -384,11 +377,18 @@ func TestIncReadSequence(t *testing.T) {
 	require.Equal(t, val, uint64(12))
 }
 
+func initializeDbDupSort(rwTx kv.RwTx) {
+	rwTx.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.1"))
+	rwTx.Put(kv.AccountChangeSet, []byte("key3"), []byte("value3.1"))
+	rwTx.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.3"))
+	rwTx.Put(kv.AccountChangeSet, []byte("key3"), []byte("value3.3"))
+}
+
 func TestNext(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -433,7 +433,7 @@ func TestNextNoDup(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDB(rwTx)
+	initializeDbDupSort(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -457,7 +457,42 @@ func TestNextNoDup(t *testing.T) {
 	assert.Equal(t, []byte("key3"), k)
 }
 
-func initializeAutoDupsortDB(rwTx kv.RwTx) {
+func TestDeleteCurrentDuplicates(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDbDupSort(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	cursor, err := batch.RwCursorDupSort(kv.AccountChangeSet)
+	require.NoError(t, err)
+
+	require.NoError(t, cursor.Put([]byte("key3"), []byte("value3.2")))
+
+	key, _, err := cursor.SeekExact([]byte("key3"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("key3"), key)
+
+	require.NoError(t, cursor.DeleteCurrentDuplicates())
+
+	require.NoError(t, batch.Flush(rwTx))
+
+	var keys []string
+	var values []string
+	err = rwTx.ForEach(kv.AccountChangeSet, nil, func(k, v []byte) error {
+		keys = append(keys, string(k))
+		values = append(values, string(v))
+		return nil
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"key1", "key1"}, keys)
+	require.Equal(t, []string{"value1.1", "value1.3"}, values)
+}
+
+func initializeDbAutoKeyConversion(rwTx kv.RwTx) {
 	rwTx.Put(kv.PlainState, []byte("A"), []byte("0"))
 	rwTx.Put(kv.PlainState, []byte("A..........................................................A"), []byte("1"))
 	rwTx.Put(kv.PlainState, []byte("A..........................................................C"), []byte("2"))
@@ -466,11 +501,11 @@ func initializeAutoDupsortDB(rwTx kv.RwTx) {
 	rwTx.Put(kv.PlainState, []byte("C..........................................................C"), []byte("4"))
 }
 
-func TestAutoDupSort(t *testing.T) {
+func TestAutoKeyConversion(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeAutoDupsortDB(rwTx)
+	initializeDbAutoKeyConversion(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -522,11 +557,11 @@ func TestAutoDupSort(t *testing.T) {
 	assert.Nil(t, v)
 }
 
-func TestAutoDupSortDelete(t *testing.T) {
+func TestAutoKeyConversionDelete(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeAutoDupsortDB(rwTx)
+	initializeDbAutoKeyConversion(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()

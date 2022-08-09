@@ -303,7 +303,7 @@ func (m *memoryMutationCursor) AppendDup(k []byte, v []byte) error {
 }
 
 func (m *memoryMutationCursor) PutNoDupData(key, value []byte) error {
-	panic("DeleteCurrentDuplicates Not implemented")
+	panic("Not implemented")
 }
 
 func (m *memoryMutationCursor) Delete(k []byte) error {
@@ -317,26 +317,19 @@ func (m *memoryMutationCursor) DeleteExact(k1, k2 []byte) error {
 	panic("DeleteExact Not implemented")
 }
 
-// TODO(yperbasis): FIXME
 func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
-	k, _, err := m.cursor.Current()
+	config, ok := kv.ChaindataTablesCfg[m.table]
+	autoKeyConversion := ok && config.AutoDupSortKeysConversion
+	if autoKeyConversion {
+		panic("DeleteCurrentDuplicates Not implemented for AutoDupSortKeysConversion tables")
+	}
+
+	k, _, err := m.Current()
 	if err != nil {
 		return err
 	}
-	for v, err := m.cursor.SeekBothRange(k, nil); v != nil; k, v, err = m.cursor.NextDup() {
-		if err != nil {
-			return err
-		}
-		if err := m.Delete(k); err != nil {
-			return err
-		}
-	}
-	dbK, _, err := m.memCursor.Current()
-	if err != nil {
-		return err
-	}
-	if len(dbK) > 0 {
-		return m.memCursor.DeleteCurrentDuplicates()
+	if k != nil {
+		return m.Delete(k)
 	}
 	return nil
 }
