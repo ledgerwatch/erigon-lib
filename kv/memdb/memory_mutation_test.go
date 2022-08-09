@@ -458,7 +458,6 @@ func TestNextNoDup(t *testing.T) {
 }
 
 func initializeAutoDupsortDB(rwTx kv.RwTx) {
-	// Insert some records
 	rwTx.Put(kv.PlainState, []byte("A"), []byte("0"))
 	rwTx.Put(kv.PlainState, []byte("A..........................................................A"), []byte("1"))
 	rwTx.Put(kv.PlainState, []byte("A..........................................................C"), []byte("2"))
@@ -516,6 +515,43 @@ func TestAutoDupSort(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("C..........................................................E"), k)
 	assert.Equal(t, []byte("5"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Nil(t, k)
+	assert.Nil(t, v)
+}
+
+func TestAutoDupSortDelete(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeAutoDupsortDB(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	c, err := batch.RwCursor(kv.PlainState)
+	require.NoError(t, err)
+
+	require.NoError(t, c.Delete([]byte("A..........................................................A")))
+	require.NoError(t, c.Delete([]byte("A..........................................................C")))
+	require.NoError(t, c.Delete([]byte("B")))
+
+	k, v, err := c.First()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("A"), k)
+	assert.Equal(t, []byte("0"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("C..........................................................A"), k)
+	assert.Equal(t, []byte("3"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("C..........................................................C"), k)
+	assert.Equal(t, []byte("4"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)

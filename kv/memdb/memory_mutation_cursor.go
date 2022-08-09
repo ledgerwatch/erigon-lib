@@ -97,7 +97,7 @@ func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte
 		return
 	}
 
-	for key != nil && value != nil && m.mutation.isEntryDeleted(m.table, m.convertAutoDupsort(key, value)) {
+	for key != nil && value != nil && m.mutation.isEntryDeleted(m.table, key) {
 		switch t {
 		case Normal:
 			key, value, err = m.cursor.Next()
@@ -120,19 +120,6 @@ func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte
 		}
 	}
 	return
-}
-
-// TODO(yperbasis): probably remove
-func (m *memoryMutationCursor) convertAutoDupsort(key []byte, value []byte) []byte {
-	config, ok := kv.ChaindataTablesCfg[m.table]
-	// If we do not have the configuration we assume it is not dupsorted
-	if !ok || !config.AutoDupSortKeysConversion {
-		return key
-	}
-	if len(key) != config.DupToLen {
-		return key
-	}
-	return append(key, value[:config.DupFromLen-config.DupToLen]...)
 }
 
 // Current return the current key and values the cursor is on.
@@ -370,7 +357,7 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 		return nil, err
 	}
 
-	if dbValue != nil && m.mutation.isEntryDeleted(m.table, m.convertAutoDupsort(key, dbValue)) {
+	if dbValue != nil && m.mutation.isEntryDeleted(m.table, key) {
 		_, dbValue, err = m.getNextOnDb(Dup)
 		if err != nil {
 			return nil, err
