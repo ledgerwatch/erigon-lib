@@ -373,6 +373,10 @@ const (
 	PlainStateR    = "PlainStateR"    // temporary table for PlainState reconstitution
 	CodeR          = "CodeR"          // temporary table for Code reconstitution
 	PlainContractR = "PlainContractR" // temporary table for PlainContract reconstitution
+
+	BAccount = "BAccount"
+	BStorage = "BStorage"
+	BCode    = "BCode"
 )
 
 // Keys
@@ -503,6 +507,10 @@ var ChaindataTables = []string{
 	PlainStateR,
 	CodeR,
 	PlainContractR,
+
+	BAccount,
+	BStorage,
+	BCode,
 }
 
 const (
@@ -602,6 +610,9 @@ var ChaindataTablesCfg = TableCfg{
 	RStorageIdx:        {Flags: DupSort},
 	RCodeKeys:          {Flags: DupSort},
 	RCodeIdx:           {Flags: DupSort},
+	BAccount:           {Flags: DupSort},
+	BStorage:           {Flags: DupSort},
+	BCode:              {Flags: DupSort},
 }
 
 var TxpoolTablesCfg = TableCfg{}
