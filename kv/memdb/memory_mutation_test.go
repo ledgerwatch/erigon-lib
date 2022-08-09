@@ -492,6 +492,32 @@ func TestDeleteCurrentDuplicates(t *testing.T) {
 	require.Equal(t, []string{"value1.1", "value1.3"}, values)
 }
 
+func TestSeekBothRange(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	rwTx.Put(kv.AccountChangeSet, []byte("key1"), []byte("value1.1"))
+	rwTx.Put(kv.AccountChangeSet, []byte("key3"), []byte("value3.3"))
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	cursor, err := batch.RwCursorDupSort(kv.AccountChangeSet)
+	require.NoError(t, err)
+
+	require.NoError(t, cursor.Put([]byte("key3"), []byte("value3.1")))
+	require.NoError(t, cursor.Put([]byte("key1"), []byte("value1.3")))
+
+	v, err := cursor.SeekBothRange([]byte("key2"), []byte("value1.2"))
+	require.NoError(t, err)
+	// SeekBothRange does exact match of the key, but range match of the value, so we get nil here
+	require.Nil(t, v)
+
+	v, err = cursor.SeekBothRange([]byte("key3"), []byte("value3.2"))
+	require.NoError(t, err)
+	require.Equal(t, "value3.3", string(v))
+}
+
 func initializeDbAutoKeyConversion(rwTx kv.RwTx) {
 	rwTx.Put(kv.PlainState, []byte("A"), []byte("0"))
 	rwTx.Put(kv.PlainState, []byte("A..........................................................A"), []byte("1"))

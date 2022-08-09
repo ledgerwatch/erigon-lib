@@ -78,7 +78,7 @@ func TestSeekBothRange(t *testing.T) {
 
 	v, err := c.SeekBothRange([]byte("key2"), []byte("value1.2"))
 	require.NoError(t, err)
-	// SeekBothRange does extact match of the key, but range match of the value, so we get nil here
+	// SeekBothRange does exact match of the key, but range match of the value, so we get nil here
 	require.Nil(t, v)
 
 	v, err = c.SeekBothRange([]byte("key3"), []byte("value3.2"))

@@ -152,11 +152,11 @@ func (m *memoryMutationCursor) skipIntersection(memKey, memValue, dbKey, dbValue
 }
 
 func (m *memoryMutationCursor) resolveCursorPriority(memKey, memValue, dbKey, dbValue []byte, t NextType) ([]byte, []byte, error) {
-	var err error
 	if memValue == nil && dbValue == nil {
 		return nil, nil, nil
 	}
 
+	var err error
 	dbKey, dbValue, err = m.skipIntersection(memKey, memValue, dbKey, dbValue, t)
 	if err != nil {
 		return nil, nil, err
@@ -338,11 +338,6 @@ func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
 func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) {
 	if m.isTableCleared() {
 		return m.memCursor.SeekBothRange(key, value)
-	}
-
-	if value == nil {
-		_, v, err := m.SeekExact(key)
-		return v, err
 	}
 
 	dbValue, err := m.cursor.SeekBothRange(key, value)
