@@ -31,6 +31,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/crypto/sha3"
 )
@@ -232,6 +233,7 @@ func (c *Coherent) advanceRoot(viewID ViewID) (r *CoherentRoot) {
 }
 
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
+	log.Error("yeeeeeeee")
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	id := ViewID(stateChanges.DatabaseViewID)
