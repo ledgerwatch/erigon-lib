@@ -291,7 +291,9 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 type ViewID uint64
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
+	defer func(t time.Time) { fmt.Printf("cache.go:294: %s\n", time.Since(t)) }(time.Now())
 	id := ViewID(tx.ViewID())
+	defer func(t time.Time) { fmt.Printf("cache.go:296: %s\n", time.Since(t)) }(time.Now())
 	r := c.selectOrCreateRoot(id)
 	select { // fast non-blocking path
 	case <-r.ready:
@@ -299,7 +301,7 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 		return &CoherentView{viewID: id, tx: tx, cache: c}, nil
 	default:
 	}
-
+	defer func(t time.Time) { fmt.Printf("cache.go:304: %s\n", time.Since(t)) }(time.Now())
 	select { // slow blocking path
 	case <-r.ready:
 		//fmt.Printf("recv broadcast2: %d\n", tx.ViewID())
