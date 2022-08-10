@@ -377,6 +377,9 @@ const (
 	BAccount = "BAccount"
 	BStorage = "BStorage"
 	BCode    = "BCode"
+	XAccount = "XAccount"
+	XStorage = "XStorage"
+	XCode    = "XCode"
 )
 
 // Keys
@@ -511,6 +514,9 @@ var ChaindataTables = []string{
 	BAccount,
 	BStorage,
 	BCode,
+	XAccount,
+	XStorage,
+	XCode,
 }
 
 const (
