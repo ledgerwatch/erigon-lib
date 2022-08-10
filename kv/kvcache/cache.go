@@ -282,8 +282,8 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 			}
 		}
 	}
-
 	switched := r.readyChanClosed.CAS(false, true)
+	log.Error("ready: ", "a", switched, "b", r.readyChanClosed.Load())
 	if switched {
 		close(r.ready) //broadcast
 	}
