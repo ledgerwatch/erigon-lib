@@ -530,14 +530,12 @@ func (h *History) MakeContext() *HistoryContext {
 	return &hc
 }
 
-func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64, error) {
+func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
 	var foundEndTxNum uint64
 	var foundStartTxNum uint64
 	var found bool
-	var anyItem bool
-	var maxTxNum uint64
 	//hc.indexFiles.Ascend(func(item *ctxItem) bool {
 	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item *ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
@@ -558,10 +556,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 				found = true
 				//fmt.Printf("Found n=%d\n", n)
 				return false
-			} else {
-				maxTxNum = ef.Max()
 			}
-			anyItem = true
 		}
 		return true
 	})
@@ -574,7 +569,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 		search.startTxNum = foundStartTxNum
 		search.endTxNum = foundEndTxNum
 		if historyItem, ok = hc.historyFiles.Get(&search); !ok {
-			return nil, false, 0, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
+			return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
 		}
 		offset := historyItem.reader.Lookup2(txKey[:], key)
 		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
@@ -582,32 +577,10 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, ui
 		g.Reset(offset)
 		if hc.h.compressVals {
 			v, _ := g.Next(nil)
-			return v, true, 0, nil
+			return v, true, nil
 		}
 		v, _ := g.NextUncompressed()
-		return v, true, 0, nil
+		return v, true, nil
 	}
-	if !anyItem {
-		hc.indexFiles.DescendLessOrEqual(&ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item *ctxItem) bool {
-			if item.reader.Empty() {
-				return true
-			}
-			offset := item.reader.Lookup(key)
-			g := item.getter
-			g.Reset(offset)
-			if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
-				//fmt.Printf("Found key=%x\n", k)
-				eliasVal, _ := g.NextUncompressed()
-				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-				maxTxNum = ef.Max()
-				anyItem = true
-				return false
-			}
-			return true
-		})
-	}
-	if anyItem {
-		return nil, false, maxTxNum, nil
-	}
-	return nil, true, 0, nil
+	return nil, false, nil
 }
