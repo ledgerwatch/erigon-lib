@@ -522,20 +522,21 @@ func TestSeekBothRange(t *testing.T) {
 	require.Equal(t, "value3.3", string(v))
 }
 
-func initializeDbAutoKeyConversion(rwTx kv.RwTx) {
+func initializeDbAutoConversion(rwTx kv.RwTx) {
 	rwTx.Put(kv.PlainState, []byte("A"), []byte("0"))
-	rwTx.Put(kv.PlainState, []byte("A..........................................................A"), []byte("1"))
-	rwTx.Put(kv.PlainState, []byte("A..........................................................C"), []byte("2"))
+	rwTx.Put(kv.PlainState, []byte("A..........................._______________________________A"), []byte("1"))
+	rwTx.Put(kv.PlainState, []byte("A..........................._______________________________C"), []byte("2"))
 	rwTx.Put(kv.PlainState, []byte("B"), []byte("8"))
-	rwTx.Put(kv.PlainState, []byte("C..........................................................A"), []byte("3"))
-	rwTx.Put(kv.PlainState, []byte("C..........................................................C"), []byte("4"))
+	rwTx.Put(kv.PlainState, []byte("C"), []byte("9"))
+	rwTx.Put(kv.PlainState, []byte("D..........................._______________________________A"), []byte("3"))
+	rwTx.Put(kv.PlainState, []byte("D..........................._______________________________C"), []byte("4"))
 }
 
-func TestAutoKeyConversion(t *testing.T) {
+func TestAutoConversion(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDbAutoKeyConversion(rwTx)
+	initializeDbAutoConversion(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -544,12 +545,13 @@ func TestAutoKeyConversion(t *testing.T) {
 	require.NoError(t, err)
 
 	// key length conflict
-	require.Error(t, c.Put([]byte("AAAAAAAAAAAAAAAAAAAAAAAAAAAA"), []byte("?")))
+	require.Error(t, c.Put([]byte("A..........................."), []byte("?")))
 
-	require.NoError(t, c.Delete([]byte("A..........................................................A")))
+	require.NoError(t, c.Delete([]byte("A..........................._______________________________A")))
 	require.NoError(t, c.Put([]byte("B"), []byte("7")))
-	require.NoError(t, c.Put([]byte("C..........................................................C"), []byte("6")))
-	require.NoError(t, c.Put([]byte("C..........................................................E"), []byte("5")))
+	require.NoError(t, c.Delete([]byte("C")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________C"), []byte("6")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________E"), []byte("5")))
 
 	k, v, err := c.First()
 	require.NoError(t, err)
@@ -558,7 +560,7 @@ func TestAutoKeyConversion(t *testing.T) {
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("A..........................................................C"), k)
+	assert.Equal(t, []byte("A..........................._______________________________C"), k)
 	assert.Equal(t, []byte("2"), v)
 
 	k, v, err = c.Next()
@@ -568,17 +570,17 @@ func TestAutoKeyConversion(t *testing.T) {
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("C..........................................................A"), k)
+	assert.Equal(t, []byte("D..........................._______________________________A"), k)
 	assert.Equal(t, []byte("3"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("C..........................................................C"), k)
+	assert.Equal(t, []byte("D..........................._______________________________C"), k)
 	assert.Equal(t, []byte("6"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("C..........................................................E"), k)
+	assert.Equal(t, []byte("D..........................._______________________________E"), k)
 	assert.Equal(t, []byte("5"), v)
 
 	k, v, err = c.Next()
@@ -587,11 +589,11 @@ func TestAutoKeyConversion(t *testing.T) {
 	assert.Nil(t, v)
 }
 
-func TestAutoKeyConversionDelete(t *testing.T) {
+func TestAutoConversionDelete(t *testing.T) {
 	rwTx, err := New().BeginRw(context.Background())
 	require.NoError(t, err)
 
-	initializeDbAutoKeyConversion(rwTx)
+	initializeDbAutoConversion(rwTx)
 
 	batch := NewMemoryBatch(rwTx)
 	defer batch.Close()
@@ -599,9 +601,10 @@ func TestAutoKeyConversionDelete(t *testing.T) {
 	c, err := batch.RwCursor(kv.PlainState)
 	require.NoError(t, err)
 
-	require.NoError(t, c.Delete([]byte("A..........................................................A")))
-	require.NoError(t, c.Delete([]byte("A..........................................................C")))
+	require.NoError(t, c.Delete([]byte("A..........................._______________________________A")))
+	require.NoError(t, c.Delete([]byte("A..........................._______________________________C")))
 	require.NoError(t, c.Delete([]byte("B")))
+	require.NoError(t, c.Delete([]byte("C")))
 
 	k, v, err := c.First()
 	require.NoError(t, err)
@@ -610,16 +613,73 @@ func TestAutoKeyConversionDelete(t *testing.T) {
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("C..........................................................A"), k)
+	assert.Equal(t, []byte("D..........................._______________________________A"), k)
 	assert.Equal(t, []byte("3"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("C..........................................................C"), k)
+	assert.Equal(t, []byte("D..........................._______________________________C"), k)
 	assert.Equal(t, []byte("4"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
 	assert.Nil(t, k)
+	assert.Nil(t, v)
+}
+
+func TestAutoConversionSeekBothRange(t *testing.T) {
+	rwTx, err := New().BeginRw(context.Background())
+	require.NoError(t, err)
+
+	initializeDbAutoConversion(rwTx)
+
+	batch := NewMemoryBatch(rwTx)
+	defer batch.Close()
+
+	c, err := batch.RwCursorDupSort(kv.PlainState)
+	require.NoError(t, err)
+
+	require.NoError(t, c.Delete([]byte("A..........................._______________________________A")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________C"), []byte("6")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________E"), []byte("5")))
+
+	v, err := c.SeekBothRange([]byte("A..........................."), []byte("_______________________________A"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________C2"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("A..........................."), []byte("_______________________________X"))
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("B..........................."), []byte(""))
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("C..........................."), []byte(""))
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("D..........................."), []byte(""))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________A3"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________C6"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________E5"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("X..........................."), []byte("_______________________________Y"))
+	require.NoError(t, err)
 	assert.Nil(t, v)
 }

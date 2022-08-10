@@ -552,53 +552,43 @@ func TestDupDelete(t *testing.T) {
 	assert.Zero(t, count)
 }
 
-func baseAutoDupsortCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursor) {
+func baseAutoConversion(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursor) {
 	path := t.TempDir()
 	logger := log.New()
-	table := "Table"
-	db := NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
-		return kv.TableCfg{
-			table: kv.TableCfgItem{
-				Flags:                     kv.DupSort,
-				AutoDupSortKeysConversion: true,
-				DupFromLen:                3,
-				DupToLen:                  2,
-			},
-		}
-	}).MustOpen()
+	db := NewMDBX(logger).Path(path).MustOpen()
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
 
-	c, err := tx.RwCursor(table)
+	c, err := tx.RwCursor(kv.PlainState)
 	require.NoError(t, err)
 
 	// Insert some records
 	require.NoError(t, c.Put([]byte("A"), []byte("0")))
-	require.NoError(t, c.Put([]byte("AxA"), []byte("1")))
-	require.NoError(t, c.Put([]byte("AxC"), []byte("2")))
+	require.NoError(t, c.Put([]byte("A..........................._______________________________A"), []byte("1")))
+	require.NoError(t, c.Put([]byte("A..........................._______________________________C"), []byte("2")))
 	require.NoError(t, c.Put([]byte("B"), []byte("8")))
 	require.NoError(t, c.Put([]byte("C"), []byte("9")))
-	require.NoError(t, c.Put([]byte("DxA"), []byte("3")))
-	require.NoError(t, c.Put([]byte("DxC"), []byte("4")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________A"), []byte("3")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________C"), []byte("4")))
 
 	return db, tx, c
 }
 
-func TestAutoDupSort(t *testing.T) {
-	db, tx, c := baseAutoDupsortCase(t)
+func TestAutoConversion(t *testing.T) {
+	db, tx, c := baseAutoConversion(t)
 	defer db.Close()
 	defer tx.Rollback()
 	defer c.Close()
 
 	// key length conflict
-	require.Error(t, c.Put([]byte("AA"), []byte("?")))
+	require.Error(t, c.Put([]byte("A..........................."), []byte("?")))
 
-	require.NoError(t, c.Delete([]byte("AxA")))
-	require.NoError(t, c.Put([]byte("B"), []byte("6")))
+	require.NoError(t, c.Delete([]byte("A..........................._______________________________A")))
+	require.NoError(t, c.Put([]byte("B"), []byte("7")))
 	require.NoError(t, c.Delete([]byte("C")))
-	require.NoError(t, c.Put([]byte("DxA"), []byte("7")))
-	require.NoError(t, c.Put([]byte("DxE"), []byte("5")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________C"), []byte("6")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________E"), []byte("5")))
 
 	k, v, err := c.First()
 	require.NoError(t, err)
@@ -607,31 +597,85 @@ func TestAutoDupSort(t *testing.T) {
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("AxC"), k)
+	assert.Equal(t, []byte("A..........................._______________________________C"), k)
 	assert.Equal(t, []byte("2"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("B"), k)
-	assert.Equal(t, []byte("6"), v)
-
-	k, v, err = c.Next()
-	require.NoError(t, err)
-	assert.Equal(t, []byte("DxA"), k)
 	assert.Equal(t, []byte("7"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("DxC"), k)
-	assert.Equal(t, []byte("4"), v)
+	assert.Equal(t, []byte("D..........................._______________________________A"), k)
+	assert.Equal(t, []byte("3"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
-	assert.Equal(t, []byte("DxE"), k)
+	assert.Equal(t, []byte("D..........................._______________________________C"), k)
+	assert.Equal(t, []byte("6"), v)
+
+	k, v, err = c.Next()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("D..........................._______________________________E"), k)
 	assert.Equal(t, []byte("5"), v)
 
 	k, v, err = c.Next()
 	require.NoError(t, err)
 	assert.Nil(t, k)
+	assert.Nil(t, v)
+}
+
+func TestAutoConversionSeekBothRange(t *testing.T) {
+	db, tx, nonDupC := baseAutoConversion(t)
+	nonDupC.Close()
+	defer db.Close()
+	defer tx.Rollback()
+
+	c, err := tx.RwCursorDupSort(kv.PlainState)
+	require.NoError(t, err)
+
+	require.NoError(t, c.Delete([]byte("A..........................._______________________________A")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________C"), []byte("6")))
+	require.NoError(t, c.Put([]byte("D..........................._______________________________E"), []byte("5")))
+
+	v, err := c.SeekBothRange([]byte("A..........................."), []byte("_______________________________A"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________C2"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("A..........................."), []byte("_______________________________X"))
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("B..........................."), []byte(""))
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("C..........................."), []byte(""))
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("D..........................."), []byte(""))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________A3"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________C6"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Equal(t, []byte("_______________________________E5"), v)
+
+	_, v, err = c.NextDup()
+	require.NoError(t, err)
+	assert.Nil(t, v)
+
+	v, err = c.SeekBothRange([]byte("X..........................."), []byte("_______________________________Y"))
+	require.NoError(t, err)
 	assert.Nil(t, v)
 }
