@@ -1,17 +1,17 @@
 /*
-   Copyright 2021 Erigon contributors
+Copyright 2021 Erigon contributors
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-       http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
 package kvcache
 
@@ -77,13 +77,14 @@ type CacheView interface {
 // - CacheView is always coherent with given db transaction -
 //
 // Rules of set view.isCanonical value:
-//  - method View can't parent.Clone() - because parent view is not coherent with current kv.Tx
-//  - only OnNewBlock method may do parent.Clone() and apply StateChanges to create coherent view of kv.Tx
-//  - parent.Clone() can't be caled if parent.isCanonical=false
-//  - only OnNewBlock method can set view.isCanonical=true
+//   - method View can't parent.Clone() - because parent view is not coherent with current kv.Tx
+//   - only OnNewBlock method may do parent.Clone() and apply StateChanges to create coherent view of kv.Tx
+//   - parent.Clone() can't be caled if parent.isCanonical=false
+//   - only OnNewBlock method can set view.isCanonical=true
+//
 // Rules of filling cache.stateEvict:
-//  - changes in Canonical View SHOULD reflect in stateEvict
-//  - changes in Non-Canonical View SHOULD NOT reflect in stateEvict
+//   - changes in Canonical View SHOULD reflect in stateEvict
+//   - changes in Non-Canonical View SHOULD NOT reflect in stateEvict
 type Coherent struct {
 	hits, miss, timeout          *metrics.Counter
 	keys, evict                  *metrics.Counter
@@ -169,13 +170,14 @@ func New(cfg CoherentConfig) *Coherent {
 
 // selectOrCreateRoot - used for usual getting root
 func (c *Coherent) selectOrCreateRoot(viewID ViewID) *CoherentRoot {
+	defer func(t time.Time) { fmt.Printf("cache.go:172: %s\n", time.Since(t)) }(time.Now())
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	r, ok := c.roots[viewID]
 	if ok {
 		return r
 	}
-
+	defer func(t time.Time) { fmt.Printf("cache.go:179: %s\n", time.Since(t)) }(time.Now())
 	r = &CoherentRoot{
 		ready:     make(chan struct{}),
 		cache:     btree.New(DEGREE),
@@ -289,6 +291,7 @@ type ViewID uint64
 
 func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 	id := ViewID(tx.ViewID())
+	defer func(t time.Time) { fmt.Printf("cache.go:292: %s\n", time.Since(t)) }(time.Now())
 	r := c.selectOrCreateRoot(id)
 	select { // fast non-blocking path
 	case <-r.ready:
@@ -296,7 +299,7 @@ func (c *Coherent) View(ctx context.Context, tx kv.Tx) (CacheView, error) {
 		return &CoherentView{viewID: id, tx: tx, cache: c}, nil
 	default:
 	}
-
+	defer func(t time.Time) { fmt.Printf("cache.go:300: %s\n", time.Since(t)) }(time.Now())
 	select { // slow blocking path
 	case <-r.ready:
 		//fmt.Printf("recv broadcast2: %d\n", tx.ViewID())
