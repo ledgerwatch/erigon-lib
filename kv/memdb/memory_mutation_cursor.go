@@ -54,6 +54,14 @@ func (m *memoryMutationCursor) isTableCleared() bool {
 	return m.mutation.isTableCleared(m.table)
 }
 
+func (m *memoryMutationCursor) isEntryDeleted(key []byte, value []byte, t NextType) bool {
+	if t == Normal {
+		return m.mutation.isEntryDeleted(m.table, key)
+	} else {
+		return m.mutation.isEntryDeleted(m.table, m.convertAutoDupsort(key, value))
+	}
+}
+
 // First move cursor to first position and return key and value accordingly.
 func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 	memKey, memValue, err := m.memCursor.First()
@@ -66,7 +74,7 @@ func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	if dbKey != nil && m.mutation.isEntryDeleted(m.table, dbKey) {
+	if dbKey != nil && m.isEntryDeleted(dbKey, dbValue, Normal) {
 		if dbKey, dbValue, err = m.getNextOnDb(Normal); err != nil {
 			return nil, nil, err
 		}
@@ -97,7 +105,7 @@ func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte
 		return
 	}
 
-	for key != nil && value != nil && m.mutation.isEntryDeleted(m.table, key) {
+	for key != nil && value != nil && m.isEntryDeleted(key, value, t) {
 		switch t {
 		case Normal:
 			key, value, err = m.cursor.Next()
@@ -122,6 +130,18 @@ func (m *memoryMutationCursor) getNextOnDb(t NextType) (key []byte, value []byte
 	return
 }
 
+func (m *memoryMutationCursor) convertAutoDupsort(key []byte, value []byte) []byte {
+	config, ok := kv.ChaindataTablesCfg[m.table]
+	// If we do not have the configuration we assume it is not dupsorted
+	if !ok || !config.AutoDupSortKeysConversion {
+		return key
+	}
+	if len(key) != config.DupToLen {
+		return key
+	}
+	return append(key, value[:config.DupFromLen-config.DupToLen]...)
+}
+
 // Current return the current key and values the cursor is on.
 func (m *memoryMutationCursor) Current() ([]byte, []byte, error) {
 	if m.isTableCleared() {
@@ -134,15 +154,22 @@ func (m *memoryMutationCursor) skipIntersection(memKey, memValue, dbKey, dbValue
 	newDbKey = dbKey
 	newDbValue = dbValue
 	config, ok := kv.ChaindataTablesCfg[m.table]
-	dupSort := ok && ((config.Flags & kv.DupSort) != 0)
+	dupSortTable := ok && ((config.Flags & kv.DupSort) != 0)
 	autoKeyConversion := ok && config.AutoDupSortKeysConversion
+	dupsortOffset := 0
+	if autoKeyConversion {
+		dupsortOffset = config.DupFromLen - config.DupToLen
+	}
 	// Check for duplicates
 	if bytes.Equal(memKey, dbKey) {
-		if !dupSort || autoKeyConversion {
-			if newDbKey, newDbValue, err = m.getNextOnDb(t); err != nil {
-				return
-			}
-		} else if bytes.Equal(memValue, dbValue) {
+		var skip bool
+		if t == Normal {
+			skip = !dupSortTable || autoKeyConversion || bytes.Equal(memValue, dbValue)
+		} else {
+			skip = bytes.Equal(memValue, dbValue) ||
+				(dupsortOffset != 0 && len(memValue) >= dupsortOffset && len(dbValue) >= dupsortOffset && bytes.Equal(memValue[:dupsortOffset], dbValue[:dupsortOffset]))
+		}
+		if skip {
 			if newDbKey, newDbValue, err = m.getNextOnDb(t); err != nil {
 				return
 			}
@@ -242,7 +269,7 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 	}
 
 	// If the entry is marked as deleted find one that is not
-	if dbKey != nil && m.mutation.isEntryDeleted(m.table, dbKey) {
+	if dbKey != nil && m.isEntryDeleted(dbKey, dbValue, Normal) {
 		dbKey, dbValue, err = m.getNextOnDb(Normal)
 		if err != nil {
 			return nil, nil, err
@@ -345,7 +372,7 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 		return nil, err
 	}
 
-	if dbValue != nil && m.mutation.isEntryDeleted(m.table, key) {
+	if dbValue != nil && m.isEntryDeleted(key, dbValue, Dup) {
 		_, dbValue, err = m.getNextOnDb(Dup)
 		if err != nil {
 			return nil, err
@@ -356,7 +383,7 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	_, retValue, err := m.resolveCursorPriority(key, memValue, key, dbValue, Normal)
+	_, retValue, err := m.resolveCursorPriority(key, memValue, key, dbValue, Dup)
 	return retValue, err
 }
 
@@ -380,7 +407,7 @@ func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	m.currentMemEntry = cursorEntry{memKey, memValue}
 
 	// Basic checks
-	if dbKey != nil && m.mutation.isEntryDeleted(m.table, dbKey) {
+	if dbKey != nil && m.isEntryDeleted(dbKey, dbValue, Normal) {
 		m.currentDbEntry = cursorEntry{}
 		m.isPrevFromDb = false
 		return memKey, memValue, nil
