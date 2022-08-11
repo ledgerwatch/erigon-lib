@@ -8,7 +8,6 @@ package remote
 
 import (
 	context "context"
-	"fmt"
 	types "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
