@@ -303,9 +303,14 @@ func (s *KvServer) SendStateChanges(ctx context.Context, sc *remote.StateChangeB
 }
 
 func (s *KvServer) Snapshots(ctx context.Context, _ *remote.SnapshotsRequest) (*remote.SnapshotsReply, error) {
+	fmt.Println("KV SNAPSHOTS()")
+	fmt.Printf("- snapthots type: %T\n- snapthots value: %+v\n", s.snapsthots, s.snapsthots)
 	if s.snapsthots == nil {
+		fmt.Println("=================================== snapsthots is NIL!!!")
 		return &remote.SnapshotsReply{Files: []string{}}, nil
 	}
+	fmt.Printf("AGAIN\n- snapthots type: %T\n- snapthots value: %+v\n", s.snapsthots, s.snapsthots)
+	fmt.Println("=================================== snapsthots is NOT NIL!!!")
 	return &remote.SnapshotsReply{Files: s.snapsthots.Files()}, nil
 }
 
