@@ -49,16 +49,16 @@ type KvServer struct {
 
 	kv                 kv.RoDB
 	stateChangeStreams *StateChangePubSub
-	snapsthots         Snapsthots
+	snapshots          Snapshots
 	ctx                context.Context
 }
 
-type Snapsthots interface {
+type Snapshots interface {
 	Files() []string
 }
 
-func NewKvServer(ctx context.Context, kv kv.RoDB, snapshots Snapsthots) *KvServer {
-	return &KvServer{kv: kv, stateChangeStreams: newStateChangeStreams(), ctx: ctx, snapsthots: snapshots}
+func NewKvServer(ctx context.Context, kv kv.RoDB, snapshots Snapshots) *KvServer {
+	return &KvServer{kv: kv, stateChangeStreams: newStateChangeStreams(), ctx: ctx, snapshots: snapshots}
 }
 
 // Version returns the service-side interface version number
@@ -304,14 +304,14 @@ func (s *KvServer) SendStateChanges(ctx context.Context, sc *remote.StateChangeB
 
 func (s *KvServer) Snapshots(ctx context.Context, _ *remote.SnapshotsRequest) (*remote.SnapshotsReply, error) {
 	fmt.Println("KV SNAPSHOTS()")
-	fmt.Printf("- snapthots type: %T\n- snapthots value: %+v\n", s.snapsthots, s.snapsthots)
-	if s.snapsthots == nil {
+	fmt.Printf("- snapthots type: %T\n- snapthots value: %+v\n", s.snapshots, s.snapshots)
+	if s.snapshots == nil {
 		fmt.Println("=================================== snapsthots is NIL!!!")
 		return &remote.SnapshotsReply{Files: []string{}}, nil
 	}
-	fmt.Printf("AGAIN\n- snapthots type: %T\n- snapthots value: %+v\n", s.snapsthots, s.snapsthots)
+	fmt.Printf("AGAIN\n- snapthots type: %T\n- snapthots value: %+v\n", s.snapshots, s.snapshots)
 	fmt.Println("=================================== snapsthots is NOT NIL!!!")
-	return &remote.SnapshotsReply{Files: s.snapsthots.Files()}, nil
+	return &remote.SnapshotsReply{Files: s.snapshots.Files()}, nil
 }
 
 type StateChangePubSub struct {
