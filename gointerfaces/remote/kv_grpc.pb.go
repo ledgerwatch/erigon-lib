@@ -119,14 +119,7 @@ func (x *kVStateChangesClient) Recv() (*StateChangeBatch, error) {
 }
 
 func (c *kVClient) Snapshots(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error) {
-	fmt.Println("SNAPSHOTS()")
 	out := new(SnapshotsReply)
-	//fmt.Printf("c: %+v\n", c)
-	//fmt.Printf("cc: %+v\n", c.cc)
-	//fmt.Printf("ctx: %+v\n", ctx)
-	//fmt.Printf("in: %+v\n", in)
-	//fmt.Printf("out: %+v\n", out)
-	//fmt.Printf("opts: %+v\n", opts)
 	err := c.cc.Invoke(ctx, "/remote.KV/Snapshots", in, out, opts...)
 	if err != nil {
 		return nil, err
