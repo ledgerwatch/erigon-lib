@@ -364,11 +364,13 @@ type InvertedIterator1 struct {
 	hasNextInFiles bool
 	hasNextInDb    bool
 	startTxKey [8]byte
+	startTxNum uint64
 	endTxNum uint64
 	roTx kv.Tx
 	cursor         kv.CursorDupSort
 	indexTable string
 	h              ReconHeap
+	key, nextKey []byte
 }
 
 func (it *InvertedIterator1) Close() {
@@ -378,42 +380,67 @@ func (it *InvertedIterator1) Close() {
 }
 
 func (it *InvertedIterator1) advanceInFiles() {
+	for it.h.Len() > 0 {
+		top := heap.Pop(&it.h).(*ReconItem)
+		key := top.key
+		val, _ := top.g.NextUncompressed()
+		if top.g.HasNext() {
+			top.key, _ = top.g.NextUncompressed()
+			heap.Push(&it.h, top)
+		}
+		if !bytes.Equal(key, it.key) {
+			ef, _ := eliasfano32.ReadEliasFano(val)
+			min := ef.Get(0)
+			max := ef.Max()
+			if min < it.endTxNum && max >= it.startTxNum { // Intersection of [min; max) and [it.startTxNum; it.endTxNum)
+				it.key = key
+				it.nextKey = key
+				it.hasNextInFiles = true
+				return
+			}
+		}
+	}
+	it.hasNextInFiles = false
 }
 
 func (it *InvertedIterator1) advanceInDb() {
-	var v []byte
+	var k, v []byte
 	var err error
 	if it.cursor == nil {
 		if it.cursor, err = it.roTx.CursorDupSort(it.indexTable); err != nil {
 			// TODO pass error properly around
 			panic(err)
 		}
-		var k []byte
 		if k, v, err = it.cursor.First(); err != nil {
 			// TODO pass error properly around
 			panic(err)
 		}
-		if k == nil {
-			it.cursor.Close()
-			it.hasNextInDb = false
-			return
-		}
-		if v, err = it.cursor.SeekBothRange(k, it.startTxKey[:]); err != nil {
+	} else {
+		if k, v, err = it.cursor.NextNoDup(); err != nil {
 			panic(err)
 		}
-		if v == nil {
-			it.cursor.Close()
-			it.hasNextInDb = false
-			return
-		}
-		txNum := binary.BigEndian.Uint64(v)
-		if txNum >= it.endTxNum {
-			it.cursor.Close()
-			it.hasNextInDb = false
-			return
-		}
-	} else {
-		_, v, err = it.cursor.NextDup()
+	}
+	if k == nil {
+		it.cursor.Close()
+		it.cursor = nil
+		it.hasNextInDb = false
+		return
+	}
+	if v, err = it.cursor.SeekBothRange(k, it.startTxKey[:]); err != nil {
+		panic(err)
+	}
+	if v == nil {
+		it.cursor.Close()
+		it.cursor = nil
+		it.hasNextInDb = false
+		return
+	}
+	txNum := binary.BigEndian.Uint64(v)
+	if txNum >= it.endTxNum {
+		it.cursor.Close()
+		it.cursor = nil
+		it.hasNextInDb = false
+		return
 	}
 }
 
@@ -458,6 +485,7 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 		return true
 	})
 	binary.BigEndian.PutUint64(ii1.startTxKey[:], startTxNum)
+	ii1.startTxNum = startTxNum
 	ii1.endTxNum = endTxNum
 	ii1.advance()
 	return ii1
