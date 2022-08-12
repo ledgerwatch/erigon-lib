@@ -357,3 +357,22 @@ func TestInvIndexScanFiles(t *testing.T) {
 	mergeInverted(t, db, ii, txs)
 	checkRanges(t, db, ii, txs)
 }
+
+func TestChangedKeysIterator(t *testing.T) {
+	_, db, ii, txs := filledInvIndex(t)
+	defer db.Close()
+	defer func() {
+		ii.Close()
+	}()
+	mergeInverted(t, db, ii, txs)
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	ic := ii.MakeContext()
+	it := ic.IterateChangedKeys(0, 10, roTx)
+	var keys [][]byte
+	for it.HasNext() {
+		keys = append(keys, it.Next(nil))
+	}
+	roTx.Rollback()
+	fmt.Printf("%x\n", keys)
+}

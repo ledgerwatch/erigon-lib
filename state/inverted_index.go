@@ -370,7 +370,7 @@ type InvertedIterator1 struct {
 	cursor         kv.CursorDupSort
 	indexTable string
 	h              ReconHeap
-	key, nextKey []byte
+	key, nextKey, nextFileKey, nextDbKey []byte
 }
 
 func (it *InvertedIterator1) Close() {
@@ -442,13 +442,30 @@ func (it *InvertedIterator1) advanceInDb() {
 		it.hasNextInDb = false
 		return
 	}
+	it.nextDbKey = append(it.nextDbKey[:0], k...)
 }
 
 func (it *InvertedIterator1) advance() {
 	if it.hasNextInFiles {
-		it.advanceInFiles()
-	}
-	if it.hasNextInDb && !it.hasNextInFiles {
+		if it.hasNextInDb {
+			c := bytes.Compare(it.nextFileKey, it.nextDbKey)
+			if c < 0 {
+				it.nextKey = it.nextFileKey
+				it.advanceInFiles()
+			} else if c > 0 {
+				it.nextKey = it.nextDbKey
+				it.advanceInDb()
+			} else {
+				it.nextKey = it.nextFileKey
+				it.advanceInDb()
+				it.advanceInFiles()
+			}
+		} else {
+			it.nextKey = it.nextFileKey
+			it.advanceInFiles()
+		}
+	} else if it.hasNextInDb {
+		it.nextKey = it.nextDbKey
 		it.advanceInDb()
 	}
 }
@@ -458,7 +475,7 @@ func (it *InvertedIterator1) HasNext() bool {
 }
 
 func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
-	return nil
+	return append(keyBuf, it.nextKey...)
 }
 
 func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator1 {
