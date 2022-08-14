@@ -500,7 +500,7 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
-func (h *History) pruneF(step uint64, txFrom, txTo uint64, f func(k, v []byte) error) error {
+func (h *History) pruneF(step uint64, txFrom, txTo uint64, f func(txNum uint64, k, v []byte) error) error {
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
@@ -519,20 +519,25 @@ func (h *History) pruneF(step uint64, txFrom, txTo uint64, f func(k, v []byte) e
 		return err
 	}
 	defer valsC.Close()
+	//fst, _, _ := historyKeysCursor.First()
+	//last, _, _ := historyKeysCursor.Last()
+	//fmt.Printf("txTo: %s, %d, fst=%d, last=%d\n", h.indexKeysTable, txFrom, binary.BigEndian.Uint64(fst), binary.BigEndian.Uint64(last))
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		if err := f(k, v); err != nil {
+		_, vv, _ := valsC.SeekExact(v[len(v)-8:])
+		if err := f(txNum, v[:len(v)-8], vv); err != nil {
 			return err
 		}
-		if err = valsC.Delete(v[len(v)-8:]); err != nil {
+		if err = valsC.DeleteCurrent(); err != nil {
 			return err
 		}
 		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
 			return err
 		}
+		//fmt.Printf("next: %s, %d, %x, %x, %x\n", h.indexKeysTable, txNum, v, v[:len(v)-8], v[len(v)-8:])
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
