@@ -500,6 +500,51 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
+func (h *History) pruneF(step uint64, txFrom, txTo uint64, f func(txNum uint64, k, v []byte) error) error {
+	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
+	if err != nil {
+		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
+	}
+	defer historyKeysCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	var k, v []byte
+	idxC, err := h.tx.RwCursorDupSort(h.indexTable)
+	if err != nil {
+		return err
+	}
+	defer idxC.Close()
+	valsC, err := h.tx.RwCursor(h.historyValsTable)
+	if err != nil {
+		return err
+	}
+	defer valsC.Close()
+	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		_, vv, _ := valsC.SeekExact(v[len(v)-8:])
+		if err := f(txNum, v[:len(v)-8], vv); err != nil {
+			return err
+		}
+		if err = valsC.DeleteCurrent(); err != nil {
+			return err
+		}
+		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
+			return err
+		}
+		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
+		if err = historyKeysCursor.DeleteCurrent(); err != nil {
+			return err
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
+	}
+	return nil
+}
+
 type HistoryContext struct {
 	h                        *History
 	indexFiles, historyFiles *btree.BTreeG[*ctxItem]
@@ -561,8 +606,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		return true
 	})
 	if found {
-		var txKey [8]byte
-		binary.BigEndian.PutUint64(txKey[:], foundTxNum)
 		var historyItem *ctxItem
 		var ok bool
 		var search ctxItem
@@ -571,6 +614,8 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		if historyItem, ok = hc.historyFiles.Get(&search); !ok {
 			return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
 		}
+		var txKey [8]byte
+		binary.BigEndian.PutUint64(txKey[:], foundTxNum)
 		offset := historyItem.reader.Lookup2(txKey[:], key)
 		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
 		g := historyItem.getter

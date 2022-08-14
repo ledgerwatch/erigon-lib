@@ -2,7 +2,7 @@ package gsa
 
 /*
 #include "gsacak.h"
-#cgo CFLAGS: -DTERMINATOR=0 -DM64=1 -Dm64=1
+#cgo CFLAGS: -DTERMINATOR=0 -DM64=1 -Dm64=1 -std=c99
 */
 import "C"
 import (
@@ -63,7 +63,7 @@ func PrintArrays(str []byte, sa []uint, lcp []int, da []int32) {
 	}
 }
 
-//nolint
+// nolint
 // SA2GSA - example func to convert SA+DA to GSA
 func SA2GSA(sa []uint, da []int32) []uint {
 	// remove terminator

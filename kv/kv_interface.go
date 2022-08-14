@@ -172,13 +172,14 @@ type RoDB interface {
 //
 // Common pattern for short-living transactions:
 //
-//  if err := db.View(ctx, func(tx ethdb.Tx) error {
-//     ... code which uses database in transaction
-//  }); err != nil {
-//		return err
-// }
+//	 if err := db.View(ctx, func(tx ethdb.Tx) error {
+//	    ... code which uses database in transaction
+//	 }); err != nil {
+//			return err
+//	}
 //
 // Common pattern for long-living transactions:
+//
 //	tx, err := db.Begin()
 //	if err != nil {
 //		return err
@@ -191,7 +192,6 @@ type RoDB interface {
 //	if err != nil {
 //		return err
 //	}
-//
 type RwDB interface {
 	RoDB
 
@@ -282,12 +282,13 @@ type BucketMigrator interface {
 // If methods (like First/Next/Seek) return error, then returned key SHOULD not be nil (can be []byte{} for example).
 // Then looping code will look as:
 // c := kv.Cursor(bucketName)
-// for k, v, err := c.First(); k != nil; k, v, err = c.Next() {
-//    if err != nil {
-//        return err
-//    }
-//    ... logic
-// }
+//
+//	for k, v, err := c.First(); k != nil; k, v, err = c.Next() {
+//	   if err != nil {
+//	       return err
+//	   }
+//	   ... logic
+//	}
 type Cursor interface {
 	First() ([]byte, []byte, error)               // First - position at first key/data item
 	Seek(seek []byte) ([]byte, []byte, error)     // Seek - position at first key greater than or equal to specified key
@@ -323,11 +324,11 @@ type CursorDupSort interface {
 	// SeekBothExact -
 	// second parameter can be nil only if searched key has no duplicates, or return error
 	SeekBothExact(key, value []byte) ([]byte, []byte, error)
-	SeekBothRange(key, value []byte) ([]byte, error)
-	FirstDup() ([]byte, error)          // FirstDup - position at first data item of current key
-	NextDup() ([]byte, []byte, error)   // NextDup - position at next data item of current key
-	NextNoDup() ([]byte, []byte, error) // NextNoDup - position at first data item of next key
-	LastDup() ([]byte, error)           // LastDup - position at last data item of current key
+	SeekBothRange(key, value []byte) ([]byte, error) // SeekBothRange - exact match of the key, but range match of the value
+	FirstDup() ([]byte, error)                       // FirstDup - position at first data item of current key
+	NextDup() ([]byte, []byte, error)                // NextDup - position at next data item of current key
+	NextNoDup() ([]byte, []byte, error)              // NextNoDup - position at first data item of next key
+	LastDup() ([]byte, error)                        // LastDup - position at last data item of current key
 
 	CountDuplicates() (uint64, error) // CountDuplicates - number of duplicates for the current key
 }

@@ -71,3 +71,10 @@ func Exist(path string) bool {
 	}
 	return true
 }
+
+func Recreate(dir string) {
+	if Exist(dir) {
+		_ = os.RemoveAll(dir)
+	}
+	MustExist(dir)
+}

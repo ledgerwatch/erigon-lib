@@ -17,9 +17,13 @@
 package state
 
 import (
+	"context"
 	"fmt"
+	math2 "math"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
@@ -273,6 +277,54 @@ func (a *Aggregator22) integrateFiles(sf Agg22StaticFiles, txNumFrom, txNumTo ui
 	a.logTopics.integrateFiles(sf.logTopics, txNumFrom, txNumTo)
 	a.tracesFrom.integrateFiles(sf.tracesFrom, txNumFrom, txNumTo)
 	a.tracesTo.integrateFiles(sf.tracesTo, txNumFrom, txNumTo)
+}
+
+func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad etl.LoadFunc) error {
+	step := a.txNum / a.aggregationStep
+	if step == 0 {
+		return nil
+	}
+
+	changes := etl.NewCollector("", "", etl.NewOldestEntryBuffer(etl.BufferOptimalSize))
+	defer changes.Close()
+
+	if err := a.accounts.pruneF(step, txUnwindTo, math2.MaxUint64, func(txNum uint64, k, v []byte) error {
+		if err := changes.Collect(libcommon.Copy(k), libcommon.Copy(v)); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := a.storage.pruneF(step, txUnwindTo, math2.MaxUint64, func(txNu uint64, k, v []byte) error {
+		if err := changes.Collect(libcommon.Copy(k), libcommon.Copy(v)); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := changes.Load(a.rwTx, kv.PlainState, stateLoad, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+		return err
+	}
+
+	if err := a.code.prune(step, txUnwindTo, math2.MaxUint64); err != nil {
+		return err
+	}
+	if err := a.logAddrs.prune(txUnwindTo, math2.MaxUint64); err != nil {
+		return err
+	}
+	if err := a.logTopics.prune(txUnwindTo, math2.MaxUint64); err != nil {
+		return err
+	}
+	if err := a.tracesFrom.prune(txUnwindTo, math2.MaxUint64); err != nil {
+		return err
+	}
+	if err := a.tracesTo.prune(txUnwindTo, math2.MaxUint64); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (a *Aggregator22) prune(step uint64, txFrom, txTo uint64) error {

@@ -47,6 +47,7 @@ type InvertedIndex struct {
 	indexTable      string // Needs to be table with DupSort
 	tx              kv.RwTx
 	txNum           uint64
+	txNumBytes      [8]byte
 	files           *btree.BTreeG[*filesItem]
 }
 
@@ -122,6 +123,7 @@ func (ii *InvertedIndex) openFiles() error {
 	ii.files.Ascend(func(item *filesItem) bool {
 		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+			log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
 			return false
 		}
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
@@ -131,6 +133,7 @@ func (ii *InvertedIndex) openFiles() error {
 			}
 		}
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
+			log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
 			return false
 		}
 		totalKeys += item.index.KeyCount()
@@ -164,15 +167,14 @@ func (ii *InvertedIndex) SetTx(tx kv.RwTx) {
 
 func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 	ii.txNum = txNum
+	binary.BigEndian.PutUint64(ii.txNumBytes[:], ii.txNum)
 }
 
 func (ii *InvertedIndex) add(key, indexKey []byte) error {
-	var txKey [8]byte
-	binary.BigEndian.PutUint64(txKey[:], ii.txNum)
-	if err := ii.tx.Put(ii.indexKeysTable, txKey[:], key); err != nil {
+	if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], key); err != nil {
 		return err
 	}
-	if err := ii.tx.Put(ii.indexTable, indexKey, txKey[:]); err != nil {
+	if err := ii.tx.Put(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
 		return err
 	}
 	return nil
@@ -274,6 +276,10 @@ func (it *InvertedIterator) advanceInDb() {
 		}
 	} else {
 		_, v, err = it.cursor.NextDup()
+		if err != nil {
+			// TODO pass error properly around
+			panic(err)
+		}
 	}
 	for ; err == nil && v != nil; _, v, err = it.cursor.NextDup() {
 		n := binary.BigEndian.Uint64(v)
