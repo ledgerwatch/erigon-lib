@@ -519,9 +519,6 @@ func (h *History) pruneF(step uint64, txFrom, txTo uint64, f func(txNum uint64, 
 		return err
 	}
 	defer valsC.Close()
-	//fst, _, _ := historyKeysCursor.First()
-	//last, _, _ := historyKeysCursor.Last()
-	//fmt.Printf("txTo: %s, %d, fst=%d, last=%d\n", h.indexKeysTable, txFrom, binary.BigEndian.Uint64(fst), binary.BigEndian.Uint64(last))
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
@@ -537,7 +534,6 @@ func (h *History) pruneF(step uint64, txFrom, txTo uint64, f func(txNum uint64, 
 		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
 			return err
 		}
-		//fmt.Printf("next: %s, %d, %x, %x, %x\n", h.indexKeysTable, txNum, v, v[:len(v)-8], v[len(v)-8:])
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
