@@ -394,8 +394,7 @@ func (it *InvertedIterator1) advanceInFiles() {
 			max := ef.Max()
 			if min < it.endTxNum && max >= it.startTxNum { // Intersection of [min; max) and [it.startTxNum; it.endTxNum)
 				it.key = key
-				it.nextKey = key
-				it.hasNextInFiles = true
+				it.nextFileKey = key
 				return
 			}
 		}
@@ -420,29 +419,25 @@ func (it *InvertedIterator1) advanceInDb() {
 			panic(err)
 		}
 	}
-	if k == nil {
-		it.cursor.Close()
-		it.cursor = nil
-		it.hasNextInDb = false
-		return
+	for k != nil {
+		if v, err = it.cursor.SeekBothRange(k, it.startTxKey[:]); err != nil {
+			panic(err)
+		}
+		if v != nil {
+			txNum := binary.BigEndian.Uint64(v)
+			if txNum < it.endTxNum {
+				it.nextDbKey = append(it.nextDbKey[:0], k...)
+				return
+			}
+		}
+		if k, v, err = it.cursor.NextNoDup(); err != nil {
+			panic(err)
+		}
 	}
-	if v, err = it.cursor.SeekBothRange(k, it.startTxKey[:]); err != nil {
-		panic(err)
-	}
-	if v == nil {
-		it.cursor.Close()
-		it.cursor = nil
-		it.hasNextInDb = false
-		return
-	}
-	txNum := binary.BigEndian.Uint64(v)
-	if txNum >= it.endTxNum {
-		it.cursor.Close()
-		it.cursor = nil
-		it.hasNextInDb = false
-		return
-	}
-	it.nextDbKey = append(it.nextDbKey[:0], k...)
+	it.cursor.Close()
+	it.cursor = nil
+	it.hasNextInDb = false
+	return
 }
 
 func (it *InvertedIterator1) advance() {
@@ -450,22 +445,22 @@ func (it *InvertedIterator1) advance() {
 		if it.hasNextInDb {
 			c := bytes.Compare(it.nextFileKey, it.nextDbKey)
 			if c < 0 {
-				it.nextKey = it.nextFileKey
+				it.nextKey = append(it.nextKey[:0], it.nextFileKey...)
 				it.advanceInFiles()
 			} else if c > 0 {
-				it.nextKey = it.nextDbKey
+				it.nextKey = append(it.nextKey[:0], it.nextDbKey...)
 				it.advanceInDb()
 			} else {
-				it.nextKey = it.nextFileKey
+				it.nextKey = append(it.nextKey[:0], it.nextFileKey...)
 				it.advanceInDb()
 				it.advanceInFiles()
 			}
 		} else {
-			it.nextKey = it.nextFileKey
+			it.nextKey = append(it.nextKey[:0], it.nextFileKey...)
 			it.advanceInFiles()
 		}
 	} else if it.hasNextInDb {
-		it.nextKey = it.nextDbKey
+		it.nextKey = append(it.nextKey[:0], it.nextDbKey...)
 		it.advanceInDb()
 	}
 }
@@ -475,7 +470,9 @@ func (it *InvertedIterator1) HasNext() bool {
 }
 
 func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
-	return append(keyBuf, it.nextKey...)
+	result := append(keyBuf, it.nextKey...)
+	it.advance()
+	return result
 }
 
 func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator1 {
@@ -504,6 +501,8 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 	binary.BigEndian.PutUint64(ii1.startTxKey[:], startTxNum)
 	ii1.startTxNum = startTxNum
 	ii1.endTxNum = endTxNum
+	ii1.advanceInDb()
+	ii1.advanceInFiles()
 	ii1.advance()
 	return ii1
 }
