@@ -367,15 +367,15 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum ui
 }
 
 type InvertedIterator1 struct {
-	hasNextInFiles bool
-	hasNextInDb    bool
-	startTxKey [8]byte
-	startTxNum uint64
-	endTxNum uint64
-	roTx kv.Tx
-	cursor         kv.CursorDupSort
-	indexTable string
-	h              ReconHeap
+	hasNextInFiles                       bool
+	hasNextInDb                          bool
+	startTxKey                           [8]byte
+	startTxNum                           uint64
+	endTxNum                             uint64
+	roTx                                 kv.Tx
+	cursor                               kv.CursorDupSort
+	indexTable                           string
+	h                                    ReconHeap
 	key, nextKey, nextFileKey, nextDbKey []byte
 }
 
