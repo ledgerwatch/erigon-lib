@@ -326,17 +326,6 @@ type InvertedIndexContext struct {
 	files *btree.BTreeG[*ctxItem]
 }
 
-func (ic *InvertedIndexContext) endTxNumMinimax() uint64 {
-	var minimax uint64
-	if max, ok := ic.files.Max(); ok {
-		endTxNum := max.endTxNum
-		if minimax == 0 || endTxNum < minimax {
-			minimax = endTxNum
-		}
-	}
-	return minimax
-}
-
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
@@ -416,12 +405,12 @@ func (it *InvertedIterator1) advanceInDb() {
 			// TODO pass error properly around
 			panic(err)
 		}
-		if k, v, err = it.cursor.First(); err != nil {
+		if k, _, err = it.cursor.First(); err != nil {
 			// TODO pass error properly around
 			panic(err)
 		}
 	} else {
-		if k, v, err = it.cursor.NextNoDup(); err != nil {
+		if k, _, err = it.cursor.NextNoDup(); err != nil {
 			panic(err)
 		}
 	}
@@ -436,14 +425,13 @@ func (it *InvertedIterator1) advanceInDb() {
 				return
 			}
 		}
-		if k, v, err = it.cursor.NextNoDup(); err != nil {
+		if k, _, err = it.cursor.NextNoDup(); err != nil {
 			panic(err)
 		}
 	}
 	it.cursor.Close()
 	it.cursor = nil
 	it.hasNextInDb = false
-	return
 }
 
 func (it *InvertedIterator1) advance() {
