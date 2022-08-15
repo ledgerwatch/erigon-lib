@@ -703,6 +703,7 @@ func (a *Aggregator22) AddStoragePrev(addr []byte, loc []byte, prev []byte) erro
 	return nil
 }
 
+// AddCodePrev - addr+inc => code
 func (a *Aggregator22) AddCodePrev(addr []byte, prev []byte) error {
 	if err := a.code.AddPrevValue(addr, nil, prev); err != nil {
 		return err
