@@ -322,7 +322,7 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	}); err != nil {
 		return err
 	}
-	if err := codeChanges.Load(a.rwTx, kv.Code, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+	if err := codeChanges.Load(a.rwTx, kv.PlainContractCode, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
 
