@@ -18,6 +18,7 @@ package state
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	math2 "math"
 
@@ -844,4 +845,12 @@ func (a *Aggregator22) MakeContext() *Aggregator22Context {
 		tracesFrom: a.tracesFrom.MakeContext(),
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
+}
+
+func decodeHex(in string) []byte {
+	payload, err := hex.DecodeString(in)
+	if err != nil {
+		panic(err)
+	}
+	return payload
 }
