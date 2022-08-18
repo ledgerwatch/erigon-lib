@@ -832,6 +832,7 @@ func (a *Aggregator22) MakeContext() *Aggregator22Context {
 	}
 }
 
+// nolint
 func decodeHex(in string) []byte {
 	payload, err := hex.DecodeString(in)
 	if err != nil {
