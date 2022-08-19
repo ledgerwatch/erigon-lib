@@ -22,9 +22,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
-	"github.com/ledgerwatch/log/v3"
 )
 
 type word []byte // plain text word associated with code from dictionary
@@ -141,7 +142,7 @@ type Decompressor struct {
 // Condensing reduces size of decompression table but leads to slower reads.
 // To disable condesning at all set to 9 (we dont use tables larger than 2^9)
 // To enable condensing for tables of size larger 64 = 6
-//					 					  for all tables               = 0
+// for all tables                                    = 0
 // There is no sense to condense tables of size [1 - 64] in terms of performance
 //
 // Should be set before calling NewDecompression.
