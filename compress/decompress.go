@@ -195,7 +195,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
-		if d > 30 {
+		if d > 40 {
 			fmt.Printf("alex: %d\n", d)
 		}
 		if d > 10_000 {
@@ -238,7 +238,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	i = 0
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
-		if d > 30 {
+		if d > 40 {
 			fmt.Printf("alex: %d\n", d)
 		}
 		if d > 10_000 {
