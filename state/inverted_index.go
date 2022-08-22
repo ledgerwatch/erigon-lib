@@ -439,7 +439,6 @@ func (it *InvertedIterator1) advanceInDb() {
 func (it *InvertedIterator1) advance() {
 	if it.hasNextInFiles {
 		if it.hasNextInDb {
-			fmt.Printf("advance hasNextInFiles.hasNextInDb: %x, %x\n", it.nextFileKey, it.nextDbKey)
 			c := bytes.Compare(it.nextFileKey, it.nextDbKey)
 			if c < 0 {
 				it.nextKey = append(it.nextKey[:0], it.nextFileKey...)
@@ -453,18 +452,14 @@ func (it *InvertedIterator1) advance() {
 				it.advanceInFiles()
 			}
 		} else {
-			fmt.Printf("advance hasNextInFiles.!hasNextInDb: %x, %x\n", it.nextFileKey, it.nextDbKey)
 			it.nextKey = append(it.nextKey[:0], it.nextFileKey...)
 			it.advanceInFiles()
 		}
 	} else if it.hasNextInDb {
 		it.nextKey = append(it.nextKey[:0], it.nextDbKey...)
-		fmt.Printf("advance hasNextInDb: %x, %x, %x\n", it.nextFileKey, it.nextDbKey, it.nextKey)
 		it.advanceInDb()
-		fmt.Printf("advance hasNextInDb2: %x, %x, %x\n", it.nextFileKey, it.nextDbKey, it.nextKey)
 	} else {
 		it.nextKey = nil
-		fmt.Printf("advance else: %x\n", it.nextKey)
 	}
 }
 
@@ -474,7 +469,6 @@ func (it *InvertedIterator1) HasNext() bool {
 
 func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
 	result := append(keyBuf, it.nextKey...)
-	fmt.Printf("next: %x\n", result)
 	it.advance()
 	return result
 }
