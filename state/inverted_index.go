@@ -420,6 +420,7 @@ func (it *InvertedIterator1) advanceInDb() {
 			panic(err)
 		}
 		if v != nil {
+			fmt.Printf("SeekBothRange: %x, %x\n", k, v[8:])
 			txNum := binary.BigEndian.Uint64(v)
 			if txNum < it.endTxNum {
 				it.nextDbKey = append(it.nextDbKey[:0], k...)
@@ -438,6 +439,7 @@ func (it *InvertedIterator1) advanceInDb() {
 func (it *InvertedIterator1) advance() {
 	if it.hasNextInFiles {
 		if it.hasNextInDb {
+			fmt.Printf("advance hasNextInFiles.hasNextInDb: %x, %x\n", it.nextFileKey, it.nextDbKey)
 			c := bytes.Compare(it.nextFileKey, it.nextDbKey)
 			if c < 0 {
 				it.nextKey = append(it.nextKey[:0], it.nextFileKey...)
@@ -451,21 +453,28 @@ func (it *InvertedIterator1) advance() {
 				it.advanceInFiles()
 			}
 		} else {
+			fmt.Printf("advance hasNextInFiles.!hasNextInDb: %x, %x\n", it.nextFileKey, it.nextDbKey)
 			it.nextKey = append(it.nextKey[:0], it.nextFileKey...)
 			it.advanceInFiles()
 		}
 	} else if it.hasNextInDb {
 		it.nextKey = append(it.nextKey[:0], it.nextDbKey...)
+		fmt.Printf("advance hasNextInDb: %x, %x, %x\n", it.nextFileKey, it.nextDbKey, it.nextKey)
 		it.advanceInDb()
+		fmt.Printf("advance hasNextInDb2: %x, %x, %x\n", it.nextFileKey, it.nextDbKey, it.nextKey)
+	} else {
+		it.nextKey = nil
+		fmt.Printf("advance else: %x\n", it.nextKey)
 	}
 }
 
 func (it *InvertedIterator1) HasNext() bool {
-	return it.hasNextInFiles || it.hasNextInDb
+	return it.hasNextInFiles || it.hasNextInDb || it.nextKey != nil
 }
 
 func (it *InvertedIterator1) Next(keyBuf []byte) []byte {
 	result := append(keyBuf, it.nextKey...)
+	fmt.Printf("next: %x\n", result)
 	it.advance()
 	return result
 }
