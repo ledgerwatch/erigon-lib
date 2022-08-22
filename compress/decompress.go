@@ -195,7 +195,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
-		if d > 5_000 {
+		if d > 2048 {
 			return nil, fmt.Errorf("dictionary is invalid: patternMaxDepth=%d", d)
 		}
 		depths = append(depths, d)
@@ -208,9 +208,6 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		patterns = append(patterns, data[i:i+l])
 		//fmt.Printf("depth = %d, pattern = [%x]\n", d, data[i:i+l])
 		i += l
-	}
-	if patternMaxDepth > 31 {
-		fmt.Printf("alex: %d\n", patternMaxDepth)
 	}
 
 	if dictSize > 0 {
@@ -238,7 +235,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	i = 0
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
-		if d > 5_000 {
+		if d > 2048 {
 			return nil, fmt.Errorf("dictionary is invalid: posMaxDepth=%d", d)
 		}
 		posDepths = append(posDepths, d)
