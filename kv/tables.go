@@ -555,6 +555,15 @@ var ReconTables = []string{
 	PlainStateR,
 	CodeR,
 	PlainContractR,
+	SyncStageProgress,
+	PlainState,
+	Code,
+	PlainContractCode,
+	HashedAccounts,
+	HashedStorage,
+	ContractCode,
+	TrieOfAccounts,
+	TrieOfStorage,
 }
 
 // ChaindataDeprecatedTables - list of buckets which can be programmatically deleted - for example after migration
@@ -642,7 +651,20 @@ var ChaindataTablesCfg = TableCfg{
 var TxpoolTablesCfg = TableCfg{}
 var SentryTablesCfg = TableCfg{}
 var DownloaderTablesCfg = TableCfg{}
-var ReconTablesCfg = TableCfg{}
+var ReconTablesCfg = TableCfg{
+	HashedStorage: {
+		Flags:                     DupSort,
+		AutoDupSortKeysConversion: true,
+		DupFromLen:                72,
+		DupToLen:                  40,
+	},
+	PlainState: {
+		Flags:                     DupSort,
+		AutoDupSortKeysConversion: true,
+		DupFromLen:                60,
+		DupToLen:                  28,
+	},
+}
 
 func sortBuckets() {
 	sort.SliceStable(ChaindataTables, func(i, j int) bool {
