@@ -195,7 +195,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
-		if d > 10_000 {
+		if d > 5_000 {
 			return nil, fmt.Errorf("dictionary is invalid: posMaxDepth=%d", d)
 		}
 		depths = append(depths, d)
@@ -235,7 +235,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	i = 0
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
-		if d > 10_000 {
+		if d > 5_000 {
 			return nil, fmt.Errorf("dictionary is invalid: posMaxDepth=%d", d)
 		}
 		posDepths = append(posDepths, d)
