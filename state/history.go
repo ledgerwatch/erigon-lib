@@ -501,6 +501,7 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
+// deprected
 func (h *History) iterateInDB(step uint64, txFrom, txTo uint64, f func(txNum uint64, k, v []byte) error) error {
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {

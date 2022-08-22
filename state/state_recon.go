@@ -286,6 +286,7 @@ func (hc *HistoryContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum
 	return &hi
 }
 
+// deprected
 func (hc *HistoryContext) Iterate(txNumFrom, txNumTo uint64, f func(txNum uint64, k, v []byte) error) {
 	hc.historyFiles.Ascend(func(item *ctxItem) bool {
 		if item.endTxNum < txNumFrom {
