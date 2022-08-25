@@ -605,7 +605,7 @@ func (p *TxPool) Started() bool                      { return p.started.Load() }
 
 // Best - returns top `n` elements of pending queue
 // id doesn't perform full copy of txs, hovewer underlying elements are immutable
-func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
+func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, dbTx kv.Tx) error {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -624,7 +624,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 		if err != nil {
 			return err
 		}
-		if len(rlpTx) == 0 || p.validateTxWithTx(mt.Tx, isLocal, tx) != Success {
+		if len(rlpTx) == 0 || p.validateTxWithTx(mt.Tx, isLocal, dbTx) != Success {
 			p.pending.Remove(mt)
 			continue
 		}
