@@ -61,6 +61,7 @@ func filesItemLess(i, j *filesItem) bool {
 }
 
 type DomainStats struct {
+	MergesCount    uint64
 	HistoryQueries uint64
 	EfSearchTime   time.Duration
 	DataSize       uint64
@@ -83,10 +84,11 @@ type Domain struct {
 	keysTable string // key -> invertedStep , invertedStep = ^(txNum / aggregationStep), Needs to be table with DupSort
 	valsTable string // key + invertedStep -> values
 
-	files     *btree.BTreeG[*filesItem] // Static files pertaining to this domain, items are of type `filesItem`
-	prefixLen int                       // Number of bytes in the keys that can be used for prefix iteration
-	stats     DomainStats
-	defaultDc *DomainContext
+	files       *btree.BTreeG[*filesItem] // Static files pertaining to this domain, items are of type `filesItem`
+	prefixLen   int                       // Number of bytes in the keys that can be used for prefix iteration
+	stats       DomainStats
+	mergesCount uint64
+	defaultDc   *DomainContext
 }
 
 func NewDomain(

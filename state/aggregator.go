@@ -739,15 +739,15 @@ func (a *AggregatorContext) branchFn(prefix []byte) ([]byte, error) {
 }
 
 func (a *AggregatorContext) accountFn(plainKey []byte, cell *commitment.Cell) error {
-	enc, err := a.ReadAccountData(plainKey, a.a.rwTx)
+	encAccount, err := a.ReadAccountData(plainKey, a.a.rwTx)
 	if err != nil {
 		return err
 	}
 	cell.Nonce = 0
 	cell.Balance.Clear()
 	copy(cell.CodeHash[:], commitment.EmptyCodeHash)
-	if len(enc) > 0 {
-		nonce, balance, chash := decodeAccountBytes(enc)
+	if len(encAccount) > 0 {
+		nonce, balance, chash := DecodeAccountBytes(encAccount)
 		cell.Nonce = nonce
 		cell.Balance.Set(balance)
 		if chash != nil {
@@ -755,15 +755,16 @@ func (a *AggregatorContext) accountFn(plainKey []byte, cell *commitment.Cell) er
 		}
 	}
 
-	enc, err = a.ReadAccountCode(plainKey, a.a.rwTx)
+	code, err := a.ReadAccountCode(plainKey, a.a.rwTx)
 	if err != nil {
 		return err
 	}
-	if enc != nil {
+	if code != nil {
 		a.a.keccak.Reset()
-		a.a.keccak.Write(enc)
+		a.a.keccak.Write(code)
 		copy(cell.CodeHash[:], a.a.keccak.Sum(nil))
 	}
+	cell.Delete = len(encAccount) == 0 && len(code) == 0
 	return nil
 }
 
@@ -775,11 +776,12 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 	}
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
+	cell.Delete = cell.StorageLen == 0
 	return nil
 }
 
 func (a *Aggregator) ComputeCommitment(trace bool) (rootHash []byte, err error) {
-	touchedKeys, hashedKeys := a.touchedKeyList()
+	touchedKeys, hashedKeys, updates := a.touchedKeyList()
 	if len(touchedKeys) == 0 {
 		hash, err := a.patriciaTrie.RootHash()
 		return hash, err
@@ -793,6 +795,20 @@ func (a *Aggregator) ComputeCommitment(trace bool) (rootHash []byte, err error) 
 	rootHash, branchNodeUpdates, err := a.patriciaTrie.ReviewKeys(touchedKeys, hashedKeys)
 	if err != nil {
 		return nil, err
+	}
+
+	a.patriciaTrie.Reset()
+	a.patriciaTrie.SetTrace(trace)
+	a.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
+
+	rootHash2, _, err := a.patriciaTrie.ProcessUpdates(touchedKeys, hashedKeys, updates)
+	if err != nil {
+		return nil, err
+	}
+
+	if !bytes.Equal(rootHash, rootHash2) {
+		fmt.Printf("hash mismatch old %x new %x\n", rootHash, rootHash2)
+		return rootHash2, nil
 	}
 
 	for pref, update := range branchNodeUpdates {
@@ -811,9 +827,9 @@ func (a *Aggregator) ComputeCommitment(trace bool) (rootHash []byte, err error) 
 		if bytes.Equal(stated, merged) {
 			continue
 		}
-		if trace {
-			fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", prefix, stated, update, merged)
-		}
+		//if trace {
+		//	fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", prefix, stated, update, merged)
+		//}
 		if err = a.UpdateCommitmentData(prefix, merged); err != nil {
 			return nil, err
 		}
@@ -843,32 +859,91 @@ func (a *Aggregator) hashAndNibblizeKey(key []byte) []byte {
 	return nibblized
 }
 
-func (a *Aggregator) touchPlainKey(key []byte) {
-	a.commTree.ReplaceOrInsert(&CommitmentItem{plainKey: common.Copy(key), hashedKey: a.hashAndNibblizeKey(key)})
+func (a *Aggregator) touchPlainKeyAccount(c *CommitmentItem, val []byte) {
+	if len(val) == 0 {
+		c.update.Flags = commitment.DELETE_UPDATE
+		return
+	}
+	c.update.DecodeForStorage(val)
+	c.update.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
+	item, found := a.commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
+	if !found {
+		return
+	}
+	if item.update.Flags&commitment.CODE_UPDATE != 0 {
+		c.update.Flags |= commitment.CODE_UPDATE
+		copy(c.update.CodeHashOrStorage[:], item.update.CodeHashOrStorage[:])
+	}
+}
+
+func (a *Aggregator) touchPlainKeyStorage(c *CommitmentItem, val []byte) {
+	c.update.ValLength = len(val)
+	if len(val) == 0 {
+		c.update.Flags = commitment.DELETE_UPDATE
+	} else {
+		c.update.Flags = commitment.STORAGE_UPDATE
+		copy(c.update.CodeHashOrStorage[:], val)
+	}
+}
+
+func (a *Aggregator) touchPlainKeyCode(c *CommitmentItem, val []byte) {
+	c.update.Flags = commitment.CODE_UPDATE
+	item, found := a.commTree.Get(c)
+	if !found {
+		a.keccak.Reset()
+		a.keccak.Write(val)
+		copy(c.update.CodeHashOrStorage[:], a.keccak.Sum(nil))
+		return
+	}
+	if item.update.Flags&commitment.BALANCE_UPDATE != 0 {
+		c.update.Flags |= commitment.BALANCE_UPDATE
+		c.update.Balance.Set(&item.update.Balance)
+	}
+	if item.update.Flags&commitment.NONCE_UPDATE != 0 {
+		c.update.Flags |= commitment.NONCE_UPDATE
+		c.update.Nonce = item.update.Nonce
+	}
+	if item.update.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
+		c.update.Flags = commitment.DELETE_UPDATE
+	} else {
+		a.keccak.Reset()
+		a.keccak.Write(val)
+		copy(c.update.CodeHashOrStorage[:], a.keccak.Sum(nil))
+	}
+}
+
+func (a *Aggregator) touchPlainKey(key, val []byte, fn func(c *CommitmentItem, val []byte)) {
+	c := &CommitmentItem{plainKey: common.Copy(key), hashedKey: a.hashAndNibblizeKey(key)}
+	fn(c, val)
+	a.commTree.ReplaceOrInsert(c)
 }
 
 type CommitmentItem struct {
 	plainKey  []byte
 	hashedKey []byte
+	update    commitment.Update
 }
 
 func commitmentItemLess(i, j *CommitmentItem) bool {
 	return bytes.Compare(i.hashedKey, j.hashedKey) < 0
 }
 
-func (a *Aggregator) touchedKeyList() ([][]byte, [][]byte) {
+func (a *Aggregator) touchedKeyList() ([][]byte, [][]byte, []commitment.Update) {
 	plainKeys := make([][]byte, a.commTree.Len())
 	hashedKeys := make([][]byte, a.commTree.Len())
+	updates := make([]commitment.Update, a.commTree.Len())
+
 	j := 0
 	a.commTree.Ascend(func(item *CommitmentItem) bool {
 		plainKeys[j] = item.plainKey
 		hashedKeys[j] = item.hashedKey
+		updates[j] = item.update
 		j++
 		return true
 	})
 
 	a.commTree.Clear(false)
-	return plainKeys, hashedKeys
+	return plainKeys, hashedKeys, updates
 }
 
 func (a *Aggregator) ReadyToFinishTx() bool {
@@ -937,13 +1012,12 @@ func (a *Aggregator) FinishTx() error {
 }
 
 func (a *Aggregator) UpdateAccountData(addr []byte, account []byte) error {
-	a.touchPlainKey(addr)
+	a.touchPlainKey(addr, account, a.touchPlainKeyAccount)
 	return a.accounts.Put(addr, nil, account)
 }
 
 func (a *Aggregator) UpdateAccountCode(addr []byte, code []byte) error {
-	a.touchPlainKey(addr)
-
+	a.touchPlainKey(addr, code, a.touchPlainKeyCode)
 	if len(code) == 0 {
 		return a.code.Delete(addr, nil)
 	}
@@ -955,7 +1029,7 @@ func (a *Aggregator) UpdateCommitmentData(prefix []byte, code []byte) error {
 }
 
 func (a *Aggregator) DeleteAccount(addr []byte) error {
-	a.touchPlainKey(addr)
+	a.touchPlainKey(addr, nil, a.touchPlainKeyAccount)
 	if err := a.accounts.Delete(addr, nil); err != nil {
 		return err
 	}
@@ -964,7 +1038,7 @@ func (a *Aggregator) DeleteAccount(addr []byte) error {
 	}
 	var e error
 	if err := a.storage.defaultDc.IteratePrefix(addr, func(k, _ []byte) {
-		a.touchPlainKey(k)
+		a.touchPlainKey(k, nil, a.touchPlainKeyStorage)
 		if e == nil {
 			e = a.storage.Delete(k, nil)
 		}
@@ -979,7 +1053,7 @@ func (a *Aggregator) WriteAccountStorage(addr, loc []byte, value []byte) error {
 	copy(composite, addr)
 	copy(composite[length.Addr:], loc)
 
-	a.touchPlainKey(composite)
+	a.touchPlainKey(composite, value, a.touchPlainKeyStorage)
 	if len(value) == 0 {
 		return a.storage.Delete(addr, loc)
 	}
@@ -1060,7 +1134,8 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
-func decodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []byte) {
+
+func DecodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []byte) {
 	balance = new(uint256.Int)
 
 	if len(enc) > 0 {
@@ -1085,12 +1160,4 @@ func decodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []
 		}
 	}
 	return
-}
-
-func decodeStorageAccount(enc []byte) string {
-	if len(enc) == 0 {
-		return "empty"
-	}
-	nonce, b, hash := decodeAccountBytes(enc)
-	return fmt.Sprintf("n=%d b=%d chash=%x %x\n", nonce, b.Uint64(), hash, enc)
 }

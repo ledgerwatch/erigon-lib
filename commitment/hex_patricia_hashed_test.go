@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ledgerwatch/erigon-lib/common/length"
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ledgerwatch/erigon-lib/common/length"
 )
 
 func TestEmptyState(t *testing.T) {

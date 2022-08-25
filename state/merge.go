@@ -298,14 +298,14 @@ func mergeEfs(preval, val, buf []byte) ([]byte, error) {
 		heap.Push(&minHeap, v)
 		//prelist = append(prelist, v)
 	}
-	//fmt.Printf("prelist [%v]\n", prelist)
+	//fmt.Printf("prelist (%d) [%v]\n", len(prelist), prelist)
 	//newList := make([]uint64, 0)
 	for efIt.HasNext() {
 		v := efIt.Next()
 		heap.Push(&minHeap, v)
 		//newList = append(newList, v)
 	}
-	//fmt.Printf("newlist [%v]\n", newList)
+	//fmt.Printf("newlist (%d) [%v]\n", len(newList), newList)
 
 	newEf := eliasfano32.NewEliasFano(uint64(minHeap.Len()), maxUint64(ef.Max(), preef.Max()))
 	for minHeap.Len() > 0 {
@@ -314,11 +314,11 @@ func mergeEfs(preval, val, buf []byte) ([]byte, error) {
 	}
 
 	newEf.Build()
-	nit := newEf.Iterator()
-	res := make([]uint64, 0)
-	for nit.HasNext() {
-		res = append(res, nit.Next())
-	}
+	//nit := newEf.Iterator()
+	//res := make([]uint64, 0)
+	//for nit.HasNext() {
+	//	res = append(res, nit.Next())
+	//}
 	//fmt.Printf("merged ef [%v]\n", res)
 	return newEf.AppendBytes(buf), nil
 }
@@ -501,6 +501,8 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 		}
 	}
 	closeItem = false
+	d.stats.MergesCount++
+	d.mergesCount++
 	return
 }
 
