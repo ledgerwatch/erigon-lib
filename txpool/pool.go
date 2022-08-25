@@ -614,11 +614,6 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 	best := p.pending.best
 	j := 0
 
-	cacheView, err := p.cache().View(context.Background(), tx)
-	if err != nil {
-		return err
-	}
-
 	for i := 0; j < int(n) && i < len(best.ms); i++ {
 		mt := best.ms[i]
 		if mt.Tx.Gas >= p.blockGasLimit.Load() {
@@ -629,7 +624,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 		if err != nil {
 			return err
 		}
-		if len(rlpTx) == 0 || p.validateTx(mt.Tx, isLocal, cacheView) != Success {
+		if len(rlpTx) == 0 || p.validateTxWithTx(mt.Tx, isLocal, tx) != Success {
 			p.pending.Remove(mt)
 			continue
 		}
@@ -687,6 +682,49 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 
 	// check nonce and balance
 	senderNonce, senderBalance, _ := p.senders.info(stateCache, txn.SenderID)
+	if senderNonce > txn.Nonce {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IDHash, senderNonce, txn.Nonce))
+
+		return NonceTooLow
+	}
+	// Transactor should have enough funds to cover the costs
+	total := uint256.NewInt(txn.Gas)
+	total.Mul(total, uint256.NewInt(txn.FeeCap))
+	total.Add(total, &txn.Value)
+	if senderBalance.Cmp(total) < 0 {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx insufficient funds idHash=%x balance in state=%d, txn.gas*txn.tip=%d", txn.IDHash, senderBalance, total))
+		return InsufficientFunds
+	}
+	return Success
+}
+
+func (p *TxPool) validateTxWithTx(txn *types.TxSlot, isLocal bool, tx kv.Tx) DiscardReason {
+	// Drop non-local transactions under our own minimal accepted gas price or tip
+	if !isLocal && txn.FeeCap < p.cfg.MinFeeCap {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx underpriced idHash=%x local=%t, feeCap=%d, cfg.MinFeeCap=%d", txn.IDHash, isLocal, txn.FeeCap, p.cfg.MinFeeCap))
+		return UnderPriced
+	}
+	gas, reason := CalcIntrinsicGas(uint64(txn.DataLen), uint64(txn.DataNonZeroLen), nil, txn.Creation, true, true)
+	if txn.Traced {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas idHash=%x gas=%d", txn.IDHash, gas))
+	}
+	if reason != Success {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas calculated failed idHash=%x reason=%s", txn.IDHash, reason))
+
+		return reason
+	}
+	if gas > txn.Gas {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas > txn.gas idHash=%x gas=%d, txn.gas=%d", txn.IDHash, gas, txn.Gas))
+
+		return IntrinsicGas
+	}
+	if !isLocal && uint64(p.all.count(txn.SenderID)) > p.cfg.AccountSlots {
+		log.Info(fmt.Sprintf("TX TRACING: validateTx marked as spamming idHash=%x slots=%d, limit=%d", txn.IDHash, p.all.count(txn.SenderID), p.cfg.AccountSlots))
+		return Spammer
+	}
+
+	// check nonce and balance
+	senderNonce, senderBalance, _ := p.senders.infoWithTx(tx, txn.SenderID)
 	if senderNonce > txn.Nonce {
 		log.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IDHash, senderNonce, txn.Nonce))
 
@@ -1832,12 +1870,32 @@ func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
 	}
 	return id, traced
 }
+
 func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint64, balance uint256.Int, err error) {
 	addr, ok := sc.senderID2Addr[id]
 	if !ok {
 		panic("must not happen")
 	}
 	encoded, err := cacheView.Get(addr)
+	if err != nil {
+		return 0, emptySender.balance, err
+	}
+	if len(encoded) == 0 {
+		return emptySender.nonce, emptySender.balance, nil
+	}
+	nonce, balance, err = types.DecodeSender(encoded)
+	if err != nil {
+		return 0, emptySender.balance, err
+	}
+	return nonce, balance, nil
+}
+
+func (sc *sendersBatch) infoWithTx(cacheView kv.Tx, id uint64) (nonce uint64, balance uint256.Int, err error) {
+	addr, ok := sc.senderID2Addr[id]
+	if !ok {
+		panic("must not happen")
+	}
+	encoded, err := cacheView.GetOne(kv.PlainState, addr)
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
