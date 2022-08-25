@@ -613,6 +613,19 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 
 	best := p.pending.best
 	j := 0
+
+	ctx := context.Background()
+	coreTx, err := p.coreDB().BeginRo(ctx)
+	if err != nil {
+		return err
+	}
+	defer coreTx.Rollback()
+
+	cacheView, err := p.cache().View(ctx, coreTx)
+	if err != nil {
+		return err
+	}
+
 	for i := 0; j < int(n) && i < len(best.ms); i++ {
 		mt := best.ms[i]
 		if mt.Tx.Gas >= p.blockGasLimit.Load() {
@@ -623,7 +636,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 		if err != nil {
 			return err
 		}
-		if len(rlpTx) == 0 {
+		if len(rlpTx) == 0 || p.validateTx(mt.Tx, isLocal, cacheView) != Success {
 			p.pending.Remove(mt)
 			continue
 		}
