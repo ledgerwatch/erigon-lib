@@ -614,14 +614,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 	best := p.pending.best
 	j := 0
 
-	ctx := context.Background()
-	coreTx, err := p.coreDB().BeginRo(ctx)
-	if err != nil {
-		return err
-	}
-	defer coreTx.Rollback()
-
-	cacheView, err := p.cache().View(ctx, coreTx)
+	cacheView, err := p.cache().View(context.Background(), tx)
 	if err != nil {
 		return err
 	}
