@@ -478,7 +478,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if isBorAndSprint && isEmptyHash && isDataEmpty && isSenderEmpty {
 		return 0, true, nil
 	}
-
 	return p, false, nil
 }
 
