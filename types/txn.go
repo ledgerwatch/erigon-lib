@@ -397,10 +397,8 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		}
 	}
 
-	if !ctx.withSender {
-		if isBorAndSprint && isEmptyHash && isDataEmpty {
-			return 0, true, nil
-		}
+	// if we receive bor sender then we continue since have to check the sender
+	if !ctx.withSender && len(sender[:]) != 20 {
 		return p, false, nil
 	}
 
@@ -475,7 +473,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	copy(sender, ctx.buf[12:32])
 	isSenderEmpty := bytes.Compare(sender, make([]byte, 20)) == 0
 
-	if isBorAndSprint && isEmptyHash && isDataEmpty && isSenderEmpty {
+	if isBorAndSprint && isEmptyHash && isDataEmpty && isSenderEmpty && legacy {
 		return 0, true, nil
 	}
 	return p, false, nil
