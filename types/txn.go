@@ -242,7 +242,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if dataLen != 0 {
 		hashBytes := payload[dataPos+1 : dataPos+dataLen]
 		emptyHash := make([]byte, 20)
-		isEmptyHash = bytes.Compare(hashBytes, emptyHash) == 0
+		isEmptyHash = bytes.Equal(hashBytes, emptyHash)
 	}
 	// Only note if To field is empty or not
 	slot.Creation = dataLen == 0
@@ -471,7 +471,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
-	isSenderEmpty := bytes.Compare(sender, make([]byte, 20)) == 0
+	isSenderEmpty := bytes.Equal(sender, make([]byte, 20))
 
 	if isEmptyHash && isDataEmpty && isSenderEmpty && legacy {
 		return 0, true, nil
