@@ -121,7 +121,7 @@ func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
-func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, validateHash func([]byte) error, isBorAndSprint bool) (p int, isBorTx bool, err error) {
+func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, validateHash func([]byte) error) (p int, isBorTx bool, err error) {
 	if len(payload) == 0 {
 		return 0, false, fmt.Errorf("%w: empty rlp", ErrParseTxn)
 	}
@@ -239,7 +239,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		return 0, false, fmt.Errorf("%w: unexpected length of to field: %d", ErrParseTxn, dataLen)
 	}
 
-	if isBorAndSprint && dataLen != 0 {
+	if dataLen != 0 {
 		hashBytes := payload[dataPos+1 : dataPos+dataLen]
 		emptyHash := make([]byte, 20)
 		isEmptyHash = bytes.Compare(hashBytes, emptyHash) == 0
@@ -473,7 +473,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	copy(sender, ctx.buf[12:32])
 	isSenderEmpty := bytes.Compare(sender, make([]byte, 20)) == 0
 
-	if isBorAndSprint && isEmptyHash && isDataEmpty && isSenderEmpty && legacy {
+	if isEmptyHash && isDataEmpty && isSenderEmpty && legacy {
 		return 0, true, nil
 	}
 	return p, false, nil
