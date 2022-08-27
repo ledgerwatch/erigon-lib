@@ -743,7 +743,7 @@ func (ac *Aggregator22Context) IsMaxCodeTxNum(addr []byte, txNum uint64) bool {
 }
 
 func (ac *Aggregator22Context) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
-	return ac.accounts.GetNoState(addr, txNum)
+	return ac.accounts.GetNoState(addr, txNum, ac.tx)
 }
 
 func (ac *Aggregator22Context) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, error) {
@@ -754,15 +754,15 @@ func (ac *Aggregator22Context) ReadAccountStorageNoState(addr []byte, loc []byte
 	}
 	copy(ac.keyBuf, addr)
 	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storage.GetNoState(ac.keyBuf, txNum)
+	return ac.storage.GetNoState(ac.keyBuf, txNum, ac.tx)
 }
 
 func (ac *Aggregator22Context) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
-	return ac.code.GetNoState(addr, txNum)
+	return ac.code.GetNoState(addr, txNum, ac.tx)
 }
 
 func (ac *Aggregator22Context) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, error) {
-	code, noState, err := ac.code.GetNoState(addr, txNum)
+	code, noState, err := ac.code.GetNoState(addr, txNum, ac.tx)
 	if err != nil {
 		return 0, false, err
 	}
@@ -815,6 +815,8 @@ type Aggregator22Context struct {
 	logTopics  *InvertedIndexContext
 	tracesFrom *InvertedIndexContext
 	tracesTo   *InvertedIndexContext
+
+	tx kv.Tx
 }
 
 func (a *Aggregator22) MakeContext() *Aggregator22Context {
@@ -829,3 +831,4 @@ func (a *Aggregator22) MakeContext() *Aggregator22Context {
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
+func (ac *Aggregator22Context) SetTx(tx kv.Tx) { ac.tx = tx }

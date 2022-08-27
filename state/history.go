@@ -597,6 +597,8 @@ func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) 
 type HistoryContext struct {
 	h                        *History
 	indexFiles, historyFiles *btree.BTreeG[*ctxItem]
+
+	tx kv.Tx
 }
 
 func (h *History) MakeContext() *HistoryContext {
@@ -623,8 +625,42 @@ func (h *History) MakeContext() *HistoryContext {
 	})
 	return &hc
 }
+func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
 
-func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
+func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txNum)
+	historyKeysCursor, err := tx.CursorDupSort(hc.h.indexKeysTable)
+	if err != nil {
+		return nil, false, fmt.Errorf("create %s history cursor: %w", hc.h.filenameBase, err)
+	}
+	defer historyKeysCursor.Close()
+	valsC, err := tx.Cursor(hc.h.historyValsTable)
+	if err != nil {
+		return nil, false, err
+	}
+	defer valsC.Close()
+	v, err := historyKeysCursor.SeekBothRange(txKey[:], key)
+	if len(v) > 0 {
+		key2, txnNumBytes := v[:len(v)-8], v[len(v)-8:]
+		_ = key2
+		_, vv, err := valsC.SeekExact(txnNumBytes)
+		if err != nil {
+			return nil, false, err
+		}
+		return vv, vv != nil, nil
+	}
+	return nil, false, nil
+}
+func (hc *HistoryContext) GetNoState(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
+	enc, ok, err := hc.getNoStateFromDB(key, txNum, tx)
+	if err != nil {
+		return nil, false, err
+	}
+	if ok {
+		return enc, true, nil
+	}
+
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
 	var foundEndTxNum uint64
