@@ -474,7 +474,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	isSenderEmpty := bytes.Equal(sender, make([]byte, 20))
 
 	if isEmptyHash && isDataEmpty && isSenderEmpty && legacy {
-		return 0, true, nil
+		return p, true, nil
 	}
 	return p, false, nil
 }
