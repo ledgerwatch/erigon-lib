@@ -652,7 +652,8 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	}
 	return nil, false, nil
 }
-func (hc *HistoryContext) GetNoState(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
+
+func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
 	enc, ok, err := hc.getNoStateFromDB(key, txNum, tx)
 	if err != nil {
 		return nil, false, err
@@ -660,7 +661,10 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64, tx kv.Tx) ([]byte
 	if ok {
 		return enc, true, nil
 	}
+	return hc.GetNoState(key, txNum)
+}
 
+func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
 	var foundEndTxNum uint64
