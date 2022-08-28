@@ -641,6 +641,9 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	}
 	defer valsC.Close()
 	v, err := historyKeysCursor.SeekBothRange(txKey[:], key)
+	if err != nil {
+		return nil, false, err
+	}
 	if len(v) > 0 {
 		key2, txnNumBytes := v[:len(v)-8], v[len(v)-8:]
 		_ = key2
