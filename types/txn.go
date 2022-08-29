@@ -102,7 +102,6 @@ type TxSlot struct {
 }
 
 var emptyHash = make([]byte, 20)
-var emptySender = make([]byte, 20)
 
 const (
 	LegacyTxType     int = 0
