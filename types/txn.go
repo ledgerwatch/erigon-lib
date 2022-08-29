@@ -476,6 +476,8 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// squeeze the hash of the public key
 	//ctx.keccak2.Sum(ctx.buf[:0])
 	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
+	//take last 20 bytes as address
+	copy(sender, ctx.buf[12:32])
 
 	return p, nil
 }
