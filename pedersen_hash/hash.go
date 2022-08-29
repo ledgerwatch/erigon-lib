@@ -12,7 +12,6 @@ import "C"
 import (
 	"encoding/hex"
 	"fmt"
-	"unsafe"
 )
 
 func reverseHexEndianRepresentation(s string) string {
@@ -44,11 +43,11 @@ func Hash(input1, input2 string) (string, error) {
 		(*C.char)(upIn2),
 		(*C.char)(upOut))
 	if res != 0 {
-		return "", fmt.Errorf("Pedersen hash encountered an error: %s\n", C.GoBytes(unsafe.Pointer(out), 1024))
+		return "", fmt.Errorf("Pedersen hash encountered an error: %s\n", C.GoBytes(out, 1024))
 	}
 
 	hashResult := "0x" + reverseHexEndianRepresentation(
-		hex.EncodeToString(C.GoBytes(unsafe.Pointer(out), 32)))
+		hex.EncodeToString(C.GoBytes(out, 32)))
 
 	return hashResult, nil
 }
