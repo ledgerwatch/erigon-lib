@@ -31,9 +31,9 @@ func Hash(input1, input2 string) (string, error) {
 	in2 := C.CBytes(input2Dec)
 	var o [1024]byte
 	out := C.CBytes(o[:])
-	upIn1 := unsafe.Pointer(in1)
-	upIn2 := unsafe.Pointer(in2)
-	upOut := unsafe.Pointer(out)
+	upIn1 := in1
+	upIn2 := in2
+	upOut := out
 	defer func() {
 		C.free(upIn1)
 		C.free(upIn2)
