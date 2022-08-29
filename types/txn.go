@@ -101,6 +101,9 @@ type TxSlot struct {
 	Rlp []byte // TxPool set it to nil after save it to db
 }
 
+var emptyHash = make([]byte, 20)
+var emptySender = make([]byte, 20)
+
 const (
 	LegacyTxType     int = 0
 	AccessListTxType int = 1
@@ -243,7 +246,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 	if dataLen != 0 {
 		hashBytes := payload[dataPos+1 : dataPos+dataLen]
-		emptyHash := make([]byte, 20)
 		isEmptyHash = bytes.Equal(hashBytes, emptyHash)
 	}
 	// Only note if To field is empty or not
@@ -399,8 +401,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		}
 	}
 
-	// if we receive bor sender then we continue since have to check the sender
-	if !ctx.withSender && len(sender[:]) != 20 {
+	if !ctx.withSender {
 		return p, nil
 	}
 
@@ -473,7 +474,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
-	isSenderEmpty := bytes.Equal(sender, make([]byte, 20))
+	isSenderEmpty := bytes.Equal(sender, emptySender)
 
 	if isEmptyHash && isDataEmpty && isSenderEmpty && legacy {
 		slot.IsBor = true
