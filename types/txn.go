@@ -264,6 +264,10 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	slot.DataLen = dataLen
 	isDataEmpty := dataLen == 0
 
+	if isEmptyHash && isDataEmpty && legacy {
+		slot.IsBor = true
+	}
+
 	// Zero and non-zero bytes are priced differently
 	slot.DataNonZeroLen = 0
 	for _, byt := range payload[dataPos : dataPos+dataLen] {
