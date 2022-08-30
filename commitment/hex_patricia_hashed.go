@@ -19,6 +19,7 @@ package commitment
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -91,6 +92,61 @@ type HexPatriciaHashed struct {
 	trace           bool
 	auxBuffer       [1 + length.Hash]byte
 	byteArrayWriter ByteArrayWriter
+}
+
+type state struct {
+	TouchMap      [128]uint16 // For each row, bitmap of cells that were either present before modification, or modified or deleted
+	AfterMap      [128]uint16 // For each row, bitmap of cells that were present after modification
+	CurrentKeyLen int
+	RootChecked   bool // Set to false if it is not known whether the root is empty, set to true if it is checked
+	RootTouched   bool
+	RootPresent   bool
+	BranchBefore  [128]bool // For each row, whether there was a branch node in the database loaded in unfold
+	CurrentKey    [128]byte // For each row indicates which column is currently selected
+	Depths        [128]int  // For each row, the depth of cells in that row
+}
+
+func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
+	s := state{
+		CurrentKeyLen: hph.currentKeyLen,
+		RootChecked:   hph.rootChecked,
+		RootTouched:   hph.rootTouched,
+		RootPresent:   hph.rootPresent,
+	}
+
+	copy(s.CurrentKey[:], hph.currentKey[:])
+	copy(s.Depths[:], hph.depths[:])
+	copy(s.BranchBefore[:], hph.branchBefore[:])
+	copy(s.TouchMap[:], hph.touchMap[:])
+	copy(s.AfterMap[:], hph.afterMap[:])
+
+	aux := bytes.NewBuffer(buf)
+	if err := gob.NewEncoder(aux).Encode(s); err != nil {
+		return nil, err
+	}
+	return aux.Bytes(), nil
+}
+
+func (hph *HexPatriciaHashed) SetState(buf []byte) error {
+	var s state
+	if err := gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&s); err != nil {
+		return err
+	}
+	if hph.activeRows != 0 {
+		return fmt.Errorf("has active rows, could not reset state")
+	}
+	hph.currentKeyLen = s.CurrentKeyLen
+	hph.rootChecked = s.RootChecked
+	hph.rootTouched = s.RootTouched
+	hph.rootPresent = s.RootPresent
+
+	copy(hph.currentKey[:], s.CurrentKey[:])
+	copy(hph.depths[:], s.Depths[:])
+	copy(hph.branchBefore[:], s.BranchBefore[:])
+	copy(hph.touchMap[:], s.TouchMap[:])
+	copy(hph.afterMap[:], s.AfterMap[:])
+
+	return nil
 }
 
 func NewHexPatriciaHashed(accountKeyLen int,

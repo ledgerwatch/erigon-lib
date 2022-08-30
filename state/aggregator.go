@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"hash"
+	"os"
 	"sync"
 	"sync/atomic"
 
@@ -70,7 +71,10 @@ func NewAggregator(
 			a.Close()
 		}
 	}()
-	var err error
+	err := os.MkdirAll(dir, 0764)
+	if err != nil {
+		return nil, err
+	}
 	if a.accounts, err = NewDomain(dir, aggregationStep, "accounts", kv.AccountKeys, kv.AccountVals, kv.AccountHistoryKeys, kv.AccountHistoryVals, kv.AccountSettings, kv.AccountIdx, 0 /* prefixLen */, false /* compressVals */); err != nil {
 		return nil, err
 	}
@@ -780,6 +784,18 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 	return nil
 }
 
+func (a *Aggregator) SeekCommitment() error {
+	ctx := a.MakeContext()
+	buf, err := ctx.ReadCommitment([]byte("rootstate"), a.rwTx)
+	if err != nil {
+		return err
+	}
+	if err := a.patriciaTrie.SetState(buf); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (a *Aggregator) ComputeCommitment(trace bool) (rootHash []byte, err error) {
 	touchedKeys, hashedKeys, updates := a.touchedKeyList()
 	if len(touchedKeys) == 0 {
@@ -834,6 +850,14 @@ func (a *Aggregator) ComputeCommitment(trace bool) (rootHash []byte, err error) 
 			return nil, err
 		}
 	}
+	state, err := a.patriciaTrie.EncodeCurrentState(nil)
+	if err != nil {
+		return nil, err
+	}
+	if err = a.UpdateCommitmentData([]byte("roothash"), state); err != nil {
+		return nil, err
+	}
+
 	return rootHash, nil
 }
 
@@ -953,9 +977,10 @@ func (a *Aggregator) ReadyToFinishTx() bool {
 func (a *Aggregator) FinishTx() error {
 	atomic.AddUint64(&a.stats.TxCount, 1)
 
-	if (a.txNum+1)%a.aggregationStep != 0 {
+	if !a.ReadyToFinishTx() {
 		return nil
 	}
+
 	closeAll := true
 	step := a.txNum / a.aggregationStep
 	if step == 0 {
