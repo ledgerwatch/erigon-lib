@@ -125,7 +125,7 @@ func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
-func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, validateHash func([]byte) error) (p int, err error) {
+func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, validateHash func([]byte) error, checkIfBor bool) (p int, err error) {
 	if len(payload) == 0 {
 		return 0, fmt.Errorf("%w: empty rlp", ErrParseTxn)
 	}
@@ -263,7 +263,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	slot.DataLen = dataLen
 	isDataEmpty := dataLen == 0
 
-	if isEmptyHash && isDataEmpty && legacy {
+	if checkIfBor && isEmptyHash && isDataEmpty && legacy {
 		slot.IsBor = true
 	}
 
