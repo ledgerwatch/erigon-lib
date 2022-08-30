@@ -282,15 +282,10 @@ func (a *Aggregator22) integrateFiles(sf Agg22StaticFiles, txNumFrom, txNumTo ui
 }
 
 func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad etl.LoadFunc) error {
-	step := a.txNum / a.aggregationStep
-	if step == 0 {
-		return nil
-	}
-
 	stateChanges := etl.NewCollector(a.logPrefix, "", etl.NewOldestEntryBuffer(etl.BufferOptimalSize))
 	defer stateChanges.Close()
 
-	if err := a.accounts.pruneF(step, txUnwindTo, math2.MaxUint64, func(txNum uint64, k, v []byte) error {
+	if err := a.accounts.pruneF(txUnwindTo, math2.MaxUint64, func(txNum uint64, k, v []byte) error {
 		if err := stateChanges.Collect(k, v); err != nil {
 			return err
 		}
@@ -298,7 +293,7 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	}); err != nil {
 		return err
 	}
-	if err := a.storage.pruneF(step, txUnwindTo, math2.MaxUint64, func(txNu uint64, k, v []byte) error {
+	if err := a.storage.pruneF(txUnwindTo, math2.MaxUint64, func(txNu uint64, k, v []byte) error {
 		if err := stateChanges.Collect(k, v); err != nil {
 			return err
 		}
@@ -747,8 +742,23 @@ func (ac *Aggregator22Context) IsMaxCodeTxNum(addr []byte, txNum uint64) bool {
 	return ac.code.IsMaxTxNum(addr, txNum)
 }
 
+func (ac *Aggregator22Context) ReadAccountDataNoStateWithRecent(addr []byte, txNum uint64) ([]byte, bool, error) {
+	return ac.accounts.GetNoStateWithRecent(addr, txNum, ac.tx)
+}
+
 func (ac *Aggregator22Context) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
 	return ac.accounts.GetNoState(addr, txNum)
+}
+
+func (ac *Aggregator22Context) ReadAccountStorageNoStateWithRecent(addr []byte, loc []byte, txNum uint64) ([]byte, bool, error) {
+	if cap(ac.keyBuf) < len(addr)+len(loc) {
+		ac.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(ac.keyBuf) != len(addr)+len(loc) {
+		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(ac.keyBuf, addr)
+	copy(ac.keyBuf[len(addr):], loc)
+	return ac.storage.GetNoStateWithRecent(ac.keyBuf, txNum, ac.tx)
 }
 
 func (ac *Aggregator22Context) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, error) {
@@ -762,10 +772,20 @@ func (ac *Aggregator22Context) ReadAccountStorageNoState(addr []byte, loc []byte
 	return ac.storage.GetNoState(ac.keyBuf, txNum)
 }
 
+func (ac *Aggregator22Context) ReadAccountCodeNoStateWithRecent(addr []byte, txNum uint64) ([]byte, bool, error) {
+	return ac.code.GetNoStateWithRecent(addr, txNum, ac.tx)
+}
 func (ac *Aggregator22Context) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
 	return ac.code.GetNoState(addr, txNum)
 }
 
+func (ac *Aggregator22Context) ReadAccountCodeSizeNoStateWithRecent(addr []byte, txNum uint64) (int, bool, error) {
+	code, noState, err := ac.code.GetNoStateWithRecent(addr, txNum, ac.tx)
+	if err != nil {
+		return 0, false, err
+	}
+	return len(code), noState, nil
+}
 func (ac *Aggregator22Context) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, error) {
 	code, noState, err := ac.code.GetNoState(addr, txNum)
 	if err != nil {
@@ -820,6 +840,8 @@ type Aggregator22Context struct {
 	logTopics  *InvertedIndexContext
 	tracesFrom *InvertedIndexContext
 	tracesTo   *InvertedIndexContext
+
+	tx kv.Tx
 }
 
 func (a *Aggregator22) MakeContext() *Aggregator22Context {
@@ -834,3 +856,4 @@ func (a *Aggregator22) MakeContext() *Aggregator22Context {
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
+func (ac *Aggregator22Context) SetTx(tx kv.Tx) { ac.tx = tx }

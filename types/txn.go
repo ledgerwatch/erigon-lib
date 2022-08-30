@@ -51,6 +51,7 @@ type TxParseContext struct {
 	Sighash          [32]byte
 	Sig              [65]byte
 	withSender       bool
+	withBor          bool
 	chainIDRequired  bool
 	IsProtected      bool
 	validateRlp      func([]byte) error
@@ -64,6 +65,7 @@ func NewTxParseContext(chainID uint256.Int) *TxParseContext {
 	}
 	ctx := &TxParseContext{
 		withSender: true,
+		withBor:    false,
 		Keccak1:    sha3.NewLegacyKeccak256(),
 		Keccak2:    sha3.NewLegacyKeccak256(),
 	}
@@ -96,8 +98,12 @@ type TxSlot struct {
 	//worstIdx    int         // Index of the transaction in the worst priority queue (of whatever pook it currently belongs to)
 	//local       bool        // Whether transaction has been injected locally (and hence needs priority when mining or proposing a block)
 
+	IsBor bool // Wether or not the current parsed transaction is a bor transaction or not
+
 	Rlp []byte // TxPool set it to nil after save it to db
 }
+
+var emptyHash = make([]byte, 20)
 
 const (
 	LegacyTxType     int = 0
@@ -114,6 +120,7 @@ var ErrRlpTooBig = errors.New("txn rlp too big")
 
 func (ctx *TxParseContext) ValidateRLP(f func(txnRlp []byte) error) { ctx.validateRlp = f }
 func (ctx *TxParseContext) WithSender(v bool)                       { ctx.withSender = v }
+func (ctx *TxParseContext) WithBor(v bool)                          { ctx.withBor = v }
 func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 	ctx.chainIDRequired = true
 	return ctx
@@ -231,11 +238,17 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	}
 	// Next follows the destrination address (if present)
 	dataPos, dataLen, err = rlp.String(payload, p)
+	var isEmptyHash bool
 	if err != nil {
 		return 0, fmt.Errorf("%w: to len: %s", ErrParseTxn, err)
 	}
 	if dataLen != 0 && dataLen != 20 {
 		return 0, fmt.Errorf("%w: unexpected length of to field: %d", ErrParseTxn, dataLen)
+	}
+
+	if dataLen != 0 {
+		hashBytes := payload[dataPos+1 : dataPos+dataLen]
+		isEmptyHash = bytes.Equal(hashBytes, emptyHash)
 	}
 	// Only note if To field is empty or not
 	slot.Creation = dataLen == 0
@@ -251,6 +264,11 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		return 0, fmt.Errorf("%w: data len: %s", ErrParseTxn, err)
 	}
 	slot.DataLen = dataLen
+	isDataEmpty := dataLen == 0
+
+	if ctx.withBor && isEmptyHash && isDataEmpty && legacy {
+		slot.IsBor = true
+	}
 
 	// Zero and non-zero bytes are priced differently
 	slot.DataNonZeroLen = 0
@@ -462,6 +480,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
+
 	return p, nil
 }
 

@@ -121,6 +121,7 @@ func (opts MdbxOpts) Set(opt MdbxOpts) MdbxOpts {
 func (opts MdbxOpts) InMem() MdbxOpts {
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.WriteMap
+	opts.mapSize = 64 * datasize.MB
 	return opts
 }
 
@@ -159,7 +160,7 @@ func (opts MdbxOpts) WriteMap() MdbxOpts {
 	return opts
 }
 
-func (opts MdbxOpts) WithTablessCfg(f TableCfgFunc) MdbxOpts {
+func (opts MdbxOpts) WithTableCfg(f TableCfgFunc) MdbxOpts {
 	opts.bucketsCfg = f
 	return opts
 }
@@ -188,9 +189,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.mapSize == 0 {
-		if opts.inMem {
-			opts.mapSize = 64 * datasize.MB
-		} else {
+		if !opts.inMem {
 			opts.mapSize = 3 * datasize.TB
 		}
 	}
