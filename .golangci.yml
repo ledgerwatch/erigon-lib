@@ -5,12 +5,11 @@ linters:
   disable-all: true
   enable:
     - errorlint
-#    - unconvert
+    - unconvert
     - predeclared
 #    - wastedassign # go1.18
 #    - thelper
     - gofmt
-    - deadcode
     - errcheck
     - gosimple
     - govet
@@ -18,12 +17,11 @@ linters:
     - staticcheck
 #    - structcheck # go1.18
     - unused
-    - varcheck
 #    - gocritic
     - bodyclose # go1.18
     - gosec
 #    - forcetypeassert
-#    - prealloc
+    - prealloc
 #    - contextcheck
 #    - goerr113
 #    - revive

@@ -502,32 +502,33 @@ func (h *History) prune(step uint64, txFrom, txTo uint64) error {
 }
 
 func (h *History) iterateInDB(step uint64, txFrom, txTo uint64, f func(txNum uint64, k, v []byte) error) error {
-	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
+	idxKeys, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
 	}
-	defer historyKeysCursor.Close()
+	defer idxKeys.Close()
+	idx, err := h.tx.RwCursorDupSort(h.indexTable)
+	if err != nil {
+		return err
+	}
+	defer idx.Close()
+	historyVals, err := h.tx.RwCursor(h.historyValsTable)
+	if err != nil {
+		return err
+	}
+	defer historyVals.Close()
+
+	var k, v []byte
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	var k, v []byte
-	idxC, err := h.tx.RwCursorDupSort(h.indexTable)
-	if err != nil {
-		return err
-	}
-	defer idxC.Close()
-	valsC, err := h.tx.RwCursor(h.historyValsTable)
-	if err != nil {
-		return err
-	}
-	defer valsC.Close()
-	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+	for k, v, err = idxKeys.Seek(txKey[:]); err == nil && k != nil; k, v, err = idxKeys.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
 		key, txnNumBytes := v[:len(v)-8], v[len(v)-8:]
 		{
-			_, vv, err := valsC.SeekExact(txnNumBytes)
+			_, vv, err := historyVals.SeekExact(txnNumBytes)
 			if err != nil {
 				return err
 			}
@@ -597,6 +598,8 @@ func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) 
 type HistoryContext struct {
 	h                        *History
 	indexFiles, historyFiles *btree.BTreeG[*ctxItem]
+
+	tx kv.Tx
 }
 
 func (h *History) MakeContext() *HistoryContext {
@@ -622,6 +625,47 @@ func (h *History) MakeContext() *HistoryContext {
 		return true
 	})
 	return &hc
+}
+func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
+
+func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txNum)
+	historyKeysCursor, err := tx.CursorDupSort(hc.h.indexKeysTable)
+	if err != nil {
+		return nil, false, fmt.Errorf("create %s history cursor: %w", hc.h.filenameBase, err)
+	}
+	defer historyKeysCursor.Close()
+	valsC, err := tx.Cursor(hc.h.historyValsTable)
+	if err != nil {
+		return nil, false, err
+	}
+	defer valsC.Close()
+	v, err := historyKeysCursor.SeekBothRange(txKey[:], key)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(v) > 0 {
+		key2, txnNumBytes := v[:len(v)-8], v[len(v)-8:]
+		_ = key2
+		_, vv, err := valsC.SeekExact(txnNumBytes)
+		if err != nil {
+			return nil, false, err
+		}
+		return vv, vv != nil, nil
+	}
+	return nil, false, nil
+}
+
+func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
+	enc, ok, err := hc.getNoStateFromDB(key, txNum, tx)
+	if err != nil {
+		return nil, false, err
+	}
+	if ok {
+		return enc, true, nil
+	}
+	return hc.GetNoState(key, txNum)
 }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
