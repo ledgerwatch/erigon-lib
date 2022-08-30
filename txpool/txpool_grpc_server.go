@@ -196,7 +196,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 				return types.ErrAlreadyKnown
 			}
 			return nil
-		}); err != nil {
+		}, false); err != nil {
 			if errors.Is(err, types.ErrAlreadyKnown) { // Noop, but need to handle to not count these
 				reply.Errors[i] = AlreadyKnown.String()
 				reply.Imported[i] = txpool_proto.ImportResult_ALREADY_EXISTS
