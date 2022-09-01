@@ -35,7 +35,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-type TxParsseConfig struct {
+type TxParseConfig struct {
 	ChainID uint256.Int
 }
 
@@ -57,7 +57,7 @@ type TxParseContext struct {
 	IsProtected      bool
 	validateRlp      func([]byte) error
 
-	cfg TxParsseConfig
+	cfg TxParseConfig
 }
 
 func NewTxParseContext(chainID uint256.Int) *TxParseContext {
