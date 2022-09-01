@@ -52,6 +52,7 @@ type TxParseContext struct {
 	Sig              [65]byte
 	withSender       bool
 	withBor          bool
+	allowPreEip2s    bool // Allow s > secp256k1n/2; see EIP-2
 	chainIDRequired  bool
 	IsProtected      bool
 	validateRlp      func([]byte) error
@@ -79,8 +80,6 @@ func NewTxParseContext(chainID uint256.Int) *TxParseContext {
 // TxSlot contains information extracted from an Ethereum transaction, which is enough to manage it inside the transaction.
 // Also, it contains some auxillary information, like ephemeral fields, and indices within priority queues
 type TxSlot struct {
-	//txId        uint64      // Transaction id (distinct from transaction hash), used as a compact reference to a transaction accross data structures
-	//senderId    uint64      // Sender id (distinct from sender address), used as a compact referecne to to a sender accross data structures
 	Nonce          uint64      // Nonce of the transaction
 	Tip            uint256.Int // Maximum tip that transaction is giving to miner/block proposer
 	FeeCap         uint64      // Maximum fee that transaction burns and gives to the miner/block proposer
@@ -88,15 +87,12 @@ type TxSlot struct {
 	Value          uint256.Int // Value transferred by the transaction
 	IDHash         [32]byte    // Transaction hash for the purposes of using it as a transaction Id
 	SenderID       uint64      // SenderID - require external mapping to it's address
-	Traced         bool        // Whether transaction needs to be traced throughout transcation pool code and generate debug printing
-	Creation       bool        // Set to true if "To" field of the transation is not set
+	Traced         bool        // Whether transaction needs to be traced throughout transaction pool code and generate debug printing
+	Creation       bool        // Set to true if "To" field of the transaction is not set
 	DataLen        int         // Length of transaction's data (for calculation of intrinsic gas)
 	DataNonZeroLen int
 	AlAddrCount    int // Number of addresses in the access list
 	AlStorCount    int // Number of storage keys in the access list
-	//bestIdx     int         // Index of the transaction in the best priority queue (of whatever pool it currently belongs to)
-	//worstIdx    int         // Index of the transaction in the worst priority queue (of whatever pook it currently belongs to)
-	//local       bool        // Whether transaction has been injected locally (and hence needs priority when mining or proposing a block)
 
 	IsBor bool // Wether or not the current parsed transaction is a bor transaction or not
 
@@ -121,6 +117,7 @@ var ErrRlpTooBig = errors.New("txn rlp too big")
 func (ctx *TxParseContext) ValidateRLP(f func(txnRlp []byte) error) { ctx.validateRlp = f }
 func (ctx *TxParseContext) WithSender(v bool)                       { ctx.withSender = v }
 func (ctx *TxParseContext) WithBor(v bool)                          { ctx.withBor = v }
+func (ctx *TxParseContext) WithAllowPreEip2s(v bool)                { ctx.allowPreEip2s = v }
 func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 	ctx.chainIDRequired = true
 	return ctx
@@ -138,7 +135,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// Compute transaction hash
 	ctx.Keccak1.Reset()
 	ctx.Keccak2.Reset()
-	// Legacy transations have list Prefix, whereas EIP-2718 transactions have string Prefix
+	// Legacy transactions have list Prefix, whereas EIP-2718 transactions have string Prefix
 	// therefore we assign the first returned value of Prefix function (list) to legacy variable
 	dataPos, dataLen, legacy, err := rlp.Prefix(payload, pos)
 	if err != nil {
@@ -236,7 +233,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if err != nil {
 		return 0, fmt.Errorf("%w: gas: %s", ErrParseTxn, err)
 	}
-	// Next follows the destrination address (if present)
+	// Next follows the destination address (if present)
 	dataPos, dataLen, err = rlp.String(payload, p)
 	var isEmptyHash bool
 	if err != nil {
