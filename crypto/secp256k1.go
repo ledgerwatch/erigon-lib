@@ -27,6 +27,7 @@ var (
 	secp256k1halfN = new(uint256.Int).Rsh(secp256k1N, 1)
 )
 
+// See Appendix F "Signing Transactions" of the Yellow Paper
 func TransactionSignatureIsValid(v byte, r, s *uint256.Int, allowPreEip2s bool, bor bool) bool {
 	if !bor { // Polygon state sync transactions have zero r & s
 		if r.IsZero() || s.IsZero() {
