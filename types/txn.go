@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2021 The Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -27,12 +27,14 @@ import (
 	"sort"
 
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/common/u256"
-	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
-	"github.com/ledgerwatch/erigon-lib/rlp"
 	"github.com/ledgerwatch/secp256k1"
 	"golang.org/x/crypto/sha3"
+
+	"github.com/ledgerwatch/erigon-lib/common/length"
+	"github.com/ledgerwatch/erigon-lib/common/u256"
+	"github.com/ledgerwatch/erigon-lib/crypto"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
+	"github.com/ledgerwatch/erigon-lib/rlp"
 )
 
 type TxParseConfig struct {
@@ -406,6 +408,10 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 	if !ctx.withSender {
 		return p, nil
+	}
+
+	if !crypto.TransactionSignatureIsValid(vByte, &ctx.R, &ctx.S, ctx.allowPreEip2s, ctx.withBor) {
+		return 0, fmt.Errorf("%w: invalid v, r, s: %d, %s, %s", ErrParseTxn, vByte, &ctx.R, &ctx.S)
 	}
 
 	// Computing sigHash (hash used to recover sender from the signature)
