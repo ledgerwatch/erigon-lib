@@ -302,6 +302,11 @@ func checkHistory(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 			} else {
 				require.Nil(t, val, label)
 			}
+			if txNum == txs {
+				val, err := dc.Get(k[:], nil, roTx)
+				require.NoError(t, err)
+				require.EqualValues(t, v[:], val)
+			}
 		}
 	}
 }

@@ -18,6 +18,7 @@ package state
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"hash"
 	"os"
@@ -38,6 +39,8 @@ import (
 // Reconstruction of the aggregator in another package, `aggregator`
 
 type Aggregator struct {
+	mergeNotify     chan struct{}
+	commitFn        func() error
 	aggregationStep uint64
 	accounts        *Domain
 	storage         *Domain
@@ -61,6 +64,7 @@ func NewAggregator(
 ) (*Aggregator, error) {
 	a := &Aggregator{
 		aggregationStep: aggregationStep,
+		mergeNotify:     make(chan struct{}, 1),
 		patriciaTrie:    commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
 		commTree:        btree.NewG[*CommitmentItem](32, commitmentItemLess),
 		keccak:          sha3.NewLegacyKeccak256(),
@@ -698,6 +702,9 @@ func (ac *AggregatorContext) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, e
 func (ac *AggregatorContext) ReadCommitment(addr []byte, roTx kv.Tx) ([]byte, error) {
 	return ac.commitment.Get(addr, nil, roTx)
 }
+func (ac *AggregatorContext) ReadCommitmentBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
+	return ac.commitment.GetBeforeTxNum(addr, txNum, roTx)
+}
 
 func (ac *AggregatorContext) ReadAccountCodeBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
 	return ac.code.GetBeforeTxNum(addr, txNum, roTx)
@@ -786,9 +793,12 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 
 func (a *Aggregator) SeekCommitment() error {
 	ctx := a.MakeContext()
-	buf, err := ctx.ReadCommitment([]byte("rootstate"), a.rwTx)
+	buf, err := ctx.ReadCommitment(makeCommitmentKey(a.txNum-1), a.rwTx)
 	if err != nil {
 		return err
+	}
+	if len(buf) == 0 {
+		return fmt.Errorf("root state was not found")
 	}
 	if err := a.patriciaTrie.SetState(buf); err != nil {
 		return err
@@ -796,11 +806,28 @@ func (a *Aggregator) SeekCommitment() error {
 	return nil
 }
 
-func (a *Aggregator) ComputeCommitment(trace bool) (rootHash []byte, err error) {
+func makeCommitmentKey(txNum uint64) []byte {
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], txNum)
+	return append([]byte("roothash"), b[:]...)
+}
+
+// Evaluates commitment for processed state. Commit=true - store trie state after evaluation
+func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err error) {
 	touchedKeys, hashedKeys, updates := a.touchedKeyList()
 	if len(touchedKeys) == 0 {
-		hash, err := a.patriciaTrie.RootHash()
-		return hash, err
+		rootHash, err = a.patriciaTrie.RootHash()
+		if commit {
+			fmt.Printf("put roothash %x\n", rootHash)
+			state, err := a.patriciaTrie.EncodeCurrentState(nil, rootHash)
+			if err != nil {
+				return nil, err
+			}
+			if err = a.UpdateCommitmentData(makeCommitmentKey(a.txNum), state); err != nil {
+				return nil, err
+			}
+		}
+		return rootHash, err
 	}
 
 	ctx := a.MakeContext()
@@ -850,12 +877,15 @@ func (a *Aggregator) ComputeCommitment(trace bool) (rootHash []byte, err error) 
 			return nil, err
 		}
 	}
-	state, err := a.patriciaTrie.EncodeCurrentState(nil)
-	if err != nil {
-		return nil, err
-	}
-	if err = a.UpdateCommitmentData([]byte("roothash"), state); err != nil {
-		return nil, err
+	if commit {
+		fmt.Printf("put roothash %x\n", rootHash)
+		state, err := a.patriciaTrie.EncodeCurrentState(nil, rootHash)
+		if err != nil {
+			return nil, err
+		}
+		if err = a.UpdateCommitmentData(makeCommitmentKey(a.txNum), state); err != nil {
+			return nil, err
+		}
 	}
 
 	return rootHash, nil
@@ -974,19 +1004,30 @@ func (a *Aggregator) ReadyToFinishTx() bool {
 	return (a.txNum+1)%a.aggregationStep == 0
 }
 
+func (a *Aggregator) SetCommitFn(fn func() error) {
+	a.commitFn = fn
+}
+
+func (a *Aggregator) MergeNotifyChannel() chan struct{} {
+	return a.mergeNotify
+}
+
 func (a *Aggregator) FinishTx() error {
 	atomic.AddUint64(&a.stats.TxCount, 1)
 
 	if !a.ReadyToFinishTx() {
 		return nil
 	}
-
+	_, err := a.ComputeCommitment(true, false)
+	if err != nil {
+		return err
+	}
 	closeAll := true
 	step := a.txNum / a.aggregationStep
 	if step == 0 {
 		return nil
 	}
-	step-- // Leave one step worth in the DB
+	// step-- // Leave one step worth in the DB
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
 	if err != nil {
 		return err
@@ -996,6 +1037,7 @@ func (a *Aggregator) FinishTx() error {
 			collation.Close()
 		}
 	}()
+
 	sf, err := a.buildFiles(step, collation)
 	if err != nil {
 		return err
@@ -1006,9 +1048,9 @@ func (a *Aggregator) FinishTx() error {
 		}
 	}()
 	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-	if err = a.prune(step, step*a.aggregationStep, (step+1)*a.aggregationStep); err != nil {
-		return err
-	}
+	// if err = a.prune(step, step*a.aggregationStep, (step+1)*a.aggregationStep); err != nil {
+	// 	return err
+	// }
 	maxEndTxNum := a.EndTxNumMinimax()
 	maxSpan := uint64(32) * a.aggregationStep
 	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
@@ -1033,6 +1075,18 @@ func (a *Aggregator) FinishTx() error {
 		}
 	}
 	closeAll = false
+
+	// select {
+	// case a.mergeNotify <- struct{}{}:
+	// default:
+	// }
+
+	if a.commitFn != nil {
+		if err := a.commitFn(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

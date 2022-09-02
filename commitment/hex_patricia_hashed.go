@@ -101,12 +101,13 @@ type state struct {
 	RootChecked   bool // Set to false if it is not known whether the root is empty, set to true if it is checked
 	RootTouched   bool
 	RootPresent   bool
+	RootHash      [32]byte
 	BranchBefore  [128]bool // For each row, whether there was a branch node in the database loaded in unfold
 	CurrentKey    [128]byte // For each row indicates which column is currently selected
 	Depths        [128]int  // For each row, the depth of cells in that row
 }
 
-func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
+func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte, rootHash []byte) ([]byte, error) {
 	s := state{
 		CurrentKeyLen: hph.currentKeyLen,
 		RootChecked:   hph.rootChecked,
@@ -114,6 +115,7 @@ func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 		RootPresent:   hph.rootPresent,
 	}
 
+	copy(s.RootHash[:], rootHash[:])
 	copy(s.CurrentKey[:], hph.currentKey[:])
 	copy(s.Depths[:], hph.depths[:])
 	copy(s.BranchBefore[:], hph.branchBefore[:])
@@ -139,6 +141,8 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 	hph.rootChecked = s.RootChecked
 	hph.rootTouched = s.RootTouched
 	hph.rootPresent = s.RootPresent
+	copy(hph.root.h[:], s.RootHash[:])
+	hph.root.hl = length.Hash
 
 	copy(hph.currentKey[:], s.CurrentKey[:])
 	copy(hph.depths[:], s.Depths[:])

@@ -785,31 +785,17 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 
 	for k, steps := range pruneKeysToStep {
 		if len(steps) == 1 {
-			if steps[0] != step {
-				delete(pruneKeysToStep, k)
-			}
-			continue
+			delete(pruneKeysToStep, k)
 		}
-
-		var maxStep uint64
-		for _, s := range steps {
-			if s > maxStep {
-				maxStep = s
-			}
-		}
-		steps = steps[:1]
-		steps[0] = maxStep
-
-		pruneKeysToStep[k] = steps
 	}
 
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		s := ^binary.BigEndian.Uint64(v)
-		list, toDelete := pruneKeysToStep[string(k)]
+		_, toDelete := pruneKeysToStep[string(k)]
 		if !toDelete {
 			continue
 		}
-		if list[0] != s {
+		if step == s {
 			if err = keysCursor.DeleteCurrent(); err != nil {
 				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
 			}
@@ -826,11 +812,11 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	defer valsCursor.Close()
 	for k, v, err = valsCursor.First(); err == nil && k != nil; k, v, err = valsCursor.Next() {
 		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
-		list, toDelete := pruneKeysToStep[string(k)]
+		_, toDelete := pruneKeysToStep[string(k)]
 		if !toDelete {
 			continue
 		}
-		if list[0] != s {
+		if step == s {
 			if err = valsCursor.DeleteCurrent(); err != nil {
 				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
 			}

@@ -711,9 +711,6 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 				ci1 := cp[0]
 
-				//if bytes.Equal(laddrb, ci1.key) {
-				//	fmt.Printf("+-%s\n", decodeStorageAccount(ci1.val))
-				//}
 				//if h.valueMergeFn != nil && mergeOnce {
 				//	valBuf, err = h.valueMergeFn(ci1.val, valBuf)
 				//	if err != nil {
