@@ -305,8 +305,12 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 	ef.count = binary.BigEndian.Uint64(r[:8])
 	ef.u = binary.BigEndian.Uint64(r[8:16])
 	ef.maxOffset = ef.u - 1
-	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
-	ef.data = p[:]
+
+	ef.data = make([]uint64, len(r[16:])/8)
+	for i, fi := 16, 0; i < len(r[16:]); i, fi = i+8, fi+1 {
+		ef.data[fi] = binary.LittleEndian.Uint64(r[i : i+8])
+	}
+
 	ef.deriveFields()
 	return ef, 16 + 8*len(ef.data)
 }
@@ -626,8 +630,11 @@ func (ef *DoubleEliasFano) Read(r []byte) int {
 	ef.uPosition = binary.BigEndian.Uint64(r[16:24])
 	ef.cumKeysMinDelta = binary.BigEndian.Uint64(r[24:32])
 	ef.posMinDelta = binary.BigEndian.Uint64(r[32:40])
-	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[40]))
-	ef.data = p[:]
+
+	ef.data = make([]uint64, len(r[40:])/8)
+	for i, fi := 16, 0; i < len(r[40:]); i, fi = i+8, fi+1 {
+		ef.data[fi] = binary.LittleEndian.Uint64(r[i : i+8])
+	}
 	ef.deriveFields()
 	return 40 + 8*len(ef.data)
 }
