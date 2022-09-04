@@ -111,10 +111,8 @@ github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.7.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PKk=
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
-github.com/torquem-ch/mdbx-go v0.25.3-0.20220831025043-6870a276ab8f h1:Sgl+MBSpbUs49w6Ya8p0S3Z3frocKZAg1iPSEf3nJBU=
-github.com/torquem-ch/mdbx-go v0.25.3-0.20220831025043-6870a276ab8f/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
-github.com/torquem-ch/mdbx-go v0.25.3-0.20220902114947-8189e1449e2c h1:V2dJyyPif637sBqHMKMnRWonORBPyjZUPlIv2bMFmOo=
-github.com/torquem-ch/mdbx-go v0.25.3-0.20220902114947-8189e1449e2c/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
+github.com/torquem-ch/mdbx-go v0.25.3-0.20220904064346-fc5dd9ad4bf0 h1:anl0l4izfFJjNFKNmQXv0t9R+srEqD4n6QLu7T/DdIs=
+github.com/torquem-ch/mdbx-go v0.25.3-0.20220904064346-fc5dd9ad4bf0/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
 github.com/valyala/fastrand v1.1.0 h1:f+5HkLW4rsgzdNoleUOB69hyT9IlD2ZQh9GyDMfb5G8=
 github.com/valyala/fastrand v1.1.0/go.mod h1:HWqCzkrkg6QXT8V2EXWvXCoow7vLwOFN002oeRzjapQ=
 github.com/valyala/histogram v1.2.0 h1:wyYGAZZt3CpwUiIb9AU/Zbllg1llXyrtApRS815OLoQ=
