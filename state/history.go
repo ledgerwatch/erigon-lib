@@ -195,7 +195,7 @@ type HistoryCollation struct {
 
 func (c HistoryCollation) Close() {
 	if c.historyComp != nil {
-		c.Close()
+		c.historyComp.Close()
 	}
 }
 
@@ -626,7 +626,10 @@ func (h *History) MakeContext() *HistoryContext {
 	})
 	return &hc
 }
-func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
+func (hc *HistoryContext) SetTx(tx kv.Tx) *HistoryContext {
+	hc.tx = tx
+	return hc
+}
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
 	var txKey [8]byte
@@ -721,4 +724,234 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		return v, true, nil
 	}
 	return nil, false, nil
+}
+
+func (h *History) IterateWithRecent(txNumFrom, txNumTo uint64, tx kv.Tx, f func(txNum uint64, k, v []byte) error) {
+	err := h.iterateNoState(txNumFrom, txNumTo, f)
+	if err != nil {
+		panic(err)
+	}
+	if err := h.iterateInDB(txNumFrom, txNumTo, tx, f); err != nil {
+		panic(err)
+	}
+}
+
+func (h *History) iterateInDB(txFrom, txTo uint64, tx kv.Tx, f func(txNum uint64, k []byte, v []byte) error) error {
+	idxKeys, err := tx.CursorDupSort(h.indexKeysTable)
+	if err != nil {
+		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
+	}
+	defer idxKeys.Close()
+	idx, err := tx.CursorDupSort(h.indexTable)
+	if err != nil {
+		return err
+	}
+	defer idx.Close()
+	historyVals, err := tx.Cursor(h.historyValsTable)
+	if err != nil {
+		return err
+	}
+	defer historyVals.Close()
+
+	var k, v []byte
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	for k, v, err = idxKeys.Seek(txKey[:]); err == nil && k != nil; k, v, err = idxKeys.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		key, txnNumBytes := v[:len(v)-8], v[len(v)-8:]
+		{
+			_, vv, err := historyVals.SeekExact(txnNumBytes)
+			if err != nil {
+				return err
+			}
+			if err := f(txNum, key, vv); err != nil {
+				return err
+			}
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
+	}
+	return nil
+}
+
+func (h *History) iterateNoState(txnFrom, txnTo uint64, f func(txNum uint64, k []byte, v []byte) error) (err error) {
+	h.files.Ascend(func(item *filesItem) bool {
+		//fmt.Printf("from file!!: %d-%d, %d-%d\n", item.endTxNum, item.startTxNum, txnFrom, txnTo)
+		if item.endTxNum < txnFrom {
+			return true
+		}
+		if item.startTxNum > txnTo {
+			return false
+		}
+		g := item.decompressor.MakeGetter()
+		for g.HasNext() {
+			v, offset := g.NextUncompressed()
+			k, offset2 := g.NextUncompressed()
+			fmt.Printf("from file!!: %x, %x\n", v, k)
+			if err = f(0, k, v); err != nil {
+				return false
+			}
+			_, _ = offset2, offset
+		}
+		return true
+	})
+	return
+	/*
+		h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
+			if item.endTxNum < txnFrom {
+				return true
+			}
+			if item.startTxNum > txnTo {
+				return false
+			}
+
+			var hfi = &filesItem{startTxNum: txnFrom * h.aggregationStep, endTxNum: txnTo * h.aggregationStep}
+			hItem, _ := h.files.Get(hfi)
+			hg := hItem.decompressor.MakeGetter()
+			hIndex := recsplit.NewIndexReader(hItem.index)
+
+			g := item.decompressor.MakeGetter()
+			for g.HasNext() {
+				k, _ := g.NextUncompressed()
+
+				offset := hIndex.Lookup(k)
+				//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
+				g := historyItem.getter
+				g.Reset(offset)
+				if h.compressVals {
+					v, _ := g.Next(nil)
+					return v, true, nil
+				}
+				v, _ := g.NextUncompressed()
+				return v, true, nil
+
+			}
+
+			return true
+		})
+
+		h.files.Ascend(func(item *filesItem) bool {
+			var foundTxNum uint64
+			var foundEndTxNum uint64
+			var foundStartTxNum uint64
+			var found bool
+
+			if item.endTxNum < txnFrom {
+				return true
+			}
+			if item.startTxNum > txnTo {
+				return false
+			}
+			g := item.decompressor.MakeGetter()
+			for g.HasNext() {
+				key, _ := g.NextUncompressed()
+
+				var historyItem *ctxItem
+				var ok bool
+				var search ctxItem
+				search.startTxNum = foundStartTxNum
+				search.endTxNum = foundEndTxNum
+
+				if historyItem, ok = h.files.Get(&search); !ok {
+					return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
+				}
+
+				//if h.compressVals {
+				//	v, _ := g.Next(nil)
+				//	fmt.Printf("from file!!: %x, %x\n", key, v)
+				//	if err := f(0, key, v); err != nil {
+				//		panic(err)
+				//	}
+				//	continue
+				//}
+				//v, _ := g.NextUncompressed()
+				//fmt.Printf("from file!!: %x, %x\n", key, v)
+				//if err := f(0, key, v); err != nil {
+				//	panic(err)
+				//}
+			}
+
+			if found {
+				var historyItem *ctxItem
+				var ok bool
+				var search ctxItem
+				search.startTxNum = foundStartTxNum
+				search.endTxNum = foundEndTxNum
+				if historyItem, ok = hc.historyFiles.Get(&search); !ok {
+					return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
+				}
+				offset := historyItem.reader.Lookup(key)
+				//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
+				g := historyItem.getter
+				g.Reset(offset)
+				if h.compressVals {
+					v, _ := g.Next(nil)
+					return v, true, nil
+				}
+				v, _ := g.NextUncompressed()
+				return v, true, nil
+			}
+			return true
+		})
+		return
+	*/
+
+	/*
+		//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
+		var foundTxNum uint64
+		var foundEndTxNum uint64
+		var foundStartTxNum uint64
+		var found bool
+		//hc.indexFiles.Ascend(func(item *ctxItem) bool {
+		hc.indexFiles.AscendGreaterOrEqual(&ctxItem{startTxNum: txnFrom, endTxNum: txnTo}, func(item *ctxItem) bool {
+			//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
+			if item.reader.Empty() {
+				return true
+			}
+			offset := item.reader.Lookup(key)
+			g := item.getter
+			g.Reset(offset)
+			if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+				//fmt.Printf("Found key=%x\n", k)
+				eliasVal, _ := g.NextUncompressed()
+				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+				if n, ok := ef.Search(txNum); ok {
+					foundTxNum = n
+					foundEndTxNum = item.endTxNum
+					foundStartTxNum = item.startTxNum
+					found = true
+					//fmt.Printf("Found n=%d\n", n)
+					return false
+				}
+			}
+			return true
+		})
+		if found {
+			var historyItem *ctxItem
+			var ok bool
+			var search ctxItem
+			search.startTxNum = foundStartTxNum
+			search.endTxNum = foundEndTxNum
+			if historyItem, ok = hc.historyFiles.Get(&search); !ok {
+				return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
+			}
+			var txKey [8]byte
+			binary.BigEndian.PutUint64(txKey[:], foundTxNum)
+			offset := historyItem.reader.Lookup2(txKey[:], key)
+			//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
+			g := historyItem.getter
+			g.Reset(offset)
+			if hc.h.compressVals {
+				v, _ := g.Next(nil)
+				return v, true, nil
+			}
+			v, _ := g.NextUncompressed()
+			return v, true, nil
+		}
+		return nil, false, nil
+	*/
 }
