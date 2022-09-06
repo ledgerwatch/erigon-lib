@@ -843,6 +843,7 @@ func (hc *HistoryContext) IterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx
 type HistoryIterator1 struct {
 	hc           *HistoryContext
 	compressVals bool
+	total        uint64
 
 	hasNextInFiles        bool
 	hasNextInDb           bool
@@ -853,7 +854,7 @@ type HistoryIterator1 struct {
 	indexTable, valsTable string
 	h                     ReconHeap
 
-	key, val, nextKey, nextVal, nextFileKey, nextFileVal, nextDbKey, nextDbVal []byte
+	key, nextKey, nextVal, nextFileKey, nextFileVal, nextDbKey, nextDbVal []byte
 }
 
 func (hi *HistoryIterator1) Close() {
