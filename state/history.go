@@ -843,8 +843,6 @@ func (hc *HistoryContext) IterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx
 type HistoryIterator1 struct {
 	hc           *HistoryContext
 	compressVals bool
-	progress     uint64
-	total        uint64
 
 	hasNextInFiles        bool
 	hasNextInDb           bool
