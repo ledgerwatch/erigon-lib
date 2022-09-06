@@ -90,7 +90,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 	offset := 16 + 1 + int(idx.keyCount)*idx.bytesPerRec
 
 	if offset < 0 {
-		return nil, fmt.Errorf("offset is: %d which is below zero, the file is broken", offset)
+		return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexFile)
 	}
 
 	// Bucket count, bucketSize, leafSize
