@@ -122,12 +122,22 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 func (h *History) openFiles() error {
 	var totalKeys uint64
 	var err error
+
+	invalidFileItems := make([]*filesItem, 0)
 	h.files.Ascend(func(item *filesItem) bool {
 		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
+		if fi, err := os.Stat(datPath); err != nil || fi.IsDir() {
+			invalidFileItems = append(invalidFileItems, item)
+			return true
+		}
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
 		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
+		if fi, err := os.Stat(idxPath); err != nil || fi.IsDir() {
+			invalidFileItems = append(invalidFileItems, item)
+			return true
+		}
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 			return false
 		}
@@ -136,6 +146,9 @@ func (h *History) openFiles() error {
 	})
 	if err != nil {
 		return err
+	}
+	for _, item := range invalidFileItems {
+		h.files.Delete(item)
 	}
 	return nil
 }

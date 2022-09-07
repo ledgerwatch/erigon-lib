@@ -23,8 +23,6 @@ import (
 	"math"
 	"math/bits"
 	"os"
-	"runtime"
-	"time"
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/mmap"
@@ -56,8 +54,6 @@ type Index struct {
 	startSeed          []uint64
 	golombRice         []uint32
 	size               int64
-	closedAt           time.Time
-	closer             string
 }
 
 func MustOpen(indexFile string) *Index {
@@ -163,26 +159,7 @@ func (idx *Index) Close() error {
 	if err := idx.f.Close(); err != nil {
 		return err
 	}
-	idx.closedAt = time.Now()
-	idx.closer = caller()
 	return nil
-}
-
-func caller() string {
-	var s string
-	_, fn, ln, _ := runtime.Caller(2)
-	s += fmt.Sprintf("%s:%d\n", fn, ln)
-	_, fn, ln, _ = runtime.Caller(3)
-	s += fmt.Sprintf("%s:%d\n", fn, ln)
-	_, fn, ln, _ = runtime.Caller(4)
-	s += fmt.Sprintf("%s:%d\n", fn, ln)
-	_, fn, ln, _ = runtime.Caller(5)
-	s += fmt.Sprintf("%s:%d\n", fn, ln)
-	_, fn, ln, _ = runtime.Caller(6)
-	s += fmt.Sprintf("%s:%d\n", fn, ln)
-	_, fn, ln, _ = runtime.Caller(7)
-	s += fmt.Sprintf("%s:%d\n", fn, ln)
-	return s
 }
 
 func (idx *Index) skipBits(m uint16) int {
@@ -210,9 +187,6 @@ func (idx *Index) KeyCount() uint64 {
 
 // Lookup is not thread-safe because it used id.hasher
 func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
-	if !idx.closedAt.IsZero() {
-		fmt.Printf("index closed %v ago by %s, but now looking up by %s", time.Now().Sub(idx.closedAt).String(), idx.closer, caller())
-	}
 	if idx.keyCount == 0 {
 		panic("no Lookup should be done when keyCount==0, please use Empty function to guard")
 	}
@@ -279,9 +253,6 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 // Perfect hash table lookup is not performed, only access to the
 // Elias-Fano structure containing all offsets.
 func (idx *Index) OrdinalLookup(i uint64) uint64 {
-	if !idx.closedAt.IsZero() {
-		fmt.Printf("index closed %v ago, but now ordinal looking up", time.Now().Sub(idx.closedAt).String())
-	}
 	return idx.offsetEf.Get(i)
 }
 
@@ -297,9 +268,6 @@ func (idx *Index) ExtractOffsets() map[uint64]uint64 {
 }
 
 func (idx *Index) RewriteWithOffsets(w *bufio.Writer, m map[uint64]uint64) error {
-	if !idx.closedAt.IsZero() {
-		fmt.Printf("index closed %v ago, but rwoffsets", time.Now().Sub(idx.closedAt).String())
-	}
 	// New max offset
 	var maxOffset uint64
 	for _, offset := range m {

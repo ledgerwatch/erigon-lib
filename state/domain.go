@@ -139,7 +139,7 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 4 {
 			if len(subs) != 0 {
-				log.Warn("File ignored by doman scan, more than 4 submatches", "name", name, "submatches", len(subs))
+				log.Warn("File ignored by domain scan, more than 4 submatches", "name", name, "submatches", len(subs))
 			}
 			continue
 		}
@@ -174,12 +174,23 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 func (d *Domain) openFiles() error {
 	var err error
 	var totalKeys uint64
+
+	invalidFileItems := make([]*filesItem, 0)
 	d.files.Ascend(func(item *filesItem) bool {
 		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep))
+		if fi, err := os.Stat(datPath); err != nil || fi.IsDir() {
+			invalidFileItems = append(invalidFileItems, item)
+			return true
+		}
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return false
 		}
+
 		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep))
+		if fi, err := os.Stat(idxPath); err != nil || fi.IsDir() {
+			invalidFileItems = append(invalidFileItems, item)
+			return true
+		}
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 			return false
 		}
@@ -188,6 +199,9 @@ func (d *Domain) openFiles() error {
 	})
 	if err != nil {
 		return err
+	}
+	for _, item := range invalidFileItems {
+		d.files.Delete(item)
 	}
 	return nil
 }
@@ -210,9 +224,9 @@ func (d *Domain) Close() {
 	d.closeFiles()
 }
 
-func (dc *DomainContext) get(key []byte, roTx kv.Tx) ([]byte, bool, error) {
+func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, bool, error) {
 	var invertedStep [8]byte
-	binary.BigEndian.PutUint64(invertedStep[:], ^(dc.d.txNum / dc.d.aggregationStep))
+	binary.BigEndian.PutUint64(invertedStep[:], ^(fromTxNum / dc.d.aggregationStep))
 	keyCursor, err := roTx.CursorDupSort(dc.d.keysTable)
 	if err != nil {
 		return nil, false, err
@@ -222,9 +236,9 @@ func (dc *DomainContext) get(key []byte, roTx kv.Tx) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if foundInvStep == nil {
+	if len(foundInvStep) == 0 {
 		atomic.AddUint64(&dc.d.stats.HistoryQueries, 1)
-		v, found := dc.readFromFiles(key)
+		v, found := dc.readFromFiles(key, fromTxNum)
 		return v, found, nil
 	}
 	keySuffix := make([]byte, len(key)+8)
@@ -241,7 +255,7 @@ func (dc *DomainContext) Get(key1, key2 []byte, roTx kv.Tx) ([]byte, error) {
 	key := make([]byte, len(key1)+len(key2))
 	copy(key, key1)
 	copy(key[len(key1):], key2)
-	v, _, err := dc.get(key, roTx)
+	v, _, err := dc.get(key, dc.d.txNum, roTx)
 	return v, err
 }
 
@@ -258,7 +272,7 @@ func (d *Domain) Put(key1, key2, val []byte) error {
 	key := make([]byte, len(key1)+len(key2))
 	copy(key, key1)
 	copy(key[len(key1):], key2)
-	original, _, err := d.defaultDc.get(key, d.tx)
+	original, _, err := d.defaultDc.get(key, d.txNum, d.tx)
 	if err != nil {
 		return err
 	}
@@ -286,7 +300,7 @@ func (d *Domain) Delete(key1, key2 []byte) error {
 	key := make([]byte, len(key1)+len(key2))
 	copy(key, key1)
 	copy(key[len(key1):], key2)
-	original, found, err := d.defaultDc.get(key, d.tx)
+	original, found, err := d.defaultDc.get(key, d.txNum, d.tx)
 	if err != nil {
 		return err
 	}
@@ -769,33 +783,24 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	}
 	defer keysCursor.Close()
 	var k, v []byte
-	pruneKeysToStep := make(map[string][]uint64)
+	keysToPrune := make(map[string]uint64)
 
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		s := ^binary.BigEndian.Uint64(v)
-		list, seen := pruneKeysToStep[string(k)]
-		if !seen {
-			list = make([]uint64, 0)
+		if keysToPrune[string(k)] < s {
+			keysToPrune[string(k)] = s
 		}
-		pruneKeysToStep[string(k)] = append(list, s)
 	}
 	if err != nil {
 		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
 	}
 
-	for k, steps := range pruneKeysToStep {
-		if len(steps) == 1 {
-			delete(pruneKeysToStep, k)
-		}
-	}
-
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		s := ^binary.BigEndian.Uint64(v)
-		_, toDelete := pruneKeysToStep[string(k)]
-		if !toDelete {
-			continue
-		}
 		if step == s {
+			if keyMaxStep := keysToPrune[string(k)]; keyMaxStep <= step {
+				continue
+			}
 			if err = keysCursor.DeleteCurrent(); err != nil {
 				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
 			}
@@ -810,13 +815,12 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
-	for k, v, err = valsCursor.First(); err == nil && k != nil; k, v, err = valsCursor.Next() {
+	for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
 		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
-		_, toDelete := pruneKeysToStep[string(k)]
-		if !toDelete {
-			continue
-		}
 		if step == s {
+			if keyMaxStep := keysToPrune[string(k)]; keyMaxStep <= step {
+				continue
+			}
 			if err = valsCursor.DeleteCurrent(); err != nil {
 				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
 			}
@@ -831,10 +835,13 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 	return nil
 }
 
-func (dc *DomainContext) readFromFiles(filekey []byte) ([]byte, bool) {
+func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool) {
 	var val []byte
 	var found bool
 	dc.files.Descend(func(item *ctxItem) bool {
+		if item.endTxNum < fromTxNum {
+			return false
+		}
 		if item.reader.Empty() {
 			return true
 		}
@@ -985,7 +992,7 @@ func (dc *DomainContext) GetBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([
 	if hOk {
 		return v, nil
 	}
-	if v, _, err = dc.get(key, roTx); err != nil {
+	if v, _, err = dc.get(key, txNum-1, roTx); err != nil {
 		return nil, err
 	}
 	return v, nil

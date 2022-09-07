@@ -702,6 +702,7 @@ func (ac *AggregatorContext) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, e
 func (ac *AggregatorContext) ReadCommitment(addr []byte, roTx kv.Tx) ([]byte, error) {
 	return ac.commitment.Get(addr, nil, roTx)
 }
+
 func (ac *AggregatorContext) ReadCommitmentBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
 	return ac.commitment.GetBeforeTxNum(addr, txNum, roTx)
 }
@@ -791,19 +792,40 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 	return nil
 }
 
-func (a *Aggregator) SeekCommitment() error {
+func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
 	ctx := a.MakeContext()
-	buf, err := ctx.ReadCommitment(makeCommitmentKey(a.txNum-1), a.rwTx)
+	var latestTxNum uint64 = txNum
+	for {
+		a.SetTxNum(latestTxNum + 1)
+		latest, err := ctx.ReadCommitment([]byte("latesttx"), a.rwTx)
+		if err != nil {
+			return 0, err
+		}
+		if len(latest) != 8 {
+			break
+		}
+		v := binary.BigEndian.Uint64(latest)
+		if v == latestTxNum {
+			break
+		}
+		latestTxNum = v
+	}
+	if latestTxNum < txNum {
+		panic("latest < txnum")
+	}
+
+	a.SetTxNum(latestTxNum)
+	buf, err := ctx.ReadCommitment(makeCommitmentKey(latestTxNum), a.rwTx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(buf) == 0 {
-		return fmt.Errorf("root state was not found")
+		return 0, fmt.Errorf("root state was not found")
 	}
 	if err := a.patriciaTrie.SetState(buf); err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	return latestTxNum, nil
 }
 
 func makeCommitmentKey(txNum uint64) []byte {
@@ -817,13 +839,18 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 	touchedKeys, hashedKeys, updates := a.touchedKeyList()
 	if len(touchedKeys) == 0 {
 		rootHash, err = a.patriciaTrie.RootHash()
-		if commit {
-			fmt.Printf("put roothash %x\n", rootHash)
+		if commit && err == nil {
+			fmt.Printf("put roothash %x txnum=%d\n", rootHash, a.txNum)
 			state, err := a.patriciaTrie.EncodeCurrentState(nil, rootHash)
 			if err != nil {
 				return nil, err
 			}
 			if err = a.UpdateCommitmentData(makeCommitmentKey(a.txNum), state); err != nil {
+				return nil, err
+			}
+			var b [8]byte
+			binary.BigEndian.PutUint64(b[:], a.txNum)
+			if err = a.UpdateCommitmentData([]byte("latesttx"), b[:]); err != nil {
 				return nil, err
 			}
 		}
@@ -839,7 +866,7 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 	if err != nil {
 		return nil, err
 	}
-
+	_ = updates
 	a.patriciaTrie.Reset()
 	a.patriciaTrie.SetTrace(trace)
 	a.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
@@ -884,6 +911,11 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 			return nil, err
 		}
 		if err = a.UpdateCommitmentData(makeCommitmentKey(a.txNum), state); err != nil {
+			return nil, err
+		}
+		var b [8]byte
+		binary.BigEndian.PutUint64(b[:], a.txNum)
+		if err = a.UpdateCommitmentData([]byte("latesttx"), b[:]); err != nil {
 			return nil, err
 		}
 	}
@@ -1027,7 +1059,7 @@ func (a *Aggregator) FinishTx() error {
 	if step == 0 {
 		return nil
 	}
-	// step-- // Leave one step worth in the DB
+	step-- // Leave one step worth in the DB
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
 	if err != nil {
 		return err
@@ -1048,9 +1080,9 @@ func (a *Aggregator) FinishTx() error {
 		}
 	}()
 	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-	// if err = a.prune(step, step*a.aggregationStep, (step+1)*a.aggregationStep); err != nil {
-	// 	return err
-	// }
+	if err = a.prune(step, step*a.aggregationStep, (step+1)*a.aggregationStep); err != nil {
+		return err
+	}
 	maxEndTxNum := a.EndTxNumMinimax()
 	maxSpan := uint64(32) * a.aggregationStep
 	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
@@ -1076,10 +1108,10 @@ func (a *Aggregator) FinishTx() error {
 	}
 	closeAll = false
 
-	// select {
-	// case a.mergeNotify <- struct{}{}:
-	// default:
-	// }
+	select {
+	case a.mergeNotify <- struct{}{}:
+	default:
+	}
 
 	if a.commitFn != nil {
 		if err := a.commitFn(); err != nil {

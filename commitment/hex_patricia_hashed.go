@@ -19,7 +19,6 @@ package commitment
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -97,7 +96,7 @@ type HexPatriciaHashed struct {
 type state struct {
 	TouchMap      [128]uint16 // For each row, bitmap of cells that were either present before modification, or modified or deleted
 	AfterMap      [128]uint16 // For each row, bitmap of cells that were present after modification
-	CurrentKeyLen int
+	CurrentKeyLen int8
 	RootChecked   bool // Set to false if it is not known whether the root is empty, set to true if it is checked
 	RootTouched   bool
 	RootPresent   bool
@@ -105,52 +104,6 @@ type state struct {
 	BranchBefore  [128]bool // For each row, whether there was a branch node in the database loaded in unfold
 	CurrentKey    [128]byte // For each row indicates which column is currently selected
 	Depths        [128]int  // For each row, the depth of cells in that row
-}
-
-func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte, rootHash []byte) ([]byte, error) {
-	s := state{
-		CurrentKeyLen: hph.currentKeyLen,
-		RootChecked:   hph.rootChecked,
-		RootTouched:   hph.rootTouched,
-		RootPresent:   hph.rootPresent,
-	}
-
-	copy(s.RootHash[:], rootHash[:])
-	copy(s.CurrentKey[:], hph.currentKey[:])
-	copy(s.Depths[:], hph.depths[:])
-	copy(s.BranchBefore[:], hph.branchBefore[:])
-	copy(s.TouchMap[:], hph.touchMap[:])
-	copy(s.AfterMap[:], hph.afterMap[:])
-
-	aux := bytes.NewBuffer(buf)
-	if err := gob.NewEncoder(aux).Encode(s); err != nil {
-		return nil, err
-	}
-	return aux.Bytes(), nil
-}
-
-func (hph *HexPatriciaHashed) SetState(buf []byte) error {
-	var s state
-	if err := gob.NewDecoder(bytes.NewBuffer(buf)).Decode(&s); err != nil {
-		return err
-	}
-	if hph.activeRows != 0 {
-		return fmt.Errorf("has active rows, could not reset state")
-	}
-	hph.currentKeyLen = s.CurrentKeyLen
-	hph.rootChecked = s.RootChecked
-	hph.rootTouched = s.RootTouched
-	hph.rootPresent = s.RootPresent
-	copy(hph.root.h[:], s.RootHash[:])
-	hph.root.hl = length.Hash
-
-	copy(hph.currentKey[:], s.CurrentKey[:])
-	copy(hph.depths[:], s.Depths[:])
-	copy(hph.branchBefore[:], s.BranchBefore[:])
-	copy(hph.touchMap[:], s.TouchMap[:])
-	copy(hph.afterMap[:], s.AfterMap[:])
-
-	return nil
 }
 
 func NewHexPatriciaHashed(accountKeyLen int,
@@ -1425,6 +1378,176 @@ func (hph *HexPatriciaHashed) ResetFns(
 	hph.storageFn = storageFn
 }
 
+type stateRootFlag int8
+
+var (
+	stateRootPresent stateRootFlag = 1
+	stateRootChecked stateRootFlag = 2
+	stateRootTouched stateRootFlag = 4
+)
+
+func (s *state) Encode(buf []byte) ([]byte, error) {
+	var rootFlags stateRootFlag
+	if s.RootPresent {
+		rootFlags |= stateRootPresent
+	}
+	if s.RootChecked {
+		rootFlags |= stateRootChecked
+	}
+	if s.RootTouched {
+		rootFlags |= stateRootTouched
+	}
+
+	ee := bytes.NewBuffer(buf)
+	if err := binary.Write(ee, binary.BigEndian, s.CurrentKeyLen); err != nil {
+		return nil, fmt.Errorf("encode currentKeyLen: %w", err)
+	}
+	if err := binary.Write(ee, binary.BigEndian, int8(rootFlags)); err != nil {
+		return nil, fmt.Errorf("encode rootFlags: %w", err)
+	}
+	if err := binary.Write(ee, binary.BigEndian, s.RootHash); err != nil {
+		return nil, fmt.Errorf("encode rootHash: %w", err)
+	}
+	if err := binary.Write(ee, binary.BigEndian, s.CurrentKey); err != nil {
+		return nil, fmt.Errorf("encode currentKey: %w", err)
+	}
+	d := make([]byte, len(s.Depths))
+	for i := 0; i < len(s.Depths); i++ {
+		d[i] = byte(s.Depths[i])
+	}
+	if err := binary.Write(ee, binary.BigEndian, d); err != nil {
+		return nil, fmt.Errorf("encode depths: %w", err)
+	}
+	if err := binary.Write(ee, binary.BigEndian, s.TouchMap); err != nil {
+		return nil, fmt.Errorf("encode touchMap: %w", err)
+	}
+	if err := binary.Write(ee, binary.BigEndian, s.AfterMap); err != nil {
+		return nil, fmt.Errorf("encode afterMap: %w", err)
+	}
+
+	var before1, before2 uint64
+	for i := 0; i < 64; i++ {
+		if s.BranchBefore[i] {
+			before1 |= 1 << i
+		}
+	}
+	for i, j := 64, 0; i < 128; i, j = i+1, j+1 {
+		if s.BranchBefore[i] {
+			before2 |= 1 << j
+		}
+	}
+	if err := binary.Write(ee, binary.BigEndian, before1); err != nil {
+		return nil, fmt.Errorf("encode branchBefore_1: %w", err)
+	}
+	if err := binary.Write(ee, binary.BigEndian, before2); err != nil {
+		return nil, fmt.Errorf("encode branchBefore_2: %w", err)
+	}
+	return ee.Bytes(), nil
+}
+
+func (s *state) Decode(buf []byte) error {
+	aux := bytes.NewBuffer(buf)
+	if err := binary.Read(aux, binary.BigEndian, &s.CurrentKeyLen); err != nil {
+		return fmt.Errorf("currentKeyLen: %w", err)
+	}
+	var rootFlags stateRootFlag
+	if err := binary.Read(aux, binary.BigEndian, &rootFlags); err != nil {
+		return fmt.Errorf("rootFlags: %w", err)
+	}
+
+	if rootFlags&stateRootPresent != 0 {
+		s.RootPresent = true
+	}
+	if rootFlags&stateRootTouched != 0 {
+		s.RootTouched = true
+	}
+	if rootFlags&stateRootChecked != 0 {
+		s.RootChecked = true
+	}
+	if err := binary.Read(aux, binary.BigEndian, &s.RootHash); err != nil {
+		return fmt.Errorf("rootHash: %w", err)
+	}
+	if err := binary.Read(aux, binary.BigEndian, &s.CurrentKey); err != nil {
+		return fmt.Errorf("currentKey: %w", err)
+	}
+	d := make([]byte, len(s.Depths))
+	if err := binary.Read(aux, binary.BigEndian, &d); err != nil {
+		return fmt.Errorf("depths: %w", err)
+	}
+	for i := 0; i < len(s.Depths); i++ {
+		s.Depths[i] = int(d[i])
+	}
+	if err := binary.Read(aux, binary.BigEndian, &s.TouchMap); err != nil {
+		return fmt.Errorf("touchMap: %w", err)
+	}
+	if err := binary.Read(aux, binary.BigEndian, &s.AfterMap); err != nil {
+		return fmt.Errorf("afterMap: %w", err)
+	}
+	var branch1, branch2 uint64
+	if err := binary.Read(aux, binary.BigEndian, &branch1); err != nil {
+		return fmt.Errorf("branchBefore1: %w", err)
+	}
+	if err := binary.Read(aux, binary.BigEndian, &branch2); err != nil {
+		return fmt.Errorf("branchBefore2: %w", err)
+	}
+
+	for i := 0; i < 64; i++ {
+		if branch1&(1<<i) != 0 {
+			s.BranchBefore[i] = true
+		}
+	}
+	for i, j := 64, 0; i < 128; i, j = i+1, j+1 {
+		if branch2&(1<<j) != 0 {
+			s.BranchBefore[i] = true
+		}
+	}
+	return nil
+}
+
+func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte, rootHash []byte) ([]byte, error) {
+	s := state{
+		CurrentKeyLen: int8(hph.currentKeyLen),
+		RootChecked:   hph.rootChecked,
+		RootTouched:   hph.rootTouched,
+		RootPresent:   hph.rootPresent,
+	}
+
+	copy(s.RootHash[:], rootHash[:])
+	copy(s.CurrentKey[:], hph.currentKey[:])
+	copy(s.Depths[:], hph.depths[:])
+	copy(s.BranchBefore[:], hph.branchBefore[:])
+	copy(s.TouchMap[:], hph.touchMap[:])
+	copy(s.AfterMap[:], hph.afterMap[:])
+
+	return s.Encode(buf)
+}
+
+func (hph *HexPatriciaHashed) SetState(buf []byte) error {
+	if hph.activeRows != 0 {
+		return fmt.Errorf("has active rows, could not reset state")
+	}
+
+	var s state
+	if err := s.Decode(buf); err != nil {
+		return err
+	}
+
+	hph.currentKeyLen = int(s.CurrentKeyLen)
+	hph.rootChecked = s.RootChecked
+	hph.rootTouched = s.RootTouched
+	hph.rootPresent = s.RootPresent
+	copy(hph.root.h[:], s.RootHash[:])
+	hph.root.hl = length.Hash
+
+	copy(hph.currentKey[:], s.CurrentKey[:])
+	copy(hph.depths[:], s.Depths[:])
+	copy(hph.branchBefore[:], s.BranchBefore[:])
+	copy(hph.touchMap[:], s.TouchMap[:])
+	copy(hph.afterMap[:], s.AfterMap[:])
+
+	return nil
+}
+
 func bytesToUint64(buf []byte) (x uint64) {
 	for i, b := range buf {
 		x = x<<8 + uint64(b)
@@ -1581,6 +1704,7 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 	return rootHash, branchNodeUpdates, nil
 }
 
+//nolint
 func (hph *HexPatriciaHashed) hashAndNibblizeKey(key []byte) []byte {
 	hashedKey := make([]byte, length.Hash)
 
