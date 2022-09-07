@@ -816,6 +816,7 @@ func (hc *HistoryContext) IterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx
 	hi.hasNextInDb = true
 	hi.roTx = roTx
 	hi.indexTable = hc.h.indexTable
+	hi.idxKeysTable = hc.h.indexKeysTable
 	hi.valsTable = hc.h.historyValsTable
 	heap.Init(&hi.h)
 	hc.indexFiles.Ascend(func(item *ctxItem) bool {
@@ -845,14 +846,14 @@ type HistoryIterator1 struct {
 	compressVals bool
 	total        uint64
 
-	hasNextInFiles        bool
-	hasNextInDb           bool
-	startTxKey            [8]byte
-	startTxNum, endTxNum  uint64
-	roTx                  kv.Tx
-	idxCursor             kv.CursorDupSort
-	indexTable, valsTable string
-	h                     ReconHeap
+	hasNextInFiles                      bool
+	hasNextInDb                         bool
+	startTxKey                          [8]byte
+	startTxNum, endTxNum                uint64
+	roTx                                kv.Tx
+	idxCursor, txNum2kCursor            kv.CursorDupSort
+	indexTable, idxKeysTable, valsTable string
+	h                                   ReconHeap
 
 	key, nextKey, nextVal, nextFileKey, nextFileVal, nextDbKey, nextDbVal []byte
 }
@@ -860,6 +861,9 @@ type HistoryIterator1 struct {
 func (hi *HistoryIterator1) Close() {
 	if hi.idxCursor != nil {
 		hi.idxCursor.Close()
+	}
+	if hi.txNum2kCursor != nil {
+		hi.txNum2kCursor.Close()
 	}
 }
 
@@ -906,13 +910,17 @@ func (hi *HistoryIterator1) advanceInFiles() {
 }
 
 func (hi *HistoryIterator1) advanceInDb() {
-	var k, v []byte
+	var k []byte
 	var err error
 	if hi.idxCursor == nil {
 		if hi.idxCursor, err = hi.roTx.CursorDupSort(hi.indexTable); err != nil {
 			// TODO pass error properly around
 			panic(err)
 		}
+		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
+			panic(err)
+		}
+
 		if k, _, err = hi.idxCursor.First(); err != nil {
 			// TODO pass error properly around
 			panic(err)
@@ -922,25 +930,38 @@ func (hi *HistoryIterator1) advanceInDb() {
 			panic(err)
 		}
 	}
-	for k != nil {
-		if v, err = hi.idxCursor.SeekBothRange(k, hi.startTxKey[:]); err != nil {
+	for ; k != nil; k, _, err = hi.idxCursor.NextNoDup() {
+		if err != nil {
 			panic(err)
 		}
-		if v != nil {
-			txNum := binary.BigEndian.Uint64(v)
-			if txNum < hi.endTxNum {
-				hi.nextDbKey = append(hi.nextDbKey[:0], k...)
-				vv, err := hi.roTx.GetOne(hi.valsTable, v[len(v)-8:])
-				if err != nil {
-					panic(err)
-				}
-				hi.nextDbVal = append(hi.nextDbVal[:0], vv...)
-				return
-			}
-		}
-		if k, _, err = hi.idxCursor.NextNoDup(); err != nil {
+		foundTxNumVal, err := hi.idxCursor.SeekBothRange(k, hi.startTxKey[:])
+		if err != nil {
 			panic(err)
 		}
+		if foundTxNumVal == nil {
+			continue
+		}
+		txNum := binary.BigEndian.Uint64(foundTxNumVal)
+		if txNum >= hi.endTxNum {
+			continue
+		}
+		hi.nextDbKey = append(hi.nextDbKey[:0], k...)
+		vn, err := hi.txNum2kCursor.SeekBothRange(foundTxNumVal, k)
+		if err != nil {
+			panic(err)
+		}
+		valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
+		if valNum == 0 {
+			// This is special valNum == 0, which is empty value
+			hi.nextDbVal = hi.nextDbVal[:0]
+			return
+		}
+		v, err := hi.roTx.GetOne(hi.valsTable, vn[len(vn)-8:])
+		if err != nil {
+			panic(err)
+		}
+		hi.nextDbVal = append(hi.nextDbVal[:0], v...)
+		return
 	}
 	hi.idxCursor.Close()
 	hi.idxCursor = nil
