@@ -480,7 +480,6 @@ func TestIterateChanged(t *testing.T) {
 		"",
 		"",
 		""}, vals)
-	return
 	it = ic.IterateChanged(995, 1000, roTx)
 	keys, vals = keys[:0], vals[:0]
 	for it.HasNext() {
