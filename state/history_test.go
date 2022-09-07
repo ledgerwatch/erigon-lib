@@ -484,7 +484,6 @@ func TestIterateChanged(t *testing.T) {
 	keys, vals = keys[:0], vals[:0]
 	for it.HasNext() {
 		k, v := it.Next(nil, nil)
-		fmt.Printf("got: %x, %x\n", k, v)
 		keys = append(keys, fmt.Sprintf("%x", k))
 		vals = append(vals, fmt.Sprintf("%x", v))
 	}
