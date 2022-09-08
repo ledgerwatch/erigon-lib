@@ -301,7 +301,7 @@ const maxDataSize = 0xFFFFFFFFFFFF
 
 // Read inputs the state of golomb rice encoding from a reader s
 func ReadEliasFano(r []byte) (*EliasFano, int) {
-w	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
+	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
 	ef := &EliasFano{
 		count: binary.BigEndian.Uint64(r[:8]),
 		u:     binary.BigEndian.Uint64(r[8:16]),
