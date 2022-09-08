@@ -926,8 +926,10 @@ func PersistDictrionary(fileName string, db *DictionaryBuilder) error {
 	if err = w.Flush(); err != nil {
 		return err
 	}
-	if err := df.Sync(); err != nil {
-		return err
+	if common.FSYNC {
+		if err := df.Sync(); err != nil {
+			return err
+		}
 	}
 	return df.Close()
 }

@@ -5,6 +5,8 @@ import (
 	"runtime"
 )
 
+const FSYNC = true
+
 var doMemstat = true
 
 func init() {

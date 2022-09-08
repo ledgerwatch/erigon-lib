@@ -777,8 +777,12 @@ func (hc *HistoryContext) IterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx
 		indexTable:   hc.h.indexTable,
 		idxKeysTable: hc.h.indexKeysTable,
 		valsTable:    hc.h.historyValsTable,
+		hc:           hc,
+		compressVals: hc.h.compressVals,
+		startTxNum:   startTxNum,
+		endTxNum:     endTxNum,
 	}
-
+	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
 	hc.indexFiles.Ascend(func(item *ctxItem) bool {
 		if item.endTxNum >= endTxNum {
 			hi.hasNextInDb = false
@@ -799,11 +803,6 @@ func (hc *HistoryContext) IterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx
 		hi.total += uint64(item.getter.Size())
 		return true
 	})
-	hi.hc = hc
-	hi.compressVals = hc.h.compressVals
-	hi.startTxNum = startTxNum
-	hi.endTxNum = endTxNum
-	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
 	hi.advanceInDb()
 	hi.advanceInFiles()
 	hi.advance()

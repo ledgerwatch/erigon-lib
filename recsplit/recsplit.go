@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 
 	"github.com/c2h5oh/datasize"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
@@ -536,7 +537,9 @@ func (rs *RecSplit) Build() error {
 	if rs.indexF, err = os.Create(tmpIdxFilePath); err != nil {
 		return fmt.Errorf("create index file %s: %w", rs.indexFile, err)
 	}
-	defer rs.indexF.Sync()
+	if common.FSYNC {
+		defer rs.indexF.Sync()
+	}
 	defer rs.indexF.Close()
 	rs.indexW = bufio.NewWriterSize(rs.indexF, etl.BufIOSize)
 	defer rs.indexW.Flush()
@@ -649,7 +652,9 @@ func (rs *RecSplit) Build() error {
 	}
 
 	_ = rs.indexW.Flush()
-	_ = rs.indexF.Sync()
+	if common.FSYNC {
+		_ = rs.indexF.Sync()
+	}
 	_ = rs.indexF.Close()
 	if err := os.Rename(tmpIdxFilePath, rs.indexFile); err != nil {
 		return err
