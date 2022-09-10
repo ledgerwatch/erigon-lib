@@ -215,6 +215,7 @@ type CompressorSequential struct {
 	posMap      map[uint64]uint64           // Counter of use for each position within compressed word (for building huffman code for positions)
 
 	wordsCount, emptyWordsCount uint64
+	superstringNum              uint64
 }
 
 // superstringLimit limits how large can one "superstring" get before it is processed
@@ -228,7 +229,7 @@ const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 1 * 1024 * 1024
+const maxDictPatterns = 512 * 1024
 
 // nolint
 const compressLogPrefix = "compress"
@@ -695,9 +696,14 @@ func (c *CompressorSequential) AddWord(word []byte) error {
 		c.emptyWordsCount++
 	}
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		// Adding this word would make superstring go over the limit
-		if err := c.processSuperstring(); err != nil {
-			return fmt.Errorf("buildDictNextWord: error processing superstring: %w", err)
+		c.superstringNum++
+		if c.superstringNum%2 == 0 { // sampling, skip 50% of superstrings
+			c.superstring = c.superstring[:0]
+		} else {
+			// Adding this word would make superstring go over the limit
+			if err := c.processSuperstring(); err != nil {
+				return fmt.Errorf("buildDictNextWord: error processing superstring: %w", err)
+			}
 		}
 	}
 	for _, b := range word {
