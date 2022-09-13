@@ -118,7 +118,6 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 			return false
 		})
 		if foundI == nil || foundI.startTxNum > startTxNum {
-			fmt.Printf("dbg: %s, %d, %d\n", name, startTxNum, endTxNum)
 			//log.Info("Load state file", "name", name, "startTxNum", startTxNum*ii.aggregationStep, "endTxNum", endTxNum*ii.aggregationStep)
 			h.files.ReplaceOrInsert(item)
 		}
