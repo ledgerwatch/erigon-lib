@@ -67,6 +67,7 @@ func NewInvertedIndex(
 		indexKeysTable:  indexKeysTable,
 		indexTable:      indexTable,
 	}
+
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
