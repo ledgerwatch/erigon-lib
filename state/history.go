@@ -75,7 +75,7 @@ func NewHistory(
 	}
 	h.scanStateFiles(files)
 	if err = h.openFiles(); err != nil {
-		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
+		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
 	}
 	return &h, nil
 }
@@ -118,6 +118,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 			return false
 		})
 		if foundI == nil || foundI.startTxNum > startTxNum {
+			fmt.Printf("dbg: %s, %d, %d\n", name, startTxNum, endTxNum)
 			//log.Info("Load state file", "name", name, "startTxNum", startTxNum*ii.aggregationStep, "endTxNum", endTxNum*ii.aggregationStep)
 			h.files.ReplaceOrInsert(item)
 		}

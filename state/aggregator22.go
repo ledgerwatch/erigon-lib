@@ -50,25 +50,25 @@ func (a *Aggregator22) ReopenFiles() error {
 	aggregationStep := a.aggregationStep
 	var err error
 	if a.accounts, err = NewHistory(dir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */); err != nil {
-		return err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.storage, err = NewHistory(dir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */); err != nil {
-		return err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.code, err = NewHistory(dir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */); err != nil {
-		return err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.logAddrs, err = NewInvertedIndex(dir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx); err != nil {
-		return err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.logTopics, err = NewInvertedIndex(dir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx); err != nil {
-		return err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.tracesFrom, err = NewInvertedIndex(dir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx); err != nil {
-		return err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.tracesTo, err = NewInvertedIndex(dir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx); err != nil {
-		return err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	return nil
 }
