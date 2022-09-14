@@ -168,6 +168,18 @@ func (h *History) Close() {
 	h.closeFiles()
 }
 
+func (h *History) Files() (res []string) {
+	h.files.Ascend(func(item *filesItem) bool {
+		if item.decompressor != nil {
+			_, fName := filepath.Split(item.decompressor.FilePath())
+			res = append(res, filepath.Join("history", fName))
+		}
+		return true
+	})
+	res = append(res, h.InvertedIndex.Files()...)
+	return res
+}
+
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
 	historyKey := make([]byte, lk+8)

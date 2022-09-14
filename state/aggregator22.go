@@ -76,6 +76,18 @@ func (a *Aggregator22) ReopenFiles() error {
 func (a *Aggregator22) Close() {
 	a.closeFiles()
 }
+
+func (a *Aggregator22) Files() (res []string) {
+	res = append(res, a.accounts.Files()...)
+	res = append(res, a.storage.Files()...)
+	res = append(res, a.code.Files()...)
+	res = append(res, a.logAddrs.Files()...)
+	res = append(res, a.logTopics.Files()...)
+	res = append(res, a.tracesFrom.Files()...)
+	res = append(res, a.tracesTo.Files()...)
+	return res
+}
+
 func (a *Aggregator22) closeFiles() {
 	if a.accounts != nil {
 		a.accounts.Close()

@@ -167,6 +167,17 @@ func (ii *InvertedIndex) Close() {
 	ii.closeFiles()
 }
 
+func (ii *InvertedIndex) Files() (res []string) {
+	ii.files.Ascend(func(item *filesItem) bool {
+		if item.decompressor != nil {
+			_, fName := filepath.Split(item.decompressor.FilePath())
+			res = append(res, filepath.Join("history", fName))
+		}
+		return true
+	})
+	return res
+}
+
 func (ii *InvertedIndex) SetTx(tx kv.RwTx) {
 	ii.tx = tx
 }
