@@ -616,6 +616,7 @@ func (a *Aggregator22) FinishTx() error {
 	}
 	closeAll := true
 	step := a.txNum / a.aggregationStep
+	fmt.Printf("FinishTx txNum = %d, step = %d\n", a.txNum, step)
 	if step == 0 {
 		return nil
 	}
