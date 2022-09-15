@@ -616,7 +616,7 @@ func (a *Aggregator22) FinishTx() error {
 	if (a.txNum+1)%a.aggregationStep != 0 {
 		return nil
 	}
-	if a.txNum < a.maxTxNum {
+	if a.txNum <= a.maxTxNum {
 		return nil
 	}
 	closeAll := true
