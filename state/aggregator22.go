@@ -613,10 +613,10 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
-	if (a.txNum+1)%a.aggregationStep != 0 {
+	if (a.txNum + 1) <= a.maxTxNum {
 		return nil
 	}
-	if a.txNum <= a.maxTxNum {
+	if (a.txNum+1)%a.aggregationStep != 0 {
 		return nil
 	}
 	closeAll := true
