@@ -39,6 +39,7 @@ type Aggregator22 struct {
 	txNum           uint64
 	logPrefix       string
 	rwTx            kv.RwTx
+	maxTxNum        uint64
 }
 
 func NewAggregator22(dir string, aggregationStep uint64) (*Aggregator22, error) {
@@ -70,6 +71,7 @@ func (a *Aggregator22) ReopenFiles() error {
 	if a.tracesTo, err = NewInvertedIndex(dir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
+	a.maxTxNum = a.EndTxNumMinimax()
 	return nil
 }
 
@@ -620,6 +622,9 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
+	if (a.txNum + 1) <= a.maxTxNum+a.aggregationStep {
+		return nil
+	}
 	if (a.txNum+1)%a.aggregationStep != 0 {
 		return nil
 	}
