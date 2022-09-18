@@ -131,6 +131,7 @@ type Cell struct {
 	spl           int                             // length of the storage plain key
 	downHashedKey [128]byte
 	downHashedLen int
+	hashBuffer    [128]byte // buffer for computing keccak hash
 	extension     [64]byte
 	extLen        int
 	Nonce         uint64
@@ -685,32 +686,32 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		}
 		singleton := depth <= 64
 		_ = singleton
-		if err := hashKey(hph.keccak, cell.spk[hph.accountKeyLen:cell.spl], cell.downHashedKey[:], hashedKeyOffset); err != nil {
+		if err := hashKey(hph.keccak, cell.spk[hph.accountKeyLen:cell.spl], cell.hashBuffer[:], hashedKeyOffset); err != nil {
 			return nil, err
 		}
-		cell.downHashedKey[64-hashedKeyOffset] = 16 // Add terminator
+		cell.hashBuffer[64-hashedKeyOffset] = 16 // Add terminator
 		if singleton {
 			if hph.trace {
-				fmt.Printf("leafHashWithKeyVal(singleton) for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
+				fmt.Printf("leafHashWithKeyVal(singleton) for [%x]=>[%x]\n", cell.hashBuffer[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
 			}
 			aux := make([]byte, 0, 33)
-			if aux, err = hph.leafHashWithKeyVal(aux, cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen], true); err != nil {
+			if aux, err = hph.leafHashWithKeyVal(aux, cell.hashBuffer[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen], true); err != nil {
 				return nil, err
 			}
 			storageRootHash = *(*[length.Hash]byte)(aux[1:])
 			storageRootHashIsSet = true
 		} else {
 			if hph.trace {
-				fmt.Printf("leafHashWithKeyVal for [%x]=>[%x]\n", cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
+				fmt.Printf("leafHashWithKeyVal for [%x]=>[%x]\n", cell.hashBuffer[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen])
 			}
-			return hph.leafHashWithKeyVal(buf, cell.downHashedKey[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen], false)
+			return hph.leafHashWithKeyVal(buf, cell.hashBuffer[:64-hashedKeyOffset+1], cell.Storage[:cell.StorageLen], false)
 		}
 	}
 	if cell.apl > 0 {
-		if err := hashKey(hph.keccak, cell.apk[:cell.apl], cell.downHashedKey[:], depth); err != nil {
+		if err := hashKey(hph.keccak, cell.apk[:cell.apl], cell.hashBuffer[:], depth); err != nil {
 			return nil, err
 		}
-		cell.downHashedKey[64-depth] = 16 // Add terminator
+		cell.hashBuffer[64-depth] = 16 // Add terminator
 		if !storageRootHashIsSet {
 			if cell.extLen > 0 {
 				// Extension
@@ -733,9 +734,9 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		var valBuf [128]byte
 		valLen := cell.accountForHashing(valBuf[:], storageRootHash)
 		if hph.trace {
-			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.downHashedKey[:65-depth], valBuf[:valLen])
+			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.hashBuffer[:65-depth], valBuf[:valLen])
 		}
-		return hph.accountLeafHashWithKey(buf, cell.downHashedKey[:65-depth], rlp.RlpEncodedBytes(valBuf[:valLen]))
+		return hph.accountLeafHashWithKey(buf, cell.hashBuffer[:65-depth], rlp.RlpEncodedBytes(valBuf[:valLen]))
 	}
 	buf = append(buf, 0x80+32)
 	if cell.extLen > 0 {
@@ -766,6 +767,10 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 	if hph.activeRows == 0 {
 		if hph.trace {
 			fmt.Printf("needUnfolding root, rootChecked = %t\n", hph.rootChecked)
+		}
+		if hph.rootChecked && hph.root.downHashedLen == 0 && hph.root.hl == 0 {
+			// Previously checked, empty root, no unfolding needed
+			return 0
 		}
 		cell = &hph.root
 		if cell.downHashedLen == 0 && cell.hl == 0 && !hph.rootChecked {
@@ -807,15 +812,16 @@ func (hph *HexPatriciaHashed) needUnfolding(hashedKey []byte) int {
 	return unfolding
 }
 
-func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int) error {
+// unfoldBranchNode returns true if unfolding has been done
+func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int) (bool, error) {
 	branchData, err := hph.branchFn(hexToCompact(hph.currentKey[:hph.currentKeyLen]))
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !hph.rootChecked && hph.currentKeyLen == 0 && len(branchData) == 0 {
 		// Special case - empty or deleted root
 		hph.rootChecked = true
-		return nil
+		return false, nil
 	}
 	if len(branchData) == 0 {
 		log.Warn("got empty branch data during unfold", "row", row, "depth", depth, "deleted", deleted)
@@ -841,7 +847,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		pos++
 		var err error
 		if pos, err = cell.fillFromFields(branchData, pos, PartFlags(fieldBits)); err != nil {
-			return fmt.Errorf("prefix [%x], branchData[%x]: %w", hph.currentKey[:hph.currentKeyLen], branchData, err)
+			return false, fmt.Errorf("prefix [%x], branchData[%x]: %w", hph.currentKey[:hph.currentKeyLen], branchData, err)
 		}
 		if hph.trace {
 			fmt.Printf("cell (%d, %x) depth=%d, hash=[%x], a=[%x], s=[%x], ex=[%x]\n", row, nibble, depth, cell.h[:cell.hl], cell.apk[:cell.apl], cell.spk[:cell.spl], cell.extension[:cell.extLen])
@@ -856,11 +862,11 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 			hph.storageFn(cell.spk[:cell.spl], cell)
 		}
 		if err = cell.deriveHashedKeys(depth, hph.keccak, hph.accountKeyLen); err != nil {
-			return err
+			return false, err
 		}
 		bitset ^= bit
 	}
-	return nil
+	return true, nil
 }
 
 func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
@@ -903,8 +909,11 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 	hph.branchBefore[row] = false
 	if upCell.downHashedLen == 0 {
 		depth = upDepth + 1
-		if err := hph.unfoldBranchNode(row, touched && !present /* deleted */, depth); err != nil {
+		if unfolded, err := hph.unfoldBranchNode(row, touched && !present /* deleted */, depth); err != nil {
 			return err
+		} else if !unfolded {
+			// Return here to prevent activeRow from being incremented
+			return nil
 		}
 	} else if upCell.downHashedLen >= unfolding {
 		depth = upDepth + unfolding

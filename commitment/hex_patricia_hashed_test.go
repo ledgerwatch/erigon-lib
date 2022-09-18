@@ -144,18 +144,18 @@ func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 		Balance("ff", 900234).
 		Balance("04", 1233).
 		Storage("04", "01", "0401").
-		Balance("ba", 065606).
-		Balance("00", 4).
-		Balance("01", 5).
-		Balance("02", 6).
-		Balance("03", 7).
-		Storage("03", "56", "050505").
-		Balance("05", 9).
-		Storage("03", "87", "060606").
-		Balance("b9", 6).
-		Nonce("ff", 169356).
-		Storage("05", "02", "8989").
-		Storage("f5", "04", "9898").
+		//Balance("ba", 065606).
+		//Balance("00", 4).
+		//Balance("01", 5).
+		//Balance("02", 6).
+		//Balance("03", 7).
+		//Storage("03", "56", "050505").
+		//Balance("05", 9).
+		//Storage("03", "87", "060606").
+		//Balance("b9", 6).
+		//Nonce("ff", 169356).
+		//Storage("05", "02", "8989").
+		//Storage("f5", "04", "9898").
 		Build()
 
 	trieOne := NewHexPatriciaHashed(1, ms.branchFn, ms.accountFn, ms.storageFn)
