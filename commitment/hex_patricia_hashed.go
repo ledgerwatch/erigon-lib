@@ -837,7 +837,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		hph.afterMap[row] = bitmap
 		hph.touchMap[row] = 0
 	}
-	//fmt.Printf("unfoldBranchNode [unfoldBranchNode%x], afterMap = [%016b], touchMap = [%016b]\n", branchData, hph.afterMap[row], hph.touchMap[row])
+	fmt.Printf("unfoldBranchNode [unfoldBranchNode%x], afterMap = [%016b], touchMap = [%016b]\n", branchData, hph.afterMap[row], hph.touchMap[row])
 	// Loop iterating over the set bits of modMask
 	for bitset, j := bitmap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
@@ -886,7 +886,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		touched = hph.rootTouched
 		present = hph.rootPresent
 		if hph.trace {
-			fmt.Printf("root, touched %t, present %t\n", touched, present)
+			fmt.Printf("root, touched %t, present %t, root %+v\n", touched, present, hph.root)
 		}
 	} else {
 		upDepth = hph.depths[hph.activeRows-1]
@@ -1179,10 +1179,10 @@ func (hph *HexPatriciaHashed) foldRoot() (BranchData, error) {
 	if hph.activeRows != 0 {
 		return nil, fmt.Errorf("cannot fold root - there are still active rows: %d", hph.activeRows)
 	}
-	if hph.root.downHashedLen == 0 {
-		// Not overwrite previous branch node
-		return nil, nil
-	}
+	//if hph.root.downHashedLen == 0 {
+	// Not overwrite previous branch node
+	//	return nil, nil
+	//}
 
 	rootGetter := func(_ int, _ bool) (*Cell, error) {
 		_, err := hph.RootHash()
