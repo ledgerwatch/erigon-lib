@@ -1143,8 +1143,10 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 			}
 		}
 		upCell.extLen = depth - upDepth - 1
+		upCell.downHashedLen = upCell.extLen
 		if upCell.extLen > 0 {
 			copy(upCell.extension[:], hph.currentKey[upDepth:hph.currentKeyLen])
+			copy(upCell.downHashedKey[:], hph.currentKey[upDepth:hph.currentKeyLen])
 		}
 		if depth < 64 {
 			upCell.apl = 0
@@ -1344,11 +1346,11 @@ func (hph *HexPatriciaHashed) ReviewKeys(plainKeys, hashedKeys [][]byte) (rootHa
 			branchNodeUpdates[string(updateKey)] = branchData
 		}
 	}
-	if branchData, err := hph.foldRoot(); err != nil {
-		return nil, nil, fmt.Errorf("foldRoot: %w", err)
-	} else if branchData != nil {
-		branchNodeUpdates[string(hexToCompact([]byte{}))] = branchData
-	}
+	//if branchData, err := hph.foldRoot(); err != nil {
+	//	return nil, nil, fmt.Errorf("foldRoot: %w", err)
+	//} else if branchData != nil {
+	//	branchNodeUpdates[string(hexToCompact([]byte{}))] = branchData
+	//}
 
 	rootHash, err = hph.RootHash()
 	if err != nil {
