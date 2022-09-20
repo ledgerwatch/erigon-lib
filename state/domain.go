@@ -795,42 +795,37 @@ func (d *Domain) prune(step uint64, txFrom, txTo uint64) error {
 		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
 	}
 
-	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
-		s := ^binary.BigEndian.Uint64(v)
-		if step == s {
-			if keyMaxStep := keysToPrune[string(k)]; keyMaxStep <= step {
-				continue
-			}
-			if err = keysCursor.DeleteCurrent(); err != nil {
-				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
-			}
-		}
-	}
-	if err != nil {
-		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
-	}
-
 	var valsCursor kv.RwCursor
 	if valsCursor, err = d.tx.RwCursor(d.valsTable); err != nil {
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
-	for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
-		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
-		if step == s {
-			if keyMaxStep := keysToPrune[string(k)]; keyMaxStep <= step {
-				continue
+
+	for key, dbMaxStep := range keysToPrune {
+		k, v, err := keysCursor.SeekExact([]byte(key))
+		if err != nil {
+			return fmt.Errorf("seek [%x] in %s keys: %w", key, d.filenameBase, err)
+		}
+		s := ^binary.BigEndian.Uint64(v)
+		if dbMaxStep > s {
+			if err = keysCursor.DeleteCurrent(); err != nil {
+				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
 			}
+
+			// Also prune value for that key
+			Key, Value, err := valsCursor.SeekExact([]byte(key))
+			if err != nil {
+				return fmt.Errorf("seek [%x] in %s vals: %w", key, d.filenameBase, err)
+			}
+			_ = Value
+			//fmt.Printf("prune key %x val %v step %d\n", Key, Value, s)
 			if err = valsCursor.DeleteCurrent(); err != nil {
-				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
+				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, Key, err)
 			}
 		}
 	}
-	if err != nil {
-		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
-	}
 	if err = d.History.prune(step, txFrom, txTo); err != nil {
-		return err
+		return fmt.Errorf("prune history at step %d [%d, %d): %w", step, txFrom, txTo, err)
 	}
 	return nil
 }

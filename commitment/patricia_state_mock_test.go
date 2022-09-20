@@ -39,9 +39,10 @@ func (ms MockState) branchFn(prefix []byte) ([]byte, error) {
 }
 
 func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
-	exBytes, ok := ms.sm[string(plainKey)]
+	exBytes, ok := ms.sm[string(plainKey[:])]
 	if !ok {
 		ms.t.Logf("accountFn not found key [%x]", plainKey)
+		cell.Delete = true
 		return nil
 	}
 	var ex Update
@@ -81,9 +82,10 @@ func (ms MockState) accountFn(plainKey []byte, cell *Cell) error {
 }
 
 func (ms MockState) storageFn(plainKey []byte, cell *Cell) error {
-	exBytes, ok := ms.sm[string(plainKey)]
+	exBytes, ok := ms.sm[string(plainKey[:])]
 	if !ok {
 		ms.t.Logf("storageFn not found key [%x]", plainKey)
+		cell.Delete = true
 		return nil
 	}
 	var ex Update
