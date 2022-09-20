@@ -17,7 +17,7 @@ func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, k
 	t.Helper()
 	path := t.TempDir()
 	logger := log.New()
-	db := mdbx.NewMDBX(logger).Path(path).WithTablessCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+	db := mdbx.NewMDBX(logger).Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.ChaindataTablesCfg
 	}).MustOpen()
 	agg, err := NewAggregator(path, aggStep)

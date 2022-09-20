@@ -173,20 +173,27 @@ func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		sequentialRoot, branchNodeUpdates, err := trieOne.ReviewKeys(plainKeys[i:i+1], hashedKeys[i:i+1])
+		sequentialRoot, branchNodeUpdates, err := trieOne.ProcessUpdates(plainKeys[i:i+1], hashedKeys[i:i+1], updates[i:i+1])
+		_, _ = sequentialRoot, branchNodeUpdates
+		//bu, err := trieOne.WriteUpdate(plainKeys[i], hashedKeys[i], updates[i])
 		require.NoError(t, err)
-		roots = append(roots, sequentialRoot)
-
 		ms.applyBranchNodeUpdates(branchNodeUpdates)
+		//
 		renderUpdates(branchNodeUpdates)
 	}
 
-	err := ms2.applyPlainUpdates(plainKeys, updates)
+	sequentialRoot, branchNodeUpdates, err := trieOne.Commit()
+	require.NoError(t, err)
+	roots = append(roots, sequentialRoot)
+
+	ms.applyBranchNodeUpdates(branchNodeUpdates)
+
+	err = ms2.applyPlainUpdates(plainKeys, updates)
 	require.NoError(t, err)
 
 	fmt.Printf("\n2. Trie batch update generated following branch updates\n")
 	// batch update
-	batchRoot, branchNodeUpdatesTwo, err := trieTwo.ReviewKeys(plainKeys, hashedKeys)
+	batchRoot, branchNodeUpdatesTwo, err := trieTwo.ProcessUpdates(plainKeys, hashedKeys, updates)
 	require.NoError(t, err)
 	renderUpdates(branchNodeUpdatesTwo)
 

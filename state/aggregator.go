@@ -39,8 +39,7 @@ import (
 // Reconstruction of the aggregator in another package, `aggregator`
 
 type Aggregator struct {
-	mergeNotify     chan struct{}
-	commitFn        func() error
+	commitFn        func(txNum uint64) error
 	aggregationStep uint64
 	accounts        *Domain
 	storage         *Domain
@@ -64,7 +63,6 @@ func NewAggregator(
 ) (*Aggregator, error) {
 	a := &Aggregator{
 		aggregationStep: aggregationStep,
-		mergeNotify:     make(chan struct{}, 1),
 		patriciaTrie:    commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
 		commTree:        btree.NewG[*CommitmentItem](32, commitmentItemLess),
 		keccak:          sha3.NewLegacyKeccak256(),
@@ -792,12 +790,20 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 	return nil
 }
 
+var (
+	keyCommitLatestTx = []byte("latesttx")
+	keyLatestTxInDB   = []byte("dblasttx")
+)
+
 func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
+	if txNum == 0 {
+		return 0, nil
+	}
 	ctx := a.MakeContext()
-	var latestTxNum uint64 = txNum
+	latestTxNum := txNum
 	for {
 		a.SetTxNum(latestTxNum + 1)
-		latest, err := ctx.ReadCommitment([]byte("latesttx"), a.rwTx)
+		latest, err := ctx.ReadCommitment(keyCommitLatestTx, a.rwTx)
 		if err != nil {
 			return 0, err
 		}
@@ -810,11 +816,19 @@ func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
 		}
 		latestTxNum = v
 	}
-	if latestTxNum < txNum {
-		panic("latest < txnum")
+
+	a.SetTxNum(latestTxNum)
+	dblast, err := ctx.ReadCommitment(keyLatestTxInDB, a.rwTx)
+	if err != nil {
+		return 0, err
+	}
+	if len(dblast) == 8 {
+		v := binary.BigEndian.Uint64(dblast)
+		latestTxNum = v
 	}
 
 	a.SetTxNum(latestTxNum)
+
 	buf, err := ctx.ReadCommitment(makeCommitmentKey(latestTxNum), a.rwTx)
 	if err != nil {
 		return 0, err
@@ -825,6 +839,7 @@ func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
 	if err := a.patriciaTrie.SetState(buf); err != nil {
 		return 0, err
 	}
+
 	return latestTxNum, nil
 }
 
@@ -840,7 +855,6 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 	if len(touchedKeys) == 0 {
 		rootHash, err = a.patriciaTrie.RootHash()
 		if commit && err == nil {
-			fmt.Printf("put roothash %x txnum=%d\n", rootHash, a.txNum)
 			state, err := a.patriciaTrie.EncodeCurrentState(nil, rootHash)
 			if err != nil {
 				return nil, err
@@ -850,7 +864,7 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 			}
 			var b [8]byte
 			binary.BigEndian.PutUint64(b[:], a.txNum)
-			if err = a.UpdateCommitmentData([]byte("latesttx"), b[:]); err != nil {
+			if err = a.UpdateCommitmentData(keyCommitLatestTx, b[:]); err != nil {
 				return nil, err
 			}
 		}
@@ -905,7 +919,6 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 		}
 	}
 	if commit {
-		fmt.Printf("put roothash %x\n", rootHash)
 		state, err := a.patriciaTrie.EncodeCurrentState(nil, rootHash)
 		if err != nil {
 			return nil, err
@@ -915,7 +928,7 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 		}
 		var b [8]byte
 		binary.BigEndian.PutUint64(b[:], a.txNum)
-		if err = a.UpdateCommitmentData([]byte("latesttx"), b[:]); err != nil {
+		if err = a.UpdateCommitmentData(keyCommitLatestTx, b[:]); err != nil {
 			return nil, err
 		}
 	}
@@ -1036,16 +1049,18 @@ func (a *Aggregator) ReadyToFinishTx() bool {
 	return (a.txNum+1)%a.aggregationStep == 0
 }
 
-func (a *Aggregator) SetCommitFn(fn func() error) {
+func (a *Aggregator) SetCommitFn(fn func(txNum uint64) error) {
 	a.commitFn = fn
-}
-
-func (a *Aggregator) MergeNotifyChannel() chan struct{} {
-	return a.mergeNotify
 }
 
 func (a *Aggregator) FinishTx() error {
 	atomic.AddUint64(&a.stats.TxCount, 1)
+
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], a.txNum)
+	if err := a.UpdateCommitmentData(keyLatestTxInDB, b[:]); err != nil {
+		return err
+	}
 
 	if !a.ReadyToFinishTx() {
 		return nil
@@ -1108,13 +1123,8 @@ func (a *Aggregator) FinishTx() error {
 	}
 	closeAll = false
 
-	select {
-	case a.mergeNotify <- struct{}{}:
-	default:
-	}
-
 	if a.commitFn != nil {
-		if err := a.commitFn(); err != nil {
+		if err := a.commitFn(a.txNum); err != nil {
 			return err
 		}
 	}
