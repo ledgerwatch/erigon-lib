@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -472,6 +473,34 @@ func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 	}
 }
 
+func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
+	t.Helper()
+	txFrom, txTo := (step)*d.aggregationStep, (step+1)*d.aggregationStep
+
+	c, err := d.collate(step, txFrom, txTo, d.tx)
+	require.NoError(t, err)
+
+	sf, err := d.buildFiles(step, c)
+	require.NoError(t, err)
+	d.integrateFiles(sf, txFrom, txTo)
+
+	err = d.prune(step, txFrom, txTo)
+	require.NoError(t, err)
+
+	var r DomainRanges
+	maxEndTxNum := d.endTxNumMinimax()
+	maxSpan := uint64(d.aggregationStep * d.aggregationStep)
+	for r = d.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = d.findMergeRange(maxEndTxNum, maxSpan) {
+		valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r)
+		valuesIn, indexIn, historyIn, err := d.mergeFiles(valuesOuts, indexOuts, historyOuts, r, maxSpan)
+		require.NoError(t, err)
+
+		d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
+		err = d.deleteFiles(valuesOuts, indexOuts, historyOuts)
+		require.NoError(t, err)
+	}
+}
+
 func TestMergeFiles(t *testing.T) {
 	_, db, d, txs := filledDomain(t)
 	defer db.Close()
@@ -550,5 +579,211 @@ func TestDelete(t *testing.T) {
 		val, err = dc.GetBeforeTxNum([]byte("key2"), txNum+1, roTx)
 		require.NoError(t, err)
 		require.Nil(t, val, label)
+	}
+}
+
+func filledDomainFixedSize(t *testing.T, keysCount, txCount uint64) (string, kv.RwDB, *Domain, map[string][]bool) {
+	t.Helper()
+	path, db, d := testDbAndDomain(t, 0 /* prefixLen */)
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	d.SetTx(tx)
+	// keys are encodings of numbers 1..31
+	// each key changes value on every txNum which is multiple of the key
+	dat := make(map[string][]bool) // K:V is key -> list of bools. If list[i] == true, i'th txNum should persists
+
+	for txNum := uint64(1); txNum <= txCount; txNum++ {
+		d.SetTxNum(txNum)
+		for keyNum := uint64(1); keyNum <= keysCount; keyNum++ {
+			if keyNum == txNum%d.aggregationStep {
+				continue
+			}
+			var k [8]byte
+			var v [8]byte
+			binary.BigEndian.PutUint64(k[:], keyNum)
+			binary.BigEndian.PutUint64(v[:], txNum)
+			err = d.Put(k[:], nil, v[:])
+			require.NoError(t, err)
+
+			if _, ok := dat[fmt.Sprintf("%d", keyNum)]; !ok {
+				dat[fmt.Sprintf("%d", keyNum)] = make([]bool, txCount+1)
+			}
+			dat[fmt.Sprintf("%d", keyNum)][txNum] = true
+		}
+		if txNum%d.aggregationStep == 0 {
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			d.SetTx(tx)
+		}
+	}
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx = nil
+	return path, db, d, dat
+}
+
+// firstly we write all the data to domain
+// then we collate-merge-prune
+// then check.
+//  in real life we periodically do collate-merge-prune without stopping adding data
+func TestDomain_Prune_AfterAllWrites(t *testing.T) {
+	keyCount, txCount := uint64(4), uint64(64)
+	path, db, dom, data := filledDomainFixedSize(t, keyCount, txCount)
+	defer db.Close()
+	defer dom.Close()
+	defer os.Remove(path)
+
+	collateAndMerge(t, db, dom, txCount)
+
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+
+	// Check the history
+	dc := dom.MakeContext()
+	for txNum := uint64(1); txNum <= txCount; txNum++ {
+		for keyNum := uint64(1); keyNum <= keyCount; keyNum++ {
+			var k [8]byte
+			var v [8]byte
+			label := fmt.Sprintf("txNum=%d, keyNum=%d\n", txNum, keyNum)
+			binary.BigEndian.PutUint64(k[:], keyNum)
+			binary.BigEndian.PutUint64(v[:], txNum)
+
+			val, err := dc.GetBeforeTxNum(k[:], txNum+1, roTx)
+			// during generation such keys are skipped so value should be nil for this call
+			require.NoError(t, err, label)
+			if !data[fmt.Sprintf("%d", keyNum)][txNum] {
+				if txNum > 1 {
+					binary.BigEndian.PutUint64(v[:], txNum-1)
+				} else {
+					require.Nil(t, val, label)
+					continue
+				}
+			}
+			require.EqualValues(t, v[:], val)
+		}
+	}
+
+	var v [8]byte
+	binary.BigEndian.PutUint64(v[:], txCount)
+
+	for keyNum := uint64(1); keyNum <= keyCount; keyNum++ {
+		var k [8]byte
+		label := fmt.Sprintf("txNum=%d, keyNum=%d\n", txCount, keyNum)
+		binary.BigEndian.PutUint64(k[:], keyNum)
+
+		storedV, err := dc.Get(k[:], nil, roTx)
+		require.NoError(t, err, label)
+		require.EqualValues(t, v[:], storedV, label)
+	}
+}
+
+func TestDomain_PruneOnWrite(t *testing.T) {
+	keysCount, txCount := uint64(16), uint64(64)
+
+	path, db, d := testDbAndDomain(t, 0 /* prefixLen */)
+	defer db.Close()
+	defer d.Close()
+	defer os.Remove(path)
+
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	d.SetTx(tx)
+	// keys are encodings of numbers 1..31
+	// each key changes value on every txNum which is multiple of the key
+	data := make(map[string][]uint64)
+
+	for txNum := uint64(1); txNum <= txCount; txNum++ {
+		d.SetTxNum(txNum)
+		for keyNum := uint64(1); keyNum <= keysCount; keyNum++ {
+			if keyNum == txNum%d.aggregationStep {
+				continue
+			}
+			var k [8]byte
+			var v [8]byte
+			binary.BigEndian.PutUint64(k[:], keyNum)
+			binary.BigEndian.PutUint64(v[:], txNum)
+			err = d.Put(k[:], nil, v[:])
+			require.NoError(t, err)
+
+			list, ok := data[fmt.Sprintf("%d", keyNum)]
+			if !ok {
+				data[fmt.Sprintf("%d", keyNum)] = make([]uint64, 0)
+			}
+			data[fmt.Sprintf("%d", keyNum)] = append(list, txNum)
+		}
+		if txNum%d.aggregationStep == 0 {
+			step := txNum/d.aggregationStep - 1
+			if step == 0 {
+				continue
+			}
+			step--
+			collateAndMergeOnce(t, d, step)
+
+			err = tx.Commit()
+			require.NoError(t, err)
+			tx, err = db.BeginRw(context.Background())
+			require.NoError(t, err)
+			d.SetTx(tx)
+		}
+	}
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx = nil
+
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+
+	// Check the history
+	dc := d.MakeContext()
+	for txNum := uint64(1); txNum <= txCount; txNum++ {
+		for keyNum := uint64(1); keyNum <= keysCount; keyNum++ {
+			valNum := txNum
+			var k [8]byte
+			var v [8]byte
+			label := fmt.Sprintf("txNum=%d, keyNum=%d\n", txNum, keyNum)
+			binary.BigEndian.PutUint64(k[:], keyNum)
+			binary.BigEndian.PutUint64(v[:], valNum)
+
+			val, err := dc.GetBeforeTxNum(k[:], txNum+1, roTx)
+			if keyNum == txNum%d.aggregationStep {
+				if txNum > 1 {
+					binary.BigEndian.PutUint64(v[:], txNum-1)
+					require.EqualValues(t, v[:], val)
+					continue
+				} else {
+					require.Nil(t, val, label)
+					continue
+				}
+			}
+			require.NoError(t, err, label)
+			require.EqualValues(t, v[:], val, label)
+		}
+	}
+
+	var v [8]byte
+	binary.BigEndian.PutUint64(v[:], txCount)
+
+	for keyNum := uint64(1); keyNum <= keysCount; keyNum++ {
+		var k [8]byte
+		label := fmt.Sprintf("txNum=%d, keyNum=%d\n", txCount, keyNum)
+		binary.BigEndian.PutUint64(k[:], keyNum)
+
+		storedV, err := dc.Get(k[:], nil, roTx)
+		require.NoError(t, err, label)
+		require.EqualValues(t, v[:], storedV, label)
 	}
 }
