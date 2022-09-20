@@ -1181,10 +1181,6 @@ func (hph *HexPatriciaHashed) foldRoot() (BranchData, error) {
 	if hph.activeRows != 0 {
 		return nil, fmt.Errorf("cannot fold root - there are still active rows: %d", hph.activeRows)
 	}
-	//if hph.root.downHashedLen == 0 {
-	// Not overwrite previous branch node
-	//	return nil, nil
-	//}
 
 	rootGetter := func(_ int, _ bool) (*Cell, error) {
 		_, err := hph.RootHash()
@@ -1346,11 +1342,6 @@ func (hph *HexPatriciaHashed) ReviewKeys(plainKeys, hashedKeys [][]byte) (rootHa
 			branchNodeUpdates[string(updateKey)] = branchData
 		}
 	}
-	//if branchData, err := hph.foldRoot(); err != nil {
-	//	return nil, nil, fmt.Errorf("foldRoot: %w", err)
-	//} else if branchData != nil {
-	//	branchNodeUpdates[string(hexToCompact([]byte{}))] = branchData
-	//}
 
 	rootHash, err = hph.RootHash()
 	if err != nil {
