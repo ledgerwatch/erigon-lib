@@ -837,7 +837,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		hph.afterMap[row] = bitmap
 		hph.touchMap[row] = 0
 	}
-	fmt.Printf("unfoldBranchNode [unfoldBranchNode%x], afterMap = [%016b], touchMap = [%016b]\n", branchData, hph.afterMap[row], hph.touchMap[row])
+	fmt.Printf("unfoldBranchNode [%x], afterMap = [%016b], touchMap = [%016b]\n", branchData, hph.afterMap[row], hph.touchMap[row])
 	// Loop iterating over the set bits of modMask
 	for bitset, j := bitmap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
@@ -886,7 +886,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		touched = hph.rootTouched
 		present = hph.rootPresent
 		if hph.trace {
-			fmt.Printf("root, touched %t, present %t, root %+v\n", touched, present, hph.root)
+			fmt.Printf("root, touched %t, present %t\n", touched, present)
 		}
 	} else {
 		upDepth = hph.depths[hph.activeRows-1]
@@ -1267,10 +1267,10 @@ func (hph *HexPatriciaHashed) updateCell(plainKey, hashedKey []byte) *Cell {
 	}
 	if len(hashedKey) == 2*length.Hash {
 		// account
-		cell.apl = length.Addr
+		cell.apl = len(plainKey)
 		copy(cell.apk[:], plainKey)
 	} else {
-		cell.spl = length.Addr + length.Hash
+		cell.spl = len(plainKey)
 		copy(cell.spk[:], plainKey)
 	}
 	return cell
