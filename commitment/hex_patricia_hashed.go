@@ -1272,6 +1272,7 @@ func (hph *HexPatriciaHashed) updateCell(plainKey, hashedKey []byte) *Cell {
 		// account
 		cell.apl = len(plainKey)
 		copy(cell.apk[:], plainKey)
+		copy(cell.CodeHash[:], EmptyCodeHash)
 	} else {
 		cell.spl = len(plainKey)
 		copy(cell.spk[:], plainKey)

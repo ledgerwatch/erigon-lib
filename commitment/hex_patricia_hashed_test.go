@@ -140,7 +140,7 @@ func Test_HexPatriciaHashed_ProcessUpdates_UniqueRepresentation(t *testing.T) {
 	ms2 := NewMockState(t)
 
 	plainKeys, hashedKeys, updates := NewUpdateBuilder().
-		Balance("f4", 4).
+		Balance("f5", 4).
 		Balance("ff", 900234).
 		Balance("04", 1233).
 		Storage("04", "01", "0401").
