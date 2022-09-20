@@ -56,6 +56,16 @@ func BeginRw(tb testing.TB, db kv.RwDB) kv.RwTx {
 	return tx
 }
 
+func BeginRo(tb testing.TB, db kv.RoDB) kv.Tx {
+	tb.Helper()
+	tx, err := db.BeginRo(context.Background())
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(tx.Rollback)
+	return tx
+}
+
 func NewTestPoolDB(tb testing.TB) kv.RwDB {
 	tb.Helper()
 	db := NewPoolDB()
