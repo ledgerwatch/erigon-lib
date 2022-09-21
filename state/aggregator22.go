@@ -27,6 +27,7 @@ import (
 )
 
 type Aggregator22 struct {
+	dir             string
 	aggregationStep uint64
 	accounts        *History
 	storage         *History
@@ -38,48 +39,58 @@ type Aggregator22 struct {
 	txNum           uint64
 	logPrefix       string
 	rwTx            kv.RwTx
+	maxTxNum        uint64
 }
 
-func NewAggregator22(
-	dir string,
-	aggregationStep uint64,
-) (*Aggregator22, error) {
-	a := &Aggregator22{
-		aggregationStep: aggregationStep,
-	}
-	closeAgg := true
-	defer func() {
-		if closeAgg {
-			a.Close()
-		}
-	}()
+func NewAggregator22(dir string, aggregationStep uint64) (*Aggregator22, error) {
+	return &Aggregator22{dir: dir, aggregationStep: aggregationStep}, nil
+}
+
+func (a *Aggregator22) ReopenFiles() error {
+	dir := a.dir
+	aggregationStep := a.aggregationStep
 	var err error
 	if a.accounts, err = NewHistory(dir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */); err != nil {
-		return nil, err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.storage, err = NewHistory(dir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */); err != nil {
-		return nil, err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.code, err = NewHistory(dir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */); err != nil {
-		return nil, err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.logAddrs, err = NewInvertedIndex(dir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx); err != nil {
-		return nil, err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.logTopics, err = NewInvertedIndex(dir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx); err != nil {
-		return nil, err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.tracesFrom, err = NewInvertedIndex(dir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx); err != nil {
-		return nil, err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	if a.tracesTo, err = NewInvertedIndex(dir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx); err != nil {
-		return nil, err
+		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	closeAgg = false
-	return a, nil
+	a.maxTxNum = a.EndTxNumMinimax()
+	return nil
 }
 
 func (a *Aggregator22) Close() {
+	a.closeFiles()
+}
+
+func (a *Aggregator22) Files() (res []string) {
+	res = append(res, a.accounts.Files()...)
+	res = append(res, a.storage.Files()...)
+	res = append(res, a.code.Files()...)
+	res = append(res, a.logAddrs.Files()...)
+	res = append(res, a.logTopics.Files()...)
+	res = append(res, a.tracesFrom.Files()...)
+	res = append(res, a.tracesTo.Files()...)
+	return res
+}
+
+func (a *Aggregator22) closeFiles() {
 	if a.accounts != nil {
 		a.accounts.Close()
 	}
@@ -611,6 +622,9 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
+	if (a.txNum + 1) <= a.maxTxNum+a.aggregationStep {
+		return nil
+	}
 	if (a.txNum+1)%a.aggregationStep != 0 {
 		return nil
 	}

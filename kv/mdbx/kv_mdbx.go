@@ -121,7 +121,7 @@ func (opts MdbxOpts) Set(opt MdbxOpts) MdbxOpts {
 func (opts MdbxOpts) InMem() MdbxOpts {
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.WriteMap
-	opts.mapSize = 64 * datasize.MB
+	opts.mapSize = 512 * datasize.MB
 	return opts
 }
 
@@ -281,7 +281,11 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.roTxsLimiter == nil {
-		opts.roTxsLimiter = semaphore.NewWeighted(int64(runtime.GOMAXPROCS(-1)))
+		targetSemCount := int64(runtime.GOMAXPROCS(-1)) - 1
+		if targetSemCount <= 1 {
+			targetSemCount = 2
+		}
+		opts.roTxsLimiter = semaphore.NewWeighted(targetSemCount) // 1 less than max to allow unlocking to happen
 	}
 	db := &MdbxKV{
 		opts:         opts,
@@ -418,6 +422,15 @@ func (db *MdbxKV) Close() {
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
+	}
+
+	// don't try to acquire if the context is already done
+	done := ctx.Done()
+	select {
+	case <-done:
+		return nil, ctx.Err()
+	default:
+		// otherwise carry on
 	}
 
 	// will return nil err if context is cancelled (may appear to acquire the semaphore)
@@ -1344,9 +1357,6 @@ func (c *MdbxCursor) deleteDupSort(key []byte) error {
 }
 
 func (c *MdbxCursor) PutNoOverwrite(key []byte, value []byte) error {
-	if len(key) == 0 {
-		return fmt.Errorf("mdbx doesn't support empty keys. bucket: %s", c.bucketName)
-	}
 	if c.bucketCfg.AutoDupSortKeysConversion {
 		panic("not implemented")
 	}
@@ -1355,10 +1365,6 @@ func (c *MdbxCursor) PutNoOverwrite(key []byte, value []byte) error {
 }
 
 func (c *MdbxCursor) Put(key []byte, value []byte) error {
-	if len(key) == 0 {
-		return fmt.Errorf("mdbx doesn't support empty keys. bucket: %s", c.bucketName)
-	}
-
 	b := c.bucketCfg
 	if b.AutoDupSortKeysConversion {
 		if err := c.putDupSort(key, value); err != nil {
