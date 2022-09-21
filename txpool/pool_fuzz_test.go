@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -172,7 +173,7 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 	if !ok {
 		return nil, nil, txs, false
 	}
-	feeCap, ok := u256Slice(rawFeeCap)
+	feeCap, ok := u64Slice(rawFeeCap)
 	if !ok {
 		return nil, nil, txs, false
 	}
@@ -202,8 +203,9 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 			Nonce:  txNonce[i],
 			Value:  values[i%len(values)],
 			Tip:    *uint256.NewInt(tips[i%len(tips)]),
-			FeeCap: feeCap[i%len(feeCap)],
+			FeeCap: *uint256.NewInt(feeCap[i%len(feeCap)]),
 		}
+		fmt.Println(i)
 		txRlp := fakeRlpTx(txs.Txs[i], senders.At(i%senders.Len()))
 		_, err := parseCtx.ParseTransaction(txRlp, 0, txs.Txs[i], nil, false, nil)
 		if err != nil {
