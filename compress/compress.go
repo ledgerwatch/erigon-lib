@@ -66,6 +66,7 @@ type Compressor struct {
 	wg               *sync.WaitGroup
 	suffixCollectors []*etl.Collector
 	wordsCount       uint64
+	superstringCount uint64
 
 	ctx       context.Context
 	logPrefix string
@@ -133,7 +134,10 @@ func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
 
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		c.superstrings <- c.superstring
+		c.superstringCount++
+		if c.superstringCount%2 != 0 {
+			c.superstrings <- c.superstring
+		}
 		c.superstring = nil
 	}
 	for _, a := range word {
@@ -228,7 +232,7 @@ const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 1 * 1024 * 1024
+const maxDictPatterns = 512 * 1024
 
 // nolint
 const compressLogPrefix = "compress"
