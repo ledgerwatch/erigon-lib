@@ -1154,9 +1154,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 	protocolBaseFee, blockGasLimit uint64, pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
-	max256 := uint256.NewInt(2)
-	max256.Exp(max256, uint256.NewInt(256))
-	minFeeCap := *max256
+	minFeeCap := uint256.NewInt(0).SetAllOne()
 	minTip := uint64(math.MaxUint64)
 	var toDel []*metaTx // can't delete items while iterate them
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
@@ -1182,9 +1180,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			return true
 		}
 		if minFeeCap.Cmp(&mt.Tx.FeeCap) < 0 {
-			minFeeCap = mt.Tx.FeeCap
+			*minFeeCap = mt.Tx.FeeCap
 		}
-		mt.minFeeCap = minFeeCap
+		mt.minFeeCap = *minFeeCap
 		if mt.Tx.Tip.IsUint64() {
 			minTip = cmp.Min(minTip, mt.Tx.Tip.Uint64())
 		}
