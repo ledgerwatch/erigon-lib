@@ -232,7 +232,7 @@ const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 512 * 1024
+const maxDictPatterns = 256 * 1024
 
 // nolint
 const compressLogPrefix = "compress"
