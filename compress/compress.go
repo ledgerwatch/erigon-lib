@@ -200,7 +200,10 @@ const maxPatternLen = 128
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
 /*
-Experiments on 74Gb uncompressed file (bsc 012500-013000-transactions.seg):
+Experiments on 74Gb uncompressed file (bsc 012500-013000-transactions.seg).
+Ram - needed just to open compressed file (Huff tables, etc...).
+dec_speed - loop with `word, _ = g.Next(word[:0])
+skip_speed - loop with `g.Skip()`
 | DictSize | Ram  | file_size | dec_speed | skip_speed |
 | -------- | ---- | --------- | --------- | ---------- |
 | 1M       | 70Mb | 35871Mb   | 4m06s     | 1m58s      |
