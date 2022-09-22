@@ -1399,7 +1399,7 @@ func (f *DecompressedFile) ForEach(walker func(v []byte, compressed bool) error)
 	if err != nil {
 		return err
 	}
-	r := bufio.NewReaderSize(f.f, etl.BufIOSize)
+	r := bufio.NewReaderSize(f.f, 4*etl.BufIOSize)
 	buf := make([]byte, 4096)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {

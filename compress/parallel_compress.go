@@ -301,8 +301,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return fmt.Errorf("create intermediate file: %w", err)
 	}
 	defer intermediateFile.Close()
-	intermediateW := bufio.NewWriterSize(intermediateFile, etl.BufIOSize)
-
+	intermediateW := bufio.NewWriterSize(intermediateFile, 4*etl.BufIOSize)
+	fmt.Printf("slow part\n")
 	var inCount, outCount, emptyWordsCount uint64 // Counters words sent to compression and returned for compression
 	var numBuf [binary.MaxVarintLen64]byte
 	if err = datFile.ForEach(func(v []byte, compression bool) error {
@@ -413,6 +413,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return err
 	}
 	close(ch)
+	fmt.Printf("slow part end\n")
+
 	defer func(t time.Time) { fmt.Printf("parallel_compress.go:416: %s\n", time.Since(t)) }(time.Now())
 	// Drain the out queue if necessary
 	if inCount > outCount {
@@ -644,7 +646,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
-	r := bufio.NewReaderSize(intermediateFile, etl.BufIOSize)
+	r := bufio.NewReaderSize(intermediateFile, 4*etl.BufIOSize)
 	var l uint64
 	var e error
 	defer func(t time.Time) { fmt.Printf("parallel_compress.go:650: %s\n", time.Since(t)) }(time.Now())
