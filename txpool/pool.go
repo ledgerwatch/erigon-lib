@@ -2202,9 +2202,10 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint256.Int) bool {
 			}
 		}
 		if than.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
-			than.minFeeCap.Sub(&than.minFeeCap, &pendingBaseFee)
-			if than.minFeeCap.Cmp(uint256.NewInt(than.minTip)) <= 0 {
-				thanEffectiveTip = than.minFeeCap
+			difference := uint256.NewInt(0)
+			difference.Sub(&than.minFeeCap, &pendingBaseFee)
+			if difference.Cmp(uint256.NewInt(than.minTip)) <= 0 {
+				thanEffectiveTip = *difference
 			} else {
 				thanEffectiveTip = *uint256.NewInt(than.minTip)
 			}
