@@ -154,6 +154,7 @@ func (c *Compressor) AddUncompressedWord(word []byte) error {
 }
 
 func (c *Compressor) Compress() error {
+	fmt.Printf("superstringCount: %d\n", c.superstringCount)
 	c.uncompressedFile.w.Flush()
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
