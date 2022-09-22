@@ -632,7 +632,7 @@ func filledDomainFixedSize(t *testing.T, keysCount, txCount uint64) (string, kv.
 // firstly we write all the data to domain
 // then we collate-merge-prune
 // then check.
-//  in real life we periodically do collate-merge-prune without stopping adding data
+// in real life we periodically do collate-merge-prune without stopping adding data
 func TestDomain_Prune_AfterAllWrites(t *testing.T) {
 	keyCount, txCount := uint64(4), uint64(64)
 	path, db, dom, data := filledDomainFixedSize(t, keyCount, txCount)

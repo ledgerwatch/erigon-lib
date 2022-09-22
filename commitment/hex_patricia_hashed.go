@@ -853,7 +853,7 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		if cell.apl > 0 {
 			hph.accountFn(cell.apk[:cell.apl], cell)
 			if hph.trace {
-				fmt.Printf("accountFn[%x] return balance=%d, nonce=%d\n", cell.apk[:cell.apl], &cell.Balance, cell.Nonce)
+				fmt.Printf("accountFn[%x] return balance=%d, nonce=%d code=%x\n", cell.apk[:cell.apl], &cell.Balance, cell.Nonce, cell.CodeHash[:])
 			}
 		}
 		if cell.spl > 0 {
@@ -1243,7 +1243,7 @@ func (hph *HexPatriciaHashed) updateCell(plainKey, hashedKey []byte) *Cell {
 		// account
 		cell.apl = len(plainKey)
 		copy(cell.apk[:], plainKey)
-		copy(cell.CodeHash[:], EmptyCodeHash)
+		//copy(cell.CodeHash[:], EmptyCodeHash)
 	} else {
 		cell.spl = len(plainKey)
 		copy(cell.spk[:], plainKey)
@@ -1294,7 +1294,7 @@ func (hph *HexPatriciaHashed) ReviewKeys(plainKeys, hashedKeys [][]byte) (rootHa
 				cell.setAccountFields(stagedCell.CodeHash[:], &stagedCell.Balance, stagedCell.Nonce)
 
 				if hph.trace {
-					fmt.Printf("accountFn filled cell plainKey: %x balance: %v nonce: %v codeHash: %x\n", cell.apk, cell.Balance.String(), cell.Nonce, cell.CodeHash)
+					fmt.Printf("accountFn reading key %x => balance=%v nonce=%v codeHash=%x\n", cell.apk, cell.Balance.Uint64(), cell.Nonce, cell.CodeHash)
 				}
 			}
 		} else {
@@ -1304,7 +1304,7 @@ func (hph *HexPatriciaHashed) ReviewKeys(plainKeys, hashedKeys [][]byte) (rootHa
 			if !stagedCell.Delete {
 				hph.updateCell(plainKey, hashedKey).setStorage(stagedCell.Storage[:stagedCell.StorageLen])
 				if hph.trace {
-					fmt.Printf("storageFn filled %x : %x\n", plainKey, stagedCell.Storage)
+					fmt.Printf("storageFn reading key %x => %x\n", plainKey, stagedCell.Storage[:stagedCell.StorageLen])
 				}
 			}
 		}
@@ -1710,19 +1710,40 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 		// Update the cell
 		if update.Flags == DELETE_UPDATE {
 			hph.deleteCell(hashedKey)
+			if hph.trace {
+				fmt.Printf("key %x deleted\n", plainKey)
+			}
 		} else {
 			cell := hph.updateCell(plainKey, hashedKey)
+			if hph.trace {
+				fmt.Printf("accountFn updated key %x =>", plainKey)
+			}
 			if update.Flags&BALANCE_UPDATE != 0 {
+				if hph.trace {
+					fmt.Printf(" balance=%d", update.Balance.Uint64())
+				}
 				cell.Balance.Set(&update.Balance)
 			}
 			if update.Flags&NONCE_UPDATE != 0 {
+				if hph.trace {
+					fmt.Printf(" nonce=%d", update.Nonce)
+				}
 				cell.Nonce = update.Nonce
 			}
 			if update.Flags&CODE_UPDATE != 0 {
+				if hph.trace {
+					fmt.Printf(" codeHash=%x", update.CodeHashOrStorage)
+				}
 				copy(cell.CodeHash[:], update.CodeHashOrStorage[:])
+			}
+			if hph.trace {
+				fmt.Printf("\n")
 			}
 			if update.Flags&STORAGE_UPDATE != 0 {
 				cell.setStorage(update.CodeHashOrStorage[:update.ValLength])
+				if hph.trace {
+					fmt.Printf("\rstorageFn filled key %x => %x\n", plainKey, update.CodeHashOrStorage[:update.ValLength])
+				}
 			}
 		}
 	}

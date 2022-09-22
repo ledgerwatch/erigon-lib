@@ -307,7 +307,7 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 		data:  make([]uint64, len(r[16:])/8), // p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
 	}
 	ef.maxOffset = ef.u - 1
-  for i, fi := 16, 0; i < len(r[16:]); i, fi = i+8, fi+1 {
+	for i, fi := 16, 0; i < len(r[16:]); i, fi = i+8, fi+1 {
 		ef.data[fi] = binary.LittleEndian.Uint64(r[i : i+8])
 	}
 	ef.deriveFields()

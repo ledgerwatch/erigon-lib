@@ -891,7 +891,7 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 	}
 
 	if !bytes.Equal(rootHash, rootHash2) {
-		fmt.Printf("hash mismatch old %x new %x\n", rootHash, rootHash2)
+		fmt.Printf("hash mismatch: state direct reading=%x update based=%x\n", rootHash, rootHash2)
 		return rootHash2, nil
 	}
 

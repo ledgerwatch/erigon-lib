@@ -100,7 +100,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	}()
 	agg.SetTx(tx)
 
-	comit := func() error {
+	comit := func(txn uint64) error {
 		err = tx.Commit()
 		require.NoError(t, err)
 		tx, err = db.BeginRw(context.Background())
@@ -130,7 +130,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, agg.FinishTx())
 		if txNum+1%100 == 0 {
-			comit()
+			comit(txNum)
 		}
 	}
 	err = tx.Commit()

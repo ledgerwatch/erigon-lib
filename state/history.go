@@ -183,7 +183,6 @@ func (h *History) Close() {
 	h.closeFiles()
 }
 
-
 func (h *History) SetMergeFn(fn func([]byte, []byte) ([]byte, error)) {
 	h.valueMergeFn = fn
 }
