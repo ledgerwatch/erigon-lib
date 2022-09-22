@@ -489,7 +489,7 @@ func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
 
 	var r DomainRanges
 	maxEndTxNum := d.endTxNumMinimax()
-	maxSpan := uint64(d.aggregationStep * d.aggregationStep)
+	maxSpan := d.aggregationStep * d.aggregationStep
 	for r = d.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = d.findMergeRange(maxEndTxNum, maxSpan) {
 		valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r)
 		valuesIn, indexIn, historyIn, err := d.mergeFiles(valuesOuts, indexOuts, historyOuts, r, maxSpan)
