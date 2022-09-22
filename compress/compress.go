@@ -233,7 +233,7 @@ const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 128 * 1024
+const maxDictPatterns = 64 * 1024
 
 // nolint
 const compressLogPrefix = "compress"
@@ -268,7 +268,10 @@ func dictionaryBuilderLess(i, j *Pattern) bool {
 func (db *DictionaryBuilder) Swap(i, j int) {
 	db.items[i], db.items[j] = db.items[j], db.items[i]
 }
-func (db *DictionaryBuilder) Sort() { slices.SortFunc(db.items, dictionaryBuilderLess) }
+func (db *DictionaryBuilder) Sort() {
+	slices.SortFunc(db.items, dictionaryBuilderLess)
+	fmt.Printf("dict size: %d\n", len(db.items))
+}
 
 func (db *DictionaryBuilder) Push(x interface{}) {
 	db.items = append(db.items, x.(*Pattern))
