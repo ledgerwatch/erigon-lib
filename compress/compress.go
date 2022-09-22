@@ -208,7 +208,7 @@ Experiments on 74Gb uncompressed file (bsc 012500-013000-transactions.seg):
 | 256K     | 21Mb | 37100Mb   | 3m44s     | 1m48s      |
 | 128K     | 11Mb | 37782Mb   | 3m25s     | 1m44s      |
 | 64K      | 7Mb  | 38597Mb   | 3m16s     | 1m34s      |
-| 32K      | 7Mb  | 39626Mb   | 3m0s      | 1m29s      |
+| 32K      | 5Mb  | 39626Mb   | 3m0s      | 1m29s      |
 */
 const maxDictPatterns = 64 * 1024
 
