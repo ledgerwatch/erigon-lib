@@ -131,9 +131,7 @@ func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
 
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		if c.superstringCount%4 == 0 {
-			c.superstrings <- c.superstring
-		}
+		c.superstrings <- c.superstring
 		c.superstringCount++
 		c.superstring = nil
 	}
@@ -200,7 +198,7 @@ const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 32 * 1024
+const maxDictPatterns = 64 * 1024
 
 // nolint
 const compressLogPrefix = "compress"
