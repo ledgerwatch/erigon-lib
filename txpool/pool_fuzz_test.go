@@ -172,7 +172,7 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 	if !ok {
 		return nil, nil, txs, false
 	}
-	feeCap, ok := u64Slice(rawFeeCap)
+	feeCap, ok := u8Slice(rawFeeCap)
 	if !ok {
 		return nil, nil, txs, false
 	}
@@ -236,6 +236,8 @@ func fakeRlpTx(slot *types.TxSlot, data []byte) []byte {
 	bb := bytes.NewBuffer(buf[p:p])
 	_ = slot.Tip.EncodeRLP(bb)
 	p += rlp.U256Len(&slot.Tip)
+	bb = bytes.NewBuffer(buf[p:p])
+	_ = slot.FeeCap.EncodeRLP(bb)
 	p += rlp.U256Len(&slot.FeeCap)
 	p += rlp.EncodeU64(0, buf[p:])           //gas
 	p += rlp.EncodeString([]byte{}, buf[p:]) //destrination addr
