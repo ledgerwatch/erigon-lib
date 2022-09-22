@@ -1353,7 +1353,7 @@ func NewUncompressedFile(filePath string) (*DecompressedFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := bufio.NewWriterSize(f, etl.BufIOSize)
+	w := bufio.NewWriterSize(f, 16*etl.BufIOSize)
 	return &DecompressedFile{filePath: filePath, f: f, w: w, buf: make([]byte, 128)}, nil
 }
 func (f *DecompressedFile) Close() {
