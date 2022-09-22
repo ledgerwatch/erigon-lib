@@ -2194,16 +2194,16 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint256.Int) bool {
 	switch mt.currentSubPool {
 	case PendingSubPool:
 		var effectiveTip, thanEffectiveTip uint256.Int
+		difference := uint256.NewInt(0)
+		difference.Sub(&than.minFeeCap, &pendingBaseFee)
 		if mt.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
-			if mt.minFeeCap.Cmp(uint256.NewInt(mt.minTip)) <= 0 {
-				effectiveTip = mt.minFeeCap
+			if difference.Cmp(uint256.NewInt(mt.minTip)) <= 0 {
+				effectiveTip = *difference
 			} else {
 				effectiveTip = *uint256.NewInt(mt.minTip)
 			}
 		}
 		if than.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
-			difference := uint256.NewInt(0)
-			difference.Sub(&than.minFeeCap, &pendingBaseFee)
 			if difference.Cmp(uint256.NewInt(than.minTip)) <= 0 {
 				thanEffectiveTip = *difference
 			} else {
