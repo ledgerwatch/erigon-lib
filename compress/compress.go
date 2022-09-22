@@ -131,7 +131,7 @@ func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
 
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		if c.superstringCount%4 == 0 {
+		if c.superstringCount%samplingFactor == 0 {
 			c.superstrings <- c.superstring
 		}
 		c.superstringCount++
@@ -151,7 +151,6 @@ func (c *Compressor) AddUncompressedWord(word []byte) error {
 }
 
 func (c *Compressor) Compress() error {
-	fmt.Printf("superstringCount: %d\n", c.superstringCount)
 	c.uncompressedFile.w.Flush()
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
@@ -200,7 +199,20 @@ const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
-const maxDictPatterns = 128 * 1024
+/*
+Experiments on 74Gb uncompressed file (bsc 012500-013000-transactions.seg):
+| DictSize | Ram  | file_size | dec_speed | skip_speed |
+| -------- | ---- | --------- | --------- | ---------- |
+| 1M       | 70Mb | 35871Mb   | 4m06s     | 1m58s      |
+| 512K     | 42Mb | 36496Mb   | 3m49s     | 1m51s      |
+| 256K     | 21Mb | 37100Mb   | 3m44s     | 1m48s      |
+| 128K     | 11Mb | 37782Mb   | 3m25s     | 1m44s      |
+| 64K      | 7Mb  | 38597Mb   | 3m16s     | 1m34s      |
+| 32K      | 7Mb  | 39626Mb   | 3m16s     | 1m34s      |
+*/
+const maxDictPatterns = 64 * 1024
+
+const samplingFactor = 4 // skip superstrings if `superstringNumber % samplingFactor != 0`
 
 // nolint
 const compressLogPrefix = "compress"
@@ -235,10 +247,7 @@ func dictionaryBuilderLess(i, j *Pattern) bool {
 func (db *DictionaryBuilder) Swap(i, j int) {
 	db.items[i], db.items[j] = db.items[j], db.items[i]
 }
-func (db *DictionaryBuilder) Sort() {
-	slices.SortFunc(db.items, dictionaryBuilderLess)
-	fmt.Printf("dict size: %d\n", len(db.items))
-}
+func (db *DictionaryBuilder) Sort() { slices.SortFunc(db.items, dictionaryBuilderLess) }
 
 func (db *DictionaryBuilder) Push(x interface{}) {
 	db.items = append(db.items, x.(*Pattern))
@@ -714,7 +723,7 @@ func NewUncompressedFile(filePath string) (*DecompressedFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := bufio.NewWriterSize(f, 16*etl.BufIOSize)
+	w := bufio.NewWriterSize(f, 8*etl.BufIOSize)
 	return &DecompressedFile{filePath: filePath, f: f, w: w, buf: make([]byte, 128)}, nil
 }
 func (f *DecompressedFile) Close() {
@@ -759,7 +768,7 @@ func (f *DecompressedFile) ForEach(walker func(v []byte, compressed bool) error)
 	if err != nil {
 		return err
 	}
-	r := bufio.NewReaderSize(f.f, 4*etl.BufIOSize)
+	r := bufio.NewReaderSize(f.f, 8*etl.BufIOSize)
 	buf := make([]byte, 4096)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {

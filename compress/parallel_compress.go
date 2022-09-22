@@ -239,7 +239,6 @@ func (cq *CompressionQueue) Pop() interface{} {
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
 func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath string, datFile *DecompressedFile, workers int, dictBuilder *DictionaryBuilder, lvl log.Lvl) error {
-	defer func(t time.Time) { fmt.Printf("parallel_compress.go:242 reducedict: %s\n", time.Since(t)) }(time.Now())
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -292,7 +291,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 			go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
 		}
 	}
-	defer func(t time.Time) { fmt.Printf("parallel_compress.go:295: %s\n", time.Since(t)) }(time.Now())
+
 	var err error
 	intermediatePath := segmentFilePath + ".tmp"
 	defer os.Remove(intermediatePath)
@@ -301,8 +300,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return fmt.Errorf("create intermediate file: %w", err)
 	}
 	defer intermediateFile.Close()
-	intermediateW := bufio.NewWriterSize(intermediateFile, 4*etl.BufIOSize)
-	fmt.Printf("slow part\n")
+	intermediateW := bufio.NewWriterSize(intermediateFile, 8*etl.BufIOSize)
+
 	var inCount, outCount, emptyWordsCount uint64 // Counters words sent to compression and returned for compression
 	var numBuf [binary.MaxVarintLen64]byte
 	if err = datFile.ForEach(func(v []byte, compression bool) error {
@@ -413,9 +412,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return err
 	}
 	close(ch)
-	fmt.Printf("slow part end\n")
-
-	defer func(t time.Time) { fmt.Printf("parallel_compress.go:416: %s\n", time.Since(t)) }(time.Now())
 	// Drain the out queue if necessary
 	if inCount > outCount {
 		for compressionQueue.Len() > 0 && compressionQueue[0].order == outCount {
@@ -475,8 +471,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	var codeHeap PatternHeap
 	heap.Init(&codeHeap)
 	tieBreaker := uint64(0)
-	defer func(t time.Time) { fmt.Printf("parallel_compress.go:476: %s\n", time.Since(t)) }(time.Now())
-
 	for codeHeap.Len()+(patternList.Len()-i) > 1 {
 		// New node
 		h := &PatternHuff{
@@ -559,7 +553,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pattern=[%x]\n", p.depth, p.code, p.codeBits, p.word)
 	}
 	log.Debug(fmt.Sprintf("[%s] Dictionary", logPrefix), "size", common.ByteCount(patternsSize))
-	defer func(t time.Time) { fmt.Printf("parallel_compress.go:560: %s\n", time.Since(t)) }(time.Now())
 
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)
@@ -575,8 +568,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	var posHeap PositionHeap
 	heap.Init(&posHeap)
 	tieBreaker = uint64(0)
-	defer func(t time.Time) { fmt.Printf("parallel_compress.go:576: %s\n", time.Since(t)) }(time.Now())
-
 	for posHeap.Len()+(positionList.Len()-i) > 1 {
 		// New node
 		h := &PositionHuff{
@@ -646,10 +637,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
-	r := bufio.NewReaderSize(intermediateFile, 4*etl.BufIOSize)
+	r := bufio.NewReaderSize(intermediateFile, 8*etl.BufIOSize)
 	var l uint64
 	var e error
-	defer func(t time.Time) { fmt.Printf("parallel_compress.go:650: %s\n", time.Since(t)) }(time.Now())
 	for l, e = binary.ReadUvarint(r); e == nil; l, e = binary.ReadUvarint(r) {
 		posCode := pos2code[l+1]
 		if posCode != nil {
@@ -904,9 +894,6 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 }
 
 func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir string, collectors []*etl.Collector) (*DictionaryBuilder, error) {
-	defer func(t time.Time) {
-		fmt.Printf("parallel_compress.go:897 DictionaryBuilderFromCollectors: %s\n", time.Since(t))
-	}(time.Now())
 	dictCollector := etl.NewCollector(logPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer dictCollector.Close()
 	dictAggregator := &DictAggregator{collector: dictCollector, dist: map[int]int{}}
