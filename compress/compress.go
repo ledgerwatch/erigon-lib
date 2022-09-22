@@ -212,7 +212,8 @@ Experiments on 74Gb uncompressed file (bsc 012500-013000-transactions.seg):
 */
 const maxDictPatterns = 64 * 1024
 
-const samplingFactor = 4 // skip superstrings if `superstringNumber % samplingFactor != 0`
+// samplingFactor - skip superstrings if `superstringNumber % samplingFactor != 0`
+const samplingFactor = 4
 
 // nolint
 const compressLogPrefix = "compress"
