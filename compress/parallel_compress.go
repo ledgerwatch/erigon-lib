@@ -907,7 +907,7 @@ func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir stri
 	defer func(t time.Time) {
 		fmt.Printf("parallel_compress.go:897 DictionaryBuilderFromCollectors: %s\n", time.Since(t))
 	}(time.Now())
-	dictCollector := etl.NewCollector(logPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize/2))
+	dictCollector := etl.NewCollector(logPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer dictCollector.Close()
 	dictAggregator := &DictAggregator{collector: dictCollector, dist: map[int]int{}}
 	for _, collector := range collectors {
