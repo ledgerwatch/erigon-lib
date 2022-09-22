@@ -131,7 +131,7 @@ func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
 
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		if c.superstringCount%4 == 0 {
+		if c.superstringCount%10 == 0 {
 			c.superstrings <- c.superstring
 		}
 		c.superstringCount++
