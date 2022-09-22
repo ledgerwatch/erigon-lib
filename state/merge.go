@@ -409,22 +409,12 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 		// to `lastKey` and `lastVal` correspondingly, and the next step of multi-way merge happens. Therefore, after the multi-way merge loop
 		// (when CursorHeap cp is empty), there is a need to process the last pair `keyBuf=>valBuf`, because it was one step behind
 		var keyBuf, valBuf []byte
-		var mergedOnce bool
 		for cp.Len() > 0 {
 			lastKey := common.Copy(cp[0].key)
 			lastVal := common.Copy(cp[0].val)
 			// Advance all the items that have this key (including the top)
 			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 				ci1 := cp[0]
-				if mergedOnce && d.valueMergeFn != nil {
-					fmt.Printf("mergeIntoStateFile pre-merge prefix [%x], [%x]+[%x]\n", lastKey, ci1.val, lastVal)
-					if lastVal, err = d.valueMergeFn(ci1.val, lastVal); err != nil {
-						return nil, nil, nil, fmt.Errorf("mergeIntoStateFile: merge values: %w", err)
-					}
-					fmt.Printf("mergeIntoStateFile post-merge  prefix [%x], [%x]\n", lastKey, lastVal)
-				} else {
-					mergedOnce = true
-				}
 				if ci1.dg.HasNext() {
 					ci1.key, _ = ci1.dg.NextUncompressed()
 					if d.compressVals {
@@ -508,7 +498,6 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 
 func (d *Domain) SetValueMergeStrategy(merge func([]byte, []byte) ([]byte, error)) {
 	d.valueMergeFn = merge
-	d.History.SetMergeFn(merge)
 }
 
 func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uint64, maxSpan uint64) (*filesItem, error) {
