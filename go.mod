@@ -16,7 +16,7 @@ require (
 	github.com/ledgerwatch/secp256k1 v1.0.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.21
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.0s
 	github.com/torquem-ch/mdbx-go v0.26.0
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4
