@@ -496,9 +496,9 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 	return
 }
 
-func (d *Domain) SetValueMergeStrategy(merge func([]byte, []byte) ([]byte, error)) {
-	d.valueMergeFn = merge
-}
+//func (d *Domain) SetValueMergeStrategy(merge func([]byte, []byte) ([]byte, error)) {
+//	d.valueMergeFn = merge
+//}
 
 func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uint64, maxSpan uint64) (*filesItem, error) {
 	var outItem *filesItem
