@@ -95,6 +95,7 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 	for i := 0; i < workers; i++ {
 		collector := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 		collector.LogLvl(lvl)
+
 		suffixCollectors[i] = collector
 		go processSuperstring(superstrings, collector, minPatternScore, wg)
 	}
@@ -160,7 +161,7 @@ func (c *Compressor) Compress() error {
 	}
 	close(c.superstrings)
 	c.wg.Wait()
-	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, c.suffixCollectors)
+	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, c.suffixCollectors, c.lvl)
 	if err != nil {
 
 		return err
