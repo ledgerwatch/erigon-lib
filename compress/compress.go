@@ -162,6 +162,7 @@ func (c *Compressor) Compress() error {
 	close(c.superstrings)
 	c.wg.Wait()
 
+	log.Log(c.lvl, fmt.Sprintf("[%s] BuildDict start", c.logPrefix), "workers", c.workers)
 	t := time.Now()
 	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, c.suffixCollectors, c.lvl)
 	if err != nil {

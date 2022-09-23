@@ -305,6 +305,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 
 	var inCount, outCount, emptyWordsCount uint64 // Counters words sent to compression and returned for compression
 	var numBuf [binary.MaxVarintLen64]byte
+	totalWords := datFile.count
+
 	if err = datFile.ForEach(func(v []byte, compression bool) error {
 		select {
 		case <-ctx.Done():
@@ -404,7 +406,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 				common.ReadMemStats(&m)
 			}
 			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix),
-				"processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(datFile.count)),
+				"processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)),
 				//"input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()),
 				"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 		}
@@ -466,6 +468,12 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	for _, p := range code2pattern {
 		if p.uses > 0 {
 			patternList = append(patternList, p)
+			if len(p.word) == 128 {
+				fmt.Printf("128: %d\n", p.uses)
+			}
+			if len(p.word) == 64 {
+				fmt.Printf("64: %d\n", p.uses)
+			}
 			distribution[len(p.word)]++
 		}
 	}
@@ -720,7 +728,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		wc++
 		if wc%10_000_000 == 0 {
-			log.Info(fmt.Sprintf("[%s] Compressed", logPrefix), "millions", wc/1_000_000)
+			log.Log(lvl, fmt.Sprintf("[%s] Compressed", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(wc)/float64(totalWords)))
 		}
 	}
 	if e != nil && !errors.Is(e, io.EOF) {
