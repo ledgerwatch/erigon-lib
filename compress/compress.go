@@ -159,7 +159,7 @@ func (c *Compressor) Compress() error {
 	}
 	close(c.superstrings)
 	c.wg.Wait()
-
+	defer func(t time.Time) { fmt.Printf("compress.go:162: %s\n", time.Since(t)) }(time.Now())
 	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, c.suffixCollectors)
 	if err != nil {
 
@@ -173,6 +173,7 @@ func (c *Compressor) Compress() error {
 	}
 
 	defer os.Remove(c.tmpOutFilePath)
+	defer func(t time.Time) { fmt.Printf("compress.go:176: %s\n", time.Since(t)) }(time.Now())
 	if err := reducedict(c.ctx, c.trace, c.logPrefix, c.tmpOutFilePath, c.uncompressedFile, c.workers, db, c.lvl); err != nil {
 		return err
 	}

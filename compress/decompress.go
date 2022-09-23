@@ -24,6 +24,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
+	"github.com/ledgerwatch/log/v3"
 )
 
 type word []byte // plain text word associated with code from dictionary
@@ -212,7 +213,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		if n == 0 {
 			continue
 		}
-		fmt.Printf("distribution: %d, %d\n", i, n)
+		log.Info("distribution", "len", i, "n", n)
 	}
 
 	if dictSize > 0 {
