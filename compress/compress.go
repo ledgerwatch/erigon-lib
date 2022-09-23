@@ -60,6 +60,7 @@ type Compressor struct {
 	// this is needed for using ordinary (one string) suffix sorting algorithm instead of a generalised (many superstrings) suffix
 	// sorting algorithm
 	superstring      []byte
+	superstringLen   int
 	superstrings     chan []byte
 	wg               *sync.WaitGroup
 	suffixCollectors []*etl.Collector
@@ -132,19 +133,26 @@ func (c *Compressor) Count() int { return int(c.wordsCount) }
 
 func (c *Compressor) AddWord(word []byte) error {
 	c.wordsCount++
-
-	if len(c.superstring)+2*len(word)+2 > superstringLimit {
-		if c.superstringCount%samplingFactor == 0 {
+	l := 2*len(word) + 2
+	if c.superstringLen+l > superstringLimit {
+		if c.superstringCount%16 == 0 {
 			log.Log(c.lvl, "[compress] add word", "ch", len(c.superstrings), "ch_cap", cap(c.superstrings))
+		}
+		if c.superstringCount%samplingFactor == 0 {
 			c.superstrings <- c.superstring
 		}
 		c.superstringCount++
 		c.superstring = nil
+		c.superstringLen = 0
 	}
-	for _, a := range word {
-		c.superstring = append(c.superstring, 1, a)
+	c.superstringLen += l
+
+	if c.superstringCount%samplingFactor == 0 {
+		for _, a := range word {
+			c.superstring = append(c.superstring, 1, a)
+		}
+		c.superstring = append(c.superstring, 0, 0)
 	}
-	c.superstring = append(c.superstring, 0, 0)
 
 	return c.uncompressedFile.Append(word)
 }
