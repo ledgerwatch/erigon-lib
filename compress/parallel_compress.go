@@ -445,7 +445,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return err
 	}
 	wg.Wait()
-	log.Log(lvl, fmt.Sprintf("[%s] ReduceDict", logPrefix), "took", time.Since(t))
+	log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "took", time.Since(t))
 
 	if _, err = intermediateFile.Seek(0, 0); err != nil {
 		return fmt.Errorf("return to the start of intermediate file: %w", err)
