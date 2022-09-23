@@ -203,7 +203,7 @@ const superstringLimit = 16 * 1024 * 1024
 
 // minPatternLen is minimum length of pattern we consider to be included into the dictionary
 const minPatternLen = 5
-const maxPatternLen = 64
+const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
@@ -222,7 +222,7 @@ skip_speed - loop with `g.Skip()`
 | 32K      | 5Mb  | 39626Mb   | 3m0s      | 1m29s      |
 
 */
-const maxDictPatterns = 128 * 1024
+const maxDictPatterns = 64 * 1024
 
 // samplingFactor - skip superstrings if `superstringNumber % samplingFactor != 0`
 const samplingFactor = 4
