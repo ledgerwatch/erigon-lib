@@ -291,6 +291,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 			go reduceDictWorker(trace, ch, out, &wg, &pt, inputSize, outputSize, posMap)
 		}
 	}
+	t := time.Now()
 
 	var err error
 	intermediatePath := segmentFilePath + ".tmp"
@@ -444,6 +445,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return err
 	}
 	wg.Wait()
+	log.Log(lvl, fmt.Sprintf("[%s] ReduceDict", logPrefix), "took", time.Since(t))
+
 	if _, err = intermediateFile.Seek(0, 0); err != nil {
 		return fmt.Errorf("return to the start of intermediate file: %w", err)
 	}
@@ -634,6 +637,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	}
 	log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(posSize))
 	// Re-encode all the words with the use of optimised (via Huffman coding) dictionaries
+	t = time.Now()
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
@@ -722,6 +726,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	if err = cf.Close(); err != nil {
 		return err
 	}
+	log.Log(lvl, fmt.Sprintf("[%s] Compress", logPrefix), "took", time.Since(t))
+
 	return nil
 }
 
