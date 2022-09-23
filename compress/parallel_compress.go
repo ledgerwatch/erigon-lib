@@ -257,7 +257,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		code2pattern = append(code2pattern, p)
 	})
 	dictBuilder.Close()
-	log.Debug(fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
+	log.Log(lvl, fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
 	ch := make(chan *CompressionWord, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
 
@@ -466,7 +466,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	}
 	slices.SortFunc(patternList, patternListLess)
 	i := 0
-	log.Debug(fmt.Sprintf("[%s] Effective dictionary", logPrefix), "size", patternList.Len())
+	log.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), "size", patternList.Len())
 	// Build Huffman tree for codes
 	var codeHeap PatternHeap
 	heap.Init(&codeHeap)
@@ -552,7 +552,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pattern=[%x]\n", p.depth, p.code, p.codeBits, p.word)
 	}
-	log.Debug(fmt.Sprintf("[%s] Dictionary", logPrefix), "size", common.ByteCount(patternsSize))
+	log.Log(lvl, fmt.Sprintf("[%s] Dictionary", logPrefix), "size", common.ByteCount(patternsSize))
 
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)
@@ -563,7 +563,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	}
 	slices.SortFunc(positionList, positionListLess)
 	i = 0
-	log.Debug(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", positionList.Len())
+	log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", positionList.Len())
 	// Build Huffman tree for codes
 	var posHeap PositionHeap
 	heap.Init(&posHeap)
@@ -632,7 +632,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pos=%d\n", p.depth, p.code, p.codeBits, p.pos)
 	}
-	log.Debug(fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(posSize))
+	log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(posSize))
 	// Re-encode all the words with the use of optimised (via Huffman coding) dictionaries
 	wc := 0
 	var hc HuffmanCoder

@@ -94,6 +94,7 @@ func NewCompressor(ctx context.Context, logPrefix, outputFile, tmpDir string, mi
 	suffixCollectors := make([]*etl.Collector, workers)
 	for i := 0; i < workers; i++ {
 		collector := etl.NewCollector(compressLogPrefix, tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+		collector.LogLvl(lvl)
 		suffixCollectors[i] = collector
 		go processSuperstring(superstrings, collector, minPatternScore, wg)
 	}
@@ -170,8 +171,9 @@ func (c *Compressor) Compress() error {
 			return err
 		}
 	}
-
 	defer os.Remove(c.tmpOutFilePath)
+	//log.Log(c.lvl, "[compress] dict", "size", db.Len(), "distribution")
+
 	if err := reducedict(c.ctx, c.trace, c.logPrefix, c.tmpOutFilePath, c.uncompressedFile, c.workers, db, c.lvl); err != nil {
 		return err
 	}
@@ -194,7 +196,7 @@ const superstringLimit = 16 * 1024 * 1024
 
 // minPatternLen is minimum length of pattern we consider to be included into the dictionary
 const minPatternLen = 5
-const maxPatternLen = 64
+const maxPatternLen = 128
 
 // maxDictPatterns is the maximum number of patterns allowed in the initial (not reduced dictionary)
 // Large values increase memory consumption of dictionary reduction phase
