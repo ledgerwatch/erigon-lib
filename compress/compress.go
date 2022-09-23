@@ -161,6 +161,8 @@ func (c *Compressor) Compress() error {
 	}
 	close(c.superstrings)
 	c.wg.Wait()
+
+	t := time.Now()
 	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, c.suffixCollectors, c.lvl)
 	if err != nil {
 
@@ -173,11 +175,13 @@ func (c *Compressor) Compress() error {
 		}
 	}
 	defer os.Remove(c.tmpOutFilePath)
-	//log.Log(c.lvl, "[compress] dict", "size", db.Len(), "distribution")
+	log.Log(c.lvl, fmt.Sprintf("[%s] BuildDict", c.logPrefix), "took", time.Since(t))
 
+	t := time.Now()
 	if err := reducedict(c.ctx, c.trace, c.logPrefix, c.tmpOutFilePath, c.uncompressedFile, c.workers, db, c.lvl); err != nil {
 		return err
 	}
+	log.Log(c.lvl, fmt.Sprintf("[%s] ReduceDict", c.logPrefix), "took", time.Since(t))
 
 	if err := os.Rename(c.tmpOutFilePath, c.outputFile); err != nil {
 		return fmt.Errorf("renaming: %w", err)
