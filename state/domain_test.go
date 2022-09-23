@@ -179,6 +179,14 @@ func TestAfterPrune(t *testing.T) {
 	err = d.Put([]byte("key1"), nil, []byte("value1.2"))
 	require.NoError(t, err)
 
+	d.SetTxNum(17)
+	err = d.Put([]byte("key1"), nil, []byte("value1.3"))
+	require.NoError(t, err)
+
+	d.SetTxNum(18)
+	err = d.Put([]byte("key2"), nil, []byte("value2.2"))
+	require.NoError(t, err)
+
 	err = tx.Commit()
 	require.NoError(t, err)
 
@@ -202,10 +210,10 @@ func TestAfterPrune(t *testing.T) {
 	dc := d.MakeContext()
 	v, err = dc.Get([]byte("key1"), nil, tx)
 	require.NoError(t, err)
-	require.Equal(t, []byte("value1.2"), v)
+	require.Equal(t, []byte("value1.3"), v)
 	v, err = dc.Get([]byte("key2"), nil, tx)
 	require.NoError(t, err)
-	require.Equal(t, []byte("value2.1"), v)
+	require.Equal(t, []byte("value2.2"), v)
 
 	err = d.prune(0, 0, 16)
 	require.NoError(t, err)
@@ -223,15 +231,15 @@ func TestAfterPrune(t *testing.T) {
 		var k []byte
 		k, _, err = cur.First()
 		require.NoError(t, err)
-		require.Nil(t, k, table)
+		require.NotNilf(t, k, table, string(k))
 	}
 
 	v, err = dc.Get([]byte("key1"), nil, tx)
 	require.NoError(t, err)
-	require.Equal(t, []byte("value1.2"), v)
+	require.Equal(t, []byte("value1.3"), v)
 	v, err = dc.Get([]byte("key2"), nil, tx)
 	require.NoError(t, err)
-	require.Equal(t, []byte("value2.1"), v)
+	require.Equal(t, []byte("value2.2"), v)
 }
 
 func filledDomain(t *testing.T) (string, kv.RwDB, *Domain, uint64) {
