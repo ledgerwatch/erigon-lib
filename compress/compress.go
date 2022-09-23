@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common"
 	dir2 "github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/etl"
@@ -783,8 +784,8 @@ func (f *DecompressedFile) ForEach(walker func(v []byte, compressed bool) error)
 	if err != nil {
 		return err
 	}
-	r := bufio.NewReaderSize(f.f, 8*etl.BufIOSize)
-	buf := make([]byte, 4096)
+	r := bufio.NewReaderSize(f.f, int(64*datasize.MB))
+	buf := make([]byte, 16*1024)
 	l, e := binary.ReadUvarint(r)
 	for ; e == nil; l, e = binary.ReadUvarint(r) {
 		// extract lowest bit of length prefix as "uncompressed" flag and shift to obtain correct length
