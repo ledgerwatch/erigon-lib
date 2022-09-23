@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"encoding/binary"
-	"os"
 	"testing"
 
 	"github.com/ledgerwatch/log/v3"
@@ -28,7 +27,8 @@ func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, k
 func TestAggregator_Merge(t *testing.T) {
 	path, db, agg := testDbAndAggregator(t, 0, 100)
 	defer db.Close()
-	defer os.Remove(path)
+	_ = path
+	//defer os.Remove(path)
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	aggStep := uint64(100)
 	path, db, agg := testDbAndAggregator(t, 0, aggStep)
 	defer db.Close()
-	defer os.Remove(path)
+	//defer os.Remove(path)
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
