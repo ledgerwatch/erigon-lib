@@ -218,7 +218,7 @@ skip_speed - loop with `g.Skip()`
 | 32K      | 5Mb  | 39626Mb   | 3m0s      | 1m29s      |
 
 */
-const maxDictPatterns = 64 * 1024
+const maxDictPatterns = 128 * 1024
 
 // samplingFactor - skip superstrings if `superstringNumber % samplingFactor != 0`
 const samplingFactor = 4

@@ -24,7 +24,6 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
-	"github.com/ledgerwatch/log/v3"
 )
 
 type word []byte // plain text word associated with code from dictionary
@@ -186,7 +185,6 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	dictSize := binary.BigEndian.Uint64(d.data[16:24])
 	data := d.data[24 : 24+dictSize]
 
-	distribution := make([]int, 1024)
 	var depths []uint64
 	var patterns [][]byte
 	var i uint64
@@ -205,18 +203,9 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		l, n := binary.Uvarint(data[i:])
 		i += uint64(n)
 		patterns = append(patterns, data[i:i+l])
-		distribution[int(l)]++
 		//fmt.Printf("depth = %d, pattern = [%x]\n", d, data[i:i+l])
 		i += l
 	}
-	var logCtx []interface{}
-	for j, n := range distribution {
-		if n == 0 {
-			continue
-		}
-		logCtx = append(logCtx, fmt.Sprintf("%d", j), fmt.Sprintf("%d", n))
-	}
-	log.Info("[decompress] Dict length distribution", logCtx...)
 
 	if dictSize > 0 {
 		var bitLen int
