@@ -465,14 +465,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	}
 	slices.SortFunc(patternList, patternListLess)
 	var logCtx []interface{}
-	logCtx = append(logCtx, "size", patternList.Len())
-	for i, n := range distribution {
-		if n == 0 {
-			continue
-		}
-		logCtx = append(logCtx, fmt.Sprintf("%d", i), fmt.Sprintf("%d", n))
-	}
-	log.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), logCtx...)
+	logCtx = append(logCtx, "patternList.Len", patternList.Len())
 
 	i := 0
 	// Build Huffman tree for codes
@@ -524,6 +517,16 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		n := binary.PutUvarint(numBuf[:], uint64(len(p.word))) // Length of the word's length
 		patternsSize += uint64(ns + n + len(p.word))
 	}
+
+	logCtx = append(logCtx, "patternsSize", common.ByteCount(patternsSize))
+	for i, n := range distribution {
+		if n == 0 {
+			continue
+		}
+		logCtx = append(logCtx, fmt.Sprintf("%d", i), fmt.Sprintf("%d", n))
+	}
+	log.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), logCtx...)
+
 	var cf *os.File
 	if cf, err = os.Create(segmentFilePath); err != nil {
 		return err
@@ -560,7 +563,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pattern=[%x]\n", p.depth, p.code, p.codeBits, p.word)
 	}
-	log.Log(lvl, fmt.Sprintf("[%s] Dictionary", logPrefix), "size", common.ByteCount(patternsSize))
 
 	var positionList PositionList
 	pos2code := make(map[uint64]*Position)
