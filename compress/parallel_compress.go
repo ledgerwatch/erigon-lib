@@ -408,7 +408,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix),
 				"processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)),
 				//"input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()),
-				"alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+			)
 		}
 		return nil
 	}); err != nil {
