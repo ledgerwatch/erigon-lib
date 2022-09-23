@@ -159,7 +159,6 @@ func (c *Compressor) Compress() error {
 	}
 	close(c.superstrings)
 	c.wg.Wait()
-	defer func(t time.Time) { fmt.Printf("compress.go:162: %s\n", time.Since(t)) }(time.Now())
 	db, err := DictionaryBuilderFromCollectors(c.ctx, compressLogPrefix, c.tmpDir, c.suffixCollectors)
 	if err != nil {
 
@@ -173,7 +172,6 @@ func (c *Compressor) Compress() error {
 	}
 
 	defer os.Remove(c.tmpOutFilePath)
-	defer func(t time.Time) { fmt.Printf("compress.go:176: %s\n", time.Since(t)) }(time.Now())
 	if err := reducedict(c.ctx, c.trace, c.logPrefix, c.tmpOutFilePath, c.uncompressedFile, c.workers, db, c.lvl); err != nil {
 		return err
 	}
@@ -213,6 +211,7 @@ skip_speed - loop with `g.Skip()`
 | 128K     | 11Mb | 37782Mb   | 3m25s     | 1m44s      |
 | 64K      | 7Mb  | 38597Mb   | 3m16s     | 1m34s      |
 | 32K      | 5Mb  | 39626Mb   | 3m0s      | 1m29s      |
+
 */
 const maxDictPatterns = 64 * 1024
 
