@@ -186,7 +186,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	dictSize := binary.BigEndian.Uint64(d.data[16:24])
 	data := d.data[24 : 24+dictSize]
 
-	distribution := make([]int, maxPatternLen+1)
+	distribution := make([]int, 1024)
 	var depths []uint64
 	var patterns [][]byte
 	var i uint64
@@ -210,11 +210,11 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		i += l
 	}
 	var logCtx []interface{}
-	for i, n := range distribution {
+	for j, n := range distribution {
 		if n == 0 {
 			continue
 		}
-		logCtx = append(logCtx, fmt.Sprintf("%d", i), fmt.Sprintf("%d", n))
+		logCtx = append(logCtx, fmt.Sprintf("%d", j), fmt.Sprintf("%d", n))
 	}
 	log.Info("[decompress] Dict length distribution", logCtx...)
 
