@@ -848,8 +848,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 			}
 			prevSkipped := false
 			for l := int(lcp[i]); l > int(lcp[i+1]) && l >= minPatternLen; l-- {
-				if l > maxPatternLen ||
-					l > 20 && (l&(l-1)) != 0 { // is power of 2
+				if l > maxPatternLen || (l == 20) || (l > 16 && (l&(l-1)) != 0) { // is power of 2
 					prevSkipped = true
 					continue
 				}
