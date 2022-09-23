@@ -135,6 +135,7 @@ func (c *Compressor) AddWord(word []byte) error {
 
 	if len(c.superstring)+2*len(word)+2 > superstringLimit {
 		if c.superstringCount%samplingFactor == 0 {
+			log.Log(c.lvl, "[compress] add word", "ch", len(c.superstring))
 			c.superstrings <- c.superstring
 		}
 		c.superstringCount++
