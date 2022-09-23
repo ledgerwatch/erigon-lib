@@ -211,7 +211,12 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 		//fmt.Printf("depth = %d, pattern = [%x]\n", d, data[i:i+l])
 		i += l
 	}
-	fmt.Printf("distribution: %v\n", distribution)
+	for i, n := range distribution {
+		if n == 0 {
+			continue
+		}
+		fmt.Printf("distribution: %d, %d\n", i, n)
+	}
 
 	if dictSize > 0 {
 		var bitLen int
