@@ -177,6 +177,7 @@ func (c *Compressor) Compress() error {
 	defer os.Remove(c.tmpOutFilePath)
 	log.Log(c.lvl, fmt.Sprintf("[%s] BuildDict", c.logPrefix), "took", time.Since(t))
 
+	t = time.Now()
 	if err := reducedict(c.ctx, c.trace, c.logPrefix, c.tmpOutFilePath, c.uncompressedFile, c.workers, db, c.lvl); err != nil {
 		return err
 	}
@@ -188,6 +189,9 @@ func (c *Compressor) Compress() error {
 	if err != nil {
 		return fmt.Errorf("ratio: %w", err)
 	}
+
+	_, fName := filepath.Split(c.outputFile)
+	log.Log(c.lvl, fmt.Sprintf("[%s] Compress", c.logPrefix), "took", time.Since(t), "ratio", c.Ratio, "file", fName)
 
 	return nil
 }
@@ -218,7 +222,7 @@ skip_speed - loop with `g.Skip()`
 | 32K      | 5Mb  | 39626Mb   | 3m0s      | 1m29s      |
 
 */
-const maxDictPatterns = 64 * 1024
+const maxDictPatterns = 128 * 1024
 
 // samplingFactor - skip superstrings if `superstringNumber % samplingFactor != 0`
 const samplingFactor = 4

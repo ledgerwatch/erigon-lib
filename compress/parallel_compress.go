@@ -577,7 +577,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	}
 	slices.SortFunc(positionList, positionListLess)
 	i = 0
-	log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", positionList.Len())
 	// Build Huffman tree for codes
 	var posHeap PositionHeap
 	heap.Init(&posHeap)
@@ -646,9 +645,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pos=%d\n", p.depth, p.code, p.codeBits, p.pos)
 	}
-	log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "size", common.ByteCount(posSize))
+	log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "positionList.len", positionList.Len(), "posSize", common.ByteCount(posSize))
 	// Re-encode all the words with the use of optimised (via Huffman coding) dictionaries
-	t = time.Now()
 	wc := 0
 	var hc HuffmanCoder
 	hc.w = cw
@@ -737,7 +735,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	if err = cf.Close(); err != nil {
 		return err
 	}
-	log.Log(lvl, fmt.Sprintf("[%s] Compress", logPrefix), "took", time.Since(t))
 
 	return nil
 }
