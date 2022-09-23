@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -399,16 +398,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 
 		select {
-		default:
 		case <-logEvery.C:
-			var m runtime.MemStats
-			if lvl >= log.LvlInfo {
-				common.ReadMemStats(&m)
-			}
-			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix),
-				"processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)),
-				//"input", common.ByteCount(inputSize.Load()), "output", common.ByteCount(outputSize.Load()),
-			)
+			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)))
+		default:
 		}
 		return nil
 	}); err != nil {
@@ -727,8 +719,10 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 			}
 		}
 		wc++
-		if wc%10_000_000 == 0 {
+		select {
+		case <-logEvery.C:
 			log.Log(lvl, fmt.Sprintf("[%s] Compressed", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(wc)/float64(totalWords)))
+		default:
 		}
 	}
 	if e != nil && !errors.Is(e, io.EOF) {
