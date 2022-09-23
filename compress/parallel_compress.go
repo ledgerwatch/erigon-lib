@@ -462,14 +462,25 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	}
 	//fmt.Printf("posMap = %v\n", posMap)
 	var patternList PatternList
+	distribution := make([]int, maxPatternLen+1)
 	for _, p := range code2pattern {
 		if p.uses > 0 {
 			patternList = append(patternList, p)
+			distribution[len(p.word)]++
 		}
 	}
 	slices.SortFunc(patternList, patternListLess)
+	var logCtx []interface{}
+	logCtx = append(logCtx, "size", patternList.Len())
+	for i, n := range distribution {
+		if n == 0 {
+			continue
+		}
+		logCtx = append(logCtx, fmt.Sprintf("%d", i), fmt.Sprintf("%d", n))
+	}
+	log.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), logCtx...)
+
 	i := 0
-	log.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), "size", patternList.Len())
 	// Build Huffman tree for codes
 	var codeHeap PatternHeap
 	heap.Init(&codeHeap)
