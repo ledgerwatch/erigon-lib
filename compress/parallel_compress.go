@@ -911,7 +911,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 }
 
 func DictionaryBuilderFromCollectors(ctx context.Context, logPrefix, tmpDir string, collectors []*etl.Collector, lvl log.Lvl) (*DictionaryBuilder, error) {
-	dictCollector := etl.NewCollector(logPrefix+"_buildDict", tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+	dictCollector := etl.NewCollector(logPrefix+"_collectDict", tmpDir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	defer dictCollector.Close()
 	dictCollector.LogLvl(lvl)
 
