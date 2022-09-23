@@ -460,12 +460,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	for _, p := range code2pattern {
 		if p.uses > 0 {
 			patternList = append(patternList, p)
-			if len(p.word) == 128 {
-				fmt.Printf("128: %d\n", p.uses)
-			}
-			if len(p.word) == 64 {
-				fmt.Printf("64: %d\n", p.uses)
-			}
 			distribution[len(p.word)]++
 		}
 	}
@@ -883,7 +877,11 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 					}
 				}
 
-				if (l < 8 || l > 64) && repeats < int(minPatternScore) {
+				if (l < 8 || l >= 64) && repeats < int(minPatternScore) {
+					prevSkipped = true
+					continue
+				}
+				if (l > 64) && repeats < int(minPatternScore*2) {
 					prevSkipped = true
 					continue
 				}
