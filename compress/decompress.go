@@ -185,10 +185,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	dictSize := binary.BigEndian.Uint64(d.data[16:24])
 	data := d.data[24 : 24+dictSize]
 
-	distribution := map[int]int{}
-	for j := 0; j < 128; j++ {
-		distribution[j] = 0
-	}
+	distribution := make([]int, 129)
 	var depths []uint64
 	var patterns [][]byte
 	var i uint64
