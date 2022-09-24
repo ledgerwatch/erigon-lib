@@ -236,7 +236,7 @@ skip_speed - loop with `g.Skip()`
 const maxDictPatterns = 64 * 1024
 
 // samplingFactor - skip superstrings if `superstringNumber % samplingFactor != 0`
-const samplingFactor = 8
+const samplingFactor = 2
 
 // nolint
 const compressLogPrefix = "compress"
