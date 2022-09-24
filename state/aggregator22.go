@@ -79,6 +79,16 @@ func (a *Aggregator22) Close() {
 	a.closeFiles()
 }
 
+func (a *Aggregator22) SetCompressWorkers(i int) {
+	a.accounts.compressWorkers = i
+	a.storage.compressWorkers = i
+	a.code.compressWorkers = i
+	a.logAddrs.compressWorkers = i
+	a.logTopics.compressWorkers = i
+	a.tracesFrom.compressWorkers = i
+	a.tracesTo.compressWorkers = i
+}
+
 func (a *Aggregator22) Files() (res []string) {
 	res = append(res, a.accounts.Files()...)
 	res = append(res, a.storage.Files()...)

@@ -50,6 +50,8 @@ type InvertedIndex struct {
 	txNum           uint64
 	txNumBytes      [8]byte
 	files           *btree.BTreeG[*filesItem]
+
+	compressWorkers int
 }
 
 func NewInvertedIndex(
@@ -66,6 +68,7 @@ func NewInvertedIndex(
 		filenameBase:    filenameBase,
 		indexKeysTable:  indexKeysTable,
 		indexTable:      indexTable,
+		compressWorkers: 1,
 	}
 
 	files, err := os.ReadDir(dir)
@@ -585,7 +588,7 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 	txNumFrom := step * ii.aggregationStep
 	txNumTo := (step + 1) * ii.aggregationStep
 	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
-	comp, err = compress.NewCompressor(context.Background(), "ef", datPath, ii.dir, compress.MinPatternScore, 1, log.LvlDebug)
+	comp, err = compress.NewCompressor(context.Background(), "ef", datPath, ii.dir, compress.MinPatternScore, ii.compressWorkers, log.LvlDebug)
 	if err != nil {
 		return InvertedFiles{}, fmt.Errorf("create %s compressor: %w", ii.filenameBase, err)
 	}
