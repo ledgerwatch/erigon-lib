@@ -30,6 +30,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -107,6 +108,12 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 		}
 		if startStep > endStep {
 			log.Warn("File ignored by inverted index scan, startStep > endStep", "name", name)
+			continue
+		}
+
+		vPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, startStep, endStep))
+		viPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, startStep, endStep))
+		if !dir.Exist(vPath) || !dir.Exist(viPath) {
 			continue
 		}
 
