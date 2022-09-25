@@ -110,12 +110,6 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 			continue
 		}
 
-		vPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, startStep, endStep))
-		viPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, startStep, endStep))
-		if !dir.Exist(vPath) || !dir.Exist(viPath) {
-			continue
-		}
-
 		var item = &filesItem{startTxNum: startStep * h.aggregationStep, endTxNum: endStep * h.aggregationStep}
 		var foundI *filesItem
 		h.files.AscendGreaterOrEqual(&filesItem{startTxNum: endStep * h.aggregationStep, endTxNum: endStep * h.aggregationStep}, func(it *filesItem) bool {
