@@ -95,28 +95,34 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 			}
 			continue
 		}
-		var startTxNum, endTxNum uint64
-		if startTxNum, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
-			log.Warn("File ignored by inverted index scan, parsing startTxNum", "error", err, "name", name)
+		var startStep, endStep uint64
+		if startStep, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
+			log.Warn("File ignored by inverted index scan, parsing startStep", "error", err, "name", name)
 			continue
 		}
-		if endTxNum, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
-			log.Warn("File ignored by inverted index scan, parsing endTxNum", "error", err, "name", name)
+		if endStep, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
+			log.Warn("File ignored by inverted index scan, parsing endStep", "error", err, "name", name)
 			continue
 		}
-		if startTxNum > endTxNum {
-			log.Warn("File ignored by inverted index scan, startTxNum > endTxNum", "name", name)
+		if startStep > endStep {
+			log.Warn("File ignored by inverted index scan, startStep > endStep", "name", name)
 			continue
 		}
-		var item = &filesItem{startTxNum: startTxNum * ii.aggregationStep, endTxNum: endTxNum * ii.aggregationStep}
+		vPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, startStep, endStep))
+		viPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, startStep, endStep))
+		if !dir.Exist(vPath) || !dir.Exist(viPath) {
+			continue
+		}
+
+		var item = &filesItem{startTxNum: startStep * ii.aggregationStep, endTxNum: endStep * ii.aggregationStep}
 		var foundI *filesItem
-		ii.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * ii.aggregationStep, endTxNum: endTxNum * ii.aggregationStep}, func(it *filesItem) bool {
-			if it.endTxNum == endTxNum {
+		ii.files.AscendGreaterOrEqual(&filesItem{startTxNum: endStep * ii.aggregationStep, endTxNum: endStep * ii.aggregationStep}, func(it *filesItem) bool {
+			if it.endTxNum == endStep {
 				foundI = it
 			}
 			return false
 		})
-		if foundI == nil || foundI.startTxNum > startTxNum {
+		if foundI == nil || foundI.startTxNum > startStep {
 			//log.Info("Load state file", "name", name, "startTxNum", startTxNum*ii.aggregationStep, "endTxNum", endTxNum*ii.aggregationStep)
 			ii.files.ReplaceOrInsert(item)
 		}
@@ -133,11 +139,11 @@ func (ii *InvertedIndex) openFiles() error {
 			return false
 		}
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
-		if !dir.Exist(idxPath) {
-			if _, err = buildIndex(item.decompressor, idxPath, ii.dir, item.decompressor.Count()/2, false /* values */); err != nil {
-				return false
-			}
-		}
+		//if !dir.Exist(idxPath) {
+		//	if _, err = buildIndex(item.decompressor, idxPath, ii.dir, item.decompressor.Count()/2, false /* values */); err != nil {
+		//		return false
+		//	}
+		//}
 		if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 			log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
 			return false

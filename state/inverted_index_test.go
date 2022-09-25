@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -45,6 +47,25 @@ func testDbAndInvertedIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex) {
 	ii, err := NewInvertedIndex(path, 16 /* aggregationStep */, "inv" /* filenameBase */, keysTable, indexTable)
 	require.NoError(t, err)
 	return path, db, ii
+}
+
+func TestInvIndexSkipUnfinishedFiles(t *testing.T) {
+	keysTable := "Keys"
+	indexTable := "Index"
+	dir := t.TempDir()
+
+	os.Create(filepath.Join(dir, "inv.0-1.ef"))
+	ii, err := NewInvertedIndex(dir, 16 /* aggregationStep */, "inv" /* filenameBase */, keysTable, indexTable)
+	require.NoError(t, err)
+	require.NoError(t, ii.openFiles())
+	require.Equal(t, 0, ii.files.Len())
+
+	os.Remove(filepath.Join(dir, "inv.0-1.ef"))
+	os.Create(filepath.Join(dir, "inv.0-1.efi"))
+	ii, err = NewInvertedIndex(dir, 16 /* aggregationStep */, "inv" /* filenameBase */, keysTable, indexTable)
+	require.NoError(t, err)
+	require.NoError(t, ii.openFiles())
+	require.Equal(t, 0, ii.files.Len())
 }
 
 func TestInvIndexCollationBuild(t *testing.T) {

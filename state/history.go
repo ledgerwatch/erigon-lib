@@ -95,28 +95,36 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 			}
 			continue
 		}
-		var startTxNum, endTxNum uint64
-		if startTxNum, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
-			log.Warn("File ignored by inverted index scan, parsing startTxNum", "error", err, "name", name)
+
+		var startStep, endStep uint64
+		if startStep, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
+			log.Warn("File ignored by inverted index scan, parsing startStep", "error", err, "name", name)
 			continue
 		}
-		if endTxNum, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
-			log.Warn("File ignored by inverted index scan, parsing endTxNum", "error", err, "name", name)
+		if endStep, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
+			log.Warn("File ignored by inverted index scan, parsing endStep", "error", err, "name", name)
 			continue
 		}
-		if startTxNum > endTxNum {
-			log.Warn("File ignored by inverted index scan, startTxNum > endTxNum", "name", name)
+		if startStep > endStep {
+			log.Warn("File ignored by inverted index scan, startStep > endStep", "name", name)
 			continue
 		}
-		var item = &filesItem{startTxNum: startTxNum * h.aggregationStep, endTxNum: endTxNum * h.aggregationStep}
+
+		vPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, startStep, endStep))
+		viPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, startStep, endStep))
+		if !dir.Exist(vPath) || !dir.Exist(viPath) {
+			continue
+		}
+
+		var item = &filesItem{startTxNum: startStep * h.aggregationStep, endTxNum: endStep * h.aggregationStep}
 		var foundI *filesItem
-		h.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * h.aggregationStep, endTxNum: endTxNum * h.aggregationStep}, func(it *filesItem) bool {
-			if it.endTxNum == endTxNum {
+		h.files.AscendGreaterOrEqual(&filesItem{startTxNum: endStep * h.aggregationStep, endTxNum: endStep * h.aggregationStep}, func(it *filesItem) bool {
+			if it.endTxNum == endStep {
 				foundI = it
 			}
 			return false
 		})
-		if foundI == nil || foundI.startTxNum > startTxNum {
+		if foundI == nil || foundI.startTxNum > startStep {
 			//log.Info("Load state file", "name", name, "startTxNum", startTxNum*ii.aggregationStep, "endTxNum", endTxNum*ii.aggregationStep)
 			h.files.ReplaceOrInsert(item)
 		}
@@ -417,10 +425,7 @@ func (h *History) buildFiles(step uint64, collation HistoryCollation) (HistoryFi
 		BucketSize: 2000,
 		LeafSize:   8,
 		TmpDir:     h.dir,
-		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
-			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
-			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-		IndexFile: historyIdxPath,
+		IndexFile:  historyIdxPath,
 	}); err != nil {
 		return HistoryFiles{}, fmt.Errorf("create recsplit: %w", err)
 	}

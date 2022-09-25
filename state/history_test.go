@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -52,6 +54,27 @@ func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 	tb.Cleanup(db.Close)
 	tb.Cleanup(ii.Close)
 	return path, db, ii
+}
+
+func TestHistSkipUnfinishedFiles(t *testing.T) {
+	keysTable := "Keys"
+	indexTable := "Index"
+	valsTable := "Vals"
+	settingsTable := "Settings"
+	dir := t.TempDir()
+
+	os.Create(filepath.Join(dir, "hist.0-1.v"))
+	h, err := NewHistory(dir, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */)
+	require.NoError(t, err)
+	require.NoError(t, h.openFiles())
+	require.Equal(t, 0, h.files.Len())
+
+	os.Remove(filepath.Join(dir, "hist.0-1.v"))
+	os.Create(filepath.Join(dir, "hist.0-1.vi"))
+	h, err = NewHistory(dir, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */)
+	require.NoError(t, err)
+	require.NoError(t, h.openFiles())
+	require.Equal(t, 0, h.files.Len())
 }
 
 func TestHistoryCollationBuild(t *testing.T) {
