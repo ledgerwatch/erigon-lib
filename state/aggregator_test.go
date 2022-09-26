@@ -3,6 +3,8 @@ package state
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/ledgerwatch/log/v3"
@@ -83,6 +85,14 @@ func TestAggregator_Merge(t *testing.T) {
 	require.NoError(t, err)
 
 	require.EqualValues(t, otherMaxWrite, binary.BigEndian.Uint64(v[:]))
+	agg.Close()
+
+	fi, err := os.ReadDir(path)
+	require.NoError(t, err)
+	fmt.Printf("list test temp %s\n", path)
+	for _, item := range fi {
+		fmt.Printf("%s %v\n", item.Name(), item.IsDir())
+	}
 }
 
 func TestAggregator_RestartOnFiles(t *testing.T) {
