@@ -45,8 +45,6 @@ type History struct {
 	settingsTable    string
 	files            *btree.BTreeG[*filesItem]
 	compressVals     bool
-	files            *btree.BTreeG[*filesItem]
-	compressVals     bool
 	workers          int
 }
 

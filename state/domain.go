@@ -415,7 +415,7 @@ func (d *Domain) MakeContext() *DomainContext {
 		idxsz += uint64(item.index.Size())
 		files += 2
 
-		bt.ReplaceOrInsert(&ctxItem{
+		bt.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     getter,
@@ -842,7 +842,7 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 	var val []byte
 	var found bool
 
-	dc.files.Descend(func(item *ctxItem) bool {
+	dc.files.Descend(func(item ctxItem) bool {
 		if item.endTxNum < fromTxNum {
 			return false
 		}
