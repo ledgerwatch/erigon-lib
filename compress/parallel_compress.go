@@ -464,7 +464,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 	}
 	slices.SortFunc(patternList, patternListLess)
-	var logCtx []interface{}
+	logCtx := make([]interface{}, 0, 8)
 	logCtx = append(logCtx, "patternList.Len", patternList.Len())
 
 	i := 0
