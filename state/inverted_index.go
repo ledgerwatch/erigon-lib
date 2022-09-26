@@ -206,9 +206,9 @@ func (ii *InvertedIndex) Add(key []byte) error {
 
 func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	var ic = InvertedIndexContext{ii: ii}
-	ic.files = btree.NewG[*ctxItem](32, ctxItemLess)
+	ic.files = btree.NewG[ctxItem](32, ctxItemLess)
 	ii.files.Ascend(func(item *filesItem) bool {
-		ic.files.ReplaceOrInsert(&ctxItem{
+		ic.files.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
@@ -226,7 +226,7 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 type InvertedIterator struct {
 	key                  []byte
 	startTxNum, endTxNum uint64
-	stack                []*ctxItem
+	stack                []ctxItem
 	efIt                 *eliasfano32.EliasFanoIter
 	next                 uint64
 	hasNextInFiles       bool
@@ -343,7 +343,7 @@ func (it *InvertedIterator) Next() uint64 {
 
 type InvertedIndexContext struct {
 	ii    *InvertedIndex
-	files *btree.BTreeG[*ctxItem]
+	files *btree.BTreeG[ctxItem]
 }
 
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
@@ -361,7 +361,7 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum ui
 	it.hasNextInDb = true
 	search.startTxNum = 0
 	search.endTxNum = startTxNum
-	ic.files.DescendGreaterThan(&search, func(item *ctxItem) bool {
+	ic.files.DescendGreaterThan(search, func(item ctxItem) bool {
 		if item.startTxNum < endTxNum {
 			it.stack = append(it.stack, item)
 			it.hasNextInFiles = true
@@ -496,7 +496,7 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 	ii1.hasNextInDb = true
 	ii1.roTx = roTx
 	ii1.indexTable = ic.ii.indexTable
-	ic.files.AscendGreaterOrEqual(&ctxItem{endTxNum: startTxNum}, func(item *ctxItem) bool {
+	ic.files.AscendGreaterOrEqual(ctxItem{endTxNum: startTxNum}, func(item ctxItem) bool {
 		if item.endTxNum >= endTxNum {
 			ii1.hasNextInDb = false
 		}
