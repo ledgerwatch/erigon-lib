@@ -88,13 +88,15 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	aggStep := uint64(100)
 	path, db, agg := testDbAndAggregator(t, 0, aggStep)
 	defer db.Close()
-	defer agg.Close()
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
 	defer func() {
 		if tx != nil {
 			tx.Rollback()
+		}
+		if agg != nil {
+			agg.Close()
 		}
 	}()
 	agg.SetTx(tx)
@@ -136,9 +138,11 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	require.NoError(t, err)
 	tx = nil
 	agg.Close()
+	agg = nil
 
 	anotherAgg, err := NewAggregator(path, aggStep)
 	require.NoError(t, err)
+	defer anotherAgg.Close()
 
 	rwTx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
