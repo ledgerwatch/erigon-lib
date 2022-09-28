@@ -300,7 +300,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return fmt.Errorf("create intermediate file: %w", err)
 	}
 	defer intermediateFile.Close()
-	intermediateW := bufio.NewWriterSize(intermediateFile, 8*etl.BufIOSize)
+	intermediateW := bufio.NewWriterSize(intermediateFile, 4*etl.BufIOSize)
 
 	var inCount, outCount, emptyWordsCount uint64 // Counters words sent to compression and returned for compression
 	var numBuf [binary.MaxVarintLen64]byte
