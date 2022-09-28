@@ -25,11 +25,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
 )
 
 func (d *Domain) endTxNumMinimax() uint64 {
@@ -378,6 +379,13 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 						return nil, nil, nil, err
 					}
 					count++ // Only counting keys, not values
+
+					//if d.valueMergeFn != nil {
+					//	valBuf, err = d.valueMergeFn(valBuf, nil)
+					//	if err != nil {
+					//		return nil, nil, nil, err
+					//	}
+					//}
 					if d.compressVals {
 						if err = comp.AddWord(valBuf); err != nil {
 							return nil, nil, nil, err
@@ -422,8 +430,14 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 		}
 	}
 	closeItem = false
+	d.stats.MergesCount++
+	d.mergesCount++
 	return
 }
+
+//func (d *Domain) SetValueMergeStrategy(merge func([]byte, []byte) ([]byte, error)) {
+//	d.valueMergeFn = merge
+//}
 
 func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uint64, maxSpan uint64) (*filesItem, error) {
 	var outItem *filesItem
@@ -483,6 +497,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 		lastKey := common.Copy(cp[0].key)
 		lastVal := common.Copy(cp[0].val)
 		var mergedOnce bool
+
 		// Advance all the items that have this key (including the top)
 		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 			ci1 := cp[0]
@@ -620,8 +635,20 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 		for cp.Len() > 0 {
 			lastKey := common.Copy(cp[0].key)
 			// Advance all the items that have this key (including the top)
+			//var mergeOnce bool
 			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 				ci1 := cp[0]
+
+				//if h.valueMergeFn != nil && mergeOnce {
+				//	valBuf, err = h.valueMergeFn(ci1.val, valBuf)
+				//	if err != nil {
+				//		return nil, nil, err
+				//	}
+				//	ci1.val = valBuf
+				//}
+				//if !mergeOnce {
+				//	mergeOnce = true
+				//}
 				ef, _ := eliasfano32.ReadEliasFano(ci1.val)
 				for i := uint64(0); i < ef.Count(); i++ {
 					if h.compressVals {
@@ -660,10 +687,7 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 			BucketSize: 2000,
 			LeafSize:   8,
 			TmpDir:     h.dir,
-			StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
-				0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
-				0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-			IndexFile: idxPath,
+			IndexFile:  idxPath,
 		}); err != nil {
 			return nil, nil, fmt.Errorf("create recsplit: %w", err)
 		}

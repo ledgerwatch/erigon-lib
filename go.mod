@@ -6,7 +6,6 @@ require (
 	github.com/RoaringBitmap/roaring v1.2.1
 	github.com/VictoriaMetrics/metrics v1.22.2
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
-	github.com/flanglet/kanzi-go v1.9.1-0.20211212184056-72dda96261ee
 	github.com/go-stack/stack v1.8.1
 	github.com/google/btree v1.1.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
@@ -39,7 +38,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/valyala/fastrand v1.1.0 // indirect
 	github.com/valyala/histogram v1.2.0 // indirect
-	golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4 // indirect
+	golang.org/x/net v0.0.0-20220607020251-c690dde0001d // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
