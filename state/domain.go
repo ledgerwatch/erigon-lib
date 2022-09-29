@@ -416,6 +416,9 @@ func (d *Domain) MakeContext() *DomainContext {
 	var datsz, idxsz, files uint64
 
 	d.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
 		getter := item.decompressor.MakeGetter()
 		datsz += uint64(getter.Size())
 		idxsz += uint64(item.index.Size())
