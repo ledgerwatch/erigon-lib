@@ -202,6 +202,7 @@ func (h *History) missedIdxFiles() (l []*filesItem) {
 	return l
 }
 
+// BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
 func (h *History) BuildMissedIndices() (err error) {
 	if err := h.InvertedIndex.BuildMissedIndices(); err != nil {
 		return err
