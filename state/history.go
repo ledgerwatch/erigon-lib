@@ -447,20 +447,21 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 			if err != nil {
 				return HistoryCollation{}, err
 			}
-			if bytes.HasPrefix(v, []byte(key)) {
-				valNum := binary.BigEndian.Uint64(v[len(v)-8:])
-				if valNum == 0 {
-					val = nil
-				} else {
-					if val, err = roTx.GetOne(h.historyValsTable, v[len(v)-8:]); err != nil {
-						return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.filenameBase, k, valNum, err)
-					}
-				}
-				if err = historyComp.AddUncompressedWord(val); err != nil {
-					return HistoryCollation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", h.filenameBase, k, val, err)
-				}
-				historyCount++
+			if !bytes.HasPrefix(v, []byte(key)) {
+				continue
 			}
+			valNum := binary.BigEndian.Uint64(v[len(v)-8:])
+			if valNum == 0 {
+				val = nil
+			} else {
+				if val, err = roTx.GetOne(h.historyValsTable, v[len(v)-8:]); err != nil {
+					return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.filenameBase, k, valNum, err)
+				}
+			}
+			if err = historyComp.AddUncompressedWord(val); err != nil {
+				return HistoryCollation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", h.filenameBase, k, val, err)
+			}
+			historyCount++
 		}
 	}
 	closeComp = false
