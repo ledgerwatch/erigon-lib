@@ -154,10 +154,10 @@ func (ii *InvertedIndex) openFiles() error {
 	var totalKeys uint64
 	var invalidFileItems []*filesItem
 	ii.files.Ascend(func(item *filesItem) bool {
-		fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
 		if item.decompressor != nil {
 			item.decompressor.Close()
 		}
+		fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
 		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, fromStep, toStep))
 		if !dir.FileExist(datPath) {
 			invalidFileItems = append(invalidFileItems, item)
@@ -174,8 +174,8 @@ func (ii *InvertedIndex) openFiles() error {
 					log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
 					return false
 				}
+				totalKeys += item.index.KeyCount()
 			}
-			totalKeys += item.index.KeyCount()
 		}
 		return true
 	})

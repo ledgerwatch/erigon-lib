@@ -132,7 +132,11 @@ func (h *History) openFiles() error {
 
 	invalidFileItems := make([]*filesItem, 0)
 	h.files.Ascend(func(item *filesItem) bool {
-		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
+		if item.decompressor != nil {
+			item.decompressor.Close()
+		}
+		fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
+		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, fromStep, toStep))
 		if fi, err := os.Stat(datPath); err != nil || fi.IsDir() {
 			invalidFileItems = append(invalidFileItems, item)
 			return true
@@ -142,7 +146,7 @@ func (h *History) openFiles() error {
 			return false
 		}
 		if item.index == nil {
-			idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
+			idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
 			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 					log.Debug("Hisrory.openFiles: %w, %s", err, idxPath)
