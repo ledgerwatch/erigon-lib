@@ -365,6 +365,13 @@ func (d *Decompressor) WithReadAhead(f func() error) error {
 	return f()
 }
 
+// DisableReadAhead - `defer d.DisabelReadAhead(d.EnableReadAhead())`
+func (d *Decompressor) DisabelReadAhead(_ *Decompressor) { _ = mmap.MadviseRandom(d.mmapHandle1) }
+func (d *Decompressor) EnableReadAhead() *Decompressor {
+	_ = mmap.MadviseSequential(d.mmapHandle1)
+	return d
+}
+
 // Getter represent "reader" or "interator" that can move accross the data of the decompressor
 // The full state of the getter can be captured by saving dataP, and dataBit
 type Getter struct {

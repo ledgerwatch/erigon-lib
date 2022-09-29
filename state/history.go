@@ -302,6 +302,10 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count i
 	var historyKey []byte
 	var txKey [8]byte
 	var valOffset uint64
+
+	defer iiItem.decompressor.DisabelReadAhead(iiItem.decompressor.EnableReadAhead())
+	defer historyItem.decompressor.DisabelReadAhead(historyItem.decompressor.EnableReadAhead())
+
 	g := iiItem.decompressor.MakeGetter()
 	g2 := historyItem.decompressor.MakeGetter()
 	var keyBuf, valBuf []byte
