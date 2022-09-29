@@ -753,6 +753,9 @@ func (h *History) MakeContext() *HistoryContext {
 	var hc = HistoryContext{h: h}
 	hc.indexFiles = btree.NewG[ctxItem](32, ctxItemLess)
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
 		hc.indexFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
@@ -763,6 +766,9 @@ func (h *History) MakeContext() *HistoryContext {
 	})
 	hc.historyFiles = btree.NewG[ctxItem](32, ctxItemLess)
 	h.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
 		hc.historyFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
