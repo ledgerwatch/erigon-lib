@@ -708,6 +708,18 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	}, nil
 }
 
+func (d *Domain) BuildMissedIndices() (err error) {
+	if err := d.History.BuildMissedIndices(); err != nil {
+		return err
+	}
+	missedIndices := d.missedIdxFiles()
+	if len(missedIndices) == 0 {
+		return nil
+	}
+	//TODO: build .kvi
+	return nil
+}
+
 func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values bool) (*recsplit.Index, error) {
 	var rs *recsplit.RecSplit
 	var err error

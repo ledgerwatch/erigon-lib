@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -144,7 +143,7 @@ func (h *History) openFiles() error {
 		}
 		if item.index == nil {
 			idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
-			if dir.Exist(idxPath) {
+			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 					log.Debug("Hisrory.openFiles: %w, %s", err, idxPath)
 					return false
@@ -195,8 +194,7 @@ func (h *History) Files() (res []string) {
 func (h *History) missedIdxFiles() (l []*filesItem) {
 	h.files.Ascend(func(item *filesItem) bool { // don't run slow logic while iterating on btree
 		fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
-		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
-		if !dir.Exist(idxPath) {
+		if !dir.FileExist(filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.kvi", h.filenameBase, fromStep, toStep))) {
 			l = append(l, item)
 		}
 		return true
@@ -212,24 +210,14 @@ func (h *History) BuildMissedIndices() (err error) {
 	if len(missedIndices) == 0 {
 		return nil
 	}
-	var logItems []string
 	for i := 0; i < len(missedIndices); i++ {
-		fromStep, toStep := missedIndices[i].startTxNum/h.aggregationStep, missedIndices[i].endTxNum/h.aggregationStep
-		logItems = append(logItems, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
-	}
-	log.Info("[snapshots] BuildMissedIndices", "files", strings.Join(logItems, ","))
-
-	for i := 0; i < len(missedIndices); i++ {
-		fromStep, toStep := missedIndices[i].startTxNum/h.aggregationStep, missedIndices[i].endTxNum/h.aggregationStep
-		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
-		if dir.Exist(idxPath) {
-			return nil
-		}
 		search := &filesItem{startTxNum: missedIndices[i].startTxNum, endTxNum: missedIndices[i].endTxNum}
 		item, ok := h.files.Get(search)
 		if !ok {
 			return nil
 		}
+		fromStep, toStep := missedIndices[i].startTxNum/h.aggregationStep, missedIndices[i].endTxNum/h.aggregationStep
+		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
 		iiItem, ok := h.InvertedIndex.files.Get(search)
 		if !ok {
 			return nil

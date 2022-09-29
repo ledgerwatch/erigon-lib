@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -130,8 +129,7 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 func (ii *InvertedIndex) missedIdxFiles() (l []*filesItem) {
 	ii.files.Ascend(func(item *filesItem) bool { // don't run slow logic while iterating on btree
 		fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
-		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
-		if !dir.Exist(idxPath) {
+		if !dir.FileExist(filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))) {
 			l = append(l, item)
 		}
 		return true
@@ -144,24 +142,15 @@ func (ii *InvertedIndex) BuildMissedIndices() (err error) {
 	if len(missedIndices) == 0 {
 		return nil
 	}
-	var logItems []string
 	for i := 0; i < len(missedIndices); i++ {
-		fromStep, toStep := missedIndices[i].startTxNum/ii.aggregationStep, missedIndices[i].endTxNum/ii.aggregationStep
-		logItems = append(logItems, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
-	}
-	log.Info("[snapshots] BuildMissedIndices", "files", strings.Join(logItems, ","))
-
-	for i := 0; i < len(missedIndices); i++ {
-		fromStep, toStep := missedIndices[i].startTxNum/ii.aggregationStep, missedIndices[i].endTxNum/ii.aggregationStep
-		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
-		if dir.Exist(idxPath) {
-			return nil
-		}
 		search := &filesItem{startTxNum: missedIndices[i].startTxNum, endTxNum: missedIndices[i].endTxNum}
 		item, ok := ii.files.Get(search)
 		if !ok {
 			return nil
 		}
+
+		fromStep, toStep := missedIndices[i].startTxNum/ii.aggregationStep, missedIndices[i].endTxNum/ii.aggregationStep
+		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
 		if _, err := buildIndex(item.decompressor, idxPath, ii.dir, item.decompressor.Count()/2, false /* values */); err != nil {
 			return err
 		}
@@ -189,7 +178,7 @@ func (ii *InvertedIndex) openFiles() error {
 
 		if item.index == nil {
 			idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
-			if dir.Exist(idxPath) {
+			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 					log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
 					return false
