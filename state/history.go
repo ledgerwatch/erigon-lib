@@ -194,7 +194,7 @@ func (h *History) Files() (res []string) {
 func (h *History) missedIdxFiles() (l []*filesItem) {
 	h.files.Ascend(func(item *filesItem) bool { // don't run slow logic while iterating on btree
 		fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
-		if !dir.FileExist(filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.kvi", h.filenameBase, fromStep, toStep))) {
+		if !dir.FileExist(filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))) {
 			l = append(l, item)
 		}
 		return true
@@ -206,23 +206,14 @@ func (h *History) BuildMissedIndices() (err error) {
 	if err := h.InvertedIndex.BuildMissedIndices(); err != nil {
 		return err
 	}
-	missedIndices := h.missedIdxFiles()
-	if len(missedIndices) == 0 {
-		return nil
-	}
-	for i := 0; i < len(missedIndices); i++ {
-		search := &filesItem{startTxNum: missedIndices[i].startTxNum, endTxNum: missedIndices[i].endTxNum}
-		item, ok := h.files.Get(search)
-		if !ok {
-			return nil
-		}
-		fromStep, toStep := missedIndices[i].startTxNum/h.aggregationStep, missedIndices[i].endTxNum/h.aggregationStep
-		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
+	for _, item := range h.missedIdxFiles() {
+		search := &filesItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum}
 		iiItem, ok := h.InvertedIndex.files.Get(search)
 		if !ok {
 			return nil
 		}
-
+		fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
+		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
 		count, err := iterateForVi(item, iiItem, h.compressVals, func(v []byte) error { return nil })
 		if err != nil {
 			return err

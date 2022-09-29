@@ -32,6 +32,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -708,16 +709,26 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	}, nil
 }
 
+func (d *Domain) missedIdxFiles() (l []*filesItem) {
+	d.files.Ascend(func(item *filesItem) bool { // don't run slow logic while iterating on btree
+		fromStep, toStep := item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep
+		if !dir.FileExist(filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, fromStep, toStep))) {
+			l = append(l, item)
+		}
+		return true
+	})
+	return l
+}
+
 func (d *Domain) BuildMissedIndices() (err error) {
 	if err := d.History.BuildMissedIndices(); err != nil {
 		return err
 	}
-	missedIndices := d.missedIdxFiles()
-	if len(missedIndices) == 0 {
-		return nil
+	for _, item := range d.missedIdxFiles() {
+		//TODO: build .kvi
+		_ = item
 	}
-	//TODO: build .kvi
-	return nil
+	return d.openFiles()
 }
 
 func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values bool) (*recsplit.Index, error) {

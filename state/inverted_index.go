@@ -137,19 +137,10 @@ func (ii *InvertedIndex) missedIdxFiles() (l []*filesItem) {
 	return l
 }
 
+// BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
 func (ii *InvertedIndex) BuildMissedIndices() (err error) {
-	missedIndices := ii.missedIdxFiles()
-	if len(missedIndices) == 0 {
-		return nil
-	}
-	for i := 0; i < len(missedIndices); i++ {
-		search := &filesItem{startTxNum: missedIndices[i].startTxNum, endTxNum: missedIndices[i].endTxNum}
-		item, ok := ii.files.Get(search)
-		if !ok {
-			return nil
-		}
-
-		fromStep, toStep := missedIndices[i].startTxNum/ii.aggregationStep, missedIndices[i].endTxNum/ii.aggregationStep
+	for _, item := range ii.missedIdxFiles() {
+		fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
 		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
 		if _, err := buildIndex(item.decompressor, idxPath, ii.dir, item.decompressor.Count()/2, false /* values */); err != nil {
 			return err
