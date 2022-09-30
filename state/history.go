@@ -847,12 +847,29 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if ok {
 		return v, true, nil
 	}
+	if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
+		fmt.Printf("not found in files: %d\n", txNum)
+	}
 
 	// Value not found in history files, look in the recent history
 	if roTx == nil {
 		return nil, false, fmt.Errorf("roTx is nil")
 	}
-	return hc.getNoStateFromDB(key, txNum, roTx)
+	v, ok, err = hc.getNoStateFromDB(key, txNum, roTx)
+	if err != nil {
+		return nil, ok, err
+	}
+	if ok {
+		if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
+			fmt.Printf("found in files: %d\n", txNum)
+		}
+
+		return v, true, nil
+	}
+	if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
+		fmt.Printf("not found in db: %d\n", txNum)
+	}
+	return nil, false, err
 }
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
