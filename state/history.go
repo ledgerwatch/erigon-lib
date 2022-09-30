@@ -814,9 +814,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 			n, ok := ef.Search(txNum)
-			if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
-				fmt.Printf("ef %t, %d\n", ok, n)
-			}
 			if ok {
 				foundTxNum = n
 				foundEndTxNum = item.endTxNum
