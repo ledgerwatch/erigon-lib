@@ -20,10 +20,13 @@ import (
 	"context"
 	"fmt"
 	math2 "math"
+	"runtime"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 )
 
 type Aggregator22 struct {
@@ -404,6 +407,19 @@ func (a *Aggregator22) prune(step uint64, txFrom, txTo uint64) error {
 		return err
 	}
 	return nil
+}
+
+func (a *Aggregator22) LogStats(histBlockNumProgress uint64) {
+	max := a.EndTxNumMinimax()
+	if max == 0 {
+		return
+	}
+	var m runtime.MemStats
+	common2.ReadMemStats(&m)
+	log.Info("[Snapshots] History Stat",
+		"blocks", fmt.Sprintf("%dk", (histBlockNumProgress+1)/1000),
+		"txs", fmt.Sprintf("%dk", max/1000),
+		"alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
 }
 
 func (a *Aggregator22) EndTxNumMinimax() uint64 {

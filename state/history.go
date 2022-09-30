@@ -789,19 +789,35 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	var foundStartTxNum uint64
 	var found bool
 	//hc.indexFiles.Ascend(func(item *ctxItem) bool {
+	if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
+		fmt.Printf("search txNum=%d\n", txNum)
+	}
+
 	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
+		if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
+			fromStep, toStep := item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep
+			fmt.Printf("check file %d, %d-%d\n", item.startTxNum, fromStep, toStep)
+		}
 		if item.reader.Empty() {
 			return true
 		}
 		offset := item.reader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
-		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+		k, _ := g.NextUncompressed()
+		if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
+			fmt.Printf("another key %x,%x\n", k, key)
+		}
+		if bytes.Equal(k, key) {
 			//fmt.Printf("Found key=%x\n", k)
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			if n, ok := ef.Search(txNum); ok {
+			n, ok := ef.Search(txNum)
+			if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
+				fmt.Printf("ef %t, %d\n", ok, n)
+			}
+			if ok {
 				foundTxNum = n
 				foundEndTxNum = item.endTxNum
 				foundStartTxNum = item.startTxNum
@@ -847,9 +863,6 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if ok {
 		return v, true, nil
 	}
-	if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
-		fmt.Printf("not found in files: %d\n", txNum)
-	}
 
 	// Value not found in history files, look in the recent history
 	if roTx == nil {
@@ -860,14 +873,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 		return nil, ok, err
 	}
 	if ok {
-		if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
-			fmt.Printf("found in files: %d\n", txNum)
-		}
-
 		return v, true, nil
-	}
-	if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
-		fmt.Printf("not found in db: %d\n", txNum)
 	}
 	return nil, false, err
 }
