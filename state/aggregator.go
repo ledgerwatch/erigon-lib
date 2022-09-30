@@ -45,7 +45,6 @@ type Aggregator struct {
 	storage         *Domain
 	code            *Domain
 	commitment      *Domain
-	stats           FilesStats
 	commTree        *btree.BTreeG[*CommitmentItem]
 	keccak          hash.Hash
 	patriciaTrie    *commitment.HexPatriciaHashed
@@ -53,6 +52,7 @@ type Aggregator struct {
 	logTopics       *InvertedIndex
 	tracesFrom      *InvertedIndex
 	tracesTo        *InvertedIndex
+	stats           FilesStats
 	txNum           uint64
 	rwTx            kv.RwTx
 }
@@ -802,8 +802,7 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 }
 
 var (
-	keyCommitLatestTx = []byte("latesttx")
-	keyLatestTxInDB   = []byte("dblasttx")
+	keyCommitmentState = []byte("state")
 )
 
 func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
@@ -811,53 +810,71 @@ func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
 		return 0, nil
 	}
 	ctx := a.MakeContext()
-	latestTxNum := txNum
-	for {
+	latestTxNum := txNum - 2
+	var latestState []byte
+	var err error
+	for latestTxNum != txNum {
 		a.SetTxNum(latestTxNum + 1)
-		latest, err := ctx.ReadCommitment(keyCommitLatestTx, a.rwTx)
+		latestState, err = ctx.ReadCommitment(keyCommitmentState, a.rwTx)
 		if err != nil {
 			return 0, err
 		}
-		if len(latest) != 8 {
+		if len(latestState) < 8 {
 			break
 		}
-		v := binary.BigEndian.Uint64(latest)
+		v := binary.BigEndian.Uint64(latestState)
 		if v == latestTxNum {
 			break
 		}
 		latestTxNum = v
 	}
 
-	a.SetTxNum(latestTxNum)
-	dblast, err := ctx.ReadCommitment(keyLatestTxInDB, a.rwTx)
-	if err != nil {
-		return 0, err
-	}
-	if len(dblast) == 8 {
-		v := binary.BigEndian.Uint64(dblast)
-		latestTxNum = v
-	}
-
-	a.SetTxNum(latestTxNum)
-
-	buf, err := ctx.ReadCommitment(makeCommitmentKey(latestTxNum), a.rwTx)
-	if err != nil {
-		return 0, err
-	}
-	if len(buf) == 0 {
+	if len(latestState) == 0 {
 		return 0, fmt.Errorf("root state was not found")
 	}
-	if err := a.patriciaTrie.SetState(buf); err != nil {
+	if err := a.patriciaTrie.SetState(latestState); err != nil {
 		return 0, err
 	}
-
 	return latestTxNum, nil
 }
 
-func makeCommitmentKey(txNum uint64) []byte {
-	var b [8]byte
-	binary.BigEndian.PutUint64(b[:], txNum)
-	return append([]byte("roothash"), b[:]...)
+type commitmentState struct {
+	txNum         uint64
+	blockEndTxNum uint64
+	trieState     []byte
+}
+
+func (cs *commitmentState) Decode(buf []byte) error {
+	if len(buf) < 10 {
+		return fmt.Errorf("ivalid commitment state buffer size")
+	}
+	pos := 0
+	cs.txNum = binary.BigEndian.Uint64(buf[pos : pos+8])
+	pos += 8
+	cs.blockEndTxNum = binary.BigEndian.Uint64(buf[pos : pos+8])
+	pos += 8
+	cs.trieState = make([]byte, binary.BigEndian.Uint16(buf[pos:pos+2]))
+	pos += 2
+	if len(cs.trieState) == 0 && len(buf) == 10 {
+		return nil
+	}
+	copy(cs.trieState, buf[pos:pos+len(cs.trieState)])
+	return nil
+}
+
+func (cs *commitmentState) Encode() ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	var v [18]byte
+	binary.BigEndian.PutUint64(v[:], cs.txNum)
+	binary.BigEndian.PutUint64(v[8:16], cs.blockEndTxNum)
+	binary.BigEndian.PutUint16(v[16:18], uint16(len(cs.trieState)))
+	if _, err := buf.Write(v[:]); err != nil {
+		return nil, err
+	}
+	if _, err := buf.Write(cs.trieState); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
@@ -870,12 +887,12 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 			if err != nil {
 				return nil, err
 			}
-			if err = a.UpdateCommitmentData(makeCommitmentKey(a.txNum), state); err != nil {
+			cs := &commitmentState{txNum: a.txNum, trieState: state}
+			encoded, err := cs.Encode()
+			if err != nil {
 				return nil, err
 			}
-			var b [8]byte
-			binary.BigEndian.PutUint64(b[:], a.txNum)
-			if err = a.UpdateCommitmentData(keyCommitLatestTx, b[:]); err != nil {
+			if err = a.UpdateCommitmentData(keyCommitmentState, encoded); err != nil {
 				return nil, err
 			}
 		}
@@ -934,12 +951,12 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 		if err != nil {
 			return nil, err
 		}
-		if err = a.UpdateCommitmentData(makeCommitmentKey(a.txNum), state); err != nil {
+		cs := &commitmentState{txNum: a.txNum, trieState: state}
+		encoded, err := cs.Encode()
+		if err != nil {
 			return nil, err
 		}
-		var b [8]byte
-		binary.BigEndian.PutUint64(b[:], a.txNum)
-		if err = a.UpdateCommitmentData(keyCommitLatestTx, b[:]); err != nil {
+		if err = a.UpdateCommitmentData(keyCommitmentState, encoded); err != nil {
 			return nil, err
 		}
 	}
@@ -1066,12 +1083,6 @@ func (a *Aggregator) SetCommitFn(fn func(txNum uint64) error) {
 
 func (a *Aggregator) FinishTx() error {
 	atomic.AddUint64(&a.stats.TxCount, 1)
-
-	var b [8]byte
-	binary.BigEndian.PutUint64(b[:], a.txNum)
-	if err := a.UpdateCommitmentData(keyLatestTxInDB, b[:]); err != nil {
-		return err
-	}
 
 	if !a.ReadyToFinishTx() {
 		return nil

@@ -1389,17 +1389,18 @@ func (s *state) Encode(buf []byte) ([]byte, error) {
 	if err := binary.Write(ee, binary.BigEndian, int8(rootFlags)); err != nil {
 		return nil, fmt.Errorf("encode rootFlags: %w", err)
 	}
-	if err := binary.Write(ee, binary.BigEndian, s.RootHash); err != nil {
+
+	if n, err := ee.Write(s.RootHash[:]); err != nil || n != length.Hash {
 		return nil, fmt.Errorf("encode rootHash: %w", err)
 	}
-	if err := binary.Write(ee, binary.BigEndian, s.CurrentKey); err != nil {
+	if n, err := ee.Write(s.CurrentKey[:]); err != nil || n != len(s.CurrentKey) {
 		return nil, fmt.Errorf("encode currentKey: %w", err)
 	}
 	d := make([]byte, len(s.Depths))
 	for i := 0; i < len(s.Depths); i++ {
 		d[i] = byte(s.Depths[i])
 	}
-	if err := binary.Write(ee, binary.BigEndian, d); err != nil {
+	if n, err := ee.Write(d); err != nil || n != len(s.Depths) {
 		return nil, fmt.Errorf("encode depths: %w", err)
 	}
 	if err := binary.Write(ee, binary.BigEndian, s.TouchMap); err != nil {
@@ -1448,10 +1449,10 @@ func (s *state) Decode(buf []byte) error {
 	if rootFlags&stateRootChecked != 0 {
 		s.RootChecked = true
 	}
-	if err := binary.Read(aux, binary.BigEndian, &s.RootHash); err != nil {
+	if n, err := aux.Read(s.RootHash[:]); err != nil || n != length.Hash {
 		return fmt.Errorf("rootHash: %w", err)
 	}
-	if err := binary.Read(aux, binary.BigEndian, &s.CurrentKey); err != nil {
+	if n, err := aux.Read(s.CurrentKey[:]); err != nil || n != 128 {
 		return fmt.Errorf("currentKey: %w", err)
 	}
 	d := make([]byte, len(s.Depths))
