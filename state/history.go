@@ -671,6 +671,7 @@ func (h *History) prune(txFrom, txTo uint64) error {
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
+			fmt.Printf("prune to: %d\n", txNum)
 			break
 		}
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
@@ -788,17 +789,8 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	var foundEndTxNum uint64
 	var foundStartTxNum uint64
 	var found bool
-	//hc.indexFiles.Ascend(func(item *ctxItem) bool {
-	if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
-		fmt.Printf("search txNum=%d\n", txNum)
-	}
-
 	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
-		if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
-			fromStep, toStep := item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep
-			fmt.Printf("check file %d, %d-%d\n", item.startTxNum, fromStep, toStep)
-		}
 		if item.reader.Empty() {
 			return true
 		}
@@ -806,9 +798,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		g := item.getter
 		g.Reset(offset)
 		k, _ := g.NextUncompressed()
-		if bytes.Equal(key, common.MustDecodeHex("38cE91d6E9Ba5Ce2EEa1c1A634E9BF609bf538A5")) {
-			fmt.Printf("another key %x,%x\n", k, key)
-		}
 		if bytes.Equal(k, key) {
 			//fmt.Printf("Found key=%x\n", k)
 			eliasVal, _ := g.NextUncompressed()
