@@ -18,6 +18,7 @@ package state
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	math2 "math"
 	"runtime"
@@ -415,7 +416,7 @@ func (a *Aggregator22) prune(txFrom, txTo uint64) error {
 	return nil
 }
 
-func (a *Aggregator22) LogStats(tx2block func(endTxNumMinimax uint64) uint64) {
+func (a *Aggregator22) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) uint64) {
 	if a.maxTxNum == 0 {
 		return
 	}
@@ -427,12 +428,28 @@ func (a *Aggregator22) LogStats(tx2block func(endTxNumMinimax uint64) uint64) {
 		return true
 	})
 
+	c, err := tx.CursorDupSort(a.accounts.InvertedIndex.indexTable)
+	if err != nil {
+		// TODO pass error properly around
+		panic(err)
+	}
+	_, v, err := c.First()
+	if err != nil {
+		// TODO pass error properly around
+		panic(err)
+	}
+	var firstHistoryIndexBlockInDB uint64
+	if len(v) != 0 {
+		firstHistoryIndexBlockInDB = tx2block(binary.BigEndian.Uint64(v))
+	}
+
 	var m runtime.MemStats
 	common2.ReadMemStats(&m)
 	log.Info("[Snapshots] History Stat",
 		"blocks", fmt.Sprintf("%dk", (histBlockNumProgress+1)/1000),
 		"txs", fmt.Sprintf("%dk", a.maxTxNum/1000),
 		"txNum2blockNum", strings.Join(str, ","),
+		"first_history_idx_in_db", firstHistoryIndexBlockInDB,
 		"alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
 }
 
