@@ -47,6 +47,8 @@ type History struct {
 	files            *btree.BTreeG[*filesItem]
 	compressVals     bool
 	workers          int
+
+	historyKey []byte
 }
 
 func NewHistory(
@@ -65,6 +67,7 @@ func NewHistory(
 		settingsTable:    settingsTable,
 		compressVals:     compressVals,
 		workers:          1,
+		historyKey:       make([]byte, 256),
 	}
 	var err error
 	h.InvertedIndex, err = NewInvertedIndex(dir, aggregationStep, filenameBase, indexKeysTable, indexTable)
@@ -350,7 +353,7 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count i
 
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
-	historyKey := make([]byte, lk+8)
+	historyKey := h.historyKey[:lk+8]
 	copy(historyKey, key1)
 	if len(key2) > 0 {
 		copy(historyKey[len(key1):], key2)
