@@ -854,7 +854,7 @@ func (a *Aggregator22) EnableMadvWillNeed() *Aggregator22 {
 	a.tracesTo.EnableMadvWillNeed()
 	return a
 }
-func (a *Aggregator22) EnableMadvNormalReadAhead() *Aggregator22 {
+func (a *Aggregator22) EnableMadvNormal() *Aggregator22 {
 	a.accounts.EnableMadvNormalReadAhead()
 	a.storage.EnableMadvNormalReadAhead()
 	a.code.EnableMadvNormalReadAhead()
