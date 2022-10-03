@@ -266,6 +266,50 @@ func (sf Agg22StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
+func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collation) error {
+	closeAll := true
+	fmt.Printf("buildFilesInBackground: %d-%d\n", step, step+1)
+	sf, err := a.buildFiles(step, collation)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeAll {
+			sf.Close()
+		}
+	}()
+	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
+	fmt.Printf("integrateFiles: %d-%d\n", step, step+1)
+	maxSpan := uint64(32) * a.aggregationStep
+	for r := a.findMergeRange(a.maxTxNum, maxSpan); r.any(); r = a.findMergeRange(a.maxTxNum, maxSpan) {
+		outs := a.staticFilesInRange(r)
+		defer func() {
+			if closeAll {
+				outs.Close()
+			}
+		}()
+		fmt.Printf("mergeFiles: %d-%d\n", step, step+1)
+		in, err := a.mergeFiles(outs, r, maxSpan)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if closeAll {
+				in.Close()
+			}
+		}()
+		a.integrateMergedFiles(outs, in)
+		fmt.Printf("integrateMergedFiles: %d-%d\n", step, step+1)
+		if err = a.deleteFiles(outs); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("buildFilesInBackground end: %d-%d\n", step, step+1)
+
+	closeAll = false
+	return nil
+}
+
 func (a *Aggregator22) buildFiles(step uint64, collation Agg22Collation) (Agg22StaticFiles, error) {
 	var sf Agg22StaticFiles
 	closeFiles := true
@@ -355,19 +399,13 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	stateChanges := etl.NewCollector(a.logPrefix, "", etl.NewOldestEntryBuffer(etl.BufferOptimalSize))
 	defer stateChanges.Close()
 
-	if err := a.accounts.pruneF(txUnwindTo, math2.MaxUint64, func(txNum uint64, k, v []byte) error {
-		if err := stateChanges.Collect(k, v); err != nil {
-			return err
-		}
-		return nil
+	if err := a.accounts.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
+		return stateChanges.Collect(k, v)
 	}); err != nil {
 		return err
 	}
-	if err := a.storage.pruneF(txUnwindTo, math2.MaxUint64, func(txNu uint64, k, v []byte) error {
-		if err := stateChanges.Collect(k, v); err != nil {
-			return err
-		}
-		return nil
+	if err := a.storage.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
+		return stateChanges.Collect(k, v)
 	}); err != nil {
 		return err
 	}
@@ -504,7 +542,7 @@ func (a *Aggregator22) findMergeRange(maxEndTxNum, maxSpan uint64) Ranges22 {
 	r.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum = a.logTopics.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum = a.tracesFrom.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum = a.tracesTo.findMergeRange(maxEndTxNum, maxSpan)
-	fmt.Printf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r)
+	//fmt.Printf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r)
 	return r
 }
 
@@ -724,8 +762,14 @@ func (a *Aggregator22) FinishTx() error {
 	}
 	step := a.maxTxNum / a.aggregationStep
 	if a.working.Load() {
+		fmt.Printf("can prune, but prev not finished: %d-%d\n", step, step+1)
 		return nil
 	}
+
+	if err := a.prune(0, a.maxTxNum); err != nil {
+		return err
+	}
+
 	closeAll := true
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
 	if err != nil {
@@ -738,43 +782,12 @@ func (a *Aggregator22) FinishTx() error {
 	}()
 
 	a.working.Store(true)
-	//go func() {
-	defer a.working.Store(false)
-	sf, err := a.buildFiles(step, collation)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeAll {
-			sf.Close()
+	go func() {
+		defer a.working.Store(false)
+		if err := a.buildFilesInBackground(step, collation); err != nil {
+			log.Warn("buildFilesInBackground", "err", err)
 		}
 	}()
-	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-	if err := a.prune(0, a.maxTxNum); err != nil {
-		return err
-	}
-	maxSpan := uint64(32) * a.aggregationStep
-	for r := a.findMergeRange(a.maxTxNum, maxSpan); r.any(); r = a.findMergeRange(a.maxTxNum, maxSpan) {
-		outs := a.staticFilesInRange(r)
-		defer func() {
-			if closeAll {
-				outs.Close()
-			}
-		}()
-		in, err := a.mergeFiles(outs, r, maxSpan)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if closeAll {
-				in.Close()
-			}
-		}()
-		a.integrateMergedFiles(outs, in)
-		if err = a.deleteFiles(outs); err != nil {
-			return err
-		}
-	}
 	closeAll = false
 	return nil
 }
