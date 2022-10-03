@@ -824,6 +824,28 @@ func (a *Aggregator22) AddLogTopic(topic []byte) error {
 	return a.logTopics.Add(topic)
 }
 
+// DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
+func (a *Aggregator22) DisableReadAhead() {
+	a.accounts.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.DisableReadAhead()
+		return true
+	})
+}
+func (a *Aggregator22) EnableReadAhead() *Aggregator22 {
+	a.accounts.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableReadAhead()
+		return true
+	})
+	return a
+}
+func (a *Aggregator22) EnableMadvNormalReadAhead() *Aggregator22 {
+	a.accounts.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableMadvNormal()
+		return true
+	})
+	return a
+}
+
 func (ac *Aggregator22Context) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
 	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, roTx)
 }

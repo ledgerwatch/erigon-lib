@@ -673,7 +673,6 @@ func (h *History) prune(txFrom, txTo uint64) error {
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
-			fmt.Printf("prune to: %d\n", txNum)
 			break
 		}
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
