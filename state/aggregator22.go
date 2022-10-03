@@ -268,7 +268,6 @@ func (sf Agg22StaticFiles) Close() {
 
 func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collation) error {
 	closeAll := true
-	fmt.Printf("buildFilesInBackground: %d-%d\n", step, step+1)
 	sf, err := a.buildFiles(step, collation)
 	if err != nil {
 		return err
@@ -758,7 +757,6 @@ func (a *Aggregator22) FinishTx() error {
 	}
 	step := a.maxTxNum / a.aggregationStep
 	if a.working.Load() {
-		fmt.Printf("can prune, but prev not finished: %d-%d\n", step, step+1)
 		return nil
 	}
 
