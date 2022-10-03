@@ -287,6 +287,8 @@ func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []
 }
 
 func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count int, values, compressVals bool) error {
+	_, fName := filepath.Split(historyIdxPath)
+	log.Debug("[snapshots] build idx", "file", fName)
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
 		Enums:      false,
