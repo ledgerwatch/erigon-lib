@@ -279,7 +279,6 @@ func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collat
 		}
 	}()
 	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-	fmt.Printf("integrateFiles: %d-%d\n", step, step+1)
 	maxSpan := uint64(32) * a.aggregationStep
 	for r := a.findMergeRange(a.maxTxNum, maxSpan); r.any(); r = a.findMergeRange(a.maxTxNum, maxSpan) {
 		outs := a.staticFilesInRange(r)
@@ -288,7 +287,6 @@ func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collat
 				outs.Close()
 			}
 		}()
-		fmt.Printf("mergeFiles: %d-%d\n", step, step+1)
 		in, err := a.mergeFiles(outs, r, maxSpan)
 		if err != nil {
 			return err
@@ -299,12 +297,10 @@ func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collat
 			}
 		}()
 		a.integrateMergedFiles(outs, in)
-		fmt.Printf("integrateMergedFiles: %d-%d\n", step, step+1)
 		if err = a.deleteFiles(outs); err != nil {
 			return err
 		}
 	}
-	fmt.Printf("buildFilesInBackground end: %d-%d\n", step, step+1)
 
 	closeAll = false
 	return nil
