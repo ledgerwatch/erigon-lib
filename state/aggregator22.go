@@ -826,23 +826,42 @@ func (a *Aggregator22) AddLogTopic(topic []byte) error {
 
 // DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
 func (a *Aggregator22) DisableReadAhead() {
-	a.accounts.files.Ascend(func(item *filesItem) bool {
-		item.decompressor.DisableReadAhead()
-		return true
-	})
+	a.accounts.DisableReadAhead()
+	a.storage.DisableReadAhead()
+	a.code.DisableReadAhead()
+	a.logAddrs.DisableReadAhead()
+	a.logTopics.DisableReadAhead()
+	a.tracesFrom.DisableReadAhead()
+	a.tracesTo.DisableReadAhead()
 }
 func (a *Aggregator22) EnableReadAhead() *Aggregator22 {
-	a.accounts.files.Ascend(func(item *filesItem) bool {
-		item.decompressor.EnableReadAhead()
-		return true
-	})
+	a.accounts.EnableReadAhead()
+	a.storage.EnableReadAhead()
+	a.code.EnableReadAhead()
+	a.logAddrs.EnableReadAhead()
+	a.logTopics.EnableReadAhead()
+	a.tracesFrom.EnableReadAhead()
+	a.tracesTo.EnableReadAhead()
+	return a
+}
+func (a *Aggregator22) EnableMadvWillNeed() *Aggregator22 {
+	a.accounts.EnableMadvWillNeed()
+	a.storage.EnableMadvWillNeed()
+	a.code.EnableMadvWillNeed()
+	a.logAddrs.EnableMadvWillNeed()
+	a.logTopics.EnableMadvWillNeed()
+	a.tracesFrom.EnableMadvWillNeed()
+	a.tracesTo.EnableMadvWillNeed()
 	return a
 }
 func (a *Aggregator22) EnableMadvNormalReadAhead() *Aggregator22 {
-	a.accounts.files.Ascend(func(item *filesItem) bool {
-		item.decompressor.EnableMadvNormal()
-		return true
-	})
+	a.accounts.EnableMadvNormalReadAhead()
+	a.storage.EnableMadvNormalReadAhead()
+	a.code.EnableMadvNormalReadAhead()
+	a.logAddrs.EnableMadvNormalReadAhead()
+	a.logTopics.EnableMadvNormalReadAhead()
+	a.tracesFrom.EnableMadvNormalReadAhead()
+	a.tracesTo.EnableMadvNormalReadAhead()
 	return a
 }
 

@@ -376,6 +376,10 @@ func (d *Decompressor) EnableMadvNormal() *Decompressor {
 	_ = mmap.MadviseNormal(d.mmapHandle1)
 	return d
 }
+func (d *Decompressor) EnableWillNeed() *Decompressor {
+	_ = mmap.MadviseWillNeed(d.mmapHandle1)
+	return d
+}
 
 // Getter represent "reader" or "interator" that can move accross the data of the decompressor
 // The full state of the getter can be captured by saving dataP, and dataBit

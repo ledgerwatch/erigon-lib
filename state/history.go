@@ -1126,3 +1126,40 @@ func (hi *HistoryIterator1) Next(keyBuf, valBuf []byte) ([]byte, []byte) {
 	hi.advance()
 	return k, v
 }
+
+func (h *History) DisableReadAhead() {
+	h.InvertedIndex.DisableReadAhead()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.DisableReadAhead()
+		item.index.DisableReadAhead()
+		return true
+	})
+}
+
+func (h *History) EnableReadAhead() *History {
+	h.InvertedIndex.EnableReadAhead()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableReadAhead()
+		item.index.EnableReadAhead()
+		return true
+	})
+	return h
+}
+func (h *History) EnableMadvWillNeed() *History {
+	h.InvertedIndex.EnableMadvWillNeed()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableWillNeed()
+		item.index.EnableWillNeed()
+		return true
+	})
+	return h
+}
+func (h *History) EnableMadvNormalReadAhead() *History {
+	h.InvertedIndex.EnableMadvNormalReadAhead()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableMadvNormal()
+		item.index.EnableMadvNormal()
+		return true
+	})
+	return h
+}
