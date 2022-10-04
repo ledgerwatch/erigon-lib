@@ -714,7 +714,9 @@ func (ii *InvertedIndex) prune(txFrom, txTo uint64) error {
 func (ii *InvertedIndex) DisableReadAhead() {
 	ii.files.Ascend(func(item *filesItem) bool {
 		item.decompressor.DisableReadAhead()
-		item.index.DisableReadAhead()
+		if item.index != nil {
+			item.index.DisableReadAhead()
+		}
 		return true
 	})
 }
@@ -722,7 +724,9 @@ func (ii *InvertedIndex) DisableReadAhead() {
 func (ii *InvertedIndex) EnableReadAhead() *InvertedIndex {
 	ii.files.Ascend(func(item *filesItem) bool {
 		item.decompressor.EnableReadAhead()
-		item.index.EnableReadAhead()
+		if item.index != nil {
+			item.index.EnableReadAhead()
+		}
 		return true
 	})
 	return ii
@@ -730,7 +734,9 @@ func (ii *InvertedIndex) EnableReadAhead() *InvertedIndex {
 func (ii *InvertedIndex) EnableMadvWillNeed() *InvertedIndex {
 	ii.files.Ascend(func(item *filesItem) bool {
 		item.decompressor.EnableWillNeed()
-		item.index.EnableWillNeed()
+		if item.index != nil {
+			item.index.EnableWillNeed()
+		}
 		return true
 	})
 	return ii
@@ -738,7 +744,9 @@ func (ii *InvertedIndex) EnableMadvWillNeed() *InvertedIndex {
 func (ii *InvertedIndex) EnableMadvNormalReadAhead() *InvertedIndex {
 	ii.files.Ascend(func(item *filesItem) bool {
 		item.decompressor.EnableMadvNormal()
-		item.index.EnableMadvNormal()
+		if item.index != nil {
+			item.index.EnableMadvNormal()
+		}
 		return true
 	})
 	return ii
