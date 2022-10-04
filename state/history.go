@@ -353,7 +353,8 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count i
 
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
-	historyKey := h.historyKey[:lk+8]
+	//historyKey := h.historyKey[:lk+8]
+	historyKey := make([]byte, lk+8)
 	copy(historyKey, key1)
 	if len(key2) > 0 {
 		copy(historyKey[len(key1):], key2)
