@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -304,6 +303,8 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 
 	var inCount, outCount, emptyWordsCount uint64 // Counters words sent to compression and returned for compression
 	var numBuf [binary.MaxVarintLen64]byte
+	totalWords := datFile.count
+
 	if err = datFile.ForEach(func(v []byte, compression bool) error {
 		select {
 		case <-ctx.Done():
