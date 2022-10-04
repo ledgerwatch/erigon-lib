@@ -657,40 +657,40 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.CacheView) DiscardReason {
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !isLocal && uint256.NewInt(p.cfg.MinFeeCap).Cmp(&txn.FeeCap) == 1 {
-		if txn.Traced {
+		//if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx underpriced idHash=%x local=%t, feeCap=%d, cfg.MinFeeCap=%d", txn.IDHash, isLocal, txn.FeeCap, p.cfg.MinFeeCap))
-		}
+		//}
 		return UnderPriced
 	}
 	gas, reason := CalcIntrinsicGas(uint64(txn.DataLen), uint64(txn.DataNonZeroLen), nil, txn.Creation, true, true)
-	if txn.Traced {
+	//if txn.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas idHash=%x gas=%d", txn.IDHash, gas))
-	}
+	//}
 	if reason != Success {
-		if txn.Traced {
+		//if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas calculated failed idHash=%x reason=%s", txn.IDHash, reason))
-		}
+		//}
 		return reason
 	}
 	if gas > txn.Gas {
-		if txn.Traced {
+		//if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas > txn.gas idHash=%x gas=%d, txn.gas=%d", txn.IDHash, gas, txn.Gas))
-		}
+		//}
 		return IntrinsicGas
 	}
 	if !isLocal && uint64(p.all.count(txn.SenderID)) > p.cfg.AccountSlots {
-		if txn.Traced {
+		//if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx marked as spamming idHash=%x slots=%d, limit=%d", txn.IDHash, p.all.count(txn.SenderID), p.cfg.AccountSlots))
-		}
+		//}
 		return Spammer
 	}
 
 	// check nonce and balance
 	senderNonce, senderBalance, _ := p.senders.info(stateCache, txn.SenderID)
 	if senderNonce > txn.Nonce {
-		if txn.Traced {
+		//if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IDHash, senderNonce, txn.Nonce))
-		}
+		//}
 		return NonceTooLow
 	}
 	// Transactor should have enough funds to cover the costs
@@ -698,9 +698,9 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 	total.Mul(total, &txn.FeeCap)
 	total.Add(total, &txn.Value)
 	if senderBalance.Cmp(total) < 0 {
-		if txn.Traced {
+		//if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx insufficient funds idHash=%x balance in state=%d, txn.gas*txn.tip=%d", txn.IDHash, senderBalance, total))
-		}
+		//}
 		return InsufficientFunds
 	}
 	return Success
@@ -845,9 +845,9 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 	for i, reason := range reasons {
 		if reason == Success {
 			txn := newTxs.Txs[i]
-			if txn.Traced {
+			//if txn.Traced {
 				log.Info(fmt.Sprintf("TX TRACING: AddLocalTxs promotes idHash=%x, senderId=%d", txn.IDHash, txn.SenderID))
-			}
+			//}
 			p.promoted = append(p.promoted, txn.IDHash[:]...)
 		}
 	}
@@ -920,9 +920,9 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			continue
 		}
 		discardReasons[i] = NotSet
-		if txn.Traced {
+		//if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: schedule sendersWithChangedState idHash=%x senderId=%d", txn.IDHash, mt.Tx.SenderID))
-		}
+		//}
 		sendersWithChangedState[mt.Tx.SenderID] = struct{}{}
 	}
 
@@ -1120,9 +1120,9 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*types.TxSlot, pending *P
 			if mt.Tx.Nonce > nonce {
 				return false
 			}
-			if mt.Tx.Traced {
+			//if mt.Tx.Traced {
 				log.Info(fmt.Sprintf("TX TRACING: removeMined idHash=%x senderId=%d, currentSubPool=%s", mt.Tx.IDHash, mt.Tx.SenderID, mt.currentSubPool))
-			}
+			//}
 			toDel = append(toDel, mt)
 			// del from sub-pool
 			switch mt.currentSubPool {
@@ -1158,13 +1158,13 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 	minTip := uint64(math.MaxUint64)
 	var toDel []*metaTx // can't delete items while iterate them
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
-		if mt.Tx.Traced {
+		//if mt.Tx.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IDHash, senderID, senderNonce, mt.Tx.Nonce, mt.currentSubPool))
-		}
+		//}
 		if senderNonce > mt.Tx.Nonce {
-			if mt.Tx.Traced {
+			//if mt.Tx.Traced {
 				log.Info(fmt.Sprintf("TX TRACING: removing due to low nonce for idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IDHash, senderID, senderNonce, mt.Tx.Nonce, mt.currentSubPool))
-			}
+			//}
 			// del from sub-pool
 			switch mt.currentSubPool {
 			case PendingSubPool:
@@ -1241,9 +1241,9 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			mt.subPool |= NotTooMuchGas
 		}
 
-		if mt.Tx.Traced {
+		//if mt.Tx.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderId=%d subPool=%b", mt.Tx.IDHash, mt.Tx.SenderID, mt.subPool))
-		}
+		//}
 
 		// Some fields of mt might have changed, need to fix the invariants in the subpool best and worst queues
 		switch mt.currentSubPool {
@@ -1836,9 +1836,9 @@ func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
 		id = sc.senderID
 		sc.senderIDs[string(copyAddr)] = id
 		sc.senderID2Addr[id] = copyAddr
-		if traced {
+		//if traced {
 			log.Info(fmt.Sprintf("TX TRACING: allocated senderID %d to sender %x", id, addr))
-		}
+		//}
 	}
 	return id, traced
 }
@@ -2075,9 +2075,9 @@ func (p *PendingPool) Add(i *metaTx) {
 	if p.adding {
 		p.added = append(p.added, i.Tx.IDHash[:]...)
 	}
-	if i.Tx.Traced {
+	//if i.Tx.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IDHash, i.Tx.SenderID))
-	}
+	//}
 	i.currentSubPool = p.t
 	heap.Push(p.worst, i)
 	p.best.UnsafeAdd(i)
@@ -2145,9 +2145,9 @@ func (p *SubPool) Add(i *metaTx) {
 	if p.adding {
 		p.added = append(p.added, i.Tx.IDHash[:]...)
 	}
-	if i.Tx.Traced {
+	//if i.Tx.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IDHash, i.Tx.SenderID))
-	}
+	//}
 	i.currentSubPool = p.t
 	heap.Push(p.best, i)
 	heap.Push(p.worst, i)
