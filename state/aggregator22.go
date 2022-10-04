@@ -267,6 +267,7 @@ func (sf Agg22StaticFiles) Close() {
 }
 
 func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collation) error {
+	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
 	closeAll := true
 	sf, err := a.buildFiles(step, collation)
 	if err != nil {
@@ -278,6 +279,7 @@ func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collat
 		}
 	}()
 	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
+	log.Info("[snapshots] history build done", "step", fmt.Sprintf("%d-%d", step, step+1))
 	maxSpan := uint64(32) * a.aggregationStep
 	for r := a.findMergeRange(a.maxTxNum, maxSpan); r.any(); r = a.findMergeRange(a.maxTxNum, maxSpan) {
 		outs := a.staticFilesInRange(r)
@@ -537,7 +539,7 @@ func (a *Aggregator22) findMergeRange(maxEndTxNum, maxSpan uint64) Ranges22 {
 	r.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum = a.logTopics.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum = a.tracesFrom.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum = a.tracesTo.findMergeRange(maxEndTxNum, maxSpan)
-	//fmt.Printf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r)
+	fmt.Printf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r)
 	return r
 }
 
