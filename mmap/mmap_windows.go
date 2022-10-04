@@ -51,7 +51,7 @@ func Mmap(f *os.File, size int) ([]byte, *[MaxMapSize]byte, error) {
 }
 
 func MadviseSequential(mmapHandle1 []byte) error { return nil }
-func MadviseNormal(mmapHandle1 []byte) error     {}
+func MadviseNormal(mmapHandle1 []byte) error     { return nil }
 func MadviseWillNeed(mmapHandle1 []byte) error   { return nil }
 func MadviseRandom(mmapHandle1 []byte) error     { return nil }
 
