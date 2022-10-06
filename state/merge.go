@@ -247,6 +247,15 @@ func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles 
 }
 
 func mergeEfs(preval, val, buf []byte) ([]byte, error) {
+	defer func() {
+		rec := recover()
+		if rec != nil {
+			fmt.Printf("ef1: %x\n", preval)
+			fmt.Printf("ef2: %x\n", val)
+			panic(rec)
+		}
+	}()
+
 	preef, _ := eliasfano32.ReadEliasFano(preval)
 	ef, _ := eliasfano32.ReadEliasFano(val)
 	preIt := preef.Iterator()
