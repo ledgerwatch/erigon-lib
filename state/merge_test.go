@@ -4,6 +4,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
@@ -66,4 +67,10 @@ func Test_mergeEliasFano(t *testing.T) {
 		v := mit.Next()
 		require.Contains(t, mergedLists, int(v))
 	}
+}
+
+func Test2(t *testing.T) {
+	buf := []byte{}
+	_, err := mergeEfs(common.MustDecodeHex("000000000000000000000000053e5c1d1c5c3e010000000000000000000000000200000000000000010000000000000000000000000000000000000000000000"), common.MustDecodeHex("00000000000000180000000005d00cf4bdbaa23486281c139a3c85a09b9376f3c1528fdbbb0b81d727f0bbeb45ca9456234300cbcf1aedb381e53362f170379a1b750e2edfab2b208dd03c03843442f30c10000000000000000000000000000096a1510808ee00107a00000000000000010000000000000000000000000000000000000000000000"), buf)
+	require.NoError(t, err)
 }
