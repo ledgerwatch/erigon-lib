@@ -246,12 +246,12 @@ func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles 
 	return
 }
 
-func mergeEfs(preval, val, buf []byte) ([]byte, error) {
+func mergeEfs(preval, val, buf []byte, k1, k2 []byte) ([]byte, error) {
 	defer func() {
 		rec := recover()
 		if rec != nil {
-			fmt.Printf("ef1: %x\n", preval)
-			fmt.Printf("ef2: %x\n", val)
+			fmt.Printf("key1=%x, ef1=%x\n", k1, preval)
+			fmt.Printf("key2=%x, ef2=%x\n", k2, val)
 			panic(rec)
 		}
 	}()
@@ -511,7 +511,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 			ci1 := cp[0]
 			if mergedOnce {
-				if lastVal, err = mergeEfs(ci1.val, lastVal, nil); err != nil {
+				if lastVal, err = mergeEfs(ci1.val, lastVal, nil, ci1.key, lastKey); err != nil {
 					return nil, fmt.Errorf("merge %s inverted index: %w", ii.filenameBase, err)
 				}
 			} else {
