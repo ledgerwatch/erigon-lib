@@ -19,6 +19,7 @@ package commitment
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -105,6 +106,23 @@ type state struct {
 	BranchBefore  [128]bool // For each row, whether there was a branch node in the database loaded in unfold
 	CurrentKey    [128]byte // For each row indicates which column is currently selected
 	Depths        [128]int  // For each row, the depth of cells in that row
+
+	//RootCell ecell
+}
+
+type ecell struct {
+	Hash       []byte
+	APK        []byte
+	SPK        []byte
+	DHK        []byte
+	DHL        int
+	EXT        []byte
+	ExtLen     int
+	Nonce      uint64
+	Balance    uint256.Int
+	CodeHash   []byte
+	Storage    []byte
+	StorageLen int
 }
 
 func NewHexPatriciaHashed(accountKeyLen int,
@@ -1504,13 +1522,36 @@ func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 		Root:          make([]byte, 0),
 	}
 
-	var err error
-	s.Root, _, err = EncodeBranch(1, 1, 1, func(nibble int, skip bool) (*Cell, error) {
-		return &hph.root, nil
-	})
-	if err != nil {
+	//var err error
+	//s.Root, _, err = EncodeBranch(1, 1, 1, func(nibble int, skip bool) (*Cell, error) {
+	//	return &hph.root, nil
+	//})
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	root := hph.root
+	rc := ecell{
+		Hash:   root.h[:root.hl],
+		APK:    root.apk[:root.apl],
+		SPK:    root.spk[:root.spl],
+		DHL:    root.downHashedLen,
+		DHK:    root.downHashedKey[:root.downHashedLen],
+		EXT:    root.extension[:root.extLen],
+		ExtLen: root.extLen,
+		Nonce:  root.Nonce,
+		//Balance:    root,
+		CodeHash:   root.CodeHash[:],
+		Storage:    root.Storage[:root.StorageLen],
+		StorageLen: root.StorageLen,
+	}
+	rc.Balance.Set(&root.Balance)
+
+	w := bytes.NewBuffer(nil)
+	if err := gob.NewEncoder(w).Encode(rc); err != nil {
 		return nil, err
 	}
+	s.Root = w.Bytes()
 
 	copy(s.CurrentKey[:], hph.currentKey[:])
 	copy(s.Depths[:], hph.depths[:])
@@ -1532,13 +1573,32 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 		return err
 	}
 
-	_, _, row, err := BranchData(s.Root).DecodeCells()
+	//_, _, row, err := BranchData(s.Root).DecodeCells()
+	var rc ecell
+	err := gob.NewDecoder(bytes.NewBuffer(s.Root)).Decode(&rc)
 	if err != nil {
 		return err
 	}
 	hph.Reset()
 
-	hph.root = row[0]
+	//hph.root = row[0]
+	hph.root.apl = len(rc.APK)
+	hph.root.spl = len(rc.SPK)
+	hph.root.downHashedLen = rc.DHL
+	hph.root.extLen = rc.ExtLen
+	hph.root.hl = len(rc.Hash)
+	hph.root.StorageLen = len(rc.Storage)
+	hph.root.Nonce = rc.Nonce
+
+	copy(hph.root.apk[:], rc.APK)
+	copy(hph.root.spk[:], rc.SPK)
+	copy(hph.root.downHashedKey[:], rc.DHK)
+	copy(hph.root.extension[:], rc.EXT)
+	copy(hph.root.h[:], rc.Hash)
+	copy(hph.root.Storage[:], rc.Storage)
+	copy(hph.root.CodeHash[:], rc.CodeHash)
+	hph.root.Balance.Set(&rc.Balance)
+
 	hph.currentKeyLen = int(s.CurrentKeyLen)
 	hph.rootChecked = s.RootChecked
 	hph.rootTouched = s.RootTouched
