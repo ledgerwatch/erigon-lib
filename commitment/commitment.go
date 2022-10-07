@@ -22,6 +22,8 @@ type Trie interface {
 
 	ReviewKeys(pk, hk [][]byte) (rootHash []byte, branchNodeUpdates map[string]BranchData, err error)
 
+	ProcessUpdates(pk, hk [][]byte, updates []Update) (rootHash []byte, branchNodeUpdates map[string]BranchData, err error)
+
 	ResetFns(
 		branchFn func(prefix []byte) ([]byte, error),
 		accountFn func(plainKey []byte, cell *Cell) error,
@@ -340,7 +342,7 @@ func (branchData BranchData) ReplacePlainKeys(accountPlainKeys [][]byte, storage
 }
 
 // IsComplete determines whether given branch data is complete, meaning that all information about all the children is present
-// All of the 16 children of a branch node have two attributes
+// Each of 16 children of a branch node have two attributes
 // touch - whether this child has been modified or deleted in this branchData (corresponding bit in touchMap is set)
 // after - whether after this branchData application, the child is present in the tree or not (corresponding bit in afterMap is set)
 func (branchData BranchData) IsComplete() bool {

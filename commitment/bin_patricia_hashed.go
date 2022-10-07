@@ -127,6 +127,10 @@ func NewBinPatriciaHashed(accountKeyLen int,
 		rootPresent:   true,
 	}
 }
+func (hph *BinHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, update []Update) (rootHash []byte, branchNodeUpdates map[string]BranchData, err error) {
+	panic("implement me")
+	return
+}
 
 func (hph *BinHashed) ReviewKeys(plainKeys, hashedKeys [][]byte) (rootHash []byte, branchNodeUpdates map[string]BranchData, err error) {
 	branchNodeUpdates = make(map[string]BranchData)
