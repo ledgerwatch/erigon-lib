@@ -39,7 +39,6 @@ import (
 // Reconstruction of the aggregator in another package, `aggregator`
 
 type Aggregator struct {
-	commitFn        func(txNum uint64) error
 	aggregationStep uint64
 	accounts        *Domain
 	storage         *Domain
@@ -52,9 +51,13 @@ type Aggregator struct {
 	logTopics       *InvertedIndex
 	tracesFrom      *InvertedIndex
 	tracesTo        *InvertedIndex
-	stats           FilesStats
 	txNum           uint64
-	rwTx            kv.RwTx
+	blockNum        uint64
+
+	commitmentMode CommitmentMode
+	commitFn       func(txNum uint64) error
+	rwTx           kv.RwTx
+	stats          FilesStats
 }
 
 func NewAggregator(
@@ -66,6 +69,7 @@ func NewAggregator(
 		patriciaTrie:    commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
 		commTree:        btree.NewG[*CommitmentItem](32, commitmentItemLess),
 		keccak:          sha3.NewLegacyKeccak256(),
+		commitmentMode:  CommitmentModeDirect,
 	}
 	closeAgg := true
 	defer func() {
@@ -171,6 +175,8 @@ func (a *Aggregator) SetTxNum(txNum uint64) {
 	a.tracesTo.SetTxNum(txNum)
 }
 
+func (a *Aggregator) SetBlockNum(bn uint64) { a.blockNum = bn }
+
 func (a *Aggregator) SetWorkers(i int) {
 	a.accounts.workers = i
 	a.storage.workers = i
@@ -180,6 +186,10 @@ func (a *Aggregator) SetWorkers(i int) {
 	a.logTopics.workers = i
 	a.tracesFrom.workers = i
 	a.tracesTo.workers = i
+}
+
+func (a *Aggregator) SetCommitmentMode(mode CommitmentMode) {
+	a.commitmentMode = mode
 }
 
 type AggCollation struct {
@@ -813,7 +823,7 @@ func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
 	latestTxNum := txNum - 2
 	var latestState []byte
 	var err error
-	for latestTxNum != txNum {
+	for latestTxNum = 1; latestTxNum != txNum; {
 		a.SetTxNum(latestTxNum + 1)
 		latestState, err = ctx.ReadCommitment(keyCommitmentState, a.rwTx)
 		if err != nil {
@@ -877,50 +887,60 @@ func (cs *commitmentState) Encode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+func (a *Aggregator) storeCommitmentState() error {
+	state, err := a.patriciaTrie.EncodeCurrentState(nil)
+	if err != nil {
+		return err
+	}
+	cs := &commitmentState{txNum: a.txNum, trieState: state, blockEndTxNum: a.blockNum}
+	encoded, err := cs.Encode()
+	if err != nil {
+		return err
+	}
+	if err = a.UpdateCommitmentData(keyCommitmentState, encoded); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
 func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err error) {
+	if a.commitmentMode == CommitmentModeDisabled {
+		return
+	}
+
 	touchedKeys, hashedKeys, updates := a.touchedKeyList()
 	if len(touchedKeys) == 0 {
 		rootHash, err = a.patriciaTrie.RootHash()
-		if commit && err == nil {
-			state, err := a.patriciaTrie.EncodeCurrentState(nil, rootHash)
-			if err != nil {
-				return nil, err
-			}
-			cs := &commitmentState{txNum: a.txNum, trieState: state}
-			encoded, err := cs.Encode()
-			if err != nil {
-				return nil, err
-			}
-			if err = a.UpdateCommitmentData(keyCommitmentState, encoded); err != nil {
+		if err == nil && commit {
+			if err := a.storeCommitmentState(); err != nil {
 				return nil, err
 			}
 		}
 		return rootHash, err
 	}
 
+	_ = updates
+
 	ctx := a.MakeContext()
 	a.patriciaTrie.Reset()
 	a.patriciaTrie.SetTrace(trace)
 	a.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
 
-	rootHash, branchNodeUpdates, err := a.patriciaTrie.ReviewKeys(touchedKeys, hashedKeys)
-	if err != nil {
-		return nil, err
-	}
-	_ = updates
-	a.patriciaTrie.Reset()
-	a.patriciaTrie.SetTrace(trace)
-	a.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
-
-	rootHash2, _, err := a.patriciaTrie.ProcessUpdates(touchedKeys, hashedKeys, updates)
-	if err != nil {
-		return nil, err
-	}
-
-	if !bytes.Equal(rootHash, rootHash2) {
-		fmt.Printf("hash mismatch: state direct reading=%x update based=%x\n", rootHash, rootHash2)
-		return rootHash2, nil
+	var branchNodeUpdates map[string]commitment.BranchData
+	switch a.commitmentMode {
+	case CommitmentModeDirect:
+		rootHash, branchNodeUpdates, err = a.patriciaTrie.ReviewKeys(touchedKeys, hashedKeys)
+		if err != nil {
+			return nil, err
+		}
+	case CommitmentModeUpdates:
+		rootHash, branchNodeUpdates, err = a.patriciaTrie.ProcessUpdates(touchedKeys, hashedKeys, updates)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("invalid commitment mode: %d", a.commitmentMode)
 	}
 
 	for pref, update := range branchNodeUpdates {
@@ -939,24 +959,16 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 		if bytes.Equal(stated, merged) {
 			continue
 		}
-		//if trace {
-		//	fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", prefix, stated, update, merged)
-		//}
+		if trace {
+			fmt.Printf("computeCommitment merge [%x] [%x]+[%x]=>[%x]\n", prefix, stated, update, merged)
+		}
 		if err = a.UpdateCommitmentData(prefix, merged); err != nil {
 			return nil, err
 		}
 	}
+
 	if commit {
-		state, err := a.patriciaTrie.EncodeCurrentState(nil, rootHash)
-		if err != nil {
-			return nil, err
-		}
-		cs := &commitmentState{txNum: a.txNum, trieState: state}
-		encoded, err := cs.Encode()
-		if err != nil {
-			return nil, err
-		}
-		if err = a.UpdateCommitmentData(keyCommitmentState, encoded); err != nil {
+		if err := a.storeCommitmentState(); err != nil {
 			return nil, err
 		}
 	}
@@ -1304,3 +1316,12 @@ func DecodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []
 	}
 	return
 }
+
+// Defines how to evaluate commitments.
+type CommitmentMode uint
+
+const (
+	CommitmentModeDisabled CommitmentMode = 0
+	CommitmentModeDirect   CommitmentMode = 1
+	CommitmentModeUpdates  CommitmentMode = 2
+)
