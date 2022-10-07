@@ -430,3 +430,23 @@ func (branchData BranchData) MergeHexBranches(branchData2 BranchData, newData []
 	}
 	return newData, nil
 }
+
+func (branchData BranchData) DecodeCells() (touchMap, afterMap uint16, row [16]Cell, err error) {
+	touchMap = binary.BigEndian.Uint16(branchData[0:])
+	afterMap = binary.BigEndian.Uint16(branchData[2:])
+	pos := 4
+	for bitset, j := touchMap, 0; bitset != 0; j++ {
+		bit := bitset & -bitset
+		nibble := bits.TrailingZeros16(bit)
+		if afterMap&bit != 0 {
+			fieldBits := PartFlags(branchData[pos])
+			pos++
+			if pos, err = row[nibble].fillFromFields(branchData, pos, fieldBits); err != nil {
+				err = fmt.Errorf("faield to fill cell at nibble %x: %w", nibble, err)
+				return
+			}
+		}
+		bitset ^= bit
+	}
+	return
+}

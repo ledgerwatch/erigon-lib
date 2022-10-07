@@ -271,20 +271,21 @@ func Test_Sepolia(t *testing.T) {
 func Test_HexPatriciaHashed_StateEncode(t *testing.T) {
 	//trie := NewHexPatriciaHashed(length.Hash, nil, nil, nil)
 	var s state
+	s.Root = make([]byte, 128)
 	rnd := rand.New(rand.NewSource(42))
 	n, err := rnd.Read(s.CurrentKey[:])
 	require.NoError(t, err)
 	require.EqualValues(t, 128, n)
-	n, err = rnd.Read(s.RootHash[:])
+	n, err = rnd.Read(s.Root[:])
 	require.NoError(t, err)
-	require.EqualValues(t, 32, n)
+	require.EqualValues(t, len(s.Root), n)
 	s.RootPresent = true
 	s.RootTouched = true
 	s.RootChecked = true
 
 	s.CurrentKeyLen = int8(rnd.Intn(129))
 	for i := 0; i < len(s.Depths); i++ {
-		s.Depths[i] = rnd.Int()
+		s.Depths[i] = rnd.Intn(256)
 	}
 	for i := 0; i < len(s.TouchMap); i++ {
 		s.TouchMap[i] = uint16(rnd.Intn(1<<16 - 1))
@@ -306,7 +307,9 @@ func Test_HexPatriciaHashed_StateEncode(t *testing.T) {
 	err = s1.Decode(enc)
 	require.NoError(t, err)
 
-	require.EqualValues(t, s.RootHash[:], s1.RootHash[:])
+	require.EqualValues(t, s.Root[:], s1.Root[:])
+	require.EqualValues(t, s.Depths[:], s1.Depths[:])
+	require.EqualValues(t, s.CurrentKeyLen, s1.CurrentKeyLen)
 	require.EqualValues(t, s.CurrentKey[:], s1.CurrentKey[:])
 	require.EqualValues(t, s.AfterMap[:], s1.AfterMap[:])
 	require.EqualValues(t, s.TouchMap[:], s1.TouchMap[:])

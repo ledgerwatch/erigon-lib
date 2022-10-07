@@ -93,14 +93,15 @@ type HexPatriciaHashed struct {
 	byteArrayWriter ByteArrayWriter
 }
 
+// represents state of the tree
 type state struct {
 	TouchMap      [128]uint16 // For each row, bitmap of cells that were either present before modification, or modified or deleted
 	AfterMap      [128]uint16 // For each row, bitmap of cells that were present after modification
 	CurrentKeyLen int8
-	RootChecked   bool // Set to false if it is not known whether the root is empty, set to true if it is checked
+	Root          []byte // encoded root cell
+	RootChecked   bool   // Set to false if it is not known whether the root is empty, set to true if it is checked
 	RootTouched   bool
 	RootPresent   bool
-	RootHash      [32]byte
 	BranchBefore  [128]bool // For each row, whether there was a branch node in the database loaded in unfold
 	CurrentKey    [128]byte // For each row indicates which column is currently selected
 	Depths        [128]int  // For each row, the depth of cells in that row
@@ -1386,12 +1387,14 @@ func (s *state) Encode(buf []byte) ([]byte, error) {
 	if err := binary.Write(ee, binary.BigEndian, int8(rootFlags)); err != nil {
 		return nil, fmt.Errorf("encode rootFlags: %w", err)
 	}
-
-	if n, err := ee.Write(s.RootHash[:]); err != nil || n != length.Hash {
-		return nil, fmt.Errorf("encode rootHash: %w", err)
-	}
 	if n, err := ee.Write(s.CurrentKey[:]); err != nil || n != len(s.CurrentKey) {
 		return nil, fmt.Errorf("encode currentKey: %w", err)
+	}
+	if err := binary.Write(ee, binary.BigEndian, uint16(len(s.Root))); err != nil {
+		return nil, fmt.Errorf("encode root len: %w", err)
+	}
+	if n, err := ee.Write(s.Root[:]); err != nil || n != len(s.Root) {
+		return nil, fmt.Errorf("encode root: %w", err)
 	}
 	d := make([]byte, len(s.Depths))
 	for i := 0; i < len(s.Depths); i++ {
@@ -1446,11 +1449,16 @@ func (s *state) Decode(buf []byte) error {
 	if rootFlags&stateRootChecked != 0 {
 		s.RootChecked = true
 	}
-	if n, err := aux.Read(s.RootHash[:]); err != nil || n != length.Hash {
-		return fmt.Errorf("rootHash: %w", err)
-	}
 	if n, err := aux.Read(s.CurrentKey[:]); err != nil || n != 128 {
 		return fmt.Errorf("currentKey: %w", err)
+	}
+	var rootSize uint16
+	if err := binary.Read(aux, binary.BigEndian, &rootSize); err != nil {
+		return fmt.Errorf("root size: %w", err)
+	}
+	s.Root = make([]byte, rootSize)
+	if _, err := aux.Read(s.Root[:]); err != nil {
+		return fmt.Errorf("root: %w", err)
 	}
 	d := make([]byte, len(s.Depths))
 	if err := binary.Read(aux, binary.BigEndian, &d); err != nil {
@@ -1486,15 +1494,24 @@ func (s *state) Decode(buf []byte) error {
 	return nil
 }
 
-func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte, rootHash []byte) ([]byte, error) {
+// Encode current state of hph into bytes
+func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 	s := state{
 		CurrentKeyLen: int8(hph.currentKeyLen),
 		RootChecked:   hph.rootChecked,
 		RootTouched:   hph.rootTouched,
 		RootPresent:   hph.rootPresent,
+		Root:          make([]byte, 0),
 	}
 
-	copy(s.RootHash[:], rootHash[:])
+	var err error
+	s.Root, _, err = EncodeBranch(1, 1, 1, func(nibble int, skip bool) (*Cell, error) {
+		return &hph.root, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	copy(s.CurrentKey[:], hph.currentKey[:])
 	copy(s.Depths[:], hph.depths[:])
 	copy(s.BranchBefore[:], hph.branchBefore[:])
@@ -1504,6 +1521,7 @@ func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte, rootHash []byte) ([
 	return s.Encode(buf)
 }
 
+// buf expected to be encoded hph state. Decode state and set up hph to that state.
 func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 	if hph.activeRows != 0 {
 		return fmt.Errorf("has active rows, could not reset state")
@@ -1514,12 +1532,17 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 		return err
 	}
 
+	_, _, row, err := BranchData(s.Root).DecodeCells()
+	if err != nil {
+		return err
+	}
+	hph.Reset()
+
+	hph.root = row[0]
 	hph.currentKeyLen = int(s.CurrentKeyLen)
 	hph.rootChecked = s.RootChecked
 	hph.rootTouched = s.RootTouched
 	hph.rootPresent = s.RootPresent
-	copy(hph.root.h[:], s.RootHash[:])
-	hph.root.hl = length.Hash
 
 	copy(hph.currentKey[:], s.CurrentKey[:])
 	copy(hph.depths[:], s.Depths[:])
