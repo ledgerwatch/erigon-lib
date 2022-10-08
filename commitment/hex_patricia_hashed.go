@@ -1475,7 +1475,7 @@ func (s *state) Decode(buf []byte) error {
 		return fmt.Errorf("root size: %w", err)
 	}
 	s.Root = make([]byte, rootSize)
-	if _, err := aux.Read(s.Root[:]); err != nil {
+	if _, err := aux.Read(s.Root); err != nil {
 		return fmt.Errorf("root: %w", err)
 	}
 	d := make([]byte, len(s.Depths))
@@ -1532,15 +1532,14 @@ func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 
 	root := hph.root
 	rc := ecell{
-		Hash:   root.h[:root.hl],
-		APK:    root.apk[:root.apl],
-		SPK:    root.spk[:root.spl],
-		DHL:    root.downHashedLen,
-		DHK:    root.downHashedKey[:root.downHashedLen],
-		EXT:    root.extension[:root.extLen],
-		ExtLen: root.extLen,
-		Nonce:  root.Nonce,
-		//Balance:    root,
+		Hash:       root.h[:root.hl],
+		APK:        root.apk[:root.apl],
+		SPK:        root.spk[:root.spl],
+		DHL:        root.downHashedLen,
+		DHK:        root.downHashedKey[:root.downHashedLen],
+		EXT:        root.extension[:root.extLen],
+		ExtLen:     root.extLen,
+		Nonce:      root.Nonce,
 		CodeHash:   root.CodeHash[:],
 		Storage:    root.Storage[:root.StorageLen],
 		StorageLen: root.StorageLen,
@@ -1577,7 +1576,7 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 	var rc ecell
 	err := gob.NewDecoder(bytes.NewBuffer(s.Root)).Decode(&rc)
 	if err != nil {
-		return err
+		return fmt.Errorf("decode root: %w", err)
 	}
 	hph.Reset()
 

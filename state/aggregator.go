@@ -819,39 +819,43 @@ func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
 	if txNum == 0 {
 		return 0, nil
 	}
-	ctx := a.MakeContext()
-	latestTxNum := txNum - 2
+	//latestTxNum := txNum - 2
+	var latestTxNum uint64 //= txNum
 	var latestState []byte
-	var err error
-	for latestTxNum = 1; latestTxNum != txNum; {
-		a.SetTxNum(latestTxNum + 1)
-		latestState, err = ctx.ReadCommitment(keyCommitmentState, a.rwTx)
+	a.SetTxNum(latestTxNum)
+
+	for {
+		ctx := a.MakeContext()
+		s, err := ctx.ReadCommitment(keyCommitmentState, a.rwTx)
 		if err != nil {
 			return 0, err
 		}
-		if len(latestState) < 8 {
+		if len(s) < 8 {
 			break
 		}
-		v := binary.BigEndian.Uint64(latestState)
+		v := binary.BigEndian.Uint64(s)
 		if v == latestTxNum {
 			break
 		}
-		latestTxNum = v
+		latestTxNum, latestState = v, s
+		a.SetTxNum(latestTxNum + a.aggregationStep - 1)
 	}
 
-	if len(latestState) == 0 {
-		return 0, fmt.Errorf("root state was not found")
+	var latest commitmentState
+	if err := latest.Decode(latestState); err != nil {
+		return 0, nil
 	}
-	if err := a.patriciaTrie.SetState(latestState); err != nil {
+
+	if err := a.patriciaTrie.SetState(latest.trieState); err != nil {
 		return 0, err
 	}
-	return latestTxNum, nil
+	return latestTxNum + 1, nil
 }
 
 type commitmentState struct {
-	txNum         uint64
-	blockEndTxNum uint64
-	trieState     []byte
+	txNum     uint64
+	blockNum  uint64
+	trieState []byte
 }
 
 func (cs *commitmentState) Decode(buf []byte) error {
@@ -861,7 +865,7 @@ func (cs *commitmentState) Decode(buf []byte) error {
 	pos := 0
 	cs.txNum = binary.BigEndian.Uint64(buf[pos : pos+8])
 	pos += 8
-	cs.blockEndTxNum = binary.BigEndian.Uint64(buf[pos : pos+8])
+	cs.blockNum = binary.BigEndian.Uint64(buf[pos : pos+8])
 	pos += 8
 	cs.trieState = make([]byte, binary.BigEndian.Uint16(buf[pos:pos+2]))
 	pos += 2
@@ -876,7 +880,7 @@ func (cs *commitmentState) Encode() ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
 	var v [18]byte
 	binary.BigEndian.PutUint64(v[:], cs.txNum)
-	binary.BigEndian.PutUint64(v[8:16], cs.blockEndTxNum)
+	binary.BigEndian.PutUint64(v[8:16], cs.blockNum)
 	binary.BigEndian.PutUint16(v[16:18], uint16(len(cs.trieState)))
 	if _, err := buf.Write(v[:]); err != nil {
 		return nil, err
@@ -892,7 +896,7 @@ func (a *Aggregator) storeCommitmentState() error {
 	if err != nil {
 		return err
 	}
-	cs := &commitmentState{txNum: a.txNum, trieState: state, blockEndTxNum: a.blockNum}
+	cs := &commitmentState{txNum: a.txNum, trieState: state, blockNum: a.blockNum}
 	encoded, err := cs.Encode()
 	if err != nil {
 		return err
