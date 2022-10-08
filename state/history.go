@@ -48,6 +48,8 @@ type History struct {
 	files            *btree.BTreeG[*filesItem]
 	compressVals     bool
 	workers          int
+
+	historyKey []byte
 }
 
 func NewHistory(
@@ -66,6 +68,7 @@ func NewHistory(
 		settingsTable:    settingsTable,
 		compressVals:     compressVals,
 		workers:          1,
+		historyKey:       make([]byte, 256),
 	}
 	var err error
 	h.InvertedIndex, err = NewInvertedIndex(dir, aggregationStep, filenameBase, indexKeysTable, indexTable)
@@ -288,6 +291,8 @@ func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []
 }
 
 func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count int, values, compressVals bool) error {
+	_, fName := filepath.Split(historyIdxPath)
+	log.Debug("[snapshots] build idx", "file", fName)
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
 		Enums:      false,
@@ -349,6 +354,7 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count i
 
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
+	//historyKey := h.historyKey[:lk+8]
 	historyKey := make([]byte, lk+8)
 	copy(historyKey, key1)
 	if len(key2) > 0 {
@@ -448,20 +454,21 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 			if err != nil {
 				return HistoryCollation{}, err
 			}
-			if bytes.HasPrefix(v, []byte(key)) {
-				valNum := binary.BigEndian.Uint64(v[len(v)-8:])
-				if valNum == 0 {
-					val = nil
-				} else {
-					if val, err = roTx.GetOne(h.historyValsTable, v[len(v)-8:]); err != nil {
-						return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.filenameBase, k, valNum, err)
-					}
-				}
-				if err = historyComp.AddUncompressedWord(val); err != nil {
-					return HistoryCollation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", h.filenameBase, k, val, err)
-				}
-				historyCount++
+			if !bytes.HasPrefix(v, []byte(key)) {
+				continue
 			}
+			valNum := binary.BigEndian.Uint64(v[len(v)-8:])
+			if valNum == 0 {
+				val = nil
+			} else {
+				if val, err = roTx.GetOne(h.historyValsTable, v[len(v)-8:]); err != nil {
+					return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.filenameBase, k, valNum, err)
+				}
+			}
+			if err = historyComp.AddUncompressedWord(val); err != nil {
+				return HistoryCollation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", h.filenameBase, k, val, err)
+			}
+			historyCount++
 		}
 	}
 	closeComp = false
@@ -788,7 +795,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	var foundEndTxNum uint64
 	var foundStartTxNum uint64
 	var found bool
-	//hc.indexFiles.Ascend(func(item *ctxItem) bool {
 	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
 		if item.reader.Empty() {
@@ -797,11 +803,13 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		offset := item.reader.Lookup(key)
 		g := item.getter
 		g.Reset(offset)
-		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
+		k, _ := g.NextUncompressed()
+		if bytes.Equal(k, key) {
 			//fmt.Printf("Found key=%x\n", k)
 			eliasVal, _ := g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			if n, ok := ef.Search(txNum); ok {
+			n, ok := ef.Search(txNum)
+			if ok {
 				foundTxNum = n
 				foundEndTxNum = item.endTxNum
 				foundStartTxNum = item.startTxNum
@@ -852,7 +860,14 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if roTx == nil {
 		return nil, false, fmt.Errorf("roTx is nil")
 	}
-	return hc.getNoStateFromDB(key, txNum, roTx)
+	v, ok, err = hc.getNoStateFromDB(key, txNum, roTx)
+	if err != nil {
+		return nil, ok, err
+	}
+	if ok {
+		return v, true, nil
+	}
+	return nil, false, err
 }
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
@@ -1115,4 +1130,49 @@ func (hi *HistoryIterator1) Next(keyBuf, valBuf []byte) ([]byte, []byte) {
 	v := append(valBuf, hi.nextVal...)
 	hi.advance()
 	return k, v
+}
+
+func (h *History) DisableReadAhead() {
+	h.InvertedIndex.DisableReadAhead()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.DisableReadAhead()
+		if item.index != nil {
+			item.index.DisableReadAhead()
+		}
+		return true
+	})
+}
+
+func (h *History) EnableReadAhead() *History {
+	h.InvertedIndex.EnableReadAhead()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableReadAhead()
+		if item.index != nil {
+			item.index.EnableReadAhead()
+		}
+		return true
+	})
+	return h
+}
+func (h *History) EnableMadvWillNeed() *History {
+	h.InvertedIndex.EnableMadvWillNeed()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableWillNeed()
+		if item.index != nil {
+			item.index.EnableWillNeed()
+		}
+		return true
+	})
+	return h
+}
+func (h *History) EnableMadvNormalReadAhead() *History {
+	h.InvertedIndex.EnableMadvNormalReadAhead()
+	h.files.Ascend(func(item *filesItem) bool {
+		item.decompressor.EnableMadvNormal()
+		if item.index != nil {
+			item.index.EnableMadvNormal()
+		}
+		return true
+	})
+	return h
 }

@@ -18,6 +18,7 @@ package state
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	math2 "math"
 	"runtime"
@@ -265,6 +266,47 @@ func (sf Agg22StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
+func (a *Aggregator22) buildFilesInBackground(step uint64, collation Agg22Collation) error {
+	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
+	closeAll := true
+	sf, err := a.buildFiles(step, collation)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeAll {
+			sf.Close()
+		}
+	}()
+	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
+	log.Info("[snapshots] history build done", "step", fmt.Sprintf("%d-%d", step, step+1))
+	maxSpan := uint64(32) * a.aggregationStep
+	for r := a.findMergeRange(a.maxTxNum, maxSpan); r.any(); r = a.findMergeRange(a.maxTxNum, maxSpan) {
+		outs := a.staticFilesInRange(r)
+		defer func() {
+			if closeAll {
+				outs.Close()
+			}
+		}()
+		in, err := a.mergeFiles(outs, r, maxSpan)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if closeAll {
+				in.Close()
+			}
+		}()
+		a.integrateMergedFiles(outs, in)
+		if err = a.deleteFiles(outs); err != nil {
+			return err
+		}
+	}
+
+	closeAll = false
+	return nil
+}
+
 func (a *Aggregator22) buildFiles(step uint64, collation Agg22Collation) (Agg22StaticFiles, error) {
 	var sf Agg22StaticFiles
 	closeFiles := true
@@ -354,19 +396,13 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	stateChanges := etl.NewCollector(a.logPrefix, "", etl.NewOldestEntryBuffer(etl.BufferOptimalSize))
 	defer stateChanges.Close()
 
-	if err := a.accounts.pruneF(txUnwindTo, math2.MaxUint64, func(txNum uint64, k, v []byte) error {
-		if err := stateChanges.Collect(k, v); err != nil {
-			return err
-		}
-		return nil
+	if err := a.accounts.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
+		return stateChanges.Collect(k, v)
 	}); err != nil {
 		return err
 	}
-	if err := a.storage.pruneF(txUnwindTo, math2.MaxUint64, func(txNu uint64, k, v []byte) error {
-		if err := stateChanges.Collect(k, v); err != nil {
-			return err
-		}
-		return nil
+	if err := a.storage.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
+		return stateChanges.Collect(k, v)
 	}); err != nil {
 		return err
 	}
@@ -415,7 +451,7 @@ func (a *Aggregator22) prune(txFrom, txTo uint64) error {
 	return nil
 }
 
-func (a *Aggregator22) LogStats(tx2block func(endTxNumMinimax uint64) uint64) {
+func (a *Aggregator22) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) uint64) {
 	if a.maxTxNum == 0 {
 		return
 	}
@@ -427,12 +463,28 @@ func (a *Aggregator22) LogStats(tx2block func(endTxNumMinimax uint64) uint64) {
 		return true
 	})
 
+	c, err := tx.CursorDupSort(a.accounts.InvertedIndex.indexTable)
+	if err != nil {
+		// TODO pass error properly around
+		panic(err)
+	}
+	_, v, err := c.First()
+	if err != nil {
+		// TODO pass error properly around
+		panic(err)
+	}
+	var firstHistoryIndexBlockInDB uint64
+	if len(v) != 0 {
+		firstHistoryIndexBlockInDB = tx2block(binary.BigEndian.Uint64(v))
+	}
+
 	var m runtime.MemStats
 	common2.ReadMemStats(&m)
 	log.Info("[Snapshots] History Stat",
 		"blocks", fmt.Sprintf("%dk", (histBlockNumProgress+1)/1000),
 		"txs", fmt.Sprintf("%dk", a.maxTxNum/1000),
 		"txNum2blockNum", strings.Join(str, ","),
+		"first_history_idx_in_db", firstHistoryIndexBlockInDB,
 		"alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
 }
 
@@ -516,7 +568,7 @@ func (sf SelectedStaticFiles22) Close() {
 				if item.decompressor != nil {
 					item.decompressor.Close()
 				}
-				if item.decompressor != nil {
+				if item.index != nil {
 					item.index.Close()
 				}
 			}
@@ -567,7 +619,7 @@ func (mf MergedFiles22) Close() {
 			if item.decompressor != nil {
 				item.decompressor.Close()
 			}
-			if item.decompressor != nil {
+			if item.index != nil {
 				item.index.Close()
 			}
 		}
@@ -709,6 +761,11 @@ func (a *Aggregator22) FinishTx() error {
 	if a.working.Load() {
 		return nil
 	}
+
+	if err := a.prune(0, a.maxTxNum); err != nil {
+		return err
+	}
+
 	closeAll := true
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
 	if err != nil {
@@ -721,43 +778,12 @@ func (a *Aggregator22) FinishTx() error {
 	}()
 
 	a.working.Store(true)
-	//go func() {
-	defer a.working.Store(false)
-	sf, err := a.buildFiles(step, collation)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeAll {
-			sf.Close()
+	go func() {
+		defer a.working.Store(false)
+		if err := a.buildFilesInBackground(step, collation); err != nil {
+			log.Warn("buildFilesInBackground", "err", err)
 		}
 	}()
-	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-	if err := a.prune(0, a.maxTxNum); err != nil {
-		return err
-	}
-	maxSpan := uint64(32) * a.aggregationStep
-	for r := a.findMergeRange(a.maxTxNum, maxSpan); r.any(); r = a.findMergeRange(a.maxTxNum, maxSpan) {
-		outs := a.staticFilesInRange(r)
-		defer func() {
-			if closeAll {
-				outs.Close()
-			}
-		}()
-		in, err := a.mergeFiles(outs, r, maxSpan)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if closeAll {
-				in.Close()
-			}
-		}()
-		a.integrateMergedFiles(outs, in)
-		if err = a.deleteFiles(outs); err != nil {
-			return err
-		}
-	}
 	closeAll = false
 	return nil
 }
@@ -798,6 +824,47 @@ func (a *Aggregator22) AddLogAddr(addr []byte) error {
 
 func (a *Aggregator22) AddLogTopic(topic []byte) error {
 	return a.logTopics.Add(topic)
+}
+
+// DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
+func (a *Aggregator22) DisableReadAhead() {
+	a.accounts.DisableReadAhead()
+	a.storage.DisableReadAhead()
+	a.code.DisableReadAhead()
+	a.logAddrs.DisableReadAhead()
+	a.logTopics.DisableReadAhead()
+	a.tracesFrom.DisableReadAhead()
+	a.tracesTo.DisableReadAhead()
+}
+func (a *Aggregator22) EnableReadAhead() *Aggregator22 {
+	a.accounts.EnableReadAhead()
+	a.storage.EnableReadAhead()
+	a.code.EnableReadAhead()
+	a.logAddrs.EnableReadAhead()
+	a.logTopics.EnableReadAhead()
+	a.tracesFrom.EnableReadAhead()
+	a.tracesTo.EnableReadAhead()
+	return a
+}
+func (a *Aggregator22) EnableMadvWillNeed() *Aggregator22 {
+	a.accounts.EnableMadvWillNeed()
+	a.storage.EnableMadvWillNeed()
+	a.code.EnableMadvWillNeed()
+	a.logAddrs.EnableMadvWillNeed()
+	a.logTopics.EnableMadvWillNeed()
+	a.tracesFrom.EnableMadvWillNeed()
+	a.tracesTo.EnableMadvWillNeed()
+	return a
+}
+func (a *Aggregator22) EnableMadvNormal() *Aggregator22 {
+	a.accounts.EnableMadvNormalReadAhead()
+	a.storage.EnableMadvNormalReadAhead()
+	a.code.EnableMadvNormalReadAhead()
+	a.logAddrs.EnableMadvNormalReadAhead()
+	a.logTopics.EnableMadvNormalReadAhead()
+	a.tracesFrom.EnableMadvNormalReadAhead()
+	a.tracesTo.EnableMadvNormalReadAhead()
+	return a
 }
 
 func (ac *Aggregator22Context) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
