@@ -811,16 +811,10 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 	return nil
 }
 
-var (
-	keyCommitmentState = []byte("state")
-)
+var keyCommitmentState = []byte("state")
 
-func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
-	if txNum == 0 {
-		return 0, nil
-	}
-	//latestTxNum := txNum - 2
-	var latestTxNum uint64 //= txNum
+func (a *Aggregator) SeekCommitment() (uint64, error) {
+	var latestTxNum uint64
 	var latestState []byte
 	a.SetTxNum(latestTxNum)
 
@@ -849,7 +843,7 @@ func (a *Aggregator) SeekCommitment(txNum uint64) (uint64, error) {
 	if err := a.patriciaTrie.SetState(latest.trieState); err != nil {
 		return 0, err
 	}
-	return latestTxNum + 1, nil
+	return latestTxNum, nil
 }
 
 type commitmentState struct {
