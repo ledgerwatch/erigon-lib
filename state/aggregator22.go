@@ -754,6 +754,19 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
+	maxSpan := uint64(32) * a.aggregationStep
+	for r := a.findMergeRange(a.maxTxNum.Load(), maxSpan); r.any(); r = a.findMergeRange(a.maxTxNum.Load(), maxSpan) {
+		outs := a.staticFilesInRange(r)
+		in, err := a.mergeFiles(outs, r, maxSpan)
+		if err != nil {
+			return err
+		}
+		a.integrateMergedFiles(outs, in)
+		if err = a.deleteFiles(outs); err != nil {
+			return err
+		}
+	}
+	log.Info("done merge")
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
