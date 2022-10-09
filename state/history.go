@@ -834,6 +834,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
 		g := historyItem.getter
 		g.Reset(offset)
+		fmt.Printf("fnd3.1: %d-%d\n", foundStartTxNum, foundEndTxNum)
 		if hc.h.compressVals {
 			v, _ := g.Next(nil)
 			return v, true, nil
@@ -849,6 +850,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
 	v, ok, err := hc.GetNoState(key, txNum)
 	if err != nil {
+		fmt.Printf("fnd1\n")
 		return nil, ok, err
 	}
 	if ok {
@@ -864,6 +866,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 		return nil, ok, err
 	}
 	if ok {
+		fmt.Printf("fnd2\n")
 		return v, true, nil
 	}
 	return nil, false, err
@@ -888,6 +891,7 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 		}
 		defer historyKeysCursor.Close()
 		var vn []byte
+		fmt.Printf("fnd4.1: %d\n", foundTxNumVal)
 		if vn, err = historyKeysCursor.SeekBothRange(foundTxNumVal, key); err != nil {
 			return nil, false, err
 		}
