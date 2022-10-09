@@ -28,6 +28,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -415,6 +416,9 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum ui
 }
 
 func (hc *InvertedIndexContext) IterateAll() {
+	logEvery := time.NewTicker(20 * time.Second)
+	defer logEvery.Stop()
+
 	wg := sync.WaitGroup{}
 	hc.files.Ascend(func(item ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
@@ -442,6 +446,13 @@ func (hc *InvertedIndexContext) IterateAll() {
 				it := ef.Iterator()
 				for it.HasNext() {
 					it.Next()
+				}
+
+				select {
+				case <-logEvery.C:
+					a := fmt.Errorf("at %d-%d, %s", item.startTxNum/hc.ii.aggregationStep, item.endTxNum/hc.ii.aggregationStep, hc.ii.filenameBase)
+					log.Info(a.Error())
+				default:
 				}
 			}
 		}(item)
