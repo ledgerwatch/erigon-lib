@@ -571,9 +571,9 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 		return nil, nil, err
 	}
 	if r.history {
-		fmt.Printf("merge: %d\n", h.filenameBase)
+		log.Info("merge", "name", h.filenameBase)
 		for _, i := range indexFiles {
-			fmt.Printf("merge: %s\n", i.decompressor.FilePath())
+			log.Info("merge", "file", i.decompressor.FilePath())
 		}
 		var comp *compress.Compressor
 		var decomp *compress.Decompressor
