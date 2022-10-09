@@ -834,7 +834,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
 		g := historyItem.getter
 		g.Reset(offset)
-		fmt.Printf("fnd3.1: %d-%d\n", foundStartTxNum, foundEndTxNum)
+		fmt.Printf("fnd3.1: %d, %d-%d\n", foundTxNum, foundStartTxNum, foundEndTxNum)
 		if hc.h.compressVals {
 			v, _ := g.Next(nil)
 			return v, true, nil
