@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sync"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -411,6 +412,42 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum ui
 	})
 	it.advance()
 	return it
+}
+
+func (hc *InvertedIndexContext) IterateAll() {
+	wg := sync.WaitGroup{}
+	hc.files.Ascend(func(item ctxItem) bool {
+		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
+		if item.reader.Empty() {
+			return true
+		}
+		wg.Add(1)
+		go func(item ctxItem) {
+			defer wg.Done()
+			defer func() {
+				rec := recover()
+				if rec != nil {
+					a := fmt.Errorf("%v, at %d-%d, %s", rec, item.startTxNum/hc.ii.aggregationStep, item.endTxNum/hc.ii.aggregationStep, hc.ii.filenameBase)
+					panic(a)
+				}
+			}()
+
+			g := item.getter
+			g.Reset(0)
+			for g.HasNext() {
+				k, _ := g.NextUncompressed()
+				_ = k
+				eliasVal, _ := g.NextUncompressed()
+				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+				it := ef.Iterator()
+				for it.HasNext() {
+					it.Next()
+				}
+			}
+		}(item)
+		return true
+	})
+	wg.Wait()
 }
 
 type InvertedIterator1 struct {

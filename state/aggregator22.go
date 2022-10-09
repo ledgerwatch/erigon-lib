@@ -978,6 +978,16 @@ func (ac *Aggregator22Context) IterateCodeReconTxs(fromKey, toKey []byte, txNum 
 	return ac.code.iterateReconTxs(fromKey, toKey, txNum)
 }
 
+func (ac *Aggregator22) IterateAll() {
+	ac.accounts.InvertedIndex.MakeContext().IterateAll()
+	ac.storage.InvertedIndex.MakeContext().IterateAll()
+	ac.code.InvertedIndex.MakeContext().IterateAll()
+	ac.logAddrs.MakeContext().IterateAll()
+	ac.logTopics.MakeContext().IterateAll()
+	ac.tracesFrom.MakeContext().IterateAll()
+	ac.tracesTo.MakeContext().IterateAll()
+}
+
 type FilesStats22 struct {
 }
 
