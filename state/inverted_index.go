@@ -604,6 +604,8 @@ func (sf InvertedFiles) Close() {
 	}
 }
 
+const ASSERT = true
+
 func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.Bitmap) (InvertedFiles, error) {
 	var decomp *compress.Decompressor
 	var index *recsplit.Index
@@ -648,6 +650,14 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 		}
 		ef.Build()
 		buf = ef.AppendBytes(buf[:0])
+		if ASSERT {
+			fmt.Printf("ef: %d\n", bitmap.ToArray())
+			ef2, _ := eliasfano32.ReadEliasFano(buf)
+			itt := ef2.Iterator()
+			for itt.HasNext() {
+				itt.Next()
+			}
+		}
 		if err = comp.AddUncompressedWord(buf); err != nil {
 			return InvertedFiles{}, fmt.Errorf("add %s val: %w", ii.filenameBase, err)
 		}
