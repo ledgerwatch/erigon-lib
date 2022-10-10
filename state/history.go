@@ -724,6 +724,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	defer valsC.Close()
 
 	addrs := map[string]struct{}{}
+	j := 0
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
@@ -733,6 +734,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
 			return err
 		}
+		j++
 		addrs[string(v[:len(v)-8])] = struct{}{}
 		//if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
 		//	return err
@@ -750,7 +752,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
-	fmt.Printf("prune len(addrs): %d\n", len(addrs))
+	fmt.Printf("prune len(addrs): %d, %d\n", len(addrs), j)
 	i := 0
 	for addr, _ := range addrs {
 		fmt.Printf("%s: %d/%d\n", h.filenameBase, i, len(addrs))
