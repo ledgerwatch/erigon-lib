@@ -657,7 +657,9 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 }
 
 func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
-	return nil
+	if !common.DoMemStat() {
+		return nil
+	}
 	defer func(t time.Time, limit uint64) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
 	}(time.Now(), limit)
