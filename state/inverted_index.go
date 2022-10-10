@@ -727,14 +727,18 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 		return err
 	}
 	defer idxC.Close()
+	addrs := map[string]struct{}{}
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		if err = idxC.DeleteExact(v, k); err != nil {
-			return err
+		if _, ok := addrs[string(v)]; !ok {
+			addrs[string(v)] = struct{}{}
 		}
+		//if err = idxC.DeleteExact(v, k); err != nil {
+		//	return err
+		//}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
@@ -746,6 +750,21 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
+	}
+	for addr, _ := range addrs {
+		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
+			txNum := binary.BigEndian.Uint64(v)
+			if txNum >= txTo {
+				break
+			}
+
+			if err := idxC.DeleteCurrent(); err != nil {
+				return err
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("iterate over %s history keys: %w", ii.filenameBase, err)
+		}
 	}
 	return nil
 }
