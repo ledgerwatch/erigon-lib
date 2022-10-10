@@ -85,7 +85,7 @@ func (a *Aggregator22) ReopenFiles() error {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
-	a.warmup(0, 100_000)
+	a.warmup(0, 10_000)
 	return nil
 }
 
@@ -801,7 +801,7 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
-	if a.pruneWarmupDone.Load() {
+	if a.txNum%10_000 == 0 && a.pruneWarmupDone.Load() {
 		if err := a.prune(0, a.maxTxNum.Load(), 100_000); err != nil {
 			return err
 		}

@@ -678,6 +678,37 @@ func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uin
 	})
 }
 
+func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
+	defer func(t time.Time) {
+		fmt.Printf("inverted_index.go:683: %s, %s, %d\n", time.Since(t), ii.filenameBase, limit)
+	}(time.Now())
+	keysCursor, err := tx.CursorDupSort(ii.indexKeysTable)
+	if err != nil {
+		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
+	}
+	defer keysCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	var k, v []byte
+	idxC, err := tx.CursorDupSort(ii.indexTable)
+	if err != nil {
+		return err
+	}
+	defer idxC.Close()
+	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
+		_, _, _ = idxC.SeekBothExact(v, k)
+
+		limit--
+		if limit == 0 {
+			break
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
+	}
+	return nil
+}
+
 // [txFrom; txTo)
 func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	defer func(t time.Time) {
