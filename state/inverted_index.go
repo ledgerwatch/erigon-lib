@@ -700,7 +700,7 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		return err
 	}
 	defer idxC.Close()
-	//addrs := map[string]struct{}{}
+	addrs := map[string]struct{}{}
 	k, v, err = keysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo := txFrom + limit
@@ -709,20 +709,20 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		if txNum >= txTo {
 			break
 		}
-		//addrs[string(v)] = struct{}{}
+		addrs[string(v)] = struct{}{}
 		_, _, _ = idxC.SeekBothExact(v, k)
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
 	}
-	//for addr := range addrs {
-	//	for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
-	//		txNum := binary.BigEndian.Uint64(v)
-	//		if txNum >= txTo {
-	//			break
-	//		}
-	//	}
-	//}
+	for addr := range addrs {
+		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
+			txNum := binary.BigEndian.Uint64(v)
+			if txNum >= txTo {
+				break
+			}
+		}
+	}
 	return nil
 }
 
