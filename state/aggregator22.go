@@ -816,7 +816,7 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
-	if a.txNum%10_000 == 0 && a.pruneWarmupDone.Load() {
+	if a.txNum%1_000 == 0 && a.pruneWarmupDone.Load() {
 		if err := a.prune(0, a.maxTxNum.Load(), 10_000); err != nil {
 			return err
 		}
