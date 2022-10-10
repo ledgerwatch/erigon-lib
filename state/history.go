@@ -657,6 +657,7 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 }
 
 func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
+	return nil
 	defer func(t time.Time, limit uint64) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
 	}(time.Now(), limit)
@@ -751,6 +752,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
+	fmt.Printf("prune len(addrs): %d\n", len(addrs))
 	for addr, _ := range addrs {
 		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
 			txNum := binary.BigEndian.Uint64(v)
