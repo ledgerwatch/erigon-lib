@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -687,6 +688,7 @@ func (h *History) warmup(txFrom, limit uint64) error {
 	return nil
 }
 func (h *History) prune(txFrom, txTo, limit uint64) error {
+	defer func(t time.Time) { fmt.Printf("history.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit) }(time.Now())
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
