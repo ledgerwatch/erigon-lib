@@ -31,7 +31,6 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
-	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
