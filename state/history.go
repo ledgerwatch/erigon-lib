@@ -681,8 +681,12 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	addrs := map[string]struct{}{}
 	k, v, err = historyKeysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
-	txnTo := txFrom + limit
+	txTo := txFrom + limit
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
 		_, _, _ = valsC.Seek(v[len(v)-8:])
 		//_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
 		addrs[string(v[:len(v)-8])] = struct{}{}
@@ -693,7 +697,7 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	for addr, _ := range addrs {
 		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
 			txNum := binary.BigEndian.Uint64(v)
-			if txNum >= txnTo {
+			if txNum >= txTo {
 				break
 			}
 		}
