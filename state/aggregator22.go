@@ -49,6 +49,8 @@ type Aggregator22 struct {
 
 	backgroundResult *BackgroundResult
 	working          atomic.Bool
+
+	db kv.RoDB
 }
 
 func NewAggregator22(dir string, aggregationStep uint64) (*Aggregator22, error) {
@@ -435,12 +437,15 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 }
 
 func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
+	go a.accounts.warmup(txFrom, limit)
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
+	go a.storage.warmup(txFrom, limit)
 	if err := a.storage.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
+	go a.code.warmup(txFrom, limit)
 	if err := a.code.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}

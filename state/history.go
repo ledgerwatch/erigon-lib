@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -655,9 +654,39 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 	})
 }
 
-// [txFrom; txTo)
+func (h *History) warmup(txFrom, limit uint64) error {
+	historyKeysCursor, err := h.tx.CursorDupSort(h.indexKeysTable)
+	if err != nil {
+		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
+	}
+	defer historyKeysCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	var k, v []byte
+	idxC, err := h.tx.CursorDupSort(h.indexTable)
+	if err != nil {
+		return err
+	}
+	defer idxC.Close()
+	valsC, err := h.tx.Cursor(h.historyValsTable)
+	if err != nil {
+		return err
+	}
+	defer valsC.Close()
+	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+		_, _, _ = valsC.Seek(v[len(v)-8:])
+		_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
+		limit--
+		if limit == 0 {
+			break
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
+	}
+	return nil
+}
 func (h *History) prune(txFrom, txTo, limit uint64) error {
-	defer func(t time.Time) { fmt.Printf("history.go:660: %s, %s, %d\n", time.Since(t), h.filenameBase, limit) }(time.Now())
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
