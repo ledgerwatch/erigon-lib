@@ -742,6 +742,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
+			fmt.Printf("prune break len(addrs): %d, %d, %d, %x\n", len(addrs), txFrom, txTo, v)
 			break
 		}
 		addrs[string(v)] = struct{}{}
