@@ -743,7 +743,6 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
-			fmt.Printf("prune break len(addrs): %d, %d, %d, %x\n", len(addrs), txFrom, txTo, v)
 			break
 		}
 		addrs[string(v)] = struct{}{}
@@ -760,12 +759,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
 	}
-	i := 0
 	for addr := range addrs {
-		if i%1000 == 0 {
-			fmt.Printf("%s: %d/%d\n", ii.filenameBase, i, len(addrs))
-		}
-		i++
 		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
 			txNum := binary.BigEndian.Uint64(v)
 			if txNum >= txTo {
