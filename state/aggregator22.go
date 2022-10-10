@@ -451,12 +451,12 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 }
 
 func (a *Aggregator22) warmup(txFrom, limit uint64) {
-	defer a.pruneWarmupDone.Store(true)
 	if a.db == nil {
 		return
 	}
 
 	go func() {
+		defer a.pruneWarmupDone.Store(true)
 		defer func(t time.Time) { fmt.Printf("warmup:454: %s\n", time.Since(t)) }(time.Now())
 		fmt.Printf("warmup start\n")
 		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
