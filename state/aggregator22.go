@@ -56,7 +56,6 @@ type Aggregator22 struct {
 
 func NewAggregator22(dir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
 	a := &Aggregator22{dir: dir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db}
-	a.warmup(0, 100_000)
 	return a, nil
 }
 
@@ -86,6 +85,7 @@ func (a *Aggregator22) ReopenFiles() error {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
+	a.warmup(0, 100_000)
 	return nil
 }
 
