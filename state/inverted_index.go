@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -679,6 +680,7 @@ func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uin
 
 // [txFrom; txTo)
 func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
+	defer func(t time.Time) { fmt.Printf("inverted_index.go:683: %s, %d\n", time.Since(t), limit) }(time.Now())
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
