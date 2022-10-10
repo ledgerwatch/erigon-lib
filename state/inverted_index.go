@@ -681,12 +681,6 @@ func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uin
 }
 
 func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
-	if !common.DoMemStat() {
-		return nil
-	}
-	//defer func(t time.Time) {
-	//	fmt.Printf("inverted_index.go:683: %s, %s, %d\n", time.Since(t), ii.filenameBase, limit)
-	//}(time.Now())
 	keysCursor, err := tx.CursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
