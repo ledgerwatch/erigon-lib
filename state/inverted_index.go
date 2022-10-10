@@ -762,7 +762,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	}
 	i := 0
 	for addr := range addrs {
-		fmt.Printf("%d/%d\n", i, len(addrs))
+		fmt.Printf("%s: %d/%d\n", ii.filenameBase, i, len(addrs))
 		i++
 		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
 			txNum := binary.BigEndian.Uint64(v)
