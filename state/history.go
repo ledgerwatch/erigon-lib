@@ -659,7 +659,6 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	defer func(t time.Time) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
 	}(time.Now())
-	defer tx.Rollback()
 	historyKeysCursor, err := tx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
