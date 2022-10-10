@@ -656,9 +656,9 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 }
 
 func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
-	defer func(t time.Time) {
+	defer func(t time.Time, limit uint64) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
-	}(time.Now())
+	}(time.Now(), limit)
 	historyKeysCursor, err := tx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
