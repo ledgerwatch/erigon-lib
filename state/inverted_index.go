@@ -698,9 +698,7 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	defer idxC.Close()
 	addrs := map[string]struct{}{}
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
-		if _, ok := addrs[string(v)]; !ok {
-			addrs[string(v)] = struct{}{}
-		}
+		addrs[string(v)] = struct{}{}
 		_, _, _ = idxC.SeekBothExact(v, k)
 
 		limit--
