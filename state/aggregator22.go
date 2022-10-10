@@ -419,41 +419,41 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 		return err
 	}
 
-	if err := a.logAddrs.prune(txUnwindTo, math2.MaxUint64); err != nil {
+	if err := a.logAddrs.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(txUnwindTo, math2.MaxUint64); err != nil {
+	if err := a.logTopics.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(txUnwindTo, math2.MaxUint64); err != nil {
+	if err := a.tracesFrom.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(txUnwindTo, math2.MaxUint64); err != nil {
+	if err := a.tracesTo.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (a *Aggregator22) prune(txFrom, txTo uint64) error {
-	if err := a.accounts.prune(txFrom, txTo); err != nil {
+func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
+	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.storage.prune(txFrom, txTo); err != nil {
+	if err := a.storage.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.code.prune(txFrom, txTo); err != nil {
+	if err := a.code.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.logAddrs.prune(txFrom, txTo); err != nil {
+	if err := a.logAddrs.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(txFrom, txTo); err != nil {
+	if err := a.logTopics.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(txFrom, txTo); err != nil {
+	if err := a.tracesFrom.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(txFrom, txTo); err != nil {
+	if err := a.tracesTo.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
 	return nil
@@ -547,7 +547,7 @@ func (a *Aggregator22) findMergeRange(maxEndTxNum, maxSpan uint64) Ranges22 {
 	r.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum = a.logTopics.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum = a.tracesFrom.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum = a.tracesTo.findMergeRange(maxEndTxNum, maxSpan)
-	fmt.Printf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r)
+	log.Info(fmt.Sprintf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r))
 	return r
 }
 
@@ -767,10 +767,15 @@ func (a *Aggregator22) FinishTx() error {
 	}
 	step := a.maxTxNum.Load() / a.aggregationStep
 	if a.working.Load() {
+		if a.txNum%10_000 == 0 {
+			if err := a.prune(0, a.maxTxNum.Load(), 10_000); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 
-	if err := a.prune(0, a.maxTxNum.Load()); err != nil {
+	if err := a.prune(0, a.maxTxNum.Load(), math2.MaxUint64); err != nil {
 		return err
 	}
 

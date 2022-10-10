@@ -678,7 +678,7 @@ func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uin
 }
 
 // [txFrom; txTo)
-func (ii *InvertedIndex) prune(txFrom, txTo uint64) error {
+func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -703,6 +703,10 @@ func (ii *InvertedIndex) prune(txFrom, txTo uint64) error {
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
+		}
+		limit--
+		if limit == 0 {
+			break
 		}
 	}
 	if err != nil {

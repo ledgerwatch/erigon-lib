@@ -655,7 +655,7 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 }
 
 // [txFrom; txTo)
-func (h *History) prune(txFrom, txTo uint64) error {
+func (h *History) prune(txFrom, txTo, limit uint64) error {
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
@@ -688,6 +688,11 @@ func (h *History) prune(txFrom, txTo uint64) error {
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
+		}
+
+		limit--
+		if limit == 0 {
+			break
 		}
 	}
 	if err != nil {
