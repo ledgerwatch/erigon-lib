@@ -23,6 +23,7 @@ import (
 	math2 "math"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
@@ -85,7 +86,7 @@ func (a *Aggregator22) ReopenFiles() error {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
-	a.warmup(0, 100_000)
+	a.warmup(0, 10_000)
 	return nil
 }
 
@@ -450,6 +451,7 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 }
 
 func (a *Aggregator22) warmup(txFrom, limit uint64) {
+	defer func(t time.Time) { fmt.Printf("warmup:454: %s\n", time.Since(t)) }(time.Now())
 	defer a.pruneWarmupDone.Store(true)
 	if a.db == nil {
 		return
@@ -486,6 +488,7 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 }
 
 func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
+	defer func(t time.Time) { fmt.Printf("prune:454: %s\n", time.Since(t)) }(time.Now())
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
@@ -814,11 +817,11 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 
 func (a *Aggregator22) FinishTx() error {
 	if a.txNum%10_000 == 0 && a.pruneWarmupDone.Load() {
-		if err := a.prune(0, a.maxTxNum.Load(), 100_000); err != nil {
+		if err := a.prune(0, a.maxTxNum.Load(), 10_000); err != nil {
 			return err
 		}
 		a.pruneWarmupDone.Store(false)
-		a.warmup(0, 100_000)
+		a.warmup(0, 10_000)
 	}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
