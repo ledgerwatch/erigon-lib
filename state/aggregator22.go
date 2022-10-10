@@ -53,8 +53,8 @@ type Aggregator22 struct {
 	db kv.RoDB
 }
 
-func NewAggregator22(dir string, aggregationStep uint64) (*Aggregator22, error) {
-	return &Aggregator22{dir: dir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}}, nil
+func NewAggregator22(dir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
+	return &Aggregator22{dir: dir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db}, nil
 }
 
 func (a *Aggregator22) ReopenFiles() error {
@@ -437,15 +437,15 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 }
 
 func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
-	go a.accounts.warmup(txFrom, limit)
+	go a.accounts.warmup(txFrom, limit, a.db)
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	go a.storage.warmup(txFrom, limit)
+	go a.storage.warmup(txFrom, limit, a.db)
 	if err := a.storage.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	go a.code.warmup(txFrom, limit)
+	go a.code.warmup(txFrom, limit, a.db)
 	if err := a.code.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}

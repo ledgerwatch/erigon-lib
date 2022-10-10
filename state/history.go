@@ -655,11 +655,16 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 	})
 }
 
-func (h *History) warmup(txFrom, limit uint64) error {
+func (h *History) warmup(txFrom, limit uint64, db kv.RoDB) error {
+	if db == nil {
+		return nil
+	}
 	defer func(t time.Time) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
 	}(time.Now())
-	historyKeysCursor, err := h.tx.CursorDupSort(h.indexKeysTable)
+	tx, _ := db.BeginRo(context.Background())
+	defer tx.Rollback()
+	historyKeysCursor, err := tx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
 	}
@@ -667,12 +672,12 @@ func (h *History) warmup(txFrom, limit uint64) error {
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
 	var k, v []byte
-	idxC, err := h.tx.CursorDupSort(h.indexTable)
+	idxC, err := tx.CursorDupSort(h.indexTable)
 	if err != nil {
 		return err
 	}
 	defer idxC.Close()
-	valsC, err := h.tx.Cursor(h.historyValsTable)
+	valsC, err := tx.Cursor(h.historyValsTable)
 	if err != nil {
 		return err
 	}
