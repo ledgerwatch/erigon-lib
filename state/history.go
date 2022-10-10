@@ -715,7 +715,6 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	defer valsC.Close()
 
 	addrs := map[string]struct{}{}
-
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {

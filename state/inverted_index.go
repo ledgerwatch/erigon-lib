@@ -742,9 +742,6 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 		if txNum >= txTo {
 			break
 		}
-		if _, ok := addrs[string(v)]; !ok {
-			addrs[string(v)] = struct{}{}
-		}
 		//if err = idxC.DeleteExact(v, k); err != nil {
 		//	return err
 		//}
