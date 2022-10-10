@@ -707,11 +707,6 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		addrs[string(v)] = struct{}{}
 		_, _, _ = idxC.SeekBothExact(v, k)
-
-		limit--
-		if limit == 0 {
-			break
-		}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
@@ -759,10 +754,6 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
-		}
-		limit--
-		if limit == 0 {
-			break
 		}
 	}
 	fmt.Printf("prune len(addrs): %s, %d, %d\n", ii.filenameBase, len(addrs), j)

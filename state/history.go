@@ -689,11 +689,6 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		_, _, _ = valsC.Seek(v[len(v)-8:])
 		//_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
 		addrs[string(v[:len(v)-8])] = struct{}{}
-
-		limit--
-		if limit == 0 {
-			break
-		}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
@@ -753,11 +748,6 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
-		}
-
-		limit--
-		if limit == 0 {
-			break
 		}
 	}
 	if err != nil {
