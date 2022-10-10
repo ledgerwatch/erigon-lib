@@ -31,7 +31,6 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
-	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
@@ -700,7 +699,7 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	addrs := map[string]struct{}{}
 	k, v, err = keysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
-	//txTo := txFrom + limit
+	txTo := txFrom + limit
 	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		addrs[string(v)] = struct{}{}
 		_, _, _ = idxC.SeekBothExact(v, k)
@@ -709,7 +708,12 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
 	}
 	for addr := range addrs {
-		idxC.SeekBothRange([]byte(addr), txKey[:])
+		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
+			txNum := binary.BigEndian.Uint64(v)
+			if txNum >= txTo {
+				break
+			}
+		}
 	}
 	return nil
 }
