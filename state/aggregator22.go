@@ -762,16 +762,16 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
+	if a.txNum%10_000 == 0 {
+		if err := a.prune(0, a.maxTxNum.Load(), 10_000); err != nil {
+			return err
+		}
+	}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
 	step := a.maxTxNum.Load() / a.aggregationStep
 	if a.working.Load() {
-		if a.txNum%10_000 == 0 {
-			if err := a.prune(0, a.maxTxNum.Load(), 10_000); err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 
