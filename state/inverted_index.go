@@ -737,6 +737,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 		return err
 	}
 	defer idxC.Close()
+	j := 0
 	addrs := map[string]struct{}{}
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
@@ -745,6 +746,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 			break
 		}
 		addrs[string(v)] = struct{}{}
+		j++
 		//if err = idxC.DeleteExact(v, k); err != nil {
 		//	return err
 		//}
@@ -757,6 +759,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 			break
 		}
 	}
+	fmt.Printf("prune len(addrs): %s, %d, %d\n", ii.filenameBase, len(addrs), j)
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
 	}

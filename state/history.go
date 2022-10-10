@@ -752,7 +752,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
-	fmt.Printf("prune len(addrs): %d, %d\n", len(addrs), j)
+	fmt.Printf("prune len(addrs): %s, %d, %d\n", h.filenameBase, len(addrs), j)
 	i := 0
 	for addr, _ := range addrs {
 		fmt.Printf("%s: %d/%d\n", h.filenameBase, i, len(addrs))
