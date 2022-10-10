@@ -659,6 +659,7 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	if !common.DoMemStat() {
 		return nil
 	}
+	txnTo := txFrom + limit
 	defer func(t time.Time, limit uint64) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
 	}(time.Now(), limit)
@@ -695,7 +696,12 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
 	for addr, _ := range addrs {
-		idxC.SeekBothRange([]byte(addr), txKey[:])
+		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
+			txNum := binary.BigEndian.Uint64(v)
+			if txNum >= txnTo {
+				break
+			}
+		}
 	}
 
 	return nil
