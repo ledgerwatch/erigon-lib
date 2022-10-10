@@ -141,6 +141,7 @@ func (d *Domain) GetAndResetStats() DomainStats {
 func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 	re := regexp.MustCompile("^" + d.filenameBase + ".([0-9]+)-([0-9]+).kv$")
 	var err error
+	var uselessFiles []string
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -169,7 +170,6 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 
 		startTxNum, endTxNum := startStep*d.aggregationStep, endStep*d.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
-		var uselessFiles []string
 		{
 			var subSet, superSet *filesItem
 			d.files.DescendLessOrEqual(item, func(it *filesItem) bool {
@@ -220,9 +220,12 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 				continue
 			}
 		}
-		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
 		d.files.ReplaceOrInsert(item)
 	}
+	if len(uselessFiles) > 0 {
+		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
+	}
+
 }
 
 func (d *Domain) openFiles() error {

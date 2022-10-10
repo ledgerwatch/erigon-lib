@@ -85,6 +85,7 @@ func NewInvertedIndex(
 func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 	re := regexp.MustCompile("^" + ii.filenameBase + ".([0-9]+)-([0-9]+).ef$")
 	var err error
+	var uselessFiles []string
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -114,7 +115,6 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
-		var uselessFiles []string
 		{
 			var subSet, superSet *filesItem
 			ii.files.DescendLessOrEqual(item, func(it *filesItem) bool {
@@ -165,9 +165,10 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 				continue
 			}
 		}
-		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
-		//log.Info("Load state file", "name", name, "startTxNum", startTxNum*ii.aggregationStep, "endTxNum", endTxNum*ii.aggregationStep)
 		ii.files.ReplaceOrInsert(item)
+	}
+	if len(uselessFiles) > 0 {
+		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
 	}
 }
 

@@ -89,6 +89,7 @@ func NewHistory(
 func (h *History) scanStateFiles(files []fs.DirEntry) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
+	var uselessFiles []string
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -118,7 +119,6 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
-		var uselessFiles []string
 		{
 			var subSet, superSet *filesItem
 			h.files.DescendLessOrEqual(item, func(it *filesItem) bool {
@@ -169,8 +169,10 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 				continue
 			}
 		}
-		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
 		h.files.ReplaceOrInsert(item)
+	}
+	if len(uselessFiles) > 0 {
+		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
 	}
 }
 
