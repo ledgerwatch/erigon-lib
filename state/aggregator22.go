@@ -451,14 +451,13 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 }
 
 func (a *Aggregator22) warmup(txFrom, limit uint64) {
-	fmt.Printf("w: %d\n", limit)
-	defer func(t time.Time) { fmt.Printf("warmup:454: %s\n", time.Since(t)) }(time.Now())
 	defer a.pruneWarmupDone.Store(true)
 	if a.db == nil {
 		return
 	}
 
 	go func() {
+		defer func(t time.Time) { fmt.Printf("warmup:454: %s\n", time.Since(t)) }(time.Now())
 		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
 			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
 				return err
