@@ -733,9 +733,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
 			return err
 		}
-		if _, ok := addrs[string(v[:len(v)-8])]; !ok {
-			addrs[string(v[:len(v)-8])] = struct{}{}
-		}
+		addrs[string(v[:len(v)-8])] = struct{}{}
 		//if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
 		//	return err
 		//}
