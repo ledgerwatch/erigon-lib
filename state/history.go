@@ -32,7 +32,6 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -709,7 +708,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
 	}
 	defer historyKeysCursor.Close()
-	txTo = cmp.Min(txTo, txFrom+limit)
+	//txTo = cmp.Min(txTo, txFrom+limit)
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
 	var k, v []byte
