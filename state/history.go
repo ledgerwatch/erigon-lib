@@ -32,6 +32,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -659,7 +660,6 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	if !common.DoMemStat() {
 		return nil
 	}
-	txnTo := txFrom + limit
 	defer func(t time.Time, limit uint64) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
 	}(time.Now(), limit)
@@ -682,7 +682,10 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	}
 	defer valsC.Close()
 	addrs := map[string]struct{}{}
-	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+	k, v, err = historyKeysCursor.Seek(txKey[:])
+	txFrom = binary.BigEndian.Uint64(k)
+	txnTo := txFrom + limit
+	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		_, _, _ = valsC.Seek(v[len(v)-8:])
 		//_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
 		addrs[string(v[:len(v)-8])] = struct{}{}
@@ -714,7 +717,6 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
 	}
 	defer historyKeysCursor.Close()
-	//txTo = cmp.Min(txTo, txFrom+limit)
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
 	var k, v []byte
@@ -731,7 +733,10 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 
 	addrs := map[string]struct{}{}
 	j := 0
-	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+	k, v, err = historyKeysCursor.Seek(txKey[:])
+	txFrom = binary.BigEndian.Uint64(k)
+	txTo = cmp.Min(txTo, txFrom+limit)
+	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			fmt.Printf("prune break len(addrs): %d, %d, %d\n", len(addrs), txFrom, txTo)

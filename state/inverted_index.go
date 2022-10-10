@@ -32,6 +32,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -700,7 +701,10 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	}
 	defer idxC.Close()
 	addrs := map[string]struct{}{}
-	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
+	k, v, err = keysCursor.Seek(txKey[:])
+	txFrom = binary.BigEndian.Uint64(k)
+	//txTo := txFrom + limit
+	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		addrs[string(v)] = struct{}{}
 		_, _, _ = idxC.SeekBothExact(v, k)
 
@@ -723,7 +727,6 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	defer func(t time.Time) {
 		fmt.Printf("inverted_index.go:683: %s, %s, %d\n", time.Since(t), ii.filenameBase, limit)
 	}(time.Now())
-	//txTo = cmp.Min(txTo, txFrom+limit)
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -739,7 +742,10 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	defer idxC.Close()
 	j := 0
 	addrs := map[string]struct{}{}
-	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
+	k, v, err = keysCursor.Seek(txKey[:])
+	txFrom = binary.BigEndian.Uint64(k)
+	txTo = cmp.Min(txTo, txFrom+limit)
+	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			fmt.Printf("prune break len(addrs): %d, %d, %d, %x\n", len(addrs), txFrom, txTo, v)
