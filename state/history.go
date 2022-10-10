@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -86,7 +87,7 @@ func NewHistory(
 }
 
 func (h *History) scanStateFiles(files []fs.DirEntry) {
-	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).(v|vi)$")
+	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
 	for _, f := range files {
 		if !f.Type().IsRegular() {
@@ -95,37 +96,81 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 
 		name := f.Name()
 		subs := re.FindStringSubmatch(name)
-		if len(subs) != 4 {
+		if len(subs) != 3 {
 			if len(subs) != 0 {
-				log.Warn("File ignored by inverted index scan, more than 4 submatches", "name", name, "submatches", len(subs))
+				log.Warn("File ignored by inverted index scan, more than 3 submatches", "name", name, "submatches", len(subs))
 			}
 			continue
 		}
-		var startTxNum, endTxNum uint64
-		if startTxNum, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
+		var startStep, endStep uint64
+		if startStep, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
 			log.Warn("File ignored by inverted index scan, parsing startTxNum", "error", err, "name", name)
 			continue
 		}
-		if endTxNum, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
+		if endStep, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
 			log.Warn("File ignored by inverted index scan, parsing endTxNum", "error", err, "name", name)
 			continue
 		}
-		if startTxNum > endTxNum {
+		if startStep > endStep {
 			log.Warn("File ignored by inverted index scan, startTxNum > endTxNum", "name", name)
 			continue
 		}
-		var item = &filesItem{startTxNum: startTxNum * h.aggregationStep, endTxNum: endTxNum * h.aggregationStep}
-		var foundI *filesItem
-		h.files.AscendGreaterOrEqual(&filesItem{startTxNum: endTxNum * h.aggregationStep, endTxNum: endTxNum * h.aggregationStep}, func(it *filesItem) bool {
-			if it.endTxNum == endTxNum {
-				foundI = it
+
+		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
+		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+		var uselessFiles []string
+		{
+			var subSet, superSet *filesItem
+			h.files.DescendLessOrEqual(item, func(it *filesItem) bool {
+				if it.isSubsetOf(item) {
+					subSet = it
+				} else if item.isSubsetOf(it) {
+					superSet = it
+				}
+				return true
+			})
+			if subSet != nil {
+				h.files.Delete(subSet)
+				uselessFiles = append(uselessFiles,
+					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
+					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
+				)
 			}
-			return false
-		})
-		if foundI == nil || foundI.startTxNum > startTxNum {
-			//log.Info("Load state file", "name", name, "startTxNum", startTxNum*ii.aggregationStep, "endTxNum", endTxNum*ii.aggregationStep)
-			h.files.ReplaceOrInsert(item)
+			if superSet != nil {
+				uselessFiles = append(uselessFiles,
+					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, startStep, endStep),
+					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, startStep, endStep),
+				)
+				continue
+			}
 		}
+		{
+			var subSet, superSet *filesItem
+			h.files.AscendGreaterOrEqual(item, func(it *filesItem) bool {
+				if it.isSubsetOf(item) {
+					subSet = it
+				} else if item.isSubsetOf(it) {
+					superSet = it
+				}
+				return false
+			})
+			if subSet != nil {
+				h.files.Delete(subSet)
+				uselessFiles = append(uselessFiles,
+					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
+					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
+				)
+			}
+			if superSet != nil {
+				uselessFiles = append(uselessFiles,
+					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, startStep, endStep),
+					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, startStep, endStep),
+				)
+				continue
+			}
+		}
+		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
+		h.files.ReplaceOrInsert(item)
 	}
 }
 
@@ -140,7 +185,7 @@ func (h *History) openFiles() error {
 		}
 		fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
 		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, fromStep, toStep))
-		if fi, err := os.Stat(datPath); err != nil || fi.IsDir() {
+		if !dir.FileExist(datPath) {
 			invalidFileItems = append(invalidFileItems, item)
 			return true
 		}
