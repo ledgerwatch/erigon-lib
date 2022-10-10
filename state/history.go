@@ -751,7 +751,10 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
 	fmt.Printf("prune len(addrs): %d\n", len(addrs))
+	i := 0
 	for addr, _ := range addrs {
+		fmt.Printf("%s: %d/%d\n", h.filenameBase, i, len(addrs))
+		i++
 		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
 			txNum := binary.BigEndian.Uint64(v)
 			if txNum >= txTo {
