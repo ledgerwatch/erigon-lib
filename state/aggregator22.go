@@ -85,7 +85,7 @@ func (a *Aggregator22) ReopenFiles() error {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
-	a.warmup(0, 10_000)
+	a.warmup(0, 100_000)
 	return nil
 }
 
