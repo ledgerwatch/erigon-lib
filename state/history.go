@@ -743,9 +743,9 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 			return err
 		}
 		addrs[string(v[:len(v)-8])] = struct{}{}
-		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
-			return err
-		}
+		//if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
+		//	return err
+		//}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
