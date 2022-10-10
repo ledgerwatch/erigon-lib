@@ -754,9 +754,9 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 			break
 		}
 		addrs[string(v)] = struct{}{}
-		if err = idxC.DeleteExact(v, k); err != nil {
-			return err
-		}
+		//if err = idxC.DeleteExact(v, k); err != nil {
+		//	return err
+		//}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
