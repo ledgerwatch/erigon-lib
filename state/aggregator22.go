@@ -466,6 +466,18 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 			if err := a.code.warmup(txFrom, limit, tx); err != nil {
 				return err
 			}
+			if err := a.logAddrs.warmup(txFrom, limit, tx); err != nil {
+				return err
+			}
+			if err := a.logTopics.warmup(txFrom, limit, tx); err != nil {
+				return err
+			}
+			if err := a.tracesFrom.warmup(txFrom, limit, tx); err != nil {
+				return err
+			}
+			if err := a.tracesTo.warmup(txFrom, limit, tx); err != nil {
+				return err
+			}
 			return nil
 		}); err != nil {
 			log.Warn("[snapshots] prune warmup", "err", err)
