@@ -683,9 +683,7 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		_, _, _ = valsC.Seek(v[len(v)-8:])
 		//_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
-		if _, ok := addrs[string(v[:len(v)-8])]; !ok {
-			addrs[string(v[:len(v)-8])] = struct{}{}
-		}
+		addrs[string(v[:len(v)-8])] = struct{}{}
 
 		limit--
 		if limit == 0 {
