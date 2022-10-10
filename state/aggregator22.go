@@ -451,6 +451,7 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 }
 
 func (a *Aggregator22) warmup(txFrom, limit uint64) {
+	fmt.Printf("w: %d\n", limit)
 	defer func(t time.Time) { fmt.Printf("warmup:454: %s\n", time.Since(t)) }(time.Now())
 	defer a.pruneWarmupDone.Store(true)
 	if a.db == nil {
@@ -488,7 +489,7 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 }
 
 func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
-	defer func(t time.Time) { fmt.Printf("prune:454: %s\n", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { fmt.Printf("prune:454: %s, %d\n", time.Since(t), limit) }(time.Now())
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
