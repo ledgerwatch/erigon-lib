@@ -655,14 +655,10 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 	})
 }
 
-func (h *History) warmup(txFrom, limit uint64, db kv.RoDB) error {
-	if db == nil {
-		return nil
-	}
+func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	defer func(t time.Time) {
 		fmt.Printf("history warm.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit)
 	}(time.Now())
-	tx, _ := db.BeginRo(context.Background())
 	defer tx.Rollback()
 	historyKeysCursor, err := tx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
@@ -695,8 +691,8 @@ func (h *History) warmup(txFrom, limit uint64, db kv.RoDB) error {
 	}
 	return nil
 }
+
 func (h *History) prune(txFrom, txTo, limit uint64) error {
-	defer func(t time.Time) { fmt.Printf("history.go:691: %s, %s, %d\n", time.Since(t), h.filenameBase, limit) }(time.Now())
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)

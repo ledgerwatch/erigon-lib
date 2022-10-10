@@ -49,12 +49,15 @@ type Aggregator22 struct {
 
 	backgroundResult *BackgroundResult
 	working          atomic.Bool
+	pruneWarmupDone  atomic.Bool
 
 	db kv.RoDB
 }
 
 func NewAggregator22(dir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
-	return &Aggregator22{dir: dir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db}, nil
+	a := &Aggregator22{dir: dir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db}
+	a.warmup(0, 100_000)
+	return a, nil
 }
 
 func (a *Aggregator22) ReopenFiles() error {
@@ -199,6 +202,16 @@ func (a *Aggregator22) SetTxNum(txNum uint64) {
 }
 
 type Agg22Collation struct {
+	accounts   HistoryCollation
+	storage    HistoryCollation
+	code       HistoryCollation
+	logAddrs   map[string]*roaring64.Bitmap
+	logTopics  map[string]*roaring64.Bitmap
+	tracesFrom map[string]*roaring64.Bitmap
+	tracesTo   map[string]*roaring64.Bitmap
+}
+
+type Agg22PruneCollation struct {
 	accounts   HistoryCollation
 	storage    HistoryCollation
 	code       HistoryCollation
@@ -436,16 +449,37 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	return nil
 }
 
+func (a *Aggregator22) warmup(txFrom, limit uint64) {
+	defer a.pruneWarmupDone.Store(true)
+	if a.db == nil {
+		return
+	}
+
+	go func() {
+		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
+			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
+				return err
+			}
+			if err := a.storage.warmup(txFrom, limit, tx); err != nil {
+				return err
+			}
+			if err := a.code.warmup(txFrom, limit, tx); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			log.Warn("[snapshots] prune warmup", "err", err)
+		}
+	}()
+}
+
 func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
-	go a.accounts.warmup(txFrom, limit, a.db)
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	go a.storage.warmup(txFrom, limit, a.db)
 	if err := a.storage.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
-	go a.code.warmup(txFrom, limit, a.db)
 	if err := a.code.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
@@ -767,8 +801,12 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
-	if err := a.prune(0, a.maxTxNum.Load(), 10_000); err != nil {
-		return err
+	if a.pruneWarmupDone.Load() {
+		if err := a.prune(0, a.maxTxNum.Load(), 100_000); err != nil {
+			return err
+		}
+		a.pruneWarmupDone.Store(false)
+		a.warmup(0, 100_000)
 	}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
