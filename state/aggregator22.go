@@ -817,7 +817,7 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 	return (a.txNum+1)%a.aggregationStep == 0
 }
 
-const pruneStep = 1_000
+const pruneStep = 10_000
 
 func (a *Aggregator22) FinishTx() error {
 	if a.txNum%1000 == 0 {
