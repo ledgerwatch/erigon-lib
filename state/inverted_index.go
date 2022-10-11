@@ -744,7 +744,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 		txTo = cmp.Min(txTo, txFrom+limit)
 	}
 	if txFrom-txTo > 10_000 {
-		log.Info("[snapshots] prune old history", "name", ii.filenameBase, "range", fmt.Sprintf("%dm-%dm", txFrom/1_000_000, txTo/1_000_000))
+		log.Info("[snapshots] prune old history", "name", h.filenameBase, "range", fmt.Sprintf("%.1fm-%.1fm", float64(txFrom)/1_000_000, float64(txTo)/1_000_000))
 	}
 	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
