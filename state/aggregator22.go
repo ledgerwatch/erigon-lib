@@ -821,9 +821,11 @@ const pruneStep = 1_000
 
 func (a *Aggregator22) FinishTx() error {
 	if a.txNum%100 == 0 && a.pruneWarmupDone.Load() {
+		fmt.Printf("prune start\n")
 		if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
 			return err
 		}
+		fmt.Printf("prune end\n")
 		a.pruneWarmupDone.Store(false)
 		a.warmup(0, pruneStep)
 	}
