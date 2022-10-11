@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"testing"
 	"testing/fstest"
 
@@ -163,7 +164,7 @@ func TestInvIndexAfterPrune(t *testing.T) {
 
 	ii.integrateFiles(sf, 0, 16)
 
-	err = ii.prune(0, 16)
+	err = ii.prune(0, 16, math.MaxUint64)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
@@ -280,7 +281,7 @@ func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 			tx, err = db.BeginRw(context.Background())
 			require.NoError(t, err)
 			ii.SetTx(tx)
-			err = ii.prune(step*ii.aggregationStep, (step+1)*ii.aggregationStep)
+			err = ii.prune(step*ii.aggregationStep, (step+1)*ii.aggregationStep, math.MaxUint64)
 			require.NoError(t, err)
 			err = tx.Commit()
 			require.NoError(t, err)
@@ -326,7 +327,7 @@ func TestInvIndexRanges(t *testing.T) {
 			tx, err = db.BeginRw(context.Background())
 			require.NoError(t, err)
 			ii.SetTx(tx)
-			err = ii.prune(step*ii.aggregationStep, (step+1)*ii.aggregationStep)
+			err = ii.prune(step*ii.aggregationStep, (step+1)*ii.aggregationStep, math.MaxUint64)
 			require.NoError(t, err)
 			err = tx.Commit()
 			require.NoError(t, err)
