@@ -149,6 +149,16 @@ type HistoryRanges struct {
 	index             bool
 }
 
+func (r HistoryRanges) String(aggStep uint64) string {
+	var str string
+	if r.history {
+		str += fmt.Sprintf("hist: %d-%d, ", r.historyStartTxNum/aggStep, r.historyEndTxNum/aggStep)
+	}
+	if r.index {
+		str += fmt.Sprintf("idx: %d-%d", r.indexStartTxNum/aggStep, r.indexEndTxNum/aggStep)
+	}
+	return str
+}
 func (r HistoryRanges) any() bool {
 	return r.history || r.index
 }
@@ -567,11 +577,11 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 			}
 		}
 	}()
+	log.Info("[snapshots] merge", "range", fmt.Sprintf("%s: %s", h.filenameBase, r.String(h.aggregationStep)))
 	if indexIn, err = h.InvertedIndex.mergeFiles(indexFiles, r.indexStartTxNum, r.indexEndTxNum, maxSpan); err != nil {
 		return nil, nil, err
 	}
 	if r.history {
-		log.Info("[snapshots] merge", "name", h.filenameBase, "range", fmt.Sprintf("%d-%d", r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		var comp *compress.Compressor
 		var decomp *compress.Decompressor
 		var rs *recsplit.RecSplit
