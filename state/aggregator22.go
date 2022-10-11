@@ -490,6 +490,7 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 }
 
 func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
+	a.warmup(0, limit)
 	defer func(t time.Time) { fmt.Printf("prune:454: %s, %d\n", time.Since(t), limit) }(time.Now())
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
@@ -821,11 +822,9 @@ const pruneStep = 10_000
 
 func (a *Aggregator22) FinishTx() error {
 	if a.txNum%1000 == 0 {
-		a.warmup(0, pruneStep)
 		if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
 			return err
 		}
-		a.pruneWarmupDone.Store(false)
 	}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
@@ -835,7 +834,6 @@ func (a *Aggregator22) FinishTx() error {
 		return nil
 	}
 
-	a.warmup(0, a.aggregationStep)
 	if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
 		return err
 	}
