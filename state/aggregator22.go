@@ -819,11 +819,11 @@ const pruneStep = 1_000
 const pruneEvery = 100
 
 func (a *Aggregator22) FinishTx() error {
-	if a.txNum%pruneEvery == 0 {
-		if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
-			return err
-		}
-	}
+	//if a.txNum%pruneEvery == 0 {
+	//	if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
+	//		return err
+	//	}
+	//}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
