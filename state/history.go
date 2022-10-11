@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
