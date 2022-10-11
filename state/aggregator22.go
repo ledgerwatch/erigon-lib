@@ -209,16 +209,6 @@ type Agg22Collation struct {
 	tracesTo   map[string]*roaring64.Bitmap
 }
 
-type Agg22PruneCollation struct {
-	accounts   HistoryCollation
-	storage    HistoryCollation
-	code       HistoryCollation
-	logAddrs   map[string]*roaring64.Bitmap
-	logTopics  map[string]*roaring64.Bitmap
-	tracesFrom map[string]*roaring64.Bitmap
-	tracesTo   map[string]*roaring64.Bitmap
-}
-
 func (c Agg22Collation) Close() {
 	c.accounts.Close()
 	c.storage.Close()
