@@ -23,7 +23,6 @@ import (
 	math2 "math"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
@@ -484,10 +483,11 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 	}()
 }
 
-func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
-	logEvery := time.NewTicker(20 * time.Second)
-	defer logEvery.Stop()
+func (a *Aggregator22) Prune(limit uint64) error {
+	return a.prune(0, a.maxTxNum.Load(), limit)
+}
 
+func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
 	a.warmup(txFrom, limit)
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
@@ -819,11 +819,11 @@ const pruneStep = 1_000
 const pruneEvery = 100
 
 func (a *Aggregator22) FinishTx() error {
-	if a.txNum%pruneEvery == 0 {
-		if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
-			return err
-		}
-	}
+	//if a.txNum%pruneEvery == 0 {
+	//	if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
+	//		return err
+	//	}
+	//}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
