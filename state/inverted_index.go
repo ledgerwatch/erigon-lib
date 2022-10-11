@@ -722,9 +722,9 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 
 // [txFrom; txTo)
 func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
-	defer func(t time.Time) {
-		fmt.Printf("inverted_index.go:683: %s, %s\n", time.Since(t), ii.filenameBase)
-	}(time.Now())
+	//defer func(t time.Time) {
+	//	fmt.Printf("inverted_index.go:683: %s, %s\n", time.Since(t), ii.filenameBase)
+	//}(time.Now())
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)

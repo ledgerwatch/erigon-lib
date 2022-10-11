@@ -837,6 +837,7 @@ func (a *Aggregator22) FinishTx() error {
 		return nil
 	}
 
+	a.warmup(0, pruneStep)
 	if err := a.prune(0, a.maxTxNum.Load(), math2.MaxUint64); err != nil {
 		return err
 	}
