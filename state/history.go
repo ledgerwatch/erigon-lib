@@ -667,7 +667,6 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	defer historyKeysCursor.Close()
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	var k, v []byte
 	idxC, err := tx.CursorDupSort(h.indexTable)
 	if err != nil {
 		return err
@@ -678,7 +677,7 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		return err
 	}
 	defer valsC.Close()
-	k, v, err = historyKeysCursor.Seek(txKey[:])
+	k, v, err := historyKeysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo := txFrom + limit
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
@@ -687,13 +686,13 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 			break
 		}
 		_, _, _ = valsC.Seek(v[len(v)-8:])
-		//_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
-		for v1, err := idxC.SeekBothRange(v[:len(v)-8], txKey[:]); err == nil && v1 != nil; _, v1, err = idxC.NextDup() {
-			txNum := binary.BigEndian.Uint64(v1)
-			if txNum >= txTo {
-				break
-			}
-		}
+		_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
+		//for v1, err := idxC.SeekBothRange(v[:len(v)-8], txKey[:]); err == nil && v1 != nil; _, v1, err = idxC.NextDup() {
+		//	txNum := binary.BigEndian.Uint64(v1)
+		//	if txNum >= txTo {
+		//		break
+		//	}
+		//}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
@@ -711,7 +710,6 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	defer historyKeysCursor.Close()
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	var k, v []byte
 	idxC, err := h.tx.RwCursorDupSort(h.indexTable)
 	if err != nil {
 		return err
@@ -723,7 +721,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	}
 	defer valsC.Close()
 
-	k, v, err = historyKeysCursor.Seek(txKey[:])
+	k, v, err := historyKeysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo = cmp.Min(txTo, txFrom+limit)
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {

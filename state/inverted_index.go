@@ -706,13 +706,13 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		if txNum >= txTo {
 			break
 		}
-		//_, _, _ = idxC.SeekBothExact(v, k)
-		for v1, err := idxC.SeekBothRange(v, k); err == nil && v1 != nil; _, v1, err = idxC.NextDup() {
-			txNum := binary.BigEndian.Uint64(v1)
-			if txNum >= txTo {
-				break
-			}
-		}
+		_, _, _ = idxC.SeekBothExact(v, k)
+		//for v1, err := idxC.SeekBothRange(v, k); err == nil && v1 != nil; _, v1, err = idxC.NextDup() {
+		//	txNum := binary.BigEndian.Uint64(v1)
+		//	if txNum >= txTo {
+		//		break
+		//	}
+		//}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
