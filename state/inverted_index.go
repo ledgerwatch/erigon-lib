@@ -715,35 +715,34 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 }
 
 // [txFrom; txTo)
-func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
+func (ii *InvertedIndex) prune(txnFrom, txnTo, limit uint64) error {
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
 	}
 	defer keysCursor.Close()
 	var txKey [8]byte
-	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	var k, v []byte
+	binary.BigEndian.PutUint64(txKey[:], txnFrom)
 	idxC, err := ii.tx.RwCursorDupSort(ii.indexTable)
 	if err != nil {
 		return err
 	}
 	defer idxC.Close()
-	k, v, err = keysCursor.Seek(txKey[:])
+	k, v, err := keysCursor.Seek(txKey[:])
 	if err != nil {
 		return err
 	}
 	if k == nil {
 		return nil
 	}
-	txFrom = binary.BigEndian.Uint64(k)
-	txTo = cmp.Min(txTo, txFrom+limit)
+	txnFrom = binary.BigEndian.Uint64(k)
+	txnTo = cmp.Min(txnTo, txnFrom+limit)
 	if limit > 10_000 {
-		log.Info("[snapshots] prune old history", "name", ii.filenameBase, "from", fmt.Sprintf("%dm", txFrom/1_000_000))
+		log.Info("[snapshots] prune old history", "name", ii.filenameBase, "from", fmt.Sprintf("%dm", txnFrom/1_000_000))
 	}
 	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
-		if txNum >= txTo {
+		if txNum >= txnTo {
 			break
 		}
 		if err = idxC.DeleteExact(v, k); err != nil {
