@@ -710,9 +710,6 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 
 // [txFrom; txTo)
 func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
-	if limit > 10_000 {
-		log.Info("[snapshots] prune old history", "name", ii.filenameBase)
-	}
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -729,6 +726,9 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	k, v, err = keysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo = cmp.Min(txTo, txFrom+limit)
+	if limit > 10_000 {
+		log.Info("[snapshots] prune old history", "name", ii.filenameBase, "from", txFrom)
+	}
 	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {

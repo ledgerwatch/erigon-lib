@@ -695,9 +695,6 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 }
 
 func (h *History) prune(txFrom, txTo, limit uint64) error {
-	if limit > 10_000 {
-		log.Info("[snapshots] prune old history", "name", h.filenameBase)
-	}
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
@@ -719,6 +716,10 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	k, v, err := historyKeysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo = cmp.Min(txTo, txFrom+limit)
+	if limit > 10_000 {
+		log.Info("[snapshots] prune old history", "name", h.filenameBase, "from", txFrom)
+	}
+
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
