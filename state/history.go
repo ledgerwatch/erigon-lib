@@ -675,7 +675,7 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		return err
 	}
 	defer valsC.Close()
-	addrs := map[string]struct{}{}
+	//addrs := map[string]struct{}{}
 	k, v, err = historyKeysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo := txFrom + limit
@@ -685,26 +685,27 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 			break
 		}
 		_, _, _ = valsC.Seek(v[len(v)-8:])
-		//_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
-		addrs[string(v[:len(v)-8])] = struct{}{}
+		_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
+		//addrs[string(v[:len(v)-8])] = struct{}{}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
-	for addr, _ := range addrs {
-		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
-			txNum := binary.BigEndian.Uint64(v)
-			if txNum >= txTo {
-				break
-			}
-		}
-	}
+	//for addr, _ := range addrs {
+	//	for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
+	//		txNum := binary.BigEndian.Uint64(v)
+	//		if txNum >= txTo {
+	//			break
+	//		}
+	//	}
+	//}
 
 	return nil
 }
 
 func (h *History) prune(txFrom, txTo, limit uint64) error {
-	defer func(t time.Time) { fmt.Printf("history.go:696: %s, %s\n", time.Since(t), h.filenameBase) }(time.Now())
+	var j int
+	defer func(t time.Time) { fmt.Printf("history.go:696: %s, %s: %d\n", time.Since(t), h.filenameBase, j) }(time.Now())
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
@@ -724,7 +725,7 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	}
 	defer valsC.Close()
 
-	addrs := map[string]struct{}{}
+	//addrs := map[string]struct{}{}
 	k, v, err = historyKeysCursor.Seek(txKey[:])
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo = cmp.Min(txTo, txFrom+limit)
@@ -736,10 +737,11 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
 			return err
 		}
-		addrs[string(v[:len(v)-8])] = struct{}{}
-		//if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
-		//	return err
-		//}
+		//addrs[string(v[:len(v)-8])] = struct{}{}
+		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
+			return err
+		}
+		j++
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
@@ -749,21 +751,21 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
 	//fmt.Printf("prune len(addrs): %s, %d, j=%d, %d-%d\n", h.filenameBase, len(addrs), j, txFrom, txTo)
-	for addr, _ := range addrs {
-		for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
-			txNum := binary.BigEndian.Uint64(v)
-			if txNum >= txTo {
-				break
-			}
-
-			if err := idxC.DeleteCurrent(); err != nil {
-				return err
-			}
-		}
-		if err != nil {
-			return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
-		}
-	}
+	//for addr, _ := range addrs {
+	//	for v, err = idxC.SeekBothRange([]byte(addr), txKey[:]); err == nil && v != nil; _, v, err = idxC.NextDup() {
+	//		txNum := binary.BigEndian.Uint64(v)
+	//		if txNum >= txTo {
+	//			break
+	//		}
+	//
+	//		if err := idxC.DeleteCurrent(); err != nil {
+	//			return err
+	//		}
+	//	}
+	//	if err != nil {
+	//		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
+	//	}
+	//}
 
 	return nil
 }
