@@ -457,7 +457,6 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 
 	go func() {
 		defer a.pruneWarmupDone.Store(true)
-		fmt.Printf("warmup start\n")
 		defer func(t time.Time) { fmt.Printf("warmup:454: %s\n", time.Since(t)) }(time.Now())
 		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
 			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
@@ -485,7 +484,6 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 		}); err != nil {
 			log.Warn("[snapshots] prune warmup", "err", err)
 		}
-		fmt.Printf("warmup end\n")
 	}()
 }
 
