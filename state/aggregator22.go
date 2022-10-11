@@ -50,7 +50,6 @@ type Aggregator22 struct {
 
 	backgroundResult *BackgroundResult
 	working          atomic.Bool
-	pruneWarmupDone  atomic.Bool
 
 	db kv.RoDB
 }
@@ -86,7 +85,7 @@ func (a *Aggregator22) ReopenFiles() error {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
-	a.warmup(0, 10_000)
+	a.warmup(0, pruneStep)
 	return nil
 }
 
@@ -816,10 +815,11 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 	return (a.txNum+1)%a.aggregationStep == 0
 }
 
-const pruneStep = 10_000
+const pruneStep = 1_000
+const pruneEvery = 100
 
 func (a *Aggregator22) FinishTx() error {
-	if a.txNum%1000 == 0 {
+	if a.txNum%pruneEvery == 0 {
 		if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
 			return err
 		}
