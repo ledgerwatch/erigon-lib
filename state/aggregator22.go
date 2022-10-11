@@ -84,7 +84,6 @@ func (a *Aggregator22) ReopenFiles() error {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
-	a.warmup(0, pruneStep)
 	return nil
 }
 
@@ -815,15 +814,7 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 	return (a.txNum+1)%a.aggregationStep == 0
 }
 
-const pruneStep = 1_000
-const pruneEvery = 100
-
 func (a *Aggregator22) FinishTx() error {
-	//if a.txNum%pruneEvery == 0 {
-	//	if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
-	//		return err
-	//	}
-	//}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
