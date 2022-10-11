@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -684,7 +685,10 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		return nil
 	}
 	txFrom = binary.BigEndian.Uint64(k)
-	txTo := txFrom + limit
+	txTo := txFrom + h.aggregationStep
+	if limit != math.MaxUint64 && limit != 0 {
+		txTo = txFrom + limit
+	}
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
@@ -727,11 +731,12 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		return nil
 	}
 	txFrom = binary.BigEndian.Uint64(k)
-	txTo = cmp.Min(txTo, txFrom+limit)
-	if limit > 10_000 {
-		log.Info("[snapshots] prune old history", "name", h.filenameBase, "from", fmt.Sprintf("%dm", txFrom/1_000_000))
+	if limit != math.MaxUint64 && limit != 0 {
+		txTo = cmp.Min(txTo, txFrom+limit)
 	}
-
+	if txFrom-txTo > 10_000 {
+		log.Info("[snapshots] prune old history", "name", h.filenameBase, "range", fmt.Sprintf("%dm-%dm", txFrom/1_000_000, txTo/1_000_000))
+	}
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
