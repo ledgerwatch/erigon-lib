@@ -721,6 +721,9 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 
 // [txFrom; txTo)
 func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
+	if limit > pruneStep {
+		log.Info("[snapshots] prune old history", "name", ii.filenameBase)
+	}
 	//defer func(t time.Time) {
 	//	fmt.Printf("inverted_index.go:683: %s, %s\n", time.Since(t), ii.filenameBase)
 	//}(time.Now())

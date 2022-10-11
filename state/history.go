@@ -701,6 +701,9 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 }
 
 func (h *History) prune(txFrom, txTo, limit uint64) error {
+	if limit > pruneStep {
+		log.Info("[snapshots] prune old history", "name", h.filenameBase)
+	}
 	//defer func(t time.Time) { fmt.Printf("history.go:696: %s, %s\n", time.Since(t), h.filenameBase) }(time.Now())
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
