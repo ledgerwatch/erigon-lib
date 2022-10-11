@@ -31,6 +31,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
@@ -680,6 +681,10 @@ func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uin
 }
 
 func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
+	if !common.DoMemStat() {
+		return nil
+	}
+
 	keysCursor, err := tx.CursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
