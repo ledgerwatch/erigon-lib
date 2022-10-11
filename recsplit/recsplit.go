@@ -538,7 +538,7 @@ func (rs *RecSplit) Build() error {
 	}
 	defer rs.indexF.Sync()
 	defer rs.indexF.Close()
-	rs.indexW = bufio.NewWriterSize(rs.indexF, 4*etl.BufIOSize)
+	rs.indexW = bufio.NewWriterSize(rs.indexF, etl.BufIOSize)
 	defer rs.indexW.Flush()
 	// Write minimal app-specific dataID in this index file
 	binary.BigEndian.PutUint64(rs.numBuf[:], rs.baseDataID)
