@@ -808,7 +808,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values
 		return nil, fmt.Errorf("create recsplit: %w", err)
 	}
 	defer rs.Close()
-	defer d.EnableReadAhead().DisableReadAhead()
+	defer d.EnableMadvNormal().DisableReadAhead()
 
 	word := make([]byte, 0, 256)
 	var keyPos, valPos uint64
