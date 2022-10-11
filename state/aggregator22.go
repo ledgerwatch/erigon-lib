@@ -477,7 +477,7 @@ func (a *Aggregator22) Prune(limit uint64) error {
 }
 
 func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
-	a.warmup(txFrom, limit)
+	a.warmup(txFrom, limit) // warmup is asyn and moving faster than data deletion
 	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
 		return err
 	}
