@@ -817,13 +817,15 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 	return (a.txNum+1)%a.aggregationStep == 0
 }
 
+const pruneStep = 1_000
+
 func (a *Aggregator22) FinishTx() error {
 	if a.txNum%100 == 0 && a.pruneWarmupDone.Load() {
-		if err := a.prune(0, a.maxTxNum.Load(), 1_000); err != nil {
+		if err := a.prune(0, a.maxTxNum.Load(), pruneStep); err != nil {
 			return err
 		}
 		a.pruneWarmupDone.Store(false)
-		a.warmup(0, 1_000)
+		a.warmup(0, pruneStep)
 	}
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
