@@ -118,6 +118,11 @@ func (opts MdbxOpts) Set(opt MdbxOpts) MdbxOpts {
 }
 
 func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
+	if tmpDir != "" {
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			panic(err)
+		}
+	}
 	path, err := os.MkdirTemp(tmpDir, "erigon-memdb-")
 	if err != nil {
 		panic(err)
