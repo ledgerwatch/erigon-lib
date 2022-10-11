@@ -693,6 +693,12 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	}
 	defer idxC.Close()
 	k, v, err = keysCursor.Seek(txKey[:])
+	if err != nil {
+		return err
+	}
+	if k == nil {
+		return nil
+	}
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo := txFrom + limit
 	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
@@ -724,6 +730,12 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	}
 	defer idxC.Close()
 	k, v, err = keysCursor.Seek(txKey[:])
+	if err != nil {
+		return err
+	}
+	if k == nil {
+		return nil
+	}
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo = cmp.Min(txTo, txFrom+limit)
 	if limit > 10_000 {

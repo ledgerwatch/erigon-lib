@@ -677,6 +677,12 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	}
 	defer valsC.Close()
 	k, v, err := historyKeysCursor.Seek(txKey[:])
+	if err != nil {
+		return err
+	}
+	if k == nil {
+		return nil
+	}
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo := txFrom + limit
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
@@ -714,6 +720,12 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	defer valsC.Close()
 
 	k, v, err := historyKeysCursor.Seek(txKey[:])
+	if err != nil {
+		return err
+	}
+	if k == nil {
+		return nil
+	}
 	txFrom = binary.BigEndian.Uint64(k)
 	txTo = cmp.Min(txTo, txFrom+limit)
 	if limit > 10_000 {
