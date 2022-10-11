@@ -685,13 +685,7 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 			break
 		}
 		_, _, _ = valsC.Seek(v[len(v)-8:])
-		_, _, _ = idxC.SeekBothExact(v[:len(v)-8], k)
-		//for v1, err := idxC.SeekBothRange(v[:len(v)-8], txKey[:]); err == nil && v1 != nil; _, v1, err = idxC.NextDup() {
-		//	txNum := binary.BigEndian.Uint64(v1)
-		//	if txNum >= txTo {
-		//		break
-		//	}
-		//}
+		_, _ = idxC.SeekBothRange(v[:len(v)-8], k)
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
@@ -701,10 +695,9 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 }
 
 func (h *History) prune(txFrom, txTo, limit uint64) error {
-	if limit > pruneStep {
+	if limit > 10_000 {
 		log.Info("[snapshots] prune old history", "name", h.filenameBase)
 	}
-	//defer func(t time.Time) { fmt.Printf("history.go:696: %s, %s\n", time.Since(t), h.filenameBase) }(time.Now())
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
