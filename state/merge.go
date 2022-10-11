@@ -571,6 +571,7 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 		return nil, nil, err
 	}
 	if r.history {
+		log.Info("[snapshots] merge", "name", h.filenameBase, "range", fmt.Sprintf("%d-%d", r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		var comp *compress.Compressor
 		var decomp *compress.Decompressor
 		var rs *recsplit.RecSplit
