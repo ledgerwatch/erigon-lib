@@ -214,6 +214,11 @@ func (d *Domain) staticFilesInRange(r DomainRanges) (valuesFiles, indexFiles, hi
 			valuesFiles = append(valuesFiles, item)
 			return true
 		})
+		for _, f := range valuesFiles {
+			if f == nil {
+				panic("must not happen")
+			}
+		}
 	}
 	return
 }
@@ -232,6 +237,12 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64) ([]*fil
 		files = append(files, item)
 		return true
 	})
+	for _, f := range files {
+		if f == nil {
+			panic("must not happen")
+		}
+	}
+
 	return files, startJ
 }
 
@@ -252,6 +263,12 @@ func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles 
 			historyFiles = append(historyFiles, item)
 			return true
 		})
+
+		for _, f := range historyFiles {
+			if f == nil {
+				panic("must not happen")
+			}
+		}
 	}
 	return
 }
