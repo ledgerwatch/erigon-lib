@@ -23,6 +23,7 @@ import (
 	math2 "math"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
@@ -137,63 +138,68 @@ func (a *Aggregator22) closeFiles() {
 }
 
 func (a *Aggregator22) BuildMissedIndices() error {
+	wg := sync.WaitGroup{}
+	errs := make(chan error, 7)
 	if a.accounts != nil {
+		wg.Add(1)
 		go func() {
-			if err := a.accounts.BuildMissedIndices(); err != nil {
-				panic(err)
-				//return err
-			}
+			defer wg.Done()
+			errs <- a.accounts.BuildMissedIndices()
 		}()
 	}
 	if a.storage != nil {
+		wg.Add(1)
 		go func() {
-			if err := a.storage.BuildMissedIndices(); err != nil {
-				panic(err)
-				//return err
-			}
+			defer wg.Done()
+			errs <- a.storage.BuildMissedIndices()
 		}()
 	}
 	if a.code != nil {
+		wg.Add(1)
 		go func() {
-			if err := a.code.BuildMissedIndices(); err != nil {
-				panic(err)
-				//return err
-			}
+			defer wg.Done()
+			errs <- a.code.BuildMissedIndices()
 		}()
 	}
 	if a.logAddrs != nil {
+		wg.Add(1)
 		go func() {
-			if err := a.logAddrs.BuildMissedIndices(); err != nil {
-				panic(err)
-				//return err
-			}
+			defer wg.Done()
+			errs <- a.logAddrs.BuildMissedIndices()
 		}()
 	}
 	if a.logTopics != nil {
+		wg.Add(1)
 		go func() {
-			if err := a.logTopics.BuildMissedIndices(); err != nil {
-				panic(err)
-				//return err
-			}
+			defer wg.Done()
+			errs <- a.logTopics.BuildMissedIndices()
 		}()
 	}
 	if a.tracesFrom != nil {
+		wg.Add(1)
 		go func() {
-			if err := a.tracesFrom.BuildMissedIndices(); err != nil {
-				panic(err)
-				//return err
-			}
+			defer wg.Done()
+			errs <- a.tracesFrom.BuildMissedIndices()
 		}()
 	}
 	if a.tracesTo != nil {
+		wg.Add(1)
 		go func() {
-			if err := a.tracesTo.BuildMissedIndices(); err != nil {
-				panic(err)
-				//return err
-			}
+			defer wg.Done()
+			errs <- a.tracesTo.BuildMissedIndices()
 		}()
 	}
-	return nil
+	go func() {
+		wg.Wait()
+		close(errs)
+	}()
+	var lastError error
+	for err := range errs {
+		if err != nil {
+			lastError = err
+		}
+	}
+	return lastError
 }
 
 func (a *Aggregator22) SetLogPrefix(v string) { a.logPrefix = v }
@@ -405,7 +411,9 @@ func (a *Aggregator22) buildFiles(step uint64, collation Agg22Collation) (Agg22S
 	//}()
 	var lastError error
 	for err := range errCh {
-		lastError = err
+		if err != nil {
+			lastError = err
+		}
 	}
 	if lastError == nil {
 		closeFiles = false
