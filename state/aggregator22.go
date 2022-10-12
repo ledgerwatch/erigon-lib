@@ -138,39 +138,60 @@ func (a *Aggregator22) closeFiles() {
 
 func (a *Aggregator22) BuildMissedIndices() error {
 	if a.accounts != nil {
-		if err := a.accounts.BuildMissedIndices(); err != nil {
-			return err
-		}
+		go func() {
+			if err := a.accounts.BuildMissedIndices(); err != nil {
+				panic(err)
+				//return err
+			}
+		}()
 	}
 	if a.storage != nil {
-		if err := a.storage.BuildMissedIndices(); err != nil {
-			return err
-		}
+		go func() {
+			if err := a.storage.BuildMissedIndices(); err != nil {
+				panic(err)
+				//return err
+			}
+		}()
 	}
 	if a.code != nil {
-		if err := a.code.BuildMissedIndices(); err != nil {
-			return err
-		}
+		go func() {
+			if err := a.code.BuildMissedIndices(); err != nil {
+				panic(err)
+				//return err
+			}
+		}()
 	}
 	if a.logAddrs != nil {
-		if err := a.logAddrs.BuildMissedIndices(); err != nil {
-			return err
-		}
+		go func() {
+			if err := a.logAddrs.BuildMissedIndices(); err != nil {
+				panic(err)
+				//return err
+			}
+		}()
 	}
 	if a.logTopics != nil {
-		if err := a.logTopics.BuildMissedIndices(); err != nil {
-			return err
-		}
+		go func() {
+			if err := a.logTopics.BuildMissedIndices(); err != nil {
+				panic(err)
+				//return err
+			}
+		}()
 	}
 	if a.tracesFrom != nil {
-		if err := a.tracesFrom.BuildMissedIndices(); err != nil {
-			return err
-		}
+		go func() {
+			if err := a.tracesFrom.BuildMissedIndices(); err != nil {
+				panic(err)
+				//return err
+			}
+		}()
 	}
 	if a.tracesTo != nil {
-		if err := a.tracesTo.BuildMissedIndices(); err != nil {
-			return err
-		}
+		go func() {
+			if err := a.tracesTo.BuildMissedIndices(); err != nil {
+				panic(err)
+				//return err
+			}
+		}()
 	}
 	return nil
 }
