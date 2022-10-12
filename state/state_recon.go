@@ -50,6 +50,7 @@ func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 			eliasVal, _ := g.NextUncompressed()
 			found = true
 			foundTxNum = eliasfano32.Max(eliasVal)
+			fmt.Printf("IsMaxTxNum: %d, key: %x, file:%s.%d-%d, found: %d\n", txNum, key, hc.h.filenameBase, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, foundTxNum)
 			// if there is still chance to find higher ef.Max() than txNum, we continue
 			return foundTxNum == txNum
 		}
