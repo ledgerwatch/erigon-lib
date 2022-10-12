@@ -533,7 +533,7 @@ func (a *Aggregator22) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) 
 	common2.ReadMemStats(&m)
 	log.Info("[Snapshots] History Stat",
 		"blocks", fmt.Sprintf("%dk", (histBlockNumProgress+1)/1000),
-		"txs", fmt.Sprintf("%dk", a.maxTxNum.Load()/1000),
+		"txs", fmt.Sprintf("%dm", a.maxTxNum.Load()/1_000_000),
 		"txNum2blockNum", strings.Join(str, ","),
 		"first_history_idx_in_db", firstHistoryIndexBlockInDB,
 		"alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
