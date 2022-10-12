@@ -496,6 +496,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 		if g.HasNext() {
 			key, _ := g.Next(nil)
 			val, _ := g.Next(nil)
+			//fmt.Printf("heap push %s [%d] %x\n", item.decompressor.FilePath(), item.endTxNum, key)
 			heap.Push(&cp, &CursorItem{
 				t:        FILE_CURSOR,
 				dg:       g,
@@ -506,7 +507,8 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 			})
 		}
 	}
-	count := 0
+	keyCount := 0
+
 	// In the loop below, the pair `keyBuf=>valBuf` is always 1 item behind `lastKey=>lastVal`.
 	// `lastKey` and `lastVal` are taken from the top of the multi-way merge (assisted by the CursorHeap cp), but not processed right away
 	// instead, the pair from the previous iteration is processed first - `keyBuf=>valBuf`. After that, `keyBuf` and `valBuf` are assigned
@@ -528,9 +530,11 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 			} else {
 				mergedOnce = true
 			}
+			//fmt.Printf("multi-way %s [%d] %x\n", ii.indexKeysTable, ci1.endTxNum, ci1.key)
 			if ci1.dg.HasNext() {
 				ci1.key, _ = ci1.dg.NextUncompressed()
 				ci1.val, _ = ci1.dg.NextUncompressed()
+				//fmt.Printf("heap next push %s [%d] %x\n", ii.indexKeysTable, ci1.endTxNum, ci1.key)
 				heap.Fix(&cp, 0)
 			} else {
 				heap.Pop(&cp)
@@ -540,7 +544,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 			if err = comp.AddUncompressedWord(keyBuf); err != nil {
 				return nil, err
 			}
-			count++ // Only counting keys, not values
+			keyCount++ // Only counting keys, not values
 			if err = comp.AddUncompressedWord(valBuf); err != nil {
 				return nil, err
 			}
@@ -552,7 +556,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 		if err = comp.AddUncompressedWord(keyBuf); err != nil {
 			return nil, err
 		}
-		count++ // Only counting keys, not values
+		keyCount++ // Only counting keys, not values
 		if err = comp.AddUncompressedWord(valBuf); err != nil {
 			return nil, err
 		}
@@ -567,7 +571,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 	if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 		return nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
-	if outItem.index, err = buildIndex(outItem.decompressor, idxPath, ii.dir, count, false /* values */); err != nil {
+	if outItem.index, err = buildIndex(outItem.decompressor, idxPath, ii.dir, keyCount, false /* values */); err != nil {
 		return nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
 	closeItem = false
@@ -653,13 +657,13 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 				})
 			}
 		}
-		count := 0
 		// In the loop below, the pair `keyBuf=>valBuf` is always 1 item behind `lastKey=>lastVal`.
 		// `lastKey` and `lastVal` are taken from the top of the multi-way merge (assisted by the CursorHeap cp), but not processed right away
 		// instead, the pair from the previous iteration is processed first - `keyBuf=>valBuf`. After that, `keyBuf` and `valBuf` are assigned
 		// to `lastKey` and `lastVal` correspondingly, and the next step of multi-way merge happens. Therefore, after the multi-way merge loop
 		// (when CursorHeap cp is empty), there is a need to process the last pair `keyBuf=>valBuf`, because it was one step behind
 		var valBuf []byte
+		var keyCount int
 		for cp.Len() > 0 {
 			lastKey := common.Copy(cp[0].key)
 			// Advance all the items that have this key (including the top)
@@ -691,7 +695,7 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 						}
 					}
 				}
-				count += int(ef.Count())
+				keyCount += int(ef.Count())
 				if ci1.dg.HasNext() {
 					ci1.key, _ = ci1.dg.NextUncompressed()
 					ci1.val, _ = ci1.dg.NextUncompressed()
@@ -710,7 +714,7 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 			return nil, nil, err
 		}
 		if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
-			KeyCount:   count,
+			KeyCount:   keyCount,
 			Enums:      false,
 			BucketSize: 2000,
 			LeafSize:   8,
