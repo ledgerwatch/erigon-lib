@@ -293,7 +293,7 @@ type InvertedIndexRw struct {
 	indexKeys *etl.Collector
 }
 
-func (ii *InvertedIndexRw) Commit(tx kv.RwTx) error {
+func (ii *InvertedIndexRw) Flush(tx kv.RwTx) error {
 	if err := ii.index.Load(tx, ii.ii.indexTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
