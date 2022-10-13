@@ -914,19 +914,20 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		g := item.getter
 		g.Reset(offset)
 		k, _ := g.NextUncompressed()
-		if bytes.Equal(k, key) {
-			//fmt.Printf("Found key=%x\n", k)
-			eliasVal, _ := g.NextUncompressed()
-			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			n, ok := ef.Search(txNum)
-			if ok {
-				foundTxNum = n
-				foundEndTxNum = item.endTxNum
-				foundStartTxNum = item.startTxNum
-				found = true
-				//fmt.Printf("Found n=%d\n", n)
-				return false
-			}
+		if !bytes.Equal(k, key) {
+			return true
+		}
+		//fmt.Printf("Found key=%x\n", k)
+		eliasVal, _ := g.NextUncompressed()
+		ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+		n, ok := ef.Search(txNum)
+		if ok {
+			foundTxNum = n
+			foundEndTxNum = item.endTxNum
+			foundStartTxNum = item.startTxNum
+			found = true
+			//fmt.Printf("Found n=%d\n", n)
+			return false
 		}
 		return true
 	})
