@@ -842,10 +842,6 @@ func (a *Aggregator22) FinishTx() error {
 		return nil
 	}
 
-	if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
-		return err
-	}
-
 	closeAll := true
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
 	if err != nil {
@@ -864,6 +860,11 @@ func (a *Aggregator22) FinishTx() error {
 			log.Warn("buildFilesInBackground", "err", err)
 		}
 	}()
+
+	if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
+		return err
+	}
+
 	closeAll = false
 	return nil
 }
