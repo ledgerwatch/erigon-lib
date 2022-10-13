@@ -35,6 +35,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
@@ -276,7 +277,8 @@ func (ii *InvertedIndex) add(key, indexKey []byte) error {
 	if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], key); err != nil {
 		return err
 	}
-	if err := ii.tx.Put(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
+	fmt.Printf("append: %s, %x, %x\n", ii.indexTable, indexKey, ii.txNumBytes[:])
+	if err := ii.tx.AppendDup(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
 		return err
 	}
 	return nil
@@ -284,6 +286,42 @@ func (ii *InvertedIndex) add(key, indexKey []byte) error {
 
 func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
+}
+
+type InvertedIndexRw struct {
+	ii        *InvertedIndex
+	index     *etl.Collector
+	indexKeys *etl.Collector
+}
+
+func (ii *InvertedIndexRw) Commit(tx kv.RwTx) error {
+	if err := ii.index.Load(tx, ii.ii.indexTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
+		return err
+	}
+	if err := ii.indexKeys.Load(tx, ii.ii.indexKeysTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ii *InvertedIndexRw) Rollback() {
+	ii.index.Close()
+	ii.indexKeys.Close()
+}
+func (ii *InvertedIndex) BeginRw(tmpdir string) *InvertedIndexRw {
+	return &InvertedIndexRw{ii: ii,
+		index:     etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize)),
+		indexKeys: etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize)),
+	}
+}
+func (ii *InvertedIndexRw) add(key, indexKey []byte) error {
+	if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
+		return err
+	}
+	if err := ii.index.Collect(indexKey, ii.ii.txNumBytes[:]); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {

@@ -891,19 +891,19 @@ func (a *Aggregator22) AddCodePrev(addr []byte, prev []byte) error {
 }
 
 func (a *Aggregator22) AddTraceFrom(addr []byte) error {
-	return a.tracesFrom.Add(addr)
+	//return a.tracesFrom.Add(addr)
 }
 
 func (a *Aggregator22) AddTraceTo(addr []byte) error {
-	return a.tracesTo.Add(addr)
+	//return a.tracesTo.Add(addr)
 }
 
 func (a *Aggregator22) AddLogAddr(addr []byte) error {
-	return a.logAddrs.Add(addr)
+	//return a.logAddrs.Add(addr)
 }
 
 func (a *Aggregator22) AddLogTopic(topic []byte) error {
-	return a.logTopics.Add(topic)
+	//return a.logTopics.Add(topic)
 }
 
 // DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
