@@ -891,18 +891,22 @@ func (a *Aggregator22) AddCodePrev(addr []byte, prev []byte) error {
 }
 
 func (a *Aggregator22) AddTraceFrom(addr []byte) error {
+	return nil
 	return a.tracesFrom.Add(addr)
 }
 
 func (a *Aggregator22) AddTraceTo(addr []byte) error {
+	return nil
 	return a.tracesTo.Add(addr)
 }
 
 func (a *Aggregator22) AddLogAddr(addr []byte) error {
+	return nil
 	return a.logAddrs.Add(addr)
 }
 
 func (a *Aggregator22) AddLogTopic(topic []byte) error {
+	return nil
 	return a.logTopics.Add(topic)
 }
 
