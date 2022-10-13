@@ -309,8 +309,8 @@ func (ii *InvertedIndexRw) Rollback() {
 }
 func (ii *InvertedIndex) BeginRw(tmpdir string) *InvertedIndexRw {
 	return &InvertedIndexRw{ii: ii,
-		index:     etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize)),
-		indexKeys: etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize)),
+		index:     etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		indexKeys: etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 	}
 }
 func (ii *InvertedIndexRw) add(key, indexKey []byte) error {
