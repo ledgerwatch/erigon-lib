@@ -834,7 +834,6 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 }
 
 func (a *Aggregator22) FinishTx() error {
-	return nil
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
