@@ -373,7 +373,7 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 				})
 			}
 		}
-		count := 0
+		keyCount := 0
 		// In the loop below, the pair `keyBuf=>valBuf` is always 1 item behind `lastKey=>lastVal`.
 		// `lastKey` and `lastVal` are taken from the top of the multi-way merge (assisted by the CursorHeap cp), but not processed right away
 		// instead, the pair from the previous iteration is processed first - `keyBuf=>valBuf`. After that, `keyBuf` and `valBuf` are assigned
@@ -410,14 +410,7 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 					if err = comp.AddUncompressedWord(keyBuf); err != nil {
 						return nil, nil, nil, err
 					}
-					count++ // Only counting keys, not values
-
-					//if d.valueMergeFn != nil {
-					//	valBuf, err = d.valueMergeFn(valBuf, nil)
-					//	if err != nil {
-					//		return nil, nil, nil, err
-					//	}
-					//}
+					keyCount++ // Only counting keys, not values
 					if d.compressVals {
 						if err = comp.AddWord(valBuf); err != nil {
 							return nil, nil, nil, err
@@ -436,7 +429,7 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 			if err = comp.AddUncompressedWord(keyBuf); err != nil {
 				return nil, nil, nil, err
 			}
-			count++ // Only counting keys, not values
+			keyCount++ // Only counting keys, not values
 			if d.compressVals {
 				if err = comp.AddWord(valBuf); err != nil {
 					return nil, nil, nil, err
@@ -457,7 +450,7 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 		if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
-		if valuesIn.index, err = buildIndex(valuesIn.decompressor, idxPath, d.dir, count, false /* values */); err != nil {
+		if valuesIn.index, err = buildIndex(valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
 	}
@@ -466,10 +459,6 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 	d.mergesCount++
 	return
 }
-
-//func (d *Domain) SetValueMergeStrategy(merge func([]byte, []byte) ([]byte, error)) {
-//	d.valueMergeFn = merge
-//}
 
 func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uint64, maxSpan uint64) (*filesItem, error) {
 	for _, h := range files {
@@ -684,20 +673,8 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 		for cp.Len() > 0 {
 			lastKey := common.Copy(cp[0].key)
 			// Advance all the items that have this key (including the top)
-			//var mergeOnce bool
 			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 				ci1 := cp[0]
-
-				//if h.valueMergeFn != nil && mergeOnce {
-				//	valBuf, err = h.valueMergeFn(ci1.val, valBuf)
-				//	if err != nil {
-				//		return nil, nil, err
-				//	}
-				//	ci1.val = valBuf
-				//}
-				//if !mergeOnce {
-				//	mergeOnce = true
-				//}
 				ef, _ := eliasfano32.ReadEliasFano(ci1.val)
 				for i := uint64(0); i < ef.Count(); i++ {
 					if h.compressVals {

@@ -18,22 +18,17 @@ package state
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"hash"
 	"math"
 	"os"
 	"sync"
 	"sync/atomic"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/google/btree"
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon-lib/commitment"
-	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
@@ -45,34 +40,25 @@ type Aggregator struct {
 	accounts        *Domain
 	storage         *Domain
 	code            *Domain
-	commitment      *Domain
-	commTree        *btree.BTreeG[*CommitmentItem]
-	keccak          hash.Hash
-	patriciaTrie    *commitment.HexPatriciaHashed
+	commitment      *DomainCommitted
 	logAddrs        *InvertedIndex
 	logTopics       *InvertedIndex
 	tracesFrom      *InvertedIndex
 	tracesTo        *InvertedIndex
 	txNum           uint64
 	blockNum        uint64
-
-	commitmentMode CommitmentMode
-	commitFn       func(txNum uint64) error
-	rwTx           kv.RwTx
-	stats          FilesStats
+	commitFn        func(txNum uint64) error
+	rwTx            kv.RwTx
+	stats           FilesStats
 }
 
 func NewAggregator(
 	dir string,
 	aggregationStep uint64,
 ) (*Aggregator, error) {
-	a := &Aggregator{
-		aggregationStep: aggregationStep,
-		patriciaTrie:    commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
-		commTree:        btree.NewG[*CommitmentItem](32, commitmentItemLess),
-		keccak:          sha3.NewLegacyKeccak256(),
-		commitmentMode:  CommitmentModeDirect,
-	}
+
+	a := &Aggregator{aggregationStep: aggregationStep}
+
 	closeAgg := true
 	defer func() {
 		if closeAgg {
@@ -92,14 +78,13 @@ func NewAggregator(
 	if a.code, err = NewDomain(dir, aggregationStep, "code", kv.CodeKeys, kv.CodeVals, kv.CodeHistoryKeys, kv.CodeHistoryVals, kv.CodeSettings, kv.CodeIdx, 0 /* prefixLen */, true /* compressVals */); err != nil {
 		return nil, err
 	}
-	if a.commitment, err = NewDomain(dir, aggregationStep, "commitment", kv.CommitmentKeys, kv.CommitmentVals, kv.CommitmentHistoryKeys, kv.CommitmentHistoryVals, kv.CommitmentSettings, kv.CommitmentIdx, 0 /* prefixLen */, false /* compressVals */); err != nil {
+
+	commitd, err := NewDomain(dir, aggregationStep, "commitment", kv.CommitmentKeys, kv.CommitmentVals, kv.CommitmentHistoryKeys, kv.CommitmentHistoryVals, kv.CommitmentSettings, kv.CommitmentIdx, 0 /* prefixLen */, false /* compressVals */)
+	if err != nil {
 		return nil, err
 	}
+	a.commitment = NewCommittedDomain(commitd, CommitmentModeDirect)
 
-	//merge := func(a, b []byte) ([]byte, error) {
-	//	return commitment.BranchData(a).MergeHexBranches(commitment.BranchData(b), nil)
-	//}
-	//a.commitment.SetValueMergeStrategy(merge)
 	if a.logAddrs, err = NewInvertedIndex(dir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx); err != nil {
 		return nil, err
 	}
@@ -191,7 +176,7 @@ func (a *Aggregator) SetWorkers(i int) {
 }
 
 func (a *Aggregator) SetCommitmentMode(mode CommitmentMode) {
-	a.commitmentMode = mode
+	a.commitment.mode = mode
 }
 
 type AggCollation struct {
@@ -415,6 +400,10 @@ func (a *Aggregator) EndTxNumMinimax() uint64 {
 		min = txNum
 	}
 	return min
+}
+
+func (a *Aggregator) SeekCommitment() (uint64, uint64, error) {
+	return a.commitment.SeekCommitment(a.aggregationStep)
 }
 
 type Ranges struct {
@@ -793,9 +782,9 @@ func (a *AggregatorContext) accountFn(plainKey []byte, cell *commitment.Cell) er
 		return err
 	}
 	if code != nil {
-		a.a.keccak.Reset()
-		a.a.keccak.Write(code)
-		copy(cell.CodeHash[:], a.a.keccak.Sum(nil))
+		a.a.commitment.keccak.Reset()
+		a.a.commitment.keccak.Write(code)
+		copy(cell.CodeHash[:], a.a.commitment.keccak.Sum(nil))
 	}
 	cell.Delete = len(encAccount) == 0 && len(code) == 0
 	return nil
@@ -813,134 +802,12 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 	return nil
 }
 
-var keyCommitmentState = []byte("state")
-
-func (a *Aggregator) SeekCommitment() (uint64, error) {
-	var latestTxNum uint64
-	var latestState []byte
-	a.SetTxNum(latestTxNum)
-
-	for {
-		ctx := a.MakeContext()
-		s, err := ctx.ReadCommitment(keyCommitmentState, a.rwTx)
-		if err != nil {
-			return 0, err
-		}
-		if len(s) < 8 {
-			break
-		}
-		v := binary.BigEndian.Uint64(s)
-		if v == latestTxNum {
-			break
-		}
-		latestTxNum, latestState = v, s
-		a.SetTxNum(latestTxNum + a.aggregationStep - 1)
-	}
-
-	var latest commitmentState
-	if err := latest.Decode(latestState); err != nil {
-		return 0, nil
-	}
-
-	if err := a.patriciaTrie.SetState(latest.trieState); err != nil {
-		return 0, err
-	}
-	return latestTxNum, nil
-}
-
-type commitmentState struct {
-	txNum     uint64
-	blockNum  uint64
-	trieState []byte
-}
-
-func (cs *commitmentState) Decode(buf []byte) error {
-	if len(buf) < 10 {
-		return fmt.Errorf("ivalid commitment state buffer size")
-	}
-	pos := 0
-	cs.txNum = binary.BigEndian.Uint64(buf[pos : pos+8])
-	pos += 8
-	cs.blockNum = binary.BigEndian.Uint64(buf[pos : pos+8])
-	pos += 8
-	cs.trieState = make([]byte, binary.BigEndian.Uint16(buf[pos:pos+2]))
-	pos += 2
-	if len(cs.trieState) == 0 && len(buf) == 10 {
-		return nil
-	}
-	copy(cs.trieState, buf[pos:pos+len(cs.trieState)])
-	return nil
-}
-
-func (cs *commitmentState) Encode() ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	var v [18]byte
-	binary.BigEndian.PutUint64(v[:], cs.txNum)
-	binary.BigEndian.PutUint64(v[8:16], cs.blockNum)
-	binary.BigEndian.PutUint16(v[16:18], uint16(len(cs.trieState)))
-	if _, err := buf.Write(v[:]); err != nil {
-		return nil, err
-	}
-	if _, err := buf.Write(cs.trieState); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (a *Aggregator) storeCommitmentState() error {
-	state, err := a.patriciaTrie.EncodeCurrentState(nil)
-	if err != nil {
-		return err
-	}
-	cs := &commitmentState{txNum: a.txNum, trieState: state, blockNum: a.blockNum}
-	encoded, err := cs.Encode()
-	if err != nil {
-		return err
-	}
-	if err = a.UpdateCommitmentData(keyCommitmentState, encoded); err != nil {
-		return err
-	}
-	return nil
-}
-
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
-func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err error) {
-	if a.commitmentMode == CommitmentModeDisabled {
-		return
-	}
-
-	touchedKeys, hashedKeys, updates := a.touchedKeyList()
-	if len(touchedKeys) == 0 {
-		rootHash, err = a.patriciaTrie.RootHash()
-		if err == nil && commit {
-			if err := a.storeCommitmentState(); err != nil {
-				return nil, err
-			}
-		}
-		return rootHash, err
-	}
-
-	_ = updates
-
+func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []byte, err error) {
 	ctx := a.MakeContext()
-	a.patriciaTrie.Reset()
-	a.patriciaTrie.SetTrace(trace)
-	a.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
-
-	var branchNodeUpdates map[string]commitment.BranchData
-	switch a.commitmentMode {
-	case CommitmentModeDirect:
-		rootHash, branchNodeUpdates, err = a.patriciaTrie.ReviewKeys(touchedKeys, hashedKeys)
-		if err != nil {
-			return nil, err
-		}
-	case CommitmentModeUpdates:
-		rootHash, branchNodeUpdates, err = a.patriciaTrie.ProcessUpdates(touchedKeys, hashedKeys, updates)
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("invalid commitment mode: %d", a.commitmentMode)
+	rootHash, branchNodeUpdates, err := a.commitment.ComputeCommitment(ctx, trace)
+	if err != nil {
+		return nil, err
 	}
 
 	for pref, update := range branchNodeUpdates {
@@ -967,122 +834,13 @@ func (a *Aggregator) ComputeCommitment(commit, trace bool) (rootHash []byte, err
 		}
 	}
 
-	if commit {
-		if err := a.storeCommitmentState(); err != nil {
+	if saveStateAfter {
+		if err := a.commitment.storeCommitmentState(a.blockNum, a.txNum); err != nil {
 			return nil, err
 		}
 	}
 
 	return rootHash, nil
-}
-
-func (a *Aggregator) hashAndNibblizeKey(key []byte) []byte {
-	hashedKey := make([]byte, length.Hash)
-
-	a.keccak.Reset()
-	a.keccak.Write(key[:length.Addr])
-	copy(hashedKey[:length.Hash], a.keccak.Sum(nil))
-
-	if len(key[length.Addr:]) > 0 {
-		hashedKey = append(hashedKey, make([]byte, length.Hash)...)
-		a.keccak.Reset()
-		a.keccak.Write(key[length.Addr:])
-		copy(hashedKey[length.Hash:], a.keccak.Sum(nil))
-	}
-
-	nibblized := make([]byte, len(hashedKey)*2)
-	for i, b := range hashedKey {
-		nibblized[i*2] = (b >> 4) & 0xf
-		nibblized[i*2+1] = b & 0xf
-	}
-	return nibblized
-}
-
-func (a *Aggregator) touchPlainKeyAccount(c *CommitmentItem, val []byte) {
-	if len(val) == 0 {
-		c.update.Flags = commitment.DELETE_UPDATE
-		return
-	}
-	c.update.DecodeForStorage(val)
-	c.update.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
-	item, found := a.commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
-	if !found {
-		return
-	}
-	if item.update.Flags&commitment.CODE_UPDATE != 0 {
-		c.update.Flags |= commitment.CODE_UPDATE
-		copy(c.update.CodeHashOrStorage[:], item.update.CodeHashOrStorage[:])
-	}
-}
-
-func (a *Aggregator) touchPlainKeyStorage(c *CommitmentItem, val []byte) {
-	c.update.ValLength = len(val)
-	if len(val) == 0 {
-		c.update.Flags = commitment.DELETE_UPDATE
-	} else {
-		c.update.Flags = commitment.STORAGE_UPDATE
-		copy(c.update.CodeHashOrStorage[:], val)
-	}
-}
-
-func (a *Aggregator) touchPlainKeyCode(c *CommitmentItem, val []byte) {
-	c.update.Flags = commitment.CODE_UPDATE
-	item, found := a.commTree.Get(c)
-	if !found {
-		a.keccak.Reset()
-		a.keccak.Write(val)
-		copy(c.update.CodeHashOrStorage[:], a.keccak.Sum(nil))
-		return
-	}
-	if item.update.Flags&commitment.BALANCE_UPDATE != 0 {
-		c.update.Flags |= commitment.BALANCE_UPDATE
-		c.update.Balance.Set(&item.update.Balance)
-	}
-	if item.update.Flags&commitment.NONCE_UPDATE != 0 {
-		c.update.Flags |= commitment.NONCE_UPDATE
-		c.update.Nonce = item.update.Nonce
-	}
-	if item.update.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
-		c.update.Flags = commitment.DELETE_UPDATE
-	} else {
-		a.keccak.Reset()
-		a.keccak.Write(val)
-		copy(c.update.CodeHashOrStorage[:], a.keccak.Sum(nil))
-	}
-}
-
-func (a *Aggregator) touchPlainKey(key, val []byte, fn func(c *CommitmentItem, val []byte)) {
-	c := &CommitmentItem{plainKey: common.Copy(key), hashedKey: a.hashAndNibblizeKey(key)}
-	fn(c, val)
-	a.commTree.ReplaceOrInsert(c)
-}
-
-type CommitmentItem struct {
-	plainKey  []byte
-	hashedKey []byte
-	update    commitment.Update
-}
-
-func commitmentItemLess(i, j *CommitmentItem) bool {
-	return bytes.Compare(i.hashedKey, j.hashedKey) < 0
-}
-
-func (a *Aggregator) touchedKeyList() ([][]byte, [][]byte, []commitment.Update) {
-	plainKeys := make([][]byte, a.commTree.Len())
-	hashedKeys := make([][]byte, a.commTree.Len())
-	updates := make([]commitment.Update, a.commTree.Len())
-
-	j := 0
-	a.commTree.Ascend(func(item *CommitmentItem) bool {
-		plainKeys[j] = item.plainKey
-		hashedKeys[j] = item.hashedKey
-		updates[j] = item.update
-		j++
-		return true
-	})
-
-	a.commTree.Clear(false)
-	return plainKeys, hashedKeys, updates
 }
 
 func (a *Aggregator) ReadyToFinishTx() bool {
@@ -1099,13 +857,18 @@ func (a *Aggregator) FinishTx() error {
 	if !a.ReadyToFinishTx() {
 		return nil
 	}
-	_, err := a.ComputeCommitment(true, false)
-	if err != nil {
-		return err
-	}
 	closeAll := true
 	step := a.txNum / a.aggregationStep
 	if step == 0 {
+		if a.commitFn != nil {
+			_, err := a.ComputeCommitment(true, false)
+			if err != nil {
+				return err
+			}
+			if err := a.commitFn(a.txNum); err != nil {
+				return fmt.Errorf("aggregator: db commit on finishTx failed, txNum=%d err=%w", a.txNum, err)
+			}
+		}
 		return nil
 	}
 	step-- // Leave one step worth in the DB
@@ -1157,6 +920,9 @@ func (a *Aggregator) FinishTx() error {
 	}
 	closeAll = false
 
+	if _, err = a.ComputeCommitment(true, false); err != nil {
+		return err
+	}
 	if a.commitFn != nil {
 		if err := a.commitFn(a.txNum); err != nil {
 			return err
@@ -1167,12 +933,12 @@ func (a *Aggregator) FinishTx() error {
 }
 
 func (a *Aggregator) UpdateAccountData(addr []byte, account []byte) error {
-	a.touchPlainKey(addr, account, a.touchPlainKeyAccount)
+	a.commitment.TouchPlainKey(addr, account, a.commitment.TouchPlainKeyAccount)
 	return a.accounts.Put(addr, nil, account)
 }
 
 func (a *Aggregator) UpdateAccountCode(addr []byte, code []byte) error {
-	a.touchPlainKey(addr, code, a.touchPlainKeyCode)
+	a.commitment.TouchPlainKey(addr, code, a.commitment.TouchPlainKeyCode)
 	if len(code) == 0 {
 		return a.code.Delete(addr, nil)
 	}
@@ -1184,7 +950,8 @@ func (a *Aggregator) UpdateCommitmentData(prefix []byte, code []byte) error {
 }
 
 func (a *Aggregator) DeleteAccount(addr []byte) error {
-	a.touchPlainKey(addr, nil, a.touchPlainKeyAccount)
+	a.commitment.TouchPlainKey(addr, nil, a.commitment.TouchPlainKeyAccount)
+
 	if err := a.accounts.Delete(addr, nil); err != nil {
 		return err
 	}
@@ -1193,7 +960,7 @@ func (a *Aggregator) DeleteAccount(addr []byte) error {
 	}
 	var e error
 	if err := a.storage.defaultDc.IteratePrefix(addr, func(k, _ []byte) {
-		a.touchPlainKey(k, nil, a.touchPlainKeyStorage)
+		a.commitment.TouchPlainKey(k, nil, a.commitment.TouchPlainKeyStorage)
 		if e == nil {
 			e = a.storage.Delete(k, nil)
 		}
@@ -1208,7 +975,7 @@ func (a *Aggregator) WriteAccountStorage(addr, loc []byte, value []byte) error {
 	copy(composite, addr)
 	copy(composite[length.Addr:], loc)
 
-	a.touchPlainKey(composite, value, a.touchPlainKeyStorage)
+	a.commitment.TouchPlainKey(composite, value, a.commitment.TouchPlainKeyStorage)
 	if len(value) == 0 {
 		return a.storage.Delete(addr, loc)
 	}
@@ -1316,12 +1083,3 @@ func DecodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []
 	}
 	return
 }
-
-// Defines how to evaluate commitments.
-type CommitmentMode uint
-
-const (
-	CommitmentModeDisabled CommitmentMode = 0
-	CommitmentModeDirect   CommitmentMode = 1
-	CommitmentModeUpdates  CommitmentMode = 2
-)
