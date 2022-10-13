@@ -869,6 +869,7 @@ func (a *Aggregator22) FinishTx() error {
 }
 
 func (a *Aggregator22) AddAccountPrev(addr []byte, prev []byte) error {
+	return nil
 	if err := a.accounts.AddPrevValue(addr, nil, prev); err != nil {
 		return err
 	}
@@ -876,6 +877,8 @@ func (a *Aggregator22) AddAccountPrev(addr []byte, prev []byte) error {
 }
 
 func (a *Aggregator22) AddStoragePrev(addr []byte, loc []byte, prev []byte) error {
+	return nil
+
 	if err := a.storage.AddPrevValue(addr, loc, prev); err != nil {
 		return err
 	}
@@ -884,6 +887,7 @@ func (a *Aggregator22) AddStoragePrev(addr []byte, loc []byte, prev []byte) erro
 
 // AddCodePrev - addr+inc => code
 func (a *Aggregator22) AddCodePrev(addr []byte, prev []byte) error {
+	return nil
 	if err := a.code.AddPrevValue(addr, nil, prev); err != nil {
 		return err
 	}
