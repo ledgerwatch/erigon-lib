@@ -334,8 +334,8 @@ func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 		indexKeys: etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 	}
-	w.index.LogLvl(log.LvlTrace)
-	w.indexKeys.LogLvl(log.LvlTrace)
+	w.index.LogLvl(log.LvlDebug)
+	w.indexKeys.LogLvl(log.LvlDebug)
 	return w
 }
 func (ii *invertedIndexWriter) add(key, indexKey []byte) error {

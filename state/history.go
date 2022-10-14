@@ -458,9 +458,9 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 		tmpdir:           tmpdir,
 		autoIncrement:    valNum,
 		autoIncrementBuf: make([]byte, 8),
-		historyVals:      etl.NewCollector("hist writer "+h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		historyVals:      etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 	}
-	w.historyVals.LogLvl(log.LvlInfo)
+	w.historyVals.LogLvl(log.LvlDebug)
 	return w
 }
 
