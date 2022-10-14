@@ -148,7 +148,6 @@ func (b *sortableBuffer) Reset() {
 	b.data = b.data[:0]
 }
 func (b *sortableBuffer) Sort() {
-	defer func(t time.Time) { fmt.Printf("buffers.go:150: %s, %s\n", time.Since(t), dbg.Stack()) }(time.Now())
 	if sort.IsSorted(b) {
 		return
 	}
