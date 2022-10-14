@@ -85,8 +85,15 @@ func TestCollationBuild(t *testing.T) {
 
 	err = d.Flush()
 	require.NoError(t, err)
+	err = tx.Commit()
+	require.NoError(t, err)
 
-	c, err := d.collate(0, 0, 7, tx)
+	roTx, err := db.BeginRo(context.Background())
+	require.NoError(t, err)
+	defer roTx.Rollback()
+	d.SetTx(tx)
+
+	c, err := d.collate(0, 0, 7, roTx)
 	require.NoError(t, err)
 	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
 	require.Equal(t, 2, c.valuesCount)
@@ -768,10 +775,11 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 				continue
 			}
 			step--
-			collateAndMergeOnce(t, d, step)
-
 			err = d.Flush()
 			require.NoError(t, err)
+
+			collateAndMergeOnce(t, d, step)
+
 			err = tx.Commit()
 			require.NoError(t, err)
 			tx, err = db.BeginRw(context.Background())
@@ -783,7 +791,6 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
-	tx = nil
 
 	roTx, err := db.BeginRo(context.Background())
 	require.NoError(t, err)

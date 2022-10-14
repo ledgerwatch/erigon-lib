@@ -474,10 +474,10 @@ func (h *historyWriter) flush(tx kv.RwTx) error {
 	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
-	//binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
-	//if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
-	//	return err
-	//}
+	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
+	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -518,9 +518,9 @@ func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 	if len(original) > 0 {
 		h.autoIncrement++
 		binary.BigEndian.PutUint64(historyKey[lk:], h.autoIncrement)
-		if err := h.h.tx.Put(h.h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
-			return err
-		}
+		//if err := h.h.tx.Put(h.h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
+		//	return err
+		//}
 		//if err := h.historyVals.Collect(historyKey[lk:], original); err != nil {
 		//	return err
 		//}
@@ -549,10 +549,6 @@ func (c HistoryCollation) Close() {
 }
 
 func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollation, error) {
-	if err := h.Flush(); err != nil {
-		return HistoryCollation{}, err
-	}
-
 	var historyComp *compress.Compressor
 	var err error
 	closeComp := true

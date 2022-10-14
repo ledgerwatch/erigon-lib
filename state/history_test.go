@@ -140,7 +140,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 		offset := r.Lookup([]byte(keyWords[i]))
 		g.Reset(offset)
 		w, _ := g.Next(nil)
-		require.Equal(t, keyWords[i], string(w))
+		require.Equal(keyWords[i], string(w))
 	}
 	r = recsplit.NewIndexReader(sf.historyIdx)
 	g = sf.historyDecomp.MakeGetter()
@@ -153,7 +153,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 			offset := r.Lookup2(txKey[:], []byte(keyWords[i]))
 			g.Reset(offset)
 			w, _ := g.Next(nil)
-			require.Equal(t, valWords[vi], string(w))
+			require.Equal(valWords[vi], string(w))
 			vi++
 		}
 	}

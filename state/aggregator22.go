@@ -891,6 +891,10 @@ func (a *Aggregator22) FinishTx() error {
 	}
 
 	closeAll := true
+
+	if err := a.Flush(); err != nil {
+		return err
+	}
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
 	if err != nil {
 		return err
