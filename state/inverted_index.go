@@ -56,6 +56,7 @@ type InvertedIndex struct {
 	files           *btree.BTreeG[*filesItem]
 
 	workers int
+	w       *invertedIndexWriter
 }
 
 func NewInvertedIndex(
@@ -274,46 +275,70 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 }
 
 func (ii *InvertedIndex) add(key, indexKey []byte) error {
-	if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], key); err != nil {
-		return err
-	}
-	if err := ii.tx.Put(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
-		return err
-	}
-	return nil
+	return ii.w.add(key, indexKey)
+
+	//if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], key); err != nil {
+	//	return err
+	//}
+	//if err := ii.tx.Put(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
+	//	return err
+	//}
+	//return nil
 }
 
 func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
 }
 
-type InvertedIndexRw struct {
+func (ii *InvertedIndex) StartWrites()  { ii.w = ii.newWriter("") }
+func (ii *InvertedIndex) FinishWrites() { ii.w.close() }
+
+func (ii *InvertedIndex) Flush(tx kv.RwTx) error {
+	if ii.w == nil {
+		return nil
+	}
+	if err := ii.w.flush(tx); err != nil {
+		return err
+	}
+	ii.w = nil
+	return nil
+}
+
+type invertedIndexWriter struct {
 	ii        *InvertedIndex
 	index     *etl.Collector
 	indexKeys *etl.Collector
 }
 
-func (ii *InvertedIndexRw) Flush(tx kv.RwTx) error {
+func (ii *invertedIndexWriter) flush(tx kv.RwTx) error {
 	if err := ii.index.Load(tx, ii.ii.indexTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
 	if err := ii.indexKeys.Load(tx, ii.ii.indexKeysTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
+	ii.close()
 	return nil
 }
 
-func (ii *InvertedIndexRw) Rollback() {
+func (ii *invertedIndexWriter) close() {
+	if ii == nil {
+		return
+	}
 	ii.index.Close()
 	ii.indexKeys.Close()
 }
-func (ii *InvertedIndex) BeginRw(tmpdir string) *InvertedIndexRw {
-	return &InvertedIndexRw{ii: ii,
-		index:     etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
-		indexKeys: etl.NewCollector("", tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+
+func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
+	w := &invertedIndexWriter{ii: ii,
+		index:     etl.NewCollector("[hist writer] "+ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		indexKeys: etl.NewCollector("[hist writer] "+ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 	}
+	w.index.LogLvl(log.LvlInfo)
+	w.indexKeys.LogLvl(log.LvlInfo)
+	return w
 }
-func (ii *InvertedIndexRw) add(key, indexKey []byte) error {
+func (ii *invertedIndexWriter) add(key, indexKey []byte) error {
 	if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
 		return err
 	}

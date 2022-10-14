@@ -501,6 +501,52 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 	}()
 }
 
+// StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
+func (a *Aggregator22) StartWrites() *Aggregator22 {
+	a.accounts.StartWrites()
+	a.storage.StartWrites()
+	a.code.StartWrites()
+	a.logAddrs.StartWrites()
+	a.logTopics.StartWrites()
+	a.tracesFrom.StartWrites()
+	a.tracesTo.StartWrites()
+	return a
+}
+func (a *Aggregator22) FinishWrites() {
+	a.accounts.FinishWrites()
+	a.storage.FinishWrites()
+	a.code.FinishWrites()
+	a.logAddrs.FinishWrites()
+	a.logTopics.FinishWrites()
+	a.tracesFrom.FinishWrites()
+	a.tracesTo.FinishWrites()
+}
+
+func (a *Aggregator22) Flush() error {
+	if err := a.accounts.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.storage.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.code.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.logAddrs.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.logTopics.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.tracesFrom.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.tracesTo.Flush(a.rwTx); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (a *Aggregator22) Prune(limit uint64) error {
 	return a.prune(0, a.maxTxNum.Load(), limit)
 }

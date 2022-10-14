@@ -32,6 +32,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 
@@ -53,6 +54,7 @@ type History struct {
 	workers          int
 
 	historyKey []byte
+	w          *historyWriter
 }
 
 func NewHistory(
@@ -402,32 +404,124 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count i
 }
 
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
+	return h.w.addPrevValue(key1, key2, original)
+
+	/*
+		lk := len(key1) + len(key2)
+		//historyKey := h.historyKey[:lk+8]
+		historyKey := make([]byte, lk+8)
+		copy(historyKey, key1)
+		if len(key2) > 0 {
+			copy(historyKey[len(key1):], key2)
+		}
+		if len(original) > 0 {
+			val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
+			if err != nil {
+				return err
+			}
+			var valNum uint64
+			if len(val) > 0 {
+				valNum = binary.BigEndian.Uint64(val)
+			}
+			valNum++
+			binary.BigEndian.PutUint64(historyKey[lk:], valNum)
+			if err = h.tx.Put(h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
+				return err
+			}
+			if err = h.tx.Put(h.historyValsTable, historyKey[lk:], original); err != nil {
+				return err
+			}
+		}
+		if err := h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
+			return err
+		}
+		return nil
+	*/
+}
+
+func (h *History) StartWrites() {
+	h.InvertedIndex.StartWrites()
+	h.w = h.newWriter("")
+}
+func (h *History) FinishWrites() {
+	h.InvertedIndex.FinishWrites()
+	h.w.close()
+}
+
+func (h *History) Flush(tx kv.RwTx) error {
+	if err := h.InvertedIndex.Flush(tx); err != nil {
+		return err
+	}
+	if h.w == nil {
+		return nil
+	}
+	if err := h.w.flush(tx); err != nil {
+		return err
+	}
+	h.w = nil
+	return nil
+}
+
+type historyWriter struct {
+	h                *History
+	historyVals      *etl.Collector
+	autoIncrement    uint64
+	autoIncrementBuf []byte
+}
+
+func (h *historyWriter) flush(tx kv.RwTx) error {
+	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
+		return err
+	}
+	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (h *historyWriter) close() {
+	if h == nil { // allow dobule-close
+		return
+	}
+	h.historyVals.Close()
+}
+
+func (h *History) newWriter(tmpdir string) *historyWriter {
+	val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
+	if err != nil {
+		panic(err)
+		//return err
+	}
+	var valNum uint64
+	if len(val) > 0 {
+		valNum = binary.BigEndian.Uint64(val)
+	}
+
+	w := &historyWriter{h: h,
+		autoIncrement:    valNum,
+		autoIncrementBuf: make([]byte, 8),
+		historyVals:      etl.NewCollector("[hist writer] "+h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+	}
+	w.historyVals.LogLvl(log.LvlInfo)
+	return w
+}
+
+func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
-	//historyKey := h.historyKey[:lk+8]
-	historyKey := make([]byte, lk+8)
+	historyKey := make([]byte, lk)
 	copy(historyKey, key1)
 	if len(key2) > 0 {
 		copy(historyKey[len(key1):], key2)
 	}
 	if len(original) > 0 {
-		val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
-		if err != nil {
-			return err
-		}
-		var valNum uint64
-		if len(val) > 0 {
-			valNum = binary.BigEndian.Uint64(val)
-		}
-		valNum++
-		binary.BigEndian.PutUint64(historyKey[lk:], valNum)
-		if err = h.tx.Put(h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
-			return err
-		}
-		if err = h.tx.Put(h.historyValsTable, historyKey[lk:], original); err != nil {
+		h.autoIncrement++
+		binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
+		if err := h.historyVals.Collect(h.autoIncrementBuf, original); err != nil {
 			return err
 		}
 	}
-	if err := h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
+
+	if err := h.h.InvertedIndex.add(historyKey, historyKey); err != nil {
 		return err
 	}
 	return nil
