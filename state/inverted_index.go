@@ -275,22 +275,14 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 }
 
 func (ii *InvertedIndex) add(key, indexKey []byte) error {
-	//return ii.w.add(key, indexKey)
-	//
-	if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], key); err != nil {
-		return err
-	}
-	if err := ii.tx.Put(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
-		return err
-	}
-	return nil
+	return ii.w.add(key, indexKey)
 }
 
 func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
 }
 
-func (ii *InvertedIndex) StartWrites() { ii.w = ii.newWriter("") }
+func (ii *InvertedIndex) StartWrites(tmpdir string) { ii.w = ii.newWriter(tmpdir) }
 func (ii *InvertedIndex) FinishWrites() {
 	ii.w.close()
 	ii.w = nil
@@ -310,11 +302,17 @@ type invertedIndexWriter struct {
 	indexKeys *etl.Collector
 }
 
+// loadFunc - is analog of etl.Identity, but it signaling to etl - use .Put instead of .AppendDup - to allow duplicates
+// maybe in future we will improve etl, to sort dupSort values in the way that allow use .AppendDup
+func loadFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	return next(k, k, v)
+}
+
 func (ii *invertedIndexWriter) flush(tx kv.RwTx) error {
-	if err := ii.index.Load(tx, ii.ii.indexTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
+	if err := ii.index.Load(tx, ii.ii.indexTable, loadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
-	if err := ii.indexKeys.Load(tx, ii.ii.indexKeysTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
+	if err := ii.indexKeys.Load(tx, ii.ii.indexKeysTable, loadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
 	ii.close()
@@ -339,6 +337,15 @@ func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 	return w
 }
 func (ii *invertedIndexWriter) add(key, indexKey []byte) error {
+	/*
+		if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes[:], key); err != nil {
+			return err
+		}
+		if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes[:]); err != nil {
+			return err
+		}
+		return nil
+	*/
 	if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
 		return err
 	}

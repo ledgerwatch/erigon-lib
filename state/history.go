@@ -405,7 +405,76 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count i
 
 func (h *History) AddPrevValue(key1, key2, original []byte) error {
 	return h.w.addPrevValue(key1, key2, original)
+}
 
+func (h *History) StartWrites(tmpdir string) {
+	h.InvertedIndex.StartWrites(tmpdir)
+	h.w = h.newWriter(tmpdir)
+}
+func (h *History) FinishWrites() {
+	h.InvertedIndex.FinishWrites()
+	h.w.close()
+	h.w = nil
+}
+
+func (h *History) Flush(tx kv.RwTx) error {
+	if err := h.InvertedIndex.Flush(tx); err != nil {
+		return err
+	}
+	if err := h.w.flush(tx); err != nil {
+		return err
+	}
+	h.w = h.newWriter("")
+	return nil
+}
+
+type historyWriter struct {
+	h                *History
+	historyVals      *etl.Collector
+	autoIncrement    uint64
+	autoIncrementBuf []byte
+}
+
+func (h *historyWriter) close() {
+	if h == nil { // allow dobule-close
+		return
+	}
+	h.historyVals.Close()
+}
+
+func (h *History) newWriter(tmpdir string) *historyWriter {
+	val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
+	if err != nil {
+		panic(err)
+		//return err
+	}
+	var valNum uint64
+	if len(val) > 0 {
+		valNum = binary.BigEndian.Uint64(val)
+	}
+
+	w := &historyWriter{h: h,
+		autoIncrement:    valNum,
+		autoIncrementBuf: make([]byte, 8),
+		historyVals:      etl.NewCollector("hist writer "+h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+	}
+	w.historyVals.LogLvl(log.LvlInfo)
+	return w
+}
+
+func (h *historyWriter) flush(tx kv.RwTx) error {
+	fmt.Printf("load: %s\n", h.h.historyValsTable)
+	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
+		return err
+	}
+	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
+	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 	/*
 		lk := len(key1) + len(key2)
 		//historyKey := h.historyKey[:lk+8]
@@ -437,88 +506,20 @@ func (h *History) AddPrevValue(key1, key2, original []byte) error {
 		}
 		return nil
 	*/
-}
 
-func (h *History) StartWrites() {
-	h.InvertedIndex.StartWrites()
-	h.w = h.newWriter("")
-}
-func (h *History) FinishWrites() {
-	h.InvertedIndex.FinishWrites()
-	h.w.close()
-	h.w = nil
-}
-
-func (h *History) Flush(tx kv.RwTx) error {
-	if err := h.InvertedIndex.Flush(tx); err != nil {
-		return err
-	}
-	if err := h.w.flush(tx); err != nil {
-		return err
-	}
-	h.w = h.newWriter("")
-	return nil
-}
-
-type historyWriter struct {
-	h                *History
-	historyVals      *etl.Collector
-	autoIncrement    uint64
-	autoIncrementBuf []byte
-}
-
-func (h *historyWriter) flush(tx kv.RwTx) error {
-	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
-		return err
-	}
-	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (h *historyWriter) close() {
-	if h == nil { // allow dobule-close
-		return
-	}
-	h.historyVals.Close()
-}
-
-func (h *History) newWriter(tmpdir string) *historyWriter {
-	val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
-	if err != nil {
-		panic(err)
-		//return err
-	}
-	var valNum uint64
-	if len(val) > 0 {
-		valNum = binary.BigEndian.Uint64(val)
-	}
-
-	w := &historyWriter{h: h,
-		autoIncrement:    valNum,
-		autoIncrementBuf: make([]byte, 8),
-		historyVals:      etl.NewCollector("hist writer "+h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
-	}
-	w.historyVals.LogLvl(log.LvlInfo)
-	return w
-}
-
-func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 	lk := len(key1) + len(key2)
-	historyKey := make([]byte, lk)
+	historyKey := make([]byte, lk+8)
 	copy(historyKey, key1)
 	if len(key2) > 0 {
 		copy(historyKey[len(key1):], key2)
 	}
 	if len(original) > 0 {
 		h.autoIncrement++
-		binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
-		if err := h.historyVals.Collect(h.autoIncrementBuf, original); err != nil {
+		binary.BigEndian.PutUint64(historyKey[lk:], h.autoIncrement)
+		if err := h.historyVals.Collect(historyKey[lk:], original); err != nil {
 			return err
 		}
 	}
-
 	if err := h.h.InvertedIndex.add(historyKey, historyKey); err != nil {
 		return err
 	}

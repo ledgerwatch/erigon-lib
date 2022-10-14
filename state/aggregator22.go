@@ -34,7 +34,7 @@ import (
 )
 
 type Aggregator22 struct {
-	dir             string
+	dir, tmpdir     string
 	aggregationStep uint64
 	accounts        *History
 	storage         *History
@@ -54,8 +54,8 @@ type Aggregator22 struct {
 	db kv.RoDB
 }
 
-func NewAggregator22(dir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
-	a := &Aggregator22{dir: dir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db}
+func NewAggregator22(dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
+	a := &Aggregator22{dir: dir, tmpdir: tmpdir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db}
 	return a, nil
 }
 
@@ -503,13 +503,13 @@ func (a *Aggregator22) warmup(txFrom, limit uint64) {
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *Aggregator22) StartWrites() *Aggregator22 {
-	a.accounts.StartWrites()
-	a.storage.StartWrites()
-	a.code.StartWrites()
-	a.logAddrs.StartWrites()
-	a.logTopics.StartWrites()
-	a.tracesFrom.StartWrites()
-	a.tracesTo.StartWrites()
+	a.accounts.StartWrites(a.tmpdir)
+	a.storage.StartWrites(a.tmpdir)
+	a.code.StartWrites(a.tmpdir)
+	a.logAddrs.StartWrites(a.tmpdir)
+	a.logTopics.StartWrites(a.tmpdir)
+	a.tracesFrom.StartWrites(a.tmpdir)
+	a.tracesTo.StartWrites(a.tmpdir)
 	return a
 }
 func (a *Aggregator22) FinishWrites() {
@@ -886,6 +886,9 @@ func (a *Aggregator22) FinishTx() error {
 	step := a.maxTxNum.Load() / a.aggregationStep
 	if a.working.Load() {
 		return nil
+	}
+	if err := a.Flush(); err != nil {
+		return err
 	}
 
 	closeAll := true
