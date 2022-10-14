@@ -463,7 +463,6 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 }
 
 func (h *historyWriter) flush(tx kv.RwTx) error {
-	fmt.Printf("load: %s\n", h.h.historyValsTable)
 	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
