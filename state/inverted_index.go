@@ -290,17 +290,17 @@ func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
 }
 
-func (ii *InvertedIndex) StartWrites()  { ii.w = ii.newWriter("") }
-func (ii *InvertedIndex) FinishWrites() { ii.w.close() }
+func (ii *InvertedIndex) StartWrites() { ii.w = ii.newWriter("") }
+func (ii *InvertedIndex) FinishWrites() {
+	ii.w.close()
+	ii.w = nil
+}
 
 func (ii *InvertedIndex) Flush(tx kv.RwTx) error {
-	if ii.w == nil {
-		return nil
-	}
 	if err := ii.w.flush(tx); err != nil {
 		return err
 	}
-	ii.w = nil
+	ii.w = ii.newWriter("")
 	return nil
 }
 

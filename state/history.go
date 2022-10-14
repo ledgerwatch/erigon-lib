@@ -446,19 +446,17 @@ func (h *History) StartWrites() {
 func (h *History) FinishWrites() {
 	h.InvertedIndex.FinishWrites()
 	h.w.close()
+	h.w = nil
 }
 
 func (h *History) Flush(tx kv.RwTx) error {
 	if err := h.InvertedIndex.Flush(tx); err != nil {
 		return err
 	}
-	if h.w == nil {
-		return nil
-	}
 	if err := h.w.flush(tx); err != nil {
 		return err
 	}
-	h.w = nil
+	h.w = h.newWriter("")
 	return nil
 }
 
