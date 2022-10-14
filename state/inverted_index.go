@@ -292,7 +292,7 @@ func (ii *InvertedIndex) Flush(tx kv.RwTx) error {
 	if err := ii.w.flush(tx); err != nil {
 		return err
 	}
-	ii.w = ii.newWriter("")
+	ii.w = ii.newWriter(ii.w.tmpdir)
 	return nil
 }
 
@@ -300,6 +300,7 @@ type invertedIndexWriter struct {
 	ii        *InvertedIndex
 	index     *etl.Collector
 	indexKeys *etl.Collector
+	tmpdir    string
 }
 
 // loadFunc - is analog of etl.Identity, but it signaling to etl - use .Put instead of .AppendDup - to allow duplicates
@@ -329,11 +330,12 @@ func (ii *invertedIndexWriter) close() {
 
 func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 	w := &invertedIndexWriter{ii: ii,
-		index:     etl.NewCollector("hist writer "+ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
-		indexKeys: etl.NewCollector("hist writer "+ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		tmpdir:    tmpdir,
+		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		indexKeys: etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 	}
-	w.index.LogLvl(log.LvlInfo)
-	w.indexKeys.LogLvl(log.LvlInfo)
+	w.index.LogLvl(log.LvlTrace)
+	w.indexKeys.LogLvl(log.LvlTrace)
 	return w
 }
 func (ii *invertedIndexWriter) add(key, indexKey []byte) error {

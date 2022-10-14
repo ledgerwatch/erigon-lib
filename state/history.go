@@ -424,7 +424,7 @@ func (h *History) Flush(tx kv.RwTx) error {
 	if err := h.w.flush(tx); err != nil {
 		return err
 	}
-	h.w = h.newWriter("")
+	h.w = h.newWriter(h.w.tmpdir)
 	return nil
 }
 
@@ -433,6 +433,7 @@ type historyWriter struct {
 	historyVals      *etl.Collector
 	autoIncrement    uint64
 	autoIncrementBuf []byte
+	tmpdir           string
 }
 
 func (h *historyWriter) close() {
@@ -454,6 +455,7 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 	}
 
 	w := &historyWriter{h: h,
+		tmpdir:           tmpdir,
 		autoIncrement:    valNum,
 		autoIncrementBuf: make([]byte, 8),
 		historyVals:      etl.NewCollector("hist writer "+h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
