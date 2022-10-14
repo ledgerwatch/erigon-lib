@@ -288,8 +288,8 @@ func (ii *InvertedIndex) FinishWrites() {
 	ii.w = nil
 }
 
-func (ii *InvertedIndex) Flush(tx kv.RwTx) error {
-	if err := ii.w.flush(tx); err != nil {
+func (ii *InvertedIndex) Flush() error {
+	if err := ii.w.flush(ii.tx); err != nil {
 		return err
 	}
 	ii.w = ii.newWriter(ii.w.tmpdir)
@@ -334,23 +334,22 @@ func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 		indexKeys: etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}
-	w.index.LogLvl(log.LvlDebug)
-	w.indexKeys.LogLvl(log.LvlDebug)
+	w.index.LogLvl(log.LvlTrace)
+	w.indexKeys.LogLvl(log.LvlTrace)
 	return w
 }
+
 func (ii *invertedIndexWriter) add(key, indexKey []byte) error {
-	/*
-		if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes[:], key); err != nil {
-			return err
-		}
-		if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes[:]); err != nil {
-			return err
-		}
-		return nil
-	*/
+	//if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes[:], key); err != nil {
+	//	return err
+	//}
 	if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
 		return err
 	}
+
+	//if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes[:]); err != nil {
+	//	return err
+	//}
 	if err := ii.index.Collect(indexKey, ii.ii.txNumBytes[:]); err != nil {
 		return err
 	}
@@ -681,6 +680,10 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 }
 
 func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {
+	if err := ii.Flush(); err != nil {
+		return nil, err
+	}
+
 	keysCursor, err := roTx.CursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return nil, fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)

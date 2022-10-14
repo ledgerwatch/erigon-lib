@@ -1274,25 +1274,25 @@ func (a *Aggregator) FinishWrites() {
 
 func (a *Aggregator) Flush() error {
 	defer func(t time.Time) { log.Info("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
-	if err := a.accounts.Flush(a.rwTx); err != nil {
+	if err := a.accounts.Flush(); err != nil {
 		return err
 	}
-	if err := a.storage.Flush(a.rwTx); err != nil {
+	if err := a.storage.Flush(); err != nil {
 		return err
 	}
-	if err := a.code.Flush(a.rwTx); err != nil {
+	if err := a.code.Flush(); err != nil {
 		return err
 	}
-	if err := a.logAddrs.Flush(a.rwTx); err != nil {
+	if err := a.logAddrs.Flush(); err != nil {
 		return err
 	}
-	if err := a.logTopics.Flush(a.rwTx); err != nil {
+	if err := a.logTopics.Flush(); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.Flush(a.rwTx); err != nil {
+	if err := a.tracesFrom.Flush(); err != nil {
 		return err
 	}
-	if err := a.tracesTo.Flush(a.rwTx); err != nil {
+	if err := a.tracesTo.Flush(); err != nil {
 		return err
 	}
 	return nil

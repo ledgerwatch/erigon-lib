@@ -415,11 +415,11 @@ func (h *History) FinishWrites() {
 	h.w = nil
 }
 
-func (h *History) Flush(tx kv.RwTx) error {
-	if err := h.InvertedIndex.Flush(tx); err != nil {
+func (h *History) Flush() error {
+	if err := h.InvertedIndex.Flush(); err != nil {
 		return err
 	}
-	if err := h.w.flush(tx); err != nil {
+	if err := h.w.flush(h.tx); err != nil {
 		return err
 	}
 	h.w = h.newWriter(h.w.tmpdir)
@@ -450,7 +450,7 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 		historyVals: etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}
 	w.forceAi()
-	w.historyVals.LogLvl(log.LvlDebug)
+	w.historyVals.LogLvl(log.LvlTrace)
 	return w
 }
 
@@ -474,10 +474,10 @@ func (h *historyWriter) flush(tx kv.RwTx) error {
 	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
-	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
-	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
-		return err
-	}
+	//binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
+	//if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
+	//	return err
+	//}
 	return nil
 }
 
@@ -528,6 +528,7 @@ func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 			return err
 		}
 	}
+
 	if err := h.h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
 		return err
 	}
@@ -548,6 +549,10 @@ func (c HistoryCollation) Close() {
 }
 
 func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollation, error) {
+	if err := h.Flush(); err != nil {
+		return HistoryCollation{}, err
+	}
+
 	var historyComp *compress.Compressor
 	var err error
 	closeComp := true

@@ -525,25 +525,25 @@ func (a *Aggregator22) FinishWrites() {
 
 func (a *Aggregator22) Flush() error {
 	defer func(t time.Time) { log.Info("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
-	if err := a.accounts.Flush(a.rwTx); err != nil {
+	if err := a.accounts.Flush(); err != nil {
 		return err
 	}
-	if err := a.storage.Flush(a.rwTx); err != nil {
+	if err := a.storage.Flush(); err != nil {
 		return err
 	}
-	if err := a.code.Flush(a.rwTx); err != nil {
+	if err := a.code.Flush(); err != nil {
 		return err
 	}
-	if err := a.logAddrs.Flush(a.rwTx); err != nil {
+	if err := a.logAddrs.Flush(); err != nil {
 		return err
 	}
-	if err := a.logTopics.Flush(a.rwTx); err != nil {
+	if err := a.logTopics.Flush(); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.Flush(a.rwTx); err != nil {
+	if err := a.tracesFrom.Flush(); err != nil {
 		return err
 	}
-	if err := a.tracesTo.Flush(a.rwTx); err != nil {
+	if err := a.tracesTo.Flush(); err != nil {
 		return err
 	}
 	return nil
@@ -888,9 +888,6 @@ func (a *Aggregator22) FinishTx() error {
 	step := a.maxTxNum.Load() / a.aggregationStep
 	if a.working.Load() {
 		return nil
-	}
-	if err := a.Flush(); err != nil {
-		return err
 	}
 
 	closeAll := true

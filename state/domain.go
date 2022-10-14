@@ -614,6 +614,10 @@ func (c Collation) Close() {
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
 func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx) (Collation, error) {
+	if err := d.Flush(); err != nil {
+		return Collation{}, err
+	}
+
 	hCollation, err := d.History.collate(step, txFrom, txTo, roTx)
 	if err != nil {
 		return Collation{}, err
