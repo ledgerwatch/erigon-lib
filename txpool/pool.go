@@ -610,15 +610,9 @@ func (p *TxPool) Started() bool                      { return p.started.Load() }
 func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 	// First wait for the corresponding state update to arrive
 	ctx := context.Background()
-	coreTx, err := p.coreDB().BeginRo(ctx)
-	if err != nil {
-		return err
-	}
-	defer coreTx.Rollback()
-	if _, err := p.cache().View(ctx, coreTx); err != nil {
+	if _, err := p.cache().View(ctx, tx); err != nil {
 		return fmt.Errorf("waiting for the state cache to be updated: %w", err)
 	}
-	coreTx.Rollback()
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
