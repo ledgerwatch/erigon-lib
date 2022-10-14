@@ -23,11 +23,9 @@ import (
 	"io"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
@@ -148,8 +146,7 @@ func (b *sortableBuffer) Reset() {
 	b.data = b.data[:0]
 }
 func (b *sortableBuffer) Sort() {
-	defer func(t time.Time) { fmt.Printf("buffers.go:150: %s, %s\n", time.Since(t), dbg.Stack()) }(time.Now())
-	if sort.IsSorted(b) { //stable sort is way more expensive. on 256mb data: 1ms vs 8sec
+	if sort.IsSorted(b) {
 		return
 	}
 	sort.Stable(b)
