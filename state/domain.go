@@ -756,7 +756,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
-	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount, false /* values */, log.LvlDebug); err != nil {
+	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount, false); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
 	closeComp = false
@@ -793,9 +793,9 @@ func (d *Domain) BuildMissedIndices() (err error) {
 	return d.openFiles()
 }
 
-func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values bool, lvl log.Lvl) (*recsplit.Index, error) {
+func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values bool) (*recsplit.Index, error) {
 	_, fName := filepath.Split(idxPath)
-	log.Log(lvl, "[snapshots] build idx", "file", fName)
+	log.Debug("[snapshots] build idx", "file", fName)
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -809,7 +809,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values
 		return nil, fmt.Errorf("create recsplit: %w", err)
 	}
 	defer rs.Close()
-	rs.LogLvl(lvl)
+	rs.LogLvl(log.LvlDebug)
 	defer d.EnableMadvNormal().DisableReadAhead()
 
 	word := make([]byte, 0, 256)
