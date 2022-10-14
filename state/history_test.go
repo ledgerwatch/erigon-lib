@@ -133,8 +133,8 @@ func TestHistoryCollationBuild(t *testing.T) {
 		}
 		intArrs = append(intArrs, ints)
 	}
-	require.Equal(t, []string{"key1", "key2", "key3"}, keyWords)
-	require.Equal(t, [][]uint64{{2, 6}, {3, 6, 7}, {7}}, intArrs)
+	require.Equal([]string{"key1", "key2", "key3"}, keyWords)
+	require.Equal([][]uint64{{2, 6}, {3, 6, 7}, {7}}, intArrs)
 	r := recsplit.NewIndexReader(sf.efHistoryIdx)
 	for i := 0; i < len(keyWords); i++ {
 		offset := r.Lookup([]byte(keyWords[i]))
