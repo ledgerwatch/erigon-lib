@@ -151,11 +151,11 @@ func NewRecSplit(args RecSplitArgs) (*RecSplit, error) {
 	if rs.etlBufLimit == 0 {
 		rs.etlBufLimit = etl.BufferOptimalSize
 	}
-	rs.bucketCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
+	rs.bucketCollector = etl.NewCollector(RecSplitLogPrefix+" "+fname, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
 	rs.bucketCollector.LogLvl(log.LvlDebug)
 	rs.enums = args.Enums
 	if args.Enums {
-		rs.offsetCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
+		rs.offsetCollector = etl.NewCollector(RecSplitLogPrefix+" "+fname, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
 		rs.offsetCollector.LogLvl(log.LvlDebug)
 	}
 	rs.currentBucket = make([]uint64, 0, args.BucketSize)
