@@ -85,7 +85,6 @@ func TestCollationBuild(t *testing.T) {
 
 	err = d.Flush(tx)
 	require.NoError(t, err)
-
 	err = tx.Commit()
 	require.NoError(t, err)
 
@@ -743,6 +742,9 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 		}
 	}()
 	d.SetTx(tx)
+	d.StartWrites("")
+	defer d.FinishWrites()
+
 	// keys are encodings of numbers 1..31
 	// each key changes value on every txNum which is multiple of the key
 	data := make(map[string][]uint64)
@@ -774,6 +776,8 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 			step--
 			collateAndMergeOnce(t, d, step)
 
+			err = d.Flush(tx)
+			require.NoError(t, err)
 			err = tx.Commit()
 			require.NoError(t, err)
 			tx, err = db.BeginRw(context.Background())
@@ -781,6 +785,8 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 			d.SetTx(tx)
 		}
 	}
+	err = d.Flush(tx)
+	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx = nil
