@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
@@ -523,6 +524,7 @@ func (a *Aggregator22) FinishWrites() {
 }
 
 func (a *Aggregator22) Flush() error {
+	defer func(t time.Time) { log.Info("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
 	if err := a.accounts.Flush(a.rwTx); err != nil {
 		return err
 	}
