@@ -368,6 +368,9 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	t := time.Now()
 
+	cache := p.cache()
+	cache.OnNewBlock(stateChanges)
+
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
@@ -376,10 +379,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	cache := p._stateCache
-	// Doing this after the acquisition of the lock makes sure that the state of the pool is synchronised with the cache for the external observers
-	// for example, for Best() function
-	p._stateCache.OnNewBlock(stateChanges)
 
 	p.lastSeenBlock.Store(stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight)
 	if !p.started.Load() {
@@ -388,7 +387,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	viewID := coreTx.ViewID()
 	cacheView, err := cache.View(ctx, coreTx)
 	if err != nil {
 		return err
@@ -469,7 +467,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendngBaseFee", pendingBaseFee, "viewID", viewID, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendngBaseFee", pendingBaseFee, "in", time.Since(t))
 	return nil
 }
 
