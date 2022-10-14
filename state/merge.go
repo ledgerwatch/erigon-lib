@@ -802,10 +802,10 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 }
 
 func (d *Domain) integrateMergedFiles(valuesOuts, indexOuts, historyOuts []*filesItem, valuesIn, indexIn, historyIn *filesItem) {
+	d.History.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
 	if valuesIn == nil {
 		return
 	}
-	d.History.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
 	d.files.ReplaceOrInsert(valuesIn)
 	for _, out := range valuesOuts {
 		if out == nil {
@@ -833,10 +833,10 @@ func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) 
 }
 
 func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, indexIn, historyIn *filesItem) {
+	h.InvertedIndex.integrateMergedFiles(indexOuts, indexIn)
 	if historyIn == nil {
 		return
 	}
-	h.InvertedIndex.integrateMergedFiles(indexOuts, indexIn)
 	h.files.ReplaceOrInsert(historyIn)
 	for _, out := range historyOuts {
 		if out == nil {
