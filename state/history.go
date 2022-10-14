@@ -519,9 +519,12 @@ func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 		if err := h.h.tx.Put(h.h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
 			return err
 		}
-		if err := h.h.tx.Put(h.h.historyValsTable, historyKey[lk:], original); err != nil {
+		if err := h.historyVals.Collect(historyKey[lk:], original); err != nil {
 			return err
 		}
+		//if err := h.h.tx.Put(h.h.historyValsTable, historyKey[lk:], original); err != nil {
+		//	return err
+		//}
 	}
 	if err := h.h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
 		return err
