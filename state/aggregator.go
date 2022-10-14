@@ -1275,6 +1275,7 @@ func (a *Aggregator) FinishWrites() {
 	a.tracesTo.FinishWrites()
 }
 
+// Flush - must be called before Collate, if you did some writes
 func (a *Aggregator) Flush() error {
 	defer func(t time.Time) { log.Info("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
 	if err := a.accounts.Flush(); err != nil {
