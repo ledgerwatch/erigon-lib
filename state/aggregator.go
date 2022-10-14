@@ -25,6 +25,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -60,6 +61,7 @@ type Aggregator struct {
 	commitFn       func(txNum uint64) error
 	rwTx           kv.RwTx
 	stats          FilesStats
+	tmpdir         string
 }
 
 func NewAggregator(
@@ -1245,6 +1247,55 @@ func (ac *AggregatorContext) TraceFromIterator(addr []byte, startTxNum, endTxNum
 
 func (ac *AggregatorContext) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
+}
+
+// StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
+func (a *Aggregator) StartWrites() *Aggregator {
+	a.accounts.StartWrites(a.tmpdir)
+	a.storage.StartWrites(a.tmpdir)
+	a.code.StartWrites(a.tmpdir)
+	a.commitment.StartWrites(a.tmpdir)
+	a.logAddrs.StartWrites(a.tmpdir)
+	a.logTopics.StartWrites(a.tmpdir)
+	a.tracesFrom.StartWrites(a.tmpdir)
+	a.tracesTo.StartWrites(a.tmpdir)
+	return a
+}
+func (a *Aggregator) FinishWrites() {
+	a.accounts.FinishWrites()
+	a.storage.FinishWrites()
+	a.code.FinishWrites()
+	a.commitment.FinishWrites()
+	a.logAddrs.FinishWrites()
+	a.logTopics.FinishWrites()
+	a.tracesFrom.FinishWrites()
+	a.tracesTo.FinishWrites()
+}
+
+func (a *Aggregator) Flush() error {
+	defer func(t time.Time) { log.Info("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
+	if err := a.accounts.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.storage.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.code.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.logAddrs.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.logTopics.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.tracesFrom.Flush(a.rwTx); err != nil {
+		return err
+	}
+	if err := a.tracesTo.Flush(a.rwTx); err != nil {
+		return err
+	}
+	return nil
 }
 
 type FilesStats struct {
