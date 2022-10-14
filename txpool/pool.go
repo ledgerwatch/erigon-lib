@@ -370,7 +370,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	cache := p.cache()
 	cache.OnNewBlock(stateChanges)
-
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
