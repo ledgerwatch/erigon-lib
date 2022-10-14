@@ -608,13 +608,11 @@ func (p *TxPool) Started() bool                      { return p.started.Load() }
 
 // Best - returns top `n` elements of pending queue
 // id doesn't perform full copy of txs, hovewer underlying elements are immutable
-func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
-	// First wait for the corresponding state update to arrive
-	ctx := context.Background()
-	if _, err := p.cache().View(ctx, tx); err != nil {
-		return fmt.Errorf("waiting for the state cache to be updated: %w", err)
+func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf uint64) (bool, error) {
+	// First wait for the corresponding block to arrive
+	if p.lastSeenBlock.Load() < onTopOf {
+		return false, nil // Too early
 	}
-	log.Info("Best is starting", "viewID", tx.ViewID())
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -630,7 +628,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 		}
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(rlpTx) == 0 {
 			p.pending.Remove(mt)
@@ -642,7 +640,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 		j++
 	}
 	txs.Resize(uint(j))
-	return nil
+	return true, nil
 }
 
 func (p *TxPool) CountContent() (int, int, int) {
