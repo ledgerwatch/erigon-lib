@@ -275,15 +275,15 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 }
 
 func (ii *InvertedIndex) add(key, indexKey []byte) error {
-	return ii.w.add(key, indexKey)
-
-	//if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], key); err != nil {
-	//	return err
-	//}
-	//if err := ii.tx.Put(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
-	//	return err
-	//}
-	//return nil
+	//return ii.w.add(key, indexKey)
+	//
+	if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], key); err != nil {
+		return err
+	}
+	if err := ii.tx.Put(ii.indexTable, indexKey, ii.txNumBytes[:]); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ii *InvertedIndex) Add(key []byte) error {
@@ -331,8 +331,8 @@ func (ii *invertedIndexWriter) close() {
 
 func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 	w := &invertedIndexWriter{ii: ii,
-		index:     etl.NewCollector("[hist writer] "+ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
-		indexKeys: etl.NewCollector("[hist writer] "+ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		index:     etl.NewCollector("hist writer "+ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		indexKeys: etl.NewCollector("hist writer "+ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 	}
 	w.index.LogLvl(log.LvlInfo)
 	w.indexKeys.LogLvl(log.LvlInfo)

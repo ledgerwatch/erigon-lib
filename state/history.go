@@ -498,7 +498,7 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 	w := &historyWriter{h: h,
 		autoIncrement:    valNum,
 		autoIncrementBuf: make([]byte, 8),
-		historyVals:      etl.NewCollector("[hist writer] "+h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		historyVals:      etl.NewCollector("hist writer "+h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
 	}
 	w.historyVals.LogLvl(log.LvlInfo)
 	return w
@@ -797,9 +797,6 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 }
 
 func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
-	if !common.DoMemStat() {
-		return nil
-	}
 	historyKeysCursor, err := tx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
