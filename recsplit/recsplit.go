@@ -222,10 +222,10 @@ func (rs *RecSplit) ResetNextSalt() {
 	if rs.bucketCollector != nil {
 		rs.bucketCollector.Close()
 	}
-	rs.bucketCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
+	rs.bucketCollector = etl.NewCollector(RecSplitLogPrefix+" "+rs.indexFileName, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
 	if rs.offsetCollector != nil {
 		rs.offsetCollector.Close()
-		rs.offsetCollector = etl.NewCollector(RecSplitLogPrefix, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
+		rs.offsetCollector = etl.NewCollector(RecSplitLogPrefix+" "+rs.indexFileName, rs.tmpDir, etl.NewSortableBuffer(rs.etlBufLimit))
 	}
 	rs.currentBucket = rs.currentBucket[:0]
 	rs.currentBucketOffs = rs.currentBucketOffs[:0]
