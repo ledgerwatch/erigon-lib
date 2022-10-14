@@ -354,62 +354,62 @@ func (a *Aggregator22) buildFiles(step uint64, collation Agg22Collation) (Agg22S
 			sf.Close()
 		}
 	}()
-	//var wg sync.WaitGroup
-	//wg.Add(7)
+	var wg sync.WaitGroup
+	wg.Add(7)
 	errCh := make(chan error, 7)
-	//go func() {
-	//	defer wg.Done()
-	var err error
-	if sf.accounts, err = a.accounts.buildFiles(step, collation.accounts); err != nil {
-		errCh <- err
-	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
-	if sf.storage, err = a.storage.buildFiles(step, collation.storage); err != nil {
-		errCh <- err
-	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
-	if sf.code, err = a.code.buildFiles(step, collation.code); err != nil {
-		errCh <- err
-	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
-	if sf.logAddrs, err = a.logAddrs.buildFiles(step, collation.logAddrs); err != nil {
-		errCh <- err
-	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
-	if sf.logTopics, err = a.logTopics.buildFiles(step, collation.logTopics); err != nil {
-		errCh <- err
-	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
-	if sf.tracesFrom, err = a.tracesFrom.buildFiles(step, collation.tracesFrom); err != nil {
-		errCh <- err
-	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
-	if sf.tracesTo, err = a.tracesTo.buildFiles(step, collation.tracesTo); err != nil {
-		errCh <- err
-	}
-	//}()
-	//go func() {
-	//	wg.Wait()
-	close(errCh)
-	//}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if sf.accounts, err = a.accounts.buildFiles(step, collation.accounts); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if sf.storage, err = a.storage.buildFiles(step, collation.storage); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if sf.code, err = a.code.buildFiles(step, collation.code); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if sf.logAddrs, err = a.logAddrs.buildFiles(step, collation.logAddrs); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if sf.logTopics, err = a.logTopics.buildFiles(step, collation.logTopics); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if sf.tracesFrom, err = a.tracesFrom.buildFiles(step, collation.tracesFrom); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if sf.tracesTo, err = a.tracesTo.buildFiles(step, collation.tracesTo); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
 	var lastError error
 	for err := range errCh {
 		if err != nil {
