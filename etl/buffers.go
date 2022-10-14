@@ -146,7 +146,7 @@ func (b *sortableBuffer) Reset() {
 	b.data = b.data[:0]
 }
 func (b *sortableBuffer) Sort() {
-	if sort.IsSorted(b) {
+	if sort.IsSorted(b) { //stable sort is way more expensive. on 256mb data: 1ms vs 8sec
 		return
 	}
 	sort.Stable(b)
