@@ -32,6 +32,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 
@@ -344,12 +345,13 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, dir string, count i
 	_, fName := filepath.Split(historyIdxPath)
 	log.Debug("[snapshots] build idx", "file", fName)
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
-		KeyCount:   count,
-		Enums:      false,
-		BucketSize: 2000,
-		LeafSize:   8,
-		TmpDir:     dir,
-		IndexFile:  historyIdxPath,
+		KeyCount:    count,
+		Enums:       false,
+		BucketSize:  2000,
+		LeafSize:    8,
+		TmpDir:      dir,
+		IndexFile:   historyIdxPath,
+		EtlBufLimit: etl.BufferOptimalSize / 2,
 	})
 	if err != nil {
 		return fmt.Errorf("create recsplit: %w", err)
