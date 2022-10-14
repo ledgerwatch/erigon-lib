@@ -445,7 +445,9 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 	w := &historyWriter{h: h,
 		tmpdir:           tmpdir,
 		autoIncrementBuf: make([]byte, 8),
-		historyVals:      etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/8)),
+		// 3 history + 4 indices = 10 etl collectors, 10*256Mb/16 = 256mb - for all indices buffers
+		// etl collector doesn't fsync: means if have enough ram, all files produced by all collectors will be in ram
+		historyVals: etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}
 	w.forceAi()
 	w.historyVals.LogLvl(log.LvlDebug)
