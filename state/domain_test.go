@@ -580,6 +580,8 @@ func TestDelete(t *testing.T) {
 		}
 	}()
 	d.SetTx(tx)
+	d.StartWrites("")
+	defer d.FinishWrites()
 
 	// Put on even txNum, delete on odd txNum
 	for txNum := uint64(0); txNum < uint64(1000); txNum++ {
@@ -591,6 +593,8 @@ func TestDelete(t *testing.T) {
 		}
 		require.NoError(t, err)
 	}
+	err = d.Flush(tx)
+	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx = nil
@@ -626,6 +630,9 @@ func filledDomainFixedSize(t *testing.T, keysCount, txCount uint64) (string, kv.
 		}
 	}()
 	d.SetTx(tx)
+	d.StartWrites("")
+	defer d.FinishWrites()
+
 	// keys are encodings of numbers 1..31
 	// each key changes value on every txNum which is multiple of the key
 	dat := make(map[string][]bool) // K:V is key -> list of bools. If list[i] == true, i'th txNum should persists
@@ -649,6 +656,8 @@ func filledDomainFixedSize(t *testing.T, keysCount, txCount uint64) (string, kv.
 			dat[fmt.Sprintf("%d", keyNum)][txNum] = true
 		}
 		if txNum%d.aggregationStep == 0 {
+			err = d.Flush(tx)
+			require.NoError(t, err)
 			err = tx.Commit()
 			require.NoError(t, err)
 			tx, err = db.BeginRw(context.Background())

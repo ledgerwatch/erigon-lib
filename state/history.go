@@ -505,10 +505,6 @@ func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 				return err
 			}
 		}
-		if err := h.h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
-			return err
-		}
-		return nil
 	*/
 
 	lk := len(key1) + len(key2)
