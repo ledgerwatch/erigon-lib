@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"math/bits"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -402,6 +403,7 @@ func (a *Aggregator) EndTxNumMinimax() uint64 {
 	return min
 }
 
+// TODO make it a part of EndTxNumMinimax()
 func (a *Aggregator) SeekCommitment() (uint64, uint64, error) {
 	return a.commitment.SeekCommitment(a.aggregationStep)
 }
@@ -555,7 +557,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		}
 	}()
 	var wg sync.WaitGroup
-	wg.Add(8)
+	wg.Add(7)
 	errCh := make(chan error, 8)
 	go func() {
 		defer wg.Done()
@@ -580,15 +582,6 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		var err error
 		if r.code.any() {
 			if mf.code, mf.codeIdx, mf.codeHist, err = a.code.mergeFiles(files.code, files.codeIdx, files.codeHist, r.code, maxSpan); err != nil {
-				errCh <- err
-			}
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		var err error
-		if r.commitment.any() {
-			if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(files.commitment, files.commitmentIdx, files.commitmentHist, r.commitment, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -631,6 +624,14 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 	}()
 	go func() {
 		wg.Wait()
+
+		var err error
+		if r.commitment.any() {
+			//if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(files.commitment, files.commitmentIdx, files.commitmentHist, r.commitment, maxSpan); err != nil {
+			if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(files, mf, r.commitment, maxSpan); err != nil {
+				errCh <- err
+			}
+		}
 		close(errCh)
 	}()
 	var lastError error
@@ -1082,4 +1083,70 @@ func DecodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []
 		}
 	}
 	return
+}
+
+func EncodeAccountBytes(nonce uint64, balance *uint256.Int, hash []byte, incarnation uint64) []byte {
+	l := int(1)
+	if nonce > 0 {
+		l += (bits.Len64(nonce) + 7) / 8
+	}
+	l++
+	if !balance.IsZero() {
+		l += balance.ByteLen()
+	}
+	l++
+	if len(hash) == length.Hash {
+		l += 32
+	}
+	l++
+	if incarnation > 0 {
+		l += (bits.Len64(incarnation) + 7) / 8
+	}
+	value := make([]byte, l)
+	pos := 0
+
+	if nonce == 0 {
+		value[pos] = 0
+		pos++
+	} else {
+		nonceBytes := (bits.Len64(nonce) + 7) / 8
+		value[pos] = byte(nonceBytes)
+		var nonce = nonce
+		for i := nonceBytes; i > 0; i-- {
+			value[pos+i] = byte(nonce)
+			nonce >>= 8
+		}
+		pos += nonceBytes + 1
+	}
+	if balance.IsZero() {
+		value[pos] = 0
+		pos++
+	} else {
+		balanceBytes := balance.ByteLen()
+		value[pos] = byte(balanceBytes)
+		pos++
+		balance.WriteToSlice(value[pos : pos+balanceBytes])
+		pos += balanceBytes
+	}
+	if len(hash) == 0 {
+		value[pos] = 0
+		pos++
+	} else {
+		value[pos] = 32
+		pos++
+		copy(value[pos:pos+32], hash[:])
+		pos += 32
+	}
+	if incarnation == 0 {
+		value[pos] = 0
+	} else {
+		incBytes := (bits.Len64(incarnation) + 7) / 8
+		value[pos] = byte(incBytes)
+		var inc = incarnation
+		for i := incBytes; i > 0; i-- {
+			value[pos+i] = byte(inc)
+			inc >>= 8
+		}
+	}
+	return value
 }

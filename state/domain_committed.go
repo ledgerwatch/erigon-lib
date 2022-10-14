@@ -2,16 +2,22 @@ package state
 
 import (
 	"bytes"
+	"container/heap"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"path/filepath"
 
 	"github.com/google/btree"
+	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
+	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/recsplit"
 )
 
 // Defines how to evaluate commitments
@@ -32,6 +38,7 @@ func mergeBranchUpdates(prev, current []byte) (merged []byte, err error) {
 type DomainCommitted struct {
 	*Domain
 	mode         CommitmentMode
+	trace        bool
 	commTree     *btree.BTreeG[*CommitmentItem]
 	keccak       hash.Hash
 	patriciaTrie *commitment.HexPatriciaHashed
@@ -291,277 +298,323 @@ func encodeU64(i uint64, to []byte) []byte {
 }
 
 // Optimised key referencing a state file record (file number and offset within the file)
-func shortenedKey(apk []byte) (fileI int, offset uint64) {
-	return int(apk[0]), decodeU64(apk[1:])
+func shortenedKey(apk []byte) (step uint16, offset uint64) {
+	step = binary.BigEndian.Uint16(apk[:2])
+	return step, decodeU64(apk[1:])
 }
 
 // commitmentValTransform parses the value of the commitment record to extract references
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
 // the updated references
-//func (d *DomainCommitted) commitmentValTransform(val, transValBuf commitment.BranchData) ([]byte, error) {
-//	if len(val) == 0 {
-//		return transValBuf, nil
-//	}
-//
-//	accountPlainKeys, storagePlainKeys, err := val.ExtractPlainKeys()
-//	if err != nil {
-//		return nil, err
-//	}
-//	transAccountPks := make([][]byte, 0, len(accountPlainKeys))
-//	var apkBuf, spkBuf []byte
-//	for _, accountPlainKey := range accountPlainKeys {
-//		if len(accountPlainKey) == length.Addr {
-//			// Non-optimised key originating from a database record
-//			apkBuf = append(apkBuf[:0], accountPlainKey...)
-//		} else {
-//			fileI, offset := shortenedKey(accountPlainKey)
-//			g := cvt.pre[Account][fileI].getterMerge
-//			g.Reset(offset)
-//			apkBuf, _ = g.Next(apkBuf[:0])
-//			//fmt.Printf("replacing account [%x] from [%x]\n", apkBuf, accountPlainKey)
-//		}
-//		// Look up apkBuf in the post account files
-//		for j := len(cvt.post[Account]); j > 0; j-- {
-//			item := cvt.post[Account][j-1]
-//			if item.index.Empty() {
-//				continue
-//			}
-//			offset := item.readerMerge.Lookup(apkBuf)
-//			g := item.getterMerge
-//			g.Reset(offset)
-//			if g.HasNext() {
-//				if keyMatch, _ := g.Match(apkBuf); keyMatch {
-//					accountPlainKey = encodeU64(offset, []byte{byte(j - 1)})
-//					//fmt.Printf("replaced account [%x]=>[%x] for file [%d-%d]\n", apkBuf, accountPlainKey, item.startBlock, item.endBlock)
-//					break
-//					//} else if j == 0 {
-//					//	fmt.Printf("could not find replacement key [%x], file=%s.%d-%d]\n\n", apkBuf, Account.String(), item.startBlock, item.endBlock)
-//				}
-//			}
-//		}
-//		transAccountPks = append(transAccountPks, accountPlainKey)
-//	}
-//
-//	transStoragePks := make([][]byte, 0, len(storagePlainKeys))
-//	for _, storagePlainKey := range storagePlainKeys {
-//		if len(storagePlainKey) == length.Addr+length.Hash {
-//			// Non-optimised key originating from a database record
-//			spkBuf = append(spkBuf[:0], storagePlainKey...)
-//		} else {
-//			// Optimised key referencing a state file record (file number and offset within the file)
-//			fileI := int(storagePlainKey[0])
-//			offset := decodeU64(storagePlainKey[1:])
-//			g := cvt.pre[Storage][fileI].getterMerge
-//			g.Reset(offset)
-//			//fmt.Printf("offsetToKey storage [%x] offset=%d, file=%d-%d\n", storagePlainKey, offset, cvt.pre[Storage][fileI].startBlock, cvt.pre[Storage][fileI].endBlock)
-//			spkBuf, _ = g.Next(spkBuf[:0])
-//		}
-//		// Lookup spkBuf in the post storage files
-//		for j := len(cvt.post[Storage]); j > 0; j-- {
-//			item := cvt.post[Storage][j-1]
-//			if item.index.Empty() {
-//				continue
-//			}
-//			offset := item.readerMerge.Lookup(spkBuf)
-//			g := item.getterMerge
-//			g.Reset(offset)
-//			if g.HasNext() {
-//				if keyMatch, _ := g.Match(spkBuf); keyMatch {
-//					storagePlainKey = encodeU64(offset, []byte{byte(j - 1)})
-//					//fmt.Printf("replacing storage [%x] => [fileI=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, j-1, offset, Storage.String(), item.startBlock, item.endBlock)
-//					break
-//				} else if j == 0 {
-//					fmt.Printf("could not find replacement key [%x], file=%s.%d-%d]\n\n", spkBuf, Storage.String(), item.startBlock, item.endBlock)
-//				}
-//			}
-//		}
-//		transStoragePks = append(transStoragePks, storagePlainKey)
-//	}
-//	if transValBuf, err = val.ReplacePlainKeys(transAccountPks, transStoragePks, transValBuf); err != nil {
-//		return nil, err
-//	}
-//	return transValBuf, nil
-//}
-//
-//func (d *DomainCommitted) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, r DomainRanges, maxSpan uint64) (valuesIn, indexIn, historyIn *filesItem, err error) {
-//	if !r.any() {
-//		return
-//	}
-//
-//	var comp *compress.Compressor
-//	var decomp *compress.Decompressor
-//	var closeItem bool = true
-//	defer func() {
-//		if closeItem {
-//			if comp != nil {
-//				comp.Close()
-//			}
-//			if decomp != nil {
-//				decomp.Close()
-//			}
-//			if indexIn != nil {
-//				if indexIn.decompressor != nil {
-//					indexIn.decompressor.Close()
-//				}
-//				if indexIn.index != nil {
-//					indexIn.index.Close()
-//				}
-//			}
-//			if historyIn != nil {
-//				if historyIn.decompressor != nil {
-//					historyIn.decompressor.Close()
-//				}
-//				if historyIn.index != nil {
-//					historyIn.index.Close()
-//				}
-//			}
-//			if valuesIn != nil {
-//				if valuesIn.decompressor != nil {
-//					valuesIn.decompressor.Close()
-//				}
-//				if valuesIn.index != nil {
-//					valuesIn.index.Close()
-//				}
-//			}
-//		}
-//	}()
-//	if indexIn, historyIn, err = d.History.mergeFiles(indexFiles, historyFiles,
-//		HistoryRanges{
-//			historyStartTxNum: r.historyStartTxNum,
-//			historyEndTxNum:   r.historyEndTxNum,
-//			history:           r.history,
-//			indexStartTxNum:   r.indexStartTxNum,
-//			indexEndTxNum:     r.indexEndTxNum,
-//			index:             r.index}, maxSpan); err != nil {
-//		return nil, nil, nil, err
-//	}
-//	if r.values {
-//		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
-//		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, d.workers, log.LvlDebug); err != nil {
-//			return nil, nil, nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
-//		}
-//		var cp CursorHeap
-//		heap.Init(&cp)
-//		for _, item := range valuesFiles {
-//			g := item.decompressor.MakeGetter()
-//			g.Reset(0)
-//			if g.HasNext() {
-//				key, _ := g.NextUncompressed()
-//				var val []byte
-//				if d.compressVals {
-//					val, _ = g.Next(nil)
-//				} else {
-//					val, _ = g.NextUncompressed()
-//				}
-//				heap.Push(&cp, &CursorItem{
-//					t:        FILE_CURSOR,
-//					dg:       g,
-//					key:      key,
-//					val:      val,
-//					endTxNum: item.endTxNum,
-//					reverse:  true,
-//				})
-//			}
-//		}
-//		keyCount := 0
-//		// In the loop below, the pair `keyBuf=>valBuf` is always 1 item behind `lastKey=>lastVal`.
-//		// `lastKey` and `lastVal` are taken from the top of the multi-way merge (assisted by the CursorHeap cp), but not processed right away
-//		// instead, the pair from the previous iteration is processed first - `keyBuf=>valBuf`. After that, `keyBuf` and `valBuf` are assigned
-//		// to `lastKey` and `lastVal` correspondingly, and the next step of multi-way merge happens. Therefore, after the multi-way merge loop
-//		// (when CursorHeap cp is empty), there is a need to process the last pair `keyBuf=>valBuf`, because it was one step behind
-//		var keyBuf, valBuf []byte
-//		for cp.Len() > 0 {
-//			lastKey := common.Copy(cp[0].key)
-//			lastVal := common.Copy(cp[0].val)
-//			// Advance all the items that have this key (including the top)
-//			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
-//				ci1 := cp[0]
-//				if ci1.dg.HasNext() {
-//					ci1.key, _ = ci1.dg.NextUncompressed()
-//					if d.compressVals {
-//						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
-//					} else {
-//						ci1.val, _ = ci1.dg.NextUncompressed()
-//					}
-//					heap.Fix(&cp, 0)
-//				} else {
-//					heap.Pop(&cp)
-//				}
-//			}
-//			var skip bool
-//			if d.prefixLen > 0 {
-//				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
-//			} else {
-//				// For the rest of types, empty value means deletion
-//				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0
-//			}
-//			if !skip {
-//				if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
-//					if err = comp.AddUncompressedWord(keyBuf); err != nil {
-//						return nil, nil, nil, err
-//					}
-//					keyCount++ // Only counting keys, not values
-//
-//					if d.keyReplaceFn != nil {
-//						valBuf, err = d.commitmentValTransform(valBuf, nil)
-//						if err != nil {
-//							return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
-//						}
-//					}
-//					if d.compressVals {
-//						if err = comp.AddWord(valBuf); err != nil {
-//							return nil, nil, nil, err
-//						}
-//					} else {
-//						if err = comp.AddUncompressedWord(valBuf); err != nil {
-//							return nil, nil, nil, err
-//						}
-//					}
-//				}
-//				keyBuf = append(keyBuf[:0], lastKey...)
-//				valBuf = append(valBuf[:0], lastVal...)
-//			}
-//		}
-//		if keyBuf != nil {
-//			if err = comp.AddUncompressedWord(keyBuf); err != nil {
-//				return nil, nil, nil, err
-//			}
-//			keyCount++ // Only counting keys, not values
-//			if d.keyReplaceFn != nil {
-//				valBuf, err = d.keyReplaceFn(valBuf, nil)
-//				if err != nil {
-//					return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
-//				}
-//			}
-//			if d.compressVals {
-//				if err = comp.AddWord(valBuf); err != nil {
-//					return nil, nil, nil, err
-//				}
-//			} else {
-//				if err = comp.AddUncompressedWord(valBuf); err != nil {
-//					return nil, nil, nil, err
-//				}
-//			}
-//		}
-//		if err = comp.Compress(); err != nil {
-//			return nil, nil, nil, err
-//		}
-//		comp.Close()
-//		comp = nil
-//		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
-//		valuesIn = &filesItem{startTxNum: r.valuesStartTxNum, endTxNum: r.valuesEndTxNum}
-//		if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-//			return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
-//		}
-//		if valuesIn.index, err = buildIndex(valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
-//			return nil, nil, nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
-//		}
-//	}
-//	closeItem = false
-//	d.stats.MergesCount++
-//	d.mergesCount++
-//	return
-//}
+func (d *DomainCommitted) commitmentValTransform(files SelectedStaticFiles, merged MergedFiles, val commitment.BranchData) ([]byte, error) {
+	if len(val) == 0 {
+		return nil, nil
+	}
+
+	accountPlainKeys, storagePlainKeys, err := val.ExtractPlainKeys()
+	if err != nil {
+		return nil, err
+	}
+	transAccountPks := make([][]byte, 0, len(accountPlainKeys))
+	var apkBuf, spkBuf []byte
+	for _, accountPlainKey := range accountPlainKeys {
+		if len(accountPlainKey) == length.Addr {
+			// Non-optimised key originating from a database record
+			apkBuf = append(apkBuf[:0], accountPlainKey...)
+		} else {
+			fileStep, offset := shortenedKey(accountPlainKey)
+
+			toFind := append(files.accounts, files.accountsHist...)
+
+			expected := uint64(fileStep) * d.aggregationStep
+			for i := 0; i < len(toFind); i++ {
+				if toFind[i].startTxNum > expected || toFind[i].endTxNum < expected {
+					continue
+				}
+				//if uint16(toFind[i].endTxNum/d.aggregationStep) != fileStep {
+				//	continue
+				//}
+				item := toFind[i]
+
+				g := item.decompressor.MakeGetter()
+				if uint64(g.Size()) < offset {
+					continue
+				}
+				g.Reset(offset)
+				fmt.Printf("offsetToKey account [%x] order=%d offset=%d, file=accounts.%d-%d ", accountPlainKey, i, offset, item.startTxNum, item.endTxNum)
+				spkBuf, _ = g.Next(spkBuf[:0])
+				fmt.Printf("restored key %x\n", spkBuf)
+			}
+		}
+		// Look up apkBuf in the post account files
+		for _, item := range []*filesItem{merged.accounts, merged.accountsHist} {
+			g := item.decompressor.MakeGetter()
+			index := recsplit.NewIndexReader(item.index)
+			offset := index.Lookup(spkBuf)
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(spkBuf); keyMatch {
+					aux := make([]byte, 2)
+					step := uint16(item.endTxNum / d.aggregationStep)
+					binary.BigEndian.PutUint16(aux, step)
+
+					accountPlainKey = encodeU64(offset, aux)
+					fmt.Printf("replacing account [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, accountPlainKey, step, offset, "accounts", item.startTxNum, item.endTxNum)
+					break
+				}
+			}
+		}
+		transAccountPks = append(transAccountPks, accountPlainKey)
+	}
+
+	transStoragePks := make([][]byte, 0, len(storagePlainKeys))
+	for _, storagePlainKey := range storagePlainKeys {
+		if len(storagePlainKey) == length.Addr+length.Hash {
+			// Non-optimised key originating from a database record
+			spkBuf = append(spkBuf[:0], storagePlainKey...)
+			fmt.Printf("full storage [%x]\n", storagePlainKey)
+		} else {
+			// Optimised key referencing a state file record (file number and offset within the file)
+			fileStep := binary.BigEndian.Uint16(storagePlainKey[:2])
+			offset := decodeU64(storagePlainKey[2:])
+
+			toFind := append(files.storage, files.storageHist...)
+			expected := uint64(fileStep) * d.aggregationStep
+			for i := 0; i < len(toFind); i++ {
+				if toFind[i].startTxNum > expected || toFind[i].endTxNum < expected {
+					continue
+				}
+				item := toFind[i]
+
+				g := item.decompressor.MakeGetter()
+				if uint64(g.Size()) <= offset {
+					continue
+				}
+				g.Reset(offset)
+				if g.HasNext() {
+					fmt.Printf("offsetToKey storage [%x] order=%d offset=%d, file=storage.%d-%d ", storagePlainKey, i, offset, item.startTxNum, item.endTxNum)
+					spkBuf, _ = g.Next(spkBuf[:0])
+					fmt.Printf("restored key %x\n", spkBuf)
+					break
+				}
+			}
+		}
+
+		// find spk in already merged file
+		for _, item := range []*filesItem{merged.storage, merged.storageHist} {
+			g := item.decompressor.MakeGetter()
+			index := recsplit.NewIndexReader(item.index)
+			offset := index.Lookup(spkBuf)
+			g.Reset(offset)
+			if g.HasNext() {
+				if keyMatch, _ := g.Match(spkBuf); keyMatch {
+					aux := make([]byte, 2)
+					step := uint16(item.endTxNum / d.aggregationStep)
+					binary.BigEndian.PutUint16(aux, step)
+
+					storagePlainKey = encodeU64(offset, aux)
+					fmt.Printf("replacing storage [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, storagePlainKey, step, offset, "storage", item.startTxNum, item.endTxNum)
+					break
+				}
+			}
+		}
+		transStoragePks = append(transStoragePks, storagePlainKey)
+	}
+	if len(transAccountPks) == 0 && len(transStoragePks) == 0 {
+		return val, nil
+	}
+	transValBuf, err := val.ReplacePlainKeys(transAccountPks, transStoragePks, nil)
+	if err != nil {
+		return nil, err
+	}
+	return transValBuf, nil
+}
+
+func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles MergedFiles, r DomainRanges, maxSpan uint64) (valuesIn, indexIn, historyIn *filesItem, err error) {
+	if !r.any() {
+		return
+	}
+
+	valuesFiles := oldFiles.commitment
+	indexFiles := oldFiles.commitmentIdx
+	historyFiles := oldFiles.commitmentHist
+
+	var comp *compress.Compressor
+	var closeItem bool = true
+	defer func() {
+		if closeItem {
+			if comp != nil {
+				comp.Close()
+			}
+			if indexIn != nil {
+				if indexIn.decompressor != nil {
+					indexIn.decompressor.Close()
+				}
+				if indexIn.index != nil {
+					indexIn.index.Close()
+				}
+			}
+			if historyIn != nil {
+				if historyIn.decompressor != nil {
+					historyIn.decompressor.Close()
+				}
+				if historyIn.index != nil {
+					historyIn.index.Close()
+				}
+			}
+			if valuesIn != nil {
+				if valuesIn.decompressor != nil {
+					valuesIn.decompressor.Close()
+				}
+				if valuesIn.index != nil {
+					valuesIn.index.Close()
+				}
+			}
+		}
+	}()
+	if indexIn, historyIn, err = d.History.mergeFiles(indexFiles, historyFiles,
+		HistoryRanges{
+			historyStartTxNum: r.historyStartTxNum,
+			historyEndTxNum:   r.historyEndTxNum,
+			history:           r.history,
+			indexStartTxNum:   r.indexStartTxNum,
+			indexEndTxNum:     r.indexEndTxNum,
+			index:             r.index}, maxSpan); err != nil {
+		return nil, nil, nil, err
+	}
+	if r.values {
+		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
+		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, d.workers, log.LvlDebug); err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
+		}
+		var cp CursorHeap
+		heap.Init(&cp)
+		for _, item := range valuesFiles {
+			g := item.decompressor.MakeGetter()
+			g.Reset(0)
+			if g.HasNext() {
+				key, _ := g.NextUncompressed()
+				var val []byte
+				if d.compressVals {
+					val, _ = g.Next(nil)
+				} else {
+					val, _ = g.NextUncompressed()
+				}
+				if d.trace {
+					fmt.Printf("merge: read values key '0x%x'\n", key)
+				}
+				heap.Push(&cp, &CursorItem{
+					t:        FILE_CURSOR,
+					dg:       g,
+					key:      key,
+					val:      val,
+					endTxNum: item.endTxNum,
+					reverse:  true,
+				})
+			}
+		}
+		keyCount := 0
+		// In the loop below, the pair `keyBuf=>valBuf` is always 1 item behind `lastKey=>lastVal`.
+		// `lastKey` and `lastVal` are taken from the top of the multi-way merge (assisted by the CursorHeap cp), but not processed right away
+		// instead, the pair from the previous iteration is processed first - `keyBuf=>valBuf`. After that, `keyBuf` and `valBuf` are assigned
+		// to `lastKey` and `lastVal` correspondingly, and the next step of multi-way merge happens. Therefore, after the multi-way merge loop
+		// (when CursorHeap cp is empty), there is a need to process the last pair `keyBuf=>valBuf`, because it was one step behind
+		var keyBuf, valBuf []byte
+		for cp.Len() > 0 {
+			lastKey := common.Copy(cp[0].key)
+			lastVal := common.Copy(cp[0].val)
+			// Advance all the items that have this key (including the top)
+			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
+				ci1 := cp[0]
+				if ci1.dg.HasNext() {
+					ci1.key, _ = ci1.dg.NextUncompressed()
+					if d.compressVals {
+						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
+					} else {
+						ci1.val, _ = ci1.dg.NextUncompressed()
+					}
+					heap.Fix(&cp, 0)
+				} else {
+					heap.Pop(&cp)
+				}
+			}
+			var skip bool
+			if d.prefixLen > 0 {
+				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
+			} else {
+				// For the rest of types, empty value means deletion
+				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0
+			}
+			if !skip {
+				if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
+					if err = comp.AddUncompressedWord(keyBuf); err != nil {
+						return nil, nil, nil, err
+					}
+					keyCount++ // Only counting keys, not values
+
+					if d.trace {
+						fmt.Printf("merge: multi-way key %x, total keys %d\n", keyBuf, keyCount)
+					}
+
+					valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+					if err != nil {
+						return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
+					}
+					if d.compressVals {
+						if err = comp.AddWord(valBuf); err != nil {
+							return nil, nil, nil, err
+						}
+					} else {
+						if err = comp.AddUncompressedWord(valBuf); err != nil {
+							return nil, nil, nil, err
+						}
+					}
+				}
+				keyBuf = append(keyBuf[:0], lastKey...)
+				valBuf = append(valBuf[:0], lastVal...)
+			}
+		}
+		if keyBuf != nil {
+			if err = comp.AddUncompressedWord(keyBuf); err != nil {
+				return nil, nil, nil, err
+			}
+			keyCount++ // Only counting keys, not values
+			//if d.keyReplaceFn != nil {
+			//fmt.Printf("last heap key %x\n", keyBuf)
+			valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
+			}
+			//}
+			if d.compressVals {
+				if err = comp.AddWord(valBuf); err != nil {
+					return nil, nil, nil, err
+				}
+			} else {
+				if err = comp.AddUncompressedWord(valBuf); err != nil {
+					return nil, nil, nil, err
+				}
+			}
+		}
+		if err = comp.Compress(); err != nil {
+			return nil, nil, nil, err
+		}
+		comp.Close()
+		comp = nil
+		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
+		valuesIn = &filesItem{startTxNum: r.valuesStartTxNum, endTxNum: r.valuesEndTxNum}
+		if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+		if valuesIn.index, err = buildIndex(valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+	}
+	closeItem = false
+	d.stats.MergesCount++
+	d.mergesCount++
+	return
+}
 
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
 func (a *DomainCommitted) ComputeCommitment(ctx *AggregatorContext, trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {

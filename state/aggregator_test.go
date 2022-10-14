@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"math/rand"
 	"sync/atomic"
 	"testing"
@@ -194,4 +195,76 @@ func Test_EncodeCommitmentState(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, cs.txNum, dec.txNum)
 	require.EqualValues(t, cs.trieState, dec.trieState)
+}
+
+func Test_Aggregator_ReplaceCommittedKeys(t *testing.T) {
+	aggStep := uint64(1)
+
+	path, db, agg := testDbAndAggregator(t, 0, aggStep)
+	defer db.Close()
+	_ = path
+
+	tx, err := db.BeginRw(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+		if agg != nil {
+			agg.Close()
+		}
+	}()
+	agg.SetTx(tx)
+
+	var latestCommitTxNum uint64
+	commit := func(txn uint64) error {
+		err = tx.Commit()
+		require.NoError(t, err)
+		tx, err = db.BeginRw(context.Background())
+		require.NoError(t, err)
+		t.Logf("commit to db txn=%d", txn)
+
+		atomic.StoreUint64(&latestCommitTxNum, txn)
+		agg.SetTx(tx)
+		return nil
+	}
+	agg.SetCommitFn(commit)
+
+	txs := aggStep * 70
+	t.Logf("step=%d tx_count=%d", aggStep, txs)
+
+	addr, err := hex.DecodeString("7d1326b4aa1738d3bb590e8b54489675f69b0975")
+	require.NoError(t, err)
+	loc, err := hex.DecodeString("6301b3416f87b39992c367ab30ec7b0cb31630c2617167c7d535a6e6d623aae4")
+	require.NoError(t, err)
+
+	for txNum := uint64(1); txNum <= txs; txNum++ {
+		agg.SetTxNum(txNum)
+		//if txNum == 1 {
+		//	buf := EncodeAccountBytes(1, uint256.NewInt(0), nil, 0)
+		//	err = agg.UpdateAccountData(addr, buf)
+		//	require.NoError(t, err)
+		//}
+		for i := 0; i < 2; i++ {
+			loc[len(loc)-2] = byte(txNum)
+			loc[len(loc)-1] = byte(uint64(i) + txNum)
+			//agg.commitment.mode = CommitmentModeDirect
+			err = agg.WriteAccountStorage(addr, loc, []byte{13})
+			require.NoError(t, err)
+		}
+
+		//rh, err := agg.ComputeCommitment(true, false)
+		//fmt.Printf("rh %x\n", rh)
+		//require.NoError(t, err)
+		//}
+
+		err = agg.FinishTx()
+		require.NoError(t, err)
+	}
+
+	err = tx.Commit()
+	require.NoError(t, err)
+
+	agg.Close()
+	tx, agg = nil, nil
 }

@@ -294,16 +294,16 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 		return
 	}
 	var comp *compress.Compressor
-	var decomp *compress.Decompressor
+	//var decomp *compress.Decompressor
 	var closeItem bool = true
 	defer func() {
 		if closeItem {
 			if comp != nil {
 				comp.Close()
 			}
-			if decomp != nil {
-				decomp.Close()
-			}
+			//if decomp != nil {
+			//	decomp.Close()
+			//}
 			if indexIn != nil {
 				if indexIn.decompressor != nil {
 					indexIn.decompressor.Close()
