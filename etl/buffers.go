@@ -119,10 +119,11 @@ func (b *sortableBuffer) Less(i, j int) bool {
 }
 
 func (b *sortableBuffer) Swap(i, j int) {
-	b.offsets[i*2], b.offsets[j*2] = b.offsets[j*2], b.offsets[i*2]
-	b.lens[i*2], b.lens[j*2] = b.lens[j*2], b.lens[i*2]
-	b.offsets[i*2+1], b.offsets[j*2+1] = b.offsets[j*2+1], b.offsets[i*2+1]
-	b.lens[i*2+1], b.lens[j*2+1] = b.lens[j*2+1], b.lens[i*2+1]
+	i2, j2 := i*2, j*2
+	b.offsets[i2], b.offsets[j2] = b.offsets[j2], b.offsets[i2]
+	b.offsets[i2+1], b.offsets[j2+1] = b.offsets[j2+1], b.offsets[i2+1]
+	b.lens[i2], b.lens[j2] = b.lens[j2], b.lens[i2]
+	b.lens[i2+1], b.lens[j2+1] = b.lens[j2+1], b.lens[i2+1]
 }
 
 func (b *sortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
