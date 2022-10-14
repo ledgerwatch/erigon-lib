@@ -366,7 +366,7 @@ func New(newTxs chan types.Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cac
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs types.TxSlots, tx kv.Tx) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
-	//t := time.Now()
+	t := time.Now()
 
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
@@ -388,6 +388,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
+	viewID := coreTx.ViewID()
 	cacheView, err := cache.View(ctx, coreTx)
 	if err != nil {
 		return err
@@ -468,7 +469,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	//log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendngBaseFee", pendingBaseFee, "in", time.Since(t))
+	log.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendngBaseFee", pendingBaseFee, "viewID", viewID, "in", time.Since(t))
 	return nil
 }
 
@@ -613,6 +614,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 	if _, err := p.cache().View(ctx, tx); err != nil {
 		return fmt.Errorf("waiting for the state cache to be updated: %w", err)
 	}
+	log.Info("Best is starting", "viewID", tx.ViewID())
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
