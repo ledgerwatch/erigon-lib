@@ -23,7 +23,6 @@ import (
 	"io"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -147,10 +146,9 @@ func (b *sortableBuffer) Reset() {
 	b.data = b.data[:0]
 }
 func (b *sortableBuffer) Sort() {
-	t := time.Now()
-	sort.IsSorted(b)
-	fmt.Printf("is sorted.go: %s\n", time.Since(t))
-	defer func(t time.Time) { fmt.Printf("sort: %s\n", time.Since(t)) }(time.Now())
+	if sort.IsSorted(b) {
+		return
+	}
 	sort.Stable(b)
 }
 
