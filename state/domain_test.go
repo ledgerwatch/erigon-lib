@@ -85,14 +85,8 @@ func TestCollationBuild(t *testing.T) {
 
 	err = d.Flush()
 	require.NoError(t, err)
-	err = tx.Commit()
-	require.NoError(t, err)
 
-	roTx, err := db.BeginRo(context.Background())
-	require.NoError(t, err)
-	defer roTx.Rollback()
-
-	c, err := d.collate(0, 0, 7, roTx)
+	c, err := d.collate(0, 0, 7, tx)
 	require.NoError(t, err)
 	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
 	require.Equal(t, 2, c.valuesCount)
