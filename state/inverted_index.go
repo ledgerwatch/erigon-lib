@@ -330,7 +330,9 @@ func (ii *invertedIndexWriter) close() {
 
 func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 	w := &invertedIndexWriter{ii: ii,
-		tmpdir:    tmpdir,
+		tmpdir: tmpdir,
+		// 3 history + 4 indices = 10 etl collectors, 10*256Mb/16 = 256mb - for all indices buffers
+		// etl collector doesn't fsync: means if have enough ram, all files produced by all collectors will be in ram
 		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 		indexKeys: etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}

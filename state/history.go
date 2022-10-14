@@ -32,7 +32,6 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
-	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 
@@ -428,7 +427,6 @@ func (h *History) Flush() error {
 
 type historyWriter struct {
 	h                *History
-	historyVals      *etl.Collector
 	autoIncrement    uint64
 	autoIncrementBuf []byte
 	tmpdir           string
@@ -438,19 +436,14 @@ func (h *historyWriter) close() {
 	if h == nil { // allow dobule-close
 		return
 	}
-	h.historyVals.Close()
 }
 
 func (h *History) newWriter(tmpdir string) *historyWriter {
 	w := &historyWriter{h: h,
 		tmpdir:           tmpdir,
 		autoIncrementBuf: make([]byte, 8),
-		// 3 history + 4 indices = 10 etl collectors, 10*256Mb/16 = 256mb - for all indices buffers
-		// etl collector doesn't fsync: means if have enough ram, all files produced by all collectors will be in ram
-		historyVals: etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}
 	w.forceAi()
-	w.historyVals.LogLvl(log.LvlTrace)
 	return w
 }
 
@@ -471,9 +464,6 @@ func (h *historyWriter) forceAi() {
 }
 
 func (h *historyWriter) flush(tx kv.RwTx) error {
-	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{}); err != nil {
-		return err
-	}
 	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
 	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
 		return err
