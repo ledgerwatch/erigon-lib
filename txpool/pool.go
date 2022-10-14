@@ -368,8 +368,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	//t := time.Now()
 
-	cache := p.cache()
-	cache.OnNewBlock(stateChanges)
 	coreTx, err := p.coreDB().BeginRo(ctx)
 	if err != nil {
 		return err
@@ -378,6 +376,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	cache := p._stateCache
+	// Doing this after the acquisition of the lock makes sure that the state of the pool is synchronised with the cache for the external observers
+	// for example, for Best() function
+	p._stateCache.OnNewBlock(stateChanges)
 
 	p.lastSeenBlock.Store(stateChanges.ChangeBatch[len(stateChanges.ChangeBatch)-1].BlockHeight)
 	if !p.started.Load() {
@@ -606,6 +608,17 @@ func (p *TxPool) Started() bool                      { return p.started.Load() }
 // Best - returns top `n` elements of pending queue
 // id doesn't perform full copy of txs, hovewer underlying elements are immutable
 func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
+	// First wait for the corresponding state update to arrive
+	ctx := context.Background()
+	coreTx, err := p.coreDB().BeginRo(ctx)
+	if err != nil {
+		return err
+	}
+	defer coreTx.Rollback()
+	if _, err := p.cache().View(ctx, coreTx); err != nil {
+		return fmt.Errorf("waiting for the state cache to be updated: %w", err)
+	}
+	coreTx.Rollback()
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
