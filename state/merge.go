@@ -341,9 +341,6 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 		return nil, nil, nil, err
 	}
 	if r.values {
-		if r.valuesStartTxNum == r.valuesEndTxNum {
-			return nil, indexIn, historyIn, nil
-		}
 		log.Info(fmt.Sprintf("[snapshots] merge: %s.%d-%d.kv", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
 		for _, f := range valuesFiles {
 			defer f.decompressor.EnableMadvNormal().DisableReadAhead()
@@ -475,9 +472,6 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 //}
 
 func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uint64, maxSpan uint64) (*filesItem, error) {
-	if startTxNum == endTxNum {
-		return nil, nil
-	}
 	for _, h := range files {
 		defer h.decompressor.EnableMadvNormal().DisableReadAhead()
 	}
@@ -594,7 +588,7 @@ func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uin
 	if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 		return nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
-	if outItem.index, err = buildIndex(outItem.decompressor, idxPath, ii.dir, keyCount, false); err != nil {
+	if outItem.index, err = buildIndex(outItem.decompressor, idxPath, ii.dir, keyCount, false /* values */); err != nil {
 		return nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
 	closeItem = false
@@ -618,9 +612,6 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 		return nil, nil, err
 	}
 	if r.history {
-		if r.historyStartTxNum == r.historyEndTxNum {
-			return indexIn, nil, nil
-		}
 		log.Info(fmt.Sprintf("[snapshots] merge: %s.%d-%d.v", h.filenameBase, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		for _, f := range indexFiles {
 			defer f.decompressor.EnableMadvNormal().DisableReadAhead()
@@ -802,10 +793,10 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 }
 
 func (d *Domain) integrateMergedFiles(valuesOuts, indexOuts, historyOuts []*filesItem, valuesIn, indexIn, historyIn *filesItem) {
-	d.History.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
 	if valuesIn == nil {
 		return
 	}
+	d.History.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
 	d.files.ReplaceOrInsert(valuesIn)
 	for _, out := range valuesOuts {
 		if out == nil {
@@ -833,10 +824,10 @@ func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) 
 }
 
 func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, indexIn, historyIn *filesItem) {
-	h.InvertedIndex.integrateMergedFiles(indexOuts, indexIn)
 	if historyIn == nil {
 		return
 	}
+	h.InvertedIndex.integrateMergedFiles(indexOuts, indexIn)
 	h.files.ReplaceOrInsert(historyIn)
 	for _, out := range historyOuts {
 		if out == nil {

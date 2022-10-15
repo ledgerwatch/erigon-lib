@@ -447,15 +447,8 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 		tmpdir:           tmpdir,
 		autoIncrementBuf: make([]byte, 8),
 	}
-	w.forceAi()
-	return w
-}
 
-func (h *historyWriter) forceAi() {
-	if h == nil {
-		return
-	}
-	val, err := h.h.tx.GetOne(h.h.settingsTable, historyValCountKey)
+	val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
 	if err != nil {
 		panic(err)
 		//return err
@@ -464,7 +457,8 @@ func (h *historyWriter) forceAi() {
 	if len(val) > 0 {
 		valNum = binary.BigEndian.Uint64(val)
 	}
-	h.autoIncrement = valNum
+	w.autoIncrement = valNum
+	return w
 }
 
 func (h *historyWriter) flush(tx kv.RwTx) error {
@@ -729,7 +723,7 @@ func (h *History) buildFiles(step uint64, collation HistoryCollation) (HistoryFi
 		return HistoryFiles{}, fmt.Errorf("open %s ef history decompressor: %w", h.filenameBase, err)
 	}
 	efHistoryIdxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.efi", h.filenameBase, step, step+1))
-	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, h.dir, len(keys), false); err != nil {
+	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, h.dir, len(keys), false /* values */); err != nil {
 		return HistoryFiles{}, fmt.Errorf("build %s ef history idx: %w", h.filenameBase, err)
 	}
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -897,7 +891,6 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
-	h.w.forceAi()
 	return nil
 }
 
@@ -951,7 +944,6 @@ func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) 
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
-	h.w.forceAi()
 	return nil
 }
 
