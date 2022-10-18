@@ -52,6 +52,9 @@ var (
 	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`)         //nolint
 	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)            //nolint
 	DbPgopsGcrtime = metrics.GetOrCreateSummary(`db_pgops_gcrtime`) //nolint
+	DbGcRloops     = metrics.NewCounter(`db_pgops_gcrloops`)        //nolint
+	DbGcWloops     = metrics.NewCounter(`db_pgops_gcwloops`)        //nolint
+	DbGcXPages     = metrics.NewCounter(`db_pgops_gcxpages`)        //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
 	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`) //nolint
