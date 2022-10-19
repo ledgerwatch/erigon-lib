@@ -41,7 +41,9 @@ func TestAggregator_Merge(t *testing.T) {
 		}
 	}()
 	agg.SetTx(tx)
+	defer agg.StartWrites().FinishWrites()
 	txs := uint64(10000)
+
 	// keys are encodings of numbers 1..31
 	// each key changes value on every txNum which is multiple of the key
 	var maxWrite, otherMaxWrite uint64
@@ -67,6 +69,8 @@ func TestAggregator_Merge(t *testing.T) {
 			agg.SetTx(tx)
 		}
 	}
+	err = agg.Flush()
+	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx = nil
@@ -109,9 +113,12 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		}
 	}()
 	agg.SetTx(tx)
+	defer agg.StartWrites().FinishWrites()
 
 	var latestCommitTxNum uint64
 	commit := func(txn uint64) error {
+		err = agg.Flush()
+		require.NoError(t, err)
 		err = tx.Commit()
 		require.NoError(t, err)
 		tx, err = db.BeginRw(context.Background())
@@ -139,6 +146,8 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 
 		require.NoError(t, agg.FinishTx())
 	}
+	err = agg.Flush()
+	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
 	agg.Close()
