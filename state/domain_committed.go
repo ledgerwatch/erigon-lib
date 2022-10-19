@@ -31,10 +31,6 @@ const (
 
 type ValueMerger func(prev, current []byte) (merged []byte, err error)
 
-func mergeBranchUpdates(prev, current []byte) (merged []byte, err error) {
-	return commitment.BranchData(prev).MergeHexBranches(commitment.BranchData(current), nil)
-}
-
 type DomainCommitted struct {
 	*Domain
 	mode         CommitmentMode
@@ -303,6 +299,7 @@ func shortenedKey(apk []byte) (step uint16, offset uint64) {
 	return step, decodeU64(apk[1:])
 }
 
+//nolint
 func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, typeAS string, list ...*filesItem) bool {
 	numBuf := [2]byte{}
 	var found bool

@@ -271,7 +271,7 @@ func Test_Aggregator_ReplaceCommittedKeys(t *testing.T) {
 	}
 
 	half := txs / 2
-	for txNum := uint64(txs/2) + 1; txNum <= txs; txNum++ {
+	for txNum := txs/2 + 1; txNum <= txs; txNum++ {
 		agg.SetTxNum(txNum)
 
 		addr, loc := keys[txNum-1-half][:length.Addr], keys[txNum-1-half][length.Addr:]

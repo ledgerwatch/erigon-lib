@@ -52,7 +52,7 @@ type Aggregator struct {
 	commitFn        func(txNum uint64) error
 	rwTx            kv.RwTx
 	stats           FilesStats
- 	tmpdir          string
+	tmpdir          string
 }
 
 func NewAggregator(
@@ -875,7 +875,7 @@ func (a *Aggregator) FinishTx() error {
 		return nil
 	}
 	step-- // Leave one step worth in the DB
-	if err = a.Flush(); err != nil {
+	if err := a.Flush(); err != nil {
 		return err
 	}
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
@@ -1045,7 +1045,7 @@ func (a *Aggregator) FinishWrites() {
 
 // Flush - must be called before Collate, if you did some writes
 func (a *Aggregator) Flush() error {
-	defer func(t time.Time) { log.Info("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { log.Info("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
 	if err := a.accounts.Flush(); err != nil {
 		return err
 	}
