@@ -225,6 +225,7 @@ func Test_Aggregator_ReplaceCommittedKeys(t *testing.T) {
 		}
 	}()
 	agg.SetTx(tx)
+	defer agg.StartWrites().FinishWrites()
 
 	var latestCommitTxNum uint64
 	commit := func(txn uint64) error {
