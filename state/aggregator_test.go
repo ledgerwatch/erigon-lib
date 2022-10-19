@@ -3,14 +3,15 @@ package state
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"math/rand"
 	"sync/atomic"
 	"testing"
 
+	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 )
@@ -198,7 +199,7 @@ func Test_EncodeCommitmentState(t *testing.T) {
 }
 
 func Test_Aggregator_ReplaceCommittedKeys(t *testing.T) {
-	aggStep := uint64(1)
+	aggStep := uint64(1000)
 
 	path, db, agg := testDbAndAggregator(t, 0, aggStep)
 	defer db.Close()
@@ -230,41 +231,64 @@ func Test_Aggregator_ReplaceCommittedKeys(t *testing.T) {
 	}
 	agg.SetCommitFn(commit)
 
-	txs := aggStep * 70
+	txs := aggStep / 2 * 20
 	t.Logf("step=%d tx_count=%d", aggStep, txs)
 
-	addr, err := hex.DecodeString("7d1326b4aa1738d3bb590e8b54489675f69b0975")
-	require.NoError(t, err)
-	loc, err := hex.DecodeString("6301b3416f87b39992c367ab30ec7b0cb31630c2617167c7d535a6e6d623aae4")
-	require.NoError(t, err)
+	rnd := rand.New(rand.NewSource(0))
+	keys := make([][]byte, txs/2)
 
-	for txNum := uint64(1); txNum <= txs; txNum++ {
+	addr, loc := make([]byte, length.Addr), make([]byte, length.Hash)
+	for txNum := uint64(1); txNum <= txs/2; txNum++ {
 		agg.SetTxNum(txNum)
-		//if txNum == 1 {
-		//	buf := EncodeAccountBytes(1, uint256.NewInt(0), nil, 0)
-		//	err = agg.UpdateAccountData(addr, buf)
-		//	require.NoError(t, err)
-		//}
-		for i := 0; i < 2; i++ {
-			loc[len(loc)-2] = byte(txNum)
-			loc[len(loc)-1] = byte(uint64(i) + txNum)
-			//agg.commitment.mode = CommitmentModeDirect
-			err = agg.WriteAccountStorage(addr, loc, []byte{13})
-			require.NoError(t, err)
-		}
 
-		//rh, err := agg.ComputeCommitment(true, false)
-		//fmt.Printf("rh %x\n", rh)
-		//require.NoError(t, err)
-		//}
+		n, err := rnd.Read(addr)
+		require.NoError(t, err)
+		require.EqualValues(t, length.Addr, n)
+
+		n, err = rnd.Read(loc)
+		require.NoError(t, err)
+		require.EqualValues(t, length.Hash, n)
+		keys[txNum-1] = append(addr, loc...)
+
+		buf := EncodeAccountBytes(1, uint256.NewInt(0), nil, 0)
+		err = agg.UpdateAccountData(addr, buf)
+		require.NoError(t, err)
+
+		err = agg.WriteAccountStorage(addr, loc, []byte{addr[0], loc[0]})
+		require.NoError(t, err)
+
+		err = agg.FinishTx()
+		require.NoError(t, err)
+	}
+
+	half := txs / 2
+	for txNum := uint64(txs/2) + 1; txNum <= txs; txNum++ {
+		agg.SetTxNum(txNum)
+
+		addr, loc := keys[txNum-1-half][:length.Addr], keys[txNum-1-half][length.Addr:]
+
+		err = agg.WriteAccountStorage(addr, loc, []byte{addr[0], loc[0]})
+		require.NoError(t, err)
 
 		err = agg.FinishTx()
 		require.NoError(t, err)
 	}
 
 	err = tx.Commit()
+	tx = nil
+
+	tx, err = db.BeginRw(context.Background())
+	require.NoError(t, err)
+
+	ctx := agg.storage.MakeContext()
+	for _, key := range keys {
+		storedV, err := ctx.Get(key[:length.Addr], key[length.Addr:], tx)
+		require.NoError(t, err)
+		require.EqualValues(t, key[0], storedV[0])
+		require.EqualValues(t, key[length.Addr], storedV[1])
+	}
 	require.NoError(t, err)
 
 	agg.Close()
-	tx, agg = nil, nil
+	agg = nil
 }

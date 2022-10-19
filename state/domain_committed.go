@@ -195,7 +195,7 @@ var keyCommitmentState = []byte("state")
 // SeekCommitment searches for last encoded state from DomainCommitted
 // and if state found, sets it up to current domain
 func (d *DomainCommitted) SeekCommitment(aggStep uint64) (uint64, uint64, error) {
-	var latestTxNum uint64 = 4000000 - 1
+	var latestTxNum uint64
 	var latestState []byte
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()
@@ -303,6 +303,67 @@ func shortenedKey(apk []byte) (step uint16, offset uint64) {
 	return step, decodeU64(apk[1:])
 }
 
+func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, typeAS string, list ...*filesItem) bool {
+	numBuf := [2]byte{}
+	var found bool
+	for _, item := range list {
+		g := item.decompressor.MakeGetter()
+		index := recsplit.NewIndexReader(item.index)
+
+		offset := index.Lookup(fullKey)
+		g.Reset(offset)
+		if !g.HasNext() {
+			continue
+		}
+		if keyMatch, _ := g.Match(fullKey); keyMatch {
+			step := uint16(item.endTxNum / d.aggregationStep)
+			binary.BigEndian.PutUint16(numBuf[:], step)
+
+			shortKey = encodeU64(offset, numBuf[:])
+
+			if d.trace {
+				fmt.Printf("replacing %s [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", typeAS, fullKey, shortKey, step, offset, typeAS, item.startTxNum, item.endTxNum)
+			}
+			found = true
+			break
+		}
+	}
+	return found
+}
+
+func (d *DomainCommitted) lookupShortenedKey(shortKey, fullKey []byte, typAS string, list []*filesItem) bool {
+	fileStep, offset := shortenedKey(shortKey)
+	expected := uint64(fileStep) * d.aggregationStep
+	var size uint64
+	switch typAS {
+	case "account":
+		size = length.Addr
+	case "storage":
+		size = length.Addr + length.Hash
+	default:
+		return false
+	}
+
+	var found bool
+	for _, item := range list {
+		if item.startTxNum > expected || item.endTxNum < expected {
+			continue
+		}
+		g := item.decompressor.MakeGetter()
+		if uint64(g.Size()) <= offset+size {
+			continue
+		}
+		g.Reset(offset)
+		fullKey, _ = g.Next(fullKey[:0])
+		if d.trace {
+			fmt.Printf("offsetToKey %s [%x]=>{%x} step=%d offset=%d, file=%s.%d-%d.kv\n", typAS, fullKey, shortKey, fileStep, offset, typAS, item.startTxNum, item.endTxNum)
+		}
+		found = true
+		break
+	}
+	return found
+}
+
 // commitmentValTransform parses the value of the commitment record to extract references
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
 // the updated references
@@ -310,11 +371,11 @@ func (d *DomainCommitted) commitmentValTransform(files SelectedStaticFiles, merg
 	if len(val) == 0 {
 		return nil, nil
 	}
-
 	accountPlainKeys, storagePlainKeys, err := val.ExtractPlainKeys()
 	if err != nil {
 		return nil, err
 	}
+
 	transAccountPks := make([][]byte, 0, len(accountPlainKeys))
 	var apkBuf, spkBuf []byte
 	for _, accountPlainKey := range accountPlainKeys {
@@ -322,48 +383,12 @@ func (d *DomainCommitted) commitmentValTransform(files SelectedStaticFiles, merg
 			// Non-optimised key originating from a database record
 			apkBuf = append(apkBuf[:0], accountPlainKey...)
 		} else {
-			fileStep, offset := shortenedKey(accountPlainKey)
-
-			toFind := append(files.accounts, files.accountsHist...)
-
-			expected := uint64(fileStep) * d.aggregationStep
-			for i := 0; i < len(toFind); i++ {
-				if toFind[i].startTxNum > expected || toFind[i].endTxNum < expected {
-					continue
-				}
-				//if uint16(toFind[i].endTxNum/d.aggregationStep) != fileStep {
-				//	continue
-				//}
-				item := toFind[i]
-
-				g := item.decompressor.MakeGetter()
-				if uint64(g.Size()) < offset {
-					continue
-				}
-				g.Reset(offset)
-				fmt.Printf("offsetToKey account [%x] order=%d offset=%d, file=accounts.%d-%d ", accountPlainKey, i, offset, item.startTxNum, item.endTxNum)
-				spkBuf, _ = g.Next(spkBuf[:0])
-				fmt.Printf("restored key %x\n", spkBuf)
+			f := d.lookupShortenedKey(accountPlainKey, apkBuf, "account", files.accounts)
+			if !f {
+				fmt.Printf("lost key %x\n", accountPlainKeys)
 			}
 		}
-		// Look up apkBuf in the post account files
-		for _, item := range []*filesItem{merged.accounts, merged.accountsHist} {
-			g := item.decompressor.MakeGetter()
-			index := recsplit.NewIndexReader(item.index)
-			offset := index.Lookup(spkBuf)
-			g.Reset(offset)
-			if g.HasNext() {
-				if keyMatch, _ := g.Match(spkBuf); keyMatch {
-					aux := make([]byte, 2)
-					step := uint16(item.endTxNum / d.aggregationStep)
-					binary.BigEndian.PutUint16(aux, step)
-
-					accountPlainKey = encodeU64(offset, aux)
-					fmt.Printf("replacing account [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, accountPlainKey, step, offset, "accounts", item.startTxNum, item.endTxNum)
-					break
-				}
-			}
-		}
+		d.replaceKeyWithReference(apkBuf, accountPlainKey, "account", merged.accounts)
 		transAccountPks = append(transAccountPks, accountPlainKey)
 	}
 
@@ -372,57 +397,18 @@ func (d *DomainCommitted) commitmentValTransform(files SelectedStaticFiles, merg
 		if len(storagePlainKey) == length.Addr+length.Hash {
 			// Non-optimised key originating from a database record
 			spkBuf = append(spkBuf[:0], storagePlainKey...)
-			fmt.Printf("full storage [%x]\n", storagePlainKey)
 		} else {
 			// Optimised key referencing a state file record (file number and offset within the file)
-			fileStep := binary.BigEndian.Uint16(storagePlainKey[:2])
-			offset := decodeU64(storagePlainKey[2:])
-
-			toFind := append(files.storage, files.storageHist...)
-			expected := uint64(fileStep) * d.aggregationStep
-			for i := 0; i < len(toFind); i++ {
-				if toFind[i].startTxNum > expected || toFind[i].endTxNum < expected {
-					continue
-				}
-				item := toFind[i]
-
-				g := item.decompressor.MakeGetter()
-				if uint64(g.Size()) <= offset {
-					continue
-				}
-				g.Reset(offset)
-				if g.HasNext() {
-					fmt.Printf("offsetToKey storage [%x] order=%d offset=%d, file=storage.%d-%d ", storagePlainKey, i, offset, item.startTxNum, item.endTxNum)
-					spkBuf, _ = g.Next(spkBuf[:0])
-					fmt.Printf("restored key %x\n", spkBuf)
-					break
-				}
+			f := d.lookupShortenedKey(storagePlainKey, spkBuf, "storage", files.storage)
+			if !f {
+				fmt.Printf("lost skey %x\n", storagePlainKey)
 			}
 		}
 
-		// find spk in already merged file
-		for _, item := range []*filesItem{merged.storage, merged.storageHist} {
-			g := item.decompressor.MakeGetter()
-			index := recsplit.NewIndexReader(item.index)
-			offset := index.Lookup(spkBuf)
-			g.Reset(offset)
-			if g.HasNext() {
-				if keyMatch, _ := g.Match(spkBuf); keyMatch {
-					aux := make([]byte, 2)
-					step := uint16(item.endTxNum / d.aggregationStep)
-					binary.BigEndian.PutUint16(aux, step)
-
-					storagePlainKey = encodeU64(offset, aux)
-					fmt.Printf("replacing storage [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", spkBuf, storagePlainKey, step, offset, "storage", item.startTxNum, item.endTxNum)
-					break
-				}
-			}
-		}
+		d.replaceKeyWithReference(spkBuf, storagePlainKey, "storage", merged.storage)
 		transStoragePks = append(transStoragePks, storagePlainKey)
 	}
-	if len(transAccountPks) == 0 && len(transStoragePks) == 0 {
-		return val, nil
-	}
+
 	transValBuf, err := val.ReplacePlainKeys(transAccountPks, transStoragePks, nil)
 	if err != nil {
 		return nil, err
@@ -501,7 +487,7 @@ func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles M
 					val, _ = g.NextUncompressed()
 				}
 				if d.trace {
-					fmt.Printf("merge: read values key '0x%x'\n", key)
+					fmt.Printf("merge: read value '%x'\n", key)
 				}
 				heap.Push(&cp, &CursorItem{
 					t:        FILE_CURSOR,
@@ -617,30 +603,30 @@ func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles M
 }
 
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
-func (a *DomainCommitted) ComputeCommitment(ctx *AggregatorContext, trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {
-	touchedKeys, hashedKeys, updates := a.TouchedKeyList()
+func (d *DomainCommitted) ComputeCommitment(ctx *AggregatorContext, trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {
+	touchedKeys, hashedKeys, updates := d.TouchedKeyList()
 	if len(touchedKeys) == 0 {
-		rootHash, err = a.patriciaTrie.RootHash()
+		rootHash, err = d.patriciaTrie.RootHash()
 		return rootHash, nil, err
 	}
 
-	a.patriciaTrie.Reset()
-	a.patriciaTrie.SetTrace(trace)
-	a.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
+	d.patriciaTrie.Reset()
+	d.patriciaTrie.SetTrace(trace)
+	d.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
 
-	switch a.mode {
+	switch d.mode {
 	case CommitmentModeDirect:
-		rootHash, branchNodeUpdates, err = a.patriciaTrie.ReviewKeys(touchedKeys, hashedKeys)
+		rootHash, branchNodeUpdates, err = d.patriciaTrie.ReviewKeys(touchedKeys, hashedKeys)
 		if err != nil {
 			return nil, nil, err
 		}
 	case CommitmentModeUpdate:
-		rootHash, branchNodeUpdates, err = a.patriciaTrie.ProcessUpdates(touchedKeys, hashedKeys, updates)
+		rootHash, branchNodeUpdates, err = d.patriciaTrie.ProcessUpdates(touchedKeys, hashedKeys, updates)
 		if err != nil {
 			return nil, nil, err
 		}
 	default:
-		return nil, nil, fmt.Errorf("invalid commitment mode: %d", a.mode)
+		return nil, nil, fmt.Errorf("invalid commitment mode: %d", d.mode)
 	}
 	return rootHash, branchNodeUpdates, err
 }
