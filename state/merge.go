@@ -472,6 +472,13 @@ func (d *Domain) mergeFiles(valuesFiles, indexFiles, historyFiles []*filesItem, 
 //}
 
 func (ii *InvertedIndex) mergeFiles(files []*filesItem, startTxNum, endTxNum uint64, maxSpan uint64) (*filesItem, error) {
+	if startTxNum == endTxNum {
+		var s string
+		for _, f := range files {
+			s += fmt.Sprintf("%d-%d, ", f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
+		}
+		panic(fmt.Sprintf("must not happen, merge %s: %s -> %d-%d\n", ii.filenameBase, s, startTxNum/ii.aggregationStep, endTxNum/ii.aggregationStep))
+	}
 	for _, h := range files {
 		defer h.decompressor.EnableMadvNormal().DisableReadAhead()
 	}
@@ -612,6 +619,14 @@ func (h *History) mergeFiles(indexFiles, historyFiles []*filesItem, r HistoryRan
 		return nil, nil, err
 	}
 	if r.history {
+		if r.historyStartTxNum == r.historyEndTxNum {
+			var s string
+			for _, f := range historyFiles {
+				s += fmt.Sprintf("%d-%d, ", f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
+			}
+			panic(fmt.Sprintf("must not happen, merge %s: %s -> %d-%d\n", h.filenameBase, s, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
+		}
+
 		log.Info(fmt.Sprintf("[snapshots] merge: %s.%d-%d.v", h.filenameBase, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		for _, f := range indexFiles {
 			defer f.decompressor.EnableMadvNormal().DisableReadAhead()

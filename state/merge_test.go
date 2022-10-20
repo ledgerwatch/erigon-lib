@@ -1,13 +1,50 @@
 package state
 
 import (
+	"fmt"
 	"sort"
 	"testing"
+	"testing/fstest"
 
+	"github.com/google/btree"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
+
+func TestHistFindMergeRange(t *testing.T) {
+	ii := &InvertedIndex{filenameBase: "test", aggregationStep: 1,
+		files: btree.NewG[*filesItem](32, filesItemLess),
+	}
+	ffs := fstest.MapFS{
+		"test.0-1.ef": {},
+		"test.1-2.ef": {},
+		"test.0-4.ef": {},
+		"test.2-3.ef": {},
+		"test.3-4.ef": {},
+		"test.4-5.ef": {},
+		"test.5-6.ef": {},
+		"test.6-8.ef": {},
+	}
+	files, err := ffs.ReadDir(".")
+	require.NoError(t, err)
+	ii.scanStateFiles(files)
+
+	ok, from, to := ii.findMergeRange(1, 32)
+	fmt.Printf("%t, %d, %d\n", ok, from, to)
+	ok, from, to = ii.findMergeRange(4, 32)
+	fmt.Printf("%t, %d, %d\n", ok, from, to)
+	ok, from, to = ii.findMergeRange(60, 32)
+	fmt.Printf("%t, %d, %d\n", ok, from, to)
+
+	f, a := ii.staticFilesInRange(from, to)
+
+	fmt.Printf("%d\n", a)
+	for _, ff := range f {
+		fmt.Printf("%d-%d\n", ff.startTxNum, ff.endTxNum)
+	}
+
+}
 
 func Test_mergeEliasFano(t *testing.T) {
 	t.Skip()
