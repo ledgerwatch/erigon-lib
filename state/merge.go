@@ -133,6 +133,9 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 				minFound = true
 				startTxNum = start
 				endTxNum = item.endTxNum
+				if startTxNum == endTxNum {
+					panic(fmt.Sprintf("must not happen: %s start=%d,item.endTxNum=%d", item.decompressor.FilePath(), start, item.endTxNum))
+				}
 			}
 		}
 		return true
@@ -182,6 +185,9 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 				r.history = true
 				r.historyStartTxNum = start
 				r.historyEndTxNum = item.endTxNum
+				if r.historyStartTxNum == r.historyEndTxNum {
+					panic(fmt.Sprintf("must not happen: %s start=%d,item.endTxNum=%d", item.decompressor.FilePath(), start, item.endTxNum))
+				}
 			}
 		}
 		return true
