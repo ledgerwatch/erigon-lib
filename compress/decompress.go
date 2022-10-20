@@ -516,7 +516,7 @@ func (g *Getter) HasNext() bool {
 func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			panic(fmt.Sprintf("file: %s, %s", g.fName, rec))
+			panic(fmt.Sprintf("file: %s, %s, %s", g.fName, rec, dbg.Stack()))
 		}
 	}()
 	savePos := g.dataP
@@ -577,7 +577,7 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 func (g *Getter) NextUncompressed() ([]byte, uint64) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			panic(fmt.Sprintf("file: %s, %s", g.fName, rec))
+			panic(fmt.Sprintf("file: %s, %s, %s", g.fName, rec, dbg.Stack()))
 		}
 	}()
 	wordLen := g.nextPos(true)
