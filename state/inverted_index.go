@@ -52,7 +52,7 @@ type InvertedIndex struct {
 	indexKeysTable  string // txnNum_u64 -> key (k+auto_increment)
 	indexTable      string // k -> txnNum_u64 , Needs to be table with DupSort
 	dir             string // Directory where static files are created
-  tmpdir     string // Directory where static files are created
+	tmpdir          string // Directory where static files are created
 	filenameBase    string
 	aggregationStep uint64
 	txNum           uint64
