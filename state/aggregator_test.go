@@ -24,7 +24,7 @@ func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, k
 		return kv.ChaindataTablesCfg
 	}).MustOpen()
 	t.Cleanup(db.Close)
-	agg, err := NewAggregator(path, aggStep)
+	agg, err := NewAggregator(path, path, aggStep)
 	require.NoError(t, err)
 	t.Cleanup(agg.Close)
 	return path, db, agg
@@ -152,7 +152,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	agg.Close()
 	tx, agg = nil, nil
 
-	anotherAgg, err := NewAggregator(path, aggStep)
+	anotherAgg, err := NewAggregator(path, path, aggStep)
 	require.NoError(t, err)
 	defer anotherAgg.Close()
 
