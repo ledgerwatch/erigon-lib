@@ -50,7 +50,7 @@ func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 			settingsTable: kv.TableCfgItem{},
 		}
 	}).MustOpen()
-	ii, err := NewHistory(path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */)
+	ii, err := NewHistory(path, path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */)
 	require.NoError(tb, err)
 	tb.Cleanup(db.Close)
 	tb.Cleanup(ii.Close)
@@ -406,7 +406,7 @@ func TestHistoryScanFiles(t *testing.T) {
 	// Recreate domain and re-scan the files
 	txNum := h.txNum
 	h.Close()
-	h, err = NewHistory(path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals)
+	h, err = NewHistory(path, path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals)
 	require.NoError(t, err)
 	defer h.Close()
 	h.SetTxNum(txNum)

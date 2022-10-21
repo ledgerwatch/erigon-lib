@@ -49,7 +49,7 @@ type InvertedIndex struct {
 	indexKeysTable string // txnNum_u64 -> key (k+auto_increment)
 	indexTable     string // k -> txnNum_u64 , Needs to be table with DupSort
 
-	dir             string // Directory where static files are created
+	dir, tmpdir     string // Directory where static files are created
 	aggregationStep uint64
 	filenameBase    string
 	tx              kv.RwTx
@@ -62,7 +62,7 @@ type InvertedIndex struct {
 }
 
 func NewInvertedIndex(
-	dir string,
+	dir, tmpdir string,
 	aggregationStep uint64,
 	filenameBase string,
 	indexKeysTable string,
@@ -70,6 +70,7 @@ func NewInvertedIndex(
 ) (*InvertedIndex, error) {
 	ii := InvertedIndex{
 		dir:             dir,
+		tmpdir:          tmpdir,
 		files:           btree.NewG[*filesItem](32, filesItemLess),
 		aggregationStep: aggregationStep,
 		filenameBase:    filenameBase,
@@ -207,7 +208,7 @@ func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.
 			fName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep)
 			idxPath := filepath.Join(ii.dir, fName)
 			log.Info("[snapshots] build idx", "file", fName)
-			_, err := buildIndex(item.decompressor, idxPath, ii.dir, item.decompressor.Count()/2, false)
+			_, err := buildIndex(item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false)
 			errs <- err
 		}(item)
 	}
@@ -812,7 +813,7 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 		return InvertedFiles{}, fmt.Errorf("open %s decompressor: %w", ii.filenameBase, err)
 	}
 	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
-	if index, err = buildIndex(decomp, idxPath, ii.dir, len(keys), false /* values */); err != nil {
+	if index, err = buildIndex(decomp, idxPath, ii.tmpdir, len(keys), false /* values */); err != nil {
 		return InvertedFiles{}, fmt.Errorf("build %s efi: %w", ii.filenameBase, err)
 	}
 	closeComp = false
