@@ -529,7 +529,7 @@ func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
 	maxSpan := d.aggregationStep * d.aggregationStep
 	for r = d.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = d.findMergeRange(maxEndTxNum, maxSpan) {
 		valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r)
-		valuesIn, indexIn, historyIn, err := d.mergeFiles(valuesOuts, indexOuts, historyOuts, r, maxSpan)
+		valuesIn, indexIn, historyIn, err := d.mergeFiles(ctx, valuesOuts, indexOuts, historyOuts, r, maxSpan)
 		require.NoError(t, err)
 
 		d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
