@@ -29,12 +29,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
@@ -260,28 +262,58 @@ func (h *History) missedIdxFiles() (l []*filesItem) {
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
-func (h *History) BuildMissedIndices() (err error) {
-	if err := h.InvertedIndex.BuildMissedIndices(); err != nil {
+func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
+	if err := h.InvertedIndex.BuildMissedIndices(ctx, sem); err != nil {
 		return err
 	}
-	for _, item := range h.missedIdxFiles() {
-		search := &filesItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum}
-		iiItem, ok := h.InvertedIndex.files.Get(search)
-		if !ok {
-			return nil
+
+	missedFiles := h.missedIdxFiles()
+	errs := make(chan error, len(missedFiles))
+	wg := sync.WaitGroup{}
+
+	for _, item := range missedFiles {
+		if err := sem.Acquire(ctx, 1); err != nil {
+			errs <- err
+			break
 		}
-		fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
-		fName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep)
-		idxPath := filepath.Join(h.dir, fName)
-		log.Info("[snapshots] build idx", "file", fName)
-		count, err := iterateForVi(item, iiItem, h.compressVals, func(v []byte) error { return nil })
+		wg.Add(1)
+		go func(item *filesItem) {
+			defer sem.Release(1)
+			defer wg.Done()
+
+			search := &filesItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum}
+			iiItem, ok := h.InvertedIndex.files.Get(search)
+			if !ok {
+				errs <- nil
+				return
+			}
+
+			fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
+			fName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep)
+			idxPath := filepath.Join(h.dir, fName)
+			log.Info("[snapshots] build idx", "file", fName)
+			count, err := iterateForVi(item, iiItem, h.compressVals, func(v []byte) error { return nil })
+			if err != nil {
+				errs <- err
+				return
+			}
+			errs <- buildVi(item, iiItem, idxPath, h.dir, count, false /* values */, h.compressVals)
+		}(item)
+	}
+	go func() {
+		wg.Wait()
+		close(errs)
+	}()
+	var lastError error
+	for err := range errs {
 		if err != nil {
-			return err
-		}
-		if err := buildVi(item, iiItem, idxPath, h.dir, count, false /* values */, h.compressVals); err != nil {
-			return err
+			lastError = err
 		}
 	}
+	if lastError != nil {
+		return lastError
+	}
+
 	return h.openFiles()
 }
 

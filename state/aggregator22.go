@@ -32,6 +32,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/semaphore"
 )
 
 type Aggregator22 struct {
@@ -138,56 +139,56 @@ func (a *Aggregator22) closeFiles() {
 	}
 }
 
-func (a *Aggregator22) BuildMissedIndices() error {
+func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) error {
 	wg := sync.WaitGroup{}
 	errs := make(chan error, 7)
 	if a.accounts != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.accounts.BuildMissedIndices()
+			errs <- a.accounts.BuildMissedIndices(ctx, sem)
 		}()
 	}
 	if a.storage != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.storage.BuildMissedIndices()
+			errs <- a.storage.BuildMissedIndices(ctx, sem)
 		}()
 	}
 	if a.code != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.code.BuildMissedIndices()
+			errs <- a.code.BuildMissedIndices(ctx, sem)
 		}()
 	}
 	if a.logAddrs != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.logAddrs.BuildMissedIndices()
+			errs <- a.logAddrs.BuildMissedIndices(ctx, sem)
 		}()
 	}
 	if a.logTopics != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.logTopics.BuildMissedIndices()
+			errs <- a.logTopics.BuildMissedIndices(ctx, sem)
 		}()
 	}
 	if a.tracesFrom != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.tracesFrom.BuildMissedIndices()
+			errs <- a.tracesFrom.BuildMissedIndices(ctx, sem)
 		}()
 	}
 	if a.tracesTo != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- a.tracesTo.BuildMissedIndices()
+			errs <- a.tracesTo.BuildMissedIndices(ctx, sem)
 		}()
 	}
 	go func() {

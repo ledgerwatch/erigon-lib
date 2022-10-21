@@ -34,6 +34,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 
@@ -782,8 +783,8 @@ func (d *Domain) missedIdxFiles() (l []*filesItem) {
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
-func (d *Domain) BuildMissedIndices() (err error) {
-	if err := d.History.BuildMissedIndices(); err != nil {
+func (d *Domain) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
+	if err := d.History.BuildMissedIndices(ctx, sem); err != nil {
 		return err
 	}
 	for _, item := range d.missedIdxFiles() {
