@@ -208,7 +208,7 @@ func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.
 			fName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep)
 			idxPath := filepath.Join(ii.dir, fName)
 			log.Info("[snapshots] build idx", "file", fName)
-			_, err := buildIndex(item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false)
+			_, err := buildIndex(ctx, item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false)
 			errs <- err
 		}(item)
 	}
@@ -756,7 +756,7 @@ func (sf InvertedFiles) Close() {
 	}
 }
 
-func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.Bitmap) (InvertedFiles, error) {
+func (ii *InvertedIndex) buildFiles(ctx context.Context, step uint64, bitmaps map[string]*roaring64.Bitmap) (InvertedFiles, error) {
 	var decomp *compress.Decompressor
 	var index *recsplit.Index
 	var comp *compress.Compressor
@@ -778,7 +778,7 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 	txNumFrom := step * ii.aggregationStep
 	txNumTo := (step + 1) * ii.aggregationStep
 	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
-	comp, err = compress.NewCompressor(context.Background(), "ef", datPath, ii.dir, compress.MinPatternScore, ii.workers, log.LvlDebug)
+	comp, err = compress.NewCompressor(ctx, "ef", datPath, ii.tmpdir, compress.MinPatternScore, ii.workers, log.LvlDebug)
 	if err != nil {
 		return InvertedFiles{}, fmt.Errorf("create %s compressor: %w", ii.filenameBase, err)
 	}
@@ -813,7 +813,7 @@ func (ii *InvertedIndex) buildFiles(step uint64, bitmaps map[string]*roaring64.B
 		return InvertedFiles{}, fmt.Errorf("open %s decompressor: %w", ii.filenameBase, err)
 	}
 	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
-	if index, err = buildIndex(decomp, idxPath, ii.tmpdir, len(keys), false /* values */); err != nil {
+	if index, err = buildIndex(ctx, decomp, idxPath, ii.tmpdir, len(keys), false /* values */); err != nil {
 		return InvertedFiles{}, fmt.Errorf("build %s efi: %w", ii.filenameBase, err)
 	}
 	closeComp = false

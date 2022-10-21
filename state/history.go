@@ -678,7 +678,7 @@ func (sf HistoryFiles) Close() {
 
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
-func (h *History) buildFiles(step uint64, collation HistoryCollation) (HistoryFiles, error) {
+func (h *History) buildFiles(ctx context.Context, step uint64, collation HistoryCollation) (HistoryFiles, error) {
 	historyComp := collation.historyComp
 	var historyDecomp, efHistoryDecomp *compress.Decompressor
 	var historyIdx, efHistoryIdx *recsplit.Index
@@ -722,7 +722,7 @@ func (h *History) buildFiles(step uint64, collation HistoryCollation) (HistoryFi
 	}
 	// Build history ef
 	efHistoryPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.ef", h.filenameBase, step, step+1))
-	efHistoryComp, err = compress.NewCompressor(context.Background(), "ef history", efHistoryPath, h.tmpdir, compress.MinPatternScore, h.workers, log.LvlDebug)
+	efHistoryComp, err = compress.NewCompressor(ctx, "ef history", efHistoryPath, h.tmpdir, compress.MinPatternScore, h.workers, log.LvlDebug)
 	if err != nil {
 		return HistoryFiles{}, fmt.Errorf("create %s ef history compressor: %w", h.filenameBase, err)
 	}
@@ -758,7 +758,7 @@ func (h *History) buildFiles(step uint64, collation HistoryCollation) (HistoryFi
 		return HistoryFiles{}, fmt.Errorf("open %s ef history decompressor: %w", h.filenameBase, err)
 	}
 	efHistoryIdxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.efi", h.filenameBase, step, step+1))
-	if efHistoryIdx, err = buildIndex(efHistoryDecomp, efHistoryIdxPath, h.tmpdir, len(keys), false /* values */); err != nil {
+	if efHistoryIdx, err = buildIndex(ctx, efHistoryDecomp, efHistoryIdxPath, h.tmpdir, len(keys), false /* values */); err != nil {
 		return HistoryFiles{}, fmt.Errorf("build %s ef history idx: %w", h.filenameBase, err)
 	}
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{

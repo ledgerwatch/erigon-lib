@@ -720,8 +720,8 @@ func (sf StaticFiles) Close() {
 
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
-func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
-	hStaticFiles, err := d.History.buildFiles(step, HistoryCollation{
+func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collation) (StaticFiles, error) {
+	hStaticFiles, err := d.History.buildFiles(ctx, step, HistoryCollation{
 		historyPath:  collation.historyPath,
 		historyComp:  collation.historyComp,
 		historyCount: collation.historyCount,
@@ -757,7 +757,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
-	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false); err != nil {
+	if valuesIdx, err = buildIndex(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
 	closeComp = false
@@ -794,7 +794,7 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted
 	return d.openFiles()
 }
 
-func buildIndex(d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) (*recsplit.Index, error) {
+func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) (*recsplit.Index, error) {
 	_, fName := filepath.Split(idxPath)
 	log.Debug("[snapshots] build idx", "file", fName)
 	var rs *recsplit.RecSplit

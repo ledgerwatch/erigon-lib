@@ -18,6 +18,7 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -273,7 +274,7 @@ func (sf AggStaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
-func (a *Aggregator) buildFiles(step uint64, collation AggCollation) (AggStaticFiles, error) {
+func (a *Aggregator) buildFiles(ctx context.Context, step uint64, collation AggCollation) (AggStaticFiles, error) {
 	var sf AggStaticFiles
 	closeFiles := true
 	defer func() {
@@ -287,56 +288,56 @@ func (a *Aggregator) buildFiles(step uint64, collation AggCollation) (AggStaticF
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.accounts, err = a.accounts.buildFiles(step, collation.accounts); err != nil {
+		if sf.accounts, err = a.accounts.buildFiles(ctx, step, collation.accounts); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.storage, err = a.storage.buildFiles(step, collation.storage); err != nil {
+		if sf.storage, err = a.storage.buildFiles(ctx, step, collation.storage); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.code, err = a.code.buildFiles(step, collation.code); err != nil {
+		if sf.code, err = a.code.buildFiles(ctx, step, collation.code); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.commitment, err = a.commitment.buildFiles(step, collation.commitment); err != nil {
+		if sf.commitment, err = a.commitment.buildFiles(ctx, step, collation.commitment); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.logAddrs, err = a.logAddrs.buildFiles(step, collation.logAddrs); err != nil {
+		if sf.logAddrs, err = a.logAddrs.buildFiles(ctx, step, collation.logAddrs); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.logTopics, err = a.logTopics.buildFiles(step, collation.logTopics); err != nil {
+		if sf.logTopics, err = a.logTopics.buildFiles(ctx, step, collation.logTopics); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.tracesFrom, err = a.tracesFrom.buildFiles(step, collation.tracesFrom); err != nil {
+		if sf.tracesFrom, err = a.tracesFrom.buildFiles(ctx, step, collation.tracesFrom); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.tracesTo, err = a.tracesTo.buildFiles(step, collation.tracesTo); err != nil {
+		if sf.tracesTo, err = a.tracesTo.buildFiles(ctx, step, collation.tracesTo); err != nil {
 			errCh <- err
 		}
 	}()
@@ -559,7 +560,7 @@ func (mf MergedFiles) Close() {
 	}
 }
 
-func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uint64) (MergedFiles, error) {
+func (a *Aggregator) mergeFiles(ctx context.Context, files SelectedStaticFiles, r Ranges, maxSpan uint64) (MergedFiles, error) {
 	var mf MergedFiles
 	closeFiles := true
 	defer func() {
@@ -574,7 +575,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.accounts.any() {
-			if mf.accounts, mf.accountsIdx, mf.accountsHist, err = a.accounts.mergeFiles(files.accounts, files.accountsIdx, files.accountsHist, r.accounts, maxSpan); err != nil {
+			if mf.accounts, mf.accountsIdx, mf.accountsHist, err = a.accounts.mergeFiles(ctx, files.accounts, files.accountsIdx, files.accountsHist, r.accounts, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -583,7 +584,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.storage.any() {
-			if mf.storage, mf.storageIdx, mf.storageHist, err = a.storage.mergeFiles(files.storage, files.storageIdx, files.storageHist, r.storage, maxSpan); err != nil {
+			if mf.storage, mf.storageIdx, mf.storageHist, err = a.storage.mergeFiles(ctx, files.storage, files.storageIdx, files.storageHist, r.storage, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -592,7 +593,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.code.any() {
-			if mf.code, mf.codeIdx, mf.codeHist, err = a.code.mergeFiles(files.code, files.codeIdx, files.codeHist, r.code, maxSpan); err != nil {
+			if mf.code, mf.codeIdx, mf.codeHist, err = a.code.mergeFiles(ctx, files.code, files.codeIdx, files.codeHist, r.code, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -601,7 +602,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.commitment.any() {
-			if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(files.commitment, files.commitmentIdx, files.commitmentHist, r.commitment, maxSpan); err != nil {
+			if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(ctx, files.commitment, files.commitmentIdx, files.commitmentHist, r.commitment, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -610,7 +611,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.logAddrs {
-			if mf.logAddrs, err = a.logAddrs.mergeFiles(files.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum, maxSpan); err != nil {
+			if mf.logAddrs, err = a.logAddrs.mergeFiles(ctx, files.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -619,7 +620,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.logTopics {
-			if mf.logTopics, err = a.logTopics.mergeFiles(files.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum, maxSpan); err != nil {
+			if mf.logTopics, err = a.logTopics.mergeFiles(ctx, files.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -628,7 +629,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.tracesFrom {
-			if mf.tracesFrom, err = a.tracesFrom.mergeFiles(files.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum, maxSpan); err != nil {
+			if mf.tracesFrom, err = a.tracesFrom.mergeFiles(ctx, files.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -637,7 +638,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.tracesTo {
-			if mf.tracesTo, err = a.tracesTo.mergeFiles(files.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum, maxSpan); err != nil {
+			if mf.tracesTo, err = a.tracesTo.mergeFiles(ctx, files.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -1124,7 +1125,7 @@ func (a *Aggregator) FinishTx() error {
 		}
 	}()
 
-	sf, err := a.buildFiles(step, collation)
+	sf, err := a.buildFiles(context.TODO(), step, collation)
 	if err != nil {
 		return err
 	}
@@ -1146,7 +1147,7 @@ func (a *Aggregator) FinishTx() error {
 				outs.Close()
 			}
 		}()
-		in, err := a.mergeFiles(outs, r, maxSpan)
+		in, err := a.mergeFiles(context.TODO(), outs, r, maxSpan)
 		if err != nil {
 			return err
 		}
