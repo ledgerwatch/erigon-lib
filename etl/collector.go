@@ -41,12 +41,12 @@ type LoadFunc func(k, v []byte, table CurrentTableReader, next LoadNextFunc) err
 type Collector struct {
 	extractNextFunc ExtractNextFunc
 	flushBuffer     func([]byte, bool) error
+	logPrefix       string
 	dataProviders   []dataProvider
-	allFlushed      bool
-	autoClean       bool
 	logLvl          log.Lvl
 	bufType         int
-	logPrefix       string
+	allFlushed      bool
+	autoClean       bool
 }
 
 // NewCollectorFromFiles creates collector from existing files (left over from previous unsuccessful loading)
