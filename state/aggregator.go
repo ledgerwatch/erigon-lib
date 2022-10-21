@@ -198,14 +198,14 @@ func (a *Aggregator) SetCommitmentMode(mode CommitmentMode) {
 }
 
 type AggCollation struct {
-	accounts   Collation
-	storage    Collation
-	code       Collation
-	commitment Collation
 	logAddrs   map[string]*roaring64.Bitmap
 	logTopics  map[string]*roaring64.Bitmap
 	tracesFrom map[string]*roaring64.Bitmap
 	tracesTo   map[string]*roaring64.Bitmap
+	accounts   Collation
+	storage    Collation
+	code       Collation
+	commitment Collation
 }
 
 func (c AggCollation) Close() {

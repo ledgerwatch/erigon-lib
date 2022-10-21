@@ -228,13 +228,13 @@ func (a *Aggregator22) SetTxNum(txNum uint64) {
 }
 
 type Agg22Collation struct {
-	accounts   HistoryCollation
-	storage    HistoryCollation
-	code       HistoryCollation
 	logAddrs   map[string]*roaring64.Bitmap
 	logTopics  map[string]*roaring64.Bitmap
 	tracesFrom map[string]*roaring64.Bitmap
 	tracesTo   map[string]*roaring64.Bitmap
+	accounts   HistoryCollation
+	storage    HistoryCollation
+	code       HistoryCollation
 }
 
 func (c Agg22Collation) Close() {
