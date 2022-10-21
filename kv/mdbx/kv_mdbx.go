@@ -351,12 +351,12 @@ func (opts MdbxOpts) MustOpen() kv.RwDB {
 }
 
 type MdbxKV struct {
-	opts         MdbxOpts
 	log          log.Logger
 	env          *mdbx.Env
 	wg           *sync.WaitGroup
 	buckets      kv.TableCfg
 	roTxsLimiter *semaphore.Weighted // does limit amount of concurrent Ro transactions - in most casess runtime.NumCPU() is good value for this channel capacity - this channel can be shared with other components (like Decompressor)
+	opts         MdbxOpts
 	txSize       uint64
 	closed       atomic.Bool
 }

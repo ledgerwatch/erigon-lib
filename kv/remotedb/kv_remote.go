@@ -31,8 +31,8 @@ type RemoteKV struct {
 	remoteKV     remote.KVClient
 	log          log.Logger
 	buckets      kv.TableCfg
-	opts         remoteOpts
 	roTxsLimiter *semaphore.Weighted
+	opts         remoteOpts
 }
 
 type remoteTx struct {

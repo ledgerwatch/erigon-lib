@@ -287,11 +287,11 @@ func calcProtocolBaseFee(baseFee uint64) uint64 {
 //
 // It preserve TxSlot objects immutable
 type TxPool struct {
-	_chainDB      kv.RoDB // remote db - use it wisely
-	_stateCache   kvcache.Cache
-	baseFee       *SubPool
-	newPendingTxs chan types.Hashes // notifications about new txs in Pending sub-pool
-	senders       *sendersBatch
+	_chainDB               kv.RoDB // remote db - use it wisely
+	_stateCache            kvcache.Cache
+	lock                   *sync.RWMutex
+	recentlyConnectedPeers *recentlyConnectedPeers // all txs will be propagated to this peers eventually, and clear list
+	senders                *sendersBatch
 	// batch processing of remote transactions
 	// handling works fast without batching, but batching allow:
 	//   - reduce amount of _chainDB transactions
@@ -302,14 +302,14 @@ type TxPool struct {
 	byHash                  map[string]*metaTx // tx_hash => tx : only not committed to db yet records
 	discardReasonsLRU       *simplelru.LRU     // tx_hash => discard_reason : non-persisted
 	pending                 *PendingPool
-	lock                    *sync.RWMutex
+	baseFee                 *SubPool
 	queued                  *SubPool
-	isLocalLRU              *simplelru.LRU          // tx_hash => is_local : to restore isLocal flag of unwinded transactions
-	recentlyConnectedPeers  *recentlyConnectedPeers // all txs will be propagated to this peers eventually, and clear list
-	all                     *BySenderAndNonce       // senderID => (sorted map of tx nonce => *metaTx)
+	isLocalLRU              *simplelru.LRU    // tx_hash => is_local : to restore isLocal flag of unwinded transactions
+	newPendingTxs           chan types.Hashes // notifications about new txs in Pending sub-pool
+	all                     *BySenderAndNonce // senderID => (sorted map of tx nonce => *metaTx)
+	deletedTxs              []*metaTx         // list of discarded txs since last db commit
+	promoted                types.Hashes      // pre-allocated temporary buffer to write promoted to pending pool txn hashes
 	cfg                     Config
-	deletedTxs              []*metaTx    // list of discarded txs since last db commit
-	promoted                types.Hashes // pre-allocated temporary buffer to write promoted to pending pool txn hashes
 	chainID                 uint256.Int
 	lastSeenBlock           atomic.Uint64
 	started                 atomic.Bool
