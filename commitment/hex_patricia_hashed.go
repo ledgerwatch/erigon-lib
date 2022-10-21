@@ -1070,6 +1070,7 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 		upCell.fillFromLowerCell(cell, depth, hph.currentKey[upDepth:hph.currentKeyLen], nibble)
 		// Delete if it existed
 		if hph.branchBefore[row] {
+			//branchData, _, err = hph.EncodeBranchDirectAccess(0, row, depth)
 			branchData, _, err = EncodeBranch(0, hph.touchMap[row], 0, func(nibble int, skip bool) (*Cell, error) { return nil, nil })
 			if err != nil {
 				return nil, updateKey, fmt.Errorf("failed to encode leaf node update: %w", err)
@@ -1115,35 +1116,37 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 		}
 
 		b := [...]byte{0x80}
-		//cellGetter := func(nibble int, skip bool) (*Cell, error) {
-		//	if skip {
-		//		if _, err := hph.keccak2.Write(b[:]); err != nil {
-		//			return nil, fmt.Errorf("failed to write empty nibble to hash: %w", err)
-		//		}
-		//		if hph.trace {
-		//			fmt.Printf("%x: empty(%d,%x)\n", nibble, row, nibble)
-		//		}
-		//		return nil, nil
-		//	}
-		//	cell := &hph.grid[row][nibble]
-		//	cellHash, err := hph.computeCellHash(cell, depth, hph.hashAuxBuffer[:0])
-		//	if err != nil {
-		//		return nil, err
-		//	}
-		//	if hph.trace {
-		//		fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
-		//	}
-		//	if _, err := hph.keccak2.Write(cellHash); err != nil {
-		//		return nil, err
-		//	}
-		//
-		//	return cell, nil
-		//}
-		//
+		cellGetter := func(nibble int, skip bool) (*Cell, error) {
+			if skip {
+				if _, err := hph.keccak2.Write(b[:]); err != nil {
+					return nil, fmt.Errorf("failed to write empty nibble to hash: %w", err)
+				}
+				if hph.trace {
+					fmt.Printf("%x: empty(%d,%x)\n", nibble, row, nibble)
+				}
+				return nil, nil
+			}
+			cell := &hph.grid[row][nibble]
+			cellHash, err := hph.computeCellHash(cell, depth, hph.hashAuxBuffer[:0])
+			if err != nil {
+				return nil, err
+			}
+			if hph.trace {
+				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
+			}
+			if _, err := hph.keccak2.Write(cellHash); err != nil {
+				return nil, err
+			}
+
+			return cell, nil
+		}
+
 		var lastNibble int
 		var err error
+		_ = cellGetter
 
 		branchData, lastNibble, err = hph.EncodeBranchDirectAccess(bitmap, row, depth)
+		//branchData, lastNibble, err = EncodeBranch(bitmap, hph.touchMap[row], hph.afterMap[row], cellGetter)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode branch update: %w", err)
 		}

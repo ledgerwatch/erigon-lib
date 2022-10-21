@@ -39,6 +39,7 @@ type DomainCommitted struct {
 	keccak       hash.Hash
 	patriciaTrie *commitment.HexPatriciaHashed
 	keyReplaceFn ValueMerger // defines logic performed with stored values during files merge
+	branchMerger *commitment.BranchMerger
 }
 
 func NewCommittedDomain(d *Domain, mode CommitmentMode) *DomainCommitted {
@@ -48,6 +49,7 @@ func NewCommittedDomain(d *Domain, mode CommitmentMode) *DomainCommitted {
 		commTree:     btree.NewG[*CommitmentItem](32, commitmentItemLess),
 		keccak:       sha3.NewLegacyKeccak256(),
 		mode:         mode,
+		branchMerger: commitment.NewHexBranchMerger(8192),
 	}
 }
 

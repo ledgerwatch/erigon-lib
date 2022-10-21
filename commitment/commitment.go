@@ -1,6 +1,7 @@
 package commitment
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math/bits"
@@ -352,99 +353,6 @@ func (branchData BranchData) IsComplete() bool {
 }
 
 // MergeHexBranches combines two branchData, number 2 coming after (and potentially shadowing) number 1
-func (branchData BranchData) MergeHexBranches2(branchData2 BranchData, newData []byte) (BranchData, error) {
-	if branchData2 == nil {
-		return branchData, nil
-	}
-	if branchData == nil {
-		return branchData2, nil
-	}
-
-	touchMap1 := binary.BigEndian.Uint16(branchData[0:])
-	afterMap1 := binary.BigEndian.Uint16(branchData[2:])
-	bitmap1 := touchMap1 & afterMap1
-	pos1 := 4
-
-	touchMap2 := binary.BigEndian.Uint16(branchData2[0:])
-	afterMap2 := binary.BigEndian.Uint16(branchData2[2:])
-	bitmap2 := touchMap2 & afterMap2
-	pos2 := 4
-
-	sz := pos1 + len(branchData) + len(branchData2) // harsh estimate to final size
-	if len(newData) < sz {
-		newData = append(newData, make([]byte, sz-len(newData))...)
-	}
-	binary.BigEndian.PutUint16(newData[0:], touchMap1|touchMap2)
-	binary.BigEndian.PutUint16(newData[2:], afterMap2)
-	dataPos := 4
-
-	for bitset, j := bitmap1|bitmap2, 0; bitset != 0; j++ {
-		bit := bitset & -bitset
-		if bitmap2&bit != 0 {
-			// Add fields from branchData2
-			fieldBits := PartFlags(branchData2[pos2])
-			newData[dataPos] = byte(fieldBits)
-			pos2++
-			dataPos++
-
-			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
-				l, n := binary.Uvarint(branchData2[pos2:])
-				if n == 0 {
-					return nil, fmt.Errorf("MergeHexBranches branch2 is too small: expected node info size")
-				} else if n < 0 {
-					return nil, fmt.Errorf("MergeHexBranches branch2: size overflow for length")
-				}
-				copy(newData[dataPos:], branchData2[pos2:pos2+n])
-				pos2 += n
-				dataPos += n
-				if len(branchData2) < pos2+int(l) {
-					return nil, fmt.Errorf("MergeHexBranches branch2 is too small: expected at least %d got %d bytes", pos2+int(l), len(branchData2))
-				}
-				if l > 0 {
-					copy(newData[dataPos:], branchData2[pos2:pos2+int(l)])
-					pos2 += int(l)
-					dataPos += int(l)
-				}
-			}
-		}
-		if bitmap1&bit != 0 {
-			add := (touchMap2&bit == 0) && (afterMap2&bit != 0) // Add fields from branchData1
-			fieldBits := PartFlags(branchData[pos1])
-			if add {
-				newData = append(newData, byte(fieldBits))
-			}
-			pos1++
-			dataPos++
-			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
-				l, n := binary.Uvarint(branchData[pos1:])
-				if n == 0 {
-					return nil, fmt.Errorf("MergeHexBranches branch1 is too small: expected node info size")
-				} else if n < 0 {
-					return nil, fmt.Errorf("MergeHexBranches branch1: size overflow for length")
-				}
-				if add {
-					copy(newData[dataPos:], branchData[pos1:pos1+n])
-				}
-				pos1 += n
-				dataPos += n
-				if len(branchData) < pos1+int(l) {
-					return nil, fmt.Errorf("MergeHexBranches branch1 is too small: expected at least %d got %d bytes", pos1+int(l), len(branchData))
-				}
-				if l > 0 {
-					if add {
-						copy(newData[dataPos:], branchData[pos1:pos1+int(l)])
-					}
-					pos1 += int(l)
-					dataPos += int(l)
-				}
-			}
-		}
-		bitset ^= bit
-	}
-	return newData[:dataPos+1], nil
-}
-
-// MergeHexBranches combines two branchData, number 2 coming after (and potentially shadowing) number 1
 func (branchData BranchData) MergeHexBranches(branchData2 BranchData, newData []byte) (BranchData, error) {
 	if branchData2 == nil {
 		return branchData, nil
@@ -524,7 +432,7 @@ func (branchData BranchData) MergeHexBranches(branchData2 BranchData, newData []
 	return newData, nil
 }
 
-func (branchData BranchData) DecodeCells() (touchMap, afterMap uint16, row [16]Cell, err error) {
+func (branchData BranchData) DecodeCells() (touchMap, afterMap uint16, row [16]*Cell, err error) {
 	touchMap = binary.BigEndian.Uint16(branchData[0:])
 	afterMap = binary.BigEndian.Uint16(branchData[2:])
 	pos := 4
@@ -534,6 +442,7 @@ func (branchData BranchData) DecodeCells() (touchMap, afterMap uint16, row [16]C
 		if afterMap&bit != 0 {
 			fieldBits := PartFlags(branchData[pos])
 			pos++
+			row[nibble] = new(Cell)
 			if pos, err = row[nibble].fillFromFields(branchData, pos, fieldBits); err != nil {
 				err = fmt.Errorf("faield to fill cell at nibble %x: %w", nibble, err)
 				return
@@ -620,4 +529,118 @@ func (hph *HexPatriciaHashed) EncodeBranchDirectAccess(bitmap uint16, row, depth
 		bitset ^= bit
 	}
 	return branchData, lastNibble, nil
+}
+
+type BranchMerger struct {
+	buf *bytes.Buffer
+	num [4]byte
+}
+
+func NewHexBranchMerger(cap uint64) *BranchMerger {
+	return &BranchMerger{buf: bytes.NewBuffer(make([]byte, cap))}
+}
+
+// MergeHexBranches combines two branchData, number 2 coming after (and potentially shadowing) number 1
+func (m *BranchMerger) Merge(branch1 BranchData, branch2 BranchData) (BranchData, error) {
+	if branch2 == nil {
+		return branch1, nil
+	}
+	if branch1 == nil {
+		return branch2, nil
+	}
+
+	touchMap1 := binary.BigEndian.Uint16(branch1[0:])
+	afterMap1 := binary.BigEndian.Uint16(branch1[2:])
+	bitmap1 := touchMap1 & afterMap1
+	pos1 := 4
+
+	touchMap2 := binary.BigEndian.Uint16(branch2[0:])
+	afterMap2 := binary.BigEndian.Uint16(branch2[2:])
+	bitmap2 := touchMap2 & afterMap2
+	pos2 := 4
+
+	binary.BigEndian.PutUint16(m.num[0:], touchMap1|touchMap2)
+	binary.BigEndian.PutUint16(m.num[2:], afterMap2)
+	dataPos := 4
+
+	m.buf.Reset()
+	if _, err := m.buf.Write(m.num[:]); err != nil {
+		return nil, err
+	}
+
+	for bitset, j := bitmap1|bitmap2, 0; bitset != 0; j++ {
+		bit := bitset & -bitset
+		if bitmap2&bit != 0 {
+			// Add fields from branch2
+			fieldBits := PartFlags(branch2[pos2])
+			if err := m.buf.WriteByte(byte(fieldBits)); err != nil {
+				return nil, err
+			}
+			pos2++
+
+			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
+				l, n := binary.Uvarint(branch2[pos2:])
+				if n == 0 {
+					return nil, fmt.Errorf("MergeHexBranches branch2 is too small: expected node info size")
+				} else if n < 0 {
+					return nil, fmt.Errorf("MergeHexBranches branch2: size overflow for length")
+				}
+
+				_, err := m.buf.Write(branch2[pos2 : pos2+n])
+				if err != nil {
+					return nil, err
+				}
+				pos2 += n
+				dataPos += n
+				if len(branch2) < pos2+int(l) {
+					return nil, fmt.Errorf("MergeHexBranches branch2 is too small: expected at least %d got %d bytes", pos2+int(l), len(branch2))
+				}
+				if l > 0 {
+					if _, err := m.buf.Write(branch2[pos2 : pos2+int(l)]); err != nil {
+						return nil, err
+					}
+					pos2 += int(l)
+					dataPos += int(l)
+				}
+			}
+		}
+		if bitmap1&bit != 0 {
+			add := (touchMap2&bit == 0) && (afterMap2&bit != 0) // Add fields from branchData1
+			fieldBits := PartFlags(branch1[pos1])
+			if add {
+				if err := m.buf.WriteByte(byte(fieldBits)); err != nil {
+					return nil, err
+				}
+			}
+			pos1++
+			for i := 0; i < bits.OnesCount8(byte(fieldBits)); i++ {
+				l, n := binary.Uvarint(branch1[pos1:])
+				if n == 0 {
+					return nil, fmt.Errorf("MergeHexBranches branch1 is too small: expected node info size")
+				} else if n < 0 {
+					return nil, fmt.Errorf("MergeHexBranches branch1: size overflow for length")
+				}
+				if add {
+					if _, err := m.buf.Write(branch1[pos1 : pos1+n]); err != nil {
+						return nil, err
+					}
+				}
+				pos1 += n
+				if len(branch1) < pos1+int(l) {
+					return nil, fmt.Errorf("MergeHexBranches branch1 is too small: expected at least %d got %d bytes", pos1+int(l), len(branch1))
+				}
+				if l > 0 {
+					if add {
+						if _, err := m.buf.Write(branch1[pos1 : pos1+int(l)]); err != nil {
+							return nil, err
+						}
+					}
+					pos1 += int(l)
+				}
+			}
+		}
+		bitset ^= bit
+	}
+	return m.buf.Bytes(), nil
+
 }

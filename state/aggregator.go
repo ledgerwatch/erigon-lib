@@ -54,7 +54,6 @@ type Aggregator struct {
 	stats           FilesStats
 	tmpdir          string
 	defaultCtx      *AggregatorContext
-	mbuf            [8192]byte
 }
 
 func NewAggregator(
@@ -826,7 +825,7 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 		}
 
 		stated := commitment.BranchData(stateValue)
-		merged, err := stated.MergeHexBranches2(update, a.mbuf[:])
+		merged, err := a.commitment.branchMerger.Merge(stated, update)
 		if err != nil {
 			return nil, err
 		}
