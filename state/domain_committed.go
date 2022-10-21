@@ -600,16 +600,16 @@ func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles M
 }
 
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
-func (d *DomainCommitted) ComputeCommitment(ctx *AggregatorContext, trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {
+func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {
 	touchedKeys, hashedKeys, updates := d.TouchedKeyList()
 	if len(touchedKeys) == 0 {
 		rootHash, err = d.patriciaTrie.RootHash()
 		return rootHash, nil, err
 	}
 
+	// data accessing functions should be set once before
 	d.patriciaTrie.Reset()
 	d.patriciaTrie.SetTrace(trace)
-	d.patriciaTrie.ResetFns(ctx.branchFn, ctx.accountFn, ctx.storageFn)
 
 	switch d.mode {
 	case CommitmentModeDirect:

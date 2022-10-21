@@ -53,6 +53,8 @@ type Aggregator struct {
 	rwTx            kv.RwTx
 	stats           FilesStats
 	tmpdir          string
+	defaultCtx      *AggregatorContext
+	mbuf            [8192]byte
 }
 
 func NewAggregator(
@@ -101,6 +103,9 @@ func NewAggregator(
 		return nil, err
 	}
 	closeAgg = false
+
+	a.defaultCtx = a.MakeContext()
+	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
 	return a, nil
 }
 
@@ -807,8 +812,7 @@ func (a *AggregatorContext) storageFn(plainKey []byte, cell *commitment.Cell) er
 
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
 func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []byte, err error) {
-	ctx := a.MakeContext()
-	rootHash, branchNodeUpdates, err := a.commitment.ComputeCommitment(ctx, trace)
+	rootHash, branchNodeUpdates, err := a.commitment.ComputeCommitment(trace)
 	if err != nil {
 		return nil, err
 	}
@@ -816,13 +820,13 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 	for pref, update := range branchNodeUpdates {
 		prefix := []byte(pref)
 
-		stateValue, err := ctx.ReadCommitment(prefix, a.rwTx)
+		stateValue, err := a.defaultCtx.ReadCommitment(prefix, a.rwTx)
 		if err != nil {
 			return nil, err
 		}
 
 		stated := commitment.BranchData(stateValue)
-		merged, err := stated.MergeHexBranches(update, nil)
+		merged, err := stated.MergeHexBranches2(update, a.mbuf[:])
 		if err != nil {
 			return nil, err
 		}

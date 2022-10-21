@@ -19,7 +19,6 @@ package commitment
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -106,8 +105,6 @@ type state struct {
 	BranchBefore  [128]bool // For each row, whether there was a branch node in the database loaded in unfold
 	CurrentKey    [128]byte // For each row indicates which column is currently selected
 	Depths        [128]int  // For each row, the depth of cells in that row
-
-	//RootCell ecell
 }
 
 type ecell struct {
@@ -1118,35 +1115,35 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 		}
 
 		b := [...]byte{0x80}
-		cellGetter := func(nibble int, skip bool) (*Cell, error) {
-			if skip {
-				if _, err := hph.keccak2.Write(b[:]); err != nil {
-					return nil, fmt.Errorf("failed to write empty nibble to hash: %w", err)
-				}
-				if hph.trace {
-					fmt.Printf("%x: empty(%d,%x)\n", nibble, row, nibble)
-				}
-				return nil, nil
-			}
-			cell := &hph.grid[row][nibble]
-			cellHash, err := hph.computeCellHash(cell, depth, hph.hashAuxBuffer[:0])
-			if err != nil {
-				return nil, err
-			}
-			if hph.trace {
-				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
-			}
-			if _, err := hph.keccak2.Write(cellHash); err != nil {
-				return nil, err
-			}
-
-			return cell, nil
-		}
-
+		//cellGetter := func(nibble int, skip bool) (*Cell, error) {
+		//	if skip {
+		//		if _, err := hph.keccak2.Write(b[:]); err != nil {
+		//			return nil, fmt.Errorf("failed to write empty nibble to hash: %w", err)
+		//		}
+		//		if hph.trace {
+		//			fmt.Printf("%x: empty(%d,%x)\n", nibble, row, nibble)
+		//		}
+		//		return nil, nil
+		//	}
+		//	cell := &hph.grid[row][nibble]
+		//	cellHash, err := hph.computeCellHash(cell, depth, hph.hashAuxBuffer[:0])
+		//	if err != nil {
+		//		return nil, err
+		//	}
+		//	if hph.trace {
+		//		fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
+		//	}
+		//	if _, err := hph.keccak2.Write(cellHash); err != nil {
+		//		return nil, err
+		//	}
+		//
+		//	return cell, nil
+		//}
+		//
 		var lastNibble int
 		var err error
 
-		branchData, lastNibble, err = EncodeBranch(bitmap, hph.touchMap[row], hph.afterMap[row], cellGetter)
+		branchData, lastNibble, err = hph.EncodeBranchDirectAccess(bitmap, row, depth)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode branch update: %w", err)
 		}
@@ -1512,6 +1509,94 @@ func (s *state) Decode(buf []byte) error {
 	return nil
 }
 
+func (c *Cell) bytes() []byte {
+	var pos = 1
+	size := 1 + c.hl + 1 + c.apl + c.spl + 1 + c.downHashedLen + 1 + c.extLen + 1 // max size
+	buf := make([]byte, size)
+
+	var flags uint8
+	if c.hl != 0 {
+		flags |= 1
+		buf[pos] = byte(c.hl)
+		pos++
+		copy(buf[pos:pos+c.hl], c.h[:])
+		pos += c.hl
+	}
+	if c.apl != 0 {
+		flags |= 2
+		buf[pos] = byte(c.hl)
+		pos++
+		copy(buf[pos:pos+c.apl], c.apk[:])
+		pos += c.apl
+	}
+	if c.spl != 0 {
+		flags |= 4
+		buf[pos] = byte(c.spl)
+		pos++
+		copy(buf[pos:pos+c.spl], c.spk[:])
+		pos += c.spl
+	}
+	if c.downHashedLen != 0 {
+		flags |= 8
+		buf[pos] = byte(c.downHashedLen)
+		pos++
+		copy(buf[pos:pos+c.downHashedLen], c.downHashedKey[:])
+		pos += c.downHashedLen
+	}
+	if c.extLen != 0 {
+		flags |= 16
+		buf[pos] = byte(c.extLen)
+		pos++
+		copy(buf[pos:pos+c.downHashedLen], c.downHashedKey[:])
+		pos += c.downHashedLen
+	}
+	buf[0] = flags
+	return buf
+}
+
+func (c *Cell) decodeBytes(buf []byte) error {
+	if len(buf) < 1 {
+		return fmt.Errorf("invalid buffer size to contain Cell (at least 1 byte expected)")
+	}
+	c.fillEmpty()
+
+	var pos int
+	flags := buf[pos]
+	pos++
+
+	if flags&1 != 0 {
+		c.hl = int(buf[pos])
+		pos++
+		copy(c.h[:], buf[pos:pos+c.hl])
+		pos += c.hl
+	}
+	if flags&2 != 0 {
+		c.apl = int(buf[pos])
+		pos++
+		copy(c.apk[:], buf[pos:pos+c.apl])
+		pos += c.apl
+	}
+	if flags&4 != 0 {
+		c.spl = int(buf[pos])
+		pos++
+		copy(c.spk[:], buf[pos:pos+c.spl])
+		pos += c.spl
+	}
+	if flags&8 != 0 {
+		c.downHashedLen = int(buf[pos])
+		pos++
+		copy(c.downHashedKey[:], buf[pos:pos+c.downHashedLen])
+		pos += c.downHashedLen
+	}
+	if flags&16 != 0 {
+		c.extLen = int(buf[pos])
+		pos++
+		copy(c.extension[:], buf[pos:pos+c.extLen])
+		pos += c.extLen
+	}
+	return nil
+}
+
 // Encode current state of hph into bytes
 func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 	s := state{
@@ -1530,28 +1615,29 @@ func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 	//	return nil, err
 	//}
 
-	root := hph.root
-	rc := ecell{
-		Hash:       root.h[:root.hl],
-		APK:        root.apk[:root.apl],
-		SPK:        root.spk[:root.spl],
-		DHL:        root.downHashedLen,
-		DHK:        root.downHashedKey[:root.downHashedLen],
-		EXT:        root.extension[:root.extLen],
-		ExtLen:     root.extLen,
-		Nonce:      root.Nonce,
-		CodeHash:   root.CodeHash[:],
-		Storage:    root.Storage[:root.StorageLen],
-		StorageLen: root.StorageLen,
-	}
-	rc.Balance.Set(&root.Balance)
+	//root := hph.root
+	//rc := ecell{
+	//	Hash:   root.h[:root.hl],
+	//	APK:    root.apk[:root.apl],
+	//	SPK:    root.spk[:root.spl],
+	//	DHL:    root.downHashedLen,
+	//	DHK:    root.downHashedKey[:root.downHashedLen],
+	//	EXT:    root.extension[:root.extLen],
+	//	ExtLen: root.extLen,
+	//	//Nonce:      root.Nonce,
+	//	//CodeHash:   root.CodeHash[:],
+	//	//Storage:    root.Storage[:root.StorageLen],
+	//	//StorageLen: root.StorageLen,
+	//}
+	////rc.Balance.Set(&root.Balance)
+	//
+	//w := bytes.NewBuffer(nil)
+	//if err := gob.NewEncoder(w).Encode(rc); err != nil {
+	//	return nil, err
+	//}
+	//s.Root = w.Bytes()
 
-	w := bytes.NewBuffer(nil)
-	if err := gob.NewEncoder(w).Encode(rc); err != nil {
-		return nil, err
-	}
-	s.Root = w.Bytes()
-
+	s.Root = hph.root.bytes()
 	copy(s.CurrentKey[:], hph.currentKey[:])
 	copy(s.Depths[:], hph.depths[:])
 	copy(s.BranchBefore[:], hph.branchBefore[:])
@@ -1573,30 +1659,35 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 	}
 
 	//_, _, row, err := BranchData(s.Root).DecodeCells()
-	var rc ecell
-	err := gob.NewDecoder(bytes.NewBuffer(s.Root)).Decode(&rc)
-	if err != nil {
-		return fmt.Errorf("decode root: %w", err)
-	}
+	//var rc ecell
+	//err := gob.NewDecoder(bytes.NewBuffer(s.Root)).Decode(&rc)
+	//if err != nil {
+	//	return fmt.Errorf("decode root: %w", err)
+	//}
+
 	hph.Reset()
 
-	//hph.root = row[0]
-	hph.root.apl = len(rc.APK)
-	hph.root.spl = len(rc.SPK)
-	hph.root.downHashedLen = rc.DHL
-	hph.root.extLen = rc.ExtLen
-	hph.root.hl = len(rc.Hash)
-	hph.root.StorageLen = len(rc.Storage)
-	hph.root.Nonce = rc.Nonce
+	if err := hph.root.decodeBytes(s.Root); err != nil {
+		return err
+	}
 
-	copy(hph.root.apk[:], rc.APK)
-	copy(hph.root.spk[:], rc.SPK)
-	copy(hph.root.downHashedKey[:], rc.DHK)
-	copy(hph.root.extension[:], rc.EXT)
-	copy(hph.root.h[:], rc.Hash)
-	copy(hph.root.Storage[:], rc.Storage)
-	copy(hph.root.CodeHash[:], rc.CodeHash)
-	hph.root.Balance.Set(&rc.Balance)
+	//hph.root = row[0]
+	//hph.root.apl = len(rc.APK)
+	//hph.root.spl = len(rc.SPK)
+	//hph.root.downHashedLen = rc.DHL
+	//hph.root.extLen = rc.ExtLen
+	//hph.root.hl = len(rc.Hash)
+	////hph.root.StorageLen = len(rc.Storage)
+	////hph.root.Nonce = rc.Nonce
+	//
+	//copy(hph.root.apk[:], rc.APK)
+	//copy(hph.root.spk[:], rc.SPK)
+	//copy(hph.root.downHashedKey[:], rc.DHK)
+	//copy(hph.root.extension[:], rc.EXT)
+	//copy(hph.root.h[:], rc.Hash)
+	//copy(hph.root.Storage[:], rc.Storage)
+	//copy(hph.root.CodeHash[:], rc.CodeHash)
+	//hph.root.Balance.Set(&rc.Balance)
 
 	hph.currentKeyLen = int(s.CurrentKeyLen)
 	hph.rootChecked = s.RootChecked

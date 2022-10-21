@@ -288,7 +288,8 @@ func (d *Domain) Close() {
 }
 
 func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, bool, error) {
-	var invertedStep [8]byte
+	//var invertedStep [8]byte
+	invertedStep := dc.numBuf
 	binary.BigEndian.PutUint64(invertedStep[:], ^(fromTxNum / dc.d.aggregationStep))
 	keyCursor, err := roTx.CursorDupSort(dc.d.keysTable)
 	if err != nil {
@@ -304,10 +305,10 @@ func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, 
 		v, found := dc.readFromFiles(key, fromTxNum)
 		return v, found, nil
 	}
-	keySuffix := make([]byte, len(key)+8)
-	copy(keySuffix, key)
-	copy(keySuffix[len(key):], foundInvStep)
-	v, err := roTx.GetOne(dc.d.valsTable, keySuffix)
+	//keySuffix := make([]byte, len(key)+8)
+	copy(dc.keyBuf[:], key)
+	copy(dc.keyBuf[len(key):], foundInvStep)
+	v, err := roTx.GetOne(dc.d.valsTable, dc.keyBuf[:len(key)+8])
 	if err != nil {
 		return nil, false, err
 	}
@@ -315,10 +316,11 @@ func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, 
 }
 
 func (dc *DomainContext) Get(key1, key2 []byte, roTx kv.Tx) ([]byte, error) {
-	key := make([]byte, len(key1)+len(key2))
-	copy(key, key1)
-	copy(key[len(key1):], key2)
-	v, _, err := dc.get(key, dc.d.txNum, roTx)
+	//key := make([]byte, len(key1)+len(key2))
+	copy(dc.keyBuf[:], key1)
+	copy(dc.keyBuf[len(key1):], key2)
+	// keys larger than 52 bytes will panic
+	v, _, err := dc.get(dc.keyBuf[:len(key1)+len(key2)], dc.d.txNum, roTx)
 	return v, err
 }
 
@@ -456,9 +458,11 @@ func ctxItemLess(i, j ctxItem) bool {
 
 // DomainContext allows accesing the same domain from multiple go-routines
 type DomainContext struct {
-	d     *Domain
-	files *btree.BTreeG[ctxItem]
-	hc    *HistoryContext
+	d      *Domain
+	files  *btree.BTreeG[ctxItem]
+	hc     *HistoryContext
+	keyBuf [60]byte // 52b key and 8b for inverted step
+	numBuf [8]byte
 }
 
 func (d *Domain) MakeContext() *DomainContext {
