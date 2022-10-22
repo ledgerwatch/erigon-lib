@@ -409,6 +409,7 @@ func (g *Getter) nextPos(clean bool) uint64 {
 	var l byte
 	var pos uint64
 	for l == 0 {
+		g.touch()
 		code := uint16(g.data[g.dataP]) >> g.dataBit
 		if 8-g.dataBit < table.bitLen && int(g.dataP)+1 < len(g.data) {
 			code |= uint16(g.data[g.dataP+1]) << (8 - g.dataBit)
@@ -428,6 +429,8 @@ func (g *Getter) nextPos(clean bool) uint64 {
 	return pos
 }
 
+func (g *Getter) touch() { _ = g.data[g.dataP] }
+
 func (g *Getter) nextPattern() []byte {
 	table := g.patternDict
 
@@ -438,6 +441,7 @@ func (g *Getter) nextPattern() []byte {
 	var l byte
 	var pattern []byte
 	for l == 0 {
+		g.touch()
 		code := uint16(g.data[g.dataP]) >> g.dataBit
 		if 8-g.dataBit < table.bitLen && int(g.dataP)+1 < len(g.data) {
 			code |= uint16(g.data[g.dataP+1]) << (8 - g.dataBit)
