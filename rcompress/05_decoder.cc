@@ -18,25 +18,25 @@ int PrepareNextBlock(Decoder *decoder, unsigned char *src, int src_size, int64_t
     return decoder->prepare_next_block(src, src_size, offset);
 }
 
-int HasNext(Decoder *decoder) {
-    // if (decoder->has_next())
-    //     return 1;
-    // else
-    //     return 0;
+// int HasNext(Decoder *decoder) {
+//     // if (decoder->has_next())
+//     //     return 1;
+//     // else
+//     //     return 0;
 
-    return decoder->has_next() ? 1 : 0;
-}
+//     return decoder->has_next() ? 1 : 0;
+// }
 
-int64_t Next(Decoder *decoder, unsigned char *dst, int *dst_size) {
-    return decoder->next(dst, dst_size);
-}
+// int64_t Next(Decoder *decoder, int64_t offset, signed short *dst) {
+//     return decoder->next(offset, dst);
+// }
 
-int Match(Decoder *decoder, unsigned char *prefix, int prefix_size) {
-    return decoder->match(prefix, prefix_size);
-}
+// int Match(Decoder *decoder, unsigned char *prefix, int prefix_size) {
+//     return decoder->match(prefix, prefix_size);
+// }
 
-int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, unsigned char *dst, int *dst_size) {
-    return decoder->decode_at(offset, block_num, dst, dst_size);
+int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, short *dst) {
+    return decoder->decode_at(offset, block_num, dst);
 }
 
 // ---------------- DECODER
@@ -61,6 +61,7 @@ int Decoder::prepare_next_block(unsigned char *src, int src_size, int64_t offset
 
     auto _d_data = new d_data(src, src_size);
     _d_data->offset = offset;
+
     _d_data->restore_prefixes();
 
     block_decoders.push_back(_d_data);
@@ -68,153 +69,195 @@ int Decoder::prepare_next_block(unsigned char *src, int src_size, int64_t offset
     return _d_data->word_start + _d_data->offset;
 }
 
-bool Decoder::has_next() {
+// bool Decoder::has_next() {
 
-    if (current_block < num_blocks - 1) return true;
+//     if (current_block < num_blocks - 1) return true;
 
-    if (current_block + 1 == num_blocks) {
+//     if (current_block + 1 == num_blocks) {
 
-        auto decoder = block_decoders.at(current_block);
+//         auto decoder = block_decoders.at(current_block);
 
-        return decoder->next_start == decoder->src_size ? false : true;
-    }
+//         return decoder->next_start == decoder->src_size ? false : true;
+//     }
 
-    return false;
-}
+//     return false;
+// }
 
-int64_t Decoder::next(unsigned char *dst, int *dst_size) {
+// int64_t Decoder::next(int64_t offset, signed short *dst) {
 
-    if (current_block >= num_blocks)
-        return -1;
+//     if (current_block >= num_blocks)
+//         return -1;
 
-    auto decoder = block_decoders.at(current_block);
+//     int64_t next_word_offset;
+//     d_data *decoder;
+//     d_data *next_decoder = nullptr;
 
-    if (decoder->next(&word_codes)) {
-        int dst_idx = 0;
-        int match_code, match_diff, match_len, match_idx;
-        for (int i = 0; i < (int)word_codes.size();) {
-            int code = word_codes.at(i);
+//     // for (int i = 0; i < (int)block_decoders.size(); i++) {
+//     //     auto _d_data = block_decoders.at(i);
 
-            if (code > R_FLAG_EOW) {
-                assert(code < R_MAX_ALPH_SIZE);
-                int xbits = match_len_xbits[code - 257];
+//     //     if (_d_data->offset > offset) {
+//     //         current_block = i - 1;
+//     //         break;
+//     //     }
+//     // }
 
-                if (xbits > 0) {
-                    int diff = word_codes.at(i + 1);
-                    match_len = match_len_mins[code - 257] + diff;
-                    match_code = word_codes.at(i + 2);
+//     decoder = block_decoders.at(current_block);
+//     if (current_block < (int)block_decoders.size()) {
+//         next_decoder = block_decoders.at(current_block + 1);
+//     }
 
-                    match_diff = word_codes.at(i + 3);
+//     // // decoder->next_start =
 
-                    i += 4;
-                    match_idx = prefix_id_mins[match_code] + match_diff;
+//     // auto d_offset = decoder->offset + decoder->next_start;
+//     // std::cout << "OFFSET: " << offset << "\n";
+//     // std::cout << "DECODER OFFSET: " << decoder->offset << "\n";
+//     // std::cout << "DECODER_NEXT START: " << decoder->next_start << "\n";
+//     // std::cout << "ALL TOGETHER: " << d_offset << "\n";
 
-                } else {
-                    match_len = match_len_mins[code - 257];
-                    match_code = word_codes.at(i + 1);
+//     // assert(offset == decoder->offset + decoder->next_start);
 
-                    match_diff = word_codes.at(i + 2);
+//     if (decoder->next(&word_codes)) {
+//         int dst_idx = 0;
+//         int match_code, match_diff, match_len, match_idx;
+//         for (int i = 0; i < (int)word_codes.size();) {
+//             int code = word_codes.at(i);
 
-                    i += 3;
-                    match_idx = prefix_id_mins[match_code] + match_diff;
-                }
+//             if (code > R_FLAG_EOW) {
+//                 assert(code < R_MAX_ALPH_SIZE);
+//                 int xbits = match_len_xbits[code - 257];
 
-                assert(match_len <= 255);
-                for (int q = 0; q < match_len; q++) {
-                    dst[dst_idx++] = dict.at(match_idx).at(q);
-                }
+//                 if (xbits > 0) {
+//                     int diff = word_codes.at(i + 1);
+//                     match_len = match_len_mins[code - 257] + diff;
+//                     match_code = word_codes.at(i + 2);
 
-            } else {
-                dst[dst_idx++] = (unsigned char)code;
-                i++;
-            }
-        }
-        *dst_size = dst_idx;
+//                     match_diff = word_codes.at(i + 3);
 
-        return decoder->offset + decoder->next_start;
-    } else {
-        if (current_block < num_blocks) {
-            current_block++;
-            return this->next(dst, dst_size);
-        }
+//                     i += 4;
+//                     match_idx = prefix_id_mins[match_code] + match_diff;
 
-        return -1;
-    }
-}
+//                 } else {
+//                     match_len = match_len_mins[code - 257];
+//                     match_code = word_codes.at(i + 1);
 
-int Decoder::match(unsigned char *prefix, int prefix_size) {
+//                     match_diff = word_codes.at(i + 2);
 
-    if (current_block >= num_blocks)
-        return 0;
+//                     i += 3;
+//                     match_idx = prefix_id_mins[match_code] + match_diff;
+//                 }
 
-    auto decoder = block_decoders.at(current_block);
+//                 assert(match_len <= 255);
+//                 for (int q = 0; q < match_len; q++) {
+//                     dst[dst_idx++] = dict.at(match_idx).at(q);
+//                 }
 
-    std::vector<uint8_t> decoded_part(prefix_size, 0);
+//             } else {
+//                 dst[dst_idx++] = (unsigned char)code;
+//                 i++;
+//             }
+//         }
 
-    bool matched = 1;
+//         dst[dst_idx] = -1; // eow
 
-    if (decoder->match(&word_codes)) {
-        int dst_idx = 0;
-        int match_code, match_diff, match_len, match_idx;
-        for (int i = 0; i < (int)word_codes.size() && dst_idx < prefix_size;) {
-            int code = word_codes.at(i);
+//         next_word_offset = decoder->d_offset + decoder->next_start;
 
-            if (code > R_FLAG_EOW) {
-                assert(code < R_MAX_ALPH_SIZE);
-                int xbits = match_len_xbits[code - 257];
+//         if (next_decoder != nullptr) {
+//             if (next_word_offset == next_decoder->s_offset) {
+//                 return next_decoder->d_offset;
+//             }
+//         }
 
-                if (xbits > 0) {
-                    int diff = word_codes.at(i + 1);
-                    match_len = match_len_mins[code - 257] + diff;
-                    match_code = word_codes.at(i + 2);
+//         return next_word_offset;
+//     } else {
+//         if (current_block < num_blocks) {
+//             current_block++;
+//             return this->next(offset, dst);
+//         }
 
-                    match_diff = word_codes.at(i + 3);
+//         return -1;
+//     }
+//     return 0;
+// }
 
-                    i += 4;
-                    match_idx = prefix_id_mins[match_code] + match_diff;
+// int Decoder::match(unsigned char *prefix, int prefix_size) {
 
-                } else {
-                    match_len = match_len_mins[code - 257];
-                    match_code = word_codes.at(i + 1);
+//     if (current_block >= num_blocks)
+//         return 0;
 
-                    match_diff = word_codes.at(i + 2);
+//     auto decoder = block_decoders.at(current_block);
 
-                    i += 3;
-                    match_idx = prefix_id_mins[match_code] + match_diff;
-                }
+//     std::vector<uint8_t> decoded_part(prefix_size, 0);
 
-                assert(match_len <= 255);
-                for (int q = 0; q < match_len && dst_idx < prefix_size; q++) {
-                    decoded_part.at(dst_idx++) = dict.at(match_idx).at(q);
-                }
+//     bool matched = 1;
 
-            } else {
-                decoded_part.at(dst_idx++) = (unsigned char)code;
-                i++;
-            }
-        }
+//     if (decoder->match(&word_codes)) {
+//         int dst_idx = 0;
+//         int match_code, match_diff, match_len, match_idx;
+//         for (int i = 0; i < (int)word_codes.size() && dst_idx < prefix_size;) {
+//             int code = word_codes.at(i);
 
-    } else {
-        if (current_block < num_blocks) {
-            current_block++;
-            return this->match(prefix, prefix_size);
-        }
-    }
+//             if (code > R_FLAG_EOW) {
+//                 assert(code < R_MAX_ALPH_SIZE);
+//                 int xbits = match_len_xbits[code - 257];
 
-    for (int i = 0; i < prefix_size; i++) {
-        if (decoded_part.at(i) != prefix[i]) {
-            matched = 0;
-            break;
-        }
-    }
+//                 if (xbits > 0) {
+//                     int diff = word_codes.at(i + 1);
+//                     match_len = match_len_mins[code - 257] + diff;
+//                     match_code = word_codes.at(i + 2);
 
-    return matched;
-}
+//                     match_diff = word_codes.at(i + 3);
 
-int64_t Decoder::decode_at(int64_t offset, int block_num, unsigned char *dst, int *dst_size) {
+//                     i += 4;
+//                     match_idx = prefix_id_mins[match_code] + match_diff;
+
+//                 } else {
+//                     match_len = match_len_mins[code - 257];
+//                     match_code = word_codes.at(i + 1);
+
+//                     match_diff = word_codes.at(i + 2);
+
+//                     i += 3;
+//                     match_idx = prefix_id_mins[match_code] + match_diff;
+//                 }
+
+//                 assert(match_len <= 255);
+//                 for (int q = 0; q < match_len && dst_idx < prefix_size; q++) {
+//                     decoded_part.at(dst_idx++) = dict.at(match_idx).at(q);
+//                 }
+
+//             } else {
+//                 decoded_part.at(dst_idx++) = (unsigned char)code;
+//                 i++;
+//             }
+//         }
+
+//     } else {
+//         if (current_block < num_blocks) {
+//             current_block++;
+//             return this->match(prefix, prefix_size);
+//         }
+//     }
+
+//     for (int i = 0; i < prefix_size; i++) {
+//         if (decoded_part.at(i) != prefix[i]) {
+//             matched = 0;
+//             break;
+//         }
+//     }
+
+//     return matched;
+// }
+
+int64_t Decoder::decode_at(int64_t offset, int block_num, short *dst) {
+
+    assert(block_num < (int)block_decoders.size());
 
     auto decoder = block_decoders.at(block_num);
-    decoder->next_start = offset;
+
+    if (offset > decoder->word_start)
+        decoder->next_start = offset - decoder->offset;
+    if (offset < decoder->word_start || decoder->next_start == 0)
+        decoder->next_start = decoder->word_start;
 
     if (decoder->next(&word_codes)) {
         int dst_idx = 0;
@@ -256,9 +299,13 @@ int64_t Decoder::decode_at(int64_t offset, int block_num, unsigned char *dst, in
                 i++;
             }
         }
-        *dst_size = dst_idx;
+
+        dst[dst_idx++] = -1;
+
         return decoder->offset + decoder->next_start;
     } else {
+
+        std::cout << "GOT HERE\n";
         return -1;
     }
 }

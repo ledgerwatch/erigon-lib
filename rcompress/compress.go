@@ -60,28 +60,6 @@ func newPrefixTree() *prefix_tree {
 	return &prefix_tree{trie: C.NewTrie()}
 }
 
-// type ref_count struct {
-// 	refs []int32
-// 	mu   sync.Mutex
-// }
-
-// func newRefCount(size int) *ref_count {
-// 	refs := make([]int32, size)
-// 	for i := 0; i < size; i++ {
-// 		refs[i] = 0
-// 	}
-// 	return &ref_count{refs: refs}
-// }
-
-// func (this *ref_count) add_count(prefix_count []int32) {
-// 	this.mu.Lock()
-// 	defer this.mu.Unlock()
-
-// 	for idx, v := range prefix_count {
-// 		this.refs[idx] += v
-// 	}
-// }
-
 type block struct {
 	data          []byte
 	sizes         []int32

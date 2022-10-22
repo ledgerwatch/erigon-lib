@@ -138,22 +138,26 @@ func (d *Decompressor) Count() int           { return int(d.wordsCount) }
 func (d *Decompressor) EmptyWordsCount() int { return int(d.emptyWordsCount) }
 
 type tuple struct {
-	offset int64
-	size   int
+	startOffset uint64
+	dataOffset  uint64
+	size        int
 }
 
 // Getter represent "reader" or "interator" that can move accross the data of the decompressor
 // The full state of the getter can be captured by saving dataP, and dataBit
 type Getter struct {
 	buf          []byte
+	decoded      []int16
 	data         []byte
 	blockOffsets []tuple
 	wordOffsets  []int // starting point of a first word in each block
 
-	currentBlock int   // for sequential decoding
-	offset       int64 // for sequential and random access
-	fName        string
-	trace        bool
+	numBlocks    int
+	currentBlock int    // for sequential decoding
+	offset       uint64 // for sequential and random access
+
+	fName string
+	trace bool
 
 	decoder *C.Decoder
 }
@@ -180,32 +184,39 @@ func (d *Decompressor) MakeGetter() *Getter {
 
 	g := &Getter{
 		buf:          make([]byte, d.maxWordSize),
+		decoded:      make([]int16, d.maxWordSize),
 		data:         d.data[d.blocksStart:],
 		blockOffsets: make([]tuple, 0, d.numBlocks),
 		fName:        d.compressedFile,
 		decoder:      d.decoder,
+
+		numBlocks: int(d.numBlocks),
 	}
 
-	left := d.size - int64(d.blocksStart)
-	offset := int64(0)
+	left := uint64(d.size) - d.blocksStart
+	offset := uint64(0)
+
 	for offset < left {
+
 		compressed_block_size, bytes_read := binary.Uvarint(g.data[offset:])
-		offset += int64(bytes_read)
+		startOffset := offset
+		offset += uint64(bytes_read)
+		dataOffset := offset
+		size := int(compressed_block_size)
 		// fmt.Printf("compressed_block_size: %d, offset: %d\n", compressed_block_size, offset)
-		g.blockOffsets = append(g.blockOffsets,
-			tuple{
-				offset: offset,
-				size:   int(compressed_block_size),
-			},
-		)
-		offset += int64(compressed_block_size)
+		g.blockOffsets = append(g.blockOffsets, tuple{
+			startOffset,
+			dataOffset,
+			size,
+		})
+		offset += uint64(compressed_block_size)
 	}
 
 	__assert_true(offset == left, "offset == uint64(d.size)")
 
-	g.prepareBlocks() // prepare blocks for decoding (sequential and random access)
+	g.prepareBlocks() // prepare block for decoding (sequential and random access)
 
-	g.offset = g.blockOffsets[0].offset
+	g.offset = uint64(g.blockOffsets[0].startOffset)
 
 	return g
 }
@@ -215,15 +226,16 @@ func (g *Getter) prepareBlocks() {
 	var word_start int
 
 	for _, val := range g.blockOffsets {
-		offset := val.offset
+		// startOffset := val.startOffset
+		dataOffset := val.dataOffset
 		size := val.size
-		dataPtr := unsafe.Pointer(&g.data[offset])
+		dataPtr := unsafe.Pointer(&g.data[dataOffset])
 
 		word_start = int(C.PrepareNextBlock(
 			g.decoder,
 			(*C.uchar)(dataPtr),
 			C.int(size),
-			C.longlong(offset),
+			C.longlong(dataOffset),
 		))
 
 		g.wordOffsets = append(g.wordOffsets, word_start)
@@ -234,56 +246,85 @@ func (g *Getter) prepareBlocks() {
 
 // offset has to be a starting point of a word
 func (g *Getter) Reset(offset uint64) {
-	// unimplemented TODO
+	g.offset = offset
 }
 
 func (g *Getter) HasNext() bool {
-
-	// TODO:
-	// this should not have to call C function
-
-	hasNext := int(C.HasNext(g.decoder))
-	if hasNext == 1 {
+	if g.offset < uint64(len(g.data)) {
 		return true
 	}
 	return false
 }
 
+// TODO: make this one more effective
+func findBlockNum(g *Getter) int {
+	var blockNum int
+
+	for i, tup := range g.blockOffsets {
+
+		if g.offset == tup.startOffset {
+			g.offset = tup.dataOffset
+			blockNum = i
+			break
+		}
+
+		if g.offset < tup.startOffset {
+			__assert_true(i > 0, "i > 0")
+			blockNum = i - 1
+			break
+		}
+
+		if g.offset > tup.dataOffset {
+			blockNum = i
+		}
+	}
+
+	return blockNum
+}
+
 // Next extracts a compressed word from current offset in the file
 // and appends it to the given buf, returning the result of appending
 // After extracting next word, it moves to the beginning of the next one
-// Sequential read
 func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 
-	// TODO:
-	// 1. Do not pass word_size to C function
-	//    - instead create buffer of int16, so that -1 means the END_OF_WORD
+	dPtr := unsafe.Pointer(&g.decoded[0])
 
-	// 2. Next has to decode from the current offset, see `reset` method
+	blockNum := findBlockNum(g)
 
-	bufPtr := unsafe.Pointer(&g.buf[0])
-	var word_size C.int // this will be moved to the heap
-	offset := int64(C.Next(g.decoder, (*C.uchar)(bufPtr), &word_size))
+	// int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, short *dst)
+	// returns next offset to the starting point of a word
+	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
 
 	if offset == -1 {
+		g.offset = 0
 		return nil, (1 << 63)
 	}
 
+	// next starting offset (this has to be valid offset! otherwise behavior is unpredicted)
+	g.offset = uint64(offset)
+
+	g.buf = g.buf[:0]
+	for _, v := range g.decoded {
+		if v == -1 {
+			break
+		}
+		__assert_true(v <= 255, "v <= 255")
+		__assert_true(v >= 0, "v >= 0")
+		g.buf = append(g.buf, byte(v))
+	}
+
 	if buf != nil {
-		if len(buf)+int(word_size) > cap(buf) {
-			newBuf := make([]byte, len(buf)+int(word_size))
-			copy(newBuf, buf)
+		if cap(buf) < len(g.buf) {
+			newBuf := make([]byte, len(g.buf))
 			buf = newBuf
 		}
-		copy(buf, g.buf[:int(word_size)])
-		return buf, uint64(offset)
+		copy(buf, g.buf)
+		return buf, g.offset
 	} else {
-
-		if word_size == 0 {
-			return buf, uint64(offset)
+		if len(g.buf) == 0 {
+			return nil, g.offset
 		}
-
-		return g.buf[:int(word_size)], uint64(offset)
+		return g.buf, g.offset
 	}
 
 }
@@ -292,23 +333,23 @@ func (g *Getter) NextUncompressed() ([]byte, uint64) {
 	return g.Next(nil)
 }
 
-// Random read, use only when the exact starting offset of the word is known
-func (g *Getter) NextAt(buf []byte, offset int64) ([]byte, uint64) {
-	return nil, 0
-}
-
 // Skip moves offset to the next word and returns the new offset.
 func (g *Getter) Skip() uint64 {
 
-	bufPtr := unsafe.Pointer(&g.buf[0])
-	var word_size C.int // this will be moved to the heap
-	offset := int64(C.Next(g.decoder, (*C.uchar)(bufPtr), &word_size))
+	dPtr := unsafe.Pointer(&g.decoded[0])
+
+	blockNum := findBlockNum(g)
+
+	// int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, short *dst)
+	// returns next offset to the starting point
+	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
 
 	if offset == -1 {
-		return (1 << 63)
+		g.offset = 0
+		return (1 << 63) // invalid offset
 	}
-
-	return uint64(offset)
+	g.offset = uint64(offset)
+	return uint64(g.offset)
 }
 
 func (g *Getter) SkipUncompressed() uint64 {
@@ -319,39 +360,65 @@ func (g *Getter) SkipUncompressed() uint64 {
 // returns false and current offset otherwise.
 func (g *Getter) Match(buf []byte) (bool, uint64) {
 
-	dst_ptr := unsafe.Pointer(&g.buf[0])
-	var word_size C.int // this will be moved to the heap
-	offset := int64(C.Next(g.decoder, (*C.uchar)(dst_ptr), &word_size))
+	dPtr := unsafe.Pointer(&g.decoded[0])
 
-	if len(buf) != int(word_size) {
-		return false, uint64(offset)
+	blockNum := findBlockNum(g)
+
+	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
+
+	if offset == -1 {
+		g.offset = 0
+		return false, (1 << 63) // invalid offset
 	}
 
-	for i := 0; i < int(word_size); i++ {
-		if buf[i] != g.buf[i] {
-			return false, uint64(offset)
+	for i, v := range g.decoded {
+		if v == -1 {
+			break
+		}
+		__assert_true(v <= 255, "v <= 255")
+		__assert_true(v >= 0, "v >= 0")
+
+		if buf[i] != byte(v) {
+			return false, g.offset
 		}
 	}
 
-	return true, uint64(offset)
+	g.offset = uint64(offset)
+	return true, g.offset
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
 func (g *Getter) MatchPrefix(prefix []byte) bool {
 
-	size := len(prefix)
-	var prefix_ptr unsafe.Pointer
-	if size > 0 {
-		prefix_ptr = unsafe.Pointer(&prefix[0])
+	dPtr := unsafe.Pointer(&g.decoded[0])
+
+	blockNum := findBlockNum(g)
+
+	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
+
+	if offset == -1 {
+		return false
 	}
 
-	prefix_size := C.int(size)
-
-	result := C.Match(g.decoder, (*C.uchar)(prefix_ptr), prefix_size)
-
-	if result == 1 {
-		return true
+	if len(prefix) > len(g.decoded) {
+		return false
 	}
 
-	return false
+	for i := 0; i < len(prefix); i++ {
+
+		v := g.decoded[i]
+
+		if v == -1 {
+			return false
+		}
+
+		__assert_true(v <= 255, "v <= 255")
+		__assert_true(v >= 0, "v >= 0")
+
+		if prefix[i] != byte(v) {
+			return false
+		}
+	}
+
+	return true
 }

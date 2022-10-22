@@ -28,7 +28,7 @@ func BenchmarkDecompressNext(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = g.Next(nil)
 		if !g.HasNext() {
-			// g.Reset(0)
+			g.Reset(0)
 		}
 	}
 }
@@ -41,9 +41,9 @@ func BenchmarkDecompressSkip(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_ = g.Skip()
-		// if !g.HasNext() {
-		// 	// g.Reset(0)
-		// }
+		if !g.HasNext() {
+			g.Reset(0)
+		}
 	}
 }
 

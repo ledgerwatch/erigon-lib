@@ -29,10 +29,11 @@ public:
     ~Decoder();
 
     int prepare_next_block(unsigned char *src, int src_size, int64_t offset);
-    bool has_next();
-    int64_t next(unsigned char *dst, int *dst_size);
-    int match(unsigned char *prefix, int prefix_size);
-    int64_t decode_at(int64_t offset, int block_num, unsigned char *dst, int *dst_size);
+
+    // bool has_next();
+    // int64_t next(int64_t offset, short *dst);
+    // int match(unsigned char *prefix, int prefix_size);
+    int64_t decode_at(int64_t offset, int block_num, short *dst);
 };
 
 #else
@@ -49,20 +50,22 @@ extern void DeleteDecoder(Decoder *decoder);
 
 extern int PrepareNextBlock(Decoder *decoder, unsigned char *src, int src_size, int64_t offset);
 
-extern int HasNext(Decoder *decoder);
-extern int64_t Next(Decoder *decoder, unsigned char *dst, int *dst_size);
-extern int Match(Decoder *decoder, unsigned char *prefix, int prefix_size);
-extern int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, unsigned char *dst, int *dst_size);
+// extern int HasNext(Decoder *decoder);
+// extern int64_t Next(Decoder *decoder, int64_t offset, short *dst);
+// extern int Match(Decoder *decoder, unsigned char *prefix, int prefix_size);
+
+extern int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, short *dst);
 #else
 extern Decoder *NewDecoder(uint64_t num_words, int num_blocks, unsigned char *compressed_dict, int cmp_dict_size, int max_word_size);
 extern void DeleteDecoder(Decoder *decoder);
 
-extern int PrepareNextBlock(Decoder *decoder, unsigned char *src, int src_size, int64_t offset);
+extern int PrepareNextBlock(Decoder *decoder, unsigned char *src, int src_size, int64_t s_offset, int64_t d_offset);
 
-extern int HasNext(Decoder *decoder);
-extern int64_t Next(Decoder *decoder, unsigned char *dst, int *dst_size);
-extern int Match(Decoder *decoder, unsigned char *prefix, int prefix_size);
-extern int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, unsigned char *dst, int *dst_size);
+// extern int HasNext(Decoder *decoder);
+// extern int64_t Next(Decoder *decoder, int64_t offset, short *dst);
+// extern int Match(Decoder *decoder, unsigned char *prefix, int prefix_size);
+
+extern int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, short *dst);
 #endif
 
 #ifdef __cplusplus

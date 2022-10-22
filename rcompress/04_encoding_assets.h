@@ -187,7 +187,7 @@ struct d_data {
     std::vector<std::tuple<uint16_t, uint8_t>> prefixes; // prefix and bit_len, testing only
     std::vector<std::tuple<int16_t, uint8_t>> map;       // maps prefix code to corresponding symbol
     unsigned char *src;                                  // src to decode
-    int64_t offset;                                      // an actual offset in a file
+    int64_t offset;                                      // starting point of the data this decoder cares about
     int src_size;
     int next_start;
     int word_start;
