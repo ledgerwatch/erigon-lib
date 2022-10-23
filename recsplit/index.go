@@ -252,10 +252,8 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	b := gr.ReadNext(idx.golombParam(m))
 	rec := int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
 	pos := 1 + 8 + idx.bytesPerRec*(rec+1)
-	idx.touch(pos)
 	return binary.BigEndian.Uint64(idx.data[pos:]) & idx.recMask
 }
-func (idx *Index) touch(pos int) { _ = idx.data[pos] }
 
 // OrdinalLookup returns the offset of i-th element in the index
 // Perfect hash table lookup is not performed, only access to the
