@@ -154,6 +154,9 @@ func (idx *Index) Size() int64 {
 func (idx *Index) BaseDataID() uint64 { return idx.baseDataID }
 
 func (idx *Index) Close() error {
+	if idx == nil {
+		return nil
+	}
 	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
 		return err
 	}
