@@ -334,6 +334,7 @@ type invertedIndexWriter struct {
 	index     *etl.Collector
 	indexKeys *etl.Collector
 	tmpdir    string
+	buffered  bool
 }
 
 // loadFunc - is analog of etl.Identity, but it signaling to etl - use .Put instead of .AppendDup - to allow duplicates
@@ -363,7 +364,8 @@ func (ii *invertedIndexWriter) close() {
 
 func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 	w := &invertedIndexWriter{ii: ii,
-		tmpdir: tmpdir,
+		buffered: true,
+		tmpdir:   tmpdir,
 		// 3 history + 4 indices = 10 etl collectors, 10*256Mb/16 = 256mb - for all indices buffers
 		// etl collector doesn't fsync: means if have enough ram, all files produced by all collectors will be in ram
 		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
@@ -375,18 +377,21 @@ func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
 }
 
 func (ii *invertedIndexWriter) add(key, indexKey []byte) error {
-	//if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes[:], key); err != nil {
-	//	return err
-	//}
-	if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
-		return err
-	}
+	if ii.buffered {
+		if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
+			return err
+		}
 
-	//if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes[:]); err != nil {
-	//	return err
-	//}
-	if err := ii.index.Collect(indexKey, ii.ii.txNumBytes[:]); err != nil {
-		return err
+		if err := ii.index.Collect(indexKey, ii.ii.txNumBytes[:]); err != nil {
+			return err
+		}
+	} else {
+		if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes[:], key); err != nil {
+			return err
+		}
+		if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes[:]); err != nil {
+			return err
+		}
 	}
 	return nil
 }
