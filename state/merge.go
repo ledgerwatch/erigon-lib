@@ -608,9 +608,6 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 			}
 		}
 	}()
-	fmt.Printf("merge hist: %d-%d, %d-%d\n", r.indexStartTxNum/h.aggregationStep, r.indexEndTxNum/h.aggregationStep, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep)
-	fmt.Printf("merge hist: %t, %t\n", r.index, r.history)
-	panic(1)
 	if indexIn, err = h.InvertedIndex.mergeFiles(ctx, indexFiles, r.indexStartTxNum, r.indexEndTxNum, maxSpan); err != nil {
 		return nil, nil, err
 	}
