@@ -901,9 +901,10 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	if txFrom >= txTo {
 		return nil
 	}
-	if txFrom-txTo > 10_000 {
-		log.Info("[snapshots] prune old history", "name", h.filenameBase, "range", fmt.Sprintf("%.1fm-%.1fm", float64(txFrom)/1_000_000, float64(txTo)/1_000_000))
+	if txTo-txFrom > 10_000 {
+		log.Info("[snapshots] prune old history", "name", h.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txFrom)/1_000_000, float64(txTo)/1_000_000))
 	}
+
 	idxC, err := h.tx.RwCursorDupSort(h.indexTable)
 	if err != nil {
 		return err
