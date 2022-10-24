@@ -23,7 +23,7 @@ type Decompressor struct {
 	wordsCount      uint64
 	emptyWordsCount uint64
 	numBlocks       uint64
-	blocksStart     uint64 // Offset of whether the superstrings actually start
+	blocksStart     uint64
 	maxWordSize     uint64
 	decoder         *C.Decoder
 }

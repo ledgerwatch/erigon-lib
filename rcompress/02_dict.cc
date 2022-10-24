@@ -432,8 +432,6 @@ int Dict::reduce_dict() {
         to_prioritise.resize(0);
     }
 
-    // move quads to the front
-
     int total_size = 0;
     for (int i = 0; i < (int)prefixes.size(); i++) {
         total_size += prefixes.at(i).size();

@@ -428,8 +428,10 @@ func (c *Compressor) Compress() error {
 
 	n := 0
 	_id := 0
-
 	num_blocks := 0
+
+	// on the first run precompress (created flags) and count matches of dictionary prfixes
+	// (how many times each prefix has been used?) to sort them later
 	if err := c.uncompressedFile.ForEach(func(word []byte) error {
 
 		if len(word)+n > (1 << 24) {
@@ -523,6 +525,8 @@ func (c *Compressor) Compress() error {
 		sizes: _block.sizes[:0],
 		id:    _id,
 	}
+
+	// on the second run encode blocks
 	if err := c.uncompressedFile.ForEach(func(word []byte) error {
 
 		if len(word)+n > (1 << 24) {
