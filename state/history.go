@@ -881,11 +881,6 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 	defer historyKeysCursor.Close()
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], txFrom)
-	valsC, err := h.tx.RwCursor(h.historyValsTable)
-	if err != nil {
-		return err
-	}
-	defer valsC.Close()
 
 	k, v, err := historyKeysCursor.Seek(txKey[:])
 	if err != nil {
@@ -905,6 +900,11 @@ func (h *History) prune(txFrom, txTo, limit uint64) error {
 		log.Info("[snapshots] prune old history", "name", h.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txFrom)/1_000_000, float64(txTo)/1_000_000))
 	}
 
+	valsC, err := h.tx.RwCursor(h.historyValsTable)
+	if err != nil {
+		return err
+	}
+	defer valsC.Close()
 	idxC, err := h.tx.RwCursorDupSort(h.indexTable)
 	if err != nil {
 		return err
