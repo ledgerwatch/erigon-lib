@@ -110,7 +110,7 @@ type BinHashed struct {
 	accountKeyLen   int
 	trace           bool
 	auxBuf          [1 + length.Hash]byte
-	byteArrayWriter ByteArrayWriter
+	byteArrayWriter *bytes.Buffer
 }
 
 func NewBinPatriciaHashed(accountKeyLen int,
@@ -119,13 +119,14 @@ func NewBinPatriciaHashed(accountKeyLen int,
 	storageFn func(plainKey []byte, cell *Cell) error,
 ) *BinHashed {
 	return &BinHashed{
-		keccak:        sha3.NewLegacyKeccak256().(keccakState),
-		keccak2:       sha3.NewLegacyKeccak256().(keccakState),
-		accountKeyLen: accountKeyLen,
-		branchFn:      branchFn,
-		accountFn:     wrapAccountStorageFn(accountFn),
-		storageFn:     wrapAccountStorageFn(storageFn),
-		rootPresent:   true,
+		keccak:          sha3.NewLegacyKeccak256().(keccakState),
+		keccak2:         sha3.NewLegacyKeccak256().(keccakState),
+		accountKeyLen:   accountKeyLen,
+		branchFn:        branchFn,
+		accountFn:       wrapAccountStorageFn(accountFn),
+		storageFn:       wrapAccountStorageFn(storageFn),
+		rootPresent:     true,
+		byteArrayWriter: bytes.NewBuffer(make([]byte, 8192)),
 	}
 }
 
@@ -291,8 +292,7 @@ func (hph *BinHashed) completeLeafHash(buf, keyPrefix []byte, kp, kl, compactLen
 	embedded := !singleton && totalLen+pt < length.Hash
 	var writer io.Writer
 	if embedded {
-		hph.byteArrayWriter.Setup(buf)
-		writer = &hph.byteArrayWriter
+		writer = hph.byteArrayWriter
 	} else {
 		hph.keccak.Reset()
 		writer = hph.keccak
@@ -320,7 +320,7 @@ func (hph *BinHashed) completeLeafHash(buf, keyPrefix []byte, kp, kl, compactLen
 		return nil, err
 	}
 	if embedded {
-		buf = hph.byteArrayWriter.buf
+		buf = hph.byteArrayWriter.Bytes()
 	} else {
 		var hashBuf [33]byte
 		hashBuf[0] = 0x80 + length.Hash

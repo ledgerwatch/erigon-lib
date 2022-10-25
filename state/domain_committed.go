@@ -193,7 +193,7 @@ var keyCommitmentState = []byte("state")
 // SeekCommitment searches for last encoded state from DomainCommitted
 // and if state found, sets it up to current domain
 func (d *DomainCommitted) SeekCommitment(aggStep uint64) (uint64, uint64, error) {
-	var latestTxNum uint64
+	var latestTxNum uint64 = 1
 	var latestState []byte
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()

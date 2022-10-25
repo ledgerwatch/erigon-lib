@@ -43,19 +43,6 @@ type keccakState interface {
 	Read([]byte) (int, error)
 }
 
-type ByteArrayWriter struct {
-	buf []byte
-}
-
-func (w *ByteArrayWriter) Setup(buf []byte) {
-	w.buf = buf
-}
-
-func (w *ByteArrayWriter) Write(data []byte) (int, error) {
-	w.buf = append(w.buf, data...)
-	return len(data), nil
-}
-
 // HexPatriciaHashed implements commitment based on patricia merkle tree with radix 16,
 // with keys pre-hashed by keccak256
 type HexPatriciaHashed struct {
@@ -67,7 +54,7 @@ type HexPatriciaHashed struct {
 	// Last active row does not have selected column
 	activeRows int
 	// Length of the key that reflects current positioning of the grid. It maybe larger than number of active rows,
-	// if a account leaf cell represents multiple nibbles in the key
+	// if an account leaf cell represents multiple nibbles in the key
 	currentKeyLen int
 	currentKey    [128]byte // For each row indicates which column is currently selected
 	depths        [128]int  // For each row, the depth of cells in that row
@@ -77,20 +64,25 @@ type HexPatriciaHashed struct {
 	branchBefore  [128]bool   // For each row, whether there was a branch node in the database loaded in unfold
 	touchMap      [128]uint16 // For each row, bitmap of cells that were either present before modification, or modified or deleted
 	afterMap      [128]uint16 // For each row, bitmap of cells that were present after modification
+	keccak        keccakState
+	keccak2       keccakState
+	accountKeyLen int
+	trace         bool
+
 	// Function used to load branch node and fill up the cells
 	// For each cell, it sets the cell type, clears the modified flag, fills the hash,
 	// and for the extension, account, and leaf type, the `l` and `k`
-	branchFn func(prefix []byte) ([]byte, error)
+	branchFn  func(prefix []byte) ([]byte, error)
+	branchFn2 func(prefix []byte, target io.Writer) error
 	// Function used to fetch account with given plain key
 	accountFn func(plainKey []byte, cell *Cell) error
 	// Function used to fetch account with given plain key
-	storageFn       func(plainKey []byte, cell *Cell) error
-	keccak          keccakState
-	keccak2         keccakState
-	accountKeyLen   int
-	trace           bool
-	hashAuxBuffer   [128]byte // buffer to compute cell hash or write hash-related things
-	byteArrayWriter ByteArrayWriter
+	storageFn func(plainKey []byte, cell *Cell) error
+
+	hashAuxBuffer [128]byte     // buffer to compute cell hash or write hash-related things
+	auxBuffer     *bytes.Buffer // auxiliary buffer used during branch updates encoding
+	// aux buffer for encoding numbers
+	numBuffer [binary.MaxVarintLen64]byte
 }
 
 // represents state of the tree
@@ -107,21 +99,6 @@ type state struct {
 	Depths        [128]int  // For each row, the depth of cells in that row
 }
 
-type ecell struct {
-	Hash       []byte
-	APK        []byte
-	SPK        []byte
-	DHK        []byte
-	DHL        int
-	EXT        []byte
-	ExtLen     int
-	Nonce      uint64
-	Balance    uint256.Int
-	CodeHash   []byte
-	Storage    []byte
-	StorageLen int
-}
-
 func NewHexPatriciaHashed(accountKeyLen int,
 	branchFn func(prefix []byte) ([]byte, error),
 	accountFn func(plainKey []byte, cell *Cell) error,
@@ -134,6 +111,7 @@ func NewHexPatriciaHashed(accountKeyLen int,
 		branchFn:      branchFn,
 		accountFn:     accountFn,
 		storageFn:     storageFn,
+		auxBuffer:     bytes.NewBuffer(make([]byte, 8192)),
 	}
 }
 
@@ -338,7 +316,7 @@ func (cell *Cell) fillFromFields(data []byte, pos int, fieldBits PartFlags) (int
 		}
 		pos += n
 		if len(data) < pos+int(l) {
-			return 0, fmt.Errorf("fillFromFields buffer too small for hashedKey")
+			return 0, fmt.Errorf("fillFromFields buffer too small for hashedKey exp %d got %d", pos+int(l), len(data))
 		}
 		cell.downHashedLen = int(l)
 		cell.extLen = int(l)
@@ -500,8 +478,9 @@ func (hph *HexPatriciaHashed) completeLeafHash(buf, keyPrefix []byte, kp, kl, co
 	embedded := !singleton && totalLen+pt < length.Hash
 	var writer io.Writer
 	if embedded {
-		hph.byteArrayWriter.Setup(buf)
-		writer = &hph.byteArrayWriter
+		//hph.byteArrayWriter.Setup(buf)
+		hph.auxBuffer.Reset()
+		writer = hph.auxBuffer
 	} else {
 		hph.keccak.Reset()
 		writer = hph.keccak
@@ -529,7 +508,7 @@ func (hph *HexPatriciaHashed) completeLeafHash(buf, keyPrefix []byte, kp, kl, co
 		return nil, err
 	}
 	if embedded {
-		buf = hph.byteArrayWriter.buf
+		buf = hph.auxBuffer.Bytes()
 	} else {
 		var hashBuf [33]byte
 		hashBuf[0] = 0x80 + length.Hash
@@ -1145,8 +1124,8 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 		var err error
 		_ = cellGetter
 
-		branchData, lastNibble, err = hph.EncodeBranchDirectAccess(bitmap, row, depth)
-		//branchData, lastNibble, err = EncodeBranch(bitmap, hph.touchMap[row], hph.afterMap[row], cellGetter)
+		//branchData, lastNibble, err = hph.EncodeBranchDirectAccess(bitmap, row, depth, branchData)
+		branchData, lastNibble, err = EncodeBranch(bitmap, hph.touchMap[row], hph.afterMap[row], cellGetter)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to encode branch update: %w", err)
 		}
@@ -1366,6 +1345,11 @@ func (hph *HexPatriciaHashed) Reset() {
 	hph.root.Nonce = 0
 	hph.rootTouched = false
 	hph.rootPresent = true
+}
+func (hph *HexPatriciaHashed) ResetFnb(
+	branchFn func(prefix []byte, target io.Writer) error,
+) {
+	hph.branchFn2 = branchFn
 }
 
 func (hph *HexPatriciaHashed) ResetFns(
@@ -1610,36 +1594,6 @@ func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 		Root:          make([]byte, 0),
 	}
 
-	//var err error
-	//s.Root, _, err = EncodeBranch(1, 1, 1, func(nibble int, skip bool) (*Cell, error) {
-	//	return &hph.root, nil
-	//})
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	//root := hph.root
-	//rc := ecell{
-	//	Hash:   root.h[:root.hl],
-	//	APK:    root.apk[:root.apl],
-	//	SPK:    root.spk[:root.spl],
-	//	DHL:    root.downHashedLen,
-	//	DHK:    root.downHashedKey[:root.downHashedLen],
-	//	EXT:    root.extension[:root.extLen],
-	//	ExtLen: root.extLen,
-	//	//Nonce:      root.Nonce,
-	//	//CodeHash:   root.CodeHash[:],
-	//	//Storage:    root.Storage[:root.StorageLen],
-	//	//StorageLen: root.StorageLen,
-	//}
-	////rc.Balance.Set(&root.Balance)
-	//
-	//w := bytes.NewBuffer(nil)
-	//if err := gob.NewEncoder(w).Encode(rc); err != nil {
-	//	return nil, err
-	//}
-	//s.Root = w.Bytes()
-
 	s.Root = hph.root.bytes()
 	copy(s.CurrentKey[:], hph.currentKey[:])
 	copy(s.Depths[:], hph.depths[:])
@@ -1661,36 +1615,11 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 		return err
 	}
 
-	//_, _, row, err := BranchData(s.Root).DecodeCells()
-	//var rc ecell
-	//err := gob.NewDecoder(bytes.NewBuffer(s.Root)).Decode(&rc)
-	//if err != nil {
-	//	return fmt.Errorf("decode root: %w", err)
-	//}
-
 	hph.Reset()
 
 	if err := hph.root.decodeBytes(s.Root); err != nil {
 		return err
 	}
-
-	//hph.root = row[0]
-	//hph.root.apl = len(rc.APK)
-	//hph.root.spl = len(rc.SPK)
-	//hph.root.downHashedLen = rc.DHL
-	//hph.root.extLen = rc.ExtLen
-	//hph.root.hl = len(rc.Hash)
-	////hph.root.StorageLen = len(rc.Storage)
-	////hph.root.Nonce = rc.Nonce
-	//
-	//copy(hph.root.apk[:], rc.APK)
-	//copy(hph.root.spk[:], rc.SPK)
-	//copy(hph.root.downHashedKey[:], rc.DHK)
-	//copy(hph.root.extension[:], rc.EXT)
-	//copy(hph.root.h[:], rc.Hash)
-	//copy(hph.root.Storage[:], rc.Storage)
-	//copy(hph.root.CodeHash[:], rc.CodeHash)
-	//hph.root.Balance.Set(&rc.Balance)
 
 	hph.currentKeyLen = int(s.CurrentKeyLen)
 	hph.rootChecked = s.RootChecked

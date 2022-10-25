@@ -48,6 +48,7 @@ type Aggregator struct {
 	tracesFrom      *InvertedIndex
 	tracesTo        *InvertedIndex
 	txNum           uint64
+	seekTxNum       uint64
 	blockNum        uint64
 	commitFn        func(txNum uint64) error
 	rwTx            kv.RwTx
@@ -411,7 +412,12 @@ func (a *Aggregator) EndTxNumMinimax() uint64 {
 
 // TODO make it a part of EndTxNumMinimax()
 func (a *Aggregator) SeekCommitment() (uint64, uint64, error) {
-	return a.commitment.SeekCommitment(a.aggregationStep)
+	txNum, blockNum, err := a.commitment.SeekCommitment(a.aggregationStep)
+	if err != nil {
+		return 0, 0, err
+	}
+	a.seekTxNum = txNum
+	return txNum, blockNum, nil
 }
 
 type Ranges struct {
@@ -815,6 +821,13 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 	if err != nil {
 		return nil, err
 	}
+	if a.seekTxNum > a.txNum {
+		saveStateAfter = false
+	}
+
+	if !saveStateAfter {
+		return rootHash, nil
+	}
 
 	for pref, update := range branchNodeUpdates {
 		prefix := []byte(pref)
@@ -840,12 +853,9 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 		}
 	}
 
-	if saveStateAfter {
-		if err := a.commitment.storeCommitmentState(a.blockNum, a.txNum); err != nil {
-			return nil, err
-		}
+	if err := a.commitment.storeCommitmentState(a.blockNum, a.txNum); err != nil {
+		return nil, err
 	}
-
 	return rootHash, nil
 }
 
@@ -860,7 +870,7 @@ func (a *Aggregator) SetCommitFn(fn func(txNum uint64) error) {
 func (a *Aggregator) FinishTx() error {
 	atomic.AddUint64(&a.stats.TxCount, 1)
 
-	if !a.ReadyToFinishTx() {
+	if !a.ReadyToFinishTx() || a.seekTxNum > a.txNum {
 		return nil
 	}
 	closeAll := true

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"math/bits"
 	"strings"
+
+	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon-lib/common/length"
 )
@@ -453,16 +456,22 @@ func (branchData BranchData) DecodeCells() (touchMap, afterMap uint16, row [16]*
 	return
 }
 
-func (hph *HexPatriciaHashed) EncodeBranchDirectAccess(bitmap uint16, row, depth int) (branchData BranchData, lastNibble int, err error) {
-	branchData = make(BranchData, 0, 256)
-	var bitmapBuf [binary.MaxVarintLen64]byte
+func (hph *HexPatriciaHashed) EncodeBranchDirectAccess(bitmap uint16, row, depth int, target BranchData) (BranchData, int, error) {
+	var lastNibble int
 	touchMap, afterMap := hph.touchMap[row], hph.afterMap[row]
 
-	binary.BigEndian.PutUint16(bitmapBuf[0:], touchMap)
-	binary.BigEndian.PutUint16(bitmapBuf[2:], afterMap)
+	binary.BigEndian.PutUint16(hph.numBuffer[0:], touchMap)
+	binary.BigEndian.PutUint16(hph.numBuffer[2:], afterMap)
 
-	b := [...]byte{0x80}
-	branchData = append(branchData, bitmapBuf[:4]...)
+	b := [1]byte{0x80}
+
+	hph.auxBuffer.Reset()
+	branchData := hph.auxBuffer
+
+	_, err := branchData.Write(hph.numBuffer[:4])
+	if err != nil {
+		return nil, 0, err
+	}
 
 	for bitset, j := afterMap, 0; bitset != 0; j++ {
 		bit := bitset & -bitset
@@ -504,40 +513,82 @@ func (hph *HexPatriciaHashed) EncodeBranchDirectAccess(bitmap uint16, row, depth
 			if cell.hl > 0 {
 				fieldBits |= HashPart
 			}
-			branchData = append(branchData, byte(fieldBits))
+			branchData.WriteByte(byte(fieldBits))
 			if cell.extLen > 0 && cell.spl == 0 {
-				n := binary.PutUvarint(bitmapBuf[:], uint64(cell.extLen))
-				branchData = append(branchData, bitmapBuf[:n]...)
-				branchData = append(branchData, cell.extension[:cell.extLen]...)
+				n := binary.PutUvarint(hph.numBuffer[:], uint64(cell.extLen))
+				if wn, err := branchData.Write(hph.numBuffer[:n]); err != nil || wn != n {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded extLen write bytes mismatch: expected %d != %d", wn, n)
+					}
+				}
+				if wn, err := branchData.Write(cell.extension[:cell.extLen]); err != nil || wn != cell.extLen {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded extension write bytes mismatch: expected %d != %d", wn, cell.extLen)
+					}
+					return nil, 0, err
+				}
 			}
 			if cell.apl > 0 {
-				n := binary.PutUvarint(bitmapBuf[:], uint64(cell.apl))
-				branchData = append(branchData, bitmapBuf[:n]...)
-				branchData = append(branchData, cell.apk[:cell.apl]...)
+				n := binary.PutUvarint(hph.numBuffer[:], uint64(cell.apl))
+				if wn, err := branchData.Write(hph.numBuffer[:n]); err != nil || wn != n {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded apl write bytes mismatch: expected %d != %d", wn, n)
+					}
+				}
+				if wn, err := branchData.Write(cell.apk[:cell.apl]); err != nil || wn != cell.apl {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded apk write bytes mismatch: expected %d != %d", wn, cell.apl)
+					}
+					return nil, 0, err
+				}
 			}
 			if cell.spl > 0 {
-				n := binary.PutUvarint(bitmapBuf[:], uint64(cell.spl))
-				branchData = append(branchData, bitmapBuf[:n]...)
-				branchData = append(branchData, cell.spk[:cell.spl]...)
+				n := binary.PutUvarint(hph.numBuffer[:], uint64(cell.spl))
+				if wn, err := branchData.Write(hph.numBuffer[:n]); err != nil || wn != n {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded spl write bytes mismatch: expected %d != %d", wn, n)
+					}
+				}
+				if wn, err := branchData.Write(cell.spk[:cell.spl]); err != nil || wn != cell.spl {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded spk write bytes mismatch: expected %d != %d", wn, cell.spl)
+					}
+					return nil, 0, err
+				}
 			}
 			if cell.hl > 0 {
-				n := binary.PutUvarint(bitmapBuf[:], uint64(cell.hl))
-				branchData = append(branchData, bitmapBuf[:n]...)
-				branchData = append(branchData, cell.h[:cell.hl]...)
+				n := binary.PutUvarint(hph.numBuffer[:], uint64(cell.hl))
+				if wn, err := branchData.Write(hph.numBuffer[:n]); err != nil || wn != n {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded hl write bytes mismatch: expected %d != %d", wn, n)
+					}
+				}
+				if wn, err := branchData.Write(cell.h[:cell.hl]); err != nil || wn != cell.hl {
+					if wn != n {
+						return nil, 0, fmt.Errorf("encoded hash write bytes mismatch: expected %d != %d", wn, cell.hl)
+					}
+					return nil, 0, err
+				}
 			}
 		}
 		bitset ^= bit
 	}
-	return branchData, lastNibble, nil
+
+	if len(target) < branchData.Len() {
+		target = append(target, make([]byte, branchData.Len()-len(target))...)
+	}
+	copy(target, branchData.Bytes())
+	return target, lastNibble, nil
 }
 
 type BranchMerger struct {
-	buf *bytes.Buffer
-	num [4]byte
+	buf    *bytes.Buffer
+	num    [4]byte
+	keccak hash.Hash
 }
 
 func NewHexBranchMerger(cap uint64) *BranchMerger {
-	return &BranchMerger{buf: bytes.NewBuffer(make([]byte, cap))}
+	return &BranchMerger{buf: bytes.NewBuffer(make([]byte, cap)), keccak: sha3.NewLegacyKeccak256()}
 }
 
 // MergeHexBranches combines two branchData, number 2 coming after (and potentially shadowing) number 1
@@ -641,6 +692,7 @@ func (m *BranchMerger) Merge(branch1 BranchData, branch2 BranchData) (BranchData
 		}
 		bitset ^= bit
 	}
-	return m.buf.Bytes(), nil
-
+	target := make([]byte, m.buf.Len())
+	copy(target, m.buf.Bytes())
+	return target, nil
 }
