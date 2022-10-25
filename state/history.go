@@ -484,7 +484,7 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 		tmpdir:           tmpdir,
 		autoIncrementBuf: make([]byte, 8),
 
-		buffered:    falsek,
+		buffered:    false,
 		historyVals: etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}
 	w.historyVals.LogLvl(log.LvlTrace)
