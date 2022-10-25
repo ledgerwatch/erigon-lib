@@ -465,21 +465,27 @@ func (h *History) Flush() error {
 
 type historyWriter struct {
 	h                *History
+	historyVals      *etl.Collector
 	tmpdir           string
 	autoIncrementBuf []byte
 	autoIncrement    uint64
+	buffered         bool
 }
 
 func (h *historyWriter) close() {
 	if h == nil { // allow dobule-close
 		return
 	}
+	h.historyVals.Close()
 }
 
 func (h *History) newWriter(tmpdir string) *historyWriter {
 	w := &historyWriter{h: h,
 		tmpdir:           tmpdir,
 		autoIncrementBuf: make([]byte, 8),
+
+		buffered:    true,
+		historyVals: etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}
 
 	val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
@@ -500,6 +506,10 @@ func (h *historyWriter) flush(tx kv.RwTx) error {
 	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
 		return err
 	}
+	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{}); err != nil {
+		return err
+	}
+	h.close()
 	return nil
 }
 
@@ -543,11 +553,15 @@ func (h *historyWriter) addPrevValue(key1, key2, original []byte) error {
 		//if err := h.h.tx.Put(h.h.settingsTable, historyValCountKey, historyKey[lk:]); err != nil {
 		//	return err
 		//}
-		//if err := h.historyVals.Collect(historyKey[lk:], original); err != nil {
-		//	return err
-		//}
-		if err := h.h.tx.Put(h.h.historyValsTable, historyKey[lk:], original); err != nil {
-			return err
+
+		if h.buffered {
+			if err := h.historyVals.Collect(historyKey[lk:], original); err != nil {
+				return err
+			}
+		} else {
+			if err := h.h.tx.Put(h.h.historyValsTable, historyKey[lk:], original); err != nil {
+				return err
+			}
 		}
 	}
 
