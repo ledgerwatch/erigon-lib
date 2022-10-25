@@ -487,6 +487,7 @@ func (h *History) newWriter(tmpdir string) *historyWriter {
 		buffered:    true,
 		historyVals: etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
 	}
+	w.historyVals.LogLvl(log.LvlTrace)
 
 	val, err := h.tx.GetOne(h.settingsTable, historyValCountKey)
 	if err != nil {
