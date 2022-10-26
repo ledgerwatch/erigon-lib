@@ -920,6 +920,9 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
 		fst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
 		hasData = len(fst) > 0 && binary.BigEndian.Uint64(fst) >= toTxNum
+		if len(fst) > 0 {
+			fmt.Printf("a: %d, %d, %t\n", binary.BigEndian.Uint64(fst), toTxNum, hasData)
+		}
 		return nil
 	}); err != nil {
 		return err
