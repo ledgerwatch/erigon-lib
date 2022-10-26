@@ -244,7 +244,6 @@ func (c Agg22Collation) Close() {
 }
 
 func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Agg22Collation, error) {
-	log.Info("collate start")
 	defer func(t time.Time) { log.Info(fmt.Sprintf("aggregator22.go:247: collate %s\n", time.Since(t))) }(time.Now())
 	var ac Agg22Collation
 	var err error
