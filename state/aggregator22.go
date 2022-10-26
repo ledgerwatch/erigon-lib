@@ -918,7 +918,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	hasData := false
 	// check if db has enough data (maybe we didn't commit them yet)
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		fst, _ := kv.FirstKey(tx, a.accounts.indexKeysTable)
+		fst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
 		hasData = len(fst) > 0 && binary.BigEndian.Uint64(fst) >= toTxNum
 		return nil
 	}); err != nil {
