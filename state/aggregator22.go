@@ -245,7 +245,7 @@ func (c Agg22Collation) Close() {
 
 func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
 	defer func(t time.Time) { log.Info(fmt.Sprintf("aggregator22.go:247: collate %s\n", time.Since(t))) }(time.Now())
-
+	log.Info("collate start2")
 	roTx, _ := db.BeginRo(context.Background())
 	defer roTx.Rollback()
 	var ac Agg22Collation
@@ -920,9 +920,6 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
 		fst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
 		hasData = len(fst) > 0 && binary.BigEndian.Uint64(fst) >= toTxNum
-		if len(fst) > 0 {
-			fmt.Printf("a: %d, %d, %t\n", binary.BigEndian.Uint64(fst), toTxNum, hasData)
-		}
 		return nil
 	}); err != nil {
 		return err
@@ -930,6 +927,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if !hasData {
 		return nil
 	}
+	log.Info("have data")
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
