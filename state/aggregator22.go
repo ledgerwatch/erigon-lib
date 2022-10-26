@@ -891,7 +891,7 @@ func (a *Aggregator22) ReadyToFinishTx() bool {
 	return (a.txNum+1)%a.aggregationStep == 0
 }
 
-func (a *Aggregator22) FinishTx() error {
+func (a *Aggregator22) FinishTx(tx kv.Tx) error {
 	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
@@ -902,10 +902,13 @@ func (a *Aggregator22) FinishTx() error {
 
 	closeAll := true
 
-	if err := a.Flush(); err != nil {
-		return err
+	// check if db has enough data (maybe we didn't commit them yet)
+	lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
+	if binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
+		return nil
 	}
-	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
+
+	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
 	if err != nil {
 		return err
 	}
