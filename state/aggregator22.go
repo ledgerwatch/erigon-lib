@@ -926,9 +926,9 @@ func (a *Aggregator22) FinishTx(tx kv.Tx) error {
 		}
 	}()
 
-	if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
-		return err
-	}
+	//if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
+	//	return err
+	//}
 
 	closeAll = false
 	return nil
