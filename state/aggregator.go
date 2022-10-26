@@ -367,6 +367,7 @@ func (a *Aggregator) integrateFiles(sf AggStaticFiles, txNumFrom, txNumTo uint64
 }
 
 func (a *Aggregator) prune(step uint64, txFrom, txTo, limit uint64) error {
+	ctx := context.TODO()
 	if err := a.accounts.prune(step, txFrom, txTo, limit); err != nil {
 		return err
 	}
@@ -379,16 +380,16 @@ func (a *Aggregator) prune(step uint64, txFrom, txTo, limit uint64) error {
 	if err := a.commitment.prune(step, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.logAddrs.prune(txFrom, txTo, limit); err != nil {
+	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(txFrom, txTo, limit); err != nil {
+	if err := a.logTopics.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(txFrom, txTo, limit); err != nil {
+	if err := a.tracesFrom.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(txFrom, txTo, limit); err != nil {
+	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
 	return nil

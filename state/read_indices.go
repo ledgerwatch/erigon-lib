@@ -186,13 +186,14 @@ func (ri *ReadIndices) integrateFiles(sf RStaticFiles, txNumFrom, txNumTo uint64
 }
 
 func (ri *ReadIndices) prune(step uint64, txFrom, txTo uint64) error {
-	if err := ri.accounts.prune(txFrom, txTo, math.MaxUint64); err != nil {
+	ctx := context.TODO()
+	if err := ri.accounts.prune(ctx, txFrom, txTo, math.MaxUint64); err != nil {
 		return err
 	}
-	if err := ri.storage.prune(txFrom, txTo, math.MaxUint64); err != nil {
+	if err := ri.storage.prune(ctx, txFrom, txTo, math.MaxUint64); err != nil {
 		return err
 	}
-	if err := ri.code.prune(txFrom, txTo, math.MaxUint64); err != nil {
+	if err := ri.code.prune(ctx, txFrom, txTo, math.MaxUint64); err != nil {
 		return err
 	}
 	return nil

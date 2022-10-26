@@ -470,16 +470,16 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 		return err
 	}
 
-	if err := a.logAddrs.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	if err := a.logAddrs.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	if err := a.logTopics.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	if err := a.tracesFrom.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	if err := a.tracesTo.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
 		return err
 	}
 	return nil
@@ -570,31 +570,31 @@ func (a *Aggregator22) Flush() error {
 	return nil
 }
 
-func (a *Aggregator22) Prune(limit uint64) error {
-	return a.prune(0, a.maxTxNum.Load(), limit)
+func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
+	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
 
-func (a *Aggregator22) prune(txFrom, txTo, limit uint64) error {
+func (a *Aggregator22) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
 	a.warmup(txFrom, limit) // warmup is asyn and moving faster than data deletion
-	if err := a.accounts.prune(txFrom, txTo, limit); err != nil {
+	if err := a.accounts.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.storage.prune(txFrom, txTo, limit); err != nil {
+	if err := a.storage.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.code.prune(txFrom, txTo, limit); err != nil {
+	if err := a.code.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.logAddrs.prune(txFrom, txTo, limit); err != nil {
+	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(txFrom, txTo, limit); err != nil {
+	if err := a.logTopics.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(txFrom, txTo, limit); err != nil {
+	if err := a.tracesFrom.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(txFrom, txTo, limit); err != nil {
+	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
 	return nil
@@ -918,8 +918,14 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	hasData := false
 	// check if db has enough data (maybe we didn't commit them yet)
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		fst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-		hasData = len(fst) > 0 && binary.BigEndian.Uint64(fst) >= toTxNum
+		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
+		fst, _ := kv.FirstKey(tx, a.accounts.indexKeysTable)
+		hasData = len(lst) > 0 && binary.BigEndian.Uint64(lst) >= toTxNum
+		if len(fst) > 0 {
+			//1738505-2917181, 2929680
+			// 2917181-2929680
+			//fmt.Printf("alex: %t, %d-%d, %d, %x-%x\n", hasData, binary.BigEndian.Uint64(fst), binary.BigEndian.Uint64(lst), toTxNum, fst, lst)
+		}
 		return nil
 	}); err != nil {
 		return err

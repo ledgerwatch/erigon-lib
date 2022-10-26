@@ -924,7 +924,7 @@ func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64) error {
 		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
 	}
 
-	if err = d.History.prune(txFrom, txTo, limit); err != nil {
+	if err = d.History.prune(context.TODO(), txFrom, txTo, limit); err != nil {
 		return fmt.Errorf("prune history at step %d [%d, %d): %w", step, txFrom, txTo, err)
 	}
 	return nil

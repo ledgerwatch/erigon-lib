@@ -888,7 +888,13 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	return nil
 }
 
-func (h *History) prune(txFrom, txTo, limit uint64) error {
+func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)

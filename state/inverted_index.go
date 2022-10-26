@@ -879,7 +879,13 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 }
 
 // [txFrom; txTo)
-func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
+func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
