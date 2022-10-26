@@ -49,7 +49,7 @@ type Aggregator22 struct {
 	logPrefix        string
 	dir              string
 	tmpdir           string
-	txNum            uint64
+	txNum            atomic.Uint64
 	aggregationStep  uint64
 	maxTxNum         atomic.Uint64
 	working          atomic.Bool
@@ -217,7 +217,7 @@ func (a *Aggregator22) SetTx(tx kv.RwTx) {
 }
 
 func (a *Aggregator22) SetTxNum(txNum uint64) {
-	a.txNum = txNum
+	a.txNum.Store(txNum)
 	a.accounts.SetTxNum(txNum)
 	a.storage.SetTxNum(txNum)
 	a.code.SetTxNum(txNum)
@@ -888,12 +888,8 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 	return nil
 }
 
-func (a *Aggregator22) ReadyToFinishTx() bool {
-	return (a.txNum+1)%a.aggregationStep == 0
-}
-
 func (a *Aggregator22) FinishTx(tx kv.Tx) error {
-	if (a.txNum + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
+	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
 	step := a.maxTxNum.Load() / a.aggregationStep
