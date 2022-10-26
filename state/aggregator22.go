@@ -924,6 +924,17 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		return nil
 	}
 
+	// check if db has enough data (maybe we didn't commit them yet)
+	if err := db.View(context.Background(), func(tx kv.Tx) error {
+		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
+		if len(lst) == 0 || binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
+			return nil
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
