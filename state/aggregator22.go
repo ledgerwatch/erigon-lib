@@ -914,11 +914,12 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		return nil
 	}
 
+	toTxNum := (step + 1) * a.aggregationStep
 	hasData := false
 	// check if db has enough data (maybe we didn't commit them yet)
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-		hasData = len(lst) > 0 && binary.BigEndian.Uint64(lst) >= (step+1)*a.aggregationStep
+		fst, _ := kv.FirstKey(tx, a.accounts.indexKeysTable)
+		hasData = len(fst) > 0 && binary.BigEndian.Uint64(fst) >= toTxNum
 		return nil
 	}); err != nil {
 		return err
