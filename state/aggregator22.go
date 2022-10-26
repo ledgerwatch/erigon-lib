@@ -299,20 +299,13 @@ func (sf Agg22StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
-func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) error {
+func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) (err error) {
 	closeAll := true
 
 	var collation Agg22Collation
 	// collate - making read-transaction as short as possible
 	// all future steps (build, compress, merge files) are slow
-	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		// check if db has enough data (maybe we didn't commit them yet)
-		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-		if len(lst) == 0 || binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
-			return nil
-		}
-		var err error
-
+	if err = db.View(context.Background(), func(tx kv.Tx) error {
 		collation, err = a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
 		if err != nil {
 			return err
