@@ -889,7 +889,7 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 	return nil
 }
 
-func (a *Aggregator22) FinishTx(tx kv.Tx) error {
+func (a *Aggregator22) RetireData(tx kv.Tx) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
