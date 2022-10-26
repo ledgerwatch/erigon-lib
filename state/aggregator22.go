@@ -905,7 +905,6 @@ func (a *Aggregator22) FinishTx(tx kv.Tx) error {
 	if len(lst) == 0 || binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
 		return nil
 	}
-	fmt.Printf("collate: %d-%d\n", binary.BigEndian.Uint64(lst), (step+1)*a.aggregationStep)
 
 	closeAll := true
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
