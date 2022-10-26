@@ -902,9 +902,10 @@ func (a *Aggregator22) FinishTx(tx kv.Tx) error {
 
 	// check if db has enough data (maybe we didn't commit them yet)
 	lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-	if binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
+	if len(lst) == 0 || binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
 		return nil
 	}
+	fmt.Printf("collate: %d-%d\n", binary.BigEndian.Uint64(lst), (step+1)*a.aggregationStep)
 
 	closeAll := true
 	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
