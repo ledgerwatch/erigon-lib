@@ -33,28 +33,28 @@ import (
 
 // Index implements index lookup from the file created by the RecSplit
 type Index struct {
-	indexFile          string
-	f                  *os.File
-	mmapHandle1        []byte                 // mmap handle for unix (this is used to close mmap)
-	mmapHandle2        *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
-	data               []byte                 // slice of correct size for the index to work with
-	keyCount           uint64
-	bytesPerRec        int
-	recMask            uint64
-	grData             []uint64
-	ef                 eliasfano16.DoubleEliasFano
-	enums              bool
 	offsetEf           *eliasfano32.EliasFano
-	baseDataID         uint64
-	bucketCount        uint64 // Number of buckets
-	bucketSize         int
-	leafSize           uint16 // Leaf size for recursive split algorithms
-	primaryAggrBound   uint16 // The lower bound for primary key aggregation (computed from leafSize)
-	secondaryAggrBound uint16 // The lower bound for secondary key aggregation (computed from leadSize)
-	salt               uint32
+	f                  *os.File
+	mmapHandle2        *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
+	indexFile          string
+	grData             []uint64
+	data               []byte // slice of correct size for the index to work with
 	startSeed          []uint64
 	golombRice         []uint32
+	mmapHandle1        []byte // mmap handle for unix (this is used to close mmap)
+	ef                 eliasfano16.DoubleEliasFano
+	bucketSize         int
 	size               int64
+	baseDataID         uint64
+	bucketCount        uint64 // Number of buckets
+	keyCount           uint64
+	recMask            uint64
+	bytesPerRec        int
+	salt               uint32
+	leafSize           uint16 // Leaf size for recursive split algorithms
+	secondaryAggrBound uint16 // The lower bound for secondary key aggregation (computed from leadSize)
+	primaryAggrBound   uint16 // The lower bound for primary key aggregation (computed from leafSize)
+	enums              bool
 }
 
 func MustOpen(indexFile string) *Index {
@@ -154,6 +154,9 @@ func (idx *Index) Size() int64 {
 func (idx *Index) BaseDataID() uint64 { return idx.baseDataID }
 
 func (idx *Index) Close() error {
+	if idx == nil {
+		return nil
+	}
 	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
 		return err
 	}
@@ -248,7 +251,8 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	}
 	b := gr.ReadNext(idx.golombParam(m))
 	rec := int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
-	return binary.BigEndian.Uint64(idx.data[1+8+idx.bytesPerRec*(rec+1):]) & idx.recMask
+	pos := 1 + 8 + idx.bytesPerRec*(rec+1)
+	return binary.BigEndian.Uint64(idx.data[pos:]) & idx.recMask
 }
 
 // OrdinalLookup returns the offset of i-th element in the index

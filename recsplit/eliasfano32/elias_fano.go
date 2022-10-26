@@ -82,7 +82,7 @@ func (ef *EliasFano) AddOffset(offset uint64) {
 	ef.i++
 }
 
-func (ef EliasFano) jumpSizeWords() int {
+func (ef *EliasFano) jumpSizeWords() int {
 	size := ((ef.count + 1) / superQ) * superQSize // Whole blocks
 	if (ef.count+1)%superQ != 0 {
 		size += 1 + (((ef.count+1)%superQ+q-1)/q+3)/2 // Partial block
@@ -147,7 +147,7 @@ func (ef *EliasFano) Build() {
 	}
 }
 
-func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord uint64, lower uint64) {
+func (ef *EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord uint64, lower uint64) {
 	lower = i * ef.l
 	idx64 := lower / 64
 	shift := lower % 64
@@ -179,12 +179,12 @@ func (ef EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord 
 	return
 }
 
-func (ef EliasFano) Get(i uint64) uint64 {
+func (ef *EliasFano) Get(i uint64) uint64 {
 	val, _, _, _, _ := ef.get(i)
 	return val
 }
 
-func (ef EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
+func (ef *EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 	var window uint64
 	var sel int
 	var currWord uint64
@@ -202,7 +202,7 @@ func (ef EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 }
 
 // Search returns the value in the sequence, equal or greater than given value
-func (ef EliasFano) Search(offset uint64) (uint64, bool) {
+func (ef *EliasFano) Search(offset uint64) (uint64, bool) {
 	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
 		val, _, _, _, _ := ef.get(uint64(i))
 		return val >= offset
@@ -213,15 +213,15 @@ func (ef EliasFano) Search(offset uint64) (uint64, bool) {
 	return 0, false
 }
 
-func (ef EliasFano) Max() uint64 {
+func (ef *EliasFano) Max() uint64 {
 	return ef.maxOffset
 }
 
-func (ef EliasFano) Min() uint64 {
+func (ef *EliasFano) Min() uint64 {
 	return ef.Get(0)
 }
 
-func (ef EliasFano) Count() uint64 {
+func (ef *EliasFano) Count() uint64 {
 	return ef.count + 1
 }
 
@@ -280,9 +280,8 @@ func (ef *EliasFano) Write(w io.Writer) error {
 	if _, e := w.Write(numBuf[:]); e != nil {
 		return e
 	}
-	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
-	b := (*p)[:]
-	if _, e := w.Write(b[:len(ef.data)*8]); e != nil {
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&ef.data[0])), len(ef.data)*uint64Size)
+	if _, e := w.Write(b); e != nil {
 		return e
 	}
 	return nil
@@ -295,21 +294,17 @@ func (ef *EliasFano) AppendBytes(buf []byte) []byte {
 	buf = append(buf, numBuf[:]...)
 	binary.BigEndian.PutUint64(numBuf[:], ef.u)
 	buf = append(buf, numBuf[:]...)
-	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
-	b := (*p)[:]
-	buf = append(buf, b[:len(ef.data)*8]...)
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&ef.data[0])), len(ef.data)*uint64Size)
+	buf = append(buf, b...)
 	return buf
 }
 
-const maxDataSize = 0xFFFFFFFFFFFF //2^48
-
 // Read inputs the state of golomb rice encoding from a reader s
 func ReadEliasFano(r []byte) (*EliasFano, int) {
-	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
 	ef := &EliasFano{
 		count: binary.BigEndian.Uint64(r[:8]),
 		u:     binary.BigEndian.Uint64(r[8:16]),
-		data:  p[:],
+		data:  unsafe.Slice((*uint64)(unsafe.Pointer(&r[16])), (len(r)-16)/uint64Size),
 	}
 	ef.maxOffset = ef.u - 1
 	ef.deriveFields()
@@ -318,10 +313,12 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 
 func Max(r []byte) uint64 { return binary.BigEndian.Uint64(r[8:16]) - 1 }
 
+const uint64Size = 8
+
 func Min(r []byte) uint64 {
 	count := binary.BigEndian.Uint64(r[:8])
 	u := binary.BigEndian.Uint64(r[8:16])
-	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[16]))
+	p := unsafe.Slice((*uint64)(unsafe.Pointer(&r[16])), (len(r)-16)/uint64Size)
 	var l uint64
 	if u/(count+1) == 0 {
 		l = 0
@@ -532,7 +529,7 @@ func set(bits []uint64, pos uint64) {
 	bits[pos/64] |= uint64(1) << (pos % 64)
 }
 
-func (ef DoubleEliasFano) jumpSizeWords() int {
+func (ef *DoubleEliasFano) jumpSizeWords() int {
 	size := ((ef.numBuckets + 1) / superQ) * superQSize * 2 // Whole blocks
 	if (ef.numBuckets+1)%superQ != 0 {
 		size += (1 + (((ef.numBuckets+1)%superQ+q-1)/q+3)/2) * 2 // Partial block
@@ -541,11 +538,11 @@ func (ef DoubleEliasFano) jumpSizeWords() int {
 }
 
 // Data returns binary representation of double Ellias-Fano index that has been built
-func (ef DoubleEliasFano) Data() []uint64 {
+func (ef *DoubleEliasFano) Data() []uint64 {
 	return ef.data
 }
 
-func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
+func (ef *DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 	windowCumKeys uint64, selectCumKeys int, currWordCumKeys uint64, lower uint64, cumDelta uint64) {
 	posLower := i * (ef.lCumKeys + ef.lPosition)
 	idx64 := posLower / 64
@@ -604,12 +601,12 @@ func (ef DoubleEliasFano) get2(i uint64) (cumKeys uint64, position uint64,
 	return
 }
 
-func (ef DoubleEliasFano) Get2(i uint64) (cumKeys, position uint64) {
+func (ef *DoubleEliasFano) Get2(i uint64) (cumKeys, position uint64) {
 	cumKeys, position, _, _, _, _, _ = ef.get2(i)
 	return
 }
 
-func (ef DoubleEliasFano) Get3(i uint64) (cumKeys, cumKeysNext, position uint64) {
+func (ef *DoubleEliasFano) Get3(i uint64) (cumKeys, cumKeysNext, position uint64) {
 	var windowCumKeys uint64
 	var selectCumKeys int
 	var currWordCumKeys uint64
@@ -650,9 +647,8 @@ func (ef *DoubleEliasFano) Write(w io.Writer) error {
 	if _, e := w.Write(numBuf[:]); e != nil {
 		return e
 	}
-	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
-	b := (*p)[:]
-	if _, e := w.Write(b[:len(ef.data)*8]); e != nil {
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&ef.data[0])), len(ef.data)*uint64Size)
+	if _, e := w.Write(b); e != nil {
 		return e
 	}
 	return nil
@@ -665,8 +661,7 @@ func (ef *DoubleEliasFano) Read(r []byte) int {
 	ef.uPosition = binary.BigEndian.Uint64(r[16:24])
 	ef.cumKeysMinDelta = binary.BigEndian.Uint64(r[24:32])
 	ef.posMinDelta = binary.BigEndian.Uint64(r[32:40])
-	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&r[40]))
-	ef.data = p[:]
+	ef.data = unsafe.Slice((*uint64)(unsafe.Pointer(&r[40])), (len(r)-40)/uint64Size)
 	ef.deriveFields()
 	return 40 + 8*len(ef.data)
 }

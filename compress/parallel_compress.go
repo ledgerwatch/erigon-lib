@@ -206,8 +206,8 @@ func reduceDictWorker(trace bool, inputCh chan *CompressionWord, outCh chan *Com
 // To allow multiple words to be processed concurrently, order field is used to collect all
 // the words after processing without disrupting their order
 type CompressionWord struct {
-	order uint64
 	word  []byte
+	order uint64
 }
 
 type CompressionQueue []*CompressionWord
@@ -238,7 +238,7 @@ func (cq *CompressionQueue) Pop() interface{} {
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
 func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath string, datFile *DecompressedFile, workers int, dictBuilder *DictionaryBuilder, lvl log.Lvl) error {
-	logEvery := time.NewTicker(30 * time.Second)
+	logEvery := time.NewTicker(60 * time.Second)
 	defer logEvery.Stop()
 
 	// DictionaryBuilder is for sorting words by their freuency (to assign codes)
@@ -399,7 +399,7 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 
 		select {
 		case <-logEvery.C:
-			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)), "ch", len(ch))
+			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)), "ch", len(ch), "workers", workers)
 		default:
 		}
 		return nil

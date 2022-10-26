@@ -34,6 +34,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 
@@ -50,10 +51,10 @@ var (
 
 // filesItem corresponding to a pair of files (.dat and .idx)
 type filesItem struct {
-	startTxNum   uint64
-	endTxNum     uint64
 	decompressor *compress.Decompressor
 	index        *recsplit.Index
+	startTxNum   uint64
+	endTxNum     uint64
 }
 
 func (i *filesItem) isSubsetOf(j *filesItem) bool {
@@ -88,18 +89,17 @@ func (ds *DomainStats) Accumulate(other DomainStats) {
 // Domain should not have any go routines or locks
 type Domain struct {
 	*History
-	keysTable string // key -> invertedStep , invertedStep = ^(txNum / aggregationStep), Needs to be table with DupSort
-	valsTable string // key + invertedStep -> values
-
 	files       *btree.BTreeG[*filesItem] // Static files pertaining to this domain, items are of type `filesItem`
-	prefixLen   int                       // Number of bytes in the keys that can be used for prefix iteration
-	stats       DomainStats
-	mergesCount uint64
 	defaultDc   *DomainContext
+	keysTable   string // key -> invertedStep , invertedStep = ^(txNum / aggregationStep), Needs to be table with DupSort
+	valsTable   string // key + invertedStep -> values
+	stats       DomainStats
+	prefixLen   int // Number of bytes in the keys that can be used for prefix iteration
+	mergesCount uint64
 }
 
 func NewDomain(
-	dir string,
+	dir, tmpdir string,
 	aggregationStep uint64,
 	filenameBase string,
 	keysTable string,
@@ -118,7 +118,7 @@ func NewDomain(
 		files:     btree.NewG[*filesItem](32, filesItemLess),
 	}
 	var err error
-	if d.History, err = NewHistory(dir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals); err != nil {
+	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals); err != nil {
 		return nil, err
 	}
 	files, err := os.ReadDir(dir)
@@ -397,12 +397,14 @@ const (
 // CursorItem is the item in the priority queue used to do merge interation
 // over storage of a given account
 type CursorItem struct {
+	c        kv.CursorDupSort
+	dg       *compress.Getter
+	dg2      *compress.Getter
+	key      []byte
+	val      []byte
+	endTxNum uint64
 	t        CursorType // Whether this item represents state file or DB record, or tree
 	reverse  bool
-	endTxNum uint64
-	key, val []byte
-	dg, dg2  *compress.Getter
-	c        kv.CursorDupSort
 }
 
 type CursorHeap []*CursorItem
@@ -441,10 +443,10 @@ func (ch *CursorHeap) Pop() interface{} {
 
 // filesItem corresponding to a pair of files (.dat and .idx)
 type ctxItem struct {
-	startTxNum uint64
-	endTxNum   uint64
 	getter     *compress.Getter
 	reader     *recsplit.IndexReader
+	startTxNum uint64
+	endTxNum   uint64
 }
 
 func ctxItemLess(i, j ctxItem) bool {
@@ -592,13 +594,13 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 
 // Collation is the set of compressors created after aggregation
 type Collation struct {
-	valuesPath   string
 	valuesComp   *compress.Compressor
-	valuesCount  int
-	historyPath  string
 	historyComp  *compress.Compressor
-	historyCount int
 	indexBitmaps map[string]*roaring64.Bitmap
+	valuesPath   string
+	historyPath  string
+	valuesCount  int
+	historyCount int
 }
 
 func (c Collation) Close() {
@@ -629,7 +631,7 @@ func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx) (Collation, erro
 		}
 	}()
 	valuesPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, step, step+1))
-	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.dir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.tmpdir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return Collation{}, fmt.Errorf("create %s values compressor: %w", d.filenameBase, err)
 	}
 	keysCursor, err := roTx.CursorDupSort(d.keysTable)
@@ -719,8 +721,8 @@ func (sf StaticFiles) Close() {
 
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
-func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, error) {
-	hStaticFiles, err := d.History.buildFiles(step, HistoryCollation{
+func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collation) (StaticFiles, error) {
+	hStaticFiles, err := d.History.buildFiles(ctx, step, HistoryCollation{
 		historyPath:  collation.historyPath,
 		historyComp:  collation.historyComp,
 		historyCount: collation.historyCount,
@@ -756,7 +758,7 @@ func (d *Domain) buildFiles(step uint64, collation Collation) (StaticFiles, erro
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
-	if valuesIdx, err = buildIndex(valuesDecomp, valuesIdxPath, d.dir, collation.valuesCount, false); err != nil {
+	if valuesIdx, err = buildIndex(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
 	closeComp = false
@@ -782,8 +784,8 @@ func (d *Domain) missedIdxFiles() (l []*filesItem) {
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
-func (d *Domain) BuildMissedIndices() (err error) {
-	if err := d.History.BuildMissedIndices(); err != nil {
+func (d *Domain) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
+	if err := d.History.BuildMissedIndices(ctx, sem); err != nil {
 		return err
 	}
 	for _, item := range d.missedIdxFiles() {
@@ -793,7 +795,7 @@ func (d *Domain) BuildMissedIndices() (err error) {
 	return d.openFiles()
 }
 
-func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values bool) (*recsplit.Index, error) {
+func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) (*recsplit.Index, error) {
 	_, fName := filepath.Split(idxPath)
 	log.Debug("[snapshots] build idx", "file", fName)
 	var rs *recsplit.RecSplit
@@ -803,7 +805,7 @@ func buildIndex(d *compress.Decompressor, idxPath, dir string, count int, values
 		Enums:      false,
 		BucketSize: 2000,
 		LeafSize:   8,
-		TmpDir:     dir,
+		TmpDir:     tmpdir,
 		IndexFile:  idxPath,
 	}); err != nil {
 		return nil, fmt.Errorf("create recsplit: %w", err)
