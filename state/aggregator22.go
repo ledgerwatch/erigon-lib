@@ -299,9 +299,35 @@ func (sf Agg22StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
-func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, collation Agg22Collation) error {
-	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
+func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) error {
 	closeAll := true
+
+	var collation Agg22Collation
+	// collate - making read-transaction as short as possible
+	// all future steps (build, compress, merge files) are slow
+	if err := db.View(context.Background(), func(tx kv.Tx) error {
+		// check if db has enough data (maybe we didn't commit them yet)
+		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
+		if len(lst) == 0 || binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
+			return nil
+		}
+		var err error
+
+		collation, err = a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+	defer func() {
+		if closeAll {
+			collation.Close()
+		}
+	}()
+
+	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
 	sf, err := a.buildFiles(ctx, step, collation)
 	if err != nil {
 		return err
@@ -889,7 +915,7 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 	return nil
 }
 
-func (a *Aggregator22) RetireData(tx kv.Tx) error {
+func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
 		return nil
 	}
@@ -898,27 +924,10 @@ func (a *Aggregator22) RetireData(tx kv.Tx) error {
 		return nil
 	}
 
-	// check if db has enough data (maybe we didn't commit them yet)
-	lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-	if len(lst) == 0 || binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
-		return nil
-	}
-
-	closeAll := true
-	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeAll {
-			collation.Close()
-		}
-	}()
-
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
-		if err := a.buildFilesInBackground(context.Background(), step, collation); err != nil {
+		if err := a.buildFilesInBackground(context.Background(), step, db); err != nil {
 			log.Warn("buildFilesInBackground", "err", err)
 		}
 	}()
@@ -926,7 +935,6 @@ func (a *Aggregator22) RetireData(tx kv.Tx) error {
 	//if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
 	//	return err
 	//}
-	closeAll = false
 	return nil
 }
 
