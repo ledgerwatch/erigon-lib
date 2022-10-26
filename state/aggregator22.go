@@ -243,8 +243,11 @@ func (c Agg22Collation) Close() {
 	c.code.Close()
 }
 
-func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (Agg22Collation, error) {
+func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
 	defer func(t time.Time) { log.Info(fmt.Sprintf("aggregator22.go:247: collate %s\n", time.Since(t))) }(time.Now())
+
+	roTx, _ := db.BeginRo(context.Background())
+	defer roTx.Rollback()
 	var ac Agg22Collation
 	var err error
 	closeColl := true
@@ -304,14 +307,9 @@ func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, 
 	var collation Agg22Collation
 	// collate - making read-transaction as short as possible
 	// all future steps (build, compress, merge files) are slow
-	if err = db.View(context.Background(), func(tx kv.Tx) error {
-		collation, err = a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		panic(err)
+	collation, err = a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, db)
+	if err != nil {
+		return err
 	}
 	defer func() {
 		if closeAll {
