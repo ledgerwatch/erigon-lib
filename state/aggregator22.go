@@ -900,37 +900,36 @@ func (a *Aggregator22) FinishTx(tx kv.Tx) error {
 		return nil
 	}
 
-	closeAll := true
-
 	// check if db has enough data (maybe we didn't commit them yet)
 	lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
 	if binary.BigEndian.Uint64(lst) < (step+1)*a.aggregationStep {
 		return nil
 	}
 
-	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeAll {
-			collation.Close()
-		}
-	}()
-
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
+		closeAll := true
+		collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, tx)
+		if err != nil {
+			log.Warn("collate", "err", err)
+			return
+		}
+		defer func() {
+			if closeAll {
+				collation.Close()
+			}
+		}()
 		if err := a.buildFilesInBackground(context.Background(), step, collation); err != nil {
 			log.Warn("buildFilesInBackground", "err", err)
 		}
+		closeAll = false
 	}()
 
 	//if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
 	//	return err
 	//}
 
-	closeAll = false
 	return nil
 }
 
