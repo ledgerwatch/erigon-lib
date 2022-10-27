@@ -631,13 +631,16 @@ func (a *Aggregator22) Flush() error {
 	return nil
 }
 
-func (a *Aggregator22) CanPrune(tx kv.Tx) bool {
+func (a *Aggregator22) CanPrune(tx kv.Tx) bool { return a.CanPruneFrom(tx) < a.maxTxNum.Load() }
+func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	fst, _ := kv.FirstKey(tx, kv.TracesToKeys)
 	if len(fst) > 0 {
-		fstTxNum := binary.BigEndian.Uint64(fst)
-		return fstTxNum < a.maxTxNum.Load()
+		fstInDb := binary.BigEndian.Uint64(fst)
+		if fstInDb < a.maxTxNum.Load() {
+			return fstInDb
+		}
 	}
-	return false
+	return math2.MaxUint64
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
 	defer func(t time.Time) { log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t))) }(time.Now())
