@@ -918,8 +918,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 	if txFrom >= txTo {
 		return nil
 	}
-	if txTo-txFrom > 10_000 {
-	}
 
 	valsC, err := h.tx.RwCursor(h.historyValsTable)
 	if err != nil {
