@@ -1009,7 +1009,6 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if !hasData {
 		return nil
 	}
-	log.Info("have data")
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
