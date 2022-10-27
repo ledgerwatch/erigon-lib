@@ -550,7 +550,7 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 	if a.db == nil {
 		return
 	}
-	if limit < 1_000 {
+	if limit < 10_000 {
 		return
 	}
 
