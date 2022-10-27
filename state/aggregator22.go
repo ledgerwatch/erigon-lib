@@ -1013,7 +1013,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if !hasData {
 		return nil
 	}
-	log.Info("have data", "step", step, "lastStepInDB", lastStepInDB, "lstInDb", lstInDb)
+	log.Info("have data", "step", step, "lastStepInDB", lastStepInDB, "lstInDb", lstInDb, "a.maxTxNum", a.maxTxNum.Load())
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
