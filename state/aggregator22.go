@@ -1004,7 +1004,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 			hasData = lstInDb >= toTxNum
 		}
 		if hasData {
-			lastStepInDB = (lstInDb / a.aggregationStep) - 1
+			lastStepInDB = (lstInDb / a.aggregationStep)
 		}
 		return nil
 	}); err != nil {
