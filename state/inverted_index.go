@@ -38,6 +38,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
@@ -742,7 +743,7 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx, logEvery *time
 		var bitmap *roaring64.Bitmap
 		var ok bool
 		if bitmap, ok = indexBitmaps[string(v)]; !ok {
-			bitmap = roaring64.New()
+			bitmap = bitmapdb.NewBitmap64()
 			indexBitmaps[string(v)] = bitmap
 		}
 		bitmap.Add(txNum)

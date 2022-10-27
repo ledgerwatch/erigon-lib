@@ -31,6 +31,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
@@ -243,9 +244,30 @@ func (c Agg22Collation) Close() {
 	c.accounts.Close()
 	c.storage.Close()
 	c.code.Close()
+
+	for _, b := range c.logAddrs {
+		bitmapdb.ReturnToPool64(b)
+	}
+	c.logAddrs = nil
+
+	for _, b := range c.logTopics {
+		bitmapdb.ReturnToPool64(b)
+	}
+	c.logTopics = nil
+
+	for _, b := range c.tracesFrom {
+		bitmapdb.ReturnToPool64(b)
+	}
+	c.tracesFrom = nil
+
+	for _, b := range c.tracesTo {
+		bitmapdb.ReturnToPool64(b)
+	}
+	c.tracesTo = nil
 }
 
 func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
+	a.Warmup(txFrom, a.aggregationStep)
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	defer func(t time.Time) { log.Info(fmt.Sprintf("[snapshot] collate took: %s\n", time.Since(t))) }(time.Now())
