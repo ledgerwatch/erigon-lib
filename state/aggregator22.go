@@ -248,22 +248,15 @@ func (c Agg22Collation) Close() {
 	for _, b := range c.logAddrs {
 		bitmapdb.ReturnToPool64(b)
 	}
-	c.logAddrs = nil
-
 	for _, b := range c.logTopics {
 		bitmapdb.ReturnToPool64(b)
 	}
-	c.logTopics = nil
-
 	for _, b := range c.tracesFrom {
 		bitmapdb.ReturnToPool64(b)
 	}
-	c.tracesFrom = nil
-
 	for _, b := range c.tracesTo {
 		bitmapdb.ReturnToPool64(b)
 	}
-	c.tracesTo = nil
 }
 
 func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
