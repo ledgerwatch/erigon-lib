@@ -246,6 +246,8 @@ func (c Agg22Collation) Close() {
 }
 
 func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
 	defer func(t time.Time) { log.Info(fmt.Sprintf("[snapshot] collate took: %s\n", time.Since(t))) }(time.Now())
 	log.Info(fmt.Sprintf("[snapshot] collate start: %d-%d", step, step+1))
 	var ac Agg22Collation
@@ -262,7 +264,7 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 	//	defer wg.Done()
 	var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx)
+		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		errCh <- err
@@ -273,7 +275,7 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 	//	defer wg.Done()
 	//var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx)
+		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		errCh <- err
@@ -283,7 +285,7 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 	//	defer wg.Done()
 	//var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.code, err = a.code.collate(step, txFrom, txTo, tx)
+		ac.code, err = a.code.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		errCh <- err
@@ -293,7 +295,7 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 	//	defer wg.Done()
 	//var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, tx)
+		ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		errCh <- err
@@ -303,7 +305,7 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 	//	defer wg.Done()
 	//var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.logTopics, err = a.logTopics.collate(txFrom, txTo, tx)
+		ac.logTopics, err = a.logTopics.collate(txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		errCh <- err
@@ -313,7 +315,7 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 	//	defer wg.Done()
 	//var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, tx)
+		ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		errCh <- err
@@ -323,7 +325,7 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 	//	defer wg.Done()
 	//var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, tx)
+		ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		errCh <- err
