@@ -918,6 +918,8 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 	if txFrom >= txTo {
 		return nil
 	}
+	if txTo-txFrom > 10_000 {
+	}
 
 	valsC, err := h.tx.RwCursor(h.historyValsTable)
 	if err != nil {
@@ -929,7 +931,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		return err
 	}
 	defer idxC.Close()
-	a := map[string]struct{}{}
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
@@ -938,10 +939,9 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
 			return err
 		}
-		a[string(v[:len(v)-8])] = struct{}{}
-		//if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
-		//	return err
-		//}
+		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
+			return err
+		}
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
@@ -954,21 +954,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
-	}
-
-	for seek := range a {
-		for v, err := idxC.SeekBothRange([]byte(seek), txKey[:]); v != nil; _, v, err = idxC.NextDup() {
-			if err != nil {
-				return err
-			}
-			txNum := binary.BigEndian.Uint64(v)
-			if txNum >= txTo {
-				break
-			}
-			if err = idxC.DeleteCurrent(); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }

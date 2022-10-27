@@ -908,7 +908,6 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	if txFrom >= txTo {
 		return nil
 	}
-	a := map[string]struct{}{}
 
 	idxC, err := ii.tx.RwCursorDupSort(ii.indexTable)
 	if err != nil {
@@ -920,10 +919,9 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		if txNum >= txTo {
 			break
 		}
-		//if err = idxC.DeleteExact(v, k); err != nil {
-		//	return err
-		//}
-		a[string(v)] = struct{}{}
+		if err = idxC.DeleteExact(v, k); err != nil {
+			return err
+		}
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
@@ -936,21 +934,6 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
-	}
-
-	for seek := range a {
-		for v, err := idxC.SeekBothRange([]byte(seek), txKey[:]); v != nil; _, v, err = idxC.NextDup() {
-			if err != nil {
-				return err
-			}
-			txNum := binary.BigEndian.Uint64(v)
-			if txNum >= txTo {
-				break
-			}
-			if err = idxC.DeleteCurrent(); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
