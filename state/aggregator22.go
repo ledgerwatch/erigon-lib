@@ -53,13 +53,14 @@ type Aggregator22 struct {
 	tmpdir           string
 	txNum            atomic.Uint64
 	aggregationStep  uint64
+	keepInDB         uint64
 	maxTxNum         atomic.Uint64
 	working          atomic.Bool
 	warmupWorking    atomic.Bool
 }
 
 func NewAggregator22(dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
-	a := &Aggregator22{dir: dir, tmpdir: tmpdir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db}
+	a := &Aggregator22{dir: dir, tmpdir: tmpdir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db, keepInDB: 2 * aggregationStep}
 	return a, nil
 }
 
@@ -1001,8 +1002,9 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 	return nil
 }
 
+func (a *Aggregator22) KeepInDB(v uint64) { a.keepInDB = v }
 func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
-	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+2*a.aggregationStep { // Leave one step worth in the DB
+	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return nil
 	}
 	step := a.maxTxNum.Load() / a.aggregationStep
