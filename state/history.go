@@ -612,6 +612,9 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 	var k, v []byte
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
+		if txNum%10_000 == 0 {
+			log.Info("collate", "what ", h.filenameBase, "where", txNum, "to", txTo)
+		}
 		if txNum >= txTo {
 			break
 		}
