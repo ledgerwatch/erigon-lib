@@ -372,9 +372,7 @@ func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, 
 	}()
 	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
 	log.Info("[snapshots] history build done", "step", fmt.Sprintf("%d-%d", step, step+1))
-	if err := a.Merge(ctx); err != nil {
-		return nil
-	}
+
 	closeAll = false
 	return nil
 }
@@ -959,15 +957,13 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 
 	toTxNum := (step + 1) * a.aggregationStep
 	hasData := false
+	lastStepInDB := step
 	// check if db has enough data (maybe we didn't commit them yet)
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
 		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-		fst, _ := kv.FirstKey(tx, a.accounts.indexKeysTable)
 		hasData = len(lst) > 0 && binary.BigEndian.Uint64(lst) >= toTxNum
-		if len(fst) > 0 {
-			//1738505-2917181, 2929680
-			// 2917181-2929680
-			//fmt.Printf("alex: %t, %d-%d, %d, %x-%x\n", hasData, binary.BigEndian.Uint64(fst), binary.BigEndian.Uint64(lst), toTxNum, fst, lst)
+		if hasData {
+			lastStepInDB = (binary.BigEndian.Uint64(lst) / a.aggregationStep) - 1
 		}
 		return nil
 	}); err != nil {
@@ -980,8 +976,15 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
-		if err := a.buildFilesInBackground(context.Background(), step, db); err != nil {
-			log.Warn("buildFilesInBackground", "err", err)
+		for step < lastStepInDB {
+			if err := a.buildFilesInBackground(context.Background(), step, db); err != nil {
+				log.Warn("buildFilesInBackground", "err", err)
+				break
+			}
+			step++
+		}
+		if err := a.Merge(context.Background()); err != nil {
+			log.Warn("merge", "err", err)
 		}
 	}()
 
