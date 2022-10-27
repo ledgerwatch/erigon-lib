@@ -27,7 +27,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -919,8 +918,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 	if txFrom >= txTo {
 		return nil
 	}
-	if txTo-txFrom > 10_000 {
-	}
 
 	valsC, err := h.tx.RwCursor(h.historyValsTable)
 	if err != nil {
@@ -941,6 +938,7 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
 			return err
 		}
+		a[string(v[:len(v)-8])] = struct{}{}
 		//if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
 		//	return err
 		//}
@@ -954,11 +952,10 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		default:
 		}
 	}
-	var m runtime.MemStats
-	common.ReadMemStats(&m)
-	log.Info("[snapshot] mem after loop", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	if err != nil {
+		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
+	}
 
-	log.Info("")
 	for seek := range a {
 		for v, err := idxC.SeekBothRange([]byte(seek), txKey[:]); v != nil; _, v, err = idxC.NextDup() {
 			if err != nil {
@@ -972,9 +969,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 				return err
 			}
 		}
-	}
-	if err != nil {
-		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
 	return nil
 }
