@@ -282,9 +282,9 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 }
 
 func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
+	t.Helper()
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	t.Helper()
 	ctx := context.Background()
 	// Leave the last 2 aggregation steps un-collated
 	var tx kv.RwTx

@@ -475,9 +475,9 @@ func TestIterationMultistep(t *testing.T) {
 }
 
 func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
+	t.Helper()
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	t.Helper()
 	ctx := context.Background()
 	var tx kv.RwTx
 	defer func() {
@@ -521,9 +521,9 @@ func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 }
 
 func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
+	t.Helper()
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	t.Helper()
 	ctx := context.Background()
 	txFrom, txTo := (step)*d.aggregationStep, (step+1)*d.aggregationStep
 
