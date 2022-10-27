@@ -53,6 +53,7 @@ type Aggregator22 struct {
 	aggregationStep  uint64
 	maxTxNum         atomic.Uint64
 	working          atomic.Bool
+	warmupWorking    atomic.Bool
 }
 
 func NewAggregator22(dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
@@ -553,8 +554,12 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 	if limit < 10_000 {
 		return
 	}
-
+	if a.warmupWorking.Load() {
+		return
+	}
+	a.warmupWorking.Store(true)
 	go func() {
+		defer a.warmupWorking.Store(false)
 		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
 			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
 				return err
@@ -643,12 +648,12 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	return math2.MaxUint64
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
+	a.Warmup(0, a.aggregationStep) // warmup is asyn and moving faster than data deletion
 	defer func(t time.Time) { log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t))) }(time.Now())
 	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
 
 func (a *Aggregator22) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
-	a.Warmup(txFrom, limit) // warmup is asyn and moving faster than data deletion
 	if err := a.accounts.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
