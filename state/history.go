@@ -612,9 +612,6 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 	var k, v []byte
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
-		if txNum%1_000_000 == 0 {
-			log.Info("collate", "what ", h.filenameBase, "where", txNum/1_000_000, "to", txTo/1_000_000)
-		}
 		if txNum >= txTo {
 			break
 		}
@@ -625,6 +622,9 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollati
 			indexBitmaps[string(v[:len(v)-8])] = bitmap
 		}
 		bitmap.Add(txNum)
+		if txNum%1_000_000 == 0 {
+			log.Info("collate", "what ", h.filenameBase, "where", txNum/1_000_000, "to", txTo/1_000_000)
+		}
 	}
 	if err != nil {
 		return HistoryCollation{}, fmt.Errorf("iterate over %s history cursor: %w", h.filenameBase, err)
