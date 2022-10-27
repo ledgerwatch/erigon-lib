@@ -1002,6 +1002,8 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 	return nil
 }
 
+// KeepInDB - usually equal to one a.aggregationStep, but when we exec blocks from snapshots
+// we can set it to 0, because no re-org on this blocks are possible
 func (a *Aggregator22) KeepInDB(v uint64) { a.keepInDB = v }
 func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
