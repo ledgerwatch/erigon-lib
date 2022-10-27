@@ -28,6 +28,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
@@ -648,7 +649,7 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	return math2.MaxUint64
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
-	a.Warmup(0, a.aggregationStep) // warmup is asyn and moving faster than data deletion
+	a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
 	defer func(t time.Time) { log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t))) }(time.Now())
 	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
