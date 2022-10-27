@@ -632,10 +632,10 @@ func (a *Aggregator22) Flush() error {
 }
 
 func (a *Aggregator22) CanPrune(tx kv.Tx) bool {
-	lst, _ := kv.LastKey(tx, kv.TracesToKeys)
-	if len(lst) > 0 {
-		lstTxNum := binary.BigEndian.Uint64(lst)
-		return lstTxNum > a.maxTxNum.Load()
+	fst, _ := kv.FirstKey(tx, kv.TracesToKeys)
+	if len(fst) > 0 {
+		fstTxNum := binary.BigEndian.Uint64(fst)
+		return fstTxNum < a.maxTxNum.Load()
 	}
 	return false
 }
