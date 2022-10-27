@@ -249,36 +249,79 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 	roTx, _ := db.BeginRo(context.Background())
 	defer roTx.Rollback()
 	var ac Agg22Collation
-	var err error
 	closeColl := true
 	defer func() {
 		if closeColl {
 			ac.Close()
 		}
 	}()
-	if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx); err != nil {
-		return Agg22Collation{}, err
+	var wg sync.WaitGroup
+	wg.Add(7)
+	errCh := make(chan error, 7)
+	go func() {
+		defer wg.Done()
+		var err error
+		if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx); err != nil {
+			errCh <- err
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		var err error
+		if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if ac.code, err = a.code.collate(step, txFrom, txTo, roTx); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx); err != nil {
+			errCh <- err
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(errCh)
+	}()
+	var lastError error
+	for err := range errCh {
+		if err != nil {
+			lastError = err
+		}
 	}
-	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
-		return Agg22Collation{}, err
+	if lastError == nil {
+		closeColl = false
 	}
-	if ac.code, err = a.code.collate(step, txFrom, txTo, roTx); err != nil {
-		return Agg22Collation{}, err
-	}
-	if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx); err != nil {
-		return Agg22Collation{}, err
-	}
-	if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx); err != nil {
-		return Agg22Collation{}, err
-	}
-	if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx); err != nil {
-		return Agg22Collation{}, err
-	}
-	if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx); err != nil {
-		return Agg22Collation{}, err
-	}
-	closeColl = false
-	return ac, nil
+	return ac, lastError
 }
 
 type Agg22StaticFiles struct {
