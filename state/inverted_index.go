@@ -735,6 +735,9 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*r
 	var k, v []byte
 	for k, v, err = keysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
+		if txNum%1_000_000 == 0 {
+			log.Info("collate", "what ", ii.filenameBase, "where", txNum/1_000_000, "to", txTo/1_000_000)
+		}
 		if txNum >= txTo {
 			break
 		}
