@@ -560,7 +560,7 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 	}
 	a.warmupWorking.Store(true)
 	initialFrom, initialTo := txFrom, txFrom+limit
-	for i := initialFrom; i < initialTo; i += limit / 10 {
+	for i := initialFrom; i < initialTo; i += limit / 4 {
 		go func(txFrom, limit uint64) {
 			defer a.warmupWorking.Store(false)
 			if err := a.db.View(context.Background(), func(tx kv.Tx) error {
