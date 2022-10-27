@@ -23,6 +23,7 @@ import (
 	"math"
 	"math/bits"
 	"os"
+	"path/filepath"
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/mmap"
@@ -32,28 +33,28 @@ import (
 
 // Index implements index lookup from the file created by the RecSplit
 type Index struct {
-	indexFile          string
-	f                  *os.File
-	mmapHandle1        []byte                 // mmap handle for unix (this is used to close mmap)
-	mmapHandle2        *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
-	data               []byte                 // slice of correct size for the index to work with
-	keyCount           uint64
-	bytesPerRec        int
-	recMask            uint64
-	grData             []uint64
-	ef                 eliasfano16.DoubleEliasFano
-	enums              bool
 	offsetEf           *eliasfano32.EliasFano
-	baseDataID         uint64
-	bucketCount        uint64 // Number of buckets
-	bucketSize         int
-	leafSize           uint16 // Leaf size for recursive split algorithms
-	primaryAggrBound   uint16 // The lower bound for primary key aggregation (computed from leafSize)
-	secondaryAggrBound uint16 // The lower bound for secondary key aggregation (computed from leadSize)
-	salt               uint32
+	f                  *os.File
+	mmapHandle2        *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
+	indexFile          string
+	grData             []uint64
+	data               []byte // slice of correct size for the index to work with
 	startSeed          []uint64
 	golombRice         []uint32
+	mmapHandle1        []byte // mmap handle for unix (this is used to close mmap)
+	ef                 eliasfano16.DoubleEliasFano
+	bucketSize         int
 	size               int64
+	baseDataID         uint64
+	bucketCount        uint64 // Number of buckets
+	keyCount           uint64
+	recMask            uint64
+	bytesPerRec        int
+	salt               uint32
+	leafSize           uint16 // Leaf size for recursive split algorithms
+	secondaryAggrBound uint16 // The lower bound for secondary key aggregation (computed from leadSize)
+	primaryAggrBound   uint16 // The lower bound for primary key aggregation (computed from leafSize)
+	enums              bool
 }
 
 func MustOpen(indexFile string) *Index {
@@ -88,6 +89,10 @@ func OpenIndex(indexFile string) (*Index, error) {
 	idx.bytesPerRec = int(idx.data[16])
 	idx.recMask = (uint64(1) << (8 * idx.bytesPerRec)) - 1
 	offset := 16 + 1 + int(idx.keyCount)*idx.bytesPerRec
+
+	if offset < 0 {
+		return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexFile)
+	}
 
 	// Bucket count, bucketSize, leafSize
 	idx.bucketCount = binary.BigEndian.Uint64(idx.data[offset:])
@@ -184,7 +189,8 @@ func (idx *Index) KeyCount() uint64 {
 // Lookup is not thread-safe because it used id.hasher
 func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	if idx.keyCount == 0 {
-		panic("no Lookup should be done when keyCount==0, please use Empty function to guard")
+		_, fName := filepath.Split(idx.indexFile)
+		panic("no Lookup should be done when keyCount==0, please use Empty function to guard " + fName)
 	}
 	if idx.keyCount == 1 {
 		return 0
@@ -302,4 +308,19 @@ func (idx *Index) RewriteWithOffsets(w *bufio.Writer, m map[uint64]uint64) error
 		return err
 	}
 	return nil
+}
+
+// DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
+func (idx *Index) DisableReadAhead() { _ = mmap.MadviseRandom(idx.mmapHandle1) }
+func (idx *Index) EnableReadAhead() *Index {
+	_ = mmap.MadviseSequential(idx.mmapHandle1)
+	return idx
+}
+func (idx *Index) EnableMadvNormal() *Index {
+	_ = mmap.MadviseNormal(idx.mmapHandle1)
+	return idx
+}
+func (idx *Index) EnableWillNeed() *Index {
+	_ = mmap.MadviseWillNeed(idx.mmapHandle1)
+	return idx
 }

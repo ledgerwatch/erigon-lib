@@ -31,7 +31,7 @@ import (
 func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 	var found bool
 	var foundTxNum uint64
-	hc.indexFiles.AscendGreaterOrEqual(&ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item *ctxItem) bool {
+	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item ctxItem) bool {
 		if item.endTxNum <= txNum {
 			return true
 		}
@@ -48,9 +48,8 @@ func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 		g.Reset(offset)
 		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
 			eliasVal, _ := g.NextUncompressed()
-			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 			found = true
-			foundTxNum = ef.Max()
+			foundTxNum = eliasfano32.Max(eliasVal)
 			// if there is still chance to find higher ef.Max() than txNum, we continue
 			return foundTxNum == txNum
 		}
@@ -60,11 +59,11 @@ func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
 }
 
 type ReconItem struct {
+	g           *compress.Getter
 	key         []byte
 	txNum       uint64
 	startTxNum  uint64
 	endTxNum    uint64
-	g           *compress.Getter
 	startOffset uint64
 	lastOffset  uint64
 }
@@ -111,16 +110,17 @@ func (rh *ReconHeap) Pop() interface{} {
 }
 
 type ScanIterator struct {
-	hc             *HistoryContext
-	h              ReconHeap
-	uptoTxNum      uint64
-	hasNext        bool
-	nextTxNum      uint64
-	nextKey        []byte
-	fromKey, toKey []byte
-	key            []byte
-	progress       uint64
-	total          uint64
+	hc        *HistoryContext
+	h         ReconHeap
+	nextKey   []byte
+	fromKey   []byte
+	toKey     []byte
+	key       []byte
+	uptoTxNum uint64
+	nextTxNum uint64
+	progress  uint64
+	total     uint64
+	hasNext   bool
 }
 
 func (si *ScanIterator) advance() {
@@ -138,8 +138,7 @@ func (si *ScanIterator) advance() {
 		}
 		if !bytes.Equal(key, si.key) {
 			si.key = key
-			ef, _ := eliasfano32.ReadEliasFano(val)
-			max := ef.Max()
+			max := eliasfano32.Max(val)
 			if max < si.uptoTxNum {
 				si.nextTxNum = max
 				si.nextKey = key
@@ -167,7 +166,7 @@ func (si *ScanIterator) Total() uint64 {
 
 func (hc *HistoryContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64) *ScanIterator {
 	var si ScanIterator
-	hc.indexFiles.Ascend(func(item *ctxItem) bool {
+	hc.indexFiles.Ascend(func(item ctxItem) bool {
 		g := item.getter
 		for g.HasNext() {
 			key, offset := g.NextUncompressed()
@@ -190,15 +189,17 @@ func (hc *HistoryContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint6
 }
 
 type HistoryIterator struct {
-	hc             *HistoryContext
-	h              ReconHeap
-	txNum          uint64
-	key, val       []byte
-	hasNext        bool
-	compressVals   bool
-	fromKey, toKey []byte
-	progress       uint64
-	total          uint64
+	hc           *HistoryContext
+	h            ReconHeap
+	key          []byte
+	val          []byte
+	fromKey      []byte
+	toKey        []byte
+	txNum        uint64
+	progress     uint64
+	total        uint64
+	hasNext      bool
+	compressVals bool
 }
 
 func (hi *HistoryIterator) advance() {
@@ -214,32 +215,31 @@ func (hi *HistoryIterator) advance() {
 				heap.Push(&hi.h, top)
 			}
 		}
-		if !bytes.Equal(hi.key, key) {
-			ef, _ := eliasfano32.ReadEliasFano(val)
-			if n, ok := ef.Search(hi.txNum); ok {
-				hi.key = key
-				var txKey [8]byte
-				binary.BigEndian.PutUint64(txKey[:], n)
-				var historyItem *ctxItem
-				var ok bool
-				var search ctxItem
-				search.startTxNum = top.startTxNum
-				search.endTxNum = top.endTxNum
-				if historyItem, ok = hi.hc.historyFiles.Get(&search); !ok {
-					panic(fmt.Errorf("no %s file found for [%x]", hi.hc.h.filenameBase, hi.key))
-				}
-				offset := historyItem.reader.Lookup2(txKey[:], hi.key)
-				g := historyItem.getter
-				g.Reset(offset)
-				if hi.compressVals {
-					hi.val, _ = g.Next(nil)
-				} else {
-					hi.val, _ = g.NextUncompressed()
-				}
-				hi.hasNext = true
-				return
-			}
+		if bytes.Equal(hi.key, key) {
+			continue
 		}
+		ef, _ := eliasfano32.ReadEliasFano(val)
+		n, ok := ef.Search(hi.txNum)
+		if !ok {
+			continue
+		}
+		hi.key = key
+		var txKey [8]byte
+		binary.BigEndian.PutUint64(txKey[:], n)
+		historyItem, ok := hi.hc.historyFiles.Get(ctxItem{startTxNum: top.startTxNum, endTxNum: top.endTxNum})
+		if !ok {
+			panic(fmt.Errorf("no %s file found for [%x]", hi.hc.h.filenameBase, hi.key))
+		}
+		offset = historyItem.reader.Lookup2(txKey[:], hi.key)
+		g := historyItem.getter
+		g.Reset(offset)
+		if hi.compressVals {
+			hi.val, _ = g.Next(nil)
+		} else {
+			hi.val, _ = g.NextUncompressed()
+		}
+		hi.hasNext = true
+		return
 	}
 	hi.hasNext = false
 }
@@ -262,7 +262,7 @@ func (hi *HistoryIterator) Total() uint64 {
 func (hc *HistoryContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
 	var hi HistoryIterator
 	heap.Init(&hi.h)
-	hc.indexFiles.Ascend(func(item *ctxItem) bool {
+	hc.indexFiles.Ascend(func(item ctxItem) bool {
 		g := item.getter
 		g.Reset(0)
 		for g.HasNext() {
@@ -284,82 +284,4 @@ func (hc *HistoryContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum
 	hi.toKey = toKey
 	hi.advance()
 	return &hi
-}
-
-func (hc *HistoryContext) Iterate(txNumFrom, txNumTo uint64, f func(txNum uint64, k, v []byte) error) {
-	hc.historyFiles.Ascend(func(item *ctxItem) bool {
-		if item.endTxNum < txNumFrom {
-			return true
-		}
-		if item.startTxNum > txNumTo {
-			return false
-		}
-		for item.getter.HasNext() {
-			key, offset := item.getter.NextUncompressed()
-			val, offset2 := item.getter.NextUncompressed()
-			fmt.Printf("from file!!: %x, %x\n", key, val)
-			if err := f(0, key, val); err != nil {
-				panic(err)
-			}
-			_, _ = offset2, offset
-		}
-		return true
-	})
-
-	if err := hc.h.iterateInDB(1024, txNumFrom, txNumTo, f); err != nil {
-		panic(err)
-	}
-
-	//hc.indexFiles.Ascend(func(item *ctxItem) bool {
-	//	if item.endTxNum < txNumFrom {
-	//		return true
-	//	}
-	//	if item.startTxNum > txNumTo {
-	//		return false
-	//	}
-	//
-	//	g := item.getter
-	//	g.Reset(0)
-	//	for g.HasNext() {
-	//		key, offset := g.NextUncompressed()
-	//		val, offset := g.NextUncompressed()
-	//		fmt.Printf("alex: %x, %x\n", key, val)
-	//
-	//		if !bytes.Equal(hi.key, key) {
-	//			ef, _ := eliasfano32.ReadEliasFano(val)
-	//			if n, ok := ef.Search(txNumFrom); ok {
-	//				hi.key = key
-	//				var txKey [8]byte
-	//				binary.BigEndian.PutUint64(txKey[:], n)
-	//				var historyItem *ctxItem
-	//				var ok bool
-	//				var search ctxItem
-	//				search.startTxNum = top.startTxNum
-	//				search.endTxNum = top.endTxNum
-	//				if historyItem, ok = hi.hc.historyFiles.Get(&search); !ok {
-	//					panic(fmt.Errorf("no %s file found for [%x]", hi.hc.h.filenameBase, hi.key))
-	//				}
-	//				offset := historyItem.reader.Lookup2(txKey[:], hi.key)
-	//				g := historyItem.getter
-	//				g.Reset(offset)
-	//				if hi.compressVals {
-	//					hi.val, _ = g.Next(nil)
-	//				} else {
-	//					hi.val, _ = g.NextUncompressed()
-	//				}
-	//				hi.hasNext = true
-	//				return
-	//			}
-	//		}
-	//
-	//		//if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
-	//		//	heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
-	//		//	break
-	//		//} else {
-	//		//	g.SkipUncompressed()
-	//		//}
-	//	}
-	//	hi.total += uint64(item.getter.Size())
-	//	return true
-	//})
 }

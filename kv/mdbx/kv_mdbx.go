@@ -30,6 +30,7 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	stack2 "github.com/go-stack/stack"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/torquem-ch/mdbx-go/mdbx"
 	"go.uber.org/atomic"
@@ -47,36 +48,31 @@ func WithChaindataTables(defaultBuckets kv.TableCfg) kv.TableCfg {
 }
 
 type MdbxOpts struct {
-	bucketsCfg    TableCfgFunc
-	path          string
-	inMem         bool
-	label         kv.Label // marker to distinct db instances - one process may open many databases. for example to collect metrics of only 1 database
-	verbosity     kv.DBVerbosityLvl
-	mapSize       datasize.ByteSize
-	growthStep    datasize.ByteSize
-	flags         uint
-	log           log.Logger
-	syncPeriod    time.Duration
-	augumentLimit uint64
-	pageSize      uint64
-	roTxsLimiter  *semaphore.Weighted
-}
-
-func testKVPath() string {
-	dir, err := os.MkdirTemp(os.TempDir(), "erigon-test-db")
-	if err != nil {
-		panic(err)
-	}
-	return dir
+	// must be in the range from 12.5% (almost empty) to 50% (half empty)
+	// which corresponds to the range from 8192 and to 32768 in units respectively
+	log            log.Logger
+	roTxsLimiter   *semaphore.Weighted
+	bucketsCfg     TableCfgFunc
+	path           string
+	syncPeriod     time.Duration
+	mapSize        datasize.ByteSize
+	growthStep     datasize.ByteSize
+	flags          uint
+	pageSize       uint64
+	mergeThreshold uint64
+	verbosity      kv.DBVerbosityLvl
+	label          kv.Label // marker to distinct db instances - one process may open many databases. for example to collect metrics of only 1 database
+	inMem          bool
 }
 
 func NewMDBX(log log.Logger) MdbxOpts {
 	return MdbxOpts{
-		bucketsCfg: WithChaindataTables,
-		flags:      mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
-		log:        log,
-		pageSize:   kv.DefaultPageSize(),
-		growthStep: 2 * datasize.GB,
+		bucketsCfg:     WithChaindataTables,
+		flags:          mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
+		log:            log,
+		pageSize:       kv.DefaultPageSize(),
+		growthStep:     2 * datasize.GB,
+		mergeThreshold: 32768,
 	}
 }
 
@@ -91,11 +87,6 @@ func (opts MdbxOpts) Label(label kv.Label) MdbxOpts {
 
 func (opts MdbxOpts) RoTxsLimiter(l *semaphore.Weighted) MdbxOpts {
 	opts.roTxsLimiter = l
-	return opts
-}
-
-func (opts MdbxOpts) AugumentLimit(v uint64) MdbxOpts {
-	opts.augumentLimit = v
 	return opts
 }
 
@@ -118,10 +109,20 @@ func (opts MdbxOpts) Set(opt MdbxOpts) MdbxOpts {
 	return opt
 }
 
-func (opts MdbxOpts) InMem() MdbxOpts {
+func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
+	if tmpDir != "" {
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			panic(err)
+		}
+	}
+	path, err := os.MkdirTemp(tmpDir, "erigon-memdb-")
+	if err != nil {
+		panic(err)
+	}
+	opts.path = path
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.WriteMap
-	opts.mapSize = 64 * datasize.MB
+	opts.mapSize = 512 * datasize.MB
 	return opts
 }
 
@@ -160,17 +161,17 @@ func (opts MdbxOpts) WriteMap() MdbxOpts {
 	return opts
 }
 
+func (opts MdbxOpts) WriteMergeThreshold(v uint64) MdbxOpts {
+	opts.mergeThreshold = v
+	return opts
+}
+
 func (opts MdbxOpts) WithTableCfg(f TableCfgFunc) MdbxOpts {
 	opts.bucketsCfg = f
 	return opts
 }
 
 func (opts MdbxOpts) Open() (kv.RwDB, error) {
-	var err error
-	if opts.inMem {
-		opts.path = testKVPath()
-	}
-
 	env, err := mdbx.NewEnv()
 	if err != nil {
 		return nil, err
@@ -263,7 +264,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 		// must be in the range from 12.5% (almost empty) to 50% (half empty)
 		// which corresponds to the range from 8192 and to 32768 in units respectively
-		if err = env.SetOption(mdbx.OptMergeThreshold16dot16Percent, 32768); err != nil {
+		if err = env.SetOption(mdbx.OptMergeThreshold16dot16Percent, opts.mergeThreshold); err != nil {
 			return nil, err
 		}
 	}
@@ -281,7 +282,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.roTxsLimiter == nil {
-		opts.roTxsLimiter = semaphore.NewWeighted(int64(runtime.GOMAXPROCS(-1)))
+		targetSemCount := int64(cmp.Max(32, runtime.GOMAXPROCS(-1)*8))
+		opts.roTxsLimiter = semaphore.NewWeighted(targetSemCount) // 1 less than max to allow unlocking to happen
 	}
 	db := &MdbxKV{
 		opts:         opts,
@@ -349,13 +351,13 @@ func (opts MdbxOpts) MustOpen() kv.RwDB {
 }
 
 type MdbxKV struct {
-	env          *mdbx.Env
 	log          log.Logger
+	env          *mdbx.Env
 	wg           *sync.WaitGroup
 	buckets      kv.TableCfg
+	roTxsLimiter *semaphore.Weighted // does limit amount of concurrent Ro transactions - in most casess runtime.NumCPU() is good value for this channel capacity - this channel can be shared with other components (like Decompressor)
 	opts         MdbxOpts
 	txSize       uint64
-	roTxsLimiter *semaphore.Weighted // does limit amount of concurrent Ro transactions - in most casess runtime.NumCPU() is good value for this channel capacity - this channel can be shared with other components (like Decompressor)
 	closed       atomic.Bool
 }
 
@@ -418,6 +420,15 @@ func (db *MdbxKV) Close() {
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
+	}
+
+	// don't try to acquire if the context is already done
+	done := ctx.Done()
+	select {
+	case <-done:
+		return nil, ctx.Err()
+	default:
+		// otherwise carry on
 	}
 
 	// will return nil err if context is cancelled (may appear to acquire the semaphore)
@@ -1344,9 +1355,6 @@ func (c *MdbxCursor) deleteDupSort(key []byte) error {
 }
 
 func (c *MdbxCursor) PutNoOverwrite(key []byte, value []byte) error {
-	if len(key) == 0 {
-		return fmt.Errorf("mdbx doesn't support empty keys. bucket: %s", c.bucketName)
-	}
 	if c.bucketCfg.AutoDupSortKeysConversion {
 		panic("not implemented")
 	}
@@ -1355,10 +1363,6 @@ func (c *MdbxCursor) PutNoOverwrite(key []byte, value []byte) error {
 }
 
 func (c *MdbxCursor) Put(key []byte, value []byte) error {
-	if len(key) == 0 {
-		return fmt.Errorf("mdbx doesn't support empty keys. bucket: %s", c.bucketName)
-	}
-
 	b := c.bucketCfg
 	if b.AutoDupSortKeysConversion {
 		if err := c.putDupSort(key, value); err != nil {

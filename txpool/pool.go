@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2022 Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -68,19 +68,17 @@ const ASSERT = false
 
 type Config struct {
 	DBDir                 string
+	TracedSenders         []string // List of senders for which tx pool should print out debugging info
 	SyncToNewPeersEvery   time.Duration
 	ProcessRemoteTxsEvery time.Duration
 	CommitEvery           time.Duration
 	LogEvery              time.Duration
-
-	PendingSubPoolLimit int
-	BaseFeeSubPoolLimit int
-	QueuedSubPoolLimit  int
-
-	MinFeeCap     uint64
-	AccountSlots  uint64   // Number of executable transaction slots guaranteed per account
-	PriceBump     uint64   // Price bump percentage to replace an already existing transaction
-	TracedSenders []string // List of senders for which tx pool should print out debugging info
+	PendingSubPoolLimit   int
+	BaseFeeSubPoolLimit   int
+	QueuedSubPoolLimit    int
+	MinFeeCap             uint64
+	AccountSlots          uint64 // Number of executable transaction slots guaranteed per account
+	PriceBump             uint64 // Price bump percentage to replace an already existing transaction
 }
 
 var DefaultConfig = Config{
@@ -220,15 +218,15 @@ func (r DiscardReason) String() string {
 // metaTx holds transaction and some metadata
 type metaTx struct {
 	Tx                        *types.TxSlot
-	subPool                   SubPoolMarker
+	minFeeCap                 uint256.Int
 	nonceDistance             uint64 // how far their nonces are from the state's nonce for the sender
 	cumulativeBalanceDistance uint64 // how far their cumulativeRequiredBalance are from the state's balance for the sender
-	minFeeCap                 uint64
 	minTip                    uint64
 	bestIndex                 int
 	worstIndex                int
-	currentSubPool            SubPoolType
 	timestamp                 uint64 // when it was added to pool
+	subPool                   SubPoolMarker
+	currentSubPool            SubPoolType
 }
 
 func newMetaTx(slot *types.TxSlot, isLocal bool, timestmap uint64) *metaTx {
@@ -289,38 +287,34 @@ func calcProtocolBaseFee(baseFee uint64) uint64 {
 //
 // It preserve TxSlot objects immutable
 type TxPool struct {
-	lock *sync.RWMutex
-
-	started        atomic.Bool
-	lastSeenBlock  atomic.Uint64
-	pendingBaseFee atomic.Uint64
-	blockGasLimit  atomic.Uint64
-
+	_chainDB               kv.RoDB // remote db - use it wisely
+	_stateCache            kvcache.Cache
+	lock                   *sync.RWMutex
+	recentlyConnectedPeers *recentlyConnectedPeers // all txs will be propagated to this peers eventually, and clear list
+	senders                *sendersBatch
 	// batch processing of remote transactions
 	// handling works fast without batching, but batching allow:
 	//   - reduce amount of _chainDB transactions
 	//   - batch notifications about new txs (reduce P2P spam to other nodes about txs propagation)
 	//   - and as a result reducing pool.RWLock contention
 	unprocessedRemoteTxs    *types.TxSlots
-	unprocessedRemoteByHash map[string]int // to reject duplicates
-
-	byHash            map[string]*metaTx // tx_hash => tx : only not committed to db yet records
-	discardReasonsLRU *simplelru.LRU     // tx_hash => discard_reason : non-persisted
-	pending           *PendingPool
-	baseFee, queued   *SubPool
-	isLocalLRU        *simplelru.LRU    // tx_hash => is_local : to restore isLocal flag of unwinded transactions
-	newPendingTxs     chan types.Hashes // notifications about new txs in Pending sub-pool
-	deletedTxs        []*metaTx         // list of discarded txs since last db commit
-	all               *BySenderAndNonce // senderID => (sorted map of tx nonce => *metaTx)
-	promoted          types.Hashes      // pre-allocated temporary buffer to write promoted to pending pool txn hashes
-	_chainDB          kv.RoDB           // remote db - use it wisely
-	_stateCache       kvcache.Cache
-	cfg               Config
-
-	recentlyConnectedPeers *recentlyConnectedPeers // all txs will be propagated to this peers eventually, and clear list
-	senders                *sendersBatch
-
-	chainID uint256.Int
+	unprocessedRemoteByHash map[string]int     // to reject duplicates
+	byHash                  map[string]*metaTx // tx_hash => tx : only not committed to db yet records
+	discardReasonsLRU       *simplelru.LRU     // tx_hash => discard_reason : non-persisted
+	pending                 *PendingPool
+	baseFee                 *SubPool
+	queued                  *SubPool
+	isLocalLRU              *simplelru.LRU    // tx_hash => is_local : to restore isLocal flag of unwinded transactions
+	newPendingTxs           chan types.Hashes // notifications about new txs in Pending sub-pool
+	all                     *BySenderAndNonce // senderID => (sorted map of tx nonce => *metaTx)
+	deletedTxs              []*metaTx         // list of discarded txs since last db commit
+	promoted                types.Hashes      // pre-allocated temporary buffer to write promoted to pending pool txn hashes
+	cfg                     Config
+	chainID                 uint256.Int
+	lastSeenBlock           atomic.Uint64
+	started                 atomic.Bool
+	pendingBaseFee          atomic.Uint64
+	blockGasLimit           atomic.Uint64
 }
 
 func New(newTxs chan types.Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int) (*TxPool, error) {
@@ -604,8 +598,12 @@ func (p *TxPool) AddNewGoodPeer(peerID types.PeerID) { p.recentlyConnectedPeers.
 func (p *TxPool) Started() bool                      { return p.started.Load() }
 
 // Best - returns top `n` elements of pending queue
-// id doesn't perform full copy of txs, hovewer underlying elements are immutable
-func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
+// id doesn't perform full copy of txs, however underlying elements are immutable
+func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf uint64) (bool, error) {
+	// First wait for the corresponding block to arrive
+	if p.lastSeenBlock.Load() < onTopOf {
+		return false, nil // Too early
+	}
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
@@ -621,7 +619,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 		}
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(rlpTx) == 0 {
 			p.pending.Remove(mt)
@@ -633,7 +631,7 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx) error {
 		j++
 	}
 	txs.Resize(uint(j))
-	return nil
+	return true, nil
 }
 
 func (p *TxPool) CountContent() (int, int, int) {
@@ -656,7 +654,7 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 
 func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.CacheView) DiscardReason {
 	// Drop non-local transactions under our own minimal accepted gas price or tip
-	if !isLocal && txn.FeeCap < p.cfg.MinFeeCap {
+	if !isLocal && uint256.NewInt(p.cfg.MinFeeCap).Cmp(&txn.FeeCap) == 1 {
 		if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx underpriced idHash=%x local=%t, feeCap=%d, cfg.MinFeeCap=%d", txn.IDHash, isLocal, txn.FeeCap, p.cfg.MinFeeCap))
 		}
@@ -695,7 +693,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 	}
 	// Transactor should have enough funds to cover the costs
 	total := uint256.NewInt(txn.Gas)
-	total.Mul(total, uint256.NewInt(txn.FeeCap))
+	total.Mul(total, &txn.FeeCap)
 	total.Add(total, &txn.Value)
 	if senderBalance.Cmp(total) < 0 {
 		if txn.Traced {
@@ -1019,8 +1017,10 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 		tipThreshold := uint256.NewInt(0)
 		tipThreshold = tipThreshold.Mul(&found.Tx.Tip, uint256.NewInt(100+p.cfg.PriceBump))
 		tipThreshold.Div(tipThreshold, u256.N100)
-		feecapThreshold := found.Tx.FeeCap * (100 + p.cfg.PriceBump) / 100
-		if mt.Tx.Tip.Cmp(tipThreshold) < 0 || mt.Tx.FeeCap < feecapThreshold {
+		feecapThreshold := uint256.NewInt(0)
+		feecapThreshold.Mul(&found.Tx.FeeCap, uint256.NewInt(100+p.cfg.PriceBump))
+		feecapThreshold.Div(feecapThreshold, u256.N100)
+		if mt.Tx.Tip.Cmp(tipThreshold) < 0 || mt.Tx.FeeCap.Cmp(feecapThreshold) < 0 {
 			// Both tip and feecap need to be larger than previously to replace the transaction
 			// In case if the transation is stuck, "poke" it to rebroadcast
 			// TODO refactor to return the list of promoted hashes instead of using added inside the pool
@@ -1152,7 +1152,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 	protocolBaseFee, blockGasLimit uint64, pending *PendingPool, baseFee, queued *SubPool, discard func(*metaTx, DiscardReason)) {
 	noGapsNonce := senderNonce
 	cumulativeRequiredBalance := uint256.NewInt(0)
-	minFeeCap := uint64(math.MaxUint64)
+	minFeeCap := uint256.NewInt(0).SetAllOne()
 	minTip := uint64(math.MaxUint64)
 	var toDel []*metaTx // can't delete items while iterate them
 	byNonce.ascend(senderID, func(mt *metaTx) bool {
@@ -1177,8 +1177,10 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			toDel = append(toDel, mt)
 			return true
 		}
-		minFeeCap = cmp.Min(minFeeCap, mt.Tx.FeeCap)
-		mt.minFeeCap = minFeeCap
+		if minFeeCap.Gt(&mt.Tx.FeeCap) {
+			*minFeeCap = mt.Tx.FeeCap
+		}
+		mt.minFeeCap = *minFeeCap
 		if mt.Tx.Tip.IsUint64() {
 			minTip = cmp.Min(minTip, mt.Tx.Tip.Uint64())
 		}
@@ -1191,13 +1193,13 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 
 		// Sender has enough balance for: gasLimit x feeCap + transferred_value
 		needBalance := uint256.NewInt(mt.Tx.Gas)
-		needBalance.Mul(needBalance, uint256.NewInt(mt.Tx.FeeCap))
+		needBalance.Mul(needBalance, &mt.Tx.FeeCap)
 		needBalance.Add(needBalance, &mt.Tx.Value)
 		// 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol
 		// parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means
 		// this transaction will never be included into this particular chain.
 		mt.subPool &^= EnoughFeeCapProtocol
-		if mt.minFeeCap >= protocolBaseFee {
+		if mt.minFeeCap.Cmp(uint256.NewInt(protocolBaseFee)) >= 0 {
 			mt.subPool |= EnoughFeeCapProtocol
 		} else {
 			mt.subPool = 0 // TODO: we immediately drop all transactions if they have no first bit - then maybe we don't need this bit at all? And don't add such transactions to queue?
@@ -1261,7 +1263,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 // being promoted to the pending or basefee pool, for re-broadcasting
 func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint64, discard func(*metaTx, DiscardReason)) {
 	// Demote worst transactions that do not qualify for pending sub pool anymore, to other sub pools, or discard
-	for worst := pending.Worst(); pending.Len() > 0 && (worst.subPool < BaseFeePoolBits || worst.minFeeCap < pendingBaseFee); worst = pending.Worst() {
+	for worst := pending.Worst(); pending.Len() > 0 && (worst.subPool < BaseFeePoolBits || worst.minFeeCap.Cmp(uint256.NewInt(pendingBaseFee)) < 0); worst = pending.Worst() {
 		if worst.subPool >= BaseFeePoolBits {
 			baseFee.Add(pending.PopWorst())
 		} else if worst.subPool >= QueuedPoolBits {
@@ -1272,7 +1274,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 	}
 
 	// Promote best transactions from base fee pool to pending pool while they qualify
-	for best := baseFee.Best(); baseFee.Len() > 0 && best.subPool >= BaseFeePoolBits && best.minFeeCap >= pendingBaseFee; best = baseFee.Best() {
+	for best := baseFee.Best(); baseFee.Len() > 0 && best.subPool >= BaseFeePoolBits && best.minFeeCap.Cmp(uint256.NewInt(pendingBaseFee)) >= 0; best = baseFee.Best() {
 		pending.Add(baseFee.PopBest())
 	}
 
@@ -1287,7 +1289,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 
 	// Promote best transactions from the queued pool to either pending or base fee pool, while they qualify
 	for best := queued.Best(); queued.Len() > 0 && best.subPool >= BaseFeePoolBits; best = queued.Best() {
-		if best.minFeeCap >= pendingBaseFee {
+		if best.minFeeCap.Cmp(uint256.NewInt(pendingBaseFee)) >= 0 {
 			pending.Add(queued.PopBest())
 		} else {
 			baseFee.Add(queued.PopBest())
@@ -1779,8 +1781,8 @@ var PoolPendingBaseFeeKey = []byte("pending_base_fee")
 // DoS protection and performance saving
 // it doesn't track if peer disconnected, it's fine
 type recentlyConnectedPeers struct {
-	lock  sync.RWMutex
 	peers []types.PeerID
+	lock  sync.RWMutex
 }
 
 func (l *recentlyConnectedPeers) AddPeer(p types.PeerID) {
@@ -1809,10 +1811,10 @@ func (sc *sendersBatch) printDebug(prefix string) {
 // flushing to db periodicaly. it doesn't play as read-cache (because db is small and memory-mapped - doesn't need cache)
 // non thread-safe
 type sendersBatch struct {
-	senderID      uint64
 	senderIDs     map[string]uint64
 	senderID2Addr map[uint64][]byte
 	tracedSenders map[string]struct{}
+	senderID      uint64
 }
 
 func newSendersCache(tracedSenders map[string]struct{}) *sendersBatch {
@@ -1984,12 +1986,12 @@ func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 // It's more expensive to maintain "slice sort" invariant, but it allow do cheap copy of
 // pending.best slice for mining (because we consider txs and metaTx are immutable)
 type PendingPool struct {
-	limit  int
-	t      SubPoolType
 	best   *bestSlice
 	worst  *WorstQueue
-	adding bool
 	added  types.Hashes
+	limit  int
+	t      SubPoolType
+	adding bool
 }
 
 func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
@@ -2018,7 +2020,9 @@ func (s *bestSlice) Swap(i, j int) {
 	s.ms[i], s.ms[j] = s.ms[j], s.ms[i]
 	s.ms[i].bestIndex, s.ms[j].bestIndex = i, j
 }
-func (s *bestSlice) Less(i, j int) bool { return s.ms[i].better(s.ms[j], s.pendingBaseFee) }
+func (s *bestSlice) Less(i, j int) bool {
+	return s.ms[i].better(s.ms[j], *uint256.NewInt(s.pendingBaseFee))
+}
 func (s *bestSlice) UnsafeRemove(i *metaTx) {
 	s.Swap(i.bestIndex, len(s.ms)-1)
 	s.ms[len(s.ms)-1].bestIndex = -1
@@ -2060,8 +2064,12 @@ func (p *PendingPool) Updated(mt *metaTx) {
 func (p *PendingPool) Len() int { return len(p.best.ms) }
 
 func (p *PendingPool) Remove(i *metaTx) {
-	heap.Remove(p.worst, i.worstIndex)
-	p.best.UnsafeRemove(i)
+	if i.worstIndex >= 0 {
+		heap.Remove(p.worst, i.worstIndex)
+	}
+	if i.bestIndex >= 0 {
+		p.best.UnsafeRemove(i)
+	}
 	i.currentSubPool = 0
 }
 
@@ -2086,12 +2094,12 @@ func (p *PendingPool) DebugPrint(prefix string) {
 }
 
 type SubPool struct {
-	limit  int
-	t      SubPoolType
 	best   *BestQueue
 	worst  *WorstQueue
-	adding bool
 	added  types.Hashes
+	limit  int
+	t      SubPoolType
+	adding bool
 }
 
 func NewSubPool(t SubPoolType, limit int) *SubPool {
@@ -2172,13 +2180,13 @@ type BestQueue struct {
 	pendingBastFee uint64
 }
 
-func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
+func (mt *metaTx) better(than *metaTx, pendingBaseFee uint256.Int) bool {
 	subPool := mt.subPool
 	thanSubPool := than.subPool
-	if mt.minFeeCap >= pendingBaseFee {
+	if mt.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
 		subPool |= EnoughFeeCapBlock
 	}
-	if than.minFeeCap >= pendingBaseFee {
+	if than.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
 		thanSubPool |= EnoughFeeCapBlock
 	}
 	if subPool != thanSubPool {
@@ -2187,19 +2195,31 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
 
 	switch mt.currentSubPool {
 	case PendingSubPool:
-		var effectiveTip, thanEffectiveTip uint64
-		if pendingBaseFee <= mt.minFeeCap {
-			effectiveTip = cmp.Min(mt.minFeeCap-pendingBaseFee, mt.minTip)
+		var effectiveTip, thanEffectiveTip uint256.Int
+		if mt.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
+			difference := uint256.NewInt(0)
+			difference.Sub(&mt.minFeeCap, &pendingBaseFee)
+			if difference.Cmp(uint256.NewInt(mt.minTip)) <= 0 {
+				effectiveTip = *difference
+			} else {
+				effectiveTip = *uint256.NewInt(mt.minTip)
+			}
 		}
-		if pendingBaseFee <= than.minFeeCap {
-			thanEffectiveTip = cmp.Min(than.minFeeCap-pendingBaseFee, than.minTip)
+		if than.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
+			difference := uint256.NewInt(0)
+			difference.Sub(&than.minFeeCap, &pendingBaseFee)
+			if difference.Cmp(uint256.NewInt(than.minTip)) <= 0 {
+				thanEffectiveTip = *difference
+			} else {
+				thanEffectiveTip = *uint256.NewInt(than.minTip)
+			}
 		}
-		if effectiveTip != thanEffectiveTip {
-			return effectiveTip > thanEffectiveTip
+		if effectiveTip.Cmp(&thanEffectiveTip) != 0 {
+			return effectiveTip.Cmp(&thanEffectiveTip) > 0
 		}
 	case BaseFeeSubPool:
-		if mt.minFeeCap != than.minFeeCap {
-			return mt.minFeeCap > than.minFeeCap
+		if mt.minFeeCap.Cmp(&than.minFeeCap) != 0 {
+			return mt.minFeeCap.Cmp(&than.minFeeCap) > 0
 		}
 	case QueuedSubPool:
 		if mt.nonceDistance != than.nonceDistance {
@@ -2212,13 +2232,13 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint64) bool {
 	return mt.timestamp < than.timestamp
 }
 
-func (mt *metaTx) worse(than *metaTx, pendingBaseFee uint64) bool {
+func (mt *metaTx) worse(than *metaTx, pendingBaseFee uint256.Int) bool {
 	subPool := mt.subPool
 	thanSubPool := than.subPool
-	if mt.minFeeCap >= pendingBaseFee {
+	if mt.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
 		subPool |= EnoughFeeCapBlock
 	}
-	if than.minFeeCap >= pendingBaseFee {
+	if than.minFeeCap.Cmp(&pendingBaseFee) >= 0 {
 		thanSubPool |= EnoughFeeCapBlock
 	}
 	if subPool != thanSubPool {
@@ -2228,7 +2248,7 @@ func (mt *metaTx) worse(than *metaTx, pendingBaseFee uint64) bool {
 	switch mt.currentSubPool {
 	case PendingSubPool:
 		if mt.minFeeCap != than.minFeeCap {
-			return mt.minFeeCap < than.minFeeCap
+			return mt.minFeeCap.Cmp(&than.minFeeCap) < 0
 		}
 		if mt.nonceDistance != than.nonceDistance {
 			return mt.nonceDistance > than.nonceDistance
@@ -2247,8 +2267,10 @@ func (mt *metaTx) worse(than *metaTx, pendingBaseFee uint64) bool {
 	return mt.timestamp > than.timestamp
 }
 
-func (p BestQueue) Len() int           { return len(p.ms) }
-func (p BestQueue) Less(i, j int) bool { return p.ms[i].better(p.ms[j], p.pendingBastFee) }
+func (p BestQueue) Len() int { return len(p.ms) }
+func (p BestQueue) Less(i, j int) bool {
+	return p.ms[i].better(p.ms[j], *uint256.NewInt(p.pendingBastFee))
+}
 func (p BestQueue) Swap(i, j int) {
 	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
 	p.ms[i].bestIndex = i
@@ -2277,8 +2299,10 @@ type WorstQueue struct {
 	pendingBaseFee uint64
 }
 
-func (p WorstQueue) Len() int           { return len(p.ms) }
-func (p WorstQueue) Less(i, j int) bool { return p.ms[i].worse(p.ms[j], p.pendingBaseFee) }
+func (p WorstQueue) Len() int { return len(p.ms) }
+func (p WorstQueue) Less(i, j int) bool {
+	return p.ms[i].worse(p.ms[j], *uint256.NewInt(p.pendingBaseFee))
+}
 func (p WorstQueue) Swap(i, j int) {
 	p.ms[i], p.ms[j] = p.ms[j], p.ms[i]
 	p.ms[i].worstIndex = i

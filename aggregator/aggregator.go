@@ -40,6 +40,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/spaolacci/murmur3"
 	"golang.org/x/crypto/sha3"
@@ -168,48 +169,49 @@ func ParseFileType(s string) (FileType, bool) {
 }
 
 type Aggregator struct {
-	diffDir              string // Directory where the state diff files are stored
-	files                [NumberOfTypes]*btree.BTree
-	fileLocks            [NumberOfTypes]sync.RWMutex
-	unwindLimit          uint64              // How far the chain may unwind
-	aggregationStep      uint64              // How many items (block, but later perhaps txs or changes) are required to form one state diff file
-	changesBtree         *btree.BTree        // btree of ChangesItem
-	trace                bool                // Turns on tracing for specific accounts and locations
-	tracedKeys           map[string]struct{} // Set of keys being traced during aggregations
-	hph                  commitment.Trie     //*commitment.HexPatriciaHashed
-	keccak               hash.Hash
-	changesets           bool // Whether to generate changesets (off by default)
-	commitments          bool // Whether to calculate commitments
-	aggChannel           chan *AggregationTask
-	aggError             chan error
-	aggWg                sync.WaitGroup
-	mergeChannel         chan struct{}
-	mergeError           chan error
-	mergeWg              sync.WaitGroup
-	historyChannel       chan struct{}
-	historyError         chan error
-	historyWg            sync.WaitGroup
-	fileHits, fileMisses uint64                       // Counters for state file hit ratio
-	arches               [NumberOfStateTypes][]uint32 // Over-arching hash tables containing the block number of last aggregation
-	archHasher           murmur3.Hash128
+	files           [NumberOfTypes]*btree.BTree
+	hph             commitment.Trie //*commitment.HexPatriciaHashed
+	archHasher      murmur3.Hash128
+	keccak          hash.Hash
+	historyChannel  chan struct{}
+	mergeChannel    chan struct{}
+	tracedKeys      map[string]struct{} // Set of keys being traced during aggregations
+	changesBtree    *btree.BTree        // btree of ChangesItem
+	historyError    chan error
+	mergeError      chan error
+	aggChannel      chan *AggregationTask
+	aggError        chan error
+	diffDir         string                       // Directory where the state diff files are stored
+	arches          [NumberOfStateTypes][]uint32 // Over-arching hash tables containing the block number of last aggregation
+	historyWg       sync.WaitGroup
+	aggWg           sync.WaitGroup
+	mergeWg         sync.WaitGroup
+	unwindLimit     uint64 // How far the chain may unwind
+	aggregationStep uint64 // How many items (block, but later perhaps txs or changes) are required to form one state diff file
+	fileHits        uint64 // Counter for state file hit ratio
+	fileMisses      uint64 // Counter for state file hit ratio
+	fileLocks       [NumberOfTypes]sync.RWMutex
+	commitments     bool // Whether to calculate commitments
+	changesets      bool // Whether to generate changesets (off by default)
+	trace           bool // Turns on tracing for specific accounts and locations
 }
 
 type ChangeFile struct {
-	dir         string
-	step        uint64
-	namebase    string
-	path        string
-	pathTx      string
-	file        *os.File
-	fileTx      *os.File
-	w           *bufio.Writer
-	wTx         *bufio.Writer
 	r           *bufio.Reader
 	rTx         *bufio.Reader
-	txNum       uint64 // Currently read transaction number
-	txRemaining uint64 // Remaining number of bytes to read in the current transaction
+	w           *bufio.Writer
+	fileTx      *os.File
+	wTx         *bufio.Writer
+	file        *os.File
+	pathTx      string
+	path        string
+	dir         string
+	namebase    string
 	words       []byte // Words pending for the next block record, in the same slice
 	wordOffsets []int  // Offsets of words in the `words` slice
+	step        uint64
+	txNum       uint64 // Currently read transaction number
+	txRemaining uint64 // Remaining number of bytes to read in the current transaction
 }
 
 func (cf *ChangeFile) closeFile() error {
@@ -387,11 +389,11 @@ func (cf *ChangeFile) deleteFile() error {
 
 type Changes struct {
 	namebase string
+	dir      string
 	keys     ChangeFile
 	before   ChangeFile
 	after    ChangeFile
 	step     uint64
-	dir      string
 	beforeOn bool
 }
 
@@ -570,15 +572,13 @@ func buildIndex(d *compress.Decompressor, idxPath, tmpDir string, count int) (*r
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
-		KeyCount:   count,
-		Enums:      false,
-		BucketSize: 2000,
-		LeafSize:   8,
-		TmpDir:     tmpDir,
-		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
-			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
-			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-		IndexFile: idxPath,
+		KeyCount:    count,
+		Enums:       false,
+		BucketSize:  2000,
+		LeafSize:    8,
+		TmpDir:      tmpDir,
+		IndexFile:   idxPath,
+		EtlBufLimit: etl.BufferOptimalSize / 2,
 	}); err != nil {
 		return nil, err
 	}
@@ -920,8 +920,6 @@ func (i *ChangesItem) Less(than btree.Item) bool {
 }
 
 type byEndBlockItem struct {
-	startBlock   uint64
-	endBlock     uint64
 	decompressor *compress.Decompressor
 	getter       *compress.Getter // reader for the decompressor
 	getterMerge  *compress.Getter // reader for the decompressor used in the background merge thread
@@ -929,6 +927,8 @@ type byEndBlockItem struct {
 	indexReader  *recsplit.IndexReader         // reader for the index
 	readerMerge  *recsplit.IndexReader         // index reader for the background merge thread
 	tree         *btree.BTreeG[*AggregateItem] // Substitute for decompressor+index combination
+	startBlock   uint64
+	endBlock     uint64
 }
 
 func ByEndBlockItemLess(i, than *byEndBlockItem) bool {
@@ -950,7 +950,7 @@ func (a *Aggregator) scanStateFiles(files []fs.DirEntry) {
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
 		typeStrings[fType] = fType.String()
 	}
-	re := regexp.MustCompile("(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)")
+	re := regexp.MustCompile("^(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)$")
 	var err error
 	for _, f := range files {
 		name := f.Name()
@@ -1041,7 +1041,7 @@ func NewAggregator(diffDir string, unwindLimit uint64, aggregationStep uint64, c
 		}
 	}
 	a.changesBtree = btree.New(32)
-	re := regexp.MustCompile(`(account|storage|code|commitment).(keys|before|after).([0-9]+)-([0-9]+).chg`)
+	re := regexp.MustCompile(`^(account|storage|code|commitment).(keys|before|after).([0-9]+)-([0-9]+).chg$`)
 	for _, f := range files {
 		name := f.Name()
 		subs := re.FindStringSubmatch(name)
@@ -1194,8 +1194,8 @@ func (a *Aggregator) rebuildRecentState(tx kv.RwTx) error {
 }
 
 type AggregationTask struct {
-	changes   [NumberOfStateTypes]Changes
 	bt        [NumberOfStateTypes]*btree.BTreeG[*AggregateItem]
+	changes   [NumberOfStateTypes]Changes
 	blockFrom uint64
 	blockTo   uint64
 }
@@ -1616,10 +1616,7 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 		BucketSize: 2000,
 		LeafSize:   8,
 		TmpDir:     a.diffDir,
-		StartSeed: []uint64{0x106393c187cae21a, 0x6453cec3f7376937, 0x643e521ddbd2be98, 0x3740c6412f6572cb, 0x717d47562f1ce470, 0x4cd6eb4c63befb7c, 0x9bfd8c5e18c8da73,
-			0x082f20e10092a9a3, 0x2ada2ce68d21defc, 0xe33cb4f3e7c6466b, 0x3980be458c509c59, 0xc466fd9584828e8c, 0x45f0aabe1a61ede6, 0xf6e7b8b33ad9b98d,
-			0x4ef95e25f4b4983d, 0x81175195173b92d3, 0x4e50927d8dd15978, 0x1ea2099d1fafae7f, 0x425c8a06fbaaa815, 0xcd4216006c74052a},
-		IndexFile: idxPath,
+		IndexFile:  idxPath,
 	}); err != nil {
 		return fmt.Errorf("reduceHistoryFiles NewRecSplit: %w", err)
 	}
@@ -2125,12 +2122,12 @@ func (r *Reader) ReadAccountCodeSize(addr []byte, trace bool) (int, error) {
 }
 
 type Writer struct {
+	tx            kv.RwTx
 	a             *Aggregator
+	commTree      *btree.BTreeG[*CommitmentItem] // BTree used for gathering commitment data
+	changes       [NumberOfStateTypes]Changes
 	blockNum      uint64
 	changeFileNum uint64 // Block number associated with the current change files. It is the last block number whose changes will go into that file
-	changes       [NumberOfStateTypes]Changes
-	commTree      *btree.BTreeG[*CommitmentItem] // BTree used for gathering commitment data
-	tx            kv.RwTx
 }
 
 func (a *Aggregator) MakeStateWriter(beforeOn bool) *Writer {
@@ -2185,6 +2182,7 @@ func (w *Writer) Reset(blockNum uint64, tx kv.RwTx) error {
 type CommitmentItem struct {
 	plainKey  []byte
 	hashedKey []byte
+	u         commitment.Update
 }
 
 func commitmentItemLess(i, j *CommitmentItem) bool {
@@ -2341,6 +2339,29 @@ func (w *Writer) captureCommitmentData(trace bool) {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
 		}
+		c.u.Flags = commitment.CODE_UPDATE
+		item, found := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
+		if found && item != nil {
+			if item.u.Flags&commitment.BALANCE_UPDATE != 0 {
+				c.u.Flags |= commitment.BALANCE_UPDATE
+				c.u.Balance.Set(&item.u.Balance)
+			}
+			if item.u.Flags&commitment.NONCE_UPDATE != 0 {
+				c.u.Flags |= commitment.NONCE_UPDATE
+				c.u.Nonce = item.u.Nonce
+			}
+			if item.u.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
+				c.u.Flags = commitment.DELETE_UPDATE
+			} else {
+				h.Reset()
+				h.Write(val)
+				h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+			}
+		} else {
+			h.Reset()
+			h.Write(val)
+			h.(io.Reader).Read(c.u.CodeHashOrStorage[:])
+		}
 		commTree.ReplaceOrInsert(c)
 	})
 	w.captureCommitmentType(Account, trace, func(commTree *btree.BTreeG[*CommitmentItem], h hash.Hash, key, val []byte) {
@@ -2351,6 +2372,20 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		for i, b := range hashedKey {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
+		}
+		if len(val) == 0 {
+			c.u.Flags = commitment.DELETE_UPDATE
+		} else {
+			c.u.DecodeForStorage(val)
+			c.u.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
+			item, found := commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
+
+			if found && item != nil {
+				if item.u.Flags&commitment.CODE_UPDATE != 0 {
+					c.u.Flags |= commitment.CODE_UPDATE
+					copy(c.u.CodeHashOrStorage[:], item.u.CodeHashOrStorage[:])
+				}
+			}
 		}
 		commTree.ReplaceOrInsert(c)
 	})
@@ -2366,6 +2401,15 @@ func (w *Writer) captureCommitmentData(trace bool) {
 		for i, b := range hashedKey {
 			c.hashedKey[i*2] = (b >> 4) & 0xf
 			c.hashedKey[i*2+1] = b & 0xf
+		}
+		c.u.ValLength = len(val)
+		if len(val) > 0 {
+			copy(c.u.CodeHashOrStorage[:], val)
+		}
+		if len(val) == 0 {
+			c.u.Flags = commitment.DELETE_UPDATE
+		} else {
+			c.u.Flags = commitment.STORAGE_UPDATE
 		}
 		commTree.ReplaceOrInsert(c)
 	})
@@ -2387,10 +2431,12 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 
 	plainKeys := make([][]byte, w.commTree.Len())
 	hashedKeys := make([][]byte, w.commTree.Len())
+	updates := make([]commitment.Update, w.commTree.Len())
 	j := 0
 	w.commTree.Ascend(func(item *CommitmentItem) bool {
 		plainKeys[j] = item.plainKey
 		hashedKeys[j] = item.hashedKey
+		updates[j] = item.u
 		j++
 		return true
 	})
@@ -2403,7 +2449,7 @@ func (w *Writer) computeCommitment(trace bool) ([]byte, error) {
 	w.a.hph.ResetFns(w.branchFn, w.accountFn, w.storageFn)
 	w.a.hph.SetTrace(trace)
 
-	rootHash, branchNodeUpdates, err := w.a.hph.ReviewKeys(plainKeys, hashedKeys)
+	rootHash, branchNodeUpdates, err := w.a.hph.ProcessUpdates(plainKeys, hashedKeys, updates)
 	if err != nil {
 		return nil, err
 	}
@@ -2587,12 +2633,13 @@ const (
 // CursorItem is the item in the priority queue used to do merge interation
 // over storage of a given account
 type CursorItem struct {
-	t        CursorType // Whether this item represents state file or DB record, or tree
-	endBlock uint64
-	key, val []byte
+	c        kv.Cursor
 	dg       *compress.Getter
 	tree     *btree.BTreeG[*AggregateItem]
-	c        kv.Cursor
+	key      []byte
+	val      []byte
+	endBlock uint64
+	t        CursorType // Whether this item represents state file or DB record, or tree
 }
 
 type CursorHeap []*CursorItem

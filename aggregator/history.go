@@ -37,8 +37,8 @@ import (
 // History is a utility class that allows reading history of state
 // from state files, history files, and bitmap files produced by an Aggregator
 type History struct {
-	diffDir         string // Directory where the state diff files are stored
 	files           [NumberOfTypes]*btree.BTreeG[*byEndBlockItem]
+	diffDir         string // Directory where the state diff files are stored
 	aggregationStep uint64
 }
 
@@ -77,7 +77,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry, blockTo uint64) {
 	for fType := FileType(0); fType < NumberOfTypes; fType++ {
 		typeStrings[fType] = fType.String()
 	}
-	re := regexp.MustCompile("(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)")
+	re := regexp.MustCompile("^(" + strings.Join(typeStrings, "|") + ").([0-9]+)-([0-9]+).(dat|idx)$")
 	var err error
 	for _, f := range files {
 		name := f.Name()

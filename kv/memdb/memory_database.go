@@ -20,24 +20,23 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ledgerwatch/log/v3"
-
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
+	"github.com/ledgerwatch/log/v3"
 )
 
 func New() kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem().MustOpen()
+	return mdbx.NewMDBX(log.New()).InMem("").MustOpen()
 }
 
 func NewPoolDB() kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem().Label(kv.TxPoolDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).MustOpen()
+	return mdbx.NewMDBX(log.New()).InMem("").Label(kv.TxPoolDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).MustOpen()
 }
 func NewDownloaderDB() kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem().Label(kv.DownloaderDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.DownloaderTablesCfg }).MustOpen()
+	return mdbx.NewMDBX(log.New()).InMem("").Label(kv.DownloaderDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.DownloaderTablesCfg }).MustOpen()
 }
 func NewSentryDB() kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem().Label(kv.SentryDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.SentryTablesCfg }).MustOpen()
+	return mdbx.NewMDBX(log.New()).InMem("").Label(kv.SentryDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.SentryTablesCfg }).MustOpen()
 }
 
 func NewTestDB(tb testing.TB) kv.RwDB {
@@ -45,6 +44,26 @@ func NewTestDB(tb testing.TB) kv.RwDB {
 	db := New()
 	tb.Cleanup(db.Close)
 	return db
+}
+
+func BeginRw(tb testing.TB, db kv.RwDB) kv.RwTx {
+	tb.Helper()
+	tx, err := db.BeginRw(context.Background())
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(tx.Rollback)
+	return tx
+}
+
+func BeginRo(tb testing.TB, db kv.RoDB) kv.Tx {
+	tb.Helper()
+	tx, err := db.BeginRo(context.Background())
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(tx.Rollback)
+	return tx
 }
 
 func NewTestPoolDB(tb testing.TB) kv.RwDB {
