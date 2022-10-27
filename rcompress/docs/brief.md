@@ -26,7 +26,7 @@
 
 2. **Compressed Dictionary** is compressed static dictinary which is decompressed back to its uncompressed state when decompessor is created. Dictionary compression and decompression steps are briefly explained in [Dictionary compression and decompression](#dictionary-compression-and-decompression). For dictionary creation see [Creation of a dictionary](#creation-of-a-dictionary)
 
-3. **Compressed Block** is compressed words whos total uncompressed size is less then or equal to 16MB. Dictionary compression and decompression steps are briefly explained in [Block compression and decompression](#block-compression-and-decompression)
+3. **Compressed Block** is compressed words whos total uncompressed size is less then or equal to 16MB. Block compression and decompression steps are briefly explained in [Block compression and decompression](#block-compression-and-decompression)
 
 
 ## Creation of a dictionary
@@ -41,13 +41,13 @@ This is recursive process. In result static dictionary will contain vector of pr
 
 3. Creates blocks of words whos size <= 16MB, by reading word by word from uncomressed file and sends those blocks down the channel to precompress (or better to say create flags for compression, will be explained in [Block compression and decompression](#block-compression-and-decompression)). This will record flags in separate file. Every worker that does "precompress" after finishing its job passes (sends through the channel) the same block to another read-only function, whos job is to count number of prefixes that were used, and to separate prefixes with size 4 from the rest. 
 
-4. Reduces dicitonary size and sorts it. Since some prefixes in dictionary may be refered once, it doesn't make sense to keep them in dictionary, so they are removed. Alos, removed prefixes with size 4, if refernce count is <= 2. Then all of the prefixes that hasn't been removed are sorted in descending order. So that the most referred prefix is in 0th position, next most referred is in 1st and so on. This is the final shape of the dictionary.
+4. Reduces dicitonary size and sorts it. Since some prefixes in dictionary may be refered once, it doesn't make sense to keep them in dictionary, so they are removed. Also, removed prefixes with size 4, if refernce count is <= 2. Then all of the prefixes that hasn't been removed are sorted in descending order. So that the most referred prefix is in 0th position, next most referred is in 1st and so on. This is the final shape of the dictionary.
 
 
 ## Dictionary compression and decompression
 
 Dictionary compression and decompression is similar to block compression and decompression. They share the same encoding and decoding techniques. The main differences are: 
-- during dictionary compression dictionary encoder refers to the previously seen similar patterns in dictionary (LZ77 approach), while block compression/decompression is referred to dictionary for similar patterns. 
+- during dictionary compression dictionary encoder refers to the previously seen similar patterns in itself (LZ77 approach), while block compression/decompression is referred to dictionary for similar patterns. 
 - dictionary decompression decodes entire dictionary at once, while block decompression decodes word by word.
 
 
@@ -73,13 +73,13 @@ Block compression/decompression is combination of Huffman coding and references 
 
 `prefix_id` codes alphabet size is 32, each code is fixed size of 5 bits with possible extra bits, max extra bits <= 19
 
-Each word in a compressed block starts from "frash" byte, meaning that ending of one word and starting of new word do not share the same byte.
+Each word in a compressed block starts from "fresh" byte, meaning that ending of one word and starting of new word do not share the same byte.
 
 ## Possible improvements
 
 **Priority improvements**
 
-1. Block decompressor. Currently block decompressor does both first it reads bit codes and then decodes those codes. This could be done in 2 workers, first worker reads bit codes sends them to the second, whos job is to restore those codes into original symbols. This can done by implementing somehing like golang channels in C++ or using queues or something else.
+1. Block decompressor. Currently block decompressor does both - first it reads bit codes and then decodes those codes. This could be done in 2 workers, first worker reads bit codes sends them to the second, whos job is to restore those codes into original symbols. This can be done by implementing somehing like golang channels in C++ or using queues or something else.
 
 2. Dictionary creation and dictionary refernces. While testing this compressor, diffrent configurations were showing different results. So this part could be improved when testing on real world data. 
 

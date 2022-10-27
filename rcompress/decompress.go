@@ -94,7 +94,7 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	cmp_dict_size := C.int(dict_size)
 
 	decoder := C.NewDecoder(
-		C.ulonglong(wordsCount),
+		C.ulong(wordsCount),
 		C.int(numBlocks),
 		(*C.uchar)(cmp_dict_ptr),
 		cmp_dict_size,
@@ -235,7 +235,7 @@ func (g *Getter) prepareBlocks() {
 			g.decoder,
 			(*C.uchar)(dataPtr),
 			C.int(size),
-			C.longlong(dataOffset),
+			C.long(dataOffset),
 		))
 
 		g.wordOffsets = append(g.wordOffsets, word_start)
@@ -293,7 +293,7 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 
 	// int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, short *dst)
 	// returns next offset to the starting point of a word
-	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
+	offset := int64(C.NextAt(g.decoder, (C.long)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
 
 	if offset == -1 {
 		g.offset = 0
@@ -342,7 +342,7 @@ func (g *Getter) Skip() uint64 {
 
 	// int64_t NextAt(Decoder *decoder, int64_t offset, int block_num, short *dst)
 	// returns next offset to the starting point
-	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
+	offset := int64(C.NextAt(g.decoder, (C.long)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
 
 	if offset == -1 {
 		g.offset = 0
@@ -364,7 +364,7 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 
 	blockNum := findBlockNum(g)
 
-	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
+	offset := int64(C.NextAt(g.decoder, (C.long)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
 
 	if offset == -1 {
 		g.offset = 0
@@ -394,7 +394,7 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 
 	blockNum := findBlockNum(g)
 
-	offset := int64(C.NextAt(g.decoder, (C.longlong)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
+	offset := int64(C.NextAt(g.decoder, (C.long)(g.offset), (C.int)(blockNum), (*C.short)(dPtr)))
 
 	if offset == -1 {
 		return false

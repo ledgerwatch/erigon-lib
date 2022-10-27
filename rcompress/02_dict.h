@@ -30,7 +30,7 @@ public:
     std::vector<std::tuple<int, int>> prefix_large; // >= 5 prefix size
     std::vector<int> remapped;
     std::vector<uint8_t> max_match; // maximum match len so far for a given prefix_id
-    std::vector<uint8_t> min_match; // maximum match len so far for a given prefix_id
+    std::vector<uint8_t> min_match; // minimum match len so far for a given prefix_id
 public:
     Dict(/* args */);
     ~Dict();
