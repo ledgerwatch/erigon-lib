@@ -626,6 +626,7 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.
 		select {
 		case <-logEvery.C:
 			log.Info("[snapshots] collate history", "name", h.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txNum)/1_000_000, float64(txTo)/1_000_000))
+			bitmap.RunOptimize()
 		default:
 		}
 	}
