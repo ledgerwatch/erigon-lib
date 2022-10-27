@@ -1346,11 +1346,6 @@ func (hph *HexPatriciaHashed) Reset() {
 	hph.rootTouched = false
 	hph.rootPresent = true
 }
-func (hph *HexPatriciaHashed) ResetFnb(
-	branchFn func(prefix []byte, target io.Writer) error,
-) {
-	hph.branchFn2 = branchFn
-}
 
 func (hph *HexPatriciaHashed) ResetFns(
 	branchFn func(prefix []byte) ([]byte, error),

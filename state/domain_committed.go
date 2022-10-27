@@ -53,13 +53,16 @@ func NewCommittedDomain(d *Domain, mode CommitmentMode) *DomainCommitted {
 	}
 }
 
-func (d *DomainCommitted) SetKeyReplacer(vm ValueMerger) {
-	d.keyReplaceFn = vm
-}
+func (d *DomainCommitted) SetKeyReplacer(vm ValueMerger) { d.keyReplaceFn = vm }
+
+func (d *DomainCommitted) SetCommitmentMode(m CommitmentMode) { d.mode = m }
 
 // TouchPlainKey marks plainKey as updated and applies different fn for different key types
 // (different behaviour for Code, Account and Storage key modifications).
 func (d *DomainCommitted) TouchPlainKey(key, val []byte, fn func(c *CommitmentItem, val []byte)) {
+	if d.mode == CommitmentModeDisabled {
+		return
+	}
 	c := &CommitmentItem{plainKey: common.Copy(key), hashedKey: d.hashAndNibblizeKey(key)}
 	if d.mode > CommitmentModeDirect {
 		fn(c, val)
@@ -186,119 +189,6 @@ func (d *DomainCommitted) storeCommitmentState(blockNum, txNum uint64) error {
 		return err
 	}
 	return nil
-}
-
-var keyCommitmentState = []byte("state")
-
-// SeekCommitment searches for last encoded state from DomainCommitted
-// and if state found, sets it up to current domain
-func (d *DomainCommitted) SeekCommitment(aggStep uint64) (uint64, uint64, error) {
-	var latestTxNum uint64 = 1
-	var latestState []byte
-	d.SetTxNum(latestTxNum)
-	ctx := d.MakeContext()
-
-	for {
-		s, err := ctx.Get(keyCommitmentState, nil, d.tx)
-		if err != nil {
-			return 0, 0, err
-		}
-		if len(s) < 8 {
-			break
-		}
-		v := binary.BigEndian.Uint64(s)
-		if v == latestTxNum && len(latestState) != 0 {
-			break
-		}
-		latestTxNum, latestState = v, s
-		lookupTxN := latestTxNum + aggStep - 1
-		d.SetTxNum(lookupTxN)
-	}
-
-	var latest commitmentState
-	if err := latest.Decode(latestState); err != nil {
-		return 0, 0, nil
-	}
-
-	if err := d.patriciaTrie.SetState(latest.trieState); err != nil {
-		return 0, 0, err
-	}
-	return latest.txNum, latest.blockNum, nil
-}
-
-type commitmentState struct {
-	txNum     uint64
-	blockNum  uint64
-	trieState []byte
-}
-
-func (cs *commitmentState) Decode(buf []byte) error {
-	if len(buf) < 10 {
-		return fmt.Errorf("ivalid commitment state buffer size")
-	}
-	pos := 0
-	cs.txNum = binary.BigEndian.Uint64(buf[pos : pos+8])
-	pos += 8
-	cs.blockNum = binary.BigEndian.Uint64(buf[pos : pos+8])
-	pos += 8
-	cs.trieState = make([]byte, binary.BigEndian.Uint16(buf[pos:pos+2]))
-	pos += 2
-	if len(cs.trieState) == 0 && len(buf) == 10 {
-		return nil
-	}
-	copy(cs.trieState, buf[pos:pos+len(cs.trieState)])
-	return nil
-}
-
-func (cs *commitmentState) Encode() ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
-	var v [18]byte
-	binary.BigEndian.PutUint64(v[:], cs.txNum)
-	binary.BigEndian.PutUint64(v[8:16], cs.blockNum)
-	binary.BigEndian.PutUint16(v[16:18], uint16(len(cs.trieState)))
-	if _, err := buf.Write(v[:]); err != nil {
-		return nil, err
-	}
-	if _, err := buf.Write(cs.trieState); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func decodeU64(from []byte) uint64 {
-	var i uint64
-	for _, b := range from {
-		i = (i << 8) | uint64(b)
-	}
-	return i
-}
-
-func encodeU64(i uint64, to []byte) []byte {
-	// writes i to b in big endian byte order, using the least number of bytes needed to represent i.
-	switch {
-	case i < (1 << 8):
-		return append(to, byte(i))
-	case i < (1 << 16):
-		return append(to, byte(i>>8), byte(i))
-	case i < (1 << 24):
-		return append(to, byte(i>>16), byte(i>>8), byte(i))
-	case i < (1 << 32):
-		return append(to, byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
-	case i < (1 << 40):
-		return append(to, byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
-	case i < (1 << 48):
-		return append(to, byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
-	case i < (1 << 56):
-		return append(to, byte(i>>48), byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
-	default:
-		return append(to, byte(i>>56), byte(i>>48), byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
-	}
-}
-
-// Optimised key referencing a state file record (file number and offset within the file)
-func shortenedKey(apk []byte) (step uint16, offset uint64) {
-	step = binary.BigEndian.Uint16(apk[:2])
-	return step, decodeU64(apk[1:])
 }
 
 //nolint
@@ -628,4 +518,117 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 		return nil, nil, fmt.Errorf("invalid commitment mode: %d", d.mode)
 	}
 	return rootHash, branchNodeUpdates, err
+}
+
+var keyCommitmentState = []byte("state")
+
+// SeekCommitment searches for last encoded state from DomainCommitted
+// and if state found, sets it up to current domain
+func (d *DomainCommitted) SeekCommitment(aggStep uint64) (uint64, uint64, error) {
+	var latestTxNum uint64 = 1
+	var latestState []byte
+	d.SetTxNum(latestTxNum)
+	ctx := d.MakeContext()
+
+	for {
+		s, err := ctx.Get(keyCommitmentState, nil, d.tx)
+		if err != nil {
+			return 0, 0, err
+		}
+		if len(s) < 8 {
+			break
+		}
+		v := binary.BigEndian.Uint64(s)
+		if v == latestTxNum && len(latestState) != 0 {
+			break
+		}
+		latestTxNum, latestState = v, s
+		lookupTxN := latestTxNum + aggStep - 1
+		d.SetTxNum(lookupTxN)
+	}
+
+	var latest commitmentState
+	if err := latest.Decode(latestState); err != nil {
+		return 0, 0, nil
+	}
+
+	if err := d.patriciaTrie.SetState(latest.trieState); err != nil {
+		return 0, 0, err
+	}
+	return latest.txNum, latest.blockNum, nil
+}
+
+type commitmentState struct {
+	txNum     uint64
+	blockNum  uint64
+	trieState []byte
+}
+
+func (cs *commitmentState) Decode(buf []byte) error {
+	if len(buf) < 10 {
+		return fmt.Errorf("ivalid commitment state buffer size")
+	}
+	pos := 0
+	cs.txNum = binary.BigEndian.Uint64(buf[pos : pos+8])
+	pos += 8
+	cs.blockNum = binary.BigEndian.Uint64(buf[pos : pos+8])
+	pos += 8
+	cs.trieState = make([]byte, binary.BigEndian.Uint16(buf[pos:pos+2]))
+	pos += 2
+	if len(cs.trieState) == 0 && len(buf) == 10 {
+		return nil
+	}
+	copy(cs.trieState, buf[pos:pos+len(cs.trieState)])
+	return nil
+}
+
+func (cs *commitmentState) Encode() ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	var v [18]byte
+	binary.BigEndian.PutUint64(v[:], cs.txNum)
+	binary.BigEndian.PutUint64(v[8:16], cs.blockNum)
+	binary.BigEndian.PutUint16(v[16:18], uint16(len(cs.trieState)))
+	if _, err := buf.Write(v[:]); err != nil {
+		return nil, err
+	}
+	if _, err := buf.Write(cs.trieState); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func decodeU64(from []byte) uint64 {
+	var i uint64
+	for _, b := range from {
+		i = (i << 8) | uint64(b)
+	}
+	return i
+}
+
+func encodeU64(i uint64, to []byte) []byte {
+	// writes i to b in big endian byte order, using the least number of bytes needed to represent i.
+	switch {
+	case i < (1 << 8):
+		return append(to, byte(i))
+	case i < (1 << 16):
+		return append(to, byte(i>>8), byte(i))
+	case i < (1 << 24):
+		return append(to, byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 32):
+		return append(to, byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 40):
+		return append(to, byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 48):
+		return append(to, byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	case i < (1 << 56):
+		return append(to, byte(i>>48), byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	default:
+		return append(to, byte(i>>56), byte(i>>48), byte(i>>40), byte(i>>32), byte(i>>24), byte(i>>16), byte(i>>8), byte(i))
+	}
+}
+
+// Optimised key referencing a state file record (file number and offset within the file)
+func shortenedKey(apk []byte) (step uint16, offset uint64) {
+	step = binary.BigEndian.Uint16(apk[:2])
+	return step, decodeU64(apk[1:])
 }
