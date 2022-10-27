@@ -73,3 +73,9 @@ libmdbx/build/*
 tests/testdata/*
 
 go.work
+
+/rcompress/bin
+/rcompress/trash 
+/rcompress/main.go
+/rcompress/__main.go
+/rcompress/.clang-format
