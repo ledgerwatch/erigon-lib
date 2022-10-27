@@ -244,8 +244,8 @@ func (c Agg22Collation) Close() {
 }
 
 func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
-	defer func(t time.Time) { log.Info(fmt.Sprintf("aggregator22.go:247: collate %s\n", time.Since(t))) }(time.Now())
-	log.Info("collate start2", "from", txFrom, "to", txTo)
+	defer func(t time.Time) { log.Info(fmt.Sprintf("[snapshot] collate took: %s\n", time.Since(t))) }(time.Now())
+	log.Info(fmt.Sprintf("[snapshot] collate start: %d-%d", step, step+1))
 	ctx := context.TODO()
 	var ac Agg22Collation
 	closeColl := true
