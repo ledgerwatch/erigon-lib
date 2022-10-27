@@ -995,12 +995,16 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	toTxNum := (step + 1) * a.aggregationStep
 	hasData := false
 	lastStepInDB := step
+	var lstInDb uint64
 	// check if db has enough data (maybe we didn't commit them yet)
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
 		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-		hasData = len(lst) > 0 && binary.BigEndian.Uint64(lst) >= toTxNum
+		if len(lst) > 0 {
+			lstInDb = binary.BigEndian.Uint64(lst)
+			hasData = lstInDb >= toTxNum
+		}
 		if hasData {
-			lastStepInDB = (binary.BigEndian.Uint64(lst) / a.aggregationStep) - 1
+			lastStepInDB = (lstInDb / a.aggregationStep) - 1
 		}
 		return nil
 	}); err != nil {
@@ -1009,6 +1013,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if !hasData {
 		return nil
 	}
+	log.Info("have data", "step", "step", step, "lastStepInDB", lastStepInDB, "lstInDb", lstInDb)
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
