@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -931,6 +932,7 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		return err
 	}
 	defer idxC.Close()
+	a := map[string]struct{}{}
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
@@ -939,9 +941,9 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		if err = valsC.Delete(v[len(v)-8:]); err != nil {
 			return err
 		}
-		if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
-			return err
-		}
+		//if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
+		//	return err
+		//}
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
@@ -950,6 +952,25 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		case <-logEvery.C:
 			log.Info("[snapshots] prune history", "name", h.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txNum)/1_000_000, float64(txTo)/1_000_000))
 		default:
+		}
+	}
+	var m runtime.MemStats
+	common.ReadMemStats(&m)
+	log.Info("[snapshot] mem after loop", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+
+	log.Info("")
+	for seek := range a {
+		for v, err := idxC.SeekBothRange([]byte(seek), txKey[:]); v != nil; _, v, err = idxC.NextDup() {
+			if err != nil {
+				return err
+			}
+			txNum := binary.BigEndian.Uint64(v)
+			if txNum >= txTo {
+				break
+			}
+			if err = idxC.DeleteCurrent(); err != nil {
+				return err
+			}
 		}
 	}
 	if err != nil {
