@@ -1001,6 +1001,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
 		if len(lst) > 0 {
 			lstInDb = binary.BigEndian.Uint64(lst)
+			lastStepInDB = (lstInDb / a.aggregationStep) - 1
 			hasData = lstInDb >= toTxNum
 		}
 		if hasData {
