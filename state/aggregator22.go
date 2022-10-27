@@ -546,7 +546,7 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	return nil
 }
 
-func (a *Aggregator22) warmup(txFrom, limit uint64) {
+func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 	if a.db == nil {
 		return
 	}
@@ -644,7 +644,7 @@ func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
 }
 
 func (a *Aggregator22) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
-	a.warmup(txFrom, limit) // warmup is asyn and moving faster than data deletion
+	a.Warmup(txFrom, limit) // warmup is asyn and moving faster than data deletion
 	if err := a.accounts.prune(ctx, txFrom, txTo, limit); err != nil {
 		return err
 	}
