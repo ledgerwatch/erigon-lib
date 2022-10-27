@@ -261,7 +261,7 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 		defer wg.Done()
 		var err error
 		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx)
+			ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx)
 			return err
 		}); err != nil {
 			errCh <- err
@@ -272,7 +272,7 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 		defer wg.Done()
 		var err error
 		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx)
+			ac.storage, err = a.storage.collate(step, txFrom, txTo, tx)
 			return err
 		}); err != nil {
 			errCh <- err
@@ -282,7 +282,7 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 		defer wg.Done()
 		var err error
 		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.code, err = a.code.collate(step, txFrom, txTo, roTx)
+			ac.code, err = a.code.collate(step, txFrom, txTo, tx)
 			return err
 		}); err != nil {
 			errCh <- err
@@ -292,7 +292,7 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 		defer wg.Done()
 		var err error
 		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx)
+			ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, tx)
 			return err
 		}); err != nil {
 			errCh <- err
@@ -302,7 +302,7 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 		defer wg.Done()
 		var err error
 		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx)
+			ac.logTopics, err = a.logTopics.collate(txFrom, txTo, tx)
 			return err
 		}); err != nil {
 			errCh <- err
@@ -312,7 +312,7 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 		defer wg.Done()
 		var err error
 		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx)
+			ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, tx)
 			return err
 		}); err != nil {
 			errCh <- err
@@ -322,7 +322,7 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 		defer wg.Done()
 		var err error
 		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx)
+			ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, tx)
 			return err
 		}); err != nil {
 			errCh <- err
