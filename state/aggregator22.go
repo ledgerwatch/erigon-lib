@@ -640,6 +640,7 @@ func (a *Aggregator22) CanPrune(tx kv.Tx) bool {
 	return false
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
+	defer func(t time.Time) { log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t))) }(time.Now())
 	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
 
