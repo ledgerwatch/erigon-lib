@@ -559,35 +559,39 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 		return
 	}
 	a.warmupWorking.Store(true)
-	go func() {
-		defer a.warmupWorking.Store(false)
-		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
-			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
-				return err
+	initialFrom, initialTo := txFrom, txFrom+limit
+	for i := initialFrom; i < initialTo; i += limit / 10 {
+		go func(txFrom, limit uint64) {
+			defer a.warmupWorking.Store(false)
+			if err := a.db.View(context.Background(), func(tx kv.Tx) error {
+				if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
+					return err
+				}
+				if err := a.storage.warmup(txFrom, limit, tx); err != nil {
+					return err
+				}
+				if err := a.code.warmup(txFrom, limit, tx); err != nil {
+					return err
+				}
+				if err := a.logAddrs.warmup(txFrom, limit, tx); err != nil {
+					return err
+				}
+				if err := a.logTopics.warmup(txFrom, limit, tx); err != nil {
+					return err
+				}
+				if err := a.tracesFrom.warmup(txFrom, limit, tx); err != nil {
+					return err
+				}
+				if err := a.tracesTo.warmup(txFrom, limit, tx); err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
+				log.Warn("[snapshots] prune warmup", "err", err)
 			}
-			if err := a.storage.warmup(txFrom, limit, tx); err != nil {
-				return err
-			}
-			if err := a.code.warmup(txFrom, limit, tx); err != nil {
-				return err
-			}
-			if err := a.logAddrs.warmup(txFrom, limit, tx); err != nil {
-				return err
-			}
-			if err := a.logTopics.warmup(txFrom, limit, tx); err != nil {
-				return err
-			}
-			if err := a.tracesFrom.warmup(txFrom, limit, tx); err != nil {
-				return err
-			}
-			if err := a.tracesTo.warmup(txFrom, limit, tx); err != nil {
-				return err
-			}
-			return nil
-		}); err != nil {
-			log.Warn("[snapshots] prune warmup", "err", err)
-		}
-	}()
+		}(i, limit/10)
+	}
+
 }
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
