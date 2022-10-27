@@ -532,17 +532,18 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	if err := stateChanges.Load(a.rwTx, kv.PlainState, stateLoad, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
-
-	if err := a.logAddrs.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	if err := a.logAddrs.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	if err := a.logTopics.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	if err := a.tracesFrom.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64); err != nil {
+	if err := a.tracesTo.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
 		return err
 	}
 	return nil
@@ -655,25 +656,27 @@ func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
 }
 
 func (a *Aggregator22) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
-	if err := a.accounts.prune(ctx, txFrom, txTo, limit); err != nil {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	if err := a.accounts.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.storage.prune(ctx, txFrom, txTo, limit); err != nil {
+	if err := a.storage.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.code.prune(ctx, txFrom, txTo, limit); err != nil {
+	if err := a.code.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit); err != nil {
+	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(ctx, txFrom, txTo, limit); err != nil {
+	if err := a.logTopics.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(ctx, txFrom, txTo, limit); err != nil {
+	if err := a.tracesFrom.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit); err != nil {
+	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
 	return nil

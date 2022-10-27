@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -187,13 +188,15 @@ func (ri *ReadIndices) integrateFiles(sf RStaticFiles, txNumFrom, txNumTo uint64
 
 func (ri *ReadIndices) prune(step uint64, txFrom, txTo uint64) error {
 	ctx := context.TODO()
-	if err := ri.accounts.prune(ctx, txFrom, txTo, math.MaxUint64); err != nil {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	if err := ri.accounts.prune(ctx, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
 		return err
 	}
-	if err := ri.storage.prune(ctx, txFrom, txTo, math.MaxUint64); err != nil {
+	if err := ri.storage.prune(ctx, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
 		return err
 	}
-	if err := ri.code.prune(ctx, txFrom, txTo, math.MaxUint64); err != nil {
+	if err := ri.code.prune(ctx, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
 		return err
 	}
 	return nil

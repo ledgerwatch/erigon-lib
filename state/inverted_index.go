@@ -29,6 +29,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -879,7 +880,7 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 }
 
 // [txFrom; txTo)
-func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
+func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
 	select {
 	case <-ctx.Done():
 		return nil
@@ -907,9 +908,7 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64) 
 	if txFrom >= txTo {
 		return nil
 	}
-	if txTo-txFrom > 10_000 {
-		log.Info("[snapshots] prune old history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txFrom)/1_000_000, float64(txTo)/1_000_000))
-	}
+
 	idxC, err := ii.tx.RwCursorDupSort(ii.indexTable)
 	if err != nil {
 		return err
@@ -926,6 +925,11 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64) 
 		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
+		}
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] prune history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txNum)/1_000_000, float64(txTo)/1_000_000))
+		default:
 		}
 	}
 	if err != nil {

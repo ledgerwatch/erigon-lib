@@ -29,6 +29,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
@@ -888,7 +889,7 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	return nil
 }
 
-func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
+func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
 	select {
 	case <-ctx.Done():
 		return nil
@@ -918,7 +919,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
 		return nil
 	}
 	if txTo-txFrom > 10_000 {
-		log.Info("[snapshots] prune old history", "name", h.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txFrom)/1_000_000, float64(txTo)/1_000_000))
 	}
 
 	valsC, err := h.tx.RwCursor(h.historyValsTable)
@@ -945,6 +945,11 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
 		if err = historyKeysCursor.DeleteCurrent(); err != nil {
 			return err
+		}
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] prune history", "name", h.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txNum)/1_000_000, float64(txTo)/1_000_000))
+		default:
 		}
 	}
 	if err != nil {

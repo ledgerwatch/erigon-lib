@@ -867,7 +867,7 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 }
 
 // [txFrom; txTo)
-func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64) error {
+func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
 	// It is important to clean up tables in a specific order
 	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
 	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
@@ -924,7 +924,7 @@ func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64) error {
 		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
 	}
 
-	if err = d.History.prune(context.TODO(), txFrom, txTo, limit); err != nil {
+	if err = d.History.prune(context.TODO(), txFrom, txTo, limit, logEvery); err != nil {
 		return fmt.Errorf("prune history at step %d [%d, %d): %w", step, txFrom, txTo, err)
 	}
 	return nil
