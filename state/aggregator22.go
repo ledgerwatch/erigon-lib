@@ -255,84 +255,84 @@ func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo ui
 			ac.Close()
 		}
 	}()
-	var wg sync.WaitGroup
-	wg.Add(7)
+	//var wg sync.WaitGroup
+	//wg.Add(7)
 	errCh := make(chan error, 7)
-	go func() {
-		defer wg.Done()
-		var err error
-		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx)
-			return err
-		}); err != nil {
-			errCh <- err
-		}
-	}()
+	//go func() {
+	//	defer wg.Done()
+	var err error
+	if err = db.View(ctx, func(tx kv.Tx) error {
+		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx)
+		return err
+	}); err != nil {
+		errCh <- err
+	}
+	//}()
 
-	go func() {
-		defer wg.Done()
-		var err error
-		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.storage, err = a.storage.collate(step, txFrom, txTo, tx)
-			return err
-		}); err != nil {
-			errCh <- err
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		var err error
-		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.code, err = a.code.collate(step, txFrom, txTo, tx)
-			return err
-		}); err != nil {
-			errCh <- err
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		var err error
-		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, tx)
-			return err
-		}); err != nil {
-			errCh <- err
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		var err error
-		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.logTopics, err = a.logTopics.collate(txFrom, txTo, tx)
-			return err
-		}); err != nil {
-			errCh <- err
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		var err error
-		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, tx)
-			return err
-		}); err != nil {
-			errCh <- err
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		var err error
-		if err = db.View(ctx, func(tx kv.Tx) error {
-			ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, tx)
-			return err
-		}); err != nil {
-			errCh <- err
-		}
-	}()
-	go func() {
-		wg.Wait()
-		close(errCh)
-	}()
+	//go func() {
+	//	defer wg.Done()
+	//var err error
+	if err = db.View(ctx, func(tx kv.Tx) error {
+		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx)
+		return err
+	}); err != nil {
+		errCh <- err
+	}
+	//}()
+	//go func() {
+	//	defer wg.Done()
+	//var err error
+	if err = db.View(ctx, func(tx kv.Tx) error {
+		ac.code, err = a.code.collate(step, txFrom, txTo, tx)
+		return err
+	}); err != nil {
+		errCh <- err
+	}
+	//}()
+	//go func() {
+	//	defer wg.Done()
+	//var err error
+	if err = db.View(ctx, func(tx kv.Tx) error {
+		ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, tx)
+		return err
+	}); err != nil {
+		errCh <- err
+	}
+	//}()
+	//go func() {
+	//	defer wg.Done()
+	//var err error
+	if err = db.View(ctx, func(tx kv.Tx) error {
+		ac.logTopics, err = a.logTopics.collate(txFrom, txTo, tx)
+		return err
+	}); err != nil {
+		errCh <- err
+	}
+	//}()
+	//go func() {
+	//	defer wg.Done()
+	//var err error
+	if err = db.View(ctx, func(tx kv.Tx) error {
+		ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, tx)
+		return err
+	}); err != nil {
+		errCh <- err
+	}
+	//}()
+	//go func() {
+	//	defer wg.Done()
+	//var err error
+	if err = db.View(ctx, func(tx kv.Tx) error {
+		ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, tx)
+		return err
+	}); err != nil {
+		errCh <- err
+	}
+	//}()
+	//go func() {
+	//	wg.Wait()
+	close(errCh)
+	//}()
 	var lastError error
 	for err := range errCh {
 		if err != nil {
