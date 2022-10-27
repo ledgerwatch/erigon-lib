@@ -260,7 +260,7 @@ func (c Agg22Collation) Close() {
 }
 
 func (a *Aggregator22) collate(ctx context.Context, step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
-	logEvery := time.NewTicker(30 * time.Second)
+	logEvery := time.NewTicker(60 * time.Second)
 	defer logEvery.Stop()
 	defer func(t time.Time) { log.Info(fmt.Sprintf("[snapshot] collate took: %s\n", time.Since(t))) }(time.Now())
 	log.Info(fmt.Sprintf("[snapshot] collate start: %d-%d", step, step+1))
