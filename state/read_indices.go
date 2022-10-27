@@ -101,6 +101,9 @@ func (c RCollation) Close() {
 }
 
 func (ri *ReadIndices) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (RCollation, error) {
+
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
 	var c RCollation
 	var err error
 	closeColl := true
@@ -109,13 +112,13 @@ func (ri *ReadIndices) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (RC
 			c.Close()
 		}
 	}()
-	if c.accounts, err = ri.accounts.collate(txFrom, txTo, roTx); err != nil {
+	if c.accounts, err = ri.accounts.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return RCollation{}, err
 	}
-	if c.storage, err = ri.storage.collate(txFrom, txTo, roTx); err != nil {
+	if c.storage, err = ri.storage.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return RCollation{}, err
 	}
-	if c.code, err = ri.code.collate(txFrom, txTo, roTx); err != nil {
+	if c.code, err = ri.code.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return RCollation{}, err
 	}
 	closeColl = false

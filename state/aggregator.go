@@ -216,6 +216,8 @@ func (c AggCollation) Close() {
 }
 
 func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggCollation, error) {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
 	var ac AggCollation
 	var err error
 	closeColl := true
@@ -224,28 +226,28 @@ func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggC
 			ac.Close()
 		}
 	}()
-	if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.code, err = a.code.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.code, err = a.code.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.commitment, err = a.commitment.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.commitment, err = a.commitment.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx); err != nil {
+	if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx); err != nil {
+	if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx); err != nil {
+	if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx); err != nil {
+	if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
 	closeColl = false
