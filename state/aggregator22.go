@@ -246,6 +246,7 @@ func (c Agg22Collation) Close() {
 func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22Collation, error) {
 	defer func(t time.Time) { log.Info(fmt.Sprintf("aggregator22.go:247: collate %s\n", time.Since(t))) }(time.Now())
 	log.Info("collate start2", "from", txFrom, "to", txTo)
+	ctx := context.TODO()
 	roTx, _ := db.BeginRo(context.Background())
 	defer roTx.Rollback()
 	var ac Agg22Collation
@@ -261,7 +262,10 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 	go func() {
 		defer wg.Done()
 		var err error
-		if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx); err != nil {
+		if err = db.View(ctx, func(tx kv.Tx) error {
+			ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx)
+			return err
+		}); err != nil {
 			errCh <- err
 		}
 	}()
@@ -269,42 +273,60 @@ func (a *Aggregator22) collate(step uint64, txFrom, txTo uint64, db kv.RoDB) (Ag
 	go func() {
 		defer wg.Done()
 		var err error
-		if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
+		if err = db.View(ctx, func(tx kv.Tx) error {
+			ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx)
+			return err
+		}); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if ac.code, err = a.code.collate(step, txFrom, txTo, roTx); err != nil {
+		if err = db.View(ctx, func(tx kv.Tx) error {
+			ac.code, err = a.code.collate(step, txFrom, txTo, roTx)
+			return err
+		}); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx); err != nil {
+		if err = db.View(ctx, func(tx kv.Tx) error {
+			ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx)
+			return err
+		}); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx); err != nil {
+		if err = db.View(ctx, func(tx kv.Tx) error {
+			ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx)
+			return err
+		}); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx); err != nil {
+		if err = db.View(ctx, func(tx kv.Tx) error {
+			ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx)
+			return err
+		}); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx); err != nil {
+		if err = db.View(ctx, func(tx kv.Tx) error {
+			ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx)
+			return err
+		}); err != nil {
 			errCh <- err
 		}
 	}()
