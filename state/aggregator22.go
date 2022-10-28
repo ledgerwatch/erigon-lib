@@ -570,7 +570,7 @@ type flusher interface {
 	Flush(tx kv.RwTx) error
 }
 
-func (a *Aggregator22) Flush() error {
+func (a *Aggregator22) Flush(tx kv.RwTx) error {
 	flushers := []flusher{
 		a.accounts.Rotate(),
 		a.storage.Rotate(),
@@ -582,7 +582,7 @@ func (a *Aggregator22) Flush() error {
 	}
 	defer func(t time.Time) { log.Info("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
 	for _, f := range flushers {
-		if err := f.Flush(a.rwTx); err != nil {
+		if err := f.Flush(tx); err != nil {
 			return err
 		}
 	}
