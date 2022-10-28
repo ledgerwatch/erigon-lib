@@ -335,9 +335,6 @@ func (ii *InvertedIndex) FinishWrites() {
 func (ii *InvertedIndex) Rotate() *invertedIndexWAL {
 	ii.walLock.Lock()
 	defer ii.walLock.Unlock()
-	if ii.wal == nil {
-		return nil
-	}
 	wal := ii.wal
 	if wal != nil {
 		ii.wal = ii.newWriter(ii.wal.tmpdir)

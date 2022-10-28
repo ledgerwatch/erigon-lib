@@ -56,8 +56,9 @@ type History struct {
 	settingsTable    string
 	workers          int
 	compressVals     bool
-	w                *historyWAL
-	wLock            sync.RWMutex
+
+	wal     *historyWAL
+	walLock sync.RWMutex
 }
 
 func NewHistory(
@@ -440,33 +441,31 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, coun
 }
 
 func (h *History) AddPrevValue(key1, key2, original []byte) (err error) {
-	h.wLock.RLock() // read-lock for reading fielw `w` and writing into it, write-lock for setting new `w`
-	err = h.w.addPrevValue(key1, key2, original)
-	h.wLock.RUnlock()
+	h.walLock.RLock() // read-lock for reading fielw `w` and writing into it, write-lock for setting new `w`
+	err = h.wal.addPrevValue(key1, key2, original)
+	h.walLock.RUnlock()
 	return err
 }
 func (h *History) StartWrites(tmpdir string) {
 	h.InvertedIndex.StartWrites(tmpdir)
-	h.wLock.Lock()
-	defer h.wLock.Unlock()
-	h.w = h.newWriter(tmpdir)
+	h.walLock.Lock()
+	defer h.walLock.Unlock()
+	h.wal = h.newWriter(tmpdir)
 }
 func (h *History) FinishWrites() {
 	h.InvertedIndex.FinishWrites()
-	h.wLock.Lock()
-	defer h.wLock.Unlock()
-	h.w.close()
-	h.w = nil
+	h.walLock.Lock()
+	defer h.walLock.Unlock()
+	h.wal.close()
+	h.wal = nil
 }
 
 func (h *History) Rotate() historyFlusher {
-	h.wLock.Lock()
-	defer h.wLock.Unlock()
-	w := h.w
-	if w != nil {
-		h.w = h.newWriter(h.w.tmpdir)
-		h.w.autoIncrement = w.autoIncrement
-	}
+	h.walLock.Lock()
+	defer h.walLock.Unlock()
+	w := h.wal
+	h.wal = h.newWriter(h.wal.tmpdir)
+	h.wal.autoIncrement = w.autoIncrement
 	return historyFlusher{w, h.InvertedIndex.Rotate()}
 }
 
