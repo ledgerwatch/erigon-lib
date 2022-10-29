@@ -566,8 +566,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 	*/
 
 	lk := len(key1) + len(key2)
-	h.historyKey = h.historyKey[:lk+8]
-	historyKey := make([]byte, lk+8)
+	historyKey := h.historyKey[:lk+8]
 	copy(historyKey, key1)
 	if len(key2) > 0 {
 		copy(historyKey[len(key1):], key2)
