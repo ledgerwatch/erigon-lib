@@ -260,11 +260,12 @@ func (c Agg22Collation) Close() {
 	}
 }
 
-func (a *Aggregator22) buildFiles2(ctx context.Context, step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22StaticFiles, error) {
+func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo uint64, db kv.RoDB) (Agg22StaticFiles, error) {
 	logEvery := time.NewTicker(60 * time.Second)
 	defer logEvery.Stop()
-	defer func(t time.Time) { log.Info(fmt.Sprintf("[snapshot] build took: %s\n", time.Since(t))) }(time.Now())
-	log.Info(fmt.Sprintf("[snapshot] build start: %d-%d", step, step+1))
+	defer func(t time.Time) {
+		log.Info(fmt.Sprintf("[snapshot] build %d-%d", step, step+1), "took", time.Since(t))
+	}(time.Now())
 	var sf Agg22StaticFiles
 	var ac Agg22Collation
 	closeColl := true
@@ -414,7 +415,7 @@ func (sf Agg22StaticFiles) Close() {
 func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) (err error) {
 	closeAll := true
 	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
-	sf, err := a.buildFiles2(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, db)
+	sf, err := a.buildFiles(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, db)
 	if err != nil {
 		return err
 	}
