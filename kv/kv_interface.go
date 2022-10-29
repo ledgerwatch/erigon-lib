@@ -43,18 +43,21 @@ var (
 	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)      //nolint
 	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)       //nolint
 
-	DbPgopsNewly   = metrics.NewCounter(`db_pgops_newly`)           //nolint
-	DbPgopsCow     = metrics.NewCounter(`db_pgops_cow`)             //nolint
-	DbPgopsClone   = metrics.NewCounter(`db_pgops_clone`)           //nolint
-	DbPgopsSplit   = metrics.NewCounter(`db_pgops_split`)           //nolint
-	DbPgopsMerge   = metrics.NewCounter(`db_pgops_merge`)           //nolint
-	DbPgopsSpill   = metrics.NewCounter(`db_pgops_spill`)           //nolint
-	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`)         //nolint
-	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)            //nolint
-	DbPgopsGcrtime = metrics.GetOrCreateSummary(`db_pgops_gcrtime`) //nolint
-	DbGcRloops     = metrics.NewCounter(`db_pgops_gcrloops`)        //nolint
-	DbGcWloops     = metrics.NewCounter(`db_pgops_gcwloops`)        //nolint
-	DbGcXPages     = metrics.NewCounter(`db_pgops_gcxpages`)        //nolint
+	DbPgopsNewly   = metrics.NewCounter(`db_pgops_newly`)   //nolint
+	DbPgopsCow     = metrics.NewCounter(`db_pgops_cow`)     //nolint
+	DbPgopsClone   = metrics.NewCounter(`db_pgops_clone`)   //nolint
+	DbPgopsSplit   = metrics.NewCounter(`db_pgops_split`)   //nolint
+	DbPgopsMerge   = metrics.NewCounter(`db_pgops_merge`)   //nolint
+	DbPgopsSpill   = metrics.NewCounter(`db_pgops_spill`)   //nolint
+	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`) //nolint
+	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)    //nolint
+
+	DbGcWorkRtime   = metrics.GetOrCreateSummary(`db_gc_work_rtime`) //nolint
+	DbGcWorkRloops  = metrics.NewCounter(`db_gc_work_rloops`)        //nolint
+	DbGcWorkRxpages = metrics.NewCounter(`db_gc_work_rxpages`)       //nolint
+	DbGcSelfRtime   = metrics.GetOrCreateSummary(`db_gc_self_rtime`) //nolint
+	DbGcSelfRloops  = metrics.NewCounter(`db_gc_self_rloop`)         //nolint
+	DbGcSelfXpages  = metrics.NewCounter(`db_gc_self_xpages`)        //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
 	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`) //nolint

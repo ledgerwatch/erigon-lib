@@ -604,10 +604,6 @@ func (tx *MdbxTx) CollectMetrics() {
 	kv.DbPgopsSpill.Set(info.PageOps.Spill)
 	kv.DbPgopsUnspill.Set(info.PageOps.Unspill)
 	kv.DbPgopsWops.Set(info.PageOps.Wops)
-	kv.DbPgopsGcrtime.Update(info.PageOps.Gcrtime.Seconds())
-	kv.DbGcRloops.Set(info.PageOps.Gcrloops)
-	kv.DbGcWloops.Set(info.PageOps.Gcwloops)
-	kv.DbGcXPages.Set(info.PageOps.Gcxpages)
 
 	txInfo, err := tx.tx.Info(true)
 	if err != nil {
@@ -799,6 +795,13 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbCommitSync.Update(latency.Sync.Seconds())
 		kv.DbCommitEnding.Update(latency.Ending.Seconds())
 		kv.DbCommitTotal.Update(latency.Whole.Seconds())
+
+		kv.DbGcWorkRtime.Update(latency.GCDetails.WorkRtime.Seconds())
+		kv.DbGcWorkRloops.Set(uint64(latency.GCDetails.WorkRloops))
+		kv.DbGcWorkRxpages.Set(uint64(latency.GCDetails.WorkRxpages))
+		kv.DbGcSelfRtime.Update(latency.GCDetails.SelfRtime.Seconds())
+		kv.DbGcSelfRloops.Set(uint64(latency.GCDetails.SelfRloops))
+		kv.DbGcSelfXpages.Set(uint64(latency.GCDetails.SelfXpages))
 	}
 
 	//if latency.Whole > slowTx {
