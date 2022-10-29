@@ -941,6 +941,19 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 // KeepInDB - usually equal to one a.aggregationStep, but when we exec blocks from snapshots
 // we can set it to 0, because no re-org on this blocks are possible
 func (a *Aggregator22) KeepInDB(v uint64) { a.keepInDB = v }
+func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
+	if err := db.View(context.Background(), func(tx kv.Tx) error {
+		lst, _ := kv.LastKey(tx, table)
+		if len(lst) > 0 {
+			lstInDb = binary.BigEndian.Uint64(lst)
+		}
+		return nil
+	}); err != nil {
+		_ = err
+		//return err
+	}
+	return lstInDb
+}
 func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return nil
@@ -952,20 +965,9 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 
 	toTxNum := (step + 1) * a.aggregationStep
 	hasData := false
-	lastStepInDB := step
-	var lstInDb uint64
 	// check if db has enough data (maybe we didn't commit them yet)
-	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		lst, _ := kv.LastKey(tx, a.accounts.indexKeysTable)
-		if len(lst) > 0 {
-			lstInDb = binary.BigEndian.Uint64(lst)
-			lastStepInDB = lstInDb / a.aggregationStep
-			hasData = lstInDb >= toTxNum
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
+	lastInDB := lastIdInDB(db, a.accounts.indexKeysTable)
+	hasData = lastInDB >= toTxNum
 	if !hasData {
 		return nil
 	}
@@ -973,7 +975,11 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	a.working.Store(true)
 	go func() {
 		defer a.working.Store(false)
-		for step < lastStepInDB {
+		// trying to create as much small step files as possible:
+		// - to reduce amount of small merges
+		// - to reduce amount of data in db as early as possible
+		// - during files build, may happen commit of new data. on each loop step getting latest id in db
+		for step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep {
 			if err := a.buildFilesInBackground(context.Background(), step, db); err != nil {
 				log.Warn("buildFilesInBackground", "err", err)
 				break
