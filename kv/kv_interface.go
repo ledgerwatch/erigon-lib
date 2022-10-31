@@ -57,6 +57,7 @@ var (
 	DbGcWorkRxpages = metrics.NewCounter(`db_gc_work_rxpages`)       //nolint
 	DbGcSelfRtime   = metrics.GetOrCreateSummary(`db_gc_self_rtime`) //nolint
 	DbGcSelfRloops  = metrics.NewCounter(`db_gc_self_rloop`)         //nolint
+	DbGcSelfWloops  = metrics.NewCounter(`db_gc_self_wloop`)         //nolint
 	DbGcSelfXpages  = metrics.NewCounter(`db_gc_self_xpages`)        //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
