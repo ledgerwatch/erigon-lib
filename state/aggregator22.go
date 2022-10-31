@@ -611,7 +611,6 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	if len(fst) > 0 && len(fst2) > 0 {
 		fstInDb := binary.BigEndian.Uint64(fst)
 		fstInDb2 := binary.BigEndian.Uint64(fst2)
-		log.Info("can prune?", "fst", fstInDb, "fst2", fstInDb2, "a.maxTxNum.Load()", a.maxTxNum.Load())
 		return cmp.Min(fstInDb, fstInDb2)
 	}
 	return math2.MaxUint64
