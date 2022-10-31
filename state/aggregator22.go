@@ -608,8 +608,8 @@ func (a *Aggregator22) CanPrune(tx kv.Tx) bool { return a.CanPruneFrom(tx) < a.m
 func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	fst, _ := kv.FirstKey(tx, kv.TracesToKeys)
 	if len(fst) > 0 {
-		log.Info("can prune?", "fst", fst, "a.maxTxNum.Load()", a.maxTxNum.Load())
 		fstInDb := binary.BigEndian.Uint64(fst)
+		log.Info("can prune?", "fst", fstInDb, "a.maxTxNum.Load()", a.maxTxNum.Load())
 		if fstInDb < a.maxTxNum.Load() {
 			return fstInDb
 		}
