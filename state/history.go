@@ -946,7 +946,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		return nil
 	}
 
-	log.Info("do prune", "from", txFrom, "to", txTo, "limit", limit)
 	valsC, err := h.tx.RwCursor(h.historyValsTable)
 	if err != nil {
 		return err
