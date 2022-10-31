@@ -1257,11 +1257,11 @@ func (br *BackgroundResult) GetAndReset() (bool, error) {
 
 func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		lst, _ := kv.LastKey(tx, table)
+		lst, err := kv.LastKey(tx, table)
 		if len(lst) > 0 {
 			lstInDb = binary.BigEndian.Uint64(lst)
-			log.Info("last", "tbl", table, "lstInDb", lstInDb)
 		}
+		log.Info("last", "tbl", table, "lstInDb", lstInDb, err, "err")
 		return nil
 	}); err != nil {
 		_ = err
