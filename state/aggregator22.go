@@ -614,7 +614,6 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 			return fstInDb
 		}
 	}
-	log.Info("can prune?", "a.maxTxNum.Load()", a.maxTxNum.Load())
 	return math2.MaxUint64
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
