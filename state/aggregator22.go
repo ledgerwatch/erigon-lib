@@ -431,6 +431,7 @@ func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, 
 }
 
 func (a *Aggregator22) mergeLoopStep(ctx context.Context) (somethingDone bool, err error) {
+	return
 	closeAll := true
 	maxSpan := uint64(32) * a.aggregationStep
 	r := a.findMergeRange(a.maxTxNum.Load(), maxSpan)
