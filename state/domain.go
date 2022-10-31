@@ -99,17 +99,17 @@ type Domain struct {
 }
 
 func NewDomain(
-	dir string,
-	aggregationStep uint64,
-	filenameBase string,
-	keysTable string,
-	valsTable string,
-	indexKeysTable string,
-	historyValsTable string,
-	settingsTable string,
-	indexTable string,
-	prefixLen int,
-	compressVals bool,
+	 dir string,
+	 aggregationStep uint64,
+	 filenameBase string,
+	 keysTable string,
+	 valsTable string,
+	 indexKeysTable string,
+	 historyValsTable string,
+	 settingsTable string,
+	 indexTable string,
+	 prefixLen int,
+	 compressVals bool,
 ) (*Domain, error) {
 	d := &Domain{
 		keysTable: keysTable,
@@ -135,6 +135,8 @@ func NewDomain(
 
 func (d *Domain) GetAndResetStats() DomainStats {
 	r := d.stats
+	r.DataSize, r.IndexSize, r.FilesCount = d.collectFilesStats()
+
 	d.stats = DomainStats{}
 	return r
 }
@@ -465,31 +467,38 @@ type DomainContext struct {
 	numBuf [8]byte
 }
 
+func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
+	d.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
+		datsz += uint64(item.decompressor.Size())
+		idxsz += uint64(item.index.Size())
+		files += 2
+
+		return true
+	})
+	return
+}
+
 func (d *Domain) MakeContext() *DomainContext {
 	dc := &DomainContext{d: d}
 	dc.hc = d.History.MakeContext()
 	bt := btree.NewG[ctxItem](32, ctxItemLess)
 	dc.files = bt
-	var datsz, idxsz, files uint64
 
 	d.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
 		}
-		getter := item.decompressor.MakeGetter()
-		datsz += uint64(getter.Size())
-		idxsz += uint64(item.index.Size())
-		files += 2
-
 		bt.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
-			getter:     getter,
+			getter:     item.decompressor.MakeGetter(),
 			reader:     recsplit.NewIndexReader(item.index),
 		})
 		return true
 	})
-	d.stats.DataSize, d.stats.IndexSize, d.stats.FilesCount = datsz, idxsz, files
 	return dc
 }
 
