@@ -974,8 +974,8 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	lastInDB := lastIdInDB(db, a.accounts.indexKeysTable)
 	hasData = lastInDB >= toTxNum
 	log.Info("has data?", "hasData", hasData, "lastInDB", lastInDB, "toTxNum", toTxNum, " a.accounts.indexKeysTable", a.accounts.indexKeysTable, "l1", lastIdInDB(db, a.accounts.indexKeysTable), "l2", lastIdInDB(db, a.tracesTo.indexKeysTable))
-	log.Info("has data?", "lastKey", lastKey(db, a.accounts.indexKeysTable), "lastKey2", lastKey(db, a.tracesTo.indexKeysTable), "lastKey3", lastKey(db, a.storage.indexKeysTable))
-	log.Info("has data?", "firstKey", firstKey(db, a.accounts.indexKeysTable), "firstKey2", firstKey(db, a.tracesTo.indexKeysTable), "firstKey3", firstKey(db, a.storage.indexKeysTable))
+	log.Info("has data?", "lastKey", lastKey(db, a.accounts.indexKeysTable), "lastKey2", lastKey(db, a.tracesTo.indexKeysTable), "lastKey3", lastKey(db, a.storage.indexKeysTable), "TracesToKeys", lastKey(db, kv.TracesToKeys))
+	log.Info("has data?", "firstKey", firstKey(db, a.accounts.indexKeysTable), "firstKey2", firstKey(db, a.tracesTo.indexKeysTable), "firstKey3", firstKey(db, a.storage.indexKeysTable), "TracesToKeys", firstKey(db, kv.TracesToKeys))
 	if !hasData {
 		return nil
 	}
