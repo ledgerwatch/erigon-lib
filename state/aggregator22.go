@@ -607,12 +607,12 @@ func (a *Aggregator22) Flush(tx kv.RwTx) error {
 func (a *Aggregator22) CanPrune(tx kv.Tx) bool { return a.CanPruneFrom(tx) < a.maxTxNum.Load() }
 func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	fst, _ := kv.FirstKey(tx, kv.TracesToKeys)
-	if len(fst) > 0 {
+	fst2, _ := kv.FirstKey(tx, kv.StorageKeys)
+	if len(fst) > 0 && len(fst2) > 0 {
 		fstInDb := binary.BigEndian.Uint64(fst)
-		log.Info("can prune?", "fst", fstInDb, "a.maxTxNum.Load()", a.maxTxNum.Load())
-		if fstInDb < a.maxTxNum.Load() {
-			return fstInDb
-		}
+		fstInDb2 := binary.BigEndian.Uint64(fst2)
+		log.Info("can prune?", "fst", fstInDb, "fst2", fstInDb2, "a.maxTxNum.Load()", a.maxTxNum.Load())
+		return cmp.Min(cmp.Min(fstInDb, fstInDb2), a.maxTxNum.Load())
 	}
 	return math2.MaxUint64
 }
