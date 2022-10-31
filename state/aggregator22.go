@@ -962,6 +962,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return nil
 	}
+
 	step := a.maxTxNum.Load() / a.aggregationStep
 	if a.working.Load() {
 		return nil
@@ -972,6 +973,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	// check if db has enough data (maybe we didn't commit them yet)
 	lastInDB := lastIdInDB(db, a.accounts.indexKeysTable)
 	hasData = lastInDB >= toTxNum
+	log.Info("has data?", "hasData", hasData, "lastInDB", lastInDB, "toTxNum", toTxNum)
 	if !hasData {
 		return nil
 	}
