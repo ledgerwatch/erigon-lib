@@ -1260,6 +1260,7 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 		lst, _ := kv.LastKey(tx, table)
 		if len(lst) > 0 {
 			lstInDb = binary.BigEndian.Uint64(lst)
+			log.Info("last", "tbl", table, "lstInDb", lstInDb)
 		}
 		return nil
 	}); err != nil {
