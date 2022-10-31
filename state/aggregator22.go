@@ -607,7 +607,7 @@ func (a *Aggregator22) Flush(tx kv.RwTx) error {
 func (a *Aggregator22) CanPrune(tx kv.Tx) bool { return a.CanPruneFrom(tx) < a.maxTxNum.Load() }
 func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	fst, _ := kv.FirstKey(tx, kv.TracesToKeys)
-	fst2, _ := kv.FirstKey(tx, kv.StorageKeys)
+	fst2, _ := kv.FirstKey(tx, kv.StorageHistoryKeys)
 	if len(fst) > 0 && len(fst2) > 0 {
 		fstInDb := binary.BigEndian.Uint64(fst)
 		fstInDb2 := binary.BigEndian.Uint64(fst2)
