@@ -18,6 +18,7 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"math/bits"
@@ -58,11 +59,11 @@ type Aggregator struct {
 }
 
 func NewAggregator(
-	dir string,
+	dir, tmpdir string,
 	aggregationStep uint64,
 ) (*Aggregator, error) {
 
-	a := &Aggregator{aggregationStep: aggregationStep}
+	a := &Aggregator{aggregationStep: aggregationStep, tmpdir: tmpdir}
 
 	closeAgg := true
 	defer func() {
@@ -74,32 +75,32 @@ func NewAggregator(
 	if err != nil {
 		return nil, err
 	}
-	if a.accounts, err = NewDomain(dir, aggregationStep, "accounts", kv.AccountKeys, kv.AccountVals, kv.AccountHistoryKeys, kv.AccountHistoryVals, kv.AccountSettings, kv.AccountIdx, 0 /* prefixLen */, false /* compressVals */); err != nil {
+	if a.accounts, err = NewDomain(dir, tmpdir, aggregationStep, "accounts", kv.AccountKeys, kv.AccountVals, kv.AccountHistoryKeys, kv.AccountHistoryVals, kv.AccountSettings, kv.AccountIdx, 0 /* prefixLen */, false /* compressVals */); err != nil {
 		return nil, err
 	}
-	if a.storage, err = NewDomain(dir, aggregationStep, "storage", kv.StorageKeys, kv.StorageVals, kv.StorageHistoryKeys, kv.StorageHistoryVals, kv.StorageSettings, kv.StorageIdx, 20 /* prefixLen */, false /* compressVals */); err != nil {
+	if a.storage, err = NewDomain(dir, tmpdir, aggregationStep, "storage", kv.StorageKeys, kv.StorageVals, kv.StorageHistoryKeys, kv.StorageHistoryVals, kv.StorageSettings, kv.StorageIdx, 20 /* prefixLen */, false /* compressVals */); err != nil {
 		return nil, err
 	}
-	if a.code, err = NewDomain(dir, aggregationStep, "code", kv.CodeKeys, kv.CodeVals, kv.CodeHistoryKeys, kv.CodeHistoryVals, kv.CodeSettings, kv.CodeIdx, 0 /* prefixLen */, true /* compressVals */); err != nil {
+	if a.code, err = NewDomain(dir, tmpdir, aggregationStep, "code", kv.CodeKeys, kv.CodeVals, kv.CodeHistoryKeys, kv.CodeHistoryVals, kv.CodeSettings, kv.CodeIdx, 0 /* prefixLen */, true /* compressVals */); err != nil {
 		return nil, err
 	}
 
-	commitd, err := NewDomain(dir, aggregationStep, "commitment", kv.CommitmentKeys, kv.CommitmentVals, kv.CommitmentHistoryKeys, kv.CommitmentHistoryVals, kv.CommitmentSettings, kv.CommitmentIdx, 0 /* prefixLen */, false /* compressVals */)
+	commitd, err := NewDomain(dir, tmpdir, aggregationStep, "commitment", kv.CommitmentKeys, kv.CommitmentVals, kv.CommitmentHistoryKeys, kv.CommitmentHistoryVals, kv.CommitmentSettings, kv.CommitmentIdx, 0 /* prefixLen */, false /* compressVals */)
 	if err != nil {
 		return nil, err
 	}
 	a.commitment = NewCommittedDomain(commitd, CommitmentModeDirect)
 
-	if a.logAddrs, err = NewInvertedIndex(dir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx); err != nil {
+	if a.logAddrs, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx); err != nil {
 		return nil, err
 	}
-	if a.logTopics, err = NewInvertedIndex(dir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx); err != nil {
+	if a.logTopics, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx); err != nil {
 		return nil, err
 	}
-	if a.tracesFrom, err = NewInvertedIndex(dir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx); err != nil {
+	if a.tracesFrom, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx); err != nil {
 		return nil, err
 	}
-	if a.tracesTo, err = NewInvertedIndex(dir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx); err != nil {
+	if a.tracesTo, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx); err != nil {
 		return nil, err
 	}
 	closeAgg = false
@@ -188,14 +189,14 @@ func (a *Aggregator) SetCommitmentMode(mode CommitmentMode) {
 }
 
 type AggCollation struct {
-	accounts   Collation
-	storage    Collation
-	code       Collation
-	commitment Collation
 	logAddrs   map[string]*roaring64.Bitmap
 	logTopics  map[string]*roaring64.Bitmap
 	tracesFrom map[string]*roaring64.Bitmap
 	tracesTo   map[string]*roaring64.Bitmap
+	accounts   Collation
+	storage    Collation
+	code       Collation
+	commitment Collation
 }
 
 func (c AggCollation) Close() {
@@ -206,6 +207,8 @@ func (c AggCollation) Close() {
 }
 
 func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggCollation, error) {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
 	var ac AggCollation
 	var err error
 	closeColl := true
@@ -214,28 +217,28 @@ func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggC
 			ac.Close()
 		}
 	}()
-	if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.code, err = a.code.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.code, err = a.code.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.commitment, err = a.commitment.collate(step, txFrom, txTo, roTx); err != nil {
+	if ac.commitment, err = a.commitment.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx); err != nil {
+	if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx); err != nil {
+	if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx); err != nil {
+	if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx); err != nil {
+	if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
 	closeColl = false
@@ -264,7 +267,7 @@ func (sf AggStaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
-func (a *Aggregator) buildFiles(step uint64, collation AggCollation) (AggStaticFiles, error) {
+func (a *Aggregator) buildFiles(ctx context.Context, step uint64, collation AggCollation) (AggStaticFiles, error) {
 	var sf AggStaticFiles
 	closeFiles := true
 	defer func() {
@@ -278,56 +281,56 @@ func (a *Aggregator) buildFiles(step uint64, collation AggCollation) (AggStaticF
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.accounts, err = a.accounts.buildFiles(step, collation.accounts); err != nil {
+		if sf.accounts, err = a.accounts.buildFiles(ctx, step, collation.accounts); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.storage, err = a.storage.buildFiles(step, collation.storage); err != nil {
+		if sf.storage, err = a.storage.buildFiles(ctx, step, collation.storage); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.code, err = a.code.buildFiles(step, collation.code); err != nil {
+		if sf.code, err = a.code.buildFiles(ctx, step, collation.code); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.commitment, err = a.commitment.buildFiles(step, collation.commitment); err != nil {
+		if sf.commitment, err = a.commitment.buildFiles(ctx, step, collation.commitment); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.logAddrs, err = a.logAddrs.buildFiles(step, collation.logAddrs); err != nil {
+		if sf.logAddrs, err = a.logAddrs.buildFiles(ctx, step, collation.logAddrs); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.logTopics, err = a.logTopics.buildFiles(step, collation.logTopics); err != nil {
+		if sf.logTopics, err = a.logTopics.buildFiles(ctx, step, collation.logTopics); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.tracesFrom, err = a.tracesFrom.buildFiles(step, collation.tracesFrom); err != nil {
+		if sf.tracesFrom, err = a.tracesFrom.buildFiles(ctx, step, collation.tracesFrom); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.tracesTo, err = a.tracesTo.buildFiles(step, collation.tracesTo); err != nil {
+		if sf.tracesTo, err = a.tracesTo.buildFiles(ctx, step, collation.tracesTo); err != nil {
 			errCh <- err
 		}
 	}()
@@ -357,28 +360,31 @@ func (a *Aggregator) integrateFiles(sf AggStaticFiles, txNumFrom, txNumTo uint64
 }
 
 func (a *Aggregator) prune(step uint64, txFrom, txTo, limit uint64) error {
-	if err := a.accounts.prune(step, txFrom, txTo, limit); err != nil {
+	ctx := context.TODO()
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	if err := a.accounts.prune(step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.storage.prune(step, txFrom, txTo, limit); err != nil {
+	if err := a.storage.prune(step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.code.prune(step, txFrom, txTo, limit); err != nil {
+	if err := a.code.prune(step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.commitment.prune(step, txFrom, txTo, limit); err != nil {
+	if err := a.commitment.prune(step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.logAddrs.prune(txFrom, txTo, limit); err != nil {
+	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.logTopics.prune(txFrom, txTo, limit); err != nil {
+	if err := a.logTopics.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.tracesFrom.prune(txFrom, txTo, limit); err != nil {
+	if err := a.tracesFrom.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.tracesTo.prune(txFrom, txTo, limit); err != nil {
+	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
 	return nil
@@ -422,18 +428,22 @@ func (a *Aggregator) SeekCommitment() (txNum, blockNum uint64, err error) {
 }
 
 type Ranges struct {
-	accounts                                 DomainRanges
-	storage                                  DomainRanges
-	code                                     DomainRanges
-	commitment                               DomainRanges
-	logAddrsStartTxNum, logAddrsEndTxNum     uint64
-	logAddrs                                 bool
-	logTopicsStartTxNum, logTopicsEndTxNum   uint64
-	logTopics                                bool
-	tracesFromStartTxNum, tracesFromEndTxNum uint64
-	tracesFrom                               bool
-	tracesToStartTxNum, tracesToEndTxNum     uint64
-	tracesTo                                 bool
+	accounts             DomainRanges
+	storage              DomainRanges
+	code                 DomainRanges
+	commitment           DomainRanges
+	logTopicsEndTxNum    uint64
+	logAddrsEndTxNum     uint64
+	logTopicsStartTxNum  uint64
+	logAddrsStartTxNum   uint64
+	tracesFromStartTxNum uint64
+	tracesFromEndTxNum   uint64
+	tracesToStartTxNum   uint64
+	tracesToEndTxNum     uint64
+	logAddrs             bool
+	logTopics            bool
+	tracesFrom           bool
+	tracesTo             bool
 }
 
 func (r Ranges) any() bool {
@@ -455,26 +465,30 @@ func (a *Aggregator) findMergeRange(maxEndTxNum, maxSpan uint64) Ranges {
 }
 
 type SelectedStaticFiles struct {
-	accounts                      []*filesItem
-	accountsIdx, accountsHist     []*filesItem
-	accountsI                     int
-	storage                       []*filesItem
-	storageIdx, storageHist       []*filesItem
-	storageI                      int
-	code                          []*filesItem
-	codeIdx, codeHist             []*filesItem
-	codeI                         int
-	commitment                    []*filesItem
-	commitmentIdx, commitmentHist []*filesItem
-	commitmentI                   int
-	logAddrs                      []*filesItem
-	logAddrsI                     int
-	logTopics                     []*filesItem
-	logTopicsI                    int
-	tracesFrom                    []*filesItem
-	tracesFromI                   int
-	tracesTo                      []*filesItem
-	tracesToI                     int
+	commitment     []*filesItem
+	logAddrs       []*filesItem
+	accountsHist   []*filesItem
+	codeHist       []*filesItem
+	storage        []*filesItem
+	storageIdx     []*filesItem
+	storageHist    []*filesItem
+	tracesTo       []*filesItem
+	code           []*filesItem
+	codeIdx        []*filesItem
+	tracesFrom     []*filesItem
+	logTopics      []*filesItem
+	commitmentHist []*filesItem
+	commitmentIdx  []*filesItem
+	accounts       []*filesItem
+	accountsIdx    []*filesItem
+	commitmentI    int
+	logAddrsI      int
+	tracesFromI    int
+	logTopicsI     int
+	tracesToI      int
+	codeI          int
+	storageI       int
+	accountsI      int
 }
 
 func (sf SelectedStaticFiles) Close() {
@@ -561,7 +575,8 @@ func (mf MergedFiles) Close() {
 	}
 }
 
-func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uint64) (MergedFiles, error) {
+func (a *Aggregator) mergeFiles(ctx context.Context, files SelectedStaticFiles, r Ranges, maxSpan uint64) (MergedFiles, error) {
+	defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
 	var mf MergedFiles
 	closeFiles := true
 	defer func() {
@@ -576,7 +591,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.accounts.any() {
-			if mf.accounts, mf.accountsIdx, mf.accountsHist, err = a.accounts.mergeFiles(files.accounts, files.accountsIdx, files.accountsHist, r.accounts, maxSpan); err != nil {
+			if mf.accounts, mf.accountsIdx, mf.accountsHist, err = a.accounts.mergeFiles(ctx, files.accounts, files.accountsIdx, files.accountsHist, r.accounts, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -585,7 +600,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.storage.any() {
-			if mf.storage, mf.storageIdx, mf.storageHist, err = a.storage.mergeFiles(files.storage, files.storageIdx, files.storageHist, r.storage, maxSpan); err != nil {
+			if mf.storage, mf.storageIdx, mf.storageHist, err = a.storage.mergeFiles(ctx, files.storage, files.storageIdx, files.storageHist, r.storage, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -594,7 +609,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.code.any() {
-			if mf.code, mf.codeIdx, mf.codeHist, err = a.code.mergeFiles(files.code, files.codeIdx, files.codeHist, r.code, maxSpan); err != nil {
+			if mf.code, mf.codeIdx, mf.codeHist, err = a.code.mergeFiles(ctx, files.code, files.codeIdx, files.codeHist, r.code, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -603,7 +618,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.logAddrs {
-			if mf.logAddrs, err = a.logAddrs.mergeFiles(files.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum, maxSpan); err != nil {
+			if mf.logAddrs, err = a.logAddrs.mergeFiles(ctx, files.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -612,7 +627,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.logTopics {
-			if mf.logTopics, err = a.logTopics.mergeFiles(files.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum, maxSpan); err != nil {
+			if mf.logTopics, err = a.logTopics.mergeFiles(ctx, files.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -621,7 +636,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.tracesFrom {
-			if mf.tracesFrom, err = a.tracesFrom.mergeFiles(files.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum, maxSpan); err != nil {
+			if mf.tracesFrom, err = a.tracesFrom.mergeFiles(ctx, files.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -630,7 +645,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 		defer wg.Done()
 		var err error
 		if r.tracesTo {
-			if mf.tracesTo, err = a.tracesTo.mergeFiles(files.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum, maxSpan); err != nil {
+			if mf.tracesTo, err = a.tracesTo.mergeFiles(ctx, files.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -640,8 +655,7 @@ func (a *Aggregator) mergeFiles(files SelectedStaticFiles, r Ranges, maxSpan uin
 
 		var err error
 		if r.commitment.any() {
-			//if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(files.commitment, files.commitmentIdx, files.commitmentHist, r.commitment, maxSpan); err != nil {
-			if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(files, mf, r.commitment, maxSpan); err != nil {
+			if mf.commitment, mf.commitmentIdx, mf.commitmentHist, err = a.commitment.mergeFiles(ctx, files, mf, r.commitment, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -901,7 +915,7 @@ func (a *Aggregator) FinishTx() error {
 		}
 	}()
 
-	sf, err := a.buildFiles(step, collation)
+	sf, err := a.buildFiles(context.TODO(), step, collation)
 	if err != nil {
 		return err
 	}
@@ -923,7 +937,7 @@ func (a *Aggregator) FinishTx() error {
 				outs.Close()
 			}
 		}()
-		in, err := a.mergeFiles(outs, r, maxSpan)
+		in, err := a.mergeFiles(context.TODO(), outs, r, maxSpan)
 		if err != nil {
 			return err
 		}
@@ -1058,27 +1072,21 @@ func (a *Aggregator) FinishWrites() {
 
 // Flush - must be called before Collate, if you did some writes
 func (a *Aggregator) Flush() error {
-	defer func(t time.Time) { log.Info("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
-	if err := a.accounts.Flush(); err != nil {
-		return err
+	// TODO: Add support of commitment!
+	flushers := []flusher{
+		a.accounts.Rotate(),
+		a.storage.Rotate(),
+		a.code.Rotate(),
+		a.logAddrs.Rotate(),
+		a.logTopics.Rotate(),
+		a.tracesFrom.Rotate(),
+		a.tracesTo.Rotate(),
 	}
-	if err := a.storage.Flush(); err != nil {
-		return err
-	}
-	if err := a.code.Flush(); err != nil {
-		return err
-	}
-	if err := a.logAddrs.Flush(); err != nil {
-		return err
-	}
-	if err := a.logTopics.Flush(); err != nil {
-		return err
-	}
-	if err := a.tracesFrom.Flush(); err != nil {
-		return err
-	}
-	if err := a.tracesTo.Flush(); err != nil {
-		return err
+	defer func(t time.Time) { log.Debug("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
+	for _, f := range flushers {
+		if err := f.Flush(a.rwTx); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -1147,7 +1155,7 @@ func DecodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []
 		pos++
 		if codeHashBytes > 0 {
 			codeHash := make([]byte, length.Hash)
-			copy(codeHash[:], enc[pos:pos+codeHashBytes])
+			copy(codeHash, enc[pos:pos+codeHashBytes])
 		}
 	}
 	return

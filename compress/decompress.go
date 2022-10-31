@@ -21,6 +21,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
@@ -29,17 +31,17 @@ import (
 type word []byte // plain text word associated with code from dictionary
 
 type codeword struct {
-	code    uint16        // code associated with that word
-	len     byte          // Number of bits in the codes
 	pattern *word         // Pattern corresponding to entries
 	ptr     *patternTable // pointer to deeper level tables
 	next    *codeword     // points to next word in condensed table
+	code    uint16        // code associated with that word
+	len     byte          // Number of bits in the codes
 }
 
 type patternTable struct {
-	bitLen   int // Number of bits to lookup in the table
-	patterns []*codeword
 	head     *codeword
+	patterns []*codeword
+	bitLen   int // Number of bits to lookup in the table
 }
 
 func newPatternTable(bitLen int) *patternTable {
@@ -115,25 +117,25 @@ func (pt *patternTable) condensedTableSearch(code uint16) *codeword {
 }
 
 type posTable struct {
-	bitLen int // Number of bits to lookup in the table
 	pos    []uint64
 	lens   []byte
 	ptrs   []*posTable
+	bitLen int
 }
 
 // Decompressor provides access to the superstrings in a file produced by a compressor
 type Decompressor struct {
-	compressedFile string
-	f              *os.File
-	mmapHandle1    []byte                 // mmap handle for unix (this is used to close mmap)
-	mmapHandle2    *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
-	data           []byte                 // slice of correct size for the decompressor to work with
-	dict           *patternTable
-	posDict        *posTable
-	wordsStart     uint64 // Offset of whether the superstrings actually start
-	size           int64
-
-	wordsCount, emptyWordsCount uint64
+	f               *os.File
+	mmapHandle2     *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
+	dict            *patternTable
+	posDict         *posTable
+	compressedFile  string
+	mmapHandle1     []byte // mmap handle for unix (this is used to close mmap)
+	data            []byte // slice of correct size for the decompressor to work with
+	wordsStart      uint64 // Offset of whether the superstrings actually start
+	size            int64
+	wordsCount      uint64
+	emptyWordsCount uint64
 }
 
 // Tables with bitlen greater than threshold will be condensed.
@@ -145,6 +147,20 @@ type Decompressor struct {
 //
 // Should be set before calling NewDecompression.
 var condensePatternTableBitThreshold = 9
+
+func init() {
+	v, _ := os.LookupEnv("DECOMPRESS_CONDENSITY")
+	if v != "" {
+		i, err := strconv.Atoi(v)
+		if err != nil {
+			panic(err)
+		}
+		if i < 3 || i > 9 {
+			panic("DECOMPRESS_CONDENSITY: only numbers in range 3-9 are acceptable ")
+		}
+		condensePatternTableBitThreshold = i
+	}
+}
 
 func SetDecompressionTableCondensity(fromBitSize int) {
 	condensePatternTableBitThreshold = fromBitSize
@@ -357,6 +373,10 @@ func (d *Decompressor) Close() error {
 }
 
 func (d *Decompressor) FilePath() string { return d.compressedFile }
+func (d *Decompressor) FileName() string {
+	_, fName := filepath.Split(d.compressedFile)
+	return fName
+}
 
 // WithReadAhead - Expect read in sequential order. (Hence, pages in the given range can be aggressively read ahead, and may be freed soon after they are accessed.)
 func (d *Decompressor) WithReadAhead(f func() error) error {
@@ -367,7 +387,12 @@ func (d *Decompressor) WithReadAhead(f func() error) error {
 }
 
 // DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
-func (d *Decompressor) DisableReadAhead() { _ = mmap.MadviseRandom(d.mmapHandle1) }
+func (d *Decompressor) DisableReadAhead() {
+	if d == nil || d.mmapHandle1 == nil {
+		return
+	}
+	_ = mmap.MadviseRandom(d.mmapHandle1)
+}
 func (d *Decompressor) EnableReadAhead() *Decompressor {
 	_ = mmap.MadviseSequential(d.mmapHandle1)
 	return d
@@ -384,12 +409,12 @@ func (d *Decompressor) EnableWillNeed() *Decompressor {
 // Getter represent "reader" or "interator" that can move accross the data of the decompressor
 // The full state of the getter can be captured by saving dataP, and dataBit
 type Getter struct {
-	data        []byte
-	dataP       uint64
-	dataBit     int // Value 0..7 - position of the bit
 	patternDict *patternTable
 	posDict     *posTable
 	fName       string
+	data        []byte
+	dataP       uint64
+	dataBit     int // Value 0..7 - position of the bit
 	trace       bool
 }
 

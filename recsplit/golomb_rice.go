@@ -30,8 +30,8 @@ var bijMemo []uint32 = []uint32{0, 0, 0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14, 15, 1
 
 // GolombRice can build up the golomb-rice encoding of the sequeuce of numbers, as well as read the numbers back from it.
 type GolombRice struct {
-	bitCount int      // Speficic to the builder - number of bits added to the encoding so far
 	data     []uint64 // Present in the builder and in the reader
+	bitCount int      // Speficic to the builder - number of bits added to the encoding so far
 }
 
 // appendUnaryAll adds the unary encoding of specified sequence of numbers to the end of the
@@ -83,7 +83,7 @@ func (g *GolombRice) appendFixed(v uint64, log2golomb int) {
 }
 
 // Bits returns currrent number of bits in the compact encoding of the hash function representation
-func (g GolombRice) Bits() int {
+func (g *GolombRice) Bits() int {
 	return g.bitCount
 }
 
@@ -153,7 +153,7 @@ func (g *GolombRiceReader) ReadNext(log2golomb int) uint64 {
 }
 
 // Data returns the binary representation of the Golomb-Rice code that is built
-func (g GolombRice) Data() []uint64 {
+func (g *GolombRice) Data() []uint64 {
 	return g.data
 }
 

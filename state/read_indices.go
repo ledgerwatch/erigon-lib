@@ -17,9 +17,11 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -27,17 +29,17 @@ import (
 )
 
 type ReadIndices struct {
-	aggregationStep uint64
+	rwTx            kv.RwTx
 	accounts        *InvertedIndex
 	storage         *InvertedIndex
 	code            *InvertedIndex
-	txNum           uint64
-	rwTx            kv.RwTx
 	keyBuf          []byte
+	aggregationStep uint64
+	txNum           uint64
 }
 
 func NewReadIndices(
-	dir string,
+	dir, tmpdir string,
 	aggregationStep uint64,
 ) (*ReadIndices, error) {
 	ri := &ReadIndices{
@@ -50,13 +52,13 @@ func NewReadIndices(
 		}
 	}()
 	var err error
-	if ri.accounts, err = NewInvertedIndex(dir, aggregationStep, "raccounts", kv.RAccountKeys, kv.RAccountIdx); err != nil {
+	if ri.accounts, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "raccounts", kv.RAccountKeys, kv.RAccountIdx); err != nil {
 		return nil, err
 	}
-	if ri.storage, err = NewInvertedIndex(dir, aggregationStep, "rstorage", kv.RStorageKeys, kv.RStorageIdx); err != nil {
+	if ri.storage, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "rstorage", kv.RStorageKeys, kv.RStorageIdx); err != nil {
 		return nil, err
 	}
-	if ri.code, err = NewInvertedIndex(dir, aggregationStep, "rcode", kv.RCodeKeys, kv.RCodeIdx); err != nil {
+	if ri.code, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "rcode", kv.RCodeKeys, kv.RCodeIdx); err != nil {
 		return nil, err
 	}
 	closeIndices = false
@@ -99,6 +101,9 @@ func (c RCollation) Close() {
 }
 
 func (ri *ReadIndices) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (RCollation, error) {
+
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
 	var c RCollation
 	var err error
 	closeColl := true
@@ -107,13 +112,13 @@ func (ri *ReadIndices) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (RC
 			c.Close()
 		}
 	}()
-	if c.accounts, err = ri.accounts.collate(txFrom, txTo, roTx); err != nil {
+	if c.accounts, err = ri.accounts.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return RCollation{}, err
 	}
-	if c.storage, err = ri.storage.collate(txFrom, txTo, roTx); err != nil {
+	if c.storage, err = ri.storage.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return RCollation{}, err
 	}
-	if c.code, err = ri.code.collate(txFrom, txTo, roTx); err != nil {
+	if c.code, err = ri.code.collate(txFrom, txTo, roTx, logEvery); err != nil {
 		return RCollation{}, err
 	}
 	closeColl = false
@@ -132,7 +137,7 @@ func (sf RStaticFiles) Close() {
 	sf.code.Close()
 }
 
-func (ri *ReadIndices) buildFiles(step uint64, collation RCollation) (RStaticFiles, error) {
+func (ri *ReadIndices) buildFiles(ctx context.Context, step uint64, collation RCollation) (RStaticFiles, error) {
 	var sf RStaticFiles
 	closeFiles := true
 	defer func() {
@@ -146,21 +151,21 @@ func (ri *ReadIndices) buildFiles(step uint64, collation RCollation) (RStaticFil
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.accounts, err = ri.accounts.buildFiles(step, collation.accounts); err != nil {
+		if sf.accounts, err = ri.accounts.buildFiles(ctx, step, collation.accounts); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.storage, err = ri.storage.buildFiles(step, collation.storage); err != nil {
+		if sf.storage, err = ri.storage.buildFiles(ctx, step, collation.storage); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.code, err = ri.code.buildFiles(step, collation.code); err != nil {
+		if sf.code, err = ri.code.buildFiles(ctx, step, collation.code); err != nil {
 			errCh <- err
 		}
 	}()
@@ -185,13 +190,16 @@ func (ri *ReadIndices) integrateFiles(sf RStaticFiles, txNumFrom, txNumTo uint64
 }
 
 func (ri *ReadIndices) prune(step uint64, txFrom, txTo uint64) error {
-	if err := ri.accounts.prune(txFrom, txTo, math.MaxUint64); err != nil {
+	ctx := context.TODO()
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	if err := ri.accounts.prune(ctx, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
 		return err
 	}
-	if err := ri.storage.prune(txFrom, txTo, math.MaxUint64); err != nil {
+	if err := ri.storage.prune(ctx, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
 		return err
 	}
-	if err := ri.code.prune(txFrom, txTo, math.MaxUint64); err != nil {
+	if err := ri.code.prune(ctx, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
 		return err
 	}
 	return nil
@@ -209,12 +217,15 @@ func (ri *ReadIndices) endTxNumMinimax() uint64 {
 }
 
 type RRanges struct {
-	accountsStartTxNum, accountsEndTxNum uint64
-	accounts                             bool
-	storageStartTxNum, storageEndTxNum   uint64
-	storage                              bool
-	codeStartTxNum, codeEndTxNum         uint64
-	code                                 bool
+	accountsStartTxNum uint64
+	accountsEndTxNum   uint64
+	storageStartTxNum  uint64
+	storageEndTxNum    uint64
+	codeStartTxNum     uint64
+	codeEndTxNum       uint64
+	accounts           bool
+	storage            bool
+	code               bool
 }
 
 func (r RRanges) any() bool {
@@ -232,10 +243,10 @@ func (ri *ReadIndices) findMergeRange(maxEndTxNum, maxSpan uint64) RRanges {
 
 type RSelectedStaticFiles struct {
 	accounts  []*filesItem
-	accountsI int
 	storage   []*filesItem
-	storageI  int
 	code      []*filesItem
+	accountsI int
+	storageI  int
 	codeI     int
 }
 
@@ -287,7 +298,7 @@ func (mf RMergedFiles) Close() {
 	}
 }
 
-func (ri *ReadIndices) mergeFiles(files RSelectedStaticFiles, r RRanges, maxSpan uint64) (RMergedFiles, error) {
+func (ri *ReadIndices) mergeFiles(ctx context.Context, files RSelectedStaticFiles, r RRanges, maxSpan uint64) (RMergedFiles, error) {
 	var mf RMergedFiles
 	closeFiles := true
 	defer func() {
@@ -302,7 +313,7 @@ func (ri *ReadIndices) mergeFiles(files RSelectedStaticFiles, r RRanges, maxSpan
 		defer wg.Done()
 		var err error
 		if r.accounts {
-			if mf.accounts, err = ri.accounts.mergeFiles(files.accounts, r.accountsStartTxNum, r.accountsEndTxNum, maxSpan); err != nil {
+			if mf.accounts, err = ri.accounts.mergeFiles(ctx, files.accounts, r.accountsStartTxNum, r.accountsEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -311,7 +322,7 @@ func (ri *ReadIndices) mergeFiles(files RSelectedStaticFiles, r RRanges, maxSpan
 		defer wg.Done()
 		var err error
 		if r.storage {
-			if mf.storage, err = ri.storage.mergeFiles(files.storage, r.storageStartTxNum, r.storageEndTxNum, maxSpan); err != nil {
+			if mf.storage, err = ri.storage.mergeFiles(ctx, files.storage, r.storageStartTxNum, r.storageEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -320,7 +331,7 @@ func (ri *ReadIndices) mergeFiles(files RSelectedStaticFiles, r RRanges, maxSpan
 		defer wg.Done()
 		var err error
 		if r.code {
-			if mf.code, err = ri.code.mergeFiles(files.code, r.codeStartTxNum, r.codeEndTxNum, maxSpan); err != nil {
+			if mf.code, err = ri.code.mergeFiles(ctx, files.code, r.codeStartTxNum, r.codeEndTxNum, maxSpan); err != nil {
 				errCh <- err
 			}
 		}
@@ -396,7 +407,7 @@ func (ri *ReadIndices) FinishTx() error {
 			collation.Close()
 		}
 	}()
-	sf, err := ri.buildFiles(step, collation)
+	sf, err := ri.buildFiles(context.Background(), step, collation)
 	if err != nil {
 		return err
 	}
@@ -418,7 +429,7 @@ func (ri *ReadIndices) FinishTx() error {
 				outs.Close()
 			}
 		}()
-		in, err := ri.mergeFiles(outs, r, maxSpan)
+		in, err := ri.mergeFiles(context.Background(), outs, r, maxSpan)
 		if err != nil {
 			return err
 		}

@@ -31,6 +31,7 @@ import (
 	"github.com/c2h5oh/datasize"
 	stack2 "github.com/go-stack/stack"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/torquem-ch/mdbx-go/mdbx"
 	"go.uber.org/atomic"
@@ -48,23 +49,21 @@ func WithChaindataTables(defaultBuckets kv.TableCfg) kv.TableCfg {
 }
 
 type MdbxOpts struct {
-	bucketsCfg TableCfgFunc
-	path       string
-	inMem      bool
-	label      kv.Label // marker to distinct db instances - one process may open many databases. for example to collect metrics of only 1 database
-	verbosity  kv.DBVerbosityLvl
-	mapSize    datasize.ByteSize
-	growthStep datasize.ByteSize
-	flags      uint
-	log        log.Logger
-	syncPeriod time.Duration
-	pageSize   uint64
-
 	// must be in the range from 12.5% (almost empty) to 50% (half empty)
 	// which corresponds to the range from 8192 and to 32768 in units respectively
+	log            log.Logger
+	roTxsLimiter   *semaphore.Weighted
+	bucketsCfg     TableCfgFunc
+	path           string
+	syncPeriod     time.Duration
+	mapSize        datasize.ByteSize
+	growthStep     datasize.ByteSize
+	flags          uint
+	pageSize       uint64
 	mergeThreshold uint64
-
-	roTxsLimiter *semaphore.Weighted
+	verbosity      kv.DBVerbosityLvl
+	label          kv.Label // marker to distinct db instances - one process may open many databases. for example to collect metrics of only 1 database
+	inMem          bool
 }
 
 func NewMDBX(log log.Logger) MdbxOpts {
@@ -353,13 +352,13 @@ func (opts MdbxOpts) MustOpen() kv.RwDB {
 }
 
 type MdbxKV struct {
-	env          *mdbx.Env
 	log          log.Logger
+	env          *mdbx.Env
 	wg           *sync.WaitGroup
 	buckets      kv.TableCfg
+	roTxsLimiter *semaphore.Weighted // does limit amount of concurrent Ro transactions - in most casess runtime.NumCPU() is good value for this channel capacity - this channel can be shared with other components (like Decompressor)
 	opts         MdbxOpts
 	txSize       uint64
-	roTxsLimiter *semaphore.Weighted // does limit amount of concurrent Ro transactions - in most casess runtime.NumCPU() is good value for this channel capacity - this channel can be shared with other components (like Decompressor)
 	closed       atomic.Bool
 }
 
@@ -1063,7 +1062,7 @@ func (tx *MdbxTx) stdCursor(bucket string) (kv.RwCursor, error) {
 	var err error
 	c.c, err = tx.tx.OpenCursor(c.dbi)
 	if err != nil {
-		return nil, fmt.Errorf("table: %s, %w", c.bucketName, err)
+		return nil, fmt.Errorf("table: %s, %w, stack: %s", c.bucketName, err, dbg.Stack())
 	}
 
 	// add to auto-cleanup on end of transactions

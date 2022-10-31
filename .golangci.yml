@@ -15,7 +15,6 @@ linters:
     - govet
     - ineffassign
     - staticcheck
-#    - structcheck # go1.18
     - unused
 #    - gocritic
     - bodyclose # go1.18
@@ -85,7 +84,6 @@ linters-settings:
   govet:
     disable:
       - deepequalerrors
-      - fieldalignment
       - shadow
       - unsafeptr
   goconst:

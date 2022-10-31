@@ -309,7 +309,7 @@ func (d *DomainCommitted) commitmentValTransform(files SelectedStaticFiles, merg
 	return transValBuf, nil
 }
 
-func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles MergedFiles, r DomainRanges, maxSpan uint64) (valuesIn, indexIn, historyIn *filesItem, err error) {
+func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStaticFiles, mergedFiles MergedFiles, r DomainRanges, maxSpan uint64) (valuesIn, indexIn, historyIn *filesItem, err error) {
 	if !r.any() {
 		return
 	}
@@ -351,7 +351,7 @@ func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles M
 			}
 		}
 	}()
-	if indexIn, historyIn, err = d.History.mergeFiles(indexFiles, historyFiles,
+	if indexIn, historyIn, err = d.History.mergeFiles(ctx, indexFiles, historyFiles,
 		HistoryRanges{
 			historyStartTxNum: r.historyStartTxNum,
 			historyEndTxNum:   r.historyEndTxNum,
@@ -483,7 +483,7 @@ func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles M
 		if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
-		if valuesIn.index, err = buildIndex(valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
+		if valuesIn.index, err = buildIndex(ctx, valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
 	}
