@@ -974,6 +974,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	lastInDB := lastIdInDB(db, a.accounts.indexKeysTable)
 	hasData = lastInDB >= toTxNum
 	log.Info("has data?", "hasData", hasData, "lastInDB", lastInDB, "toTxNum", toTxNum, " a.accounts.indexKeysTable", a.accounts.indexKeysTable, "l1", lastIdInDB(db, a.accounts.indexKeysTable), "l2", lastIdInDB(db, a.tracesTo.indexKeysTable))
+	log.Info("has data?", "lastKey", lastKey(db, a.accounts.indexKeysTable), "lastKey2", lastKey(db, a.tracesTo.indexKeysTable), "lastKey3", lastKey(db, a.storage.indexKeysTable))
 	if !hasData {
 		return nil
 	}
@@ -1255,6 +1256,16 @@ func (br *BackgroundResult) GetAndReset() (bool, error) {
 	return has, err
 }
 
+func lastKey(db kv.RoDB, table string) (lst []byte) {
+	if err := db.View(context.Background(), func(tx kv.Tx) error {
+		lst, _ = kv.LastKey(tx, table)
+		lst = common2.Copy(lst)
+		return nil
+	}); err != nil {
+		_ = err
+	}
+	return lst
+}
 func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
 		lst, err := kv.LastKey(tx, table)
