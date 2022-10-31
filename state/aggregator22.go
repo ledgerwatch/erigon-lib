@@ -972,7 +972,6 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	// check if db has enough data (maybe we didn't commit them yet)
 	lastInDB := lastIdInDB(db, a.accounts.indexKeysTable)
 	hasData = lastInDB >= toTxNum
-	log.Info("has data?", "hasData", hasData, "lastInDB", lastInDB, "toTxNum", toTxNum, " a.accounts.indexKeysTable", a.accounts.indexKeysTable, "l1", lastIdInDB(db, a.accounts.indexKeysTable), "l2", lastIdInDB(db, a.tracesTo.indexKeysTable))
 	if !hasData {
 		return nil
 	}
