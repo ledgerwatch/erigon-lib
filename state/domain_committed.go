@@ -185,7 +185,11 @@ func (d *DomainCommitted) storeCommitmentState(blockNum, txNum uint64) error {
 	if err != nil {
 		return err
 	}
-	if err = d.Domain.Put(keyCommitmentState, nil, encoded); err != nil {
+
+	var stepbuf [2]byte
+	step := uint16(txNum / d.aggregationStep)
+	binary.BigEndian.PutUint16(stepbuf[:], step)
+	if err = d.Domain.Put(keyCommitmentState, stepbuf[:], encoded); err != nil {
 		return err
 	}
 	return nil
@@ -454,13 +458,11 @@ func (d *DomainCommitted) mergeFiles(oldFiles SelectedStaticFiles, mergedFiles M
 				return nil, nil, nil, err
 			}
 			keyCount++ // Only counting keys, not values
-			//if d.keyReplaceFn != nil {
 			//fmt.Printf("last heap key %x\n", keyBuf)
 			valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
 			}
-			//}
 			if d.compressVals {
 				if err = comp.AddWord(valBuf); err != nil {
 					return nil, nil, nil, err
@@ -524,14 +526,20 @@ var keyCommitmentState = []byte("state")
 
 // SeekCommitment searches for last encoded state from DomainCommitted
 // and if state found, sets it up to current domain
-func (d *DomainCommitted) SeekCommitment(aggStep uint64) (uint64, uint64, error) {
-	var latestTxNum uint64 = 1
-	var latestState []byte
+func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, uint64, error) {
+	var (
+		latestState []byte
+		stepbuf     [2]byte
+		step        uint16
+		latestTxNum uint64 = 1
+	)
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()
 
 	for {
-		s, err := ctx.Get(keyCommitmentState, nil, d.tx)
+		binary.BigEndian.PutUint16(stepbuf[:], step)
+
+		s, err := ctx.Get(keyCommitmentState, stepbuf[:], d.tx)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -543,7 +551,8 @@ func (d *DomainCommitted) SeekCommitment(aggStep uint64) (uint64, uint64, error)
 			break
 		}
 		latestTxNum, latestState = v, s
-		lookupTxN := latestTxNum + aggStep - 1
+		lookupTxN := latestTxNum + aggStep // - 1
+		step = uint16(latestTxNum/aggStep) + 1
 		d.SetTxNum(lookupTxN)
 	}
 

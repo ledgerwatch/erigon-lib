@@ -899,7 +899,10 @@ func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64) error {
 			if err = keysCursor.DeleteCurrent(); err != nil {
 				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
 			}
-			//fmt.Printf("domain prune key %x [s%d]\n", string(k), s)
+
+			if bytes.HasPrefix(k, keyCommitmentState) {
+				fmt.Printf("domain prune key %x [s%d] txn=%d\n", string(k), s, ^binary.BigEndian.Uint64(v))
+			}
 		}
 	}
 	if err != nil {

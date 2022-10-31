@@ -411,8 +411,9 @@ func (a *Aggregator) EndTxNumMinimax() uint64 {
 }
 
 // TODO make it a part of EndTxNumMinimax()
-func (a *Aggregator) SeekCommitment() (uint64, uint64, error) {
-	txNum, blockNum, err := a.commitment.SeekCommitment(a.aggregationStep)
+func (a *Aggregator) SeekCommitment() (txNum, blockNum uint64, err error) {
+	filesTxNum := a.EndTxNumMinimax()
+	txNum, blockNum, err = a.commitment.SeekCommitment(a.aggregationStep, filesTxNum)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -825,10 +826,6 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 		saveStateAfter = false
 	}
 
-	if !saveStateAfter {
-		return rootHash, nil
-	}
-
 	for pref, update := range branchNodeUpdates {
 		prefix := []byte(pref)
 
@@ -853,14 +850,17 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 		}
 	}
 
-	if err := a.commitment.storeCommitmentState(a.blockNum, a.txNum); err != nil {
-		return nil, err
+	if saveStateAfter {
+		if err := a.commitment.storeCommitmentState(a.blockNum, a.txNum); err != nil {
+			return nil, err
+		}
 	}
+
 	return rootHash, nil
 }
 
 func (a *Aggregator) ReadyToFinishTx() bool {
-	return (a.txNum+1)%a.aggregationStep == 0
+	return (a.txNum+1)%a.aggregationStep == 0 && a.seekTxNum < a.txNum
 }
 
 func (a *Aggregator) SetCommitFn(fn func(txNum uint64) error) {
@@ -870,7 +870,7 @@ func (a *Aggregator) SetCommitFn(fn func(txNum uint64) error) {
 func (a *Aggregator) FinishTx() error {
 	atomic.AddUint64(&a.stats.TxCount, 1)
 
-	if !a.ReadyToFinishTx() || a.seekTxNum > a.txNum {
+	if !a.ReadyToFinishTx() {
 		return nil
 	}
 	closeAll := true
