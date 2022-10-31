@@ -531,6 +531,8 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 	a.warmupWorking.Store(true)
 	go func() {
 		defer a.warmupWorking.Store(false)
+		log.Debug("warmup start")
+		defer log.Debug("warmup end")
 		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
 			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
 				return err
