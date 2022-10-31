@@ -1288,7 +1288,7 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 		return nil
 	}); err != nil {
 		_ = err
-		log.Info("last2", "tbl", table, "lstInDb", lstInDb, err, "err")
+		log.Info("last2", "tbl", table, "lstInDb", lstInDb, "err", err)
 		//return err
 	}
 	return lstInDb
