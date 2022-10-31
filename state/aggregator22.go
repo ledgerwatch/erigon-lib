@@ -973,9 +973,6 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 	// check if db has enough data (maybe we didn't commit them yet)
 	lastInDB := lastIdInDB(db, a.accounts.indexKeysTable)
 	hasData = lastInDB >= toTxNum
-	log.Info("has data?", "hasData", hasData, "lastInDB", lastInDB, "toTxNum", toTxNum, " a.accounts.indexKeysTable", a.accounts.indexKeysTable, "l1", lastIdInDB(db, a.accounts.indexKeysTable), "l2", lastIdInDB(db, a.tracesTo.indexKeysTable))
-	log.Info("has data?", "lastKey", lastKey(db, a.accounts.indexKeysTable), "lastKey2", lastKey(db, a.tracesTo.indexKeysTable), "lastKey3", lastKey(db, a.storage.indexKeysTable), "TracesToKeys", lastKey(db, kv.TracesToKeys))
-	log.Info("has data?", "firstKey", firstKey(db, a.accounts.indexKeysTable), "firstKey2", firstKey(db, a.tracesTo.indexKeysTable), "firstKey3", firstKey(db, a.storage.indexKeysTable), "TracesToKeys", firstKey(db, kv.TracesToKeys))
 	if !hasData {
 		return nil
 	}
@@ -1257,39 +1254,15 @@ func (br *BackgroundResult) GetAndReset() (bool, error) {
 	return has, err
 }
 
-func lastKey(db kv.RoDB, table string) (lst []byte) {
-	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		lst, _ = kv.LastKey(tx, table)
-		lst = common2.Copy(lst)
-		return nil
-	}); err != nil {
-		_ = err
-	}
-	return lst
-}
-func firstKey(db kv.RoDB, table string) (lst []byte) {
-	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		lst, _ = kv.FirstKey(tx, table)
-		lst = common2.Copy(lst)
-		return nil
-	}); err != nil {
-		_ = err
-	}
-	return lst
-}
 func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
-		lst, err := kv.LastKey(tx, table)
+		lst, _ := kv.LastKey(tx, table)
 		if len(lst) > 0 {
 			lstInDb = binary.BigEndian.Uint64(lst)
 		}
-
-		log.Info("last", "tbl", table, "lstInDb", lstInDb, err, "err")
 		return nil
 	}); err != nil {
-		_ = err
-		log.Info("last2", "tbl", table, "lstInDb", lstInDb, "err", err)
-		//return err
+		log.Warn("lastIdInDB", "err", err)
 	}
 	return lstInDb
 }
