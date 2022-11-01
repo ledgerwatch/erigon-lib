@@ -531,8 +531,6 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 	a.warmupWorking.Store(true)
 	go func() {
 		defer a.warmupWorking.Store(false)
-		log.Debug("warmup start")
-		defer log.Debug("warmup end")
 		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
 			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
 				return err
@@ -619,11 +617,11 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
 	a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
-	defer func(t time.Time) {
-		if time.Since(t) > 150*time.Millisecond {
-			log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t)))
-		}
-	}(time.Now())
+	//defer func(t time.Time) {
+	//	if time.Since(t) > 150*time.Millisecond {
+	//		log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t)))
+	//	}
+	//}(time.Now())
 	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
 
