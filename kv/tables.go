@@ -411,6 +411,9 @@ const (
 	XAccount = "XAccount"
 	XStorage = "XStorage"
 	XCode    = "XCode"
+
+	// Erigon-CL
+	BeaconState = "BeaconState"
 )
 
 // Keys
@@ -541,6 +544,8 @@ var ChaindataTables = []string{
 
 	VerkleRoots,
 	VerkleTrie,
+
+	BeaconState,
 }
 
 const (
