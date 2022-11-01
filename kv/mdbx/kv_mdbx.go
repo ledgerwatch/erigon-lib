@@ -789,13 +789,16 @@ func (tx *MdbxTx) Commit() error {
 
 	if tx.db.opts.label == kv.ChainDB {
 		kv.DbCommitPreparation.Update(latency.Preparation.Seconds())
-		kv.DbCommitGc.Update(latency.GC.Seconds())
+		kv.DbGCWallClock.Update(latency.GCWallClock.Seconds())
+		kv.DbGCCpuTime.Update(latency.GCCpuTime.Seconds())
 		kv.DbCommitAudit.Update(latency.Audit.Seconds())
 		kv.DbCommitWrite.Update(latency.Write.Seconds())
 		kv.DbCommitSync.Update(latency.Sync.Seconds())
 		kv.DbCommitEnding.Update(latency.Ending.Seconds())
 		kv.DbCommitTotal.Update(latency.Whole.Seconds())
 
+		kv.DbGcWorkRtimeCPU.Update(latency.GCDetails.WorkRtimeCPU.Seconds())
+		kv.DbGcSelfRtimeCPU.Update(latency.GCDetails.SelfRtimeCPU.Seconds())
 		kv.DbGcWorkRtime.Update(latency.GCDetails.WorkRtime.Seconds())
 		kv.DbGcWorkRloops.Set(uint64(latency.GCDetails.WorkRloops))
 		kv.DbGcWorkRxpages.Set(uint64(latency.GCDetails.WorkRxpages))

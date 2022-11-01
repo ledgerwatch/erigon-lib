@@ -35,13 +35,14 @@ var (
 	TxUnspill = metrics.NewCounter(`tx_unspill`) //nolint
 	TxDirty   = metrics.NewCounter(`tx_dirty`)   //nolint
 
-	DbCommitPreparation = metrics.GetOrCreateSummary(`db_commit_seconds{phase="preparation"}`) //nolint
-	DbCommitGc          = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc"}`)          //nolint
-	DbCommitAudit       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="audit"}`)       //nolint
-	DbCommitWrite       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="write"}`)       //nolint
-	DbCommitSync        = metrics.GetOrCreateSummary(`db_commit_seconds{phase="sync"}`)        //nolint
-	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)      //nolint
-	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)       //nolint
+	DbCommitPreparation = metrics.GetOrCreateSummary(`db_commit_seconds{phase="preparation"}`)   //nolint
+	DbGCWallClock       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_wall_clock"}`) //nolint
+	DbGCCpuTime         = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_cpu_time"}`)   //nolint
+	DbCommitAudit       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="audit"}`)         //nolint
+	DbCommitWrite       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="write"}`)         //nolint
+	DbCommitSync        = metrics.GetOrCreateSummary(`db_commit_seconds{phase="sync"}`)          //nolint
+	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)        //nolint
+	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)         //nolint
 
 	DbPgopsNewly   = metrics.NewCounter(`db_pgops_newly`)   //nolint
 	DbPgopsCow     = metrics.NewCounter(`db_pgops_cow`)     //nolint
@@ -52,13 +53,15 @@ var (
 	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`) //nolint
 	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)    //nolint
 
-	DbGcWorkRtime   = metrics.GetOrCreateSummary(`db_gc_work_rtime`) //nolint
-	DbGcWorkRloops  = metrics.NewCounter(`db_gc_work_rloops`)        //nolint
-	DbGcWorkRxpages = metrics.NewCounter(`db_gc_work_rxpages`)       //nolint
-	DbGcSelfRtime   = metrics.GetOrCreateSummary(`db_gc_self_rtime`) //nolint
-	DbGcSelfRloops  = metrics.NewCounter(`db_gc_self_rloop`)         //nolint
-	DbGcSelfWloops  = metrics.NewCounter(`db_gc_self_wloop`)         //nolint
-	DbGcSelfXpages  = metrics.NewCounter(`db_gc_self_xpages`)        //nolint
+	DbGcWorkRtimeCPU = metrics.GetOrCreateSummary(`db_gc_work_rtime_cpu`) //nolint
+	DbGcSelfRtimeCPU = metrics.GetOrCreateSummary(`db_gc_self_rtime_cpu`) //nolint
+	DbGcWorkRtime    = metrics.GetOrCreateSummary(`db_gc_work_rtime`)     //nolint
+	DbGcWorkRloops   = metrics.NewCounter(`db_gc_work_rloops`)            //nolint
+	DbGcWorkRxpages  = metrics.NewCounter(`db_gc_work_rxpages`)           //nolint
+	DbGcSelfRtime    = metrics.GetOrCreateSummary(`db_gc_self_rtime`)     //nolint
+	DbGcSelfRloops   = metrics.NewCounter(`db_gc_self_rloop`)             //nolint
+	DbGcSelfWloops   = metrics.NewCounter(`db_gc_self_wloop`)             //nolint
+	DbGcSelfXpages   = metrics.NewCounter(`db_gc_self_xpages`)            //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
 	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`) //nolint
