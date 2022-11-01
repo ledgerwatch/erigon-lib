@@ -79,8 +79,6 @@ type HexPatriciaHashed struct {
 
 	hashAuxBuffer [128]byte     // buffer to compute cell hash or write hash-related things
 	auxBuffer     *bytes.Buffer // auxiliary buffer used during branch updates encoding
-	// aux buffer for encoding numbers
-	numBuffer [binary.MaxVarintLen64]byte
 }
 
 // represents state of the tree
@@ -1528,7 +1526,7 @@ func (c *Cell) bytes() []byte {
 		buf[pos] = byte(c.extLen)
 		pos++
 		copy(buf[pos:pos+c.downHashedLen], c.downHashedKey[:])
-		pos += c.downHashedLen
+		//pos += c.downHashedLen
 	}
 	buf[0] = flags
 	return buf

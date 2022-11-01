@@ -10,6 +10,8 @@ import (
 )
 
 func generateCellRow(t *testing.T, size int) (row []*Cell, bitmap uint16) {
+	t.Helper()
+
 	row = make([]*Cell, size)
 	var bm uint16
 	for i := 0; i < len(row); i++ {
@@ -23,9 +25,11 @@ func generateCellRow(t *testing.T, size int) (row []*Cell, bitmap uint16) {
 		switch {
 		case th > 70:
 			n, err = rand.Read(row[i].apk[:])
+			require.NoError(t, err)
 			row[i].apl = n
 		case th > 20 && th <= 70:
 			n, err = rand.Read(row[i].spk[:])
+			require.NoError(t, err)
 			row[i].spl = n
 		case th <= 20:
 			n, err = rand.Read(row[i].extension[:th])

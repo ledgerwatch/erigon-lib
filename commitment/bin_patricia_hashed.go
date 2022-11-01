@@ -103,8 +103,6 @@ type BinPatriciaHashed struct {
 	trace         bool
 	hashAuxBuffer [maxKeySize]byte // buffer to compute cell hash or write hash-related things
 	auxBuffer     *bytes.Buffer    // auxiliary buffer used during branch updates encoding
-	// aux buffer for encoding numbers
-	numBuffer [binary.MaxVarintLen64]byte
 
 	// Function used to load branch node and fill up the cells
 	// For each cell, it sets the cell type, clears the modified flag, fills the hash,
@@ -1419,7 +1417,7 @@ func (c *BinaryCell) bytes() []byte {
 		buf[pos] = byte(c.extLen)
 		pos++
 		copy(buf[pos:pos+c.downHashedLen], c.downHashedKey[:])
-		pos += c.downHashedLen
+		//pos += c.downHashedLen
 	}
 	buf[0] = flags
 	return buf
@@ -1463,7 +1461,7 @@ func (c *BinaryCell) decodeBytes(buf []byte) error {
 		c.extLen = int(buf[pos])
 		pos++
 		copy(c.extension[:], buf[pos:pos+c.extLen])
-		pos += c.extLen
+		//pos += c.extLen
 	}
 	return nil
 }
