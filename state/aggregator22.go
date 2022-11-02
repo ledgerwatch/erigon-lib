@@ -595,7 +595,7 @@ func (a *Aggregator22) Flush(tx kv.RwTx) error {
 		a.tracesFrom.Rotate(),
 		a.tracesTo.Rotate(),
 	}
-	defer func(t time.Time) { log.Debug("[snapshots] hitory flush", "took", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { log.Debug("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
 	for _, f := range flushers {
 		if err := f.Flush(tx); err != nil {
 			return err
