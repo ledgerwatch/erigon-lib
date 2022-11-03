@@ -195,7 +195,7 @@ func (d *DomainCommitted) storeCommitmentState(blockNum, txNum uint64) error {
 	return nil
 }
 
-//nolint
+// nolint
 func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, typeAS string, list ...*filesItem) bool {
 	numBuf := [2]byte{}
 	var found bool
@@ -309,7 +309,7 @@ func (d *DomainCommitted) commitmentValTransform(files SelectedStaticFiles, merg
 	return transValBuf, nil
 }
 
-func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStaticFiles, mergedFiles MergedFiles, r DomainRanges, maxSpan uint64) (valuesIn, indexIn, historyIn *filesItem, err error) {
+func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStaticFiles, mergedFiles MergedFiles, r DomainRanges, workers int) (valuesIn, indexIn, historyIn *filesItem, err error) {
 	if !r.any() {
 		return
 	}
@@ -358,12 +358,12 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 			history:           r.history,
 			indexStartTxNum:   r.indexStartTxNum,
 			indexEndTxNum:     r.indexEndTxNum,
-			index:             r.index}, maxSpan); err != nil {
+			index:             r.index}, workers); err != nil {
 		return nil, nil, nil, err
 	}
 	if r.values {
 		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
-		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, d.workers, log.LvlDebug); err != nil {
+		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, workers, log.LvlDebug); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
 		}
 		var cp CursorHeap
