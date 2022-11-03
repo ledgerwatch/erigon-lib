@@ -159,6 +159,7 @@ func init() {
 			panic("DECOMPRESS_CONDENSITY: only numbers in range 3-9 are acceptable ")
 		}
 		condensePatternTableBitThreshold = i
+		fmt.Printf("set DECOMPRESS_CONDENSITY to %d\n", i)
 	}
 }
 
