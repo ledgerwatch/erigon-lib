@@ -168,7 +168,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 
 	anotherAgg.SetTx(rwTx)
 	startTx := anotherAgg.EndTxNumMinimax()
-	sstartTx, _, err := anotherAgg.SeekCommitment()
+	sstartTx, err := anotherAgg.SeekCommitment()
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, sstartTx, startTx)
 	require.EqualValues(t, latestCommitTxNum, sstartTx)

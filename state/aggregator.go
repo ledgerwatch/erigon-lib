@@ -417,14 +417,17 @@ func (a *Aggregator) EndTxNumMinimax() uint64 {
 }
 
 // TODO make it a part of EndTxNumMinimax()
-func (a *Aggregator) SeekCommitment() (txNum, blockNum uint64, err error) {
+func (a *Aggregator) SeekCommitment() (txNum uint64, err error) {
 	filesTxNum := a.EndTxNumMinimax()
-	txNum, blockNum, err = a.commitment.SeekCommitment(a.aggregationStep, filesTxNum)
+	txNum, err = a.commitment.SeekCommitment(a.aggregationStep, filesTxNum)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	a.seekTxNum = txNum
-	return txNum, blockNum, nil
+	if txNum == 0 {
+		return
+	}
+	a.seekTxNum = txNum + 1
+	return txNum + 1, nil
 }
 
 type Ranges struct {
@@ -888,14 +891,18 @@ func (a *Aggregator) FinishTx() error {
 	if !a.ReadyToFinishTx() {
 		return nil
 	}
+	_, err := a.ComputeCommitment(true, false)
+	if err != nil {
+		return err
+	}
 	closeAll := true
 	step := a.txNum / a.aggregationStep
 	if step == 0 {
 		if a.commitFn != nil {
-			_, err := a.ComputeCommitment(true, false)
-			if err != nil {
-				return err
-			}
+			//_, err := a.ComputeCommitment(true, false)
+			//if err != nil {
+			//	return err
+			//}
 			if err := a.commitFn(a.txNum); err != nil {
 				return fmt.Errorf("aggregator: db commit on finishTx failed, txNum=%d err=%w", a.txNum, err)
 			}
@@ -954,9 +961,6 @@ func (a *Aggregator) FinishTx() error {
 	}
 	closeAll = false
 
-	if _, err = a.ComputeCommitment(true, false); err != nil {
-		return err
-	}
 	if a.commitFn != nil {
 		if err := a.commitFn(a.txNum); err != nil {
 			return err
@@ -1078,6 +1082,7 @@ func (a *Aggregator) Flush() error {
 		a.accounts.Rotate(),
 		a.storage.Rotate(),
 		a.code.Rotate(),
+		a.commitment.Domain.Rotate(),
 		a.logAddrs.Rotate(),
 		a.logTopics.Rotate(),
 		a.tracesFrom.Rotate(),

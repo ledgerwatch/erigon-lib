@@ -55,6 +55,67 @@ func newPatternTable(bitLen int) *patternTable {
 	return pt
 }
 
+func (pt *patternTable) insertWord2(cw *codeword) {
+	if pt.bitLen <= condensePatternTableBitThreshold {
+		codeStep := uint16(1) << uint16(cw.len)
+		codeFrom, codeTo := cw.code, cw.code+codeStep
+		if pt.bitLen != int(cw.len) && cw.len > 0 {
+			codeTo = codeFrom | (uint16(1) << pt.bitLen)
+		}
+
+		for c := codeFrom; c < codeTo; c += codeStep {
+			pt.patterns[c] = cw
+		}
+		return
+	}
+
+	pt.patterns = append(pt.patterns, cw)
+
+	//if pt.head == nil {
+	//	cw.next = nil
+	//	pt.head = cw
+	//	return
+	//}
+	//
+	//var prev *codeword
+	//for cur := pt.head; cur != nil; prev, cur = cur, cur.next {
+	//}
+	//cw.next = nil
+	//prev.next = cw
+}
+
+func (pt *patternTable) condensedTableSearch2(code uint16) *codeword {
+	if pt.bitLen <= condensePatternTableBitThreshold {
+		return pt.patterns[code]
+	}
+	var prev *codeword
+	_ = prev
+	//for cur := pt.head; cur != nil; prev, cur = cur, cur.next {
+	for _, cur := range pt.patterns {
+		if cur.code == code {
+			//if prev != nil {
+			//	prev.next = cur.next
+			//	cur.next = pt.head
+			//	pt.head = cur
+			//}
+			return cur
+		}
+		d := code - cur.code
+		if d&1 != 0 {
+			continue
+		}
+		if checkDistance(int(cur.len), int(d)) {
+			//if prev != nil {
+			//	prev.next = cur.next
+			//	cur.next = pt.head
+			//	pt.head = cur
+			//}
+			return cur
+		}
+	}
+	return nil
+}
+
 func (pt *patternTable) insertWord(cw *codeword) {
 	if pt.bitLen <= condensePatternTableBitThreshold {
 		codeStep := uint16(1) << uint16(cw.len)
@@ -63,13 +124,8 @@ func (pt *patternTable) insertWord(cw *codeword) {
 			codeTo = codeFrom | (uint16(1) << pt.bitLen)
 		}
 
-		// cw := &codeword{code: codeFrom, pattern: &pattern, len: byte(bits), ptr: nil}
 		for c := codeFrom; c < codeTo; c += codeStep {
-			if p := pt.patterns[c]; p == nil {
-				pt.patterns[c] = cw
-			} else {
-				p.pattern, p.len, p.ptr, p.code = cw.pattern, cw.len, nil, c
-			}
+			pt.patterns[c] = cw
 		}
 		return
 	}
@@ -92,13 +148,14 @@ func (pt *patternTable) condensedTableSearch(code uint16) *codeword {
 		return pt.patterns[code]
 	}
 	var prev *codeword
+	_ = prev
 	for cur := pt.head; cur != nil; prev, cur = cur, cur.next {
 		if cur.code == code {
-			if prev != nil {
-				prev.next = cur.next
-				cur.next = pt.head
-				pt.head = cur
-			}
+			//if prev != nil {
+			//	prev.next = cur.next
+			//	cur.next = pt.head
+			//	pt.head = cur
+			//}
 			return cur
 		}
 		d := code - cur.code
@@ -106,11 +163,11 @@ func (pt *patternTable) condensedTableSearch(code uint16) *codeword {
 			continue
 		}
 		if checkDistance(int(cur.len), int(d)) {
-			if prev != nil {
-				prev.next = cur.next
-				cur.next = pt.head
-				pt.head = cur
-			}
+			//if prev != nil {
+			//	prev.next = cur.next
+			//	cur.next = pt.head
+			//	pt.head = cur
+			//}
 			return cur
 		}
 	}
@@ -295,7 +352,8 @@ func buildCondensedPatternTable(table *patternTable, depths []uint64, patterns [
 		cw := &codeword{code: code, pattern: &pattern, len: byte(bits), ptr: nil}
 
 		// table.patterns = append(table.patterns, cw)
-		table.insertWord(cw)
+		table.insertWord2(cw)
+		//table.insertWord3(code, patterns[0], bits, nil)
 		return 1
 	}
 	if bits == 9 {
@@ -305,12 +363,12 @@ func buildCondensedPatternTable(table *patternTable, depths []uint64, patterns [
 		} else {
 			bitLen = int(maxDepth)
 		}
-		newTable := newPatternTable(bitLen)
-		cw := &codeword{code: code, pattern: nil, len: byte(0), ptr: newTable}
+		cw := &codeword{code: code, pattern: nil, len: byte(0), ptr: newPatternTable(bitLen)}
 
 		// table.patterns = append(table.patterns, &codeword{code: code, pattern: nil, len: byte(0), ptr: newTable})
-		table.insertWord(cw)
-		return buildCondensedPatternTable(newTable, depths, patterns, 0, 0, depth, maxDepth)
+		table.insertWord2(cw)
+		//return buildCondensedPatternTable(newTable, depths, patterns, 0, 0, depth, maxDepth)
+		return buildCondensedPatternTable(cw.ptr, depths, patterns, 0, 0, depth, maxDepth)
 	}
 	b0 := buildCondensedPatternTable(table, depths, patterns, code, bits+1, depth+1, maxDepth-1)
 	return b0 + buildCondensedPatternTable(table, depths[b0:], patterns[b0:], (uint16(1)<<bits)|code, bits+1, depth+1, maxDepth-1)
@@ -477,7 +535,7 @@ func (g *Getter) nextPattern() []byte {
 		}
 		code &= (uint16(1) << table.bitLen) - 1
 
-		cw := table.condensedTableSearch(code)
+		cw := table.condensedTableSearch2(code)
 		l = cw.len
 		if l == 0 {
 			table = cw.ptr

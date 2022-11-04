@@ -148,7 +148,7 @@ func (d *DomainCommitted) TouchedKeyList() ([][]byte, [][]byte, []commitment.Upd
 		return true
 	})
 
-	d.commTree.Clear(false)
+	d.commTree.Clear(true)
 	return plainKeys, hashedKeys, updates
 }
 
@@ -435,10 +435,10 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 						fmt.Printf("merge: multi-way key %x, total keys %d\n", keyBuf, keyCount)
 					}
 
-					valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
-					if err != nil {
-						return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
-					}
+					//valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+					//if err != nil {
+					//	return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
+					//}
 					if d.compressVals {
 						if err = comp.AddWord(valBuf); err != nil {
 							return nil, nil, nil, err
@@ -459,10 +459,10 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 			}
 			keyCount++ // Only counting keys, not values
 			//fmt.Printf("last heap key %x\n", keyBuf)
-			valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
-			}
+			//valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+			//if err != nil {
+			//	return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
+			//}
 			if d.compressVals {
 				if err = comp.AddWord(valBuf); err != nil {
 					return nil, nil, nil, err
@@ -526,12 +526,12 @@ var keyCommitmentState = []byte("state")
 
 // SeekCommitment searches for last encoded state from DomainCommitted
 // and if state found, sets it up to current domain
-func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, uint64, error) {
+func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error) {
 	var (
 		latestState []byte
 		stepbuf     [2]byte
-		step        uint16
-		latestTxNum uint64 = 1
+		step        uint16 = uint16(sinceTx/aggStep) - 1
+		latestTxNum uint64 = sinceTx - 1
 	)
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()
@@ -541,7 +541,7 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, uint6
 
 		s, err := ctx.Get(keyCommitmentState, stepbuf[:], d.tx)
 		if err != nil {
-			return 0, 0, err
+			return 0, err
 		}
 		if len(s) < 8 {
 			break
@@ -558,13 +558,13 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, uint6
 
 	var latest commitmentState
 	if err := latest.Decode(latestState); err != nil {
-		return 0, 0, nil
+		return 0, nil
 	}
 
 	if err := d.patriciaTrie.SetState(latest.trieState); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	return latest.txNum, latest.blockNum, nil
+	return latest.txNum, nil
 }
 
 type commitmentState struct {
