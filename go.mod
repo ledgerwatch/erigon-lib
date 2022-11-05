@@ -18,7 +18,7 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.21
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.0
-	github.com/torquem-ch/mdbx-go v0.26.3-0.20221105090837-1d893c0c47b7
+	github.com/torquem-ch/mdbx-go v0.26.3-0.20221105091725-5947c2d9660a
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.1.0
 	golang.org/x/exp v0.0.0-20221018221608-02f3b879a704
