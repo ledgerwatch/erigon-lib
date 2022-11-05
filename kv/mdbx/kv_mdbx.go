@@ -800,12 +800,16 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcWorkRtimeCPU.Update(latency.GCDetails.WorkRtimeCPU.Seconds())
 		kv.DbGcSelfRtimeCPU.Update(latency.GCDetails.SelfRtimeCPU.Seconds())
 		kv.DbGcWorkRtime.Update(latency.GCDetails.WorkRtime.Seconds())
-		kv.DbGcWorkRloops.Set(uint64(latency.GCDetails.WorkRloops))
+		kv.DbGcWorkRsteps.Set(uint64(latency.GCDetails.WorkRsteps))
 		kv.DbGcWorkRxpages.Set(uint64(latency.GCDetails.WorkRxpages))
 		kv.DbGcSelfRtime.Update(latency.GCDetails.SelfRtime.Seconds())
-		kv.DbGcSelfRloops.Set(uint64(latency.GCDetails.SelfRloops))
-		kv.DbGcSelfWloops.Set(uint64(latency.GCDetails.SelfWloops))
+		kv.DbGcSelfRsteps.Set(uint64(latency.GCDetails.SelfRsteps))
 		kv.DbGcSelfXpages.Set(uint64(latency.GCDetails.SelfXpages))
+		kv.DbGcWloops.Set(uint64(latency.GCDetails.Wloops))
+		kv.DbGcCoalescences.Set(uint64(latency.GCDetails.Coalescences))
+		kv.DbGcWipes.Set(uint64(latency.GCDetails.Wipes))
+		kv.DbGcFlushes.Set(uint64(latency.GCDetails.Flushes))
+		kv.DbGcKicks.Set(uint64(latency.GCDetails.Kicks))
 	}
 
 	//if latency.Whole > slowTx {

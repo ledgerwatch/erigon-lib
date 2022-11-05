@@ -56,11 +56,15 @@ var (
 	DbGcWorkRtimeCPU = metrics.GetOrCreateSummary(`db_gc_work_rtime_cpu`) //nolint
 	DbGcSelfRtimeCPU = metrics.GetOrCreateSummary(`db_gc_self_rtime_cpu`) //nolint
 	DbGcWorkRtime    = metrics.GetOrCreateSummary(`db_gc_work_rtime`)     //nolint
-	DbGcWorkRloops   = metrics.NewCounter(`db_gc_work_rloops`)            //nolint
+	DbGcWorkRsteps   = metrics.NewCounter(`db_gc_work_rsteps`)            //nolint
 	DbGcWorkRxpages  = metrics.NewCounter(`db_gc_work_rxpages`)           //nolint
 	DbGcSelfRtime    = metrics.GetOrCreateSummary(`db_gc_self_rtime`)     //nolint
-	DbGcSelfRloops   = metrics.NewCounter(`db_gc_self_rloop`)             //nolint
-	DbGcSelfWloops   = metrics.NewCounter(`db_gc_self_wloop`)             //nolint
+	DbGcSelfRsteps   = metrics.NewCounter(`db_gc_self_rsteps`)            //nolint
+	DbGcWloops       = metrics.NewCounter(`db_gc_wloop`)                  //nolint
+	DbGcCoalescences = metrics.NewCounter(`db_gc_coalescences`)           //nolint
+	DbGcWipes        = metrics.NewCounter(`db_gc_wipes`)                  //nolint
+	DbGcFlushes      = metrics.NewCounter(`db_gc_flushes`)                //nolint
+	DbGcKicks        = metrics.NewCounter(`db_gc_kicks`)                  //nolint
 	DbGcSelfXpages   = metrics.NewCounter(`db_gc_self_xpages`)            //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
