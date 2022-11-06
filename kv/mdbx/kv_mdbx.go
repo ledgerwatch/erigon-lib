@@ -812,6 +812,7 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcFlushes.Set(uint64(latency.GCDetails.Flushes))
 		kv.DbGcKicks.Set(uint64(latency.GCDetails.Kicks))
 		kv.DbGcWorkMajflt.Set(uint64(latency.GCDetails.WorkMajflt))
+		kv.DbGcSelfMajflt.Set(uint64(latency.GCDetails.SelfMajflt))
 	}
 
 	//if latency.Whole > slowTx {

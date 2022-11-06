@@ -67,6 +67,7 @@ var (
 	DbGcFlushes      = metrics.NewCounter(`db_gc_flushes`)                //nolint
 	DbGcKicks        = metrics.NewCounter(`db_gc_kicks`)                  //nolint
 	DbGcWorkMajflt   = metrics.NewCounter(`db_gc_work_majflt`)            //nolint
+	DbGcSelfMajflt   = metrics.NewCounter(`db_gc_self_majflt`)            //nolint
 	DbGcSelfXpages   = metrics.NewCounter(`db_gc_self_xpages`)            //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
