@@ -395,5 +395,5 @@ func (m *MemoryMutation) Reset() error {
 }
 
 func (m *MemoryMutation) AllBuckets() kv.TableCfg {
-	return m.memTx.AllBuckets()
+	return m.memDb.AllBuckets()
 }
