@@ -803,6 +803,7 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcWorkRsteps.Set(uint64(latency.GCDetails.WorkRsteps))
 		kv.DbGcWorkRxpages.Set(uint64(latency.GCDetails.WorkRxpages))
 		kv.DbGcSelfRtime.Update(latency.GCDetails.SelfRtime.Seconds())
+		kv.DbGcSelfXtime.Update(latency.GCDetails.SelfXtime.Seconds())
 		kv.DbGcSelfRsteps.Set(uint64(latency.GCDetails.SelfRsteps))
 		kv.DbGcSelfXpages.Set(uint64(latency.GCDetails.SelfXpages))
 		kv.DbGcWloops.Set(uint64(latency.GCDetails.Wloops))
@@ -810,6 +811,7 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcWipes.Set(uint64(latency.GCDetails.Wipes))
 		kv.DbGcFlushes.Set(uint64(latency.GCDetails.Flushes))
 		kv.DbGcKicks.Set(uint64(latency.GCDetails.Kicks))
+		kv.DbGcWorkMajflt.Set(uint64(latency.GCDetails.WorkMajflt))
 	}
 
 	//if latency.Whole > slowTx {
