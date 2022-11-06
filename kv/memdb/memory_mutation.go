@@ -393,3 +393,7 @@ func (m *MemoryMutation) ViewID() uint64 {
 func (m *MemoryMutation) Reset() error {
 	panic("MemoryMutation.Reset not implemented")
 }
+
+func (m *MemoryMutation) AllBuckets() kv.TableCfg {
+	return m.memTx.AllBuckets()
+}
