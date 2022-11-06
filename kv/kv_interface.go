@@ -68,9 +68,10 @@ var (
 	DbGcKicks        = metrics.NewCounter(`db_gc_kicks`)                  //nolint
 	DbGcWorkMajflt   = metrics.NewCounter(`db_gc_work_majflt`)            //nolint
 	DbGcSelfXpages   = metrics.NewCounter(`db_gc_self_xpages`)            //nolint
-	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)                   //nolint
-	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`)               //nolint
-	GcPagesMetric    = metrics.NewCounter(`db_gc_pages`)                  //nolint
+
+	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
+	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`) //nolint
+	GcPagesMetric    = metrics.NewCounter(`db_gc_pages`)    //nolint
 
 )
 
