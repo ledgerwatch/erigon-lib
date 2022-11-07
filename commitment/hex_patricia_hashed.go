@@ -1570,7 +1570,7 @@ func (c *Cell) decodeBytes(buf []byte) error {
 		c.extLen = int(buf[pos])
 		pos++
 		copy(c.extension[:], buf[pos:pos+c.extLen])
-		pos += c.extLen
+		//pos += c.extLen
 	}
 	return nil
 }

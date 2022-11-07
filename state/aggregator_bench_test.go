@@ -17,18 +17,18 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 )
 
-func testDbAndAggregatorBench(t *testing.B, prefixLen int, aggStep uint64) (string, kv.RwDB, *Aggregator) {
-	t.Helper()
-	path := t.TempDir()
-	t.Cleanup(func() { os.RemoveAll(path) })
+func testDbAndAggregatorBench(b *testing.B, prefixLen int, aggStep uint64) (string, kv.RwDB, *Aggregator) {
+	b.Helper()
+	path := b.TempDir()
+	b.Cleanup(func() { os.RemoveAll(path) })
 	logger := log.New()
 	db := mdbx.NewMDBX(logger).Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.ChaindataTablesCfg
 	}).MustOpen()
-	t.Cleanup(db.Close)
+	b.Cleanup(db.Close)
 	agg, err := NewAggregator(path, path, aggStep)
-	require.NoError(t, err)
-	t.Cleanup(agg.Close)
+	require.NoError(b, err)
+	b.Cleanup(agg.Close)
 	return path, db, agg
 }
 
