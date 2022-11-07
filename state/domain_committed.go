@@ -435,10 +435,10 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 						fmt.Printf("merge: multi-way key %x, total keys %d\n", keyBuf, keyCount)
 					}
 
-					//valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
-					//if err != nil {
-					//	return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
-					//}
+					valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+					if err != nil {
+						return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
+					}
 					if d.compressVals {
 						if err = comp.AddWord(valBuf); err != nil {
 							return nil, nil, nil, err
@@ -459,10 +459,10 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 			}
 			keyCount++ // Only counting keys, not values
 			//fmt.Printf("last heap key %x\n", keyBuf)
-			//valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
-			//if err != nil {
-			//	return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
-			//}
+			valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
+			}
 			if d.compressVals {
 				if err = comp.AddWord(valBuf); err != nil {
 					return nil, nil, nil, err
