@@ -800,11 +800,13 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcWorkRtimeCPU.Update(latency.GCDetails.WorkRtimeCPU.Seconds())
 		kv.DbGcSelfRtimeCPU.Update(latency.GCDetails.SelfRtimeCPU.Seconds())
 		kv.DbGcWorkRtime.Update(latency.GCDetails.WorkRtime.Seconds())
-		kv.DbGcWorkRsteps.Set(uint64(latency.GCDetails.WorkRsteps))
-		kv.DbGcWorkRxpages.Set(uint64(latency.GCDetails.WorkRxpages))
 		kv.DbGcSelfRtime.Update(latency.GCDetails.SelfRtime.Seconds())
 		kv.DbGcSelfXtime.Update(latency.GCDetails.SelfXtime.Seconds())
+
+		kv.DbGcWorkRsteps.Set(uint64(latency.GCDetails.WorkRsteps))
 		kv.DbGcSelfRsteps.Set(uint64(latency.GCDetails.SelfRsteps))
+
+		kv.DbGcWorkRxpages.Set(uint64(latency.GCDetails.WorkRxpages))
 		kv.DbGcSelfXpages.Set(uint64(latency.GCDetails.SelfXpages))
 		kv.DbGcWloops.Set(uint64(latency.GCDetails.Wloops))
 		kv.DbGcCoalescences.Set(uint64(latency.GCDetails.Coalescences))
@@ -815,6 +817,38 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcSelfMajflt.Set(uint64(latency.GCDetails.SelfMajflt))
 		kv.DbGcWorkCounter.Set(uint64(latency.GCDetails.WorkCounter))
 		kv.DbGcSelfCounter.Set(uint64(latency.GCDetails.SelfCounter))
+
+		log.Info("Commit metrics" + strings.Join([]string{
+			fmt.Sprintf("latency.Preparation=%s", latency.Preparation),
+			fmt.Sprintf("latency.Audit=%s", latency.Audit),
+			fmt.Sprintf("latency.Write=%s", latency.Write),
+			fmt.Sprintf("latency.Sync=%s", latency.Sync),
+			fmt.Sprintf("latency.Ending=%s", latency.Ending),
+			fmt.Sprintf("latency.Whole=%s", latency.Whole),
+			"\t",
+			fmt.Sprintf("latency.GCWallClock=%s", latency.GCWallClock),
+			fmt.Sprintf("latency.GCCpuTime=%s", latency.GCCpuTime),
+			fmt.Sprintf("latency.WorkRtimeCPU=%s", latency.GCDetails.WorkRtimeCPU),
+			fmt.Sprintf("latency.SelfRtimeCPU=%s", latency.GCDetails.SelfRtimeCPU),
+			fmt.Sprintf("latency.WorkRtime=%s", latency.GCDetails.WorkRtime),
+			fmt.Sprintf("latency.SelfRtime=%s", latency.GCDetails.SelfRtime),
+			fmt.Sprintf("latency.SelfXtime=%s", latency.GCDetails.SelfXtime),
+			"\t",
+			fmt.Sprintf("gc.WorkRsteps=%d", latency.GCDetails.WorkRsteps),
+			fmt.Sprintf("gc.SelfRsteps=%d", latency.GCDetails.SelfRsteps),
+			fmt.Sprintf("gc.WorkRxpages=%d", latency.GCDetails.WorkRxpages),
+			fmt.Sprintf("gc.SelfXpages=%d", latency.GCDetails.SelfXpages),
+			fmt.Sprintf("gc.WorkMajflt=%d", latency.GCDetails.WorkMajflt),
+			fmt.Sprintf("gc.SelfMajflt=%d", latency.GCDetails.SelfMajflt),
+			fmt.Sprintf("gc.WorkCounter=%d", latency.GCDetails.WorkCounter),
+			fmt.Sprintf("gc.SelfCounter=%d", latency.GCDetails.SelfCounter),
+			"\t",
+			fmt.Sprintf("gc.Wloops=%d", latency.GCDetails.Wloops),
+			fmt.Sprintf("gc.Coalescences=%d", latency.GCDetails.Coalescences),
+			fmt.Sprintf("gc.Wipes=%d", latency.GCDetails.Wipes),
+			fmt.Sprintf("gc.Flushes=%d", latency.GCDetails.Flushes),
+			fmt.Sprintf("gc.Kicks=%d", latency.GCDetails.Kicks),
+		}, ","))
 	}
 
 	//if latency.Whole > slowTx {
