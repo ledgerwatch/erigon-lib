@@ -470,6 +470,16 @@ type DomainContext struct {
 }
 
 func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
+	d.History.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
+		datsz += uint64(item.decompressor.Size())
+		idxsz += uint64(item.index.Size())
+		files += 2
+
+		return true
+	})
 	d.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
