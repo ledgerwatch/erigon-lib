@@ -59,8 +59,8 @@ type Aggregator struct {
 }
 
 func NewAggregator(
-	 dir, tmpdir string,
-	 aggregationStep uint64,
+	dir, tmpdir string,
+	aggregationStep uint64,
 ) (*Aggregator, error) {
 
 	a := &Aggregator{aggregationStep: aggregationStep, tmpdir: tmpdir}
