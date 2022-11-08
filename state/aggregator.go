@@ -59,8 +59,8 @@ type Aggregator struct {
 }
 
 func NewAggregator(
-	dir, tmpdir string,
-	aggregationStep uint64,
+	 dir, tmpdir string,
+	 aggregationStep uint64,
 ) (*Aggregator, error) {
 
 	a := &Aggregator{aggregationStep: aggregationStep, tmpdir: tmpdir}
@@ -899,10 +899,6 @@ func (a *Aggregator) FinishTx() error {
 	step := a.txNum / a.aggregationStep
 	if step == 0 {
 		if a.commitFn != nil {
-			//_, err := a.ComputeCommitment(true, false)
-			//if err != nil {
-			//	return err
-			//}
 			if err := a.commitFn(a.txNum); err != nil {
 				return fmt.Errorf("aggregator: db commit on finishTx failed, txNum=%d err=%w", a.txNum, err)
 			}
@@ -966,6 +962,8 @@ func (a *Aggregator) FinishTx() error {
 			return err
 		}
 	}
+
+	a.defaultCtx = a.MakeContext()
 
 	return nil
 }

@@ -18,11 +18,9 @@ package compress
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"testing"
 
-	"github.com/arl/statsviz"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,16 +72,8 @@ func BenchmarkDecompressMatchPrefix(b *testing.B) {
 	}
 }
 
-func init() {
-	statsviz.RegisterDefault()
-	fmt.Printf("stvz")
-	go func() {
-		http.ListenAndServe("localhost:6065", nil)
-	}()
-}
-
 func BenchmarkDecompressTorrent(t *testing.B) {
-	//t.Skip()
+	t.Skip()
 
 	//fpath := "/Volumes/wotah/mainnet/snapshots/v1-013500-014000-bodies.seg"
 	fpath := "/Volumes/wotah/mainnet/snapshots/v1-013500-014000-transactions.seg"

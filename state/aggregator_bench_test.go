@@ -2,13 +2,10 @@ package state
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
-	"net/http"
 	"os"
 	"testing"
 
-	"github.com/arl/statsviz"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 
@@ -30,14 +27,6 @@ func testDbAndAggregatorBench(b *testing.B, prefixLen int, aggStep uint64) (stri
 	require.NoError(b, err)
 	b.Cleanup(agg.Close)
 	return path, db, agg
-}
-
-func init() {
-	statsviz.RegisterDefault()
-	fmt.Printf("stvz")
-	go func() {
-		http.ListenAndServe("localhost:6065", nil)
-	}()
 }
 
 func BenchmarkAggregator_Processing(b *testing.B) {

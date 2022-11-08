@@ -90,7 +90,10 @@ func TestBranchData_MergeHexBranches3(t *testing.T) {
 	//_, _ = tm, am
 }
 
+// helper to decode row of cells from string
 func Test_UTIL_UnfoldBranchDataFromString(t *testing.T) {
+	t.Skip()
+
 	//encs := "0405040b04080f0b080d030204050b0502090805050d01060e060d070f0903090c04070a0d0a000e090b060b0c040c0700020e0b0c060b0106020c0607050a0b0209070d06040808"
 	encs := "37ad10eb75ea0fc1c363db0dda0cd2250426ee2c72787155101ca0e50804349a94b649deadcc5cddc0d2fd9fb358c2edc4e7912d165f88877b1e48c69efacf418e923124506fbb2fd64823fd41cbc10427c423"
 	enc, err := hex.DecodeString(encs)
