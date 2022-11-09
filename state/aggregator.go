@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math"
 	"math/bits"
 	"os"
 	"sync"
@@ -206,7 +205,7 @@ func (c AggCollation) Close() {
 	c.commitment.Close()
 }
 
-func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggCollation, error) {
+func (a *Aggregator) collate(ctx context.Context, step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggCollation, error) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	var ac AggCollation
@@ -217,28 +216,28 @@ func (a *Aggregator) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (AggC
 			ac.Close()
 		}
 	}()
-	if ac.accounts, err = a.accounts.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.accounts, err = a.accounts.collate(ctx, step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.storage, err = a.storage.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.storage, err = a.storage.collate(ctx, step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.code, err = a.code.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.code, err = a.code.collate(ctx, step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.commitment, err = a.commitment.collate(step, txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.commitment, err = a.commitment.collate(ctx, step, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.logAddrs, err = a.logAddrs.collate(txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.logAddrs, err = a.logAddrs.collate(ctx, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.logTopics, err = a.logTopics.collate(txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.logTopics, err = a.logTopics.collate(ctx, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.tracesFrom, err = a.tracesFrom.collate(txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.tracesFrom, err = a.tracesFrom.collate(ctx, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
-	if ac.tracesTo, err = a.tracesTo.collate(txFrom, txTo, roTx, logEvery); err != nil {
+	if ac.tracesTo, err = a.tracesTo.collate(ctx, txFrom, txTo, roTx, logEvery); err != nil {
 		return AggCollation{}, err
 	}
 	closeColl = false
@@ -359,20 +358,19 @@ func (a *Aggregator) integrateFiles(sf AggStaticFiles, txNumFrom, txNumTo uint64
 	a.tracesTo.integrateFiles(sf.tracesTo, txNumFrom, txNumTo)
 }
 
-func (a *Aggregator) prune(step uint64, txFrom, txTo, limit uint64) error {
-	ctx := context.TODO()
+func (a *Aggregator) prune(ctx context.Context, step uint64, txFrom, txTo, limit uint64) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	if err := a.accounts.prune(step, txFrom, txTo, limit, logEvery); err != nil {
+	if err := a.accounts.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.storage.prune(step, txFrom, txTo, limit, logEvery); err != nil {
+	if err := a.storage.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.code.prune(step, txFrom, txTo, limit, logEvery); err != nil {
+	if err := a.code.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	if err := a.commitment.prune(step, txFrom, txTo, limit, logEvery); err != nil {
+	if err := a.commitment.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
 	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
@@ -895,7 +893,6 @@ func (a *Aggregator) FinishTx() error {
 	if err != nil {
 		return err
 	}
-	closeAll := true
 	step := a.txNum / a.aggregationStep
 	if step == 0 {
 		if a.commitFn != nil {
@@ -909,53 +906,12 @@ func (a *Aggregator) FinishTx() error {
 	if err := a.Flush(); err != nil {
 		return err
 	}
-	collation, err := a.collate(step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeAll {
-			collation.Close()
-		}
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour*3)
+	defer cancel()
 
-	sf, err := a.buildFiles(context.TODO(), step, collation)
-	if err != nil {
+	if err := a.collator(ctx, step); err != nil {
 		return err
 	}
-	defer func() {
-		if closeAll {
-			sf.Close()
-		}
-	}()
-	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-	if err = a.prune(step, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64); err != nil {
-		return err
-	}
-	maxEndTxNum := a.EndTxNumMinimax()
-	maxSpan := uint64(32) * a.aggregationStep
-	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
-		outs := a.staticFilesInRange(r)
-		defer func() {
-			if closeAll {
-				outs.Close()
-			}
-		}()
-		in, err := a.mergeFiles(context.TODO(), outs, r, 1)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if closeAll {
-				in.Close()
-			}
-		}()
-		a.integrateMergedFiles(outs, in)
-		if err = a.deleteFiles(outs); err != nil {
-			return err
-		}
-	}
-	closeAll = false
 
 	if a.commitFn != nil {
 		if err := a.commitFn(a.txNum); err != nil {

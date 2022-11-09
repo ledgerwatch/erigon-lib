@@ -638,7 +638,7 @@ func (c Collation) Close() {
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
-func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (Collation, error) {
+func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (Collation, error) {
 	hCollation, err := d.History.collate(step, txFrom, txTo, roTx, logEvery)
 	if err != nil {
 		return Collation{}, err
@@ -666,6 +666,10 @@ func (d *Domain) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.T
 	var k, v []byte
 	valuesCount := 0
 	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.NextNoDup() {
+		if err := ctx.Err(); err != nil {
+			log.Warn("domain collate cancelled", "err", err)
+			return Collation{}, err
+		}
 		if v, err = keysCursor.LastDup(); err != nil {
 			return Collation{}, fmt.Errorf("find last %s key for aggregation step k=[%x]: %w", d.filenameBase, k, err)
 		}
@@ -841,6 +845,10 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 	var keyPos, valPos uint64
 	g := d.MakeGetter()
 	for {
+		if err := ctx.Err(); err != nil {
+			log.Warn("recsplit index building cancelled", "err", err)
+			return nil, err
+		}
 		g.Reset(0)
 		for g.HasNext() {
 			word, valPos = g.Next(word[:0])
@@ -890,7 +898,7 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 }
 
 // [txFrom; txTo)
-func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
+func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
 	// It is important to clean up tables in a specific order
 	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
 	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
@@ -902,6 +910,10 @@ func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64, logEvery *time.T
 	keyMaxSteps := make(map[string]uint64)
 
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
+		if err := ctx.Err(); err != nil {
+			log.Warn("domain prune cancelled", "err", err)
+			return err
+		}
 		s := ^binary.BigEndian.Uint64(v)
 		if maxS, seen := keyMaxSteps[string(k)]; !seen || s > maxS {
 			keyMaxSteps[string(k)] = s
@@ -912,6 +924,11 @@ func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64, logEvery *time.T
 	}
 
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
+		if err := ctx.Err(); err != nil {
+			log.Warn("domain prune cancelled", "err", err)
+			return err
+		}
+
 		s := ^binary.BigEndian.Uint64(v)
 		if s == step {
 			if maxS := keyMaxSteps[string(k)]; maxS <= step {
@@ -935,6 +952,10 @@ func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64, logEvery *time.T
 	}
 	defer valsCursor.Close()
 	for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
+		if err := ctx.Err(); err != nil {
+			log.Warn("domain prune cancelled", "err", err)
+			return err
+		}
 		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
 		if s == step {
 			if maxS := keyMaxSteps[string(k[:len(k)-8])]; maxS <= step {
@@ -950,7 +971,7 @@ func (d *Domain) prune(step uint64, txFrom, txTo, limit uint64, logEvery *time.T
 		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
 	}
 
-	if err = d.History.prune(context.TODO(), txFrom, txTo, limit, logEvery); err != nil {
+	if err = d.History.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return fmt.Errorf("prune history at step %d [%d, %d): %w", step, txFrom, txTo, err)
 	}
 	return nil

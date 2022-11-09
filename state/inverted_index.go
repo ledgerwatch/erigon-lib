@@ -34,6 +34,10 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
+
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
@@ -42,9 +46,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/semaphore"
 )
 
 type InvertedIndex struct {
@@ -736,7 +737,7 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 	return ii1
 }
 
-func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (map[string]*roaring64.Bitmap, error) {
+func (ii *InvertedIndex) collate(ctx context.Context, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (map[string]*roaring64.Bitmap, error) {
 	keysCursor, err := roTx.CursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return nil, fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -763,6 +764,10 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx, logEvery *time
 		case <-logEvery.C:
 			log.Info("[snapshots] collate history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(ii.aggregationStep), float64(txTo)/float64(ii.aggregationStep)))
 			bitmap.RunOptimize()
+		case <-ctx.Done():
+			err := ctx.Err()
+			log.Warn("index collate cancelled", "err", err)
+			return nil, err
 		default:
 		}
 	}

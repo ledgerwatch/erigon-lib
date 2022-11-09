@@ -260,7 +260,7 @@ func (d *DomainCommitted) lookupShortenedKey(shortKey, fullKey []byte, typAS str
 // commitmentValTransform parses the value of the commitment record to extract references
 // to accounts and storage items, then looks them up in the new, merged files, and replaces them with
 // the updated references
-func (d *DomainCommitted) commitmentValTransform(files SelectedStaticFiles, merged MergedFiles, val commitment.BranchData) ([]byte, error) {
+func (d *DomainCommitted) commitmentValTransform(files *SelectedStaticFiles, merged *MergedFiles, val commitment.BranchData) ([]byte, error) {
 	if len(val) == 0 {
 		return nil, nil
 	}
@@ -435,7 +435,7 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 						fmt.Printf("merge: multi-way key %x, total keys %d\n", keyBuf, keyCount)
 					}
 
-					valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+					valBuf, err = d.commitmentValTransform(&oldFiles, &mergedFiles, valBuf)
 					if err != nil {
 						return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
 					}
@@ -459,7 +459,7 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 			}
 			keyCount++ // Only counting keys, not values
 			//fmt.Printf("last heap key %x\n", keyBuf)
-			valBuf, err = d.commitmentValTransform(oldFiles, mergedFiles, valBuf)
+			valBuf, err = d.commitmentValTransform(&oldFiles, &mergedFiles, valBuf)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("merge: 2valTransform [%x] %w", valBuf, err)
 			}
