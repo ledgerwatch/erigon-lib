@@ -1002,19 +1002,19 @@ func (ii *InvertedIndex) EnableMadvNormalReadAhead() *InvertedIndex {
 	return ii
 }
 
-func (ii *InvertedIndex) collectFilesStat() (filesCount, filesTotalSize uint64) {
+func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint64) {
 	if ii.files == nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	ii.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
 		}
-		filesTotalSize += uint64(item.decompressor.Size())
-		filesTotalSize += uint64(item.index.Size())
+		filesSize += uint64(item.decompressor.Size())
+		idxSize += uint64(item.index.Size())
 		filesCount += 2
 
 		return true
 	})
-	return filesCount, filesTotalSize
+	return filesCount, filesSize, idxSize
 }

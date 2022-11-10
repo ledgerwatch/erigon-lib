@@ -492,9 +492,10 @@ func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
 		return true
 	})
 
-	fcnt, fsz := d.History.InvertedIndex.collectFilesStat()
+	fcnt, fsz, isz := d.History.InvertedIndex.collectFilesStat()
 	datsz += fsz
 	files += fcnt
+	idxsz += isz
 	return
 }
 
