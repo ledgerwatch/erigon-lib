@@ -115,6 +115,17 @@ func (a *Aggregator) GetAndResetStats() DomainStats {
 	stats.Accumulate(a.storage.GetAndResetStats())
 	stats.Accumulate(a.code.GetAndResetStats())
 	stats.Accumulate(a.commitment.GetAndResetStats())
+
+	var tto, tfrom, ltopics, laddr DomainStats
+	tto.FilesCount, tto.DataSize = a.tracesTo.collectFilesStat()
+	tfrom.FilesCount, tfrom.DataSize = a.tracesFrom.collectFilesStat()
+	ltopics.FilesCount, ltopics.DataSize = a.logTopics.collectFilesStat()
+	laddr.FilesCount, laddr.DataSize = a.logAddrs.collectFilesStat()
+
+	stats.Accumulate(tto)
+	stats.Accumulate(tfrom)
+	stats.Accumulate(ltopics)
+	stats.Accumulate(laddr)
 	return stats
 }
 

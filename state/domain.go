@@ -480,6 +480,7 @@ func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
 
 		return true
 	})
+
 	d.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
@@ -490,6 +491,10 @@ func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
 
 		return true
 	})
+
+	fcnt, fsz := d.History.InvertedIndex.collectFilesStat()
+	datsz += fsz
+	files += fcnt
 	return
 }
 

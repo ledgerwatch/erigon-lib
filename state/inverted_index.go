@@ -945,7 +945,7 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		if err = idxC.DeleteExact(v, k); err != nil {
 			return err
 		}
-		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
+		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
 		}
@@ -1000,4 +1000,21 @@ func (ii *InvertedIndex) EnableMadvNormalReadAhead() *InvertedIndex {
 		return true
 	})
 	return ii
+}
+
+func (ii *InvertedIndex) collectFilesStat() (filesCount, filesTotalSize uint64) {
+	if ii.files == nil {
+		return 0, 0
+	}
+	ii.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
+		filesTotalSize += uint64(item.decompressor.Size())
+		filesTotalSize += uint64(item.index.Size())
+		filesCount += 2
+
+		return true
+	})
+	return filesCount, filesTotalSize
 }
