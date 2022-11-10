@@ -406,6 +406,8 @@ func (db *MdbxKV) Close() {
 	if db.closed.Load() {
 		return
 	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	db.closed.Store(true)
 	db.wg.Wait()
 	db.env.Close()
@@ -466,6 +468,9 @@ func (db *MdbxKV) BeginRw(_ context.Context) (txn kv.RwTx, err error) {
 	}
 	runtime.LockOSThread()
 	defer func() {
+		if db.closed.Load() {
+			return
+		}
 		if err == nil {
 			db.wg.Add(1)
 		}
