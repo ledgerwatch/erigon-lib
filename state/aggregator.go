@@ -930,7 +930,7 @@ func (a *Aggregator) FinishTx() error {
 		}
 	}
 
-	a.defaultCtx = a.MakeContext()
+	//a.defaultCtx = a.MakeContext()
 
 	return nil
 }

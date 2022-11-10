@@ -159,8 +159,12 @@ func (a *Aggregator) collator(ctx context.Context, step uint64) error {
 				return
 			}
 			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-			sf.Close()
 		}(&wg, d, collation)
+
+		err = d.prune(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, d := range []*Domain{a.accounts, a.storage, a.code, a.commitment.Domain} {
@@ -182,8 +186,12 @@ func (a *Aggregator) collator(ctx context.Context, step uint64) error {
 			}
 
 			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-			sf.Close()
 		}(&wg, d, collation)
+
+		err = d.prune(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
+		if err != nil {
+			return err
+		}
 	}
 
 	go func() {
@@ -195,38 +203,35 @@ func (a *Aggregator) collator(ctx context.Context, step uint64) error {
 		log.Warn("build domain files failed", "err", err)
 	}
 
-	for _, d := range []*InvertedIndex{a.logTopics, a.logAddrs, a.tracesFrom, a.tracesTo} {
-		err := d.prune(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
-		if err != nil {
-			return err
-		}
-	}
-
-	for _, d := range []*Domain{a.accounts, a.storage, a.code, a.commitment.Domain} {
-		err := d.prune(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
-		if err != nil {
-			return err
-		}
-	}
-
 	maxEndTxNum := a.EndTxNumMinimax()
 	maxSpan := uint64(32) * a.aggregationStep
+	closeAll := true
 	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
 		outs := a.staticFilesInRange(r)
 		in, err := a.mergeFiles(ctx, outs, r, 1)
 		if err != nil {
-			outs.Close()
+			//outs.Close()
 			return err
 		}
+		defer func() {
+			if closeAll {
+				outs.Close()
+			}
+		}()
 		a.integrateMergedFiles(outs, in)
-		in.Close()
+		defer func() {
+			if closeAll {
+				in.Close()
+			}
+		}()
 
 		if err = a.deleteFiles(outs); err != nil {
-			outs.Close()
+			//outs.Close()
 			return err
 		}
-		outs.Close()
+		//outs.Close()
 	}
+	closeAll = false
 	return nil
 }
 
