@@ -56,8 +56,8 @@ github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
-github.com/ledgerwatch/interfaces v0.0.0-20221110171008-1309329613dc h1:KEKNQ7GGFMPTCjh+HJjbcalzfKptTCv5QbeYmNGOWSM=
-github.com/ledgerwatch/interfaces v0.0.0-20221110171008-1309329613dc/go.mod h1:ugQv1QllJzBny3cKZKxUrSnykkjkBgm27eQM6dnGAcc=
+github.com/ledgerwatch/interfaces v0.0.0-20221111145150-b55c69820c6d h1:gJHGEkhSX+dNbIoaw0SEXAbw8335QT3qvQVQPdO2rRM=
+github.com/ledgerwatch/interfaces v0.0.0-20221111145150-b55c69820c6d/go.mod h1:ugQv1QllJzBny3cKZKxUrSnykkjkBgm27eQM6dnGAcc=
 github.com/ledgerwatch/log/v3 v3.6.0 h1:JBUSK1epPyutUrz7KYDTcJtQLEHnehECRpKbM1ugy5M=
 github.com/ledgerwatch/log/v3 v3.6.0/go.mod h1:L+Sp+ma/h205EdCjviZECjGEvYUYEyXSdiuHNZzg+xQ=
 github.com/ledgerwatch/secp256k1 v1.0.0 h1:Usvz87YoTG0uePIV8woOof5cQnLXGYa162rFf3YnwaQ=
