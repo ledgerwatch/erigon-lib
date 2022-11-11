@@ -672,10 +672,15 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 	var k, v []byte
 	valuesCount := 0
 	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.NextNoDup() {
-		if err := ctx.Err(); err != nil {
-			log.Warn("domain collate cancelled", "err", err)
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] collate domain", "name", d.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+		case <-ctx.Done():
+			log.Warn("[snapshots] collate domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return Collation{}, err
+		default:
 		}
+
 		if v, err = keysCursor.LastDup(); err != nil {
 			return Collation{}, fmt.Errorf("find last %s key for aggregation step k=[%x]: %w", d.filenameBase, k, err)
 		}
@@ -914,10 +919,15 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	keyMaxSteps := make(map[string]uint64)
 
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
-		if err := ctx.Err(); err != nil {
-			log.Warn("domain prune cancelled", "err", err)
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "collect", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+		case <-ctx.Done():
+			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
+		default:
 		}
+
 		s := ^binary.BigEndian.Uint64(v)
 		if maxS, seen := keyMaxSteps[string(k)]; !seen || s > maxS {
 			keyMaxSteps[string(k)] = s
@@ -928,9 +938,13 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	}
 
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
-		if err := ctx.Err(); err != nil {
-			log.Warn("domain prune cancelled", "err", err)
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "steps", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+		case <-ctx.Done():
+			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
+		default:
 		}
 
 		s := ^binary.BigEndian.Uint64(v)
@@ -956,9 +970,13 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	}
 	defer valsCursor.Close()
 	for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
-		if err := ctx.Err(); err != nil {
-			log.Warn("domain prune cancelled", "err", err)
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "keys", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+		case <-ctx.Done():
+			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
+		default:
 		}
 		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
 		if s == step {
