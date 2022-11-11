@@ -115,6 +115,41 @@ func (d *Domain) findMergeRange(maxEndTxNum, maxSpan uint64) DomainRanges {
 	return r
 }
 
+// nolint
+func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
+	closeAll := true
+	for rng := d.findMergeRange(maxSpan, maxTxNum); rng.any(); rng = d.findMergeRange(maxTxNum, maxSpan) {
+		var sfr staticFilesInRange
+		sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, sfr.startJ = d.staticFilesInRange(rng)
+		defer func() {
+			if closeAll {
+				sfr.Close()
+			}
+		}()
+
+		var mf mergedDomainFiles
+		if mf.values, mf.index, mf.history, err = d.mergeFiles(ctx, sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, rng, workers); err != nil {
+			return err
+		}
+		defer func() {
+			if closeAll {
+				mf.Close()
+			}
+		}()
+
+		//defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
+		d.integrateMergedFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, mf.values, mf.index, mf.history)
+
+		if err := d.deleteFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles); err != nil {
+			return err
+		}
+
+		log.Info(fmt.Sprintf("domain files mergedRange[%d, %d) name=%s span=%d \n", rng.valuesStartTxNum, rng.valuesEndTxNum, d.filenameBase, maxSpan))
+	}
+	closeAll = false
+	return nil
+}
+
 func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint64, uint64) {
 	var minFound bool
 	var startTxNum, endTxNum uint64
@@ -139,6 +174,44 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 		return true
 	})
 	return minFound, startTxNum, endTxNum
+}
+
+func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
+	closeAll := true
+	for updated, startTx, endTx := ii.findMergeRange(maxSpan, maxTxNum); updated; updated, startTx, endTx = ii.findMergeRange(maxTxNum, maxSpan) {
+		staticFiles, startJ := ii.staticFilesInRange(startTx, endTx)
+		defer func() {
+			if closeAll {
+				for _, i := range staticFiles {
+					i.decompressor.Close()
+					i.index.Close()
+				}
+			}
+		}()
+		_ = startJ
+
+		mergedIndex, err := ii.mergeFiles(ctx, staticFiles, startTx, endTx, workers)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if closeAll {
+				mergedIndex.decompressor.Close()
+				mergedIndex.index.Close()
+			}
+		}()
+
+		//defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
+		ii.integrateMergedFiles(staticFiles, mergedIndex)
+
+		if err := ii.deleteFiles(staticFiles); err != nil {
+			return err
+		}
+
+		log.Info(fmt.Sprintf("domain files mergedRange[%d, %d) name=%s span=%d \n", startTx, endTx, ii.filenameBase, maxSpan))
+	}
+	closeAll = false
+	return nil
 }
 
 type HistoryRanges struct {
