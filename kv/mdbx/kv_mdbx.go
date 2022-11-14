@@ -819,9 +819,9 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcWorkCounter.Set(uint64(latency.GCDetails.WorkCounter))
 		kv.DbGcSelfCounter.Set(uint64(latency.GCDetails.SelfCounter))
 
-		kv.DbGcPnlMergeTime.Update(latency.GCDetails.PnlMergeTime.Seconds())
-		kv.DbGcPnlMergeVolume.Set(uint64(latency.GCDetails.PnlMergeVolume))
-		kv.DbGcPnlMergeCalls.Set(uint64(latency.GCDetails.PnlMergeCalls))
+		kv.DbGcPnlMergeTime.Update(latency.GCDetails.WorkPnlMergeTime.Seconds())
+		kv.DbGcPnlMergeVolume.Set(uint64(latency.GCDetails.WorkPnlMergeVolume))
+		kv.DbGcPnlMergeCalls.Set(uint64(latency.GCDetails.WorkPnlMergeCalls))
 
 		log.Info("Commit metrics. Latency: {" + strings.Join([]string{
 			fmt.Sprintf("Preparation=%s", latency.Preparation),
