@@ -1794,7 +1794,7 @@ var PoolPendingBaseFeeKey = []byte("pending_base_fee")
 // it doesn't track if peer disconnected, it's fine
 type recentlyConnectedPeers struct {
 	peers []types.PeerID
-	lock  sync.RWMutex
+	lock  sync.Mutex
 }
 
 func (l *recentlyConnectedPeers) AddPeer(p types.PeerID) {
