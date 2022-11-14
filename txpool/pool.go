@@ -296,7 +296,7 @@ type TxPool struct {
 	// handling works fast without batching, but batching allow:
 	//   - reduce amount of _chainDB transactions
 	//   - batch notifications about new txs (reduce P2P spam to other nodes about txs propagation)
-	//   - and as a result reducing pool.RWLock contention
+	//   - and as a result reducing lock contention
 	unprocessedRemoteTxs    *types.TxSlots
 	unprocessedRemoteByHash map[string]int     // to reject duplicates
 	byHash                  map[string]*metaTx // tx_hash => tx : only not committed to db yet records
