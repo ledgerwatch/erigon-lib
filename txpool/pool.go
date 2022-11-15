@@ -2234,10 +2234,10 @@ func (mt *metaTx) better(than *metaTx, pendingBaseFee uint256.Int) bool {
 		// Only compare nonces and balances for same sender
 		if mt.Tx.SenderID == than.Tx.SenderID {
 			if mt.nonceDistance != than.nonceDistance {
-				return mt.nonceDistance > than.nonceDistance
+				return mt.nonceDistance < than.nonceDistance
 			}
 			if mt.cumulativeBalanceDistance != than.cumulativeBalanceDistance {
-				return mt.cumulativeBalanceDistance > than.cumulativeBalanceDistance
+				return mt.cumulativeBalanceDistance < than.cumulativeBalanceDistance
 			}
 		}
 	case BaseFeeSubPool:
