@@ -641,6 +641,35 @@ func (c Collation) Close() {
 	}
 }
 
+func (d *Domain) buildFilesInBackground(ctx context.Context, db kv.RoDB, step uint64, logEvery *time.Ticker) error {
+	log.Info("[snapshots] domain collate-build files begun", "step", fmt.Sprintf("%d-%d", step, step+1), "domain", d.filenameBase)
+	defer func(t time.Time) { log.Info("[snapshots] domain collate-build is done", "took", time.Since(t), "domain", d.filenameBase) }(time.Now())
+
+	var collation Collation
+	err := db.View(ctx, func(tx kv.Tx) (err error) {
+		collation, err = d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, d.tx, logEvery)
+		if err != nil {
+			collation.Close()
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer collation.Close()
+
+	sf, err := d.buildFiles(ctx, step, collation)
+	if err != nil {
+		sf.Close()
+		return err
+	}
+	//collation.Close()
+
+	d.integrateFiles(sf, step*d.aggregationStep, (step+1)*d.aggregationStep)
+	return nil
+}
+
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)

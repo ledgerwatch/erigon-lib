@@ -238,8 +238,8 @@ func (a *Aggregator) SeekCommitment() (txNum uint64, err error) {
 	return txNum + 1, nil
 }
 
-func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
-	defer func(t time.Time) { log.Info("[snapshots] finishTx (collate-prune-merge)", "took", time.Since(t)) }(time.Now())
+func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
+	defer func(t time.Time) { log.Info("[snapshots] aggregation step is done", "step", step, "took", time.Since(t)) }(time.Now())
 
 	var (
 		logEvery = time.NewTicker(time.Second * 30)
@@ -252,15 +252,17 @@ func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
 	for _, d := range []*Domain{a.accounts, a.storage, a.code, a.commitment.Domain} {
 		wg.Add(1)
 
-		go func(wg *sync.WaitGroup, d *Domain) {
-			defer wg.Done()
+		log.Info("[snapshots] domain collate-build files begun", "step", fmt.Sprintf("%d-%d", step, step+1), "domain", d.filenameBase)
 
-			collation, err := d.collate(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, d.tx, logEvery)
-			if err != nil {
-				errCh <- err
-				collation.Close()
-				return
-			}
+		collation, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, d.tx, logEvery)
+		if err != nil {
+			collation.Close()
+			return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)
+		}
+
+		go func(wg *sync.WaitGroup, d *Domain, collation Collation) {
+			defer wg.Done()
+			defer func(t time.Time) { log.Info("[snapshots] domain collate-build is done", "took", time.Since(t), "domain", d.filenameBase) }(time.Now())
 
 			sf, err := d.buildFiles(ctx, step, collation)
 			collation.Close()
@@ -271,27 +273,20 @@ func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
 			}
 
 			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-
-			//maxEndTx := d.endTxNumMinimax()
-			//if err := d.mergeRangesUpTo(ctx, maxEndTx, maxSpan, workers); err != nil {
-			//	errCh <- err
-			//	return
-			//}
-		}(&wg, d)
-
+		}(&wg, d, collation)
 	}
 
 	for _, d := range []*InvertedIndex{a.logTopics, a.logAddrs, a.tracesFrom, a.tracesTo} {
 		wg.Add(1)
 
-		go func(wg *sync.WaitGroup, d *InvertedIndex) {
-			defer wg.Done()
+		collation, err := d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, d.tx, logEvery)
+		if err != nil {
+			return fmt.Errorf("index collation %q has failed: %w", d.filenameBase, err)
+		}
 
-			collation, err := d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, d.tx, logEvery)
-			if err != nil {
-				errCh <- err
-				return
-			}
+		go func(wg *sync.WaitGroup, d *InvertedIndex, tx kv.Tx) {
+			defer wg.Done()
+			defer func(t time.Time) { log.Info("[snapshots] index collate-build is done", "took", time.Since(t), "domain", d.filenameBase) }(time.Now())
 
 			sf, err := d.buildFiles(ctx, step, collation)
 			if err != nil {
@@ -300,18 +295,7 @@ func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
 				return
 			}
 			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
-
-			//maxEndTx := d.endTxNumMinimax()
-			//if err := d.mergeRangesUpTo(ctx, maxEndTx, maxSpan, workers); err != nil {
-			//	errCh <- err
-			//	return
-			//}
-		}(&wg, d)
-
-		err := d.prune(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
-		if err != nil {
-			return err
-		}
+		}(&wg, d, d.tx)
 	}
 
 	go func() {
@@ -321,6 +305,7 @@ func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
 
 	for err := range errCh {
 		log.Warn("domain collate-buildFiles failed", "err", err)
+		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
 	err := a.prune(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64)
@@ -885,7 +870,7 @@ func (a *Aggregator) FinishTx() error {
 	}
 
 	ctx := context.Background()
-	if err := a.aggregete(ctx, step); err != nil {
+	if err := a.aggregate(ctx, step); err != nil {
 		return err
 	}
 

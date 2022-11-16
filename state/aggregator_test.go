@@ -45,6 +45,7 @@ func TestAggregator_Merge(t *testing.T) {
 		}
 	}()
 	agg.SetTx(tx)
+
 	defer agg.StartWrites().FinishWrites()
 	txs := uint64(10000)
 
