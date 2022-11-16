@@ -116,6 +116,55 @@ func (d *Domain) findMergeRange(maxEndTxNum, maxSpan uint64) DomainRanges {
 }
 
 // nolint
+type mergedDomainFiles struct {
+	values  *filesItem
+	index   *filesItem
+	history *filesItem
+}
+
+// nolint
+func (m *mergedDomainFiles) Close() {
+	for _, item := range []*filesItem{
+		m.values, m.index, m.history,
+	} {
+		if item != nil {
+			if item.decompressor != nil {
+				item.decompressor.Close()
+			}
+			if item.decompressor != nil {
+				item.index.Close()
+			}
+		}
+	}
+}
+
+// nolint
+type staticFilesInRange struct {
+	valuesFiles  []*filesItem
+	indexFiles   []*filesItem
+	historyFiles []*filesItem
+	startJ       int
+}
+
+// nolint
+func (s *staticFilesInRange) Close() {
+	for _, group := range [][]*filesItem{
+		s.valuesFiles, s.indexFiles, s.historyFiles,
+	} {
+		for _, item := range group {
+			if item != nil {
+				if item.decompressor != nil {
+					item.decompressor.Close()
+				}
+				if item.index != nil {
+					item.index.Close()
+				}
+			}
+		}
+	}
+}
+
+// nolint
 func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
 	closeAll := true
 	for rng := d.findMergeRange(maxSpan, maxTxNum); rng.any(); rng = d.findMergeRange(maxTxNum, maxSpan) {
