@@ -255,7 +255,7 @@ func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
 		go func(wg *sync.WaitGroup, d *Domain) {
 			defer wg.Done()
 
-			collation, err := d.collate(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx, logEvery)
+			collation, err := d.collate(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, d.tx, logEvery)
 			if err != nil {
 				errCh <- err
 				collation.Close()
@@ -287,7 +287,7 @@ func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
 		go func(wg *sync.WaitGroup, d *InvertedIndex) {
 			defer wg.Done()
 
-			collation, err := d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx, logEvery)
+			collation, err := d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, d.tx, logEvery)
 			if err != nil {
 				errCh <- err
 				return
