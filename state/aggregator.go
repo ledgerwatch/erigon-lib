@@ -27,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/log/v3"
 
@@ -239,30 +238,29 @@ func (a *Aggregator) SeekCommitment() (txNum uint64, err error) {
 	return txNum + 1, nil
 }
 
-func (a *Aggregator) aggragete(ctx context.Context, step uint64) error {
+func (a *Aggregator) aggregete(ctx context.Context, step uint64) error {
 	defer func(t time.Time) { log.Info("[snapshots] finishTx (collate-prune-merge)", "took", time.Since(t)) }(time.Now())
 
 	var (
 		logEvery = time.NewTicker(time.Second * 30)
 		wg       sync.WaitGroup
-		commitWg sync.WaitGroup
 		errCh    = make(chan error, 8)
 		maxSpan  = uint64(32) * a.aggregationStep
 		//workers  = 1
 	)
 
-	for i, d := range []*Domain{a.accounts, a.storage, a.commitment.Domain, a.code} {
-		if i < 3 {
-			commitWg.Add(1)
-		}
-		collation, err := d.collate(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx, logEvery)
-		if err != nil {
-			return err
-		}
-
+	for _, d := range []*Domain{a.accounts, a.storage, a.code, a.commitment.Domain} {
 		wg.Add(1)
-		go func(wg *sync.WaitGroup, d *Domain, collation Collation) {
+
+		go func(wg *sync.WaitGroup, d *Domain) {
 			defer wg.Done()
+
+			collation, err := d.collate(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx, logEvery)
+			if err != nil {
+				errCh <- err
+				collation.Close()
+				return
+			}
 
 			sf, err := d.buildFiles(ctx, step, collation)
 			collation.Close()
@@ -279,26 +277,21 @@ func (a *Aggregator) aggragete(ctx context.Context, step uint64) error {
 			//	errCh <- err
 			//	return
 			//}
-		}(&wg, d, collation)
+		}(&wg, d)
 
-		err = d.prune(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
-		if err != nil {
-			return err
-		}
-		if i < 3 {
-			commitWg.Done()
-		}
 	}
 
 	for _, d := range []*InvertedIndex{a.logTopics, a.logAddrs, a.tracesFrom, a.tracesTo} {
-		collation, err := d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx, logEvery)
-		if err != nil {
-			return err
-		}
-
 		wg.Add(1)
-		go func(wg *sync.WaitGroup, d *InvertedIndex, collation map[string]*roaring64.Bitmap) {
+
+		go func(wg *sync.WaitGroup, d *InvertedIndex) {
 			defer wg.Done()
+
+			collation, err := d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, a.rwTx, logEvery)
+			if err != nil {
+				errCh <- err
+				return
+			}
 
 			sf, err := d.buildFiles(ctx, step, collation)
 			if err != nil {
@@ -313,9 +306,9 @@ func (a *Aggregator) aggragete(ctx context.Context, step uint64) error {
 			//	errCh <- err
 			//	return
 			//}
-		}(&wg, d, collation)
+		}(&wg, d)
 
-		err = d.prune(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
+		err := d.prune(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64, logEvery)
 		if err != nil {
 			return err
 		}
@@ -327,7 +320,12 @@ func (a *Aggregator) aggragete(ctx context.Context, step uint64) error {
 	}()
 
 	for err := range errCh {
-		log.Warn("build domain files failed", "err", err)
+		log.Warn("domain collate-buildFiles failed", "err", err)
+	}
+
+	err := a.prune(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64)
+	if err != nil {
+		return err
 	}
 
 	maxEndTxNum := a.EndTxNumMinimax()
@@ -360,53 +358,34 @@ func (a *Aggregator) aggragete(ctx context.Context, step uint64) error {
 	return nil
 }
 
-// nolint
-type mergedDomainFiles struct {
-	values  *filesItem
-	index   *filesItem
-	history *filesItem
-}
-
-// nolint
-func (m *mergedDomainFiles) Close() {
-	for _, item := range []*filesItem{
-		m.values, m.index, m.history,
-	} {
-		if item != nil {
-			if item.decompressor != nil {
-				item.decompressor.Close()
-			}
-			if item.decompressor != nil {
-				item.index.Close()
-			}
-		}
+func (a *Aggregator) prune(ctx context.Context, step uint64, txFrom, txTo, limit uint64) error {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	if err := a.accounts.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
+		return err
 	}
-}
-
-// nolint
-type staticFilesInRange struct {
-	valuesFiles  []*filesItem
-	indexFiles   []*filesItem
-	historyFiles []*filesItem
-	startJ       int
-}
-
-// nolint
-func (s *staticFilesInRange) Close() {
-	for _, group := range [][]*filesItem{
-		s.valuesFiles, s.indexFiles, s.historyFiles,
-	} {
-		for _, item := range group {
-			if item != nil {
-				if item.decompressor != nil {
-					item.decompressor.Close()
-				}
-				if item.index != nil {
-					item.index.Close()
-				}
-			}
-		}
+	if err := a.storage.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
+		return err
 	}
+	if err := a.code.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
+		return err
+	}
+	if err := a.commitment.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
+		return err
+	}
+	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
+		return err
+	}
+	if err := a.logTopics.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
+		return err
+	}
+	if err := a.tracesFrom.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
+		return err
+	}
+	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Ranges struct {
@@ -904,10 +883,9 @@ func (a *Aggregator) FinishTx() error {
 	if err := a.Flush(); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour*3)
-	defer cancel()
 
-	if err := a.aggragete(ctx, step); err != nil {
+	ctx := context.Background()
+	if err := a.aggregete(ctx, step); err != nil {
 		return err
 	}
 
