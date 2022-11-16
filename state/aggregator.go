@@ -239,7 +239,9 @@ func (a *Aggregator) SeekCommitment() (txNum uint64, err error) {
 }
 
 func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
-	defer func(t time.Time) { log.Info("[snapshots] aggregation step is done", "step", step, "took", time.Since(t)) }(time.Now())
+	defer func(t time.Time) {
+		log.Info("[snapshots] aggregation step is done", "step", step, "took", time.Since(t))
+	}(time.Now())
 
 	var (
 		logEvery = time.NewTicker(time.Second * 30)
@@ -262,7 +264,9 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 		go func(wg *sync.WaitGroup, d *Domain, collation Collation) {
 			defer wg.Done()
-			defer func(t time.Time) { log.Info("[snapshots] domain collate-build is done", "took", time.Since(t), "domain", d.filenameBase) }(time.Now())
+			defer func(t time.Time) {
+				log.Info("[snapshots] domain collate-build is done", "took", time.Since(t), "domain", d.filenameBase)
+			}(time.Now())
 
 			sf, err := d.buildFiles(ctx, step, collation)
 			collation.Close()
@@ -286,7 +290,9 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 		go func(wg *sync.WaitGroup, d *InvertedIndex, tx kv.Tx) {
 			defer wg.Done()
-			defer func(t time.Time) { log.Info("[snapshots] index collate-build is done", "took", time.Since(t), "domain", d.filenameBase) }(time.Now())
+			defer func(t time.Time) {
+				log.Info("[snapshots] index collate-build is done", "took", time.Since(t), "domain", d.filenameBase)
+			}(time.Now())
 
 			sf, err := d.buildFiles(ctx, step, collation)
 			if err != nil {
