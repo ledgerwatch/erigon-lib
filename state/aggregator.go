@@ -247,16 +247,17 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		logEvery = time.NewTicker(time.Second * 30)
 		wg       sync.WaitGroup
 		errCh    = make(chan error, 8)
-		maxSpan  = uint64(32) * a.aggregationStep
+		maxSpan  = 32 * a.aggregationStep
+		txFrom   = step * a.aggregationStep
+		txTo     = (step + 1) * a.aggregationStep
 		//workers  = 1
 	)
+	defer logEvery.Stop()
 
 	for _, d := range []*Domain{a.accounts, a.storage, a.code, a.commitment.Domain} {
 		wg.Add(1)
 
-		log.Info("[snapshots] domain collate-build files begun", "step", fmt.Sprintf("%d-%d", step, step+1), "domain", d.filenameBase)
-
-		collation, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, d.tx, logEvery)
+		collation, err := d.collate(ctx, step, txFrom, txTo, d.tx, logEvery)
 		if err != nil {
 			collation.Close()
 			return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)
@@ -264,6 +265,7 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 		go func(wg *sync.WaitGroup, d *Domain, collation Collation) {
 			defer wg.Done()
+
 			defer func(t time.Time) {
 				log.Info("[snapshots] domain collate-build is done", "took", time.Since(t), "domain", d.filenameBase)
 			}(time.Now())
@@ -278,6 +280,10 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
 		}(&wg, d, collation)
+
+		if err := d.prune(ctx, step, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
+			return err
+		}
 	}
 
 	for _, d := range []*InvertedIndex{a.logTopics, a.logAddrs, a.tracesFrom, a.tracesTo} {
@@ -302,6 +308,10 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 			}
 			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
 		}(&wg, d, d.tx)
+
+		if err := d.prune(ctx, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
+			return err
+		}
 	}
 
 	go func() {
@@ -312,11 +322,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	for err := range errCh {
 		log.Warn("domain collate-buildFiles failed", "err", err)
 		return fmt.Errorf("domain collate-build failed: %w", err)
-	}
-
-	err := a.prune(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, math.MaxUint64)
-	if err != nil {
-		return err
 	}
 
 	maxEndTxNum := a.EndTxNumMinimax()
@@ -346,36 +351,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	}
 
 	closeAll = false
-	return nil
-}
-
-func (a *Aggregator) prune(ctx context.Context, step uint64, txFrom, txTo, limit uint64) error {
-	logEvery := time.NewTicker(30 * time.Second)
-	defer logEvery.Stop()
-	if err := a.accounts.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
-	if err := a.storage.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
-	if err := a.code.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
-	if err := a.commitment.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
-	if err := a.logAddrs.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
-	if err := a.logTopics.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
-	if err := a.tracesFrom.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
-	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
-		return err
-	}
 	return nil
 }
 

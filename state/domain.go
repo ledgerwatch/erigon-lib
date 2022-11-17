@@ -668,13 +668,25 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 		return Collation{}, fmt.Errorf("create %s keys cursor: %w", d.filenameBase, err)
 	}
 	defer keysCursor.Close()
-	var prefix []byte // Track prefix to insert it before entries
-	var k, v []byte
-	valuesCount := 0
+
+	var (
+		prefix      []byte // Track prefix to insert it before entries
+		k, v        []byte
+		pos         uint64
+		valuesCount uint
+	)
+
+	totalKeys, err := keysCursor.Count()
+	if err != nil {
+		return Collation{}, fmt.Errorf("failed to obtain keys count for domain %q", d.filenameBase)
+	}
 	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.NextNoDup() {
+		pos++
 		select {
 		case <-logEvery.C:
-			log.Info("[snapshots] collate domain", "name", d.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+			log.Info("[snapshots] collate domain", "name", d.filenameBase,
+				"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)),
+				"progress", fmt.Sprintf("%.2f%%", (float64(pos)/float64(totalKeys))), "keys pruned", valuesCount)
 		case <-ctx.Done():
 			log.Warn("[snapshots] collate domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return Collation{}, err
@@ -719,7 +731,7 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 	return Collation{
 		valuesPath:   valuesPath,
 		valuesComp:   valuesComp,
-		valuesCount:  valuesCount,
+		valuesCount:  int(valuesCount),
 		historyPath:  hCollation.historyPath,
 		historyComp:  hCollation.historyComp,
 		historyCount: hCollation.historyCount,
