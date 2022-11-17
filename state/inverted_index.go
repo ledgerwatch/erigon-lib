@@ -105,7 +105,6 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 		}
 
 		name := f.Name()
-		fmt.Printf("alex: %s\n", name)
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 3 {
 			if len(subs) != 0 {
@@ -129,6 +128,7 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+		fmt.Printf("alex h: %s\n", fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
 		{
 			var subSet, superSet *filesItem
 			ii.files.DescendLessOrEqual(item, func(it *filesItem) bool {
