@@ -107,6 +107,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 		}
 
 		name := f.Name()
+		fmt.Printf("alex h: %s\n", name)
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 3 {
 			if len(subs) != 0 {
