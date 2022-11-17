@@ -723,6 +723,7 @@ func (a *Aggregator22) recalcMaxTxNum() {
 	if txNum < min {
 		min = txNum
 	}
+	fmt.Printf("alex min: %d\n", min)
 	a.maxTxNum.Store(min)
 }
 
