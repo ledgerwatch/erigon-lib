@@ -81,14 +81,17 @@ func NewHistory(
 	var err error
 	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable)
 	if err != nil {
+		panic(err)
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 	h.scanStateFiles(files)
 	if err = h.openFiles(); err != nil {
+		panic(err)
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
 	}
 	return &h, nil
@@ -201,6 +204,7 @@ func (h *History) openFiles() error {
 		}
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			log.Debug("Hisrory.openFiles: %w, %s", err, datPath)
+			panic(err)
 			return false
 		}
 		if item.index == nil {
@@ -208,9 +212,12 @@ func (h *History) openFiles() error {
 			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 					log.Debug("Hisrory.openFiles: %w, %s", err, idxPath)
+					panic("no file" + idxPath)
 					return false
 				}
 				totalKeys += item.index.KeyCount()
+			} else {
+				panic("no file" + idxPath)
 			}
 		}
 		return true

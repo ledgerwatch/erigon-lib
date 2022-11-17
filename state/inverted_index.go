@@ -84,10 +84,12 @@ func NewInvertedIndex(
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
+		panic(err)
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
 	ii.scanStateFiles(files)
 	if err = ii.openFiles(); err != nil {
+		panic(err)
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
 	return &ii, nil
@@ -249,6 +251,7 @@ func (ii *InvertedIndex) openFiles() error {
 		}
 		if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
+			panic(err)
 			return false
 		}
 
@@ -257,9 +260,12 @@ func (ii *InvertedIndex) openFiles() error {
 			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 					log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
+					panic("err)
 					return false
 				}
 				totalKeys += item.index.KeyCount()
+			} else {
+				panic("no file" + idxPath)
 			}
 		}
 		return true
