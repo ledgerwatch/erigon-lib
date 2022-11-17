@@ -128,7 +128,6 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
-		fmt.Printf("alex ii: %s\n", fmt.Sprintf("%s.%d-%d.v", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		{
 			var subSet, superSet *filesItem
 			ii.files.DescendLessOrEqual(item, func(it *filesItem) bool {
@@ -179,7 +178,6 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) {
 				continue
 			}
 		}
-		fmt.Printf("insert alex ii: %s\n", fmt.Sprintf("%s.%d-%d.v", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep))
 		ii.files.ReplaceOrInsert(item)
 	}
 	if len(uselessFiles) > 0 {

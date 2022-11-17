@@ -692,22 +692,35 @@ func (a *Aggregator22) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) 
 func (a *Aggregator22) EndTxNumMinimax() uint64 { return a.maxTxNum.Load() }
 func (a *Aggregator22) recalcMaxTxNum() {
 	min := a.accounts.endTxNumMinimax()
-	if txNum := a.storage.endTxNumMinimax(); txNum < min {
+	fmt.Printf("alex st accounts: %d\n", min)
+	txNum := a.storage.endTxNumMinimax()
+	fmt.Printf("alex st storage: %d\n", txNum)
+	if txNum < min {
 		min = txNum
 	}
-	if txNum := a.code.endTxNumMinimax(); txNum < min {
+	txNum = a.code.endTxNumMinimax()
+	fmt.Printf("alex st code: %d\n", txNum)
+	if txNum < min {
 		min = txNum
 	}
-	if txNum := a.logAddrs.endTxNumMinimax(); txNum < min {
+	txNum = a.logAddrs.endTxNumMinimax()
+	fmt.Printf("alex st logAddrs: %d\n", txNum)
+	if txNum < min {
 		min = txNum
 	}
-	if txNum := a.logTopics.endTxNumMinimax(); txNum < min {
+	txNum = a.logTopics.endTxNumMinimax()
+	fmt.Printf("alex st logTopics: %d\n", txNum)
+	if txNum < min {
 		min = txNum
 	}
-	if txNum := a.tracesFrom.endTxNumMinimax(); txNum < min {
+	txNum = a.tracesFrom.endTxNumMinimax()
+	fmt.Printf("alex st tracesFrom: %d\n", txNum)
+	if txNum < min {
 		min = txNum
 	}
-	if txNum := a.tracesTo.endTxNumMinimax(); txNum < min {
+	txNum = a.tracesTo.endTxNumMinimax()
+	fmt.Printf("alex st tracesTo: %d\n", txNum)
+	if txNum < min {
 		min = txNum
 	}
 	a.maxTxNum.Store(min)

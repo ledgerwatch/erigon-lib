@@ -130,7 +130,6 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
-		fmt.Printf("alex h: %s\n", fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
 
 		{
 			var subSet, superSet *filesItem
@@ -182,7 +181,6 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 				continue
 			}
 		}
-		fmt.Printf("insert alex h: %s\n", fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
 		h.files.ReplaceOrInsert(item)
 	}
 	if len(uselessFiles) > 0 {
