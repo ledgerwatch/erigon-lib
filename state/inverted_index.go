@@ -260,7 +260,7 @@ func (ii *InvertedIndex) openFiles() error {
 			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
 					log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
-					panic("err)
+					panic("err")
 					return false
 				}
 				totalKeys += item.index.KeyCount()
