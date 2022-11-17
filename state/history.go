@@ -182,6 +182,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 				continue
 			}
 		}
+		fmt.Printf("insert alex h: %s\n", fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep))
 		h.files.ReplaceOrInsert(item)
 	}
 	if len(uselessFiles) > 0 {
