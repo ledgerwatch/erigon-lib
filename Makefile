@@ -1,6 +1,8 @@
 GOBINREL = build/bin
 GOBIN = $(CURDIR)/$(GOBINREL)
-GOBUILD = env GO111MODULE=on go build -trimpath
+BUILD_TAGS = nosqlite,noboltdb,disable_libutp
+GOBUILD = env GO111MODULE=on go build -trimpath  -tags $(BUILD_TAGS)
+GOTEST = go test -trimpath -tags $(BUILD_TAGS)
 OS = $(shell uname -s)
 ARCH = $(shell uname -m)
 
@@ -15,6 +17,7 @@ PROTOC_OS = linux
 endif
 
 PROTOC_INCLUDE = build/include/google
+
 
 default: gen
 
@@ -78,3 +81,6 @@ $(GOBINREL)/golangci-lint: | $(GOBINREL)
 
 golangci-lint-clean:
 	rm -f "$(GOBIN)/golangci-lint"
+
+test:
+	$(GOTEST) --count 1 -p 2 ./...
