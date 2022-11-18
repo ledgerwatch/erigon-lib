@@ -1271,3 +1271,13 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 	}
 	return lstInDb
 }
+
+func (a *Aggregator22) BuildLocalityIndex(ctx context.Context) error {
+	li := &LocalityIndex{}
+	err := li.Build(ctx, math2.MaxUint64, a.accounts)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
