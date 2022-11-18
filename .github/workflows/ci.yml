@@ -58,4 +58,4 @@ jobs:
 
       - name: Test win
         if: matrix.os == 'windows-2022'
-        run: make test
+        run: make test-no-fuzz

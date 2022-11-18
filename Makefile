@@ -84,3 +84,6 @@ golangci-lint-clean:
 
 test:
 	$(GOTEST) --count 1 -p 2 ./...
+
+test-no-fuzz:
+	$(GOTEST) -tags nofuzz --count 1 -p 2 ./...
