@@ -3,6 +3,7 @@ GOBIN = $(CURDIR)/$(GOBINREL)
 BUILD_TAGS = nosqlite,noboltdb,disable_libutp
 GOBUILD = env GO111MODULE=on go build -trimpath  -tags $(BUILD_TAGS)
 GOTEST = go test -trimpath -tags $(BUILD_TAGS)
+GOTEST_NOFUZZ = go test -trimpath -tags $(BUILD_TAGS),nofuzz
 OS = $(shell uname -s)
 ARCH = $(shell uname -m)
 
@@ -86,4 +87,4 @@ test:
 	$(GOTEST) --count 1 -p 2 ./...
 
 test-no-fuzz:
-	$(GOTEST) -tags nofuzz --count 1 -p 2 ./...
+	$(GOTEST_NOFUZZ) --count 1 -p 2 ./...
