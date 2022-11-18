@@ -25,17 +25,15 @@ require (
 	github.com/stretchr/testify v1.8.1
 	github.com/torquem-ch/mdbx-go v0.26.2
 	go.uber.org/atomic v1.10.0
-	golang.org/x/crypto v0.2.0
-	golang.org/x/exp v0.0.0-20221018221608-02f3b879a704
+	golang.org/x/crypto v0.3.0
+	golang.org/x/exp v0.0.0-20221114191408-850992195362
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.2.0
+	golang.org/x/time v0.2.0
 	google.golang.org/grpc v1.50.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.2.0
 	google.golang.org/protobuf v1.28.1
-
 )
-
-require golang.org/x/time v0.0.0-20220609170525-579cf78fd858
 
 require (
 	crawshaw.io/sqlite v0.3.3-0.20210127221821-98b1f83c5508 // indirect
@@ -96,10 +94,10 @@ require (
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.opentelemetry.io/otel v1.8.0 // indirect
 	go.opentelemetry.io/otel/trace v1.8.0 // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
+	golang.org/x/mod v0.6.0 // indirect
 	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/tools v0.2.0 // indirect
 	google.golang.org/genproto v0.0.0-20211118181313-81c1377c94b1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
