@@ -18,12 +18,15 @@ package state
 
 import (
 	"bytes"
+	"container/heap"
 	"context"
 	"fmt"
 	"path/filepath"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -47,7 +50,7 @@ func (l *LocalityIndex) Build(ctx context.Context, toStep uint64, h *History) er
 	fromStep := uint64(0)
 
 	count := 0
-	it := h.MakeContext().iterateReconTxs(nil, nil, toStep*h.aggregationStep)
+	it := h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
 	for it.HasNext() {
 		_, _, progress := it.Next()
 		count++
@@ -83,28 +86,25 @@ func (l *LocalityIndex) Build(ctx context.Context, toStep uint64, h *History) er
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
 
-	bitmap := make([]byte, 4)
-	var i uint64
+	bm := make([]byte, 4096)
 	for {
-		it = h.MakeContext().iterateReconTxs(nil, nil, toStep*h.aggregationStep)
-		var prevK []byte
+		var offfset uint64
+		it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
 		for it.HasNext() {
-			k, txNum, progress := it.Next()
-			inStep := int(txNum / h.aggregationStep)
-			bitmap[inStep%4] &= byte(inStep / 4)
-			isNew := !bytes.Equal(k, prevK)
-			if isNew {
-				if err = comp.AddUncompressedWord(bitmap); err != nil {
-					return err
-				}
-				offfset := i * 4
-				if err = rs.AddKey(prevK, offfset); err != nil {
-					return err
-				}
-				bitmap[0], bitmap[1], bitmap[2], bitmap[3] = 0, 0, 0, 0
-				i++
+			k, steps, progress := it.Next()
+			freezeLen, err := steps.FreezeTo(bm)
+			if err != nil {
+				return err
 			}
-			prevK = append(prevK[:0], k...)
+
+			if err = comp.AddUncompressedWord(bm[:freezeLen]); err != nil {
+				return err
+			}
+
+			offfset += uint64(freezeLen)
+			if err = rs.AddKey(k, offfset); err != nil {
+				return err
+			}
 
 			select {
 			default:
@@ -138,4 +138,91 @@ func (l *LocalityIndex) Build(ctx context.Context, toStep uint64, h *History) er
 	}
 	l.files = &filesItem{index: idx, decompressor: dec, startTxNum: fromStep * h.aggregationStep, endTxNum: toStep * h.aggregationStep}
 	return nil
+}
+
+type LocalityIterator struct {
+	hc        *HistoryContext
+	h         ReconHeap
+	nextKey   []byte
+	fromKey   []byte
+	key       []byte
+	uptoTxNum uint64
+	endTxNum  uint64
+	progress  uint64
+	total     uint64
+	hasNext   bool
+
+	list     *roaring.Bitmap
+	nextList *roaring.Bitmap
+}
+
+func (si *LocalityIterator) advance() {
+	for si.h.Len() > 0 {
+		top := heap.Pop(&si.h).(*ReconItem)
+		key := top.key
+		_, offset := top.g.NextUncompressed()
+		si.progress += offset - top.lastOffset
+		top.lastOffset = offset
+		if top.g.HasNext() {
+			top.key, _ = top.g.NextUncompressed()
+			heap.Push(&si.h, top)
+		}
+
+		inStep := uint32(top.startTxNum / si.hc.h.aggregationStep)
+		if !bytes.Equal(key, si.key) {
+			if si.key == nil {
+				si.list.Add(inStep)
+				si.key = key
+				continue
+			}
+			si.key = key
+			si.nextKey = key
+
+			si.nextList, si.list = si.list, si.nextList
+			si.list.Clear()
+			si.list.Add(inStep)
+
+			si.hasNext = true
+			return
+		}
+		si.list.Add(inStep)
+	}
+	si.hasNext = false
+}
+
+func (si *LocalityIterator) HasNext() bool {
+	return si.hasNext
+}
+
+func (si *LocalityIterator) Next() ([]byte, *roaring.Bitmap, uint64) {
+	k, n, p := si.nextKey, si.nextList, si.progress
+	si.advance()
+	return k, n, p
+}
+
+func (si *LocalityIterator) Total() uint64 {
+	return si.total
+}
+
+func (hc *HistoryContext) iterateKeysLocality(fromKey, toKey []byte, uptoTxNum uint64) *LocalityIterator {
+	si := &LocalityIterator{hc: hc, fromKey: fromKey, uptoTxNum: uptoTxNum, list: bitmapdb.NewBitmap(), nextList: bitmapdb.NewBitmap()}
+	hc.indexFiles.Ascend(func(item ctxItem) bool {
+		if item.startTxNum > uptoTxNum {
+			return false
+		}
+		g := item.getter
+		for g.HasNext() {
+			key, offset := g.NextUncompressed()
+			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
+				heap.Push(&si.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
+				break
+			} else {
+				g.SkipUncompressed()
+			}
+		}
+		si.total += uint64(item.getter.Size())
+		return true
+	})
+	si.advance()
+	return si
 }
