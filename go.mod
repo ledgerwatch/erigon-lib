@@ -7,7 +7,6 @@ require (
 	github.com/VictoriaMetrics/metrics v1.23.0
 	github.com/anacrolix/go-libutp v1.2.0
 	github.com/anacrolix/log v0.13.2-0.20220711050817-613cb738ef30
-	github.com/anacrolix/sync v0.4.0 // indirect
 	github.com/anacrolix/torrent v1.47.0
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/edsrzf/mmap-go v1.1.0
@@ -52,6 +51,7 @@ require (
 	github.com/anacrolix/mmsg v1.0.0 // indirect
 	github.com/anacrolix/multiless v0.3.0 // indirect
 	github.com/anacrolix/stm v0.4.0 // indirect
+	github.com/anacrolix/sync v0.4.0 // indirect
 	github.com/anacrolix/upnp v0.1.3-0.20220123035249-922794e51c96 // indirect
 	github.com/anacrolix/utp v0.1.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
