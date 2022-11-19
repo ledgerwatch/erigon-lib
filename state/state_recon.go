@@ -252,7 +252,7 @@ func (hc *HistoryContext) iterateReconTxsInc(step int, uptoTxNum uint64) *ScanIt
 		i++
 		return true
 	})
-
+	sii.advance()
 	return &sii
 }
 
