@@ -412,8 +412,11 @@ const (
 	RCodeIdx     = "RCodeIdx"
 
 	PlainStateR    = "PlainStateR"    // temporary table for PlainState reconstitution
+	PlainStateD    = "PlainStateD"    // temporary table for PlainStare reconstitution, deletes
 	CodeR          = "CodeR"          // temporary table for Code reconstitution
+	CodeD          = "CodeD"          // temporary table for Code reconstitution, deletes
 	PlainContractR = "PlainContractR" // temporary table for PlainContract reconstitution
+	PlainContractD = "PlainContractD" // temporary table for PlainContract reconstitution, deletes
 
 	XAccount = "XAccount"
 	XStorage = "XStorage"
@@ -584,8 +587,11 @@ var ReconTables = []string{
 	XStorage,
 	XCode,
 	PlainStateR,
+	PlainStateD,
 	CodeR,
+	CodeD,
 	PlainContractR,
+	PlainContractD,
 }
 
 // ChaindataDeprecatedTables - list of buckets which can be programmatically deleted - for example after migration
@@ -676,7 +682,11 @@ var ChaindataTablesCfg = TableCfg{
 var TxpoolTablesCfg = TableCfg{}
 var SentryTablesCfg = TableCfg{}
 var DownloaderTablesCfg = TableCfg{}
-var ReconTablesCfg = TableCfg{}
+var ReconTablesCfg = TableCfg{
+	PlainStateD:    {Flags: DupSort},
+	CodeD:          {Flags: DupSort},
+	PlainContractD: {Flags: DupSort},
+}
 
 func sortBuckets() {
 	sort.SliceStable(ChaindataTables, func(i, j int) bool {

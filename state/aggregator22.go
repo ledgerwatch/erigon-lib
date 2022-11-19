@@ -1137,6 +1137,10 @@ func (ac *Aggregator22Context) ReadAccountDataNoState(addr []byte, txNum uint64)
 	return ac.accounts.GetNoState(addr, txNum)
 }
 
+func (ac *Aggregator22Context) ReadAccountDataNoStateInc(addr []byte, txNum uint64, step int) ([]byte, bool, error) {
+	return ac.accounts.GetNoStateInc(addr, txNum, step)
+}
+
 func (ac *Aggregator22Context) ReadAccountStorageNoStateWithRecent(addr []byte, loc []byte, txNum uint64) ([]byte, bool, error) {
 	if cap(ac.keyBuf) < len(addr)+len(loc) {
 		ac.keyBuf = make([]byte, len(addr)+len(loc))
@@ -1159,11 +1163,25 @@ func (ac *Aggregator22Context) ReadAccountStorageNoState(addr []byte, loc []byte
 	return ac.storage.GetNoState(ac.keyBuf, txNum)
 }
 
+func (ac *Aggregator22Context) ReadAccountStorageNoStateInc(addr []byte, loc []byte, txNum uint64, step int) ([]byte, bool, error) {
+	if cap(ac.keyBuf) < len(addr)+len(loc) {
+		ac.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(ac.keyBuf) != len(addr)+len(loc) {
+		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(ac.keyBuf, addr)
+	copy(ac.keyBuf[len(addr):], loc)
+	return ac.storage.GetNoStateInc(ac.keyBuf, txNum, step)
+}
+
 func (ac *Aggregator22Context) ReadAccountCodeNoStateWithRecent(addr []byte, txNum uint64) ([]byte, bool, error) {
 	return ac.code.GetNoStateWithRecent(addr, txNum, ac.tx)
 }
 func (ac *Aggregator22Context) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
 	return ac.code.GetNoState(addr, txNum)
+}
+func (ac *Aggregator22Context) ReadAccountCodeNoStateInc(addr []byte, txNum uint64, step int) ([]byte, bool, error) {
+	return ac.code.GetNoStateInc(addr, txNum, step)
 }
 
 func (ac *Aggregator22Context) ReadAccountCodeSizeNoStateWithRecent(addr []byte, txNum uint64) (int, bool, error) {
@@ -1175,6 +1193,13 @@ func (ac *Aggregator22Context) ReadAccountCodeSizeNoStateWithRecent(addr []byte,
 }
 func (ac *Aggregator22Context) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, error) {
 	code, noState, err := ac.code.GetNoState(addr, txNum)
+	if err != nil {
+		return 0, false, err
+	}
+	return len(code), noState, nil
+}
+func (ac *Aggregator22Context) ReadAccountCodeSizeNoStateInc(addr []byte, txNum uint64, step int) (int, bool, error) {
+	code, noState, err := ac.code.GetNoStateInc(addr, txNum, step)
 	if err != nil {
 		return 0, false, err
 	}
@@ -1203,6 +1228,22 @@ func (ac *Aggregator22Context) IterateStorageReconTxs(fromKey, toKey []byte, txN
 
 func (ac *Aggregator22Context) IterateCodeReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
 	return ac.code.iterateReconTxs(fromKey, toKey, txNum)
+}
+
+func (ac *Aggregator22) Steps() int {
+	return ac.accounts.files.Len()
+}
+
+func (ac *Aggregator22Context) IterateAccountsReconTxsInc(step int, txNum uint64) *ScanIteratorInc {
+	return ac.accounts.iterateReconTxsInc(step, txNum)
+}
+
+func (ac *Aggregator22Context) IterateStorageReconTxsInc(step int, txNum uint64) *ScanIteratorInc {
+	return ac.storage.iterateReconTxsInc(step, txNum)
+}
+
+func (ac *Aggregator22Context) IterateCodeReconTxsInc(step int, txNum uint64) *ScanIteratorInc {
+	return ac.code.iterateReconTxsInc(step, txNum)
 }
 
 type FilesStats22 struct {

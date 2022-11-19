@@ -188,6 +188,74 @@ func (hc *HistoryContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint6
 	return &si
 }
 
+type ScanIteratorInc struct {
+	g          *compress.Getter
+	nextKey    []byte
+	fromKey    []byte
+	toKey      []byte
+	key        []byte
+	uptoTxNum  uint64
+	nextTxNum  uint64
+	lastOffset uint64
+	total      uint64
+	hasNext    bool
+}
+
+func (sii *ScanIteratorInc) advance() {
+	for sii.hasNext {
+		val, offset := sii.g.NextUncompressed()
+		sii.lastOffset = offset
+		if sii.g.HasNext() {
+			sii.key, _ = sii.g.NextUncompressed()
+		} else {
+			break
+		}
+		max := eliasfano32.Max(val)
+		if max < sii.uptoTxNum {
+			sii.nextTxNum = max
+			sii.nextKey = sii.key
+			return
+		}
+	}
+	sii.hasNext = false
+}
+
+func (sii *ScanIteratorInc) HasNext() bool {
+	return sii.hasNext
+}
+
+func (si *ScanIteratorInc) Next() ([]byte, uint64, uint64) {
+	k, n, p := si.nextKey, si.nextTxNum, si.lastOffset
+	si.advance()
+	return k, n, p
+}
+
+func (sii *ScanIteratorInc) Total() uint64 {
+	return sii.total
+}
+
+func (hc *HistoryContext) iterateReconTxsInc(step int, uptoTxNum uint64) *ScanIteratorInc {
+	var sii ScanIteratorInc
+	i := 0
+	hc.indexFiles.Ascend(func(item ctxItem) bool {
+		if i == step {
+			sii.g = item.getter
+			if sii.g.HasNext() {
+				sii.key, sii.lastOffset = sii.g.NextUncompressed()
+				sii.total = uint64(item.getter.Size())
+				sii.uptoTxNum = uptoTxNum
+				sii.hasNext = true
+			} else {
+				sii.hasNext = false
+			}
+		}
+		i++
+		return true
+	})
+
+	return &sii
+}
+
 type HistoryIterator struct {
 	hc           *HistoryContext
 	h            ReconHeap

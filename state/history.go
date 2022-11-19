@@ -1136,6 +1136,68 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	return nil, false, nil
 }
 
+func (hc *HistoryContext) GetNoStateInc(key []byte, txNum uint64, step int) ([]byte, bool, error) {
+	//fmt.Printf("GetNoStateInc [%x] %d\n", key, txNum)
+	var foundTxNum uint64
+	var foundEndTxNum uint64
+	var foundStartTxNum uint64
+	var found bool
+	i := 0
+	hc.indexFiles.Ascend(func(item ctxItem) bool {
+		if i == step {
+			//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
+			if item.reader.Empty() {
+				return true
+			}
+			offset := item.reader.Lookup(key)
+			g := item.getter
+			g.Reset(offset)
+			k, _ := g.NextUncompressed()
+			if !bytes.Equal(k, key) {
+				return true
+			}
+			//fmt.Printf("Found key=%x\n", k)
+			eliasVal, _ := g.NextUncompressed()
+			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
+			n, ok := ef.Search(txNum)
+			if ok {
+				foundTxNum = n
+				foundEndTxNum = item.endTxNum
+				foundStartTxNum = item.startTxNum
+				found = true
+				//fmt.Printf("Found n=%d\n", n)
+				return false
+			}
+			return true
+		}
+		i++
+		return true
+	})
+	if found {
+		var historyItem ctxItem
+		var ok bool
+		var search ctxItem
+		search.startTxNum = foundStartTxNum
+		search.endTxNum = foundEndTxNum
+		if historyItem, ok = hc.historyFiles.Get(search); !ok {
+			return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
+		}
+		var txKey [8]byte
+		binary.BigEndian.PutUint64(txKey[:], foundTxNum)
+		offset := historyItem.reader.Lookup2(txKey[:], key)
+		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
+		g := historyItem.getter
+		g.Reset(offset)
+		if hc.h.compressVals {
+			v, _ := g.Next(nil)
+			return v, true, nil
+		}
+		v, _ := g.NextUncompressed()
+		return v, true, nil
+	}
+	return nil, false, nil
+}
+
 // GetNoStateWithRecent searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
