@@ -202,22 +202,21 @@ type ScanIteratorInc struct {
 }
 
 func (sii *ScanIteratorInc) advance() {
-	for sii.hasNext {
-		val, offset := sii.g.NextUncompressed()
-		sii.lastOffset = offset
-		if sii.g.HasNext() {
-			sii.key, _ = sii.g.NextUncompressed()
-		} else {
-			break
-		}
-		max := eliasfano32.Max(val)
-		if max < sii.uptoTxNum {
-			sii.nextTxNum = max
-			sii.nextKey = sii.key
-			return
-		}
+	if !sii.hasNext {
+		return
 	}
-	sii.hasNext = false
+	val, offset := sii.g.NextUncompressed()
+	max := eliasfano32.Max(val)
+	if max < sii.uptoTxNum {
+		sii.nextTxNum = max
+		sii.nextKey = sii.key
+	}
+	sii.lastOffset = offset
+	if sii.g.HasNext() {
+		sii.key, _ = sii.g.NextUncompressed()
+	} else {
+		sii.hasNext = false
+	}
 }
 
 func (sii *ScanIteratorInc) HasNext() bool {
