@@ -19,6 +19,7 @@ package downloadercfg
 import (
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 
 	lg "github.com/anacrolix/log"
@@ -68,15 +69,22 @@ func Default() *torrent.ClientConfig {
 	return torrentConfig
 }
 
-func New(snapDir string, version string, verbosity lg.Level, downloadRate, uploadRate datasize.ByteSize, port, connsPerFile, downloadSlots int) (*Cfg, error) {
+func New(snapDir string, version string, verbosity lg.Level, downloadRate, uploadRate datasize.ByteSize, port, connsPerFile, downloadSlots int, ipv4, ipv6 net.IP) (*Cfg, error) {
 	torrentConfig := Default()
 	torrentConfig.ExtendedHandshakeClientVersion = version
 
 	// We would-like to reduce amount of goroutines in Erigon, so reducing next params
 	torrentConfig.EstablishedConnsPerTorrent = connsPerFile // default: 50
 	torrentConfig.DataDir = snapDir
-
 	torrentConfig.ListenPort = port
+
+	if ipv4 != nil && !reflect.ValueOf(ipv4).IsNil() {
+		torrentConfig.PublicIp4 = ipv4
+	}
+	if ipv6 != nil && !reflect.ValueOf(ipv6).IsNil() {
+		torrentConfig.PublicIp6 = ipv6
+	}
+
 	// check if ipv6 is enabled
 	torrentConfig.DisableIPv6 = true
 	l, err := net.Listen("tcp6", fmt.Sprintf(":%d", port))
