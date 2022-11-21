@@ -43,7 +43,7 @@ type LocalityIndex struct {
 	files *filesItem
 }
 
-func (l *LocalityIndex) Build(ctx context.Context, toStep uint64, h *History) error {
+func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h *History) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 
@@ -51,13 +51,14 @@ func (l *LocalityIndex) Build(ctx context.Context, toStep uint64, h *History) er
 
 	count := 0
 	it := h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
+	total := float64(it.Total())
 	for it.HasNext() {
 		_, _, progress := it.Next()
 		count++
 		select {
 		default:
 		case <-logEvery.C:
-			log.Debug("[LocalityIndex] build", "progres", progress)
+			log.Debug("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)/100)/2))
 		}
 	}
 
@@ -90,6 +91,7 @@ func (l *LocalityIndex) Build(ctx context.Context, toStep uint64, h *History) er
 	for {
 		var offfset uint64
 		it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
+		total = float64(it.Total())
 		for it.HasNext() {
 			k, steps, progress := it.Next()
 			freezeLen, err := steps.FreezeTo(bm)
@@ -109,7 +111,7 @@ func (l *LocalityIndex) Build(ctx context.Context, toStep uint64, h *History) er
 			select {
 			default:
 			case <-logEvery.C:
-				log.Debug("[LocalityIndex] build", "progres", progress)
+				log.Debug("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)/100)/2))
 			}
 		}
 		if err = rs.Build(); err != nil {

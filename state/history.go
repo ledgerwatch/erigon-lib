@@ -57,6 +57,8 @@ type History struct {
 	workers          int
 	compressVals     bool
 
+	locality *filesItem
+
 	wal     *historyWAL
 	walLock sync.RWMutex
 }
@@ -178,9 +180,42 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 			}
 		}
 		h.files.ReplaceOrInsert(item)
+
 	}
 	if len(uselessFiles) > 0 {
 		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
+	}
+
+	reLocality := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).l$")
+	for _, f := range files {
+		if !f.Type().IsRegular() {
+			continue
+		}
+
+		name := f.Name()
+		subs := reLocality.FindStringSubmatch(name)
+		if len(subs) != 3 {
+			if len(subs) != 0 {
+				log.Warn("File ignored by inverted index scan, more than 3 submatches", "name", name, "submatches", len(subs))
+			}
+			continue
+		}
+		var startStep, endStep uint64
+		if startStep, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
+			log.Warn("File ignored by inverted index scan, parsing startTxNum", "error", err, "name", name)
+			continue
+		}
+		if endStep, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
+			log.Warn("File ignored by inverted index scan, parsing endTxNum", "error", err, "name", name)
+			continue
+		}
+		if startStep > endStep {
+			log.Warn("File ignored by inverted index scan, startTxNum > endTxNum", "name", name)
+			continue
+		}
+
+		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
+		h.locality = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 	}
 }
 
@@ -207,7 +242,7 @@ func (h *History) openFiles() error {
 			idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
 			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-					log.Debug("Hisrory.openFiles: %w, %s", err, idxPath)
+					log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, idxPath).Error())
 					return false
 				}
 				totalKeys += item.index.KeyCount()
@@ -220,6 +255,25 @@ func (h *History) openFiles() error {
 	}
 	for _, item := range invalidFileItems {
 		h.files.Delete(item)
+	}
+
+	if h.locality != nil {
+		fromStep, toStep := h.locality.startTxNum/h.aggregationStep, h.locality.endTxNum/h.aggregationStep
+		lPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.l", h.filenameBase, fromStep, toStep))
+		lIdxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.li", h.filenameBase, fromStep, toStep))
+
+		if dir.FileExist(lPath) {
+			h.locality.decompressor, err = compress.NewDecompressor(lPath)
+			if err != nil {
+				log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, lPath).Error())
+				return nil
+			}
+			h.locality.index, err = recsplit.OpenIndex(lIdxPath)
+			if err != nil {
+				log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, lIdxPath).Error())
+				return nil
+			}
+		}
 	}
 	return nil
 }
@@ -1080,12 +1134,35 @@ func (h *History) MakeContext() *HistoryContext {
 func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
+	var foundExactShard bool
+	var foundShardStep uint32
+	if hc.h.locality != nil {
+		localityIdx := recsplit.NewIndexReader(hc.h.locality.index)
+		offset := localityIdx.Lookup(key)
+		localityData := hc.h.locality.decompressor.MakeGetter()
+		localityData.Reset(offset)
+		locations, _ := localityData.NextUncompressed()
+		bm := bitmapdb.NewBitmap()
+		err := bm.FrozenView(locations)
+		if err != nil {
+			return nil, false, err
+		}
+		if txNum > 0 {
+			bm.RemoveRange(0, txNum/hc.h.aggregationStep)
+		}
+		if bm.GetCardinality() > 0 {
+			foundExactShard = true
+			foundShardStep = bm.Minimum()
+		}
+		bitmapdb.ReturnToPool(bm)
+	}
+
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
 	var foundEndTxNum uint64
 	var foundStartTxNum uint64
 	var found bool
-	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item ctxItem) bool {
+	var findInFile = func(item ctxItem) bool {
 		//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
 		if item.reader.Empty() {
 			return true
@@ -1110,7 +1187,16 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			return false
 		}
 		return true
-	})
+	}
+
+	if foundExactShard {
+		item, ok := hc.indexFiles.Get(ctxItem{startTxNum: uint64(foundShardStep) * hc.h.aggregationStep, endTxNum: txNum})
+		if ok {
+			findInFile(item)
+		}
+	} else {
+		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, findInFile)
+	}
 	if found {
 		var historyItem ctxItem
 		var ok bool

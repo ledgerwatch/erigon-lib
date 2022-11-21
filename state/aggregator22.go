@@ -1274,7 +1274,7 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 
 func (a *Aggregator22) BuildLocalityIndex(ctx context.Context) error {
 	li := &LocalityIndex{}
-	err := li.Build(ctx, a.accounts.endTxNumMinimax()/a.aggregationStep, a.accounts)
+	err := li.BuildMissedIndices(ctx, a.accounts.endTxNumMinimax()/a.aggregationStep, a.accounts)
 	if err != nil {
 		return err
 	}
