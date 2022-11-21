@@ -651,9 +651,7 @@ func (rs *RecSplit) Build() error {
 	_ = rs.indexW.Flush()
 	_ = rs.indexF.Sync()
 	_ = rs.indexF.Close()
-	if err := os.Rename(tmpIdxFilePath, rs.indexFile); err != nil {
-		return err
-	}
+	_ = os.Rename(tmpIdxFilePath, rs.indexFile)
 	return nil
 }
 
