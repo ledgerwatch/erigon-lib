@@ -231,24 +231,17 @@ func (sii *ScanIteratorInc) Total() uint64 {
 	return sii.total
 }
 
-func (hc *HistoryContext) iterateReconTxsInc(step int, uptoTxNum uint64) *ScanIteratorInc {
+func (hs *HistoryStep) iterateTxs(uptoTxNum uint64) *ScanIteratorInc {
 	var sii ScanIteratorInc
-	i := 0
-	hc.indexFiles.Ascend(func(item ctxItem) bool {
-		if i == step {
-			sii.g = item.getter
-			if sii.g.HasNext() {
-				sii.key, sii.lastOffset = sii.g.NextUncompressed()
-				sii.total = uint64(item.getter.Size())
-				sii.uptoTxNum = uptoTxNum
-				sii.hasNext = true
-			} else {
-				sii.hasNext = false
-			}
-		}
-		i++
-		return true
-	})
+	sii.g = hs.indexFile.getter
+	if sii.g.HasNext() {
+		sii.key, sii.lastOffset = sii.g.NextUncompressed()
+		sii.total = uint64(hs.indexFile.getter.Size())
+		sii.uptoTxNum = uptoTxNum
+		sii.hasNext = true
+	} else {
+		sii.hasNext = false
+	}
 	sii.advance()
 	return &sii
 }
