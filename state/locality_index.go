@@ -191,18 +191,13 @@ func (si *LocalityIterator) advance() {
 	si.hasNext = false
 }
 
-func (si *LocalityIterator) HasNext() bool {
-	return si.hasNext
-}
+func (si *LocalityIterator) HasNext() bool { return si.hasNext }
+func (si *LocalityIterator) Total() uint64 { return si.total }
 
 func (si *LocalityIterator) Next() ([]byte, *roaring.Bitmap, uint64) {
 	k, n, p := si.nextKey, si.nextList, si.progress
 	si.advance()
 	return k, n, p
-}
-
-func (si *LocalityIterator) Total() uint64 {
-	return si.total
 }
 
 func (hc *HistoryContext) iterateKeysLocality(fromKey, toKey []byte, uptoTxNum uint64) *LocalityIterator {
