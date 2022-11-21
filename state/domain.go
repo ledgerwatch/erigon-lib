@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -686,7 +687,7 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 		case <-logEvery.C:
 			log.Info("[snapshots] collate domain", "name", d.filenameBase,
 				"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)),
-				"progress", fmt.Sprintf("%.2f%%", (float64(pos)/float64(totalKeys))), "keys pruned", valuesCount)
+				"progress", fmt.Sprintf("%.2f%%", float64(pos)/float64(totalKeys)*100))
 		case <-ctx.Done():
 			log.Warn("[snapshots] collate domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return Collation{}, err
@@ -933,7 +934,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		select {
 		case <-logEvery.C:
-			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "collect", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "collect keys", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		case <-ctx.Done():
 			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
@@ -952,7 +953,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		select {
 		case <-logEvery.C:
-			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "steps", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "prune keys", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		case <-ctx.Done():
 			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
@@ -984,7 +985,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
 		select {
 		case <-logEvery.C:
-			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "keys", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "prune values", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		case <-ctx.Done():
 			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
@@ -1009,6 +1010,52 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("prune history at step %d [%d, %d): %w", step, txFrom, txTo, err)
 	}
 	return nil
+}
+
+//nolint
+func (d *Domain) warmup(txFrom, limit uint64, tx kv.Tx) error {
+	domainKeysCursor, err := tx.CursorDupSort(d.keysTable)
+	if err != nil {
+		return fmt.Errorf("create %s domain cursor: %w", d.filenameBase, err)
+	}
+	defer domainKeysCursor.Close()
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], txFrom)
+	idxC, err := tx.CursorDupSort(d.keysTable)
+	if err != nil {
+		return err
+	}
+	defer idxC.Close()
+	valsC, err := tx.Cursor(d.valsTable)
+	if err != nil {
+		return err
+	}
+	defer valsC.Close()
+	k, v, err := domainKeysCursor.Seek(txKey[:])
+	if err != nil {
+		return err
+	}
+	if k == nil {
+		return nil
+	}
+	txFrom = binary.BigEndian.Uint64(k)
+	txTo := txFrom + d.aggregationStep
+	if limit != math.MaxUint64 && limit != 0 {
+		txTo = txFrom + limit
+	}
+	for ; err == nil && k != nil; k, v, err = domainKeysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		_, _, _ = valsC.Seek(v[len(v)-8:])
+		_, _ = idxC.SeekBothRange(v[:len(v)-8], k)
+	}
+	if err != nil {
+		return fmt.Errorf("iterate over %s domain keys: %w", d.filenameBase, err)
+	}
+
+	return d.History.warmup(txFrom, limit, tx)
 }
 
 func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool) {
