@@ -191,8 +191,6 @@ func (hc *HistoryContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint6
 type ScanIteratorInc struct {
 	g          *compress.Getter
 	nextKey    []byte
-	fromKey    []byte
-	toKey      []byte
 	key        []byte
 	uptoTxNum  uint64
 	nextTxNum  uint64
