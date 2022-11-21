@@ -44,6 +44,8 @@ type LocalityIndex struct {
 }
 
 func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h *History) error {
+	defer h.EnableMadvNormalReadAhead().DisableReadAhead()
+
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 
