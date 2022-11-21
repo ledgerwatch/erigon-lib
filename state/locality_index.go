@@ -147,7 +147,6 @@ type LocalityIterator struct {
 	fromKey   []byte
 	key       []byte
 	uptoTxNum uint64
-	endTxNum  uint64
 	progress  uint64
 	total     uint64
 	hasNext   bool
