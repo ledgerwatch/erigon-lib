@@ -1278,6 +1278,10 @@ func (a *Aggregator22) BuildLocalityIndex(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	err = li.BuildMissedIndices(ctx, a.storage.endTxNumMinimax()/a.aggregationStep, a.storage)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
