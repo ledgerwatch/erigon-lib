@@ -58,7 +58,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 		select {
 		default:
 		case <-logEvery.C:
-			log.Debug("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)/100)/2))
+			log.Info("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)/100)/2))
 		}
 	}
 
@@ -111,7 +111,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 			select {
 			default:
 			case <-logEvery.C:
-				log.Debug("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)/100)/2))
+				log.Info("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)/100)/2))
 			}
 		}
 		if err = rs.Build(); err != nil {
