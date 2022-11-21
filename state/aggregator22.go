@@ -1214,6 +1214,10 @@ func (a *Aggregator22) Stats() FilesStats22 {
 	return fs
 }
 
+func (ac *Aggregator22) Steps() int {
+	return ac.accounts.files.Len()
+}
+
 func (a *Aggregator22) Code() *History     { return a.code }
 func (a *Aggregator22) Accounts() *History { return a.accounts }
 func (a *Aggregator22) Storage() *History  { return a.storage }
