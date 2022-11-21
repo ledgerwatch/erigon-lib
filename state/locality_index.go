@@ -53,12 +53,12 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 	it := h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
 	total := float64(it.Total())
 	for it.HasNext() {
-		_, _, progress := it.Next()
+		k, _, progress := it.Next()
 		count++
 		select {
 		default:
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		}
 	}
 
@@ -111,7 +111,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 			select {
 			default:
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build", "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+				log.Info("[LocalityIndex] build", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
 			}
 		}
 		if err = rs.Build(); err != nil {
