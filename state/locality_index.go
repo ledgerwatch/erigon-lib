@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/ledgerwatch/erigon-lib/common/hex"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
@@ -88,6 +87,9 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 			return err
 		}
 
+		//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+		//	fmt.Printf(".l file: %x, %d, %d\n", k, steps.ToArray(), freezeLen)
+		//}
 		if err = comp.AddUncompressedWord(bm[:freezeLen]); err != nil {
 			return err
 		}
@@ -132,10 +134,16 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 		var pos uint64
 		_ = keys.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 
+			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+			//	fmt.Printf(".li file: %x, %d\n", k, pos)
+			//}
 			if err = rs.AddKey(k, pos); err != nil {
 				return err
 			}
 			pos = dataGetter.Skip()
+			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+			//	fmt.Printf(".li file, next pos: %x, %d\n", k, pos)
+			//}
 
 			select {
 			default:
@@ -198,9 +206,9 @@ func (si *LocalityIterator) advance() {
 			if si.key == nil {
 				si.key = key
 				si.list.Add(inStep)
-				if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-					fmt.Printf("it1: %x, %d, %d\n", key, inStep, si.list.ToArray())
-				}
+				//if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+				//	fmt.Printf("it1: %x, %d, %d\n", key, inStep, si.list.ToArray())
+				//}
 				continue
 			}
 			si.nextKey = si.key
@@ -209,19 +217,23 @@ func (si *LocalityIterator) advance() {
 			si.list.Clear()
 			si.key = key
 			si.list.Add(inStep)
-			if bytes.Equal(si.nextKey, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-				fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
-				fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
-			}
+			//if bytes.Equal(si.nextKey, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+			//	fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
+			//	fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
+			//}
 
+			//fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
+			//fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
 			si.hasNext = true
 			return
 		}
 		si.list.Add(inStep)
-		if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-			fmt.Printf("it3: %x, %d, %d\n", key, inStep, si.list.ToArray())
-		}
+		//if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+		//	fmt.Printf("it3: %x, %d, %d\n", key, inStep, si.list.ToArray())
+		//}
 	}
+	si.nextKey = si.key
+	si.nextList, si.list = si.list, si.nextList
 	si.hasNext = false
 }
 
@@ -229,8 +241,8 @@ func (si *LocalityIterator) HasNext() bool { return si.hasNext }
 func (si *LocalityIterator) Total() uint64 { return si.total }
 
 func (si *LocalityIterator) Next() ([]byte, *roaring.Bitmap, uint64) {
-	k, n, p := si.nextKey, si.nextList, si.progress
 	si.advance()
+	k, n, p := si.nextKey, si.nextList, si.progress
 	return k, n, p
 }
 
