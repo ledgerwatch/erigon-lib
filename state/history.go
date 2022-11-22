@@ -1170,7 +1170,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			}
 		} else {
 			//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-			fmt.Printf("can early return! %x, %d, txNum=%d\n", key, bm.ToArray(), txNum)
+			//fmt.Printf("can early return! %x, %d, txNum=%d\n", key, bm.ToArray(), txNum)
 			//}
 			//bitmapdb.ReturnToPool(bm)
 			//return nil, false, nil
