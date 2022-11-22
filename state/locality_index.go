@@ -127,7 +127,6 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 	rs.LogLvl(log.LvlTrace)
 
 	for {
-		var lastKey []byte
 		var pos uint64
 		_ = keys.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 
@@ -143,9 +142,6 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 			}
 			return nil
 		}, etl.TransformArgs{})
-		if err = rs.AddKey(lastKey, pos); err != nil {
-			return err
-		}
 
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
