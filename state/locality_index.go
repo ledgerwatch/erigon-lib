@@ -61,7 +61,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 		select {
 		default:
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build step1", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		}
 	}
 
@@ -75,7 +75,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 
 	it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
 
-	keys := etl.NewCollector("", h.tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+	keys := etl.NewCollector("LocalityIndex", h.tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	keys.LogLvl(log.LvlTrace)
 
 	bm := make([]byte, 4096)
@@ -99,7 +99,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 		select {
 		default:
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build step2", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
 		}
 	}
 	if err = comp.Compress(); err != nil {
@@ -148,7 +148,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 			select {
 			default:
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build .li file", "name", h.filenameBase, "k", fmt.Sprintf("%x", k))
+				log.Info("[LocalityIndex] build step3", "name", h.filenameBase, "k", fmt.Sprintf("%x", k))
 			}
 			return nil
 		}, etl.TransformArgs{})
