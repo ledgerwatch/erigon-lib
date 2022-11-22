@@ -26,6 +26,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
@@ -72,6 +73,42 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 	}
 	defer comp.Close()
 
+	it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
+
+	keys := etl.NewCollector("", h.tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+
+	bm := make([]byte, 4096)
+	total = float64(it.Total())
+	for it.HasNext() {
+		k, steps, progress := it.Next()
+		freezeLen, err := steps.FreezeTo(bm)
+		if err != nil {
+			return err
+		}
+
+		if err = comp.AddUncompressedWord(bm[:freezeLen]); err != nil {
+			return err
+		}
+
+		_ = keys.Collect(k, nil)
+
+		select {
+		default:
+		case <-logEvery.C:
+			log.Info("[LocalityIndex] build", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+		}
+	}
+	if err = comp.Compress(); err != nil {
+		return err
+	}
+	comp.Close()
+
+	dec, err := compress.NewDecompressor(lFPath)
+	if err != nil {
+		return fmt.Errorf("open idx: %w", err)
+	}
+	dataGetter := dec.MakeGetter()
+
 	fName := fmt.Sprintf("%s.%d-%d.li", h.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(h.dir, fName)
 
@@ -89,35 +126,26 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
 
-	bm := make([]byte, 4096)
 	for {
-		var offfset uint64
-		it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
-		total = float64(it.Total())
-		for it.HasNext() {
-			k, steps, progress := it.Next()
-			freezeLen, err := steps.FreezeTo(bm)
-			if err != nil {
-				return err
-			}
+		var pos uint64
+		_ = keys.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 
-			if err = comp.AddUncompressedWord(bm[:freezeLen]); err != nil {
+			if err = rs.AddKey(k, pos); err != nil {
 				return err
 			}
-
-			offfset += uint64(freezeLen)
-			if err = rs.AddKey(k, offfset); err != nil {
-				return err
-			}
+			pos = dataGetter.Skip()
 
 			select {
 			default:
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+				log.Info("[LocalityIndex] build .li file", "name", h.filenameBase, "k", fmt.Sprintf("%x", k))
 			}
-		}
+			return nil
+		}, etl.TransformArgs{})
+
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
+				panic("TODO: need implement graceful retry - collector does delete files after load")
 				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
 			} else {
@@ -127,16 +155,8 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 			break
 		}
 	}
-	if err = comp.Compress(); err != nil {
-		return err
-	}
-	comp.Close()
 
 	idx, err := recsplit.OpenIndex(idxPath)
-	if err != nil {
-		return fmt.Errorf("open idx: %w", err)
-	}
-	dec, err := compress.NewDecompressor(lFPath)
 	if err != nil {
 		return fmt.Errorf("open idx: %w", err)
 	}
@@ -174,21 +194,25 @@ func (si *LocalityIterator) advance() {
 		inStep := uint32(top.startTxNum / si.hc.h.aggregationStep)
 		if !bytes.Equal(key, si.key) {
 			if si.key == nil {
-				si.list.Add(inStep)
 				si.key = key
+				si.list.Add(inStep)
+				//fmt.Printf("it1: %x, %d, %d\n", key, inStep, si.list.ToArray())
 				continue
 			}
-			si.key = key
-			si.nextKey = key
-
+			si.nextKey = si.key
 			si.nextList, si.list = si.list, si.nextList
+
 			si.list.Clear()
+			si.key = key
 			si.list.Add(inStep)
+			//fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
+			//fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
 
 			si.hasNext = true
 			return
 		}
 		si.list.Add(inStep)
+		//fmt.Printf("it3: %x, %d, %d\n", key, inStep, si.list.ToArray())
 	}
 	si.hasNext = false
 }
