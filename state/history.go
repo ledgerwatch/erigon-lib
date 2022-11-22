@@ -34,6 +34,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common/hex"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/semaphore"
@@ -1135,9 +1136,12 @@ func (h *History) MakeContext() *HistoryContext {
 func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
-	var foundExactShard bool
-	var foundShardStep uint32
+	var foundExactShard, foundExactShard2 bool
+	var foundShardStep, foundShard2Step uint32
 	if hc.h.locality != nil {
+		// prevents searching key in many files
+		// LocalityIndex return exactly 2 file (step)
+
 		localityIdx := recsplit.NewIndexReader(hc.h.locality.index)
 		offset := localityIdx.Lookup(key)
 		localityData := hc.h.locality.decompressor.MakeGetter()
@@ -1148,16 +1152,22 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		if err != nil {
 			return nil, false, err
 		}
-		fmt.Printf("offset: %d, %d\n", offset, len(locations))
-		fmt.Printf("a: %x, %d\n", key, bm.ToArray())
+		if bytes.Equal(key, hex.MustDecodeString("22ea9f6b28db76a7162054c05ed812deb2f519cd")) {
+			fmt.Printf("before: %x, %d, %d\n", key, bm.ToArray(), txNum/hc.h.aggregationStep)
+		}
 		if txNum/hc.h.aggregationStep > 0 {
 			bm.RemoveRange(0, txNum/hc.h.aggregationStep)
 		}
-		if bm.GetCardinality() > 0 {
-			foundExactShard = true
-			foundShardStep = bm.Minimum()
+		if bytes.Equal(key, hex.MustDecodeString("22ea9f6b28db76a7162054c05ed812deb2f519cd")) {
+			fmt.Printf("after: %x, %d, %d\n", key, bm.ToArray(), txNum/hc.h.aggregationStep)
 		}
-		fmt.Printf("foundExactShard: %x, %t, %d\n", key, foundExactShard, foundShardStep)
+		foundExactShard = true
+		foundShardStep = bm.Minimum()
+		if bm.GetCardinality() > 1 {
+			bm.Remove(foundShardStep)
+			foundExactShard2 = true
+			foundShard2Step = bm.Minimum()
+		}
 		bitmapdb.ReturnToPool(bm)
 	}
 
@@ -1175,7 +1185,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		g := item.getter
 		g.Reset(offset)
 		k, _ := g.NextUncompressed()
-		fmt.Printf("get key from file: %x->%x %d\n", key, k, item.startTxNum/hc.h.aggregationStep)
 		if !bytes.Equal(k, key) {
 			return true
 		}
@@ -1183,27 +1192,39 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		eliasVal, _ := g.NextUncompressed()
 		ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 		n, ok := ef.Search(txNum)
-		fmt.Printf("found txNum: %t %d\n", ok, n)
 		if ok {
 			foundTxNum = n
 			foundEndTxNum = item.endTxNum
 			foundStartTxNum = item.startTxNum
 			found = true
+			if foundExactShard &&
+				!(uint32(item.endTxNum/hc.h.aggregationStep) == foundShardStep ||
+					(foundExactShard2 && uint32(item.startTxNum/hc.h.aggregationStep) == foundShard2Step)) {
+				fmt.Printf("key: %x, %d\n", key, txNum)
+				fmt.Printf("old: %d, %d-%d, %d\n", uint32(foundTxNum/hc.h.aggregationStep), item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, foundTxNum)
+				fmt.Printf("new: %d, %d\n", foundShardStep, foundShard2Step)
+				panic(1)
+			}
 			//fmt.Printf("Found n=%d\n", n)
 			return false
 		}
 		return true
 	}
 
-	if foundExactShard {
-		item, ok := hc.indexFiles.Get(ctxItem{startTxNum: uint64(foundShardStep) * hc.h.aggregationStep, endTxNum: txNum})
-		fmt.Printf("get file: %t, %d\n", ok, item.startTxNum/hc.h.aggregationStep)
-		if ok {
-			findInFile(item)
-		}
-	} else {
-		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, findInFile)
-	}
+	//if foundExactShard { // check up to 2 files
+	//	hc.indexFiles.DescendLessOrEqual(ctxItem{startTxNum: txNum, endTxNum: uint64(foundShardStep) * hc.h.aggregationStep}, func(item ctxItem) bool {
+	//		findInFile(item)
+	//		return false
+	//	})
+	//	if !found && foundExactShard2 {
+	//		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: uint64(foundShard2Step) * hc.h.aggregationStep, endTxNum: txNum}, func(item ctxItem) bool {
+	//			findInFile(item)
+	//			return false
+	//		})
+	//	}
+	//} else { // iterate many files
+	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, findInFile)
+	//}
 	if found {
 		var historyItem ctxItem
 		var ok bool

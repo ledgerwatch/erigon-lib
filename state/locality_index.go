@@ -201,7 +201,7 @@ func (si *LocalityIterator) advance() {
 			heap.Push(&si.h, top)
 		}
 
-		inStep := uint32(top.startTxNum / si.hc.h.aggregationStep)
+		inStep := uint32(top.endTxNum / si.hc.h.aggregationStep)
 		if !bytes.Equal(key, si.key) {
 			if si.key == nil {
 				si.key = key
