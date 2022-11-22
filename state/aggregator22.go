@@ -1214,10 +1214,6 @@ func (a *Aggregator22) Stats() FilesStats22 {
 	return fs
 }
 
-func (ac *Aggregator22) Steps() int {
-	return ac.accounts.files.Len()
-}
-
 func (a *Aggregator22) Code() *History     { return a.code }
 func (a *Aggregator22) Accounts() *History { return a.accounts }
 func (a *Aggregator22) Storage() *History  { return a.storage }
@@ -1348,4 +1344,13 @@ func (as *AggregatorStep) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) 
 		return 0, false, err
 	}
 	return len(code), noState, nil
+}
+
+func (as *AggregatorStep) Clone() *AggregatorStep {
+	return &AggregatorStep{
+		a:        as.a,
+		accounts: as.accounts.Clone(),
+		storage:  as.storage.Clone(),
+		code:     as.code.Clone(),
+	}
 }

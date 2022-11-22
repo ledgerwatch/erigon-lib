@@ -1163,7 +1163,7 @@ func (hs *HistoryStep) GetNoState(key []byte, txNum uint64) ([]byte, bool, error
 	//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
 	g = hs.historyFile.getter
 	g.Reset(offset)
-	if hs.h.compressVals {
+	if hs.compressVals {
 		v, _ := g.Next(nil)
 		return v, true, nil
 	}
@@ -1514,9 +1514,11 @@ func (h *History) EnableMadvNormalReadAhead() *History {
 
 // HistoryStep used for incremental state reconsitution, it isolates only one snapshot interval
 type HistoryStep struct {
-	h           *History
-	indexFile   ctxItem
-	historyFile ctxItem
+	compressVals bool
+	indexItem    *filesItem
+	indexFile    ctxItem
+	historyItem  *filesItem
+	historyFile  ctxItem
 }
 
 func (h *History) MakeSteps() []*HistoryStep {
@@ -1525,7 +1527,7 @@ func (h *History) MakeSteps() []*HistoryStep {
 		if item.index == nil {
 			return false
 		}
-		step := &HistoryStep{h: h, indexFile: ctxItem{
+		step := &HistoryStep{compressVals: h.compressVals, indexItem: item, indexFile: ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
@@ -1539,6 +1541,7 @@ func (h *History) MakeSteps() []*HistoryStep {
 		if item.index == nil {
 			return false
 		}
+		steps[i].historyItem = item
 		steps[i].historyFile = ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
@@ -1549,4 +1552,24 @@ func (h *History) MakeSteps() []*HistoryStep {
 		return true
 	})
 	return steps
+}
+
+func (hs *HistoryStep) Clone() *HistoryStep {
+	return &HistoryStep{
+		compressVals: hs.compressVals,
+		indexItem:    hs.indexItem,
+		indexFile: ctxItem{
+			startTxNum: hs.indexFile.startTxNum,
+			endTxNum:   hs.indexFile.endTxNum,
+			getter:     hs.indexItem.decompressor.MakeGetter(),
+			reader:     recsplit.NewIndexReader(hs.indexItem.index),
+		},
+		historyItem: hs.historyItem,
+		historyFile: ctxItem{
+			startTxNum: hs.historyFile.startTxNum,
+			endTxNum:   hs.historyFile.endTxNum,
+			getter:     hs.historyItem.decompressor.MakeGetter(),
+			reader:     recsplit.NewIndexReader(hs.historyItem.index),
+		},
+	}
 }
