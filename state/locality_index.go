@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
+	"github.com/ledgerwatch/erigon-lib/common/hex"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
@@ -76,6 +77,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 	it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
 
 	keys := etl.NewCollector("", h.tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize))
+	keys.LogLvl(log.LvlTrace)
 
 	bm := make([]byte, 4096)
 	total = float64(it.Total())
@@ -196,7 +198,9 @@ func (si *LocalityIterator) advance() {
 			if si.key == nil {
 				si.key = key
 				si.list.Add(inStep)
-				//fmt.Printf("it1: %x, %d, %d\n", key, inStep, si.list.ToArray())
+				if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+					fmt.Printf("it1: %x, %d, %d\n", key, inStep, si.list.ToArray())
+				}
 				continue
 			}
 			si.nextKey = si.key
@@ -205,14 +209,18 @@ func (si *LocalityIterator) advance() {
 			si.list.Clear()
 			si.key = key
 			si.list.Add(inStep)
-			//fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
-			//fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
+			if bytes.Equal(si.nextKey, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+				fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
+				fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
+			}
 
 			si.hasNext = true
 			return
 		}
 		si.list.Add(inStep)
-		//fmt.Printf("it3: %x, %d, %d\n", key, inStep, si.list.ToArray())
+		if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
+			fmt.Printf("it3: %x, %d, %d\n", key, inStep, si.list.ToArray())
+		}
 	}
 	si.hasNext = false
 }

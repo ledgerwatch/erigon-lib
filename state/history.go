@@ -1148,13 +1148,16 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		if err != nil {
 			return nil, false, err
 		}
-		if txNum > 0 {
+		fmt.Printf("offset: %d, %d\n", offset, len(locations))
+		fmt.Printf("a: %x, %d\n", key, bm.ToArray())
+		if txNum/hc.h.aggregationStep > 0 {
 			bm.RemoveRange(0, txNum/hc.h.aggregationStep)
 		}
 		if bm.GetCardinality() > 0 {
 			foundExactShard = true
 			foundShardStep = bm.Minimum()
 		}
+		fmt.Printf("foundExactShard: %x, %t, %d\n", key, foundExactShard, foundShardStep)
 		bitmapdb.ReturnToPool(bm)
 	}
 
@@ -1172,6 +1175,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		g := item.getter
 		g.Reset(offset)
 		k, _ := g.NextUncompressed()
+		fmt.Printf("get key from file: %x->%x %d\n", key, k, item.startTxNum/hc.h.aggregationStep)
 		if !bytes.Equal(k, key) {
 			return true
 		}
@@ -1179,6 +1183,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		eliasVal, _ := g.NextUncompressed()
 		ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 		n, ok := ef.Search(txNum)
+		fmt.Printf("found txNum: %t %d\n", ok, n)
 		if ok {
 			foundTxNum = n
 			foundEndTxNum = item.endTxNum
@@ -1192,6 +1197,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 
 	if foundExactShard {
 		item, ok := hc.indexFiles.Get(ctxItem{startTxNum: uint64(foundShardStep) * hc.h.aggregationStep, endTxNum: txNum})
+		fmt.Printf("get file: %t, %d\n", ok, item.startTxNum/hc.h.aggregationStep)
 		if ok {
 			findInFile(item)
 		}
