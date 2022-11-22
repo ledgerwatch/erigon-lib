@@ -37,9 +37,8 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/ledgerwatch/erigon-lib/common/dir"
-
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -454,6 +453,12 @@ type ctxItem struct {
 	endTxNum   uint64
 }
 
+func ctxItemLess2(i, j ctxItem) bool {
+	if i.startTxNum != j.startTxNum {
+		return i.startTxNum < j.startTxNum
+	}
+	return i.endTxNum < j.endTxNum
+}
 func ctxItemLess(i, j ctxItem) bool {
 	if i.endTxNum == j.endTxNum {
 		return i.startTxNum > j.startTxNum
@@ -1012,7 +1017,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	return nil
 }
 
-//nolint
+// nolint
 func (d *Domain) warmup(txFrom, limit uint64, tx kv.Tx) error {
 	domainKeysCursor, err := tx.CursorDupSort(d.keysTable)
 	if err != nil {
