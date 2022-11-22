@@ -1277,42 +1277,57 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 	return lstInDb
 }
 
-// AggregatorSteps is used for incremental reconstitution, it allows
+// AggregatorStep is used for incremental reconstitution, it allows
 // accessing history in isolated way for each step
-type AggregatorSteps struct {
+type AggregatorStep struct {
 	a        *Aggregator22
-	accounts []*HistoryStep
-	storage  []*HistoryStep
-	code     []*HistoryStep
+	accounts *HistoryStep
+	storage  *HistoryStep
+	code     *HistoryStep
 	keyBuf   []byte
 }
 
-func (a *Aggregator22) MakeSteps() *AggregatorSteps {
-	return &AggregatorSteps{
-		a:        a,
-		accounts: a.accounts.MakeSteps(),
-		storage:  a.storage.MakeSteps(),
-		code:     a.code.MakeSteps(),
+func (a *Aggregator22) MakeSteps() []*AggregatorStep {
+	var steps []*AggregatorStep
+	accountSteps := a.accounts.MakeSteps()
+	for _, accountStep := range accountSteps {
+		steps = append(steps, &AggregatorStep{
+			a:        a,
+			accounts: accountStep,
+		})
 	}
+	storageSteps := a.storage.MakeSteps()
+	for i, storageStep := range storageSteps {
+		steps[i].storage = storageStep
+	}
+	codeSteps := a.code.MakeSteps()
+	for i, codeStep := range codeSteps {
+		steps[i].code = codeStep
+	}
+	return steps
 }
 
-func (as *AggregatorSteps) IterateAccountsTxs(step int, txNum uint64) *ScanIteratorInc {
-	return as.accounts[step].iterateTxs(txNum)
+func (as *AggregatorStep) TxNumRange() (uint64, uint64) {
+	return as.accounts.indexFile.startTxNum, as.accounts.indexFile.endTxNum
 }
 
-func (as *AggregatorSteps) IterateStorageTxs(step int, txNum uint64) *ScanIteratorInc {
-	return as.storage[step].iterateTxs(txNum)
+func (as *AggregatorStep) IterateAccountsTxs(txNum uint64) *ScanIteratorInc {
+	return as.accounts.iterateTxs(txNum)
 }
 
-func (as *AggregatorSteps) IterateCodeTxs(step int, txNum uint64) *ScanIteratorInc {
-	return as.code[step].iterateTxs(txNum)
+func (as *AggregatorStep) IterateStorageTxs(txNum uint64) *ScanIteratorInc {
+	return as.storage.iterateTxs(txNum)
 }
 
-func (as *AggregatorSteps) ReadAccountDataNoState(addr []byte, txNum uint64, step int) ([]byte, bool, error) {
-	return as.accounts[step].GetNoState(addr, txNum)
+func (as *AggregatorStep) IterateCodeTxs(txNum uint64) *ScanIteratorInc {
+	return as.code.iterateTxs(txNum)
 }
 
-func (as *AggregatorSteps) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64, step int) ([]byte, bool, error) {
+func (as *AggregatorStep) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
+	return as.accounts.GetNoState(addr, txNum)
+}
+
+func (as *AggregatorStep) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, error) {
 	if cap(as.keyBuf) < len(addr)+len(loc) {
 		as.keyBuf = make([]byte, len(addr)+len(loc))
 	} else if len(as.keyBuf) != len(addr)+len(loc) {
@@ -1320,15 +1335,15 @@ func (as *AggregatorSteps) ReadAccountStorageNoState(addr []byte, loc []byte, tx
 	}
 	copy(as.keyBuf, addr)
 	copy(as.keyBuf[len(addr):], loc)
-	return as.storage[step].GetNoState(as.keyBuf, txNum)
+	return as.storage.GetNoState(as.keyBuf, txNum)
 }
 
-func (as *AggregatorSteps) ReadAccountCodeNoState(addr []byte, txNum uint64, step int) ([]byte, bool, error) {
-	return as.code[step].GetNoState(addr, txNum)
+func (as *AggregatorStep) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
+	return as.code.GetNoState(addr, txNum)
 }
 
-func (as *AggregatorSteps) ReadAccountCodeSizeNoState(addr []byte, txNum uint64, step int) (int, bool, error) {
-	code, noState, err := as.code[step].GetNoState(addr, txNum)
+func (as *AggregatorStep) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, error) {
+	code, noState, err := as.code.GetNoState(addr, txNum)
 	if err != nil {
 		return 0, false, err
 	}
