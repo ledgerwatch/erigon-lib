@@ -234,6 +234,7 @@ func (sii *ScanIteratorInc) Total() uint64 {
 func (hs *HistoryStep) iterateTxs(uptoTxNum uint64) *ScanIteratorInc {
 	var sii ScanIteratorInc
 	sii.g = hs.indexFile.getter
+	sii.g.Reset(0)
 	if sii.g.HasNext() {
 		sii.key, sii.lastOffset = sii.g.NextUncompressed()
 		sii.total = uint64(hs.indexFile.getter.Size())
