@@ -1284,13 +1284,13 @@ type AggregatorStep struct {
 }
 
 func (a *Aggregator22) MakeSteps() []*AggregatorStep {
-	var steps []*AggregatorStep
 	accountSteps := a.accounts.MakeSteps()
-	for _, accountStep := range accountSteps {
-		steps = append(steps, &AggregatorStep{
+	steps := make([]*AggregatorStep, len(accountSteps))
+	for i, accountStep := range accountSteps {
+		steps[i] = &AggregatorStep{
 			a:        a,
 			accounts: accountStep,
-		})
+		}
 	}
 	storageSteps := a.storage.MakeSteps()
 	for i, storageStep := range storageSteps {
