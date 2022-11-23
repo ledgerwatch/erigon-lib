@@ -1098,6 +1098,9 @@ type HistoryContext struct {
 	h                        *History
 	indexFiles, historyFiles *btree.BTreeG[ctxItem]
 
+	lr *recsplit.IndexReader
+	lg *compress.Getter
+
 	tx kv.Tx
 }
 
@@ -1121,14 +1124,21 @@ func (h *History) MakeContext() *HistoryContext {
 		if item.index == nil {
 			return false
 		}
-		hc.historyFiles.ReplaceOrInsert(ctxItem{
+		it := ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
 			reader:     recsplit.NewIndexReader(item.index),
-		})
+		}
+		hc.historyFiles.ReplaceOrInsert(it)
+
 		return true
 	})
+	if hc.h.locality != nil {
+		hc.lr = recsplit.NewIndexReader(hc.h.locality.index)
+		hc.lg = hc.h.locality.decompressor.MakeGetter()
+	}
+
 	return &hc
 }
 func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
@@ -1144,9 +1154,9 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 
 		//TODO: if txNum is close to Max-2 steps, no profit from LocalityIndex. skip then
 
-		localityIdx := recsplit.NewIndexReader(hc.h.locality.index)
+		localityIdx := hc.lr
 		offset := localityIdx.Lookup(key)
-		localityData := hc.h.locality.decompressor.MakeGetter()
+		localityData := hc.lg
 		localityData.Reset(offset)
 		locations, _ := localityData.NextUncompressed()
 		bm := bitmapdb.NewBitmap()
