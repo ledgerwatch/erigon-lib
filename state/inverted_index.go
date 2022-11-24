@@ -29,25 +29,29 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/c2h5oh/datasize"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
+
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/semaphore"
 )
 
 type InvertedIndex struct {
 	tx              kv.RwTx
 	files           *btree.BTreeG[*filesItem]
-	w               *invertedIndexWriter
 	indexKeysTable  string // txnNum_u64 -> key (k+auto_increment)
 	indexTable      string // k -> txnNum_u64 , Needs to be table with DupSort
 	dir             string // Directory where static files are created
@@ -57,6 +61,9 @@ type InvertedIndex struct {
 	txNum           uint64
 	workers         int
 	txNumBytes      [8]byte
+
+	wal     *invertedIndexWAL
+	walLock sync.RWMutex
 }
 
 func NewInvertedIndex(
@@ -191,41 +198,40 @@ func (ii *InvertedIndex) missedIdxFiles() (l []*filesItem) {
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
 func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
 	missedFiles := ii.missedIdxFiles()
-	//errs := make(chan error, len(missedFiles))
-	//wg := sync.WaitGroup{}
+	errs := make(chan error, len(missedFiles))
+	wg := sync.WaitGroup{}
 	for _, item := range missedFiles {
-		//if err := sem.Acquire(ctx, 1); err != nil {
-		//	errs <- err
-		//	break
-		//}
-		//wg.Add(1)
-		//go func(item *filesItem) {
-		//	defer sem.Release(1)
-		//	defer wg.Done()
-		fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
-		fName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep)
-		idxPath := filepath.Join(ii.dir, fName)
-		log.Info("[snapshots] build idx", "file", fName)
-		_, err := buildIndex(ctx, item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false)
-		if err != nil {
-			return err
+		if err := sem.Acquire(ctx, 1); err != nil {
+			errs <- err
+			break
 		}
-		//errs <- err
-		//}(item)
+		wg.Add(1)
+		go func(item *filesItem) {
+			defer sem.Release(1)
+			defer wg.Done()
+			fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
+			fName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep)
+			idxPath := filepath.Join(ii.dir, fName)
+			log.Info("[snapshots] build idx", "file", fName)
+			_, err := buildIndex(ctx, item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false)
+			if err != nil {
+				errs <- err
+			}
+		}(item)
 	}
-	//go func() {
-	//	wg.Wait()
-	//	close(errs)
-	//}()
-	//var lastError error
-	//for err := range errs {
-	//	if err != nil {
-	//		lastError = err
-	//	}
-	//}
-	//if lastError != nil {
-	//	return lastError
-	//}
+	go func() {
+		wg.Wait()
+		close(errs)
+	}()
+	var lastError error
+	for err := range errs {
+		if err != nil {
+			lastError = err
+		}
+	}
+	if lastError != nil {
+		return lastError
+	}
 	return ii.openFiles()
 }
 
@@ -304,32 +310,40 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 	binary.BigEndian.PutUint64(ii.txNumBytes[:], ii.txNum)
 }
 
-func (ii *InvertedIndex) add(key, indexKey []byte) error {
-	return ii.w.add(key, indexKey)
+func (ii *InvertedIndex) add(key, indexKey []byte) (err error) {
+	ii.walLock.RLock()
+	err = ii.wal.add(key, indexKey)
+	ii.walLock.RUnlock()
+	return err
 }
 
 func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
 }
 
-func (ii *InvertedIndex) StartWrites(tmpdir string) { ii.w = ii.newWriter(tmpdir) }
+func (ii *InvertedIndex) StartWrites(tmpdir string) {
+	ii.walLock.Lock()
+	defer ii.walLock.Unlock()
+	ii.wal = ii.newWriter(tmpdir)
+}
 func (ii *InvertedIndex) FinishWrites() {
-	ii.w.close()
-	ii.w = nil
+	ii.walLock.Lock()
+	defer ii.walLock.Unlock()
+	ii.wal.close()
+	ii.wal = nil
 }
 
-func (ii *InvertedIndex) Flush() error {
-	if ii.w == nil {
-		return nil
+func (ii *InvertedIndex) Rotate() *invertedIndexWAL {
+	ii.walLock.Lock()
+	defer ii.walLock.Unlock()
+	wal := ii.wal
+	if wal != nil {
+		ii.wal = ii.newWriter(ii.wal.tmpdir)
 	}
-	if err := ii.w.flush(ii.tx); err != nil {
-		return err
-	}
-	ii.w = ii.newWriter(ii.w.tmpdir)
-	return nil
+	return wal
 }
 
-type invertedIndexWriter struct {
+type invertedIndexWAL struct {
 	ii        *InvertedIndex
 	index     *etl.Collector
 	indexKeys *etl.Collector
@@ -343,7 +357,7 @@ func loadFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) 
 	return next(k, k, v)
 }
 
-func (ii *invertedIndexWriter) flush(tx kv.RwTx) error {
+func (ii *invertedIndexWAL) Flush(tx kv.RwTx) error {
 	if err := ii.index.Load(tx, ii.ii.indexTable, loadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
@@ -354,7 +368,7 @@ func (ii *invertedIndexWriter) flush(tx kv.RwTx) error {
 	return nil
 }
 
-func (ii *invertedIndexWriter) close() {
+func (ii *invertedIndexWAL) close() {
 	if ii == nil {
 		return
 	}
@@ -362,21 +376,34 @@ func (ii *invertedIndexWriter) close() {
 	ii.indexKeys.Close()
 }
 
-func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWriter {
-	w := &invertedIndexWriter{ii: ii,
+var WALCollectorRam = etl.BufferOptimalSize / 16
+
+func init() {
+	v, _ := os.LookupEnv("ERIGON_WAL_COLLETOR_RAM")
+	if v != "" {
+		var err error
+		WALCollectorRam, err = datasize.ParseString(v)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWAL {
+	w := &invertedIndexWAL{ii: ii,
 		buffered: true,
 		tmpdir:   tmpdir,
 		// 3 history + 4 indices = 10 etl collectors, 10*256Mb/16 = 256mb - for all indices buffers
 		// etl collector doesn't fsync: means if have enough ram, all files produced by all collectors will be in ram
-		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
-		indexKeys: etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/16)),
+		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam)),
+		indexKeys: etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam)),
 	}
 	w.index.LogLvl(log.LvlTrace)
 	w.indexKeys.LogLvl(log.LvlTrace)
 	return w
 }
 
-func (ii *invertedIndexWriter) add(key, indexKey []byte) error {
+func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
 	if ii.buffered {
 		if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
 			return err
@@ -723,7 +750,7 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 	return ii1
 }
 
-func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*roaring64.Bitmap, error) {
+func (ii *InvertedIndex) collate(ctx context.Context, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (map[string]*roaring64.Bitmap, error) {
 	keysCursor, err := roTx.CursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return nil, fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -741,10 +768,21 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx) (map[string]*r
 		var bitmap *roaring64.Bitmap
 		var ok bool
 		if bitmap, ok = indexBitmaps[string(v)]; !ok {
-			bitmap = roaring64.New()
+			bitmap = bitmapdb.NewBitmap64()
 			indexBitmaps[string(v)] = bitmap
 		}
 		bitmap.Add(txNum)
+
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] collate history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(ii.aggregationStep), float64(txTo)/float64(ii.aggregationStep)))
+			bitmap.RunOptimize()
+		case <-ctx.Done():
+			err := ctx.Err()
+			log.Warn("index collate cancelled", "err", err)
+			return nil, err
+		default:
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("iterate over %s keys cursor: %w", ii.filenameBase, err)
@@ -788,7 +826,7 @@ func (ii *InvertedIndex) buildFiles(ctx context.Context, step uint64, bitmaps ma
 	txNumFrom := step * ii.aggregationStep
 	txNumTo := (step + 1) * ii.aggregationStep
 	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
-	comp, err = compress.NewCompressor(ctx, "ef", datPath, ii.tmpdir, compress.MinPatternScore, ii.workers, log.LvlDebug)
+	comp, err = compress.NewCompressor(ctx, "ef", datPath, ii.tmpdir, compress.MinPatternScore, ii.workers, log.LvlTrace)
 	if err != nil {
 		return InvertedFiles{}, fmt.Errorf("create %s compressor: %w", ii.filenameBase, err)
 	}
@@ -879,7 +917,13 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 }
 
 // [txFrom; txTo)
-func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
+func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -901,9 +945,7 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 	if txFrom >= txTo {
 		return nil
 	}
-	if txTo-txFrom > 10_000 {
-		log.Info("[snapshots] prune old history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2fm-%.2fm", float64(txFrom)/1_000_000, float64(txTo)/1_000_000))
-	}
+
 	idxC, err := ii.tx.RwCursorDupSort(ii.indexTable)
 	if err != nil {
 		return err
@@ -917,9 +959,14 @@ func (ii *InvertedIndex) prune(txFrom, txTo, limit uint64) error {
 		if err = idxC.DeleteExact(v, k); err != nil {
 			return err
 		}
-		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
+		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
+		}
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] prune history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(ii.aggregationStep), float64(txTo)/float64(ii.aggregationStep)))
+		default:
 		}
 	}
 	if err != nil {
@@ -967,4 +1014,21 @@ func (ii *InvertedIndex) EnableMadvNormalReadAhead() *InvertedIndex {
 		return true
 	})
 	return ii
+}
+
+func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint64) {
+	if ii.files == nil {
+		return 0, 0, 0
+	}
+	ii.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
+		filesSize += uint64(item.decompressor.Size())
+		idxSize += uint64(item.index.Size())
+		filesCount += 2
+
+		return true
+	})
+	return filesCount, filesSize, idxSize
 }

@@ -24,6 +24,7 @@ import (
 	"math/bits"
 	"os"
 	"path/filepath"
+	"time"
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/mmap"
@@ -45,6 +46,7 @@ type Index struct {
 	ef                 eliasfano16.DoubleEliasFano
 	bucketSize         int
 	size               int64
+	modTime            time.Time
 	baseDataID         uint64
 	bucketCount        uint64 // Number of buckets
 	keyCount           uint64
@@ -79,6 +81,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 		return nil, err
 	}
 	idx.size = stat.Size()
+	idx.modTime = stat.ModTime()
 	if idx.mmapHandle1, idx.mmapHandle2, err = mmap.Mmap(idx.f, int(idx.size)); err != nil {
 		return nil, err
 	}
@@ -147,11 +150,14 @@ func OpenIndex(indexFile string) (*Index, error) {
 	return idx, nil
 }
 
-func (idx *Index) Size() int64 {
-	return idx.size
-}
-
+func (idx *Index) Size() int64        { return idx.size }
+func (idx *Index) ModTime() time.Time { return idx.modTime }
 func (idx *Index) BaseDataID() uint64 { return idx.baseDataID }
+func (idx *Index) FilePath() string   { return idx.indexFile }
+func (idx *Index) FileName() string {
+	_, fName := filepath.Split(idx.indexFile)
+	return fName
+}
 
 func (idx *Index) Close() error {
 	if idx == nil {
@@ -315,7 +321,12 @@ func (idx *Index) RewriteWithOffsets(w *bufio.Writer, m map[uint64]uint64) error
 }
 
 // DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
-func (idx *Index) DisableReadAhead() { _ = mmap.MadviseRandom(idx.mmapHandle1) }
+func (idx *Index) DisableReadAhead() {
+	if idx == nil || idx.mmapHandle1 == nil {
+		return
+	}
+	_ = mmap.MadviseRandom(idx.mmapHandle1)
+}
 func (idx *Index) EnableReadAhead() *Index {
 	_ = mmap.MadviseSequential(idx.mmapHandle1)
 	return idx
