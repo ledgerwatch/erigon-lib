@@ -434,7 +434,7 @@ func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, 
 
 func (a *Aggregator22) mergeLoopStep(ctx context.Context, workers int) (somethingDone bool, err error) {
 	closeAll := true
-	maxSpan := uint64(32) * a.aggregationStep
+	maxSpan := uint64(StepsInBiggestFile) * a.aggregationStep
 	r := a.findMergeRange(a.maxTxNum.Load(), maxSpan)
 	if !r.any() {
 		return false, nil
@@ -1275,11 +1275,11 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 
 func (a *Aggregator22) BuildLocalityIndex(ctx context.Context) error {
 	li := &LocalityIndex{}
-	err := li.BuildMissedIndices(ctx, a.accounts.endTxNumMinimax()/a.aggregationStep, a.accounts)
+	err := li.BuildMissedIndices(ctx, a.accounts)
 	if err != nil {
 		return err
 	}
-	err = li.BuildMissedIndices(ctx, a.storage.endTxNumMinimax()/a.aggregationStep, a.storage)
+	err = li.BuildMissedIndices(ctx, a.storage)
 	if err != nil {
 		return err
 	}

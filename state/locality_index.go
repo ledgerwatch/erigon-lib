@@ -20,14 +20,13 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"path/filepath"
 	"time"
 
-	"github.com/RoaringBitmap/roaring"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -44,8 +43,19 @@ type LocalityIndex struct {
 	files *filesItem
 }
 
-func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h *History) error {
+func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) error {
 	defer h.EnableMadvNormalReadAhead().DisableReadAhead()
+	var toStep uint64
+	h.files.Descend(func(item *filesItem) bool {
+		if item.endTxNum-item.startTxNum == StepsInBiggestFile*h.aggregationStep {
+			toStep = item.endTxNum / h.aggregationStep
+			return false
+		}
+		return true
+	})
+	if toStep == 0 {
+		return nil
+	}
 
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -78,19 +88,16 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 	keys := etl.NewCollector("LocalityIndex", h.tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize))
 	keys.LogLvl(log.LvlTrace)
 
-	bm := make([]byte, 4096)
+	bm := make([]byte, 8)
 	total = float64(it.Total())
 	for it.HasNext() {
-		k, steps, progress := it.Next()
-		freezeLen, err := steps.FreezeTo(bm)
-		if err != nil {
-			return err
-		}
+		k, filesBitmap, progress := it.Next()
+		binary.BigEndian.PutUint64(bm, filesBitmap)
 
 		//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-		//	fmt.Printf(".l file: %x, %d, %d\n", k, steps.ToArray(), freezeLen)
+		//	fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
 		//}
-		if err = comp.AddUncompressedWord(bm[:freezeLen]); err != nil {
+		if err = comp.AddUncompressedWord(bm); err != nil {
 			return err
 		}
 
@@ -116,15 +123,15 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 	fName := fmt.Sprintf("%s.%d-%d.li", h.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(h.dir, fName)
 
-	var rs *recsplit.RecSplit
-	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
+	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
 		Enums:      false,
 		BucketSize: 2000,
 		LeafSize:   8,
 		TmpDir:     h.tmpdir,
 		IndexFile:  idxPath,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("create recsplit: %w", err)
 	}
 	defer rs.Close()
@@ -175,18 +182,17 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, toStep uint64, h
 }
 
 type LocalityIterator struct {
-	hc        *HistoryContext
-	h         ReconHeap
-	nextKey   []byte
-	fromKey   []byte
-	key       []byte
-	uptoTxNum uint64
-	progress  uint64
-	total     uint64
-	hasNext   bool
-
-	list     *roaring.Bitmap
-	nextList *roaring.Bitmap
+	hc         *HistoryContext
+	h          ReconHeap
+	bitmap     uint64
+	nextBitmap uint64
+	nextKey    []byte
+	fromKey    []byte
+	key        []byte
+	uptoTxNum  uint64
+	progress   uint64
+	total      uint64
+	hasNext    bool
 }
 
 func (si *LocalityIterator) advance() {
@@ -196,59 +202,70 @@ func (si *LocalityIterator) advance() {
 		_, offset := top.g.NextUncompressed()
 		si.progress += offset - top.lastOffset
 		top.lastOffset = offset
+		inStep := uint32(top.startTxNum / si.hc.h.aggregationStep)
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
 			heap.Push(&si.h, top)
 		}
 
-		inStep := uint32(top.endTxNum / si.hc.h.aggregationStep)
+		inFile := inStep / StepsInBiggestFile
+		if inFile > 64 {
+			panic("this index supports only up to 64 files")
+		}
+
 		if !bytes.Equal(key, si.key) {
 			if si.key == nil {
 				si.key = key
-				si.list.Add(inStep)
-				//if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-				//	fmt.Printf("it1: %x, %d, %d\n", key, inStep, si.list.ToArray())
+				si.bitmap |= 1 << inFile
+				//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
+				//	fmt.Printf("it1: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
 				//}
 				continue
 			}
-			si.nextKey = si.key
-			si.nextList, si.list = si.list, si.nextList
-
-			si.list.Clear()
-			si.key = key
-			si.list.Add(inStep)
-			//if bytes.Equal(si.nextKey, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-			//	fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
-			//	fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
+			//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
+			//	fmt.Printf("it2 finish: %x, %b\n", si.key, si.bitmap)
 			//}
 
-			//fmt.Printf("it2: %x, %d, %d\n", key, inStep, si.list.ToArray())
-			//fmt.Printf("it2 next: %x, %d\n", si.nextKey, si.nextList.ToArray())
+			si.nextBitmap = si.bitmap
+			si.nextKey = si.key
+			si.bitmap = 0
+
+			si.bitmap |= 1 << inFile
+			si.key = key
+
+			//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
+			//	fmt.Printf("it2 new: %x, step=%d, file=%d, %b\n", si.key, inStep, inFile, si.bitmap)
+			//}
+
 			si.hasNext = true
 			return
 		}
-		si.list.Add(inStep)
-		//if bytes.Equal(key, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-		//	fmt.Printf("it3: %x, %d, %d\n", key, inStep, si.list.ToArray())
+		si.bitmap |= 1 << inFile
+
+		//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
+		//	fmt.Printf("it3 add: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
 		//}
 	}
+	si.nextBitmap, si.bitmap = si.bitmap, si.nextBitmap
 	si.nextKey = si.key
-	si.nextList, si.list = si.list, si.nextList
 	si.hasNext = false
 }
 
 func (si *LocalityIterator) HasNext() bool { return si.hasNext }
 func (si *LocalityIterator) Total() uint64 { return si.total }
 
-func (si *LocalityIterator) Next() ([]byte, *roaring.Bitmap, uint64) {
+func (si *LocalityIterator) Next() ([]byte, uint64, uint64) {
 	si.advance()
-	k, n, p := si.nextKey, si.nextList, si.progress
+	k, n, p := si.nextKey, si.nextBitmap, si.progress
 	return k, n, p
 }
 
 func (hc *HistoryContext) iterateKeysLocality(fromKey, toKey []byte, uptoTxNum uint64) *LocalityIterator {
-	si := &LocalityIterator{hc: hc, fromKey: fromKey, uptoTxNum: uptoTxNum, list: bitmapdb.NewBitmap(), nextList: bitmapdb.NewBitmap()}
+	si := &LocalityIterator{hc: hc, fromKey: fromKey, uptoTxNum: uptoTxNum}
 	hc.indexFiles.Ascend(func(item ctxItem) bool {
+		if (item.endTxNum-item.startTxNum)/hc.h.aggregationStep != StepsInBiggestFile {
+			return false
+		}
 		if item.startTxNum > uptoTxNum {
 			return false
 		}

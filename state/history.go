@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"math/bits"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,6 +35,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common/hex"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/semaphore"
@@ -1147,7 +1149,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 
 	// shard - is last stepNum in file + 1. Example: accounts.0-8.ef store history of steps [0,8) - shard=8
 	var foundExactShard1, foundExactShard2 bool
-	var exactShard1, exactShard2 uint32
+	var exactShard1, exactShard2 ctxItem
 	if hc.h.locality != nil {
 		// prevents searching key in many files
 		// LocalityIndex return exactly 2 file (step)
@@ -1158,28 +1160,47 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		offset := localityIdx.Lookup(key)
 		localityData := hc.lg
 		localityData.Reset(offset)
-		locations, _ := localityData.NextUncompressed()
-		bm := bitmapdb.NewBitmap()
-		err := bm.FrozenView(locations)
-		if err != nil {
-			return nil, false, err
-		}
-		if txNum/hc.h.aggregationStep > 0 {
-			bm.RemoveRange(0, txNum/hc.h.aggregationStep)
-		}
-		//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-		//	fmt.Printf("locIndex: %x, %d\n", key, bm.ToArray())
+		fileNumbersB, _ := localityData.NextUncompressed()
+		fileNumbers := binary.BigEndian.Uint64(fileNumbersB)
+
+		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+		//	fmt.Printf("locIndex: %x, %b, atTxNum=%d\n", key, fileNumbers, txNum)
 		//}
-		if bm.GetCardinality() > 0 {
+		minFileNum := txNum / hc.h.aggregationStep / StepsInBiggestFile
+		if minFileNum > 0 {
+			fileNumbers = (fileNumbers >> minFileNum) << minFileNum // clear first N bits
+		}
+		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+		//	fmt.Printf("locIndex2: %x, %b\n", key, fileNumbers)
+		//}
+		if fileNumbers > 0 {
 			foundExactShard1 = true
-			exactShard1 = bm.Minimum()
-			if bm.GetCardinality() > 1 {
-				bm.Remove(exactShard1)
+			n := uint32(bits.TrailingZeros64(fileNumbers))
+			exactShardNum := uint64(n * StepsInBiggestFile)
+			fileNumbers = (fileNumbers >> (n + 1)) << (n + 1) // clear first N bits
+			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+			//	fmt.Printf("locIndex3: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
+			//}
+			var ok bool
+			exactShard1, ok = hc.indexFiles.Get(ctxItem{startTxNum: exactShardNum * hc.h.aggregationStep, endTxNum: (exactShardNum + StepsInBiggestFile) * hc.h.aggregationStep})
+			if !ok {
+				panic(exactShardNum)
+			}
+			if fileNumbers > 0 {
 				foundExactShard2 = true
-				exactShard2 = bm.Minimum()
+				n = uint32(bits.TrailingZeros64(fileNumbers))
+				exactShardNum = uint64(n * StepsInBiggestFile)
+				//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+				//	fmt.Printf("locIndex4: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
+				//}
+				var ok bool
+				exactShard2, ok = hc.indexFiles.Get(ctxItem{startTxNum: exactShardNum * hc.h.aggregationStep, endTxNum: (exactShardNum + StepsInBiggestFile) * hc.h.aggregationStep})
+				if !ok {
+					panic(exactShardNum)
+				}
 			}
 		} else {
-			//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
+			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 			//fmt.Printf("can early return! %x, %d, txNum=%d\n", key, bm.ToArray(), txNum)
 			//}
 
@@ -1187,10 +1208,9 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			//bitmapdb.ReturnToPool(bm)
 			//return nil, false, nil
 		}
-		//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
+		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 		//	fmt.Printf("foundExactShard: %x, %t, %d, %d, stepSize=%d\n", key, foundExactShard1, exactShard1, exactShard2, hc.h.aggregationStep)
 		//}
-		bitmapdb.ReturnToPool(bm)
 	}
 
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
@@ -1208,98 +1228,47 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		g.Reset(offset)
 		k, _ := g.NextUncompressed()
 
-		//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-		//	fmt.Printf("findInFile: %x->%x, %d-%d\n", key, k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep)
+		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+		//	fmt.Printf("findInFile: %x->%x, %d-%d, offset=%d\n", key, k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, offset)
 		//}
 		if !bytes.Equal(k, key) {
-			//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-			//	fmt.Printf("not in this shard: %x, %d, %d-%d\n", k, txNum, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep)
-			//}
-
-			//if foundExactShard1 {
-			//	hc.indexFiles.DescendLessOrEqual(ctxItem{startTxNum: txNum, endTxNum: uint64(foundShardStep)*hc.h.aggregationStep + 1}, func(itt ctxItem) bool {
-			//		if itt.endTxNum/hc.h.aggregationStep == item.endTxNum/hc.h.aggregationStep {
-			//			fmt.Printf("k!=key: %x, %x\n", k, key)
-			//			fmt.Printf("shard1: %d!=%d, %d->%d!=%d\n", item.startTxNum, foundStartTxNum, foundShardStep, itt.endTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep)
-			//			panic(1)
-			//		}
-			//		return false
-			//	})
-			//	if foundExactShard2 {
-			//		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: uint64(foundExact2Step) * hc.h.aggregationStep, endTxNum: txNum}, func(itt ctxItem) bool {
-			//			if itt.startTxNum/hc.h.aggregationStep == item.startTxNum/hc.h.aggregationStep {
-			//				fmt.Printf("shard2: %d!=%d, %d->%d!=%d\n", item.startTxNum, foundStartTxNum, foundExact2Step, itt.startTxNum/hc.h.aggregationStep, item.startTxNum/hc.h.aggregationStep)
-			//				panic(1)
-			//			}
-			//			return false
-			//		})
-			//	}
-			//}
-
+			if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+				fmt.Printf("not in this shard: %x, %d, %d-%d\n", k, txNum, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep)
+			}
 			return true
 		}
 		//fmt.Printf("Found key=%x\n", k)
 		eliasVal, _ := g.NextUncompressed()
 		ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 		n, ok := ef.Search(txNum)
+
+		if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+			fmt.Printf("found txNum! %x, %d-%d, txNum: %d->%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum, foundTxNum)
+		}
+
 		if ok {
 			foundTxNum = n
 			foundEndTxNum = item.endTxNum
 			foundStartTxNum = item.startTxNum
 			found = true
 
-			//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-			//	fmt.Printf("found txNum! %x, %d-%d, txNum: %d->%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum, foundTxNum)
-			//}
-
-			// some assert
-			if foundExactShard1 {
-				//hc.indexFiles.DescendLessOrEqual(ctxItem{startTxNum: txNum, endTxNum: uint64(foundShardStep)*hc.h.aggregationStep + 1}, func(itt ctxItem) bool {
-				//	if itt.endTxNum/hc.h.aggregationStep != item.endTxNum/hc.h.aggregationStep {
-				//		fmt.Printf("shard1: %d!=%d, %d->%d!=%d\n", item.startTxNum, foundStartTxNum, foundShardStep, itt.endTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep)
-				//		panic(1)
-				//	}
-				//	return false
-				//})
-				//if foundExactShard2 {
-				//	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: uint64(foundExact2Step) * hc.h.aggregationStep, endTxNum: txNum}, func(itt ctxItem) bool {
-				//		if itt.startTxNum/hc.h.aggregationStep != item.startTxNum/hc.h.aggregationStep {
-				//			fmt.Printf("shard2: %d!=%d, %d->%d!=%d\n", item.startTxNum, foundStartTxNum, foundExact2Step, itt.startTxNum/hc.h.aggregationStep, item.startTxNum/hc.h.aggregationStep)
-				//			panic(1)
-				//		}
-				//		return false
-				//	})
-				//}
-
-				//if uint32(item.endTxNum/hc.h.aggregationStep) != exactShard1 {
-				//	if !foundExactShard2 {
-				//		fmt.Printf("key: %x, %d\n", key, txNum)
-				//		fmt.Printf("old: %d, %d-%d, %d\n", uint32(foundTxNum/hc.h.aggregationStep), item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, foundTxNum)
-				//		fmt.Printf("new: %d, %d\n", exactShard1, exactShard2)
-				//		panic(1)
-				//	}
-				//	if uint32(item.endTxNum/hc.h.aggregationStep) != exactShard2 {
-				//		fmt.Printf("key: %x, %d\n", key, txNum)
-				//		fmt.Printf("old: %d, %d-%d, %d\n", uint32(foundTxNum/hc.h.aggregationStep), item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, foundTxNum)
-				//		fmt.Printf("new: %d, %d\n", exactShard1, exactShard2)
-				//		panic(1)
-				//	}
-				//}
+			if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+				fmt.Printf("found txNum! %x, %d-%d, txNum: %d->%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum, foundTxNum)
 			}
 
 			//fmt.Printf("Found n=%d\n", n)
 			return false
 		} else {
-			//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-			//fmt.Printf("not found txNum! %x, %d-%d, txNum=%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum)
+			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+			//	fmt.Printf("not found txNum! %x, %d-%d, txNum=%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum)
 			//}
 		}
 		return true
 	}
 
-	if foundExactShard1 { // check up to 2 files
-		//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-		//fmt.Printf("search1: %d-%d\n", txNum/hc.h.aggregationStep, uint64(exactShard1))
+	if false && foundExactShard1 { // check up to 2 files
+		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+		//	fmt.Printf("search1: %d-%d\n", exactShard1.startTxNum/hc.h.aggregationStep, exactShard1.endTxNum/hc.h.aggregationStep)
 		//hc.indexFiles.Ascend(func(item ctxItem) bool {
 		//	fmt.Printf("tree: %d-%d\n", item.startTxNum, item.endTxNum)
 		//	return true
@@ -1307,20 +1276,18 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		//}
 
 		// check 1 file by `endTxNum`
-		hc.indexFiles.DescendLessOrEqual(ctxItem{startTxNum: txNum, endTxNum: uint64(exactShard1)*hc.h.aggregationStep + 1}, func(item ctxItem) bool {
-			findInFile(item)
-			return false
-		})
+		findInFile(exactShard1)
 
 		if !found && foundExactShard2 {
-			//if bytes.Equal(key, hex.MustDecodeString("01dad418bb0af88909ae9ce36fd71070e0c4fc5c")) {
-			//	fmt.Printf("search2: %d-%d\n", uint64(exactShard2), exactShard2)
+			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+			//	fmt.Printf("search2: %d-%d\n", exactShard2.startTxNum/hc.h.aggregationStep, exactShard2.endTxNum/hc.h.aggregationStep)
 			//}
 			// otherwise check 1 file by `startTxNum`
-			hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: uint64(exactShard2) * hc.h.aggregationStep, endTxNum: uint64(exactShard2) * hc.h.aggregationStep}, func(item ctxItem) bool {
-				findInFile(item)
-				return false
-			})
+			findInFile(exactShard2)
+
+			if !found {
+				hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: hc.h.locality.endTxNum + 1, endTxNum: hc.h.locality.endTxNum + 1}, findInFile)
+			}
 		}
 	} else { // iterate many files
 		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, findInFile)

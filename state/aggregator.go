@@ -238,6 +238,8 @@ func (a *Aggregator) SeekCommitment() (txNum uint64, err error) {
 	return txNum + 1, nil
 }
 
+const StepsInBiggestFile = 32
+
 func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	defer func(t time.Time) {
 		log.Info("[snapshots] aggregation step is done", "step", step, "took", time.Since(t))
@@ -247,7 +249,7 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		logEvery = time.NewTicker(time.Second * 30)
 		wg       sync.WaitGroup
 		errCh    = make(chan error, 8)
-		maxSpan  = 32 * a.aggregationStep
+		maxSpan  = StepsInBiggestFile * a.aggregationStep
 		txFrom   = step * a.aggregationStep
 		txTo     = (step + 1) * a.aggregationStep
 		//workers  = 1
