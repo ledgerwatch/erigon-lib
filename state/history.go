@@ -1527,12 +1527,16 @@ func (h *History) MakeSteps() []*HistoryStep {
 		if item.index == nil {
 			return false
 		}
-		step := &HistoryStep{compressVals: h.compressVals, indexItem: item, indexFile: ctxItem{
-			startTxNum: item.startTxNum,
-			endTxNum:   item.endTxNum,
-			getter:     item.decompressor.MakeGetter(),
-			reader:     recsplit.NewIndexReader(item.index),
-		}}
+		step := &HistoryStep{
+			compressVals: h.compressVals,
+			indexItem:    item,
+			indexFile: ctxItem{
+				startTxNum: item.startTxNum,
+				endTxNum:   item.endTxNum,
+				getter:     item.decompressor.MakeGetter(),
+				reader:     recsplit.NewIndexReader(item.index),
+			},
+		}
 		steps = append(steps, step)
 		return true
 	})

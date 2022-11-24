@@ -189,27 +189,29 @@ func (hc *HistoryContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint6
 }
 
 type ScanIteratorInc struct {
-	g          *compress.Getter
-	nextKey    []byte
-	key        []byte
-	uptoTxNum  uint64
-	nextTxNum  uint64
-	lastOffset uint64
-	total      uint64
-	hasNext    bool
+	g         *compress.Getter
+	nextKey   []byte
+	key       []byte
+	uptoTxNum uint64
+	nextTxNum uint64
+	nextDel   bool
+	total     uint64
+	hasNext   bool
 }
 
 func (sii *ScanIteratorInc) advance() {
 	if !sii.hasNext {
 		return
 	}
-	val, offset := sii.g.NextUncompressed()
+	val, _ := sii.g.NextUncompressed()
 	max := eliasfano32.Max(val)
+	sii.nextKey = sii.key
 	if max < sii.uptoTxNum {
 		sii.nextTxNum = max
-		sii.nextKey = sii.key
+		sii.nextDel = false
+	} else {
+		sii.nextDel = true
 	}
-	sii.lastOffset = offset
 	if sii.g.HasNext() {
 		sii.key, _ = sii.g.NextUncompressed()
 	} else {
@@ -221,10 +223,10 @@ func (sii *ScanIteratorInc) HasNext() bool {
 	return sii.hasNext
 }
 
-func (si *ScanIteratorInc) Next() ([]byte, uint64, uint64) {
-	k, n, p := si.nextKey, si.nextTxNum, si.lastOffset
+func (si *ScanIteratorInc) Next() ([]byte, uint64, bool) {
+	k, n, d := si.nextKey, si.nextTxNum, si.nextDel
 	si.advance()
-	return k, n, p
+	return k, n, d
 }
 
 func (sii *ScanIteratorInc) Total() uint64 {
@@ -236,7 +238,7 @@ func (hs *HistoryStep) iterateTxs(uptoTxNum uint64) *ScanIteratorInc {
 	sii.g = hs.indexFile.getter
 	sii.g.Reset(0)
 	if sii.g.HasNext() {
-		sii.key, sii.lastOffset = sii.g.NextUncompressed()
+		sii.key, _ = sii.g.NextUncompressed()
 		sii.total = uint64(hs.indexFile.getter.Size())
 		sii.uptoTxNum = uptoTxNum
 		sii.hasNext = true
