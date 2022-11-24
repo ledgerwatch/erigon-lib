@@ -4,7 +4,6 @@ go 1.18
 
 require (
 	github.com/RoaringBitmap/roaring v1.2.1
-	github.com/VictoriaMetrics/metrics v1.23.0
 	github.com/anacrolix/go-libutp v1.2.0
 	github.com/anacrolix/log v0.13.2-0.20220426014722-7b7d13a55d55
 	github.com/anacrolix/torrent v1.46.0
