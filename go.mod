@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/RoaringBitmap/roaring v1.2.1
+	github.com/VictoriaMetrics/metrics v1.23.0
 	github.com/anacrolix/go-libutp v1.2.0
 	github.com/anacrolix/log v0.13.2-0.20220426014722-7b7d13a55d55
 	github.com/anacrolix/torrent v1.46.0
@@ -22,7 +23,7 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.21
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.1
-	github.com/torquem-ch/mdbx-go v0.26.3-0.20221124080648-cfaf889d3e82
+	github.com/torquem-ch/mdbx-go v0.26.3-0.20221125043830-f2c90a8fc818
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.3.0
 	golang.org/x/exp v0.0.0-20221114191408-850992195362
