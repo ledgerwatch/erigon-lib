@@ -35,7 +35,6 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
-	"github.com/ledgerwatch/erigon-lib/common/hex"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/semaphore"
@@ -1221,9 +1220,9 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		//	fmt.Printf("findInFile: %x->%x, %d-%d, offset=%d\n", key, k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, offset)
 		//}
 		if !bytes.Equal(k, key) {
-			if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-				fmt.Printf("not in this shard: %x, %d, %d-%d\n", k, txNum, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep)
-			}
+			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+			//	fmt.Printf("not in this shard: %x, %d, %d-%d\n", k, txNum, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep)
+			//}
 			return true
 		}
 		//fmt.Printf("Found key=%x\n", k)
@@ -1231,9 +1230,9 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 		n, ok := ef.Search(txNum)
 
-		if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-			fmt.Printf("found txNum! %x, %d-%d, txNum: %d->%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum, foundTxNum)
-		}
+		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+		//	fmt.Printf("found txNum! %x, %d-%d, txNum: %d->%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum, foundTxNum)
+		//}
 
 		if ok {
 			foundTxNum = n
@@ -1241,9 +1240,9 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			foundStartTxNum = item.startTxNum
 			found = true
 
-			if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-				fmt.Printf("found txNum! %x, %d-%d, txNum: %d->%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum, foundTxNum)
-			}
+			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+			//	fmt.Printf("found txNum! %x, %d-%d, txNum: %d->%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum, foundTxNum)
+			//}
 
 			//fmt.Printf("Found n=%d\n", n)
 			return false
