@@ -85,7 +85,7 @@ func NewHistory(
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
-	if filenameBase == "account" || filenameBase == "storage" {
+	if filenameBase == "accounts" || filenameBase == "storage" {
 		h.localityIndex, err = NewLocalityIndex(dir, tmpdir, aggregationStep, filenameBase)
 		if err != nil {
 			return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)

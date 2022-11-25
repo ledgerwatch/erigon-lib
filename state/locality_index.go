@@ -169,7 +169,8 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fro
 		var ok bool
 		exactShard1, ok = files.Get(ctxItem{startTxNum: n1 * li.aggregationStep, endTxNum: (n1 + StepsInBiggestFile) * li.aggregationStep})
 		if !ok {
-			panic(exactShard1)
+			fmt.Printf("aab1: %d, %d\n", n1, n2)
+			panic(n1)
 		}
 	}
 
@@ -177,7 +178,8 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fro
 		var ok bool
 		exactShard2, ok = files.Get(ctxItem{startTxNum: n2 * li.aggregationStep, endTxNum: (n2 + StepsInBiggestFile) * li.aggregationStep})
 		if !ok {
-			panic(exactShard2)
+			fmt.Printf("aab2: %d, %d\n", n1, n2)
+			panic(n2)
 		}
 	}
 	return exactShard1, exactShard2, ok1, ok2
@@ -190,9 +192,7 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum u
 		return 0, 0, false, false
 	}
 
-	offset := r.Lookup(key)
-	fileNumbers := li.file.index.OrdinalLookup(offset)
-
+	fileNumbers := r.Lookup(key)
 	fromFileNum := fromTxNum / li.aggregationStep / StepsInBiggestFile
 	if fromFileNum > 0 {
 		fileNumbers = (fileNumbers >> fromFileNum) << fromFileNum // clear first N bits
@@ -200,7 +200,23 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum u
 	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 	//	fmt.Printf("locIndex2: %x, %b\n", key, fileNumbers)
 	//}
-	if fileNumbers == 0 {
+	if fileNumbers > 0 {
+		ok1 = true
+		n := bits.TrailingZeros64(fileNumbers)
+		exactShardNum1 = uint64(n * StepsInBiggestFile)
+		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+		//	fmt.Printf("locIndex3: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
+		//}
+		fileNumbers = (fileNumbers >> (n + 1)) << (n + 1) // clear first N bits
+		if fileNumbers > 0 {
+			ok2 = true
+			n = bits.TrailingZeros64(fileNumbers)
+			exactShardNum2 = uint64(n * StepsInBiggestFile)
+			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
+			//	fmt.Printf("locIndex4: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
+			//}
+		}
+	} else {
 		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 		//fmt.Printf("can early return! %x, %d, txNum=%d\n", key, bm.ToArray(), txNum)
 		//}
@@ -209,23 +225,6 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum u
 		//return nil, false, nil
 	}
 
-	ok1 = true
-	n := uint32(bits.TrailingZeros64(fileNumbers))
-	exactShardNum := uint64(n * StepsInBiggestFile)
-	fileNumbers = (fileNumbers >> (n + 1)) << (n + 1) // clear first N bits
-	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-	//	fmt.Printf("locIndex3: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
-	//}
-	exactShardNum1 = exactShardNum * li.aggregationStep
-	if fileNumbers > 0 {
-		ok2 = true
-		n = uint32(bits.TrailingZeros64(fileNumbers))
-		exactShardNum = uint64(n * StepsInBiggestFile)
-		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-		//	fmt.Printf("locIndex4: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
-		//}
-		exactShardNum2 = exactShardNum * li.aggregationStep
-	}
 	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 	//	fmt.Printf("foundExactShard: %x, %t, %d, %d, stepSize=%d\n", key, foundExactShard1, exactShard1, exactShard2, hc.h.aggregationStep)
 	//}
@@ -294,7 +293,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 			binary.BigEndian.PutUint64(bm, filesBitmap)
 
 			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-			//	fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
+			//fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
 			//}
 			if err = rs.AddKey(k, filesBitmap); err != nil {
 				return err
