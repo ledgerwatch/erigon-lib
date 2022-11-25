@@ -74,6 +74,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) erro
 			log.Info("[LocalityIndex] build step1", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		}
 	}
+	log.Info("[LocalityIndex] keys amount", "total", count)
 
 	lFName := fmt.Sprintf("%s.%d-%d.l", h.filenameBase, fromStep, toStep)
 	lFPath := filepath.Join(h.dir, lFName)
