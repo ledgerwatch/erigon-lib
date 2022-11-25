@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
-	"math/bits"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,7 +57,7 @@ type History struct {
 	workers          int
 	compressVals     bool
 
-	locality *filesItem
+	localityIndex *LocalityIndex
 
 	wal     *historyWAL
 	walLock sync.RWMutex
@@ -83,6 +82,10 @@ func NewHistory(
 	}
 	var err error
 	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable)
+	if err != nil {
+		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
+	}
+	h.localityIndex, err = NewLocalityIndex(dir, tmpdir, aggregationStep, filenameBase)
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
@@ -181,46 +184,9 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 			}
 		}
 		h.files.ReplaceOrInsert(item)
-
 	}
 	if len(uselessFiles) > 0 {
 		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
-	}
-
-	reLocality := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).li$")
-	for _, f := range files {
-		if !f.Type().IsRegular() {
-			continue
-		}
-
-		name := f.Name()
-		subs := reLocality.FindStringSubmatch(name)
-		if len(subs) != 3 {
-			if len(subs) != 0 {
-				log.Warn("File ignored by inverted index scan, more than 3 submatches", "name", name, "submatches", len(subs))
-			}
-			continue
-		}
-		var startStep, endStep uint64
-		if startStep, err = strconv.ParseUint(subs[1], 10, 64); err != nil {
-			log.Warn("File ignored by inverted index scan, parsing startTxNum", "error", err, "name", name)
-			continue
-		}
-		if endStep, err = strconv.ParseUint(subs[2], 10, 64); err != nil {
-			log.Warn("File ignored by inverted index scan, parsing endTxNum", "error", err, "name", name)
-			continue
-		}
-		if startStep > endStep {
-			log.Warn("File ignored by inverted index scan, startTxNum > endTxNum", "name", name)
-			continue
-		}
-		if endStep > StepsInBiggestFile*LocalityIndexUint64Limit {
-			log.Warn("LocalityIndex does store bitmaps as uint64, means it can't handle > 2048 steps. But it's possible to implement")
-			continue
-		}
-
-		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
-		h.locality = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 	}
 }
 
@@ -262,18 +228,6 @@ func (h *History) openFiles() error {
 		h.files.Delete(item)
 	}
 
-	if h.locality != nil {
-		fromStep, toStep := h.locality.startTxNum/h.aggregationStep, h.locality.endTxNum/h.aggregationStep
-		lIdxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.li", h.filenameBase, fromStep, toStep))
-
-		if dir.FileExist(lIdxPath) {
-			h.locality.index, err = recsplit.OpenIndex(lIdxPath)
-			if err != nil {
-				log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, lIdxPath).Error())
-				return nil
-			}
-		}
-	}
 	return nil
 }
 
@@ -1133,9 +1087,9 @@ func (h *History) MakeContext() *HistoryContext {
 
 		return true
 	})
-	if hc.h.locality != nil {
-		hc.li = hc.h.locality.index
-		hc.lr = recsplit.NewIndexReader(hc.h.locality.index)
+	if hc.h.localityIndex != nil {
+		hc.li = hc.h.localityIndex.file.index
+		hc.lr = recsplit.NewIndexReader(hc.li)
 	}
 
 	return &hc
@@ -1143,67 +1097,7 @@ func (h *History) MakeContext() *HistoryContext {
 func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
-
-	// shard - is last stepNum in file + 1. Example: accounts.0-8.ef store history of steps [0,8) - shard=8
-	var foundExactShard1, foundExactShard2 bool
-	var exactShard1, exactShard2 ctxItem
-	if hc.h.locality != nil {
-		// prevents searching key in many files
-		// LocalityIndex return exactly 2 file (step)
-
-		//TODO: if txNum is close to Max-2 steps, no profit from LocalityIndex. skip then
-
-		offset := hc.lr.Lookup(key)
-		fileNumbers := hc.li.OrdinalLookup(offset)
-
-		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-		//	fmt.Printf("locIndex: %x, %b, atTxNum=%d\n", key, fileNumbers, txNum)
-		//}
-		minFileNum := txNum / hc.h.aggregationStep / StepsInBiggestFile
-		if minFileNum > 0 {
-			fileNumbers = (fileNumbers >> minFileNum) << minFileNum // clear first N bits
-		}
-		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-		//	fmt.Printf("locIndex2: %x, %b\n", key, fileNumbers)
-		//}
-		if fileNumbers > 0 {
-			foundExactShard1 = true
-			n := uint32(bits.TrailingZeros64(fileNumbers))
-			exactShardNum := uint64(n * StepsInBiggestFile)
-			fileNumbers = (fileNumbers >> (n + 1)) << (n + 1) // clear first N bits
-			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-			//	fmt.Printf("locIndex3: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
-			//}
-			var ok bool
-			exactShard1, ok = hc.indexFiles.Get(ctxItem{startTxNum: exactShardNum * hc.h.aggregationStep, endTxNum: (exactShardNum + StepsInBiggestFile) * hc.h.aggregationStep})
-			if !ok {
-				panic(exactShardNum)
-			}
-			if fileNumbers > 0 {
-				foundExactShard2 = true
-				n = uint32(bits.TrailingZeros64(fileNumbers))
-				exactShardNum = uint64(n * StepsInBiggestFile)
-				//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-				//	fmt.Printf("locIndex4: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
-				//}
-				var ok bool
-				exactShard2, ok = hc.indexFiles.Get(ctxItem{startTxNum: exactShardNum * hc.h.aggregationStep, endTxNum: (exactShardNum + StepsInBiggestFile) * hc.h.aggregationStep})
-				if !ok {
-					panic(exactShardNum)
-				}
-			}
-		} else {
-			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-			//fmt.Printf("can early return! %x, %d, txNum=%d\n", key, bm.ToArray(), txNum)
-			//}
-
-			//TODO: can't early return, because maybe index returned false-positive...
-			//return nil, false, nil
-		}
-		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-		//	fmt.Printf("foundExactShard: %x, %t, %d, %d, stepSize=%d\n", key, foundExactShard1, exactShard1, exactShard2, hc.h.aggregationStep)
-		//}
-	}
+	exactShard1, exactShard2, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.lr, key, txNum, hc.indexFiles)
 
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
@@ -1258,31 +1152,22 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		return true
 	}
 
-	if foundExactShard1 { // check up to 2 files
-		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-		//	fmt.Printf("search1: %d-%d\n", exactShard1.startTxNum/hc.h.aggregationStep, exactShard1.endTxNum/hc.h.aggregationStep)
-		//hc.indexFiles.Ascend(func(item ctxItem) bool {
-		//	fmt.Printf("tree: %d-%d\n", item.startTxNum, item.endTxNum)
-		//	return true
-		//})
-		//}
-
-		// check 1 file by `endTxNum`
-		findInFile(exactShard1)
-
-		if !found && foundExactShard2 {
-			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-			//	fmt.Printf("search2: %d-%d\n", exactShard2.startTxNum/hc.h.aggregationStep, exactShard2.endTxNum/hc.h.aggregationStep)
-			//}
-			// otherwise check 1 file by `startTxNum`
-			findInFile(exactShard2)
-
-			if !found {
-				hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: hc.h.locality.endTxNum + 1, endTxNum: hc.h.locality.endTxNum + 1}, findInFile)
-			}
+	searchFrom := txNum
+	if hc.h.localityIndex != nil {
+		// check up to 2 exact files
+		if foundExactShard1 {
+			findInFile(exactShard1)
 		}
-	} else { // iterate many files
-		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, findInFile)
+		if !found && foundExactShard2 {
+			findInFile(exactShard2)
+		}
+		// otherwise search in recent non-fully-merged files (they are out of LocalityIndex scope)
+		if !found {
+			searchFrom = hc.h.localityIndex.file.endTxNum + 1
+		}
+	}
+	if !found {
+		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: searchFrom, endTxNum: searchFrom}, findInFile)
 	}
 
 	if found {
