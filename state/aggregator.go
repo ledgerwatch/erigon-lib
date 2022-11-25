@@ -239,6 +239,7 @@ func (a *Aggregator) SeekCommitment() (txNum uint64, err error) {
 }
 
 const StepsInBiggestFile = 32
+const LocalityIndexUint64Limit = 64 //bitmap spend 1 bit per file, stored as uint64
 
 func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	defer func(t time.Time) {

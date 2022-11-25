@@ -214,7 +214,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 			log.Warn("File ignored by inverted index scan, startTxNum > endTxNum", "name", name)
 			continue
 		}
-		if endStep > StepsInBiggestFile*64 { //spend 1 bit per file stored as uint64
+		if endStep > StepsInBiggestFile*LocalityIndexUint64Limit {
 			log.Warn("LocalityIndex does store bitmaps as uint64, means it can't handle > 2048 steps. But it's possible to implement")
 			continue
 		}
