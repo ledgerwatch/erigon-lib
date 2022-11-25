@@ -1095,7 +1095,7 @@ func (h *History) MakeContext() *HistoryContext {
 func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
-	exactShard1, exactShard2, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.lr, key, txNum, hc.indexFiles)
+	exactShard1, exactShard2, searchFrom, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.lr, key, txNum, hc.indexFiles)
 
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
@@ -1150,7 +1150,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		return true
 	}
 
-	searchFrom := txNum
 	if hc.h.localityIndex != nil {
 		// check up to 2 exact files
 		if foundExactShard1 {
@@ -1160,9 +1159,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			findInFile(exactShard2)
 		}
 		// otherwise search in recent non-fully-merged files (they are out of LocalityIndex scope)
-		if !found {
-			searchFrom = hc.h.localityIndex.file.endTxNum + 1
-		}
+		// searchFrom - variable already set for this
 	}
 	if !found {
 		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: searchFrom, endTxNum: searchFrom}, findInFile)

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -130,7 +131,6 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) {
 
 func (li *LocalityIndex) openFiles() (err error) {
 	if li.file == nil {
-		log.Warn("no LocalityIndex file yet", "name", li.filenameBase)
 		return nil
 	}
 	fromStep, toStep := li.file.startTxNum/li.aggregationStep, li.file.endTxNum/li.aggregationStep
@@ -159,9 +159,9 @@ func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 	return nil
 }
 
-func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fromTxNum uint64, files *btree.BTreeG[ctxItem]) (exactShard1, exactShard2 ctxItem, ok1, ok2 bool) {
+func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fromTxNum uint64, files *btree.BTreeG[ctxItem]) (exactShard1, exactShard2 ctxItem, orSearchFromTxn uint64, ok1, ok2 bool) {
 	if li == nil || li.file == nil || li.file.index == nil {
-		return exactShard1, exactShard2, false, false
+		return exactShard1, exactShard2, fromTxNum, false, false
 	}
 
 	n1, n2, ok1, ok2 := li.lookup(r, key, fromTxNum)
@@ -170,7 +170,6 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fro
 		var ok bool
 		exactShard1, ok = files.Get(ctxItem{startTxNum: n1 * li.aggregationStep, endTxNum: (n1 + StepsInBiggestFile) * li.aggregationStep})
 		if !ok {
-			fmt.Printf("aab1: %d, %d\n", n1, n2)
 			panic(n1)
 		}
 	}
@@ -179,11 +178,10 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fro
 		var ok bool
 		exactShard2, ok = files.Get(ctxItem{startTxNum: n2 * li.aggregationStep, endTxNum: (n2 + StepsInBiggestFile) * li.aggregationStep})
 		if !ok {
-			fmt.Printf("aab2: %d, %d\n", n1, n2)
 			panic(n2)
 		}
 	}
-	return exactShard1, exactShard2, ok1, ok2
+	return exactShard1, exactShard2, cmp.Max(li.file.endTxNum+1, fromTxNum), ok1, ok2
 }
 
 // prevents searching key in many files
