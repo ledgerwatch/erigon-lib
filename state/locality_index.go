@@ -29,6 +29,8 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
+const LocalityIndexUint64Limit = 64 //bitmap spend 1 bit per file, stored as uint64
+
 // LocalityIndex - has info in which .ef files exists given key
 // Format: key -> bitmap(step_number_list)
 // step_number_list is list of .ef files where exists given key
