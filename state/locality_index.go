@@ -25,8 +25,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ledgerwatch/erigon-lib/compress"
-	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -76,51 +74,6 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) erro
 	}
 	log.Info("[LocalityIndex] keys amount", "total", count)
 
-	lFName := fmt.Sprintf("%s.%d-%d.l", h.filenameBase, fromStep, toStep)
-	lFPath := filepath.Join(h.dir, lFName)
-	comp, err := compress.NewCompressor(ctx, "", lFPath, h.tmpdir, compress.MinPatternScore, h.workers, log.LvlTrace)
-	if err != nil {
-		return fmt.Errorf("create %s compressor: %w", h.filenameBase, err)
-	}
-	defer comp.Close()
-
-	it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
-
-	keys := etl.NewCollector("LocalityIndex", h.tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize))
-	keys.LogLvl(log.LvlTrace)
-
-	bm := make([]byte, 8)
-	total = float64(it.Total())
-	for it.HasNext() {
-		k, filesBitmap, progress := it.Next()
-		binary.BigEndian.PutUint64(bm, filesBitmap)
-
-		//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-		//	fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
-		//}
-		if err = comp.AddUncompressedWord(bm); err != nil {
-			return err
-		}
-
-		_ = keys.Collect(k, nil)
-
-		select {
-		default:
-		case <-logEvery.C:
-			log.Info("[LocalityIndex] build step2", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
-		}
-	}
-	if err = comp.Compress(); err != nil {
-		return err
-	}
-	comp.Close()
-
-	dec, err := compress.NewDecompressor(lFPath)
-	if err != nil {
-		return fmt.Errorf("open idx: %w", err)
-	}
-	dataGetter := dec.MakeGetter()
-
 	fName := fmt.Sprintf("%s.%d-%d.li", h.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(h.dir, fName)
 
@@ -138,32 +91,30 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) erro
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
 
+	bm := make([]byte, 8)
+	total = float64(it.Total())
+
 	for {
-		var pos uint64
-		_ = keys.Load(nil, "", func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+		it = h.MakeContext().iterateKeysLocality(nil, nil, toStep*h.aggregationStep)
+		for it.HasNext() {
+			k, filesBitmap, progress := it.Next()
+			binary.BigEndian.PutUint64(bm, filesBitmap)
 
 			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-			//	fmt.Printf(".li file: %x, %d\n", k, pos)
+			//	fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
 			//}
-			if err = rs.AddKey(k, pos); err != nil {
+			if err = rs.AddKey(k, filesBitmap); err != nil {
 				return err
 			}
-			pos = dataGetter.Skip()
-			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-			//	fmt.Printf(".li file, next pos: %x, %d\n", k, pos)
-			//}
 
 			select {
 			default:
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build step3", "name", h.filenameBase, "k", fmt.Sprintf("%x", k))
+				log.Info("[LocalityIndex] build step2", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
 			}
-			return nil
-		}, etl.TransformArgs{})
-
+		}
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
-				panic("TODO: need implement graceful retry - collector does delete files after load")
 				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
 			} else {
@@ -178,7 +129,7 @@ func (l *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) erro
 	if err != nil {
 		return fmt.Errorf("open idx: %w", err)
 	}
-	l.files = &filesItem{index: idx, decompressor: dec, startTxNum: fromStep * h.aggregationStep, endTxNum: toStep * h.aggregationStep}
+	l.files = &filesItem{index: idx, startTxNum: fromStep * h.aggregationStep, endTxNum: toStep * h.aggregationStep}
 	return nil
 }
 

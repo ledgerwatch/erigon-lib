@@ -261,15 +261,9 @@ func (h *History) openFiles() error {
 
 	if h.locality != nil {
 		fromStep, toStep := h.locality.startTxNum/h.aggregationStep, h.locality.endTxNum/h.aggregationStep
-		lPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.l", h.filenameBase, fromStep, toStep))
 		lIdxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.li", h.filenameBase, fromStep, toStep))
 
-		if dir.FileExist(lPath) {
-			h.locality.decompressor, err = compress.NewDecompressor(lPath)
-			if err != nil {
-				log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, lPath).Error())
-				return nil
-			}
+		if dir.FileExist(lIdxPath) {
 			h.locality.index, err = recsplit.OpenIndex(lIdxPath)
 			if err != nil {
 				log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, lIdxPath).Error())
@@ -1100,8 +1094,8 @@ type HistoryContext struct {
 	h                        *History
 	indexFiles, historyFiles *btree.BTreeG[ctxItem]
 
+	li *recsplit.Index
 	lr *recsplit.IndexReader
-	lg *compress.Getter
 
 	tx kv.Tx
 }
@@ -1137,8 +1131,8 @@ func (h *History) MakeContext() *HistoryContext {
 		return true
 	})
 	if hc.h.locality != nil {
+		hc.li = hc.h.locality.index
 		hc.lr = recsplit.NewIndexReader(hc.h.locality.index)
-		hc.lg = hc.h.locality.decompressor.MakeGetter()
 	}
 
 	return &hc
@@ -1156,12 +1150,8 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 
 		//TODO: if txNum is close to Max-2 steps, no profit from LocalityIndex. skip then
 
-		localityIdx := hc.lr
-		offset := localityIdx.Lookup(key)
-		localityData := hc.lg
-		localityData.Reset(offset)
-		fileNumbersB, _ := localityData.NextUncompressed()
-		fileNumbers := binary.BigEndian.Uint64(fileNumbersB)
+		offset := hc.lr.Lookup(key)
+		fileNumbers := hc.li.OrdinalLookup(offset)
 
 		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 		//	fmt.Printf("locIndex: %x, %b, atTxNum=%d\n", key, fileNumbers, txNum)
@@ -1205,7 +1195,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			//}
 
 			//TODO: can't early return, because maybe index returned false-positive...
-			//bitmapdb.ReturnToPool(bm)
 			//return nil, false, nil
 		}
 		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
@@ -1266,7 +1255,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		return true
 	}
 
-	if false && foundExactShard1 { // check up to 2 files
+	if foundExactShard1 { // check up to 2 files
 		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 		//	fmt.Printf("search1: %d-%d\n", exactShard1.startTxNum/hc.h.aggregationStep, exactShard1.endTxNum/hc.h.aggregationStep)
 		//hc.indexFiles.Ascend(func(item ctxItem) bool {
