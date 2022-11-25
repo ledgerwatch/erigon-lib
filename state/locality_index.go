@@ -130,6 +130,7 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) {
 
 func (li *LocalityIndex) openFiles() (err error) {
 	if li.file == nil {
+		log.Warn("no LocalityIndex file yet", "name", li.filenameBase)
 		return nil
 	}
 	fromStep, toStep := li.file.startTxNum/li.aggregationStep, li.file.endTxNum/li.aggregationStep
