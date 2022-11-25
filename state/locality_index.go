@@ -114,7 +114,9 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) {
 		}
 
 		startTxNum, endTxNum := startStep*li.aggregationStep, endStep*li.aggregationStep
-		if li.file != nil && li.file.endTxNum < endTxNum {
+		if li.file == nil {
+			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+		} else if li.file.endTxNum < endTxNum {
 			uselessFiles = append(uselessFiles,
 				fmt.Sprintf("%s.%d-%d.li", li.filenameBase, li.file.startTxNum/li.aggregationStep, li.file.endTxNum/li.aggregationStep),
 			)
@@ -126,8 +128,10 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) {
 	}
 }
 
-func (li *LocalityIndex) openFiles() error {
-	var err error
+func (li *LocalityIndex) openFiles() (err error) {
+	if li.file == nil {
+		return nil
+	}
 	fromStep, toStep := li.file.startTxNum/li.aggregationStep, li.file.endTxNum/li.aggregationStep
 	idxPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.li", li.filenameBase, fromStep, toStep))
 	li.file.index, err = recsplit.OpenIndex(idxPath)
@@ -147,9 +151,15 @@ func (li *LocalityIndex) Close() {
 	li.closeFiles()
 }
 func (li *LocalityIndex) Files() (res []string) { return res }
+func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
+	if li != nil && li.file != nil && &li.file.index != nil {
+		return recsplit.NewIndexReader(li.file.index)
+	}
+	return nil
+}
 
 func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fromTxNum uint64, files *btree.BTreeG[ctxItem]) (exactShard1, exactShard2 ctxItem, ok1, ok2 bool) {
-	if li == nil {
+	if li == nil || li.file == nil || li.file.index == nil {
 		return exactShard1, exactShard2, false, false
 	}
 
@@ -176,7 +186,7 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fro
 // prevents searching key in many files
 // LocalityIndex return exactly 2 file (step)
 func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum uint64) (exactShardNum1, exactShardNum2 uint64, ok1, ok2 bool) {
-	if li == nil {
+	if li == nil || li.file == nil || li.file.index == nil {
 		return 0, 0, false, false
 	}
 

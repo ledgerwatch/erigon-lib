@@ -85,9 +85,11 @@ func NewHistory(
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
-	h.localityIndex, err = NewLocalityIndex(dir, tmpdir, aggregationStep, filenameBase)
-	if err != nil {
-		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
+	if filenameBase == "account" || filenameBase == "storage" {
+		h.localityIndex, err = NewLocalityIndex(dir, tmpdir, aggregationStep, filenameBase)
+		if err != nil {
+			return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
+		}
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -1051,7 +1053,6 @@ type HistoryContext struct {
 	h                        *History
 	indexFiles, historyFiles *btree.BTreeG[ctxItem]
 
-	li *recsplit.Index
 	lr *recsplit.IndexReader
 
 	tx kv.Tx
@@ -1088,8 +1089,7 @@ func (h *History) MakeContext() *HistoryContext {
 		return true
 	})
 	if hc.h.localityIndex != nil {
-		hc.li = hc.h.localityIndex.file.index
-		hc.lr = recsplit.NewIndexReader(hc.li)
+		hc.lr = hc.h.localityIndex.NewIdxReader()
 	}
 
 	return &hc
