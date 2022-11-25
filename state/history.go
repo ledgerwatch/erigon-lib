@@ -1150,17 +1150,19 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		return true
 	}
 
-	if hc.h.localityIndex != nil {
-		// check up to 2 exact files
-		if foundExactShard1 {
-			findInFile(exactShard1)
-		}
-		if !found && foundExactShard2 {
-			findInFile(exactShard2)
-		}
-		// otherwise search in recent non-fully-merged files (they are out of LocalityIndex scope)
-		// searchFrom - variable already set for this
+	// -- LocaliyIndex opimization --
+	// check up to 2 exact files
+	if foundExactShard1 {
+		findInFile(exactShard1)
 	}
+	if !found && foundExactShard2 {
+		findInFile(exactShard2)
+	}
+	// otherwise search in recent non-fully-merged files (they are out of LocalityIndex scope)
+	// searchFrom - variable already set for this
+	// if there is no LocaliyIndex available
+	// -- LocaliyIndex opimization End --
+
 	if !found {
 		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: searchFrom, endTxNum: searchFrom}, findInFile)
 	}
