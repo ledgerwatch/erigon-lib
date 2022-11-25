@@ -187,7 +187,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
 	}
 
-	reLocality := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).l$")
+	reLocality := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).li$")
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
