@@ -288,7 +288,7 @@ func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighte
 		defer sem.Release(1)
 		defer wg.Done()
 
-		errs <- h.localityIndex.BuildMissedIndices(ctx, sem, h)
+		errs <- h.localityIndex.BuildMissedIndices(ctx, h)
 	}()
 
 	for _, item := range missedFiles {

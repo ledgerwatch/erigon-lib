@@ -738,6 +738,9 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		return nil, nil, err
 	}
 	if r.history {
+		if err = h.localityIndex.BuildMissedIndices(ctx, h); err != nil {
+			return nil, nil, err
+		}
 		log.Info(fmt.Sprintf("[snapshots] merge: %s.%d-%d.v", h.filenameBase, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		for _, f := range indexFiles {
 			defer f.decompressor.EnableMadvNormal().DisableReadAhead()

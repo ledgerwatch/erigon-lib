@@ -36,7 +36,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/sync/semaphore"
 )
 
 const LocalityIndexUint64Limit = 64 //bitmap spend 1 bit per file, stored as uint64
@@ -244,7 +243,10 @@ func (li *LocalityIndex) missedIdxFiles(h *History) (toStep uint64, idxExists bo
 	return toStep, dir.FileExist(filepath.Join(li.dir, fName))
 }
 
-func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted, h *History) error {
+func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) error {
+	if li == nil {
+		return nil
+	}
 	toStep, idxExists := li.missedIdxFiles(h)
 	if idxExists {
 		return nil

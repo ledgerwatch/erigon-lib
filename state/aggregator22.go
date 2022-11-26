@@ -1275,15 +1275,15 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 
 func (a *Aggregator22) BuildLocalityIndex(ctx context.Context, sem *semaphore.Weighted) error {
 	li := &LocalityIndex{}
-	err := li.BuildMissedIndices(ctx, sem, a.accounts)
+	err := li.BuildMissedIndices(ctx, a.accounts)
 	if err != nil {
 		return err
 	}
-	err = li.BuildMissedIndices(ctx, sem, a.storage)
+	err = li.BuildMissedIndices(ctx, a.storage)
 	if err != nil {
 		return err
 	}
-	err = li.BuildMissedIndices(ctx, sem, a.code)
+	err = li.BuildMissedIndices(ctx, a.code)
 	if err != nil {
 		return err
 	}
