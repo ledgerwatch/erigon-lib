@@ -251,6 +251,9 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 	if idxExists {
 		return nil
 	}
+	if toStep == 0 {
+		return nil
+	}
 	defer h.EnableMadvNormalReadAhead().DisableReadAhead()
 
 	logEvery := time.NewTicker(30 * time.Second)
@@ -327,14 +330,19 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 		}
 	}
 
-	return li.openFiles()
-
-	//idx, err := recsplit.OpenIndex(idxPath)
-	//if err != nil {
-	//	return fmt.Errorf("open idx: %w", err)
-	//}
-	//li.file = &filesItem{index: idx, startTxNum: fromStep * h.aggregationStep, endTxNum: toStep * h.aggregationStep}
-	//return nil
+	var oldFile *filesItem
+	if li.file != nil {
+		oldFile = li.file
+	}
+	idx, err := recsplit.OpenIndex(idxPath)
+	if err != nil {
+		return fmt.Errorf("open idx: %w", err)
+	}
+	li.file = &filesItem{index: idx, startTxNum: fromStep * h.aggregationStep, endTxNum: toStep * h.aggregationStep}
+	if oldFile != nil {
+		_ = os.Remove(filepath.Join(h.dir, fName, fmt.Sprintf("%s.%d-%d.li", h.filenameBase, oldFile.startTxNum/h.aggregationStep, oldFile.endTxNum/h.aggregationStep)))
+	}
+	return nil
 }
 
 type LocalityIterator struct {
