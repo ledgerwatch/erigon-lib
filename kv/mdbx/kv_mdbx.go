@@ -829,7 +829,7 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcSelfPnlMergeVolume.Set(uint64(latency.GCDetails.SelfPnlMergeVolume))
 		kv.DbGcSelfPnlMergeCalls.Set(uint64(latency.GCDetails.SelfPnlMergeCalls))
 
-		log.Info("Commit metrics. Latency: {" + strings.Join([]string{
+		log.Info("Commit metrics. Latency: {"+strings.Join([]string{
 			fmt.Sprintf("Preparation=%s", latency.Preparation),
 			fmt.Sprintf("Audit=%s", latency.Audit),
 			fmt.Sprintf("Write=%s", latency.Write),
@@ -843,7 +843,7 @@ func (tx *MdbxTx) Commit() error {
 			fmt.Sprintf("WorkRtime=%s", latency.GCDetails.WorkRtime),
 			fmt.Sprintf("SelfRtime=%s", latency.GCDetails.SelfRtime),
 			fmt.Sprintf("SelfXtime=%s", latency.GCDetails.SelfXtime),
-		}, ",") + "}, gc: {" + strings.Join([]string{
+		}, ",")+"}, gc: {"+strings.Join([]string{
 			fmt.Sprintf("WorkRsteps=%d", latency.GCDetails.WorkRsteps),
 			fmt.Sprintf("SelfRsteps=%d", latency.GCDetails.SelfRsteps),
 			fmt.Sprintf("WorkRxpages=%d", latency.GCDetails.WorkRxpages),
@@ -857,7 +857,7 @@ func (tx *MdbxTx) Commit() error {
 			fmt.Sprintf("Wipes=%d", latency.GCDetails.Wipes),
 			fmt.Sprintf("Flushes=%d", latency.GCDetails.Flushes),
 			fmt.Sprintf("Kicks=%d", latency.GCDetails.Kicks),
-		}, ",") + "}")
+		}, ",")+"}", "stack", dbg.Stack())
 	}
 
 	//if latency.Whole > slowTx {
