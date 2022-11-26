@@ -276,10 +276,20 @@ func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighte
 	if err := h.InvertedIndex.BuildMissedIndices(ctx, sem); err != nil {
 		return err
 	}
-
 	missedFiles := h.missedIdxFiles()
-	errs := make(chan error, len(missedFiles))
+	errs := make(chan error, len(missedFiles)+1) // +1 for locality index
 	wg := sync.WaitGroup{}
+
+	if err := sem.Acquire(ctx, 1); err != nil {
+		errs <- err
+	}
+	wg.Add(1)
+	go func() {
+		defer sem.Release(1)
+		defer wg.Done()
+
+		errs <- h.localityIndex.BuildMissedIndices(ctx, sem, h)
+	}()
 
 	for _, item := range missedFiles {
 		if err := sem.Acquire(ctx, 1); err != nil {
