@@ -95,6 +95,7 @@ const (
 	SentryDB     Label = 2
 	ConsensusDB  Label = 3
 	DownloaderDB Label = 4
+	InMem        Label = 5
 )
 
 func (l Label) String() string {
