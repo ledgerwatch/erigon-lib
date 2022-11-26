@@ -805,6 +805,7 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcWorkRtime.Update(latency.GCDetails.WorkRtime.Seconds())
 		kv.DbGcSelfRtime.Update(latency.GCDetails.SelfRtime.Seconds())
 		kv.DbGcSelfXtime.Update(latency.GCDetails.SelfXtime.Seconds())
+		kv.DbGcWorkXtime.Update(latency.GCDetails.WorkXtime.Seconds())
 
 		kv.DbGcWorkRsteps.Set(uint64(latency.GCDetails.WorkRsteps))
 		kv.DbGcSelfRsteps.Set(uint64(latency.GCDetails.SelfRsteps))
