@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/btree"
@@ -58,7 +57,7 @@ func NewLocalityIndex(
 	aggregationStep uint64,
 	filenameBase string,
 ) (*LocalityIndex, error) {
-	ii := &LocalityIndex{
+	li := &LocalityIndex{
 		dir:             dir,
 		tmpdir:          tmpdir,
 		aggregationStep: aggregationStep,
@@ -68,17 +67,20 @@ func NewLocalityIndex(
 	if err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
-	ii.scanStateFiles(files)
-	if err = ii.openFiles(); err != nil {
+	uselessFiles := li.scanStateFiles(files)
+	_ = uselessFiles
+	//for _, f := range uselessFiles {
+	//	_ = os.Remove(filepath.Join(li.dir, f))
+	//}
+	if err = li.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
-	return ii, nil
+	return li, nil
 }
 
-func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) {
+func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
 	re := regexp.MustCompile("^" + li.filenameBase + ".([0-9]+)-([0-9]+).li$")
 	var err error
-	var uselessFiles []string
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -125,9 +127,7 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) {
 			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		}
 	}
-	if len(uselessFiles) > 0 {
-		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
-	}
+	return uselessFiles
 }
 
 func (li *LocalityIndex) openFiles() (err error) {
@@ -231,10 +231,10 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum u
 	return exactShardNum1, exactShardNum2, ok1, ok2
 }
 
-func (li *LocalityIndex) missedIdxFiles(h *History) (toStep uint64, idxExists bool) {
-	h.files.Descend(func(item *filesItem) bool {
-		if item.endTxNum-item.startTxNum == StepsInBiggestFile*h.aggregationStep {
-			toStep = item.endTxNum / h.aggregationStep
+func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxExists bool) {
+	ii.files.Descend(func(item *filesItem) bool {
+		if item.endTxNum-item.startTxNum == StepsInBiggestFile*ii.aggregationStep {
+			toStep = item.endTxNum / ii.aggregationStep
 			return false
 		}
 		return true
@@ -243,18 +243,18 @@ func (li *LocalityIndex) missedIdxFiles(h *History) (toStep uint64, idxExists bo
 	return toStep, dir.FileExist(filepath.Join(li.dir, fName))
 }
 
-func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) error {
+func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedIndex) error {
 	if li == nil {
 		return nil
 	}
-	toStep, idxExists := li.missedIdxFiles(h)
+	toStep, idxExists := li.missedIdxFiles(ii)
 	if idxExists {
 		return nil
 	}
 	if toStep == 0 {
 		return nil
 	}
-	defer h.EnableMadvNormalReadAhead().DisableReadAhead()
+	defer ii.EnableMadvNormalReadAhead().DisableReadAhead()
 
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -262,7 +262,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 	fromStep := uint64(0)
 
 	count := 0
-	it := h.MakeContext().iterateKeysLocality(toStep * h.aggregationStep)
+	it := ii.MakeContext().iterateKeysLocality(toStep * ii.aggregationStep)
 	total := float64(it.Total())
 	for it.HasNext() {
 		k, _, progress := it.Next()
@@ -271,21 +271,21 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build step1", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build step1", "name", ii.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		default:
 		}
 	}
 	log.Info("[LocalityIndex] keys amount", "total", count)
 
-	fName := fmt.Sprintf("%s.%d-%d.li", h.filenameBase, fromStep, toStep)
-	idxPath := filepath.Join(h.dir, fName)
+	fName := fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, fromStep, toStep)
+	idxPath := filepath.Join(ii.dir, fName)
 
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
 		Enums:      false,
 		BucketSize: 2000,
 		LeafSize:   8,
-		TmpDir:     h.tmpdir,
+		TmpDir:     ii.tmpdir,
 		IndexFile:  idxPath,
 	})
 	if err != nil {
@@ -298,7 +298,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 	total = float64(it.Total())
 
 	for {
-		it = h.MakeContext().iterateKeysLocality(toStep * h.aggregationStep)
+		it = ii.MakeContext().iterateKeysLocality(toStep * ii.aggregationStep)
 		for it.HasNext() {
 			k, filesBitmap, progress := it.Next()
 			binary.BigEndian.PutUint64(bm, filesBitmap)
@@ -314,7 +314,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build step2", "name", h.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+				log.Info("[LocalityIndex] build step2", "name", ii.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
 			default:
 			}
 		}
@@ -338,15 +338,15 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, h *History) err
 	if err != nil {
 		return fmt.Errorf("open idx: %w", err)
 	}
-	li.file = &filesItem{index: idx, startTxNum: fromStep * h.aggregationStep, endTxNum: toStep * h.aggregationStep}
+	li.file = &filesItem{index: idx, startTxNum: fromStep * ii.aggregationStep, endTxNum: toStep * ii.aggregationStep}
 	if oldFile != nil {
-		_ = os.Remove(filepath.Join(h.dir, fName, fmt.Sprintf("%s.%d-%d.li", h.filenameBase, oldFile.startTxNum/h.aggregationStep, oldFile.endTxNum/h.aggregationStep)))
+		_ = os.Remove(filepath.Join(ii.dir, fName, fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, oldFile.startTxNum/ii.aggregationStep, oldFile.endTxNum/ii.aggregationStep)))
 	}
 	return nil
 }
 
 type LocalityIterator struct {
-	hc         *HistoryContext
+	hc         *InvertedIndexContext
 	h          ReconHeap
 	bitmap     uint64
 	nextBitmap uint64
@@ -365,7 +365,7 @@ func (si *LocalityIterator) advance() {
 		_, offset := top.g.NextUncompressed()
 		si.progress += offset - top.lastOffset
 		top.lastOffset = offset
-		inStep := uint32(top.startTxNum / si.hc.h.aggregationStep)
+		inStep := uint32(top.startTxNum / si.hc.ii.aggregationStep)
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
 			heap.Push(&si.h, top)
@@ -422,10 +422,10 @@ func (si *LocalityIterator) Next() ([]byte, uint64, uint64) {
 	return si.nextKey, si.nextBitmap, si.progress
 }
 
-func (hc *HistoryContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
+func (hc *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
 	si := &LocalityIterator{hc: hc, uptoTxNum: uptoTxNum}
-	hc.indexFiles.Ascend(func(item ctxItem) bool {
-		if (item.endTxNum-item.startTxNum)/hc.h.aggregationStep != StepsInBiggestFile {
+	hc.files.Ascend(func(item ctxItem) bool {
+		if (item.endTxNum-item.startTxNum)/hc.ii.aggregationStep != StepsInBiggestFile {
 			return false
 		}
 		if item.startTxNum > uptoTxNum {

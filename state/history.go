@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -57,8 +56,6 @@ type History struct {
 	workers          int
 	compressVals     bool
 
-	localityIndex *LocalityIndex
-
 	wal     *historyWAL
 	walLock sync.RWMutex
 }
@@ -81,11 +78,7 @@ func NewHistory(
 		workers:          1,
 	}
 	var err error
-	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable)
-	if err != nil {
-		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
-	}
-	h.localityIndex, err = NewLocalityIndex(dir, tmpdir, aggregationStep, filenameBase)
+	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true)
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
@@ -93,17 +86,20 @@ func NewHistory(
 	if err != nil {
 		return nil, err
 	}
-	h.scanStateFiles(files)
+	uselessFiles := h.scanStateFiles(files)
+	_ = uselessFiles
+	//for _, f := range uselessFiles {
+	//	_ = os.Remove(filepath.Join(h.dir, f))
+	//}
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
 	}
 	return &h, nil
 }
 
-func (h *History) scanStateFiles(files []fs.DirEntry) {
+func (h *History) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
-	var uselessFiles []string
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -185,9 +181,7 @@ func (h *History) scanStateFiles(files []fs.DirEntry) {
 		}
 		h.files.ReplaceOrInsert(item)
 	}
-	if len(uselessFiles) > 0 {
-		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
-	}
+	return uselessFiles
 }
 
 func (h *History) openFiles() error {
@@ -277,19 +271,8 @@ func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighte
 		return err
 	}
 	missedFiles := h.missedIdxFiles()
-	errs := make(chan error, len(missedFiles)+1) // +1 for locality index
+	errs := make(chan error, len(missedFiles)) // +1 for locality index
 	wg := sync.WaitGroup{}
-
-	if err := sem.Acquire(ctx, 1); err != nil {
-		errs <- err
-	}
-	wg.Add(1)
-	go func() {
-		defer sem.Release(1)
-		defer wg.Done()
-
-		errs <- h.localityIndex.BuildMissedIndices(ctx, h)
-	}()
 
 	for _, item := range missedFiles {
 		if err := sem.Acquire(ctx, 1); err != nil {
