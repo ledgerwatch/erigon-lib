@@ -264,7 +264,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		default:
 		}
 	}
-	log.Info("[LocalityIndex] keys amount", "total", count)
 
 	fName := fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(ii.dir, fName)
