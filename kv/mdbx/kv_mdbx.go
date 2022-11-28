@@ -844,7 +844,13 @@ func (tx *MdbxTx) Commit() error {
 			fmt.Sprintf("WorkRtime=%s", latency.GCDetails.WorkRtime),
 			fmt.Sprintf("SelfRtime=%s", latency.GCDetails.SelfRtime),
 			fmt.Sprintf("SelfXtime=%s", latency.GCDetails.SelfXtime),
+			fmt.Sprintf("WorkPnlMergeTime=%s", latency.GCDetails.WorkPnlMergeTime),
+			fmt.Sprintf("SelfPnlMergeTime=%s", latency.GCDetails.SelfPnlMergeTime),
 		}, ",")+"}, gc: {"+strings.Join([]string{
+			fmt.Sprintf("WorkPnlMergeCalls=%d", latency.GCDetails.WorkPnlMergeCalls),
+			fmt.Sprintf("WorkPnlMergeVolume=%d", latency.GCDetails.WorkPnlMergeVolume),
+			fmt.Sprintf("SelfPnlMergeCalls=%d", latency.GCDetails.SelfPnlMergeCalls),
+			fmt.Sprintf("SelfPnlMergeVolume=%d", latency.GCDetails.SelfPnlMergeVolume),
 			fmt.Sprintf("WorkRsteps=%d", latency.GCDetails.WorkRsteps),
 			fmt.Sprintf("SelfRsteps=%d", latency.GCDetails.SelfRsteps),
 			fmt.Sprintf("WorkRxpages=%d", latency.GCDetails.WorkRxpages),
