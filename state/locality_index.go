@@ -118,7 +118,6 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []str
 
 		startTxNum, endTxNum := startStep*li.aggregationStep, endStep*li.aggregationStep
 		if li.file == nil {
-			fmt.Printf("scan\n")
 			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		} else if li.file.endTxNum < endTxNum {
 			uselessFiles = append(uselessFiles,
@@ -265,9 +264,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		default:
 		}
 	}
-	if li.file != nil {
-		fmt.Printf("alex1: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
-	}
 
 	fName := fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(li.dir, fName)
@@ -320,9 +316,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		} else {
 			break
 		}
-	}
-	if li.file != nil {
-		fmt.Printf("alex2: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
 	}
 
 	idx, err := recsplit.OpenIndex(idxPath)
