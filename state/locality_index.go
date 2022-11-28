@@ -32,7 +32,6 @@ import (
 
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
@@ -345,7 +344,6 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 	if li == nil {
 		return nil
 	}
-	fmt.Printf("bas: %s\n", li.filenameBase)
 	toStep, idxExists := li.missedIdxFiles(ii)
 	if idxExists {
 		return nil
@@ -354,28 +352,15 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 		return nil
 	}
 	fromStep := uint64(0)
-	if li.file != nil {
-		fmt.Printf("aa: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
-	}
 	f, err := li.buildFiles(ctx, ii, toStep)
 	if err != nil {
 		return err
 	}
-	if li.file != nil {
-		fmt.Printf("b: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
-	}
-
 	var oldFile *filesItem
 	if li.file != nil {
 		oldFile = li.file
 	}
-	if li.file != nil {
-		fmt.Printf("c: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
-	}
 	li.integrateFiles(*f, fromStep*li.aggregationStep, toStep*li.aggregationStep)
-	if li.file != nil {
-		fmt.Printf("dd: %s,%d, %s\n", li.filenameBase, li.file.endTxNum/li.aggregationStep, dbg.Stack())
-	}
 	if err = li.deleteFiles(oldFile); err != nil {
 		return err
 	}
