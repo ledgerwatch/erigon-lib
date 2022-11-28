@@ -955,6 +955,18 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 	}
 }
 
+func (li *LocalityIndex) integrateMergedFiles(out *filesItem, in *filesItem) {
+	if in == nil {
+		return
+	}
+	li.file = in
+	if out == nil {
+		panic("must not happen: " + li.filenameBase)
+	}
+	out.decompressor.Close()
+	out.index.Close()
+}
+
 func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) error {
 	if err := d.History.deleteFiles(indexOuts, historyOuts); err != nil {
 		return err
@@ -1003,5 +1015,16 @@ func (h *History) deleteFiles(indexOuts, historyOuts []*filesItem) error {
 		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
 		_ = os.Remove(idxPath) // may not exist
 	}
+	return nil
+}
+
+func (li *LocalityIndex) deleteFiles(out *filesItem) error {
+	if out == nil || out.index == nil {
+		return nil
+	}
+	out.index.Close()
+
+	idxPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.li", li.filenameBase, out.startTxNum/li.aggregationStep, out.endTxNum/li.aggregationStep))
+	_ = os.Remove(idxPath) // may not exist
 	return nil
 }

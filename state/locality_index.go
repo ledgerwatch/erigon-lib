@@ -242,17 +242,7 @@ func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxEx
 	return toStep, dir.FileExist(filepath.Join(li.dir, fName))
 }
 
-func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedIndex) error {
-	if li == nil {
-		return nil
-	}
-	toStep, idxExists := li.missedIdxFiles(ii)
-	if idxExists {
-		return nil
-	}
-	if toStep == 0 {
-		return nil
-	}
+func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toStep uint64) (files *LocalityIndexFiles, err error) {
 	defer ii.EnableMadvNormalReadAhead().DisableReadAhead()
 
 	logEvery := time.NewTicker(30 * time.Second)
@@ -268,7 +258,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 		count++
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-logEvery.C:
 			log.Info("[LocalityIndex] build step1", "name", ii.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		default:
@@ -288,7 +278,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 		IndexFile:  idxPath,
 	})
 	if err != nil {
-		return fmt.Errorf("create recsplit: %w", err)
+		return nil, fmt.Errorf("create recsplit: %w", err)
 	}
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
@@ -306,12 +296,12 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 			//fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
 			//}
 			if err = rs.AddKey(k, filesBitmap); err != nil {
-				return err
+				return nil, err
 			}
 
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil, ctx.Err()
 			case <-logEvery.C:
 				log.Info("[LocalityIndex] build step2", "name", ii.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
 			default:
@@ -322,26 +312,64 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
 			} else {
-				return fmt.Errorf("build idx: %w", err)
+				return nil, fmt.Errorf("build idx: %w", err)
 			}
 		} else {
 			break
 		}
+	}
+	idx, err := recsplit.OpenIndex(idxPath)
+	if err != nil {
+		return nil, err
+	}
+	return &LocalityIndexFiles{index: idx}, nil
+}
+
+func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumTo uint64) {
+	li.file = &filesItem{
+		startTxNum: txNumFrom,
+		endTxNum:   txNumTo,
+		index:      sf.index,
+	}
+}
+
+func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedIndex) error {
+	if li == nil {
+		return nil
+	}
+	toStep, idxExists := li.missedIdxFiles(ii)
+	if idxExists {
+		return nil
+	}
+	if toStep == 0 {
+		return nil
+	}
+	fromStep := uint64(0)
+
+	f, err := li.buildFiles(ctx, ii, toStep)
+	if err != nil {
+		return err
 	}
 
 	var oldFile *filesItem
 	if li.file != nil {
 		oldFile = li.file
 	}
-	idx, err := recsplit.OpenIndex(idxPath)
-	if err != nil {
-		return fmt.Errorf("open idx: %w", err)
-	}
-	li.file = &filesItem{index: idx, startTxNum: fromStep * ii.aggregationStep, endTxNum: toStep * ii.aggregationStep}
-	if oldFile != nil {
-		_ = os.Remove(filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, oldFile.startTxNum/ii.aggregationStep, oldFile.endTxNum/ii.aggregationStep)))
+	li.integrateFiles(*f, fromStep*ii.aggregationStep, toStep*ii.aggregationStep)
+	if err = li.deleteFiles(oldFile); err != nil {
+		return err
 	}
 	return nil
+}
+
+type LocalityIndexFiles struct {
+	index *recsplit.Index
+}
+
+func (sf LocalityIndexFiles) Close() {
+	if sf.index != nil {
+		sf.index.Close()
+	}
 }
 
 type LocalityIterator struct {
@@ -421,10 +449,10 @@ func (si *LocalityIterator) Next() ([]byte, uint64, uint64) {
 	return si.nextKey, si.nextBitmap, si.progress
 }
 
-func (hc *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
-	si := &LocalityIterator{hc: hc, uptoTxNum: uptoTxNum}
-	hc.files.Ascend(func(item ctxItem) bool {
-		if (item.endTxNum-item.startTxNum)/hc.ii.aggregationStep != StepsInBiggestFile {
+func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
+	si := &LocalityIterator{hc: ic, uptoTxNum: uptoTxNum}
+	ic.files.Ascend(func(item ctxItem) bool {
+		if (item.endTxNum-item.startTxNum)/ic.ii.aggregationStep != StepsInBiggestFile {
 			return false
 		}
 		if item.startTxNum > uptoTxNum {
