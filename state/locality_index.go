@@ -221,6 +221,7 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum u
 		//}
 
 		//TODO: can't early return, because maybe index returned false-positive...
+		//nolint
 		//return nil, false, nil
 	}
 
