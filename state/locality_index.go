@@ -215,15 +215,8 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum u
 			//	fmt.Printf("locIndex4: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
 			//}
 		}
-	} else {
-		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-		//fmt.Printf("can early return! %x, %d, txNum=%d\n", key, bm.ToArray(), txNum)
-		//}
-
-		//TODO: can't early return, because maybe index returned false-positive...
-		//nolint
-		//return nil, false, nil
 	}
+	//TODO: can't early return, because maybe index returned false-positive...
 
 	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 	//	fmt.Printf("foundExactShard: %x, %t, %d, %d, stepSize=%d\n", key, foundExactShard1, exactShard1, exactShard2, hc.h.aggregationStep)
