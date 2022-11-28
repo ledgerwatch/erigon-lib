@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
@@ -118,6 +119,7 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []str
 
 		startTxNum, endTxNum := startStep*li.aggregationStep, endStep*li.aggregationStep
 		if li.file == nil {
+			fmt.Printf("scan\n")
 			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		} else if li.file.endTxNum < endTxNum {
 			uselessFiles = append(uselessFiles,
@@ -251,7 +253,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	fromStep := uint64(0)
 
 	count := 0
-	it := ii.MakeContext().iterateKeysLocality(toStep * ii.aggregationStep)
+	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 	total := float64(it.Total())
 	for it.HasNext() {
 		k, _, progress := it.Next()
@@ -260,13 +262,16 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build step1", "name", ii.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		default:
 		}
 	}
+	if li.file != nil {
+		fmt.Printf("alex1: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
+	}
 
 	fName := fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, fromStep, toStep)
-	idxPath := filepath.Join(ii.dir, fName)
+	idxPath := filepath.Join(li.dir, fName)
 
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
@@ -286,7 +291,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	total = float64(it.Total())
 
 	for {
-		it = ii.MakeContext().iterateKeysLocality(toStep * ii.aggregationStep)
+		it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 		for it.HasNext() {
 			k, filesBitmap, progress := it.Next()
 			binary.BigEndian.PutUint64(bm, filesBitmap)
@@ -302,7 +307,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build step2", "name", ii.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+				log.Info("[LocalityIndex] build step2", "name", li.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
 			default:
 			}
 		}
@@ -317,6 +322,10 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			break
 		}
 	}
+	if li.file != nil {
+		fmt.Printf("alex2: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
+	}
+
 	idx, err := recsplit.OpenIndex(idxPath)
 	if err != nil {
 		return nil, err
@@ -336,6 +345,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 	if li == nil {
 		return nil
 	}
+	fmt.Printf("bas: %s\n", li.filenameBase)
 	toStep, idxExists := li.missedIdxFiles(ii)
 	if idxExists {
 		return nil
@@ -344,17 +354,28 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 		return nil
 	}
 	fromStep := uint64(0)
-
+	if li.file != nil {
+		fmt.Printf("aa: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
+	}
 	f, err := li.buildFiles(ctx, ii, toStep)
 	if err != nil {
 		return err
+	}
+	if li.file != nil {
+		fmt.Printf("b: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
 	}
 
 	var oldFile *filesItem
 	if li.file != nil {
 		oldFile = li.file
 	}
-	li.integrateFiles(*f, fromStep*ii.aggregationStep, toStep*ii.aggregationStep)
+	if li.file != nil {
+		fmt.Printf("c: %s,%d\n", li.filenameBase, li.file.endTxNum/li.aggregationStep)
+	}
+	li.integrateFiles(*f, fromStep*li.aggregationStep, toStep*li.aggregationStep)
+	if li.file != nil {
+		fmt.Printf("dd: %s,%d, %s\n", li.filenameBase, li.file.endTxNum/li.aggregationStep, dbg.Stack())
+	}
 	if err = li.deleteFiles(oldFile); err != nil {
 		return err
 	}

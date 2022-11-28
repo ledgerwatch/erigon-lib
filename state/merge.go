@@ -1025,6 +1025,7 @@ func (li *LocalityIndex) deleteFiles(out *filesItem) error {
 	out.index.Close()
 
 	idxPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.li", li.filenameBase, out.startTxNum/li.aggregationStep, out.endTxNum/li.aggregationStep))
+	fmt.Printf("del: %s\n", idxPath)
 	_ = os.Remove(idxPath) // may not exist
 	return nil
 }

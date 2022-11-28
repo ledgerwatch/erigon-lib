@@ -209,19 +209,8 @@ func (ii *InvertedIndex) missedIdxFiles() (l []*filesItem) {
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
 func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
 	missedFiles := ii.missedIdxFiles()
-	errs := make(chan error, len(missedFiles)+1)
+	errs := make(chan error, len(missedFiles))
 	wg := sync.WaitGroup{}
-
-	if err := sem.Acquire(ctx, 1); err != nil {
-		errs <- err
-	}
-	wg.Add(1)
-	go func() {
-		defer sem.Release(1)
-		defer wg.Done()
-
-		errs <- ii.localityIndex.BuildMissedIndices(ctx, ii)
-	}()
 
 	for _, item := range missedFiles {
 		if err := sem.Acquire(ctx, 1); err != nil {

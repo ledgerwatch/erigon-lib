@@ -56,9 +56,11 @@ type Aggregator22 struct {
 	aggregationStep  uint64
 	keepInDB         uint64
 	maxTxNum         atomic.Uint64
-	working          atomic.Bool
-	workingMerge     atomic.Bool
-	warmupWorking    atomic.Bool
+
+	working                atomic.Bool
+	workingMerge           atomic.Bool
+	workingOptionalIndices atomic.Bool
+	warmupWorking          atomic.Bool
 }
 
 func NewAggregator22(dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*Aggregator22, error) {
@@ -144,28 +146,42 @@ func (a *Aggregator22) closeFiles() {
 	}
 }
 
-func (a *Aggregator22) BuildOptionalMissedIndices(ctx context.Context) error {
-	if err := a.accounts.localityIndex.BuildMissedIndices(context.Background(), a.accounts.InvertedIndex); err != nil {
-		return err
+func (a *Aggregator22) BuildOptionalMissedIndices(ctx context.Context) {
+	if a.workingOptionalIndices.Load() {
+		return
 	}
-	if err := a.storage.localityIndex.BuildMissedIndices(context.Background(), a.storage.InvertedIndex); err != nil {
-		return err
-	}
-	if err := a.code.localityIndex.BuildMissedIndices(context.Background(), a.code.InvertedIndex); err != nil {
-		return err
-	}
+	a.workingOptionalIndices.Store(true)
+	go func() {
+		defer a.workingOptionalIndices.Store(false)
 
-	return nil
+		//It's time to build optional lazy indices
+
+		if err := a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex); err != nil {
+			log.Warn("merge", "err", err)
+		}
+		if err := a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex); err != nil {
+			log.Warn("merge", "err", err)
+		}
+		if err := a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex); err != nil {
+			log.Warn("merge", "err", err)
+		}
+	}()
 }
 
 func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) error {
 	wg := sync.WaitGroup{}
-	errs := make(chan error, 8)
+	errs := make(chan error, 7+3)
 	if a.accounts != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			errs <- a.accounts.BuildMissedIndices(ctx, sem)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex)
 		}()
 	}
 	if a.storage != nil {
@@ -174,12 +190,24 @@ func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 			defer wg.Done()
 			errs <- a.storage.BuildMissedIndices(ctx, sem)
 		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex)
+		}()
 	}
 	if a.code != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			errs <- a.code.BuildMissedIndices(ctx, sem)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex)
 		}()
 	}
 	if a.logAddrs != nil {
@@ -210,12 +238,6 @@ func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 			errs <- a.tracesTo.BuildMissedIndices(ctx, sem)
 		}()
 	}
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		errs <- a.BuildOptionalMissedIndices(ctx)
-	}()
 
 	go func() {
 		wg.Wait()
@@ -983,7 +1005,7 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 // we can set it to 0, because no re-org on this blocks are possible
 func (a *Aggregator22) KeepInDB(v uint64) { a.keepInDB = v }
 
-func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
+func (a *Aggregator22) BuildFilesInBackground(ctx context.Context, db kv.RoDB) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return nil
 	}
@@ -1012,7 +1034,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		// - to remove old data from db as early as possible
 		// - during files build, may happen commit of new data. on each loop step getting latest id in db
 		for step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep {
-			if err := a.buildFilesInBackground(context.Background(), step, db); err != nil {
+			if err := a.buildFilesInBackground(ctx, step, db); err != nil {
 				log.Warn("buildFilesInBackground", "err", err)
 				break
 			}
@@ -1022,19 +1044,14 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		if a.workingMerge.Load() {
 			return
 		}
-		defer a.workingMerge.Store(true)
+		a.workingMerge.Store(true)
 		go func() {
 			defer a.workingMerge.Store(false)
-			if err := a.MergeLoop(context.Background(), 1); err != nil {
+			if err := a.MergeLoop(ctx, 1); err != nil {
 				log.Warn("merge", "err", err)
 			}
 
-			go func() {
-				//It's time to build optional lazy indices
-				if err := a.BuildOptionalMissedIndices(context.Background()); err != nil {
-					log.Warn("merge", "err", err)
-				}
-			}()
+			a.BuildOptionalMissedIndices(ctx)
 		}()
 	}()
 
