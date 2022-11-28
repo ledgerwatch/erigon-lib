@@ -955,18 +955,6 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 	}
 }
 
-func (li *LocalityIndex) integrateMergedFiles(out *filesItem, in *filesItem) {
-	if in == nil {
-		return
-	}
-	li.file = in
-	if out == nil {
-		panic("must not happen: " + li.filenameBase)
-	}
-	out.decompressor.Close()
-	out.index.Close()
-}
-
 func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) error {
 	if err := d.History.deleteFiles(indexOuts, historyOuts); err != nil {
 		return err

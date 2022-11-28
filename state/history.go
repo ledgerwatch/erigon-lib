@@ -1135,10 +1135,6 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 
 			//fmt.Printf("Found n=%d\n", n)
 			return false
-		} else {
-			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-			//	fmt.Printf("not found txNum! %x, %d-%d, txNum=%d\n", k, item.startTxNum/hc.h.aggregationStep, item.endTxNum/hc.h.aggregationStep, txNum)
-			//}
 		}
 		return true
 	}

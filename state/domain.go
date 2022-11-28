@@ -453,12 +453,6 @@ type ctxItem struct {
 	endTxNum   uint64
 }
 
-func ctxItemLess2(i, j ctxItem) bool {
-	if i.startTxNum != j.startTxNum {
-		return i.startTxNum < j.startTxNum
-	}
-	return i.endTxNum < j.endTxNum
-}
 func ctxItemLess(i, j ctxItem) bool {
 	if i.endTxNum == j.endTxNum {
 		return i.startTxNum > j.startTxNum
