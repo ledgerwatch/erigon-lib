@@ -153,7 +153,7 @@ func (li *LocalityIndex) Close() {
 }
 func (li *LocalityIndex) Files() (res []string) { return res }
 func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
-	if li != nil && li.file != nil && &li.file.index != nil {
+	if li != nil && li.file != nil && li.file.index != nil {
 		return recsplit.NewIndexReader(li.file.index)
 	}
 	return nil
