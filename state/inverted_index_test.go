@@ -50,7 +50,7 @@ func testDbAndInvertedIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex) {
 		}
 	}).MustOpen()
 	t.Cleanup(db.Close)
-	ii, err := NewInvertedIndex(path, path, 16 /* aggregationStep */, "inv" /* filenameBase */, keysTable, indexTable)
+	ii, err := NewInvertedIndex(path, path, 16 /* aggregationStep */, "inv" /* filenameBase */, keysTable, indexTable, false)
 	require.NoError(t, err)
 	t.Cleanup(ii.Close)
 	return path, db, ii
@@ -379,7 +379,7 @@ func TestInvIndexScanFiles(t *testing.T) {
 	ii.Close()
 	// Recreate InvertedIndex to scan the files
 	var err error
-	ii, err = NewInvertedIndex(path, path, ii.aggregationStep, ii.filenameBase, ii.indexKeysTable, ii.indexTable)
+	ii, err = NewInvertedIndex(path, path, ii.aggregationStep, ii.filenameBase, ii.indexKeysTable, ii.indexTable, false)
 	require.NoError(t, err)
 	defer ii.Close()
 

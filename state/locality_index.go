@@ -68,10 +68,9 @@ func NewLocalityIndex(
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
 	uselessFiles := li.scanStateFiles(files)
-	_ = uselessFiles
-	//for _, f := range uselessFiles {
-	//	_ = os.Remove(filepath.Join(li.dir, f))
-	//}
+	for _, f := range uselessFiles {
+		_ = os.Remove(filepath.Join(li.dir, f))
+	}
 	if err = li.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
@@ -340,7 +339,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 	}
 	li.file = &filesItem{index: idx, startTxNum: fromStep * ii.aggregationStep, endTxNum: toStep * ii.aggregationStep}
 	if oldFile != nil {
-		_ = os.Remove(filepath.Join(ii.dir, fName, fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, oldFile.startTxNum/ii.aggregationStep, oldFile.endTxNum/ii.aggregationStep)))
+		_ = os.Remove(filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, oldFile.startTxNum/ii.aggregationStep, oldFile.endTxNum/ii.aggregationStep)))
 	}
 	return nil
 }
