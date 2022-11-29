@@ -606,6 +606,8 @@ func (tx *MdbxTx) CollectMetrics() {
 	kv.DbPgopsSpill.Set(info.PageOps.Spill)
 	kv.DbPgopsUnspill.Set(info.PageOps.Unspill)
 	kv.DbPgopsWops.Set(info.PageOps.Wops)
+	kv.DbPgopsMsync.Set(info.PageOps.Msync)
+	kv.DbPgopsFsync.Set(info.PageOps.Fsync)
 
 	txInfo, err := tx.tx.Info(true)
 	if err != nil {

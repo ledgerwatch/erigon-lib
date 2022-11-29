@@ -53,6 +53,8 @@ var (
 	DbPgopsSpill   = metrics.NewCounter(`db_pgops_spill`)   //nolint
 	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`) //nolint
 	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)    //nolint
+	DbPgopsMsync   = metrics.NewCounter(`db_pgops_msync`)   //nolint
+	DbPgopsFsync   = metrics.NewCounter(`db_pgops_fsnc`)    //nolint
 
 	DbGcWorkRtimeCPU       = metrics.GetOrCreateSummary(`db_gc_work_rtime_cpu`)      //nolint
 	DbGcSelfRtimeCPU       = metrics.GetOrCreateSummary(`db_gc_self_rtime_cpu`)      //nolint
