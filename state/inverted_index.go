@@ -364,6 +364,9 @@ func loadFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) 
 }
 
 func (ii *invertedIndexWAL) Flush(tx kv.RwTx) error {
+	if ii.discard {
+		return nil
+	}
 	if err := ii.index.Load(tx, ii.ii.indexTable, loadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
