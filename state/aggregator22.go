@@ -477,7 +477,7 @@ func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, 
 
 func (a *Aggregator22) mergeLoopStep(ctx context.Context, workers int) (somethingDone bool, err error) {
 	closeAll := true
-	maxSpan := uint64(StepsInBiggestFile) * a.aggregationStep
+	maxSpan := a.aggregationStep * StepsInBiggestFile
 	r := a.findMergeRange(a.maxTxNum.Load(), maxSpan)
 	if !r.any() {
 		return false, nil
