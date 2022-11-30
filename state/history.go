@@ -1088,7 +1088,7 @@ func (h *History) MakeContext() *HistoryContext {
 func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
-	exactShard1, exactShard2, searchFrom, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.lr, key, txNum, hc.indexFiles)
+	exactStep1, exactStep2, searchFrom, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.lr, key, txNum)
 
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64
@@ -1142,10 +1142,16 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	// -- LocaliyIndex opimization --
 	// check up to 2 exact files
 	if foundExactShard1 {
-		findInFile(exactShard1)
+		exactShard1, ok := hc.indexFiles.Get(ctxItem{startTxNum: exactStep1 * hc.h.aggregationStep, endTxNum: (exactStep1 + StepsInBiggestFile) * hc.h.aggregationStep})
+		if ok {
+			findInFile(exactShard1)
+		}
 	}
 	if !found && foundExactShard2 {
-		findInFile(exactShard2)
+		exactShard2, ok := hc.indexFiles.Get(ctxItem{startTxNum: exactStep2 * hc.h.aggregationStep, endTxNum: (exactStep2 + StepsInBiggestFile) * hc.h.aggregationStep})
+		if ok {
+			findInFile(exactShard2)
+		}
 	}
 	// otherwise search in recent non-fully-merged files (they are out of LocalityIndex scope)
 	// searchFrom - variable already set for this

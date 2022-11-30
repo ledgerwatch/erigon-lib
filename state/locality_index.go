@@ -30,7 +30,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -159,28 +158,12 @@ func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 	return nil
 }
 
-func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fromTxNum uint64, files *btree.BTreeG[ctxItem]) (exactShard1, exactShard2 ctxItem, orSearchFromTxn uint64, ok1, ok2 bool) {
+func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, orSearchFromTxn uint64, ok1, ok2 bool) {
 	if li == nil || li.file == nil || li.file.index == nil {
 		return exactShard1, exactShard2, fromTxNum, false, false
 	}
 
-	n1, n2, ok1, ok2 := li.lookup(r, key, fromTxNum)
-
-	if ok1 {
-		var ok bool
-		exactShard1, ok = files.Get(ctxItem{startTxNum: n1 * li.aggregationStep, endTxNum: (n1 + StepsInBiggestFile) * li.aggregationStep})
-		if !ok {
-			panic(n1)
-		}
-	}
-
-	if ok2 {
-		var ok bool
-		exactShard2, ok = files.Get(ctxItem{startTxNum: n2 * li.aggregationStep, endTxNum: (n2 + StepsInBiggestFile) * li.aggregationStep})
-		if !ok {
-			panic(n2)
-		}
-	}
+	exactShard1, exactShard2, ok1, ok2 = li.lookup(r, key, fromTxNum)
 	return exactShard1, exactShard2, cmp.Max(li.file.endTxNum+1, fromTxNum), ok1, ok2
 }
 
@@ -226,8 +209,8 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum u
 
 func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxExists bool) {
 	ii.files.Descend(func(item *filesItem) bool {
-		if item.endTxNum-item.startTxNum == StepsInBiggestFile*ii.aggregationStep {
-			toStep = item.endTxNum / ii.aggregationStep
+		if item.endTxNum-item.startTxNum == StepsInBiggestFile*li.aggregationStep {
+			toStep = item.endTxNum / li.aggregationStep
 			return false
 		}
 		return true
@@ -259,7 +242,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		}
 	}
 
-	fName := fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, fromStep, toStep)
+	fName := fmt.Sprintf("%s.%d-%d.li", li.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(li.dir, fName)
 
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -267,7 +250,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		Enums:      false,
 		BucketSize: 2000,
 		LeafSize:   8,
-		TmpDir:     ii.tmpdir,
+		TmpDir:     li.tmpdir,
 		IndexFile:  idxPath,
 	})
 	if err != nil {
@@ -371,7 +354,6 @@ type LocalityIterator struct {
 	nextBitmap uint64
 	nextKey    []byte
 	key        []byte
-	uptoTxNum  uint64
 	progress   uint64
 	total      uint64
 	hasNext    bool
@@ -384,6 +366,7 @@ func (si *LocalityIterator) advance() {
 		_, offset := top.g.NextUncompressed()
 		si.progress += offset - top.lastOffset
 		top.lastOffset = offset
+
 		inStep := uint32(top.startTxNum / si.hc.ii.aggregationStep)
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
@@ -442,7 +425,7 @@ func (si *LocalityIterator) Next() ([]byte, uint64, uint64) {
 }
 
 func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
-	si := &LocalityIterator{hc: ic, uptoTxNum: uptoTxNum}
+	si := &LocalityIterator{hc: ic}
 	ic.files.Ascend(func(item ctxItem) bool {
 		if (item.endTxNum-item.startTxNum)/ic.ii.aggregationStep != StepsInBiggestFile {
 			return false
