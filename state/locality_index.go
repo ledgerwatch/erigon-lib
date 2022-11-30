@@ -427,8 +427,6 @@ func (si *LocalityIterator) Next() ([]byte, uint64, uint64) {
 func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
 	si := &LocalityIterator{hc: ic}
 	ic.files.Ascend(func(item ctxItem) bool {
-		fmt.Printf("al78: %d-%d\n", item.startTxNum/ic.ii.aggregationStep, item.endTxNum/ic.ii.aggregationStep)
-
 		if (item.endTxNum-item.startTxNum)/ic.ii.aggregationStep != StepsInBiggestFile {
 			return false
 		}
@@ -438,7 +436,6 @@ func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityI
 		g := item.getter
 		if g.HasNext() {
 			key, offset := g.NextUncompressed()
-			fmt.Printf("al: %d-%d\n", item.startTxNum/ic.ii.aggregationStep, item.endTxNum/ic.ii.aggregationStep)
 			heap.Push(&si.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
 		}
 		si.total += uint64(item.getter.Size())

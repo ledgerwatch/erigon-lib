@@ -201,10 +201,10 @@ func TestInvIndexAfterPrune(t *testing.T) {
 }
 
 func filledInvIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex, uint64) {
-	return filledInvIndexOfSize(t, uint64(1000), 16)
+	return filledInvIndexOfSize(t, uint64(1000), 16, 31)
 }
 
-func filledInvIndexOfSize(t *testing.T, txs, aggStep uint64) (string, kv.RwDB, *InvertedIndex, uint64) {
+func filledInvIndexOfSize(t *testing.T, txs, aggStep, module uint64) (string, kv.RwDB, *InvertedIndex, uint64) {
 	t.Helper()
 	path, db, ii := testDbAndInvertedIndex(t, aggStep)
 	ctx := context.Background()
@@ -219,7 +219,7 @@ func filledInvIndexOfSize(t *testing.T, txs, aggStep uint64) (string, kv.RwDB, *
 	// each key changes value on every txNum which is multiple of the key
 	for txNum := uint64(1); txNum <= txs; txNum++ {
 		ii.SetTxNum(txNum)
-		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+		for keyNum := uint64(1); keyNum <= module; keyNum++ {
 			if txNum%keyNum == 0 {
 				var k [8]byte
 				binary.BigEndian.PutUint64(k[:], keyNum)

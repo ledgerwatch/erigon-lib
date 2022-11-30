@@ -2,7 +2,7 @@ package state
 
 import (
 	"context"
-	"fmt"
+	"encoding/binary"
 	"math"
 	"testing"
 	"time"
@@ -14,17 +14,27 @@ func TestLocality(t *testing.T) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	ctx := context.Background()
-	path, db, ii, txs := filledInvIndexOfSize(t, 400, 4)
+	const Module uint64 = 31
+	path, db, ii, txs := filledInvIndexOfSize(t, 300, 4, Module)
 	mergeInverted(t, db, ii, txs)
 	li, _ := NewLocalityIndex(path, path, 4, "inv")
 	err := li.BuildMissedIndices(ctx, ii)
 	require.NoError(t, err)
 
 	it := ii.MakeContext().iterateKeysLocality(math.MaxUint64)
+	require.True(t, it.HasNext())
+	key, bitmap, _ := it.Next()
+	require.Equal(t, uint64(2), binary.BigEndian.Uint64(key))
+	require.Equal(t, uint64(0b11), bitmap)
+	require.True(t, it.HasNext())
+	key, bitmap, _ = it.Next()
+	require.Equal(t, uint64(3), binary.BigEndian.Uint64(key))
+	require.Equal(t, uint64(0b11), bitmap)
+
+	var last []byte
 	for it.HasNext() {
-		a, b, c := it.Next()
-		fmt.Printf("a: %x, %d, %d\n", a, b, c)
+		key, bitmap, _ = it.Next()
+		last = key
 	}
-	//fmt.Printf("a: %d\n", li.file.endTxNum)
-	_, _ = db, txs
+	require.Equal(t, Module, binary.BigEndian.Uint64(last))
 }
