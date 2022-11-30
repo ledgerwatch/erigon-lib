@@ -50,7 +50,7 @@ func testDbAndInvertedIndex(t *testing.T, aggStep uint64) (string, kv.RwDB, *Inv
 		}
 	}).MustOpen()
 	t.Cleanup(db.Close)
-	ii, err := NewInvertedIndex(path, path, aggStep, "inv" /* filenameBase */, keysTable, indexTable, false)
+	ii, err := NewInvertedIndex(path, path, aggStep, "inv" /* filenameBase */, keysTable, indexTable)
 	require.NoError(t, err)
 	t.Cleanup(ii.Close)
 	return path, db, ii
@@ -300,7 +300,7 @@ func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 			var found bool
 			var startTxNum, endTxNum uint64
 			maxEndTxNum := ii.endTxNumMinimax()
-			maxSpan := ii.aggregationStep * StepsInBiggestFile
+			maxSpan := ii.aggregationStep * 32
 			for found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan); found; found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan) {
 				outs, _ := ii.staticFilesInRange(startTxNum, endTxNum)
 				in, err := ii.mergeFiles(ctx, outs, startTxNum, endTxNum, 1)
@@ -357,7 +357,7 @@ func TestInvIndexScanFiles(t *testing.T) {
 	ii.Close()
 	// Recreate InvertedIndex to scan the files
 	var err error
-	ii, err = NewInvertedIndex(path, path, ii.aggregationStep, ii.filenameBase, ii.indexKeysTable, ii.indexTable, false)
+	ii, err = NewInvertedIndex(path, path, ii.aggregationStep, ii.filenameBase, ii.indexKeysTable, ii.indexTable)
 	require.NoError(t, err)
 	defer ii.Close()
 
