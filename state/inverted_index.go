@@ -378,8 +378,12 @@ func (ii *invertedIndexWAL) close() {
 	if ii == nil {
 		return
 	}
-	ii.index.Close()
-	ii.indexKeys.Close()
+	if ii.index != nil {
+		ii.index.Close()
+	}
+	if ii.indexKeys != nil {
+		ii.indexKeys.Close()
+	}
 }
 
 var WALCollectorRam = etl.BufferOptimalSize / 16

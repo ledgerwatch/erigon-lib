@@ -504,7 +504,9 @@ func (h *historyWAL) close() {
 	if h == nil { // allow dobule-close
 		return
 	}
-	h.historyVals.Close()
+	if h.historyVals != nil {
+		h.historyVals.Close()
+	}
 }
 
 func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
