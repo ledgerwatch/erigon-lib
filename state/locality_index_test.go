@@ -5,14 +5,11 @@ import (
 	"encoding/binary"
 	"math"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestLocality(t *testing.T) {
-	logEvery := time.NewTicker(30 * time.Second)
-	defer logEvery.Stop()
 	ctx := context.Background()
 	const Module uint64 = 31
 	path, db, ii, txs := filledInvIndexOfSize(t, 300, 4, Module)
