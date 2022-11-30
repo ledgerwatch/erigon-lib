@@ -562,6 +562,18 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 }
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
+func (a *Aggregator22) DiscardHistory() *Aggregator22 {
+	a.accounts.DiscardHistory(a.tmpdir)
+	a.storage.DiscardHistory(a.tmpdir)
+	a.code.DiscardHistory(a.tmpdir)
+	a.logAddrs.DiscardHistory(a.tmpdir)
+	a.logTopics.DiscardHistory(a.tmpdir)
+	a.tracesFrom.DiscardHistory(a.tmpdir)
+	a.tracesTo.DiscardHistory(a.tmpdir)
+	return a
+}
+
+// StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *Aggregator22) StartWrites() *Aggregator22 {
 	a.accounts.StartWrites(a.tmpdir)
 	a.storage.StartWrites(a.tmpdir)
