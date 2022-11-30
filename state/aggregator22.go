@@ -629,7 +629,7 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	return math2.MaxUint64
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
-	a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
+	//a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
 	defer func(t time.Time) {
 		if time.Since(t) > time.Second {
 			log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t)))
