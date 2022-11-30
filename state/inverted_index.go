@@ -35,6 +35,10 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/c2h5oh/datasize"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
+
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
@@ -43,9 +47,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/semaphore"
 )
 
 type InvertedIndex struct {
@@ -320,10 +321,15 @@ func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
 }
 
+func (ii *InvertedIndex) DiscardHistory(tmpdir string) {
+	ii.walLock.Lock()
+	defer ii.walLock.Unlock()
+	ii.wal = ii.newWriter(tmpdir, false, true)
+}
 func (ii *InvertedIndex) StartWrites(tmpdir string) {
 	ii.walLock.Lock()
 	defer ii.walLock.Unlock()
-	ii.wal = ii.newWriter(tmpdir)
+	ii.wal = ii.newWriter(tmpdir, true, false)
 }
 func (ii *InvertedIndex) FinishWrites() {
 	ii.walLock.Lock()
@@ -337,7 +343,7 @@ func (ii *InvertedIndex) Rotate() *invertedIndexWAL {
 	defer ii.walLock.Unlock()
 	wal := ii.wal
 	if wal != nil {
-		ii.wal = ii.newWriter(ii.wal.tmpdir)
+		ii.wal = ii.newWriter(ii.wal.tmpdir, ii.wal.buffered, ii.wal.discard)
 	}
 	return wal
 }
@@ -348,6 +354,7 @@ type invertedIndexWAL struct {
 	indexKeys *etl.Collector
 	tmpdir    string
 	buffered  bool
+	discard   bool
 }
 
 // loadFunc - is analog of etl.Identity, but it signaling to etl - use .Put instead of .AppendDup - to allow duplicates
@@ -357,6 +364,9 @@ func loadFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) 
 }
 
 func (ii *invertedIndexWAL) Flush(tx kv.RwTx) error {
+	if ii.discard {
+		return nil
+	}
 	if err := ii.index.Load(tx, ii.ii.indexTable, loadFunc, etl.TransformArgs{}); err != nil {
 		return err
 	}
@@ -371,8 +381,12 @@ func (ii *invertedIndexWAL) close() {
 	if ii == nil {
 		return
 	}
-	ii.index.Close()
-	ii.indexKeys.Close()
+	if ii.index != nil {
+		ii.index.Close()
+	}
+	if ii.indexKeys != nil {
+		ii.indexKeys.Close()
+	}
 }
 
 var WALCollectorRam = etl.BufferOptimalSize / 16
@@ -388,21 +402,28 @@ func init() {
 	}
 }
 
-func (ii *InvertedIndex) newWriter(tmpdir string) *invertedIndexWAL {
+func (ii *InvertedIndex) newWriter(tmpdir string, buffered, discard bool) *invertedIndexWAL {
 	w := &invertedIndexWAL{ii: ii,
-		buffered: true,
+		buffered: buffered,
+		discard:  discard,
 		tmpdir:   tmpdir,
+	}
+	if buffered {
 		// 3 history + 4 indices = 10 etl collectors, 10*256Mb/16 = 256mb - for all indices buffers
 		// etl collector doesn't fsync: means if have enough ram, all files produced by all collectors will be in ram
-		index:     etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam)),
-		indexKeys: etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam)),
+		w.index = etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
+		w.indexKeys = etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
+		w.index.LogLvl(log.LvlTrace)
+		w.indexKeys.LogLvl(log.LvlTrace)
 	}
-	w.index.LogLvl(log.LvlTrace)
-	w.indexKeys.LogLvl(log.LvlTrace)
 	return w
 }
 
 func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
+	if ii.discard {
+		return nil
+	}
+
 	if ii.buffered {
 		if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
 			return err
@@ -749,7 +770,7 @@ func (ic *InvertedIndexContext) IterateChangedKeys(startTxNum, endTxNum uint64, 
 	return ii1
 }
 
-func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (map[string]*roaring64.Bitmap, error) {
+func (ii *InvertedIndex) collate(ctx context.Context, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (map[string]*roaring64.Bitmap, error) {
 	keysCursor, err := roTx.CursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return nil, fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -776,6 +797,10 @@ func (ii *InvertedIndex) collate(txFrom, txTo uint64, roTx kv.Tx, logEvery *time
 		case <-logEvery.C:
 			log.Info("[snapshots] collate history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(ii.aggregationStep), float64(txTo)/float64(ii.aggregationStep)))
 			bitmap.RunOptimize()
+		case <-ctx.Done():
+			err := ctx.Err()
+			log.Warn("index collate cancelled", "err", err)
+			return nil, err
 		default:
 		}
 	}
@@ -954,7 +979,7 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		if err = idxC.DeleteExact(v, k); err != nil {
 			return err
 		}
-		// This DeleteCurrent needs to the the last in the loop iteration, because it invalidates k and v
+		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
 		if err = keysCursor.DeleteCurrent(); err != nil {
 			return err
 		}
@@ -1009,4 +1034,21 @@ func (ii *InvertedIndex) EnableMadvNormalReadAhead() *InvertedIndex {
 		return true
 	})
 	return ii
+}
+
+func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint64) {
+	if ii.files == nil {
+		return 0, 0, 0
+	}
+	ii.files.Ascend(func(item *filesItem) bool {
+		if item.index == nil {
+			return false
+		}
+		filesSize += uint64(item.decompressor.Size())
+		idxSize += uint64(item.index.Size())
+		filesCount += 2
+
+		return true
+	})
+	return filesCount, filesSize, idxSize
 }
