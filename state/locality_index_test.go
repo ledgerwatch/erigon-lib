@@ -30,7 +30,7 @@ func TestLocality(t *testing.T) {
 
 	var last []byte
 	for it.HasNext() {
-		key, bitmap, _ = it.Next()
+		key, _, _ = it.Next()
 		last = key
 	}
 	require.Equal(t, Module, binary.BigEndian.Uint64(last))
