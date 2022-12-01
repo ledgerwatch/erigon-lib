@@ -201,6 +201,7 @@ func TestInvIndexAfterPrune(t *testing.T) {
 }
 
 func filledInvIndex(t *testing.T) (string, kv.RwDB, *InvertedIndex, uint64) {
+	t.Helper()
 	return filledInvIndexOfSize(t, uint64(1000), 16, 31)
 }
 
