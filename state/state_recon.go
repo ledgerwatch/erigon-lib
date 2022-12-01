@@ -203,6 +203,10 @@ func (sii *ScanIteratorInc) advance() {
 	if !sii.hasNext {
 		return
 	}
+	if sii.key == nil {
+		sii.hasNext = false
+		return
+	}
 	val, _ := sii.g.NextUncompressed()
 	max := eliasfano32.Max(val)
 	sii.nextKey = sii.key
@@ -215,7 +219,7 @@ func (sii *ScanIteratorInc) advance() {
 	if sii.g.HasNext() {
 		sii.key, _ = sii.g.NextUncompressed()
 	} else {
-		sii.hasNext = false
+		sii.key = nil
 	}
 }
 
