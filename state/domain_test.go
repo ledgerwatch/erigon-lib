@@ -415,9 +415,10 @@ func collateAndMerge(t *testing.T, db kv.RwDB, tx kv.RwTx, d *Domain, txs uint64
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	ctx := context.Background()
+	var err error
 	useExternalTx := tx != nil
 	if !useExternalTx {
-		tx, err := db.BeginRw(ctx)
+		tx, err = db.BeginRw(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback()
 	}
