@@ -410,15 +410,19 @@ func TestIterationMultistep(t *testing.T) {
 	require.Equal(t, []string{"value1", "value1", "value1"}, vals)
 }
 
-func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
+func collateAndMerge(t *testing.T, db kv.RwDB, tx kv.RwTx, d *Domain, txs uint64) {
 	t.Helper()
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	ctx := context.Background()
-	tx, err := db.BeginRw(ctx)
-	require.NoError(t, err)
+	var err error
+	useExternalTx := tx != nil
+	if !useExternalTx {
+		tx, err = db.BeginRw(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback()
+	}
 	d.SetTx(tx)
-	defer tx.Rollback()
 	// Leave the last 2 aggregation steps un-collated
 	for step := uint64(0); step < txs/d.aggregationStep-1; step++ {
 		func() {
@@ -442,8 +446,10 @@ func collateAndMerge(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 			}
 		}()
 	}
-	err = tx.Commit()
-	require.NoError(t, err)
+	if !useExternalTx {
+		err := tx.Commit()
+		require.NoError(t, err)
+	}
 }
 
 func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
@@ -482,7 +488,7 @@ func TestMergeFiles(t *testing.T) {
 	defer db.Close()
 	defer d.Close()
 
-	collateAndMerge(t, db, d, txs)
+	collateAndMerge(t, db, nil, d, txs)
 	checkHistory(t, db, d, txs)
 }
 
@@ -500,7 +506,7 @@ func TestScanFiles(t *testing.T) {
 		}
 	}()
 
-	collateAndMerge(t, db, d, txs)
+	collateAndMerge(t, db, nil, d, txs)
 	// Recreate domain and re-scan the files
 	txNum := d.txNum
 	d.Close()
@@ -533,7 +539,7 @@ func TestDelete(t *testing.T) {
 	}
 	err = d.Rotate().Flush(tx)
 	require.NoError(t, err)
-	collateAndMerge(t, db, d, 1000)
+	collateAndMerge(t, db, tx, d, 1000)
 	// Check the history
 	dc := d.MakeContext()
 	for txNum := uint64(0); txNum < 1000; txNum++ {
@@ -604,7 +610,7 @@ func TestDomain_Prune_AfterAllWrites(t *testing.T) {
 	defer db.Close()
 	defer dom.Close()
 
-	collateAndMerge(t, db, dom, txCount)
+	collateAndMerge(t, db, nil, dom, txCount)
 
 	ctx := context.Background()
 	roTx, err := db.BeginRo(ctx)
