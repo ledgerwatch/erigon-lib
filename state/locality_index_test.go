@@ -15,6 +15,7 @@ func TestLocality(t *testing.T) {
 	path, db, ii, txs := filledInvIndexOfSize(t, 300, 4, Module)
 	mergeInverted(t, db, ii, txs)
 	li, _ := NewLocalityIndex(path, path, 4, "inv")
+	defer li.Close()
 	err := li.BuildMissedIndices(ctx, ii)
 	require.NoError(t, err)
 
