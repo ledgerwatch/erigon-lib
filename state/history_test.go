@@ -473,8 +473,9 @@ func TestIterateChanged2(t *testing.T) {
 	var keys, vals []string
 	ic := h.MakeContext()
 	ic.SetTx(roTx)
-	ic.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
+	ic.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
 		keys = append(keys, fmt.Sprintf("%x", k))
+		vals = append(vals, fmt.Sprintf("%x", v))
 		return nil
 	})
 	require.Equal(t, []string{
@@ -497,29 +498,30 @@ func TestIterateChanged2(t *testing.T) {
 		"0100000000000011",
 		"0100000000000012",
 		"0100000000000013"}, keys)
-	//require.Equal(t, []string{
-	//	"ff00000000000001",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	"",
-	//	""}, vals)
+	require.Equal(t, []string{
+		"ff00000000000001",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		""}, vals)
 	keys, vals = keys[:0], vals[:0]
-	err = ic.IterateRecentlyChanged(995, 1000, roTx, func(k, _ []byte) error {
+	err = ic.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
 		keys = append(keys, fmt.Sprintf("%x", k))
+		vals = append(vals, fmt.Sprintf("%x", v))
 		return nil
 	})
 	require.NoError(t, err)
@@ -535,16 +537,16 @@ func TestIterateChanged2(t *testing.T) {
 		"010000000000001b",
 	}, keys)
 
-	//require.Equal(t, []string{
-	//	"ff000000000003e2",
-	//	"ff000000000001f1",
-	//	"ff0000000000014b",
-	//	"ff000000000000f8",
-	//	"ff000000000000c6",
-	//	"ff000000000000a5",
-	//	"ff0000000000006e",
-	//	"ff00000000000052",
-	//	"ff00000000000024"}, vals)
+	require.Equal(t, []string{
+		"ff000000000003e2",
+		"ff000000000001f1",
+		"ff0000000000014b",
+		"ff000000000000f8",
+		"ff000000000000c6",
+		"ff000000000000a5",
+		"ff0000000000006e",
+		"ff00000000000052",
+		"ff00000000000024"}, vals)
 
 	collateAndMergeHistory(t, db, h, txs)
 	keys = keys[:0]

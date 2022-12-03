@@ -1497,12 +1497,10 @@ type HistoryIterator2 struct {
 	valsTable     string
 	nextKey       []byte
 	nextVal       []byte
-	total         uint64
 	endTxNum      uint64
 	startTxNum    uint64
 	advDbCnt      int
 	startTxKey    [8]byte
-	txnKey        [8]byte
 	hasNext       bool
 }
 
