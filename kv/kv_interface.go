@@ -54,16 +54,13 @@ var (
 	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`) //nolint
 	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)    //nolint
 	DbPgopsMsync   = metrics.NewCounter(`db_pgops_msync`)   //nolint
-	DbPgopsFsync   = metrics.NewCounter(`db_pgops_fsnc`)    //nolint
+	DbPgopsFsync   = metrics.NewCounter(`db_pgops_fsync`)   //nolint
+	DbMiLastPgNo   = metrics.NewCounter(`db_mi_last_pgno`)  //nolint
 
-	DbGcWorkRtimeCPU       = metrics.GetOrCreateSummary(`db_gc_work_rtime_cpu`)      //nolint
-	DbGcSelfRtimeCPU       = metrics.GetOrCreateSummary(`db_gc_self_rtime_cpu`)      //nolint
 	DbGcWorkRtime          = metrics.GetOrCreateSummary(`db_gc_work_rtime`)          //nolint
 	DbGcWorkRsteps         = metrics.NewCounter(`db_gc_work_rsteps`)                 //nolint
 	DbGcWorkRxpages        = metrics.NewCounter(`db_gc_work_rxpages`)                //nolint
 	DbGcSelfRtime          = metrics.GetOrCreateSummary(`db_gc_self_rtime`)          //nolint
-	DbGcSelfXtime          = metrics.GetOrCreateSummary(`db_gc_self_xtime`)          //nolint
-	DbGcWorkXtime          = metrics.GetOrCreateSummary(`db_gc_work_xtime`)          //nolint
 	DbGcSelfRsteps         = metrics.NewCounter(`db_gc_self_rsteps`)                 //nolint
 	DbGcWloops             = metrics.NewCounter(`db_gc_wloop`)                       //nolint
 	DbGcCoalescences       = metrics.NewCounter(`db_gc_coalescences`)                //nolint

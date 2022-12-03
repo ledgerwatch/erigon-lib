@@ -606,6 +606,7 @@ func (tx *MdbxTx) CollectMetrics() {
 	kv.DbPgopsWops.Set(info.PageOps.Wops)
 	kv.DbPgopsMsync.Set(info.PageOps.Msync)
 	kv.DbPgopsFsync.Set(info.PageOps.Fsync)
+	kv.DbMiLastPgNo.Set(info.MiLastPgNo)
 
 	txInfo, err := tx.tx.Info(true)
 	if err != nil {
@@ -800,12 +801,8 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbCommitTotal.Update(latency.Whole.Seconds())
 		kv.DbCommitTotalHist.Update(latency.Whole.Seconds())
 
-		kv.DbGcWorkRtimeCPU.Update(latency.GCDetails.WorkRtimeCPU.Seconds())
-		kv.DbGcSelfRtimeCPU.Update(latency.GCDetails.SelfRtimeCPU.Seconds())
 		kv.DbGcWorkRtime.Update(latency.GCDetails.WorkRtime.Seconds())
 		kv.DbGcSelfRtime.Update(latency.GCDetails.SelfRtime.Seconds())
-		kv.DbGcSelfXtime.Update(latency.GCDetails.SelfXtime.Seconds())
-		kv.DbGcWorkXtime.Update(latency.GCDetails.WorkXtime.Seconds())
 
 		kv.DbGcWorkRsteps.Set(uint64(latency.GCDetails.WorkRsteps))
 		kv.DbGcSelfRsteps.Set(uint64(latency.GCDetails.SelfRsteps))
@@ -839,11 +836,8 @@ func (tx *MdbxTx) Commit() error {
 			fmt.Sprintf("Whole=%s", latency.Whole),
 			fmt.Sprintf("GCWallClock=%s", latency.GCWallClock),
 			fmt.Sprintf("GCCpuTime=%s", latency.GCCpuTime),
-			fmt.Sprintf("WorkRtimeCPU=%s", latency.GCDetails.WorkRtimeCPU),
-			fmt.Sprintf("SelfRtimeCPU=%s", latency.GCDetails.SelfRtimeCPU),
 			fmt.Sprintf("WorkRtime=%s", latency.GCDetails.WorkRtime),
 			fmt.Sprintf("SelfRtime=%s", latency.GCDetails.SelfRtime),
-			fmt.Sprintf("SelfXtime=%s", latency.GCDetails.SelfXtime),
 			fmt.Sprintf("WorkPnlMergeTime=%s", latency.GCDetails.WorkPnlMergeTime),
 			fmt.Sprintf("SelfPnlMergeTime=%s", latency.GCDetails.SelfPnlMergeTime),
 		}, ",")+"}, gc: {"+strings.Join([]string{
