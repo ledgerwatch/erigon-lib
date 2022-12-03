@@ -1460,6 +1460,7 @@ func (hi *HistoryIterator1) Next(keyBuf, valBuf []byte) ([]byte, []byte) {
 func (hc *HistoryContext) IterateRecentlyChanged(startTxNum, endTxNum uint64, roTx kv.Tx, f func([]byte, []byte) error) error {
 	col := etl.NewCollector("", hc.h.tmpdir, etl.NewOldestEntryBuffer(etl.BufferOptimalSize))
 	defer col.Close()
+	col.LogLvl(log.LvlTrace)
 
 	it := hc.IterateRecentlyChangedUnordered(startTxNum, endTxNum, roTx)
 	defer it.Close()
