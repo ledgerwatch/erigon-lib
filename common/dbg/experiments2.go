@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/ledgerwatch/log/v3"
 )
 
 var (
@@ -17,6 +19,7 @@ func WriteMap() bool {
 		v, _ := os.LookupEnv("WRITE_MAP")
 		if v == "true" {
 			writeMap = true
+			log.Info("[Experiment]", "WRITE_MAP", writeMap)
 		}
 	})
 	return writeMap
@@ -39,6 +42,7 @@ func MergeTr() int {
 				panic(i)
 			}
 			mergeTr = i
+			log.Info("[Experiment]", "MERGE_THRESHOLD", mergeTr)
 		}
 	})
 	return mergeTr
@@ -54,6 +58,7 @@ func MdbxReadAhead() bool {
 		v, _ := os.LookupEnv("MDBX_READAHEAD")
 		if v == "true" {
 			mdbxReadahead = true
+			log.Info("[Experiment]", "MDBX_READAHEAD", mdbxReadahead)
 		}
 	})
 	return mdbxReadahead
@@ -69,6 +74,7 @@ func DiscardHistory() bool {
 		v, _ := os.LookupEnv("DISCARD_HISTORY")
 		if v == "true" {
 			discardHistory = true
+			log.Info("[Experiment]", "DISCARD_HISTORY", discardHistory)
 		}
 	})
 	return discardHistory
@@ -91,6 +97,7 @@ func BigRoTxKb() uint {
 				panic(err)
 			}
 			bigRoTx = uint(i)
+			log.Info("[Experiment]", "DEBUG_BIG_RO_TX_KB", bigRoTx)
 		}
 	})
 	return bigRoTx
@@ -110,6 +117,7 @@ func BigRwTxKb() uint {
 				panic(err)
 			}
 			bigRwTx = uint(i)
+			log.Info("[Experiment]", "DEBUG_BIG_RW_TX_KB", bigRwTx)
 		}
 	})
 	return bigRwTx
@@ -129,6 +137,7 @@ func SlowCommit() time.Duration {
 				panic(err)
 			}
 			slowCommit = time.Duration(i) * time.Millisecond
+			log.Info("[Experiment]", "DEBUG_BIG_RW_TX_KB", slowCommit)
 		}
 	})
 	return slowCommit
@@ -146,6 +155,7 @@ func StopBeforeStage() string {
 		v, _ := os.LookupEnv("STOP_BEFORE_STAGE") // see names in eth/stagedsync/stages/stages.go
 		if v != "" {
 			stopBeforeStage = v
+			log.Info("[Experiment]", "STOP_BEFORE_STAGE", stopBeforeStage)
 		}
 	}
 	stopBeforeStageFlag.Do(f)
@@ -160,6 +170,7 @@ func StopAfterStage() string {
 		v, _ := os.LookupEnv("STOP_AFTER_STAGE") // see names in eth/stagedsync/stages/stages.go
 		if v != "" {
 			stopAfterStage = v
+			log.Info("[Experiment]", "STOP_AFTER_STAGE", stopAfterStage)
 		}
 	}
 	stopAfterStageFlag.Do(f)
