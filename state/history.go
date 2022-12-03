@@ -1530,6 +1530,9 @@ func (hi *HistoryIterator2) advanceInDb() {
 		}
 		if k == nil {
 			k, v, err = hi.txNum2kCursor.NextNoDup()
+			if err != nil {
+				panic(err)
+			}
 			if k != nil && binary.BigEndian.Uint64(k) >= hi.endTxNum {
 				k = nil // end
 			}
