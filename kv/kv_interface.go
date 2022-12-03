@@ -60,6 +60,8 @@ var (
 	DbGcWorkRsteps         = metrics.NewCounter(`db_gc_work_rsteps`)                 //nolint
 	DbGcWorkRxpages        = metrics.NewCounter(`db_gc_work_rxpages`)                //nolint
 	DbGcSelfRtime          = metrics.GetOrCreateSummary(`db_gc_self_rtime`)          //nolint
+	DbGcSelfXtime          = metrics.GetOrCreateSummary(`db_gc_self_xtime`)          //nolint
+	DbGcWorkXtime          = metrics.GetOrCreateSummary(`db_gc_work_xtime`)          //nolint
 	DbGcSelfRsteps         = metrics.NewCounter(`db_gc_self_rsteps`)                 //nolint
 	DbGcWloops             = metrics.NewCounter(`db_gc_wloop`)                       //nolint
 	DbGcCoalescences       = metrics.NewCounter(`db_gc_coalescences`)                //nolint
