@@ -374,6 +374,8 @@ github.com/tinylib/msgp v1.1.0/go.mod h1:+d+yLhGm8mzTaHzB+wgMYrodPfmZrzkirds8fDW
 github.com/tinylib/msgp v1.1.2/go.mod h1:+d+yLhGm8mzTaHzB+wgMYrodPfmZrzkirds8fDWklFE=
 github.com/torquem-ch/mdbx-go v0.26.3-0.20221203154917-ffbe211aa718 h1:19B2z25o/7viviQpuLhqzpyI6gOMyYBJaXRrd0mMPUs=
 github.com/torquem-ch/mdbx-go v0.26.3-0.20221203154917-ffbe211aa718/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
+github.com/torquem-ch/mdbx-go v0.26.3-0.20221203155324-9bb032c94aeb h1:9fhnOpbmK7U3Byhe6HQ1DZl2lJIOQ5jGkt4r88nYvYY=
+github.com/torquem-ch/mdbx-go v0.26.3-0.20221203155324-9bb032c94aeb/go.mod h1:T2fsoJDVppxfAPTLd1svUgH1kpPmeXdPESmroSHcL1E=
 github.com/valyala/fastrand v1.1.0 h1:f+5HkLW4rsgzdNoleUOB69hyT9IlD2ZQh9GyDMfb5G8=
 github.com/valyala/fastrand v1.1.0/go.mod h1:HWqCzkrkg6QXT8V2EXWvXCoow7vLwOFN002oeRzjapQ=
 github.com/valyala/histogram v1.2.0 h1:wyYGAZZt3CpwUiIb9AU/Zbllg1llXyrtApRS815OLoQ=
