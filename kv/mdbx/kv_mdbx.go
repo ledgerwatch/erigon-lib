@@ -809,7 +809,6 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbCommitSync.Update(latency.Sync.Seconds())
 		kv.DbCommitEnding.Update(latency.Ending.Seconds())
 		kv.DbCommitTotal.Update(latency.Whole.Seconds())
-		kv.DbCommitTotalHist.Update(latency.Whole.Seconds())
 
 		kv.DbGcWorkRtime.Update(latency.GCDetails.WorkRtime.Seconds())
 		kv.DbGcSelfRtime.Update(latency.GCDetails.SelfRtime.Seconds())

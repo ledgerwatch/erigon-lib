@@ -35,7 +35,6 @@ var (
 	TxUnspill = metrics.NewCounter(`tx_unspill`) //nolint
 	TxDirty   = metrics.NewCounter(`tx_dirty`)   //nolint
 
-	DbCommitTotalHist   = metrics.GetOrCreateHistogram(`db2_commit_seconds{phase="total"}`)      //nolint
 	DbCommitPreparation = metrics.GetOrCreateSummary(`db_commit_seconds{phase="preparation"}`)   //nolint
 	DbGCWallClock       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_wall_clock"}`) //nolint
 	DbGCCpuTime         = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_cpu_time"}`)   //nolint
