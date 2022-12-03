@@ -369,7 +369,7 @@ func (si *LocalityIterator) advance() {
 
 		inStep := uint32(top.startTxNum / si.hc.ii.aggregationStep)
 		if top.g.HasNext() {
-			fmt.Printf("top.g:%s\n", top.g.Trace)
+			fmt.Printf("top.g:%s\n", top.g.FileName())
 			top.key, _ = top.g.NextUncompressed()
 			heap.Push(&si.h, top)
 		}
