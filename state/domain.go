@@ -511,6 +511,9 @@ func (d *Domain) MakeContext() *DomainContext {
 		if item.index == nil {
 			return false
 		}
+		if item.startTxNum > d.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
+			return true
+		}
 		bt.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,

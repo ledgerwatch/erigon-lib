@@ -749,6 +749,9 @@ func (sf HistoryFiles) Close() {
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
 func (h *History) buildFiles(ctx context.Context, step uint64, collation HistoryCollation) (HistoryFiles, error) {
+	if collation.historyComp == nil {
+		log.Info("[Snapshots] history.buildFiles see nil at", "step", step)
+	}
 	historyComp := collation.historyComp
 	var historyDecomp, efHistoryDecomp *compress.Decompressor
 	var historyIdx, efHistoryIdx *recsplit.Index
@@ -1079,6 +1082,9 @@ func (h *History) MakeContext() *HistoryContext {
 		if item.index == nil {
 			return false
 		}
+		if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
+			return true
+		}
 		hc.indexFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
@@ -1091,6 +1097,9 @@ func (h *History) MakeContext() *HistoryContext {
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
+		}
+		if item.startTxNum > h.endTxNumMinimax() {
+			return true
 		}
 		hc.historyFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
@@ -1143,7 +1152,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		search.startTxNum = foundStartTxNum
 		search.endTxNum = foundEndTxNum
 		if historyItem, ok = hc.historyFiles.Get(search); !ok {
-			return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
+			return nil, false, fmt.Errorf("history: no '%s' file found for [%x], search for: %d-%d", hc.h.filenameBase, key, foundStartTxNum/hc.h.aggregationStep, foundEndTxNum/hc.h.aggregationStep)
 		}
 		var txKey [8]byte
 		binary.BigEndian.PutUint64(txKey[:], foundTxNum)

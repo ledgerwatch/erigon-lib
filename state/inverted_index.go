@@ -450,6 +450,9 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 		if item.index == nil {
 			return false
 		}
+		if item.startTxNum > ii.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
+			return true
+		}
 
 		ic.files.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
