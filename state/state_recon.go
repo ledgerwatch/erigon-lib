@@ -210,8 +210,8 @@ func (sii *ScanIteratorInc) advance() {
 	val, _ := sii.g.NextUncompressed()
 	max := eliasfano32.Max(val)
 	sii.nextKey = sii.key
+	sii.nextTxNum = max
 	if max < sii.uptoTxNum {
-		sii.nextTxNum = max
 		sii.nextDel = false
 	} else {
 		sii.nextDel = true
