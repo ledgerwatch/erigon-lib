@@ -614,6 +614,8 @@ func (tx *MdbxTx) CollectMetrics() {
 	kv.DbPgopsSpill.Set(info.PageOps.Spill)
 	kv.DbPgopsUnspill.Set(info.PageOps.Unspill)
 	kv.DbPgopsWops.Set(info.PageOps.Wops)
+	kv.DbPgopsPrefault.Set(info.PageOps.Prefault)
+	kv.DbPgopsMinicore.Set(info.PageOps.Minicore)
 	kv.DbPgopsMsync.Set(info.PageOps.Msync)
 	kv.DbPgopsFsync.Set(info.PageOps.Fsync)
 	kv.DbMiLastPgNo.Set(info.MiLastPgNo * tx.db.opts.pageSize)

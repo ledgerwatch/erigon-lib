@@ -44,17 +44,19 @@ var (
 	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)        //nolint
 	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)         //nolint
 
-	DbPgopsNewly   = metrics.NewCounter(`db_pgops_newly`)   //nolint
-	DbPgopsCow     = metrics.NewCounter(`db_pgops_cow`)     //nolint
-	DbPgopsClone   = metrics.NewCounter(`db_pgops_clone`)   //nolint
-	DbPgopsSplit   = metrics.NewCounter(`db_pgops_split`)   //nolint
-	DbPgopsMerge   = metrics.NewCounter(`db_pgops_merge`)   //nolint
-	DbPgopsSpill   = metrics.NewCounter(`db_pgops_spill`)   //nolint
-	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`) //nolint
-	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)    //nolint
-	DbPgopsMsync   = metrics.NewCounter(`db_pgops_msync`)   //nolint
-	DbPgopsFsync   = metrics.NewCounter(`db_pgops_fsync`)   //nolint
-	DbMiLastPgNo   = metrics.NewCounter(`db_mi_last_pgno`)  //nolint
+	DbPgopsNewly    = metrics.NewCounter(`db_pgops_newly`)    //nolint
+	DbPgopsCow      = metrics.NewCounter(`db_pgops_cow`)      //nolint
+	DbPgopsClone    = metrics.NewCounter(`db_pgops_clone`)    //nolint
+	DbPgopsSplit    = metrics.NewCounter(`db_pgops_split`)    //nolint
+	DbPgopsMerge    = metrics.NewCounter(`db_pgops_merge`)    //nolint
+	DbPgopsSpill    = metrics.NewCounter(`db_pgops_spill`)    //nolint
+	DbPgopsUnspill  = metrics.NewCounter(`db_pgops_unspill`)  //nolint
+	DbPgopsWops     = metrics.NewCounter(`db_pgops_wops`)     //nolint
+	DbPgopsPrefault = metrics.NewCounter(`db_pgop_prefault`)  //nolint
+	DbPgopsMinicore = metrics.NewCounter(`db_pgops_minicore`) //nolint
+	DbPgopsMsync    = metrics.NewCounter(`db_pgops_msync`)    //nolint
+	DbPgopsFsync    = metrics.NewCounter(`db_pgops_fsync`)    //nolint
+	DbMiLastPgNo    = metrics.NewCounter(`db_mi_last_pgno`)   //nolint
 
 	DbGcWorkRtime          = metrics.GetOrCreateSummary(`db_gc_work_rtime`)          //nolint
 	DbGcWorkRsteps         = metrics.NewCounter(`db_gc_work_rsteps`)                 //nolint
