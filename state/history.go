@@ -1137,25 +1137,25 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	return nil, false, nil
 }
 
-func (hs *HistoryStep) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
+func (hs *HistoryStep) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint64) {
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	//fmt.Printf("ef item %d-%d, key %x\n", item.startTxNum, item.endTxNum, key)
 	if hs.indexFile.reader.Empty() {
-		return nil, false, nil
+		return nil, false, txNum
 	}
 	offset := hs.indexFile.reader.Lookup(key)
 	g := hs.indexFile.getter
 	g.Reset(offset)
 	k, _ := g.NextUncompressed()
 	if !bytes.Equal(k, key) {
-		return nil, false, nil
+		return nil, false, txNum
 	}
 	//fmt.Printf("Found key=%x\n", k)
 	eliasVal, _ := g.NextUncompressed()
 	ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 	n, ok := ef.Search(txNum)
 	if !ok {
-		return nil, false, nil
+		return nil, false, ef.Max()
 	}
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], n)
@@ -1165,10 +1165,10 @@ func (hs *HistoryStep) GetNoState(key []byte, txNum uint64) ([]byte, bool, error
 	g.Reset(offset)
 	if hs.compressVals {
 		v, _ := g.Next(nil)
-		return v, true, nil
+		return v, true, txNum
 	}
 	v, _ := g.NextUncompressed()
-	return v, true, nil
+	return v, true, txNum
 }
 
 // GetNoStateWithRecent searches history for a value of specified key before txNum

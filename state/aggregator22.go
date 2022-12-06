@@ -1319,11 +1319,11 @@ func (as *AggregatorStep) IterateCodeTxs(txNum uint64) *ScanIteratorInc {
 	return as.code.iterateTxs(txNum)
 }
 
-func (as *AggregatorStep) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
+func (as *AggregatorStep) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64) {
 	return as.accounts.GetNoState(addr, txNum)
 }
 
-func (as *AggregatorStep) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, error) {
+func (as *AggregatorStep) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, uint64) {
 	if cap(as.keyBuf) < len(addr)+len(loc) {
 		as.keyBuf = make([]byte, len(addr)+len(loc))
 	} else if len(as.keyBuf) != len(addr)+len(loc) {
@@ -1334,16 +1334,13 @@ func (as *AggregatorStep) ReadAccountStorageNoState(addr []byte, loc []byte, txN
 	return as.storage.GetNoState(as.keyBuf, txNum)
 }
 
-func (as *AggregatorStep) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, error) {
+func (as *AggregatorStep) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, uint64) {
 	return as.code.GetNoState(addr, txNum)
 }
 
-func (as *AggregatorStep) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, error) {
-	code, noState, err := as.code.GetNoState(addr, txNum)
-	if err != nil {
-		return 0, false, err
-	}
-	return len(code), noState, nil
+func (as *AggregatorStep) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, uint64) {
+	code, noState, stateTxNum := as.code.GetNoState(addr, txNum)
+	return len(code), noState, stateTxNum
 }
 
 func (as *AggregatorStep) Clone() *AggregatorStep {
