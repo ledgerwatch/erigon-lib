@@ -284,7 +284,7 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//	defer wg.Done()
 	var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx, logEvery)
+		ac.accounts, err = a.accounts.collate(ctx, step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
@@ -301,7 +301,7 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//	defer wg.Done()
 	//	var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx, logEvery)
+		ac.storage, err = a.storage.collate(ctx, step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
@@ -317,7 +317,7 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//	defer wg.Done()
 	//	var err error
 	if err = db.View(ctx, func(tx kv.Tx) error {
-		ac.code, err = a.code.collate(step, txFrom, txTo, tx, logEvery)
+		ac.code, err = a.code.collate(ctx, step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err

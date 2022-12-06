@@ -635,7 +635,7 @@ func (c HistoryCollation) Close() {
 	}
 }
 
-func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (HistoryCollation, error) {
+func (h *History) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (HistoryCollation, error) {
 	var historyComp *compress.Compressor
 	var err error
 	closeComp := true
