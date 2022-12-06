@@ -1343,16 +1343,23 @@ func (as *AggregatorStep) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) 
 	return len(code), noState, stateTxNum
 }
 
-func (as *AggregatorStep) MaxTxNumAccounts() (bool, uint64) {
-	return as.accounts.MaxTxNum()
+func (as *AggregatorStep) MaxTxNumAccounts(addr []byte) (bool, uint64) {
+	return as.accounts.MaxTxNum(addr)
 }
 
-func (as *AggregatorStep) MaxTxNumStorage() (bool, uint64) {
-	return as.storage.MaxTxNum()
+func (as *AggregatorStep) MaxTxNumStorage(addr []byte, loc []byte) (bool, uint64) {
+	if cap(as.keyBuf) < len(addr)+len(loc) {
+		as.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(as.keyBuf) != len(addr)+len(loc) {
+		as.keyBuf = as.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(as.keyBuf, addr)
+	copy(as.keyBuf[len(addr):], loc)
+	return as.storage.MaxTxNum(as.keyBuf)
 }
 
-func (as *AggregatorStep) MaxTxNumCode() (bool, uint64) {
-	return as.code.MaxTxNum()
+func (as *AggregatorStep) MaxTxNumCode(addr []byte) (bool, uint64) {
+	return as.code.MaxTxNum(addr)
 }
 
 func (as *AggregatorStep) Clone() *AggregatorStep {
