@@ -418,10 +418,6 @@ const (
 	PlainContractR = "PlainContractR" // temporary table for PlainContract reconstitution
 	PlainContractD = "PlainContractD" // temporary table for PlainContract reconstitution, deletes
 
-	XAccount = "XAccount"
-	XStorage = "XStorage"
-	XCode    = "XCode"
-
 	// Erigon-CL
 	BeaconState = "BeaconState"
 	// [slot + block root] => [signature + block without execution payload]
@@ -599,9 +595,6 @@ var DownloaderTables = []string{
 	BittorrentInfo,
 }
 var ReconTables = []string{
-	XAccount,
-	XStorage,
-	XCode,
 	PlainStateR,
 	PlainStateD,
 	CodeR,
