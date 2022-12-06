@@ -1171,6 +1171,22 @@ func (hs *HistoryStep) GetNoState(key []byte, txNum uint64) ([]byte, bool, uint6
 	return v, true, txNum
 }
 
+func (hs *HistoryStep) MaxTxNum(key []byte) (bool, uint64) {
+	if hs.indexFile.reader.Empty() {
+		return false, 0
+	}
+	offset := hs.indexFile.reader.Lookup(key)
+	g := hs.indexFile.getter
+	g.Reset(offset)
+	k, _ := g.NextUncompressed()
+	if !bytes.Equal(k, key) {
+		return false, 0
+	}
+	//fmt.Printf("Found key=%x\n", k)
+	eliasVal, _ := g.NextUncompressed()
+	return true, eliasfano32.Max(eliasVal)
+}
+
 // GetNoStateWithRecent searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {

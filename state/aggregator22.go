@@ -1343,6 +1343,18 @@ func (as *AggregatorStep) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) 
 	return len(code), noState, stateTxNum
 }
 
+func (as *AggregatorStep) MaxTxNumAccounts() (bool, uint64) {
+	return as.accounts.MaxTxNum()
+}
+
+func (as *AggregatorStep) MaxTxNumStorage() (bool, uint64) {
+	return as.storage.MaxTxNum()
+}
+
+func (as *AggregatorStep) MaxTxNumCode() (bool, uint64) {
+	return as.code.MaxTxNum()
+}
+
 func (as *AggregatorStep) Clone() *AggregatorStep {
 	return &AggregatorStep{
 		a:        as.a,
