@@ -846,7 +846,7 @@ func (a *Aggregator) FinishTx() error {
 		return nil
 	}
 	step-- // Leave one step worth in the DB
-	if err := a.Flush(); err != nil {
+	if err := a.Flush(context.TODO()); err != nil {
 		return err
 	}
 
@@ -972,7 +972,7 @@ func (a *Aggregator) FinishWrites() {
 }
 
 // Flush - must be called before Collate, if you did some writes
-func (a *Aggregator) Flush() error {
+func (a *Aggregator) Flush(ctx context.Context) error {
 	// TODO: Add support of commitment!
 	flushers := []flusher{
 		a.accounts.Rotate(),
@@ -986,7 +986,7 @@ func (a *Aggregator) Flush() error {
 	}
 	defer func(t time.Time) { log.Debug("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
 	for _, f := range flushers {
-		if err := f.Flush(a.rwTx); err != nil {
+		if err := f.Flush(ctx, a.rwTx); err != nil {
 			return err
 		}
 	}

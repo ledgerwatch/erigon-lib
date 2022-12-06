@@ -662,7 +662,7 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 		}
 	}()
 	valuesPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, step, step+1))
-	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.tmpdir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
+	if valuesComp, err = compress.NewCompressor(ctx, "collate values", valuesPath, d.tmpdir, compress.MinPatternScore, 1, log.LvlDebug); err != nil {
 		return Collation{}, fmt.Errorf("create %s values compressor: %w", d.filenameBase, err)
 	}
 	keysCursor, err := roTx.CursorDupSort(d.keysTable)
@@ -886,6 +886,12 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 			}
 			// Skip value
 			keyPos = g.Skip()
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
 		}
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
@@ -1014,7 +1020,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 }
 
 // nolint
-func (d *Domain) warmup(txFrom, limit uint64, tx kv.Tx) error {
+func (d *Domain) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) error {
 	domainKeysCursor, err := tx.CursorDupSort(d.keysTable)
 	if err != nil {
 		return fmt.Errorf("create %s domain cursor: %w", d.filenameBase, err)
@@ -1051,12 +1057,18 @@ func (d *Domain) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		}
 		_, _, _ = valsC.Seek(v[len(v)-8:])
 		_, _ = idxC.SeekBothRange(v[:len(v)-8], k)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s domain keys: %w", d.filenameBase, err)
 	}
 
-	return d.History.warmup(txFrom, limit, tx)
+	return d.History.warmup(ctx, txFrom, limit, tx)
 }
 
 func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool) {

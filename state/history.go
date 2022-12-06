@@ -483,11 +483,11 @@ type historyFlusher struct {
 	i *invertedIndexWAL
 }
 
-func (f historyFlusher) Flush(tx kv.RwTx) error {
-	if err := f.i.Flush(tx); err != nil {
+func (f historyFlusher) Flush(ctx context.Context, tx kv.RwTx) error {
+	if err := f.i.Flush(ctx, tx); err != nil {
 		return err
 	}
-	if err := f.h.flush(tx); err != nil {
+	if err := f.h.flush(ctx, tx); err != nil {
 		return err
 	}
 	return nil
@@ -540,7 +540,7 @@ func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
 	return w
 }
 
-func (h *historyWAL) flush(tx kv.RwTx) error {
+func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if h.discard {
 		return nil
 	}
@@ -548,7 +548,7 @@ func (h *historyWAL) flush(tx kv.RwTx) error {
 	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
 		return err
 	}
-	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{}); err != nil {
+	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
 	h.close()
@@ -647,7 +647,7 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.
 		}
 	}()
 	historyPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, step, step+1))
-	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, h.tmpdir, compress.MinPatternScore, h.workers, log.LvlTrace); err != nil {
+	if historyComp, err = compress.NewCompressor(ctx, "collate history", historyPath, h.tmpdir, compress.MinPatternScore, h.workers, log.LvlTrace); err != nil {
 		return HistoryCollation{}, fmt.Errorf("create %s history compressor: %w", h.filenameBase, err)
 	}
 	keysCursor, err := roTx.CursorDupSort(h.indexKeysTable)
@@ -818,6 +818,12 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 		if err = efHistoryComp.AddUncompressedWord(buf); err != nil {
 			return HistoryFiles{}, fmt.Errorf("add %s ef history val: %w", h.filenameBase, err)
 		}
+
+		select {
+		case <-ctx.Done():
+			return HistoryFiles{}, ctx.Err()
+		default:
+		}
 	}
 	if err = efHistoryComp.Compress(); err != nil {
 		return HistoryFiles{}, fmt.Errorf("compress %s ef history: %w", h.filenameBase, err)
@@ -861,6 +867,11 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 				}
 				valOffset = g.Skip()
 			}
+			select {
+			case <-ctx.Done():
+				return HistoryFiles{}, ctx.Err()
+			default:
+			}
 		}
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
@@ -900,7 +911,7 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 	})
 }
 
-func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
+func (h *History) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) error {
 	historyKeysCursor, err := tx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
@@ -937,6 +948,12 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		}
 		_, _, _ = valsC.Seek(v[len(v)-8:])
 		_, _ = idxC.SeekBothRange(v[:len(v)-8], k)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)

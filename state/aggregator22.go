@@ -534,7 +534,7 @@ func (a *Aggregator22) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	return nil
 }
 
-func (a *Aggregator22) Warmup(txFrom, limit uint64) {
+func (a *Aggregator22) Warmup(ctx context.Context, txFrom, limit uint64) {
 	if a.db == nil {
 		return
 	}
@@ -547,26 +547,26 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 	a.warmupWorking.Store(true)
 	go func() {
 		defer a.warmupWorking.Store(false)
-		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
-			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
+		if err := a.db.View(ctx, func(tx kv.Tx) error {
+			if err := a.accounts.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.storage.warmup(txFrom, limit, tx); err != nil {
+			if err := a.storage.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.code.warmup(txFrom, limit, tx); err != nil {
+			if err := a.code.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.logAddrs.warmup(txFrom, limit, tx); err != nil {
+			if err := a.logAddrs.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.logTopics.warmup(txFrom, limit, tx); err != nil {
+			if err := a.logTopics.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.tracesFrom.warmup(txFrom, limit, tx); err != nil {
+			if err := a.tracesFrom.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.tracesTo.warmup(txFrom, limit, tx); err != nil {
+			if err := a.tracesTo.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
 			return nil
@@ -610,10 +610,10 @@ func (a *Aggregator22) FinishWrites() {
 }
 
 type flusher interface {
-	Flush(tx kv.RwTx) error
+	Flush(ctx context.Context, tx kv.RwTx) error
 }
 
-func (a *Aggregator22) Flush(tx kv.RwTx) error {
+func (a *Aggregator22) Flush(ctx context.Context, tx kv.RwTx) error {
 	flushers := []flusher{
 		a.accounts.Rotate(),
 		a.storage.Rotate(),
@@ -625,7 +625,7 @@ func (a *Aggregator22) Flush(tx kv.RwTx) error {
 	}
 	defer func(t time.Time) { log.Debug("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
 	for _, f := range flushers {
-		if err := f.Flush(tx); err != nil {
+		if err := f.Flush(ctx, tx); err != nil {
 			return err
 		}
 	}
@@ -989,7 +989,7 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 // we can set it to 0, because no re-org on this blocks are possible
 func (a *Aggregator22) KeepInDB(v uint64) { a.keepInDB = v }
 
-func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
+func (a *Aggregator22) BuildFilesInBackground(ctx context.Context, db kv.RoDB) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return nil
 	}
@@ -1018,7 +1018,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		// - to remove old data from db as early as possible
 		// - during files build, may happen commit of new data. on each loop step getting latest id in db
 		for step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep {
-			if err := a.buildFilesInBackground(context.Background(), step, db); err != nil {
+			if err := a.buildFilesInBackground(ctx, step, db); err != nil {
 				log.Warn("buildFilesInBackground", "err", err)
 				break
 			}
@@ -1031,7 +1031,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		defer a.workingMerge.Store(true)
 		go func() {
 			defer a.workingMerge.Store(false)
-			if err := a.MergeLoop(context.Background(), 1); err != nil {
+			if err := a.MergeLoop(ctx, 1); err != nil {
 				log.Warn("merge", "err", err)
 			}
 		}()
