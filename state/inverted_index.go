@@ -944,12 +944,6 @@ func (ii *InvertedIndex) warmup(ctx context.Context, txFrom, limit uint64, tx kv
 
 // [txFrom; txTo)
 func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
-	select {
-	case <-ctx.Done():
-		return nil
-	default:
-	}
-
 	keysCursor, err := ii.tx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -992,6 +986,8 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		select {
 		case <-logEvery.C:
 			log.Info("[snapshots] prune history", "name", ii.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(ii.aggregationStep), float64(txTo)/float64(ii.aggregationStep)))
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
 	}

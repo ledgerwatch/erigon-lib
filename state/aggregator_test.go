@@ -36,8 +36,8 @@ func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, k
 
 func TestAggregator_Merge(t *testing.T) {
 	_, db, agg := testDbAndAggregator(t, 0, 100)
-
-	tx, err := db.BeginRw(context.Background())
+	ctx := context.Background()
+	tx, err := db.BeginRw(ctx)
 	require.NoError(t, err)
 	defer func() {
 		if tx != nil {
@@ -67,7 +67,7 @@ func TestAggregator_Merge(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, agg.FinishTx())
 	}
-	err = agg.Flush()
+	err = agg.Flush(ctx)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
@@ -98,8 +98,9 @@ func TestAggregator_Merge(t *testing.T) {
 func TestAggregator_RestartOnDatadir(t *testing.T) {
 	aggStep := uint64(50)
 	path, db, agg := testDbAndAggregator(t, 0, aggStep)
+	ctx := context.Background()
 
-	tx, err := db.BeginRw(context.Background())
+	tx, err := db.BeginRw(ctx)
 	require.NoError(t, err)
 	defer func() {
 		if tx != nil {
@@ -114,7 +115,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 
 	var latestCommitTxNum uint64
 	commit := func(txn uint64) error {
-		err = agg.Flush()
+		err = agg.Flush(ctx)
 		require.NoError(t, err)
 		err = tx.Commit()
 		require.NoError(t, err)
@@ -143,7 +144,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 
 		require.NoError(t, agg.FinishTx())
 	}
-	err = agg.Flush()
+	err = agg.Flush(ctx)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)

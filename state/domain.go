@@ -943,8 +943,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		case <-logEvery.C:
 			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "collect keys", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		case <-ctx.Done():
-			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
-			return err
+			return ctx.Err()
 		default:
 		}
 
@@ -962,8 +961,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		case <-logEvery.C:
 			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "prune keys", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		case <-ctx.Done():
-			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
-			return err
+			return ctx.Err()
 		default:
 		}
 
@@ -994,8 +992,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		case <-logEvery.C:
 			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "prune values", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		case <-ctx.Done():
-			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
-			return err
+			return ctx.Err()
 		default:
 		}
 		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
