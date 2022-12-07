@@ -259,10 +259,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 
 	opts.pageSize = uint64(in.PageSize)
 
+	//nolint
 	if opts.flags&mdbx.Accede == 0 && opts.flags&mdbx.Readonly == 0 {
-		//nolint
 	}
-
 	// erigon using big transactions
 	// increase "page measured" options. need do it after env.Open() because default are depend on pageSize known only after env.Open()
 	if opts.flags&mdbx.Readonly == 0 {
