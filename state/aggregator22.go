@@ -649,9 +649,13 @@ func (a *Aggregator22) PruneWithTiemout(ctx context.Context, timeout time.Durati
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	return a.Prune(ctx, a.aggregationStep)
+	t := time.Now()
+	for time.Since(t) < timeout {
+		if err := a.Prune(ctx, 1_000); err != nil { // prune part of retired data, before commit
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
