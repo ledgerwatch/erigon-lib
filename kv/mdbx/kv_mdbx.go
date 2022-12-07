@@ -260,6 +260,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
+	log.Warn("db: dirtyPagesLimit1", "opts.pageSize", opts.pageSize, "in.PageSize", in.PageSize)
+
 	opts.pageSize = uint64(in.PageSize)
 
 	// erigon using big transactions
@@ -301,7 +303,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Warn("db: dirtyPagesLimit", "dirtyPagesLimit", dirtyPagesLimit)
+	log.Warn("db: dirtyPagesLimit", "dirtyPagesLimit", dirtyPagesLimit, "opts.pageSize", opts.pageSize, "in.PageSize", in.PageSize)
 
 	if opts.syncPeriod != 0 {
 		if err = env.SetSyncPeriod(opts.syncPeriod); err != nil {
