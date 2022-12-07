@@ -424,3 +424,66 @@ func Test_EncodeCommitmentState(t *testing.T) {
 	require.EqualValues(t, cs.txNum, dec.txNum)
 	require.EqualValues(t, cs.trieState, dec.trieState)
 }
+
+func Test_BtreeIndex(t *testing.T) {
+	count := uint64(2000000)
+	M := uint64(2048)
+	bt := newBtAlloc(count, M)
+
+	for i := uint64(0); i < count; i++ {
+		bt.data[i] = uint64(i)
+	}
+
+	//bt.traverse()
+	//bt.traverseTrick()
+	bt.traverseDfs()
+
+	bt.printSearchMx()
+
+	bt.findNode(16393)
+}
+
+func Test_BtreeIndex_Allocation(t *testing.T) {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	m := 2
+	for i := 5; i < 24; i++ {
+		t.Run(fmt.Sprintf("%d", m<<i), func(t *testing.T) {
+			for j := 0; j < 10; j++ {
+				count := rnd.Intn(1000000000)
+				bt := newBtAlloc(uint64(count), uint64(m)<<i)
+				require.GreaterOrEqual(t, bt.N, uint64(count))
+				if count < m*4 {
+					continue
+				}
+
+				require.LessOrEqual(t, float64(bt.N-uint64(count))/float64(bt.N), 0.1)
+			}
+		})
+	}
+}
+
+func Benchmark_BtreeIndex_Allocation(b *testing.B) {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < b.N; i++ {
+		now := time.Now()
+		count := rnd.Intn(1000000000)
+		bt := newBtAlloc(uint64(count), uint64(1<<12))
+		bt.traverseDfs()
+		fmt.Printf("alloc %v\n", time.Now().Sub(now))
+	}
+}
+
+func Benchmark_BtreeIndex_Search(b *testing.B) {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	now := time.Now()
+	max := 100000000
+	count := rnd.Intn(max)
+	bt := newBtAlloc(uint64(count), uint64(1<<11))
+	bt.traverseDfs()
+	fmt.Printf("alloc %v\n", time.Now().Sub(now))
+
+	for i := 0; i < b.N; i++ {
+		bt.search(uint64(i % max))
+	}
+}
+

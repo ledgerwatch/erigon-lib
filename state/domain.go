@@ -54,6 +54,7 @@ var (
 type filesItem struct {
 	decompressor *compress.Decompressor
 	index        *recsplit.Index
+	bindex       *BtIndex
 	startTxNum   uint64
 	endTxNum     uint64
 
