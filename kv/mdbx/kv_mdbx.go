@@ -257,7 +257,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
-	log.Warn("db: dirtyPagesLimit1", "label", opts.label, "opts.dirtySpace", opts.dirtySpace)
 
 	opts.pageSize = uint64(in.PageSize)
 
@@ -268,7 +267,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	// erigon using big transactions
 	// increase "page measured" options. need do it after env.Open() because default are depend on pageSize known only after env.Open()
 	if opts.flags&mdbx.Readonly == 0 {
-		log.Warn("in here")
 		// 1/8 is good for transactions with a lot of modifications - to reduce invalidation size.
 		// But Erigon app now using Batch and etl.Collectors to avoid writing to DB frequently changing data.
 		// It means most of our writes are: APPEND or "single UPSERT per key during transaction"
@@ -305,7 +303,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Warn("db: dirtyPagesLimit", "dirtyPagesLimit", dirtyPagesLimit, "opts.pageSize", opts.pageSize)
 
 	if opts.syncPeriod != 0 {
 		if err = env.SetSyncPeriod(opts.syncPeriod); err != nil {
