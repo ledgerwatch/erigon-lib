@@ -129,6 +129,7 @@ type GetPut interface {
 type Getter interface {
 	Has
 
+	// GetOne references a readonly section of memory that must not be accessed after txn has terminated
 	GetOne(bucket string, key []byte) (val []byte, err error)
 
 	// ForEach iterates over entries with keys greater or equal to fromPrefix.
@@ -211,6 +212,7 @@ type RwDB interface {
 	Update(ctx context.Context, f func(tx RwTx) error) error
 
 	BeginRw(ctx context.Context) (RwTx, error)
+	BeginRwAsync(ctx context.Context) (RwTx, error)
 }
 
 type StatelessReadTx interface {
@@ -261,6 +263,10 @@ type StatelessRwTx interface {
 	StatelessWriteTx
 }
 
+// Tx
+// WARNING:
+//   - Tx is not threadsafe and may only be used in the goroutine that created it
+//   - ReadOnly transactions do not lock goroutine to thread, RwTx does
 type Tx interface {
 	StatelessReadTx
 
@@ -285,6 +291,12 @@ type Tx interface {
 	DBSize() (uint64, error)
 }
 
+// RwTx
+//
+// WARNING:
+//   - RwTx is not threadsafe and may only be used in the goroutine that created it.
+//   - ReadOnly transactions do not lock goroutine to thread, RwTx does
+//   - User Can't call runtime.LockOSThread/runtime.UnlockOSThread in same goroutine until RwTx Commit/Rollback
 type RwTx interface {
 	Tx
 	StatelessWriteTx
