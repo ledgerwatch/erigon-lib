@@ -198,9 +198,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if dbg.MergeTr() > 0 {
 		opts = opts.WriteMergeThreshold(uint64(dbg.MergeTr() * 8192)) //nolint
 	}
-	if dbg.MergeTr() > 0 {
-		opts = opts.WriteMergeThreshold(uint64(dbg.MergeTr() * 8192)) //nolint
-	}
 	if dbg.MdbxReadAhead() {
 		opts = opts.Flags(func(u uint) uint { return u &^ mdbx.NoReadahead }) //nolint
 	}
@@ -260,7 +257,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
-	log.Warn("db: dirtyPagesLimit1", "label", opts.label, "opts.pageSize", opts.pageSize, "in.PageSize", in.PageSize, "stack", dbg.Stack())
+	log.Warn("db: dirtyPagesLimit1", "label", opts.label, "opts.dirtySpace", opts.dirtySpace)
 
 	opts.pageSize = uint64(in.PageSize)
 
@@ -303,7 +300,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Warn("db: dirtyPagesLimit", "dirtyPagesLimit", dirtyPagesLimit, "opts.pageSize", opts.pageSize, "in.PageSize", in.PageSize)
+	log.Warn("db: dirtyPagesLimit", "dirtyPagesLimit", dirtyPagesLimit, "opts.pageSize", opts.pageSize)
 
 	if opts.syncPeriod != 0 {
 		if err = env.SetSyncPeriod(opts.syncPeriod); err != nil {

@@ -113,6 +113,8 @@ func (l Label) String() string {
 		return "consensus"
 	case DownloaderDB:
 		return "downloader"
+	case InMem:
+		return "inMem"
 	default:
 		return "unknown"
 	}
