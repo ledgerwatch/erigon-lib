@@ -98,6 +98,7 @@ type GetPut interface {
 type Getter interface {
 	Has
 
+	// GetOne references a readonly section of memory that must not be accessed after txn has terminated
 	GetOne(bucket string, key []byte) (val []byte, err error)
 
 	// ForEach iterates over entries with keys greater or equal to fromPrefix.
