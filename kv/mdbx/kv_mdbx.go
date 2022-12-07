@@ -260,7 +260,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
-	log.Warn("db: dirtyPagesLimit1", "label", opts.label, "opts.pageSize", opts.pageSize, "in.PageSize", in.PageSize)
+	log.Warn("db: dirtyPagesLimit1", "label", opts.label, "opts.pageSize", opts.pageSize, "in.PageSize", in.PageSize, "stack", dbg.Stack())
 
 	opts.pageSize = uint64(in.PageSize)
 
