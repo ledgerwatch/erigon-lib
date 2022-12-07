@@ -645,12 +645,8 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 }
 
 func (a *Aggregator22) PruneWithTiemout(ctx context.Context, timeout time.Duration) error {
-	if !a.CanPrune(a.rwTx) {
-		return nil
-	}
-
 	t := time.Now()
-	for time.Since(t) < timeout {
+	for a.CanPrune(a.rwTx) && time.Since(t) < timeout {
 		if err := a.Prune(ctx, 1_000); err != nil { // prune part of retired data, before commit
 			return err
 		}
