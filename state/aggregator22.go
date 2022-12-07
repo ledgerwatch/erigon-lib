@@ -643,6 +643,17 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	}
 	return math2.MaxUint64
 }
+
+func (a *Aggregator22) PruneWithTiemout(ctx context.Context, timeout time.Duration) error {
+	if !a.CanPrune(a.rwTx) {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return a.Prune(ctx, a.aggregationStep)
+}
+
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
 	//a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
 	defer func(t time.Time) {
