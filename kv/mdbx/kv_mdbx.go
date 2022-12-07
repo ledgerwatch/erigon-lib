@@ -30,7 +30,6 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	stack2 "github.com/go-stack/stack"
-	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
@@ -312,7 +311,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.roTxsLimiter == nil {
-		targetSemCount := int64(cmp.Max(32, runtime.GOMAXPROCS(-1)*8))
+		targetSemCount := int64(runtime.GOMAXPROCS(-1) * 8)
 		opts.roTxsLimiter = semaphore.NewWeighted(targetSemCount) // 1 less than max to allow unlocking to happen
 	}
 	db := &MdbxKV{
