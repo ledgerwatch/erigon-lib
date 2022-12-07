@@ -69,11 +69,15 @@ type MdbxOpts struct {
 
 func NewMDBX(log log.Logger) MdbxOpts {
 	opts := MdbxOpts{
-		bucketsCfg:     WithChaindataTables,
-		flags:          mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
-		log:            log,
-		pageSize:       kv.DefaultPageSize(),
-		dirtySpace:     2 * (memory.TotalMemory() / 42),
+		bucketsCfg: WithChaindataTables,
+		flags:      mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
+		log:        log,
+		pageSize:   kv.DefaultPageSize(),
+
+		// default is (TOTAL_RAM+AVAILABLE_RAM)/42/pageSize
+		// but for reproducibility of benchmarks - please don't rely on Available RAM
+		dirtySpace: 2 * (memory.TotalMemory() / 42),
+
 		growthStep:     2 * datasize.GB,
 		mergeThreshold: 32768,
 	}
@@ -283,8 +287,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			return nil, err
 		}
 
-		// default is (TOTAL_RAM+AVAILABLE_RAM)/42/pageSize
-		// but for reproducibility of benchmarks - please don't rely on Available RAM
 		if err = env.SetOption(mdbx.OptTxnDpLimit, opts.dirtySpace/opts.pageSize); err != nil {
 			return nil, err
 		}
@@ -299,6 +301,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Warn("db: dirtyPagesLimit", "dirtyPagesLimit", dirtyPagesLimit)
 
 	if opts.syncPeriod != 0 {
 		if err = env.SetSyncPeriod(opts.syncPeriod); err != nil {
