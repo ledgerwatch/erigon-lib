@@ -34,7 +34,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/pbnjay/memory"
 	"github.com/torquem-ch/mdbx-go/mdbx"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
@@ -269,7 +268,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 
 		// default is (TOTAL_RAM+AVAILABLE_RAM)/42/pageSize
 		// but for reproducibility of benchmarks - please don't rely on Available RAM
-		if err = env.SetOption(mdbx.OptTxnDpLimit, 2*(memory.TotalMemory()/42/opts.pageSize)); err != nil {
+		if err = env.SetOption(mdbx.OptTxnDpLimit, uint64(512*datasize.MB)/opts.pageSize); err != nil {
 			return nil, err
 		}
 		// must be in the range from 12.5% (almost empty) to 50% (half empty)
