@@ -277,6 +277,7 @@ func (db *DictionaryBuilder) Pop() interface{} {
 	old := db.items
 	n := len(old)
 	x := old[n-1]
+	old[n-1] = nil
 	db.items = old[0 : n-1]
 	return x
 }
@@ -436,6 +437,7 @@ func (ph *PatternHeap) Pop() interface{} {
 	old := *ph
 	n := len(old)
 	x := old[n-1]
+	old[n-1] = nil
 	*ph = old[0 : n-1]
 	return x
 }
@@ -542,6 +544,7 @@ func (ph *PositionHeap) Pop() interface{} {
 	old := *ph
 	n := len(old)
 	x := old[n-1]
+	old[n-1] = nil
 	*ph = old[0 : n-1]
 	return x
 }
@@ -723,11 +726,11 @@ func (r CompressionRatio) String() string { return fmt.Sprintf("%.2f", r) }
 func Ratio(f1, f2 string) (CompressionRatio, error) {
 	s1, err := os.Stat(f1)
 	if err != nil {
-		return 0, err
+		return 0, nil
 	}
 	s2, err := os.Stat(f2)
 	if err != nil {
-		return 0, err
+		return 0, nil
 	}
 	return CompressionRatio(float64(s1.Size()) / float64(s2.Size())), nil
 }

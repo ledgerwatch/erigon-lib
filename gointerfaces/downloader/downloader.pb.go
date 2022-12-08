@@ -22,13 +22,16 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// DownloadItem:
+// - if Erigon created new snapshot and want seed it
+// - if Erigon wnat download files - it fills only "torrent_hash" field
 type DownloadItem struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
 	Path        string      `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	TorrentHash *types.H160 `protobuf:"bytes,2,opt,name=torrent_hash,json=torrentHash,proto3" json:"torrent_hash,omitempty"` // single hash will be resolved as magnet link
+	TorrentHash *types.H160 `protobuf:"bytes,2,opt,name=torrent_hash,json=torrentHash,proto3" json:"torrent_hash,omitempty"` // will be resolved as magnet link
 }
 
 func (x *DownloadItem) Reset() {

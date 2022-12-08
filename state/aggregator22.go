@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
@@ -278,7 +279,7 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	}()
 	//var wg sync.WaitGroup
 	//wg.Add(7)
-	errCh := make(chan error, 7)
+	//errCh := make(chan error, 7)
 	//go func() {
 	//	defer wg.Done()
 	var err error
@@ -286,11 +287,13 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 
 	if sf.accounts, err = a.accounts.buildFiles(ctx, step, ac.accounts); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 	//}()
 	//
@@ -301,11 +304,13 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 
 	if sf.storage, err = a.storage.buildFiles(ctx, step, ac.storage); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 	//}()
 	//go func() {
@@ -315,11 +320,13 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 		ac.code, err = a.code.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 
 	if sf.code, err = a.code.buildFiles(ctx, step, ac.code); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 	//}()
 	//go func() {
@@ -329,11 +336,13 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 		ac.logAddrs, err = a.logAddrs.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 
 	if sf.logAddrs, err = a.logAddrs.buildFiles(ctx, step, ac.logAddrs); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 	//}()
 	//go func() {
@@ -343,11 +352,13 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 		ac.logTopics, err = a.logTopics.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 
 	if sf.logTopics, err = a.logTopics.buildFiles(ctx, step, ac.logTopics); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 	//}()
 	//go func() {
@@ -357,11 +368,13 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 		ac.tracesFrom, err = a.tracesFrom.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 
 	if sf.tracesFrom, err = a.tracesFrom.buildFiles(ctx, step, ac.tracesFrom); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 	//}()
 	//go func() {
@@ -371,27 +384,29 @@ func (a *Aggregator22) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 		ac.tracesTo, err = a.tracesTo.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
-		errCh <- err
+		return sf, err
+		//errCh <- err
 	}
 
 	if sf.tracesTo, err = a.tracesTo.buildFiles(ctx, step, ac.tracesTo); err != nil {
-		errCh <- err
+		return sf, err
+		//		errCh <- err
 	}
 	//}()
 	//go func() {
 	//	wg.Wait()
-	close(errCh)
+	//close(errCh)
 	//}()
-	var lastError error
-	for err := range errCh {
-		if err != nil {
-			lastError = err
-		}
-	}
-	if lastError == nil {
-		closeColl = false
-	}
-	return sf, lastError
+	//var lastError error
+	//for err := range errCh {
+	//	if err != nil {
+	//		lastError = err
+	//	}
+	//}
+	//if lastError == nil {
+	closeColl = false
+	//}
+	return sf, nil
 }
 
 type Agg22StaticFiles struct {
@@ -562,6 +577,18 @@ func (a *Aggregator22) Warmup(txFrom, limit uint64) {
 }
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
+func (a *Aggregator22) DiscardHistory() *Aggregator22 {
+	a.accounts.DiscardHistory(a.tmpdir)
+	a.storage.DiscardHistory(a.tmpdir)
+	a.code.DiscardHistory(a.tmpdir)
+	a.logAddrs.DiscardHistory(a.tmpdir)
+	a.logTopics.DiscardHistory(a.tmpdir)
+	a.tracesFrom.DiscardHistory(a.tmpdir)
+	a.tracesTo.DiscardHistory(a.tmpdir)
+	return a
+}
+
+// StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *Aggregator22) StartWrites() *Aggregator22 {
 	a.accounts.StartWrites(a.tmpdir)
 	a.storage.StartWrites(a.tmpdir)
@@ -617,7 +644,7 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	return math2.MaxUint64
 }
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
-	a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
+	//a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
 	defer func(t time.Time) {
 		if time.Since(t) > time.Second {
 			log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t)))
@@ -681,7 +708,7 @@ func (a *Aggregator22) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) 
 	}
 
 	var m runtime.MemStats
-	common2.ReadMemStats(&m)
+	dbg.ReadMemStats(&m)
 	log.Info("[Snapshots] History Stat",
 		"blocks", fmt.Sprintf("%dk", (histBlockNumProgress+1)/1000),
 		"txs", fmt.Sprintf("%dm", a.maxTxNum.Load()/1_000_000),

@@ -21,6 +21,7 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -34,9 +35,13 @@ import (
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/log/v3"
+	"go.uber.org/atomic"
+
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
@@ -47,8 +52,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/types"
-	"github.com/ledgerwatch/log/v3"
-	"go.uber.org/atomic"
 )
 
 var (
@@ -599,7 +602,7 @@ func (p *TxPool) Started() bool                      { return p.started.Load() }
 
 // Best - returns top `n` elements of pending queue
 // id doesn't perform full copy of txs, however underlying elements are immutable
-func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf uint64) (bool, error) {
+func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error) {
 	// First wait for the corresponding block to arrive
 	if p.lastSeenBlock.Load() < onTopOf {
 		return false, nil // Too early
@@ -615,6 +618,12 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf uint64) (bo
 
 		best := p.pending.best
 		for i := 0; j < int(n) && i < len(best.ms); i++ {
+
+			// if we wouldn't have enough gas for a standard transaction then quit out early
+			if availableGas < fixedgas.TxGas {
+				break
+			}
+
 			mt := best.ms[i]
 			if mt.Tx.Gas >= p.blockGasLimit.Load() {
 				// Skip transactions with very large gas limit
@@ -628,6 +637,20 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf uint64) (bo
 				toRemove = append(toRemove, mt)
 				continue
 			}
+
+			// make sure we have enough gas in the caller to add this transaction.
+			// not an exact science using intrinsic gas but as close as we could hope for at
+			// this stage
+			intrinsicGas, _ := CalcIntrinsicGas(uint64(mt.Tx.DataLen), uint64(mt.Tx.DataNonZeroLen), nil, mt.Tx.Creation, true, true)
+			if intrinsicGas > availableGas {
+				// we might find another TX with a low enough intrinsic gas to include so carry on
+				continue
+			}
+
+			if intrinsicGas <= availableGas { // check for potential underflow
+				availableGas -= intrinsicGas
+			}
+
 			txs.Txs[j] = rlpTx
 			copy(txs.Senders.At(j), sender)
 			txs.IsLocal[j] = isLocal
@@ -1439,7 +1462,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				hashSentTo := send.AnnouncePooledTxs(localTxHashes)
 				for i := 0; i < localTxHashes.Len(); i++ {
 					hash := localTxHashes.At(i)
-					log.Info("local tx propagated", "tx_hash", fmt.Sprintf("%x", hash), "announced to peers", hashSentTo[i], "broadcast to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
+					log.Info("local tx propagated", "tx_hash", hex.EncodeToString(hash), "announced to peers", hashSentTo[i], "broadcast to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
 				}
 				send.BroadcastPooledTxs(remoteTxRlps)
 				send.AnnouncePooledTxs(remoteTxHashes)
@@ -1704,7 +1727,7 @@ func (p *TxPool) logStats() {
 	defer p.lock.Unlock()
 
 	var m runtime.MemStats
-	common.ReadMemStats(&m)
+	dbg.ReadMemStats(&m)
 	ctx := []interface{}{
 		"block", p.lastSeenBlock.Load(),
 		"pending", p.pending.Len(),
