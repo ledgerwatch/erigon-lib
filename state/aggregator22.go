@@ -1194,18 +1194,6 @@ func (ac *Aggregator22Context) IterateCodeHistory(fromKey, toKey []byte, txNum u
 	return ac.code.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
 }
 
-func (ac *Aggregator22Context) IterateAccountsReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
-	return ac.accounts.iterateReconTxs(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateStorageReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
-	return ac.storage.iterateReconTxs(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateCodeReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
-	return ac.code.iterateReconTxs(fromKey, toKey, txNum)
-}
-
 type FilesStats22 struct {
 }
 

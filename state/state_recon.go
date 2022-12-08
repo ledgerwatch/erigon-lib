@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
 
@@ -109,85 +110,6 @@ func (rh *ReconHeap) Pop() interface{} {
 	return x
 }
 
-type ScanIterator struct {
-	hc        *HistoryContext
-	h         ReconHeap
-	nextKey   []byte
-	fromKey   []byte
-	toKey     []byte
-	key       []byte
-	uptoTxNum uint64
-	nextTxNum uint64
-	progress  uint64
-	total     uint64
-	hasNext   bool
-}
-
-func (si *ScanIterator) advance() {
-	for si.h.Len() > 0 {
-		top := heap.Pop(&si.h).(*ReconItem)
-		key := top.key
-		val, offset := top.g.NextUncompressed()
-		si.progress += offset - top.lastOffset
-		top.lastOffset = offset
-		if top.g.HasNext() {
-			top.key, _ = top.g.NextUncompressed()
-			if si.toKey == nil || bytes.Compare(top.key, si.toKey) <= 0 {
-				heap.Push(&si.h, top)
-			}
-		}
-		if !bytes.Equal(key, si.key) {
-			si.key = key
-			max := eliasfano32.Max(val)
-			if max < si.uptoTxNum {
-				si.nextTxNum = max
-				si.nextKey = key
-				si.hasNext = true
-				return
-			}
-		}
-	}
-	si.hasNext = false
-}
-
-func (si *ScanIterator) HasNext() bool {
-	return si.hasNext
-}
-
-func (si *ScanIterator) Next() ([]byte, uint64, uint64) {
-	k, n, p := si.nextKey, si.nextTxNum, si.progress
-	si.advance()
-	return k, n, p
-}
-
-func (si *ScanIterator) Total() uint64 {
-	return si.total
-}
-
-func (hc *HistoryContext) iterateReconTxs(fromKey, toKey []byte, uptoTxNum uint64) *ScanIterator {
-	var si ScanIterator
-	hc.indexFiles.Ascend(func(item ctxItem) bool {
-		g := item.getter
-		for g.HasNext() {
-			key, offset := g.NextUncompressed()
-			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
-				heap.Push(&si.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
-				break
-			} else {
-				g.SkipUncompressed()
-			}
-		}
-		si.total += uint64(item.getter.Size())
-		return true
-	})
-	si.hc = hc
-	si.fromKey = fromKey
-	si.toKey = toKey
-	si.uptoTxNum = uptoTxNum
-	si.advance()
-	return &si
-}
-
 type ScanIteratorInc struct {
 	g         *compress.Getter
 	nextKey   []byte
@@ -261,6 +183,25 @@ type HistoryIterator struct {
 	fromKey      []byte
 	toKey        []byte
 	txNum        uint64
+	progress     uint64
+	total        uint64
+	hasNext      bool
+	compressVals bool
+}
+
+type HistoryIteratorInc struct {
+	uptoTxNum    uint64
+	indexG       *compress.Getter
+	historyG     *compress.Getter
+	r            *recsplit.IndexReader
+	key          []byte
+	nextKey      []byte
+	val          []byte
+	nextVal      []byte
+	fromKey      []byte
+	toKey        []byte
+	txNum        uint64
+	nextTxNum    uint64
 	progress     uint64
 	total        uint64
 	hasNext      bool
@@ -349,4 +290,66 @@ func (hc *HistoryContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum
 	hi.toKey = toKey
 	hi.advance()
 	return &hi
+}
+
+func (hs *HistoryStep) interateHistoryBeforeTxNum(txNum uint64) *HistoryIteratorInc {
+	var hii HistoryIteratorInc
+	hii.indexG = hs.indexFile.getter
+	hii.historyG = hs.historyFile.getter
+	hii.r = hs.historyFile.reader
+	hii.compressVals = hs.compressVals
+	hii.indexG.Reset(0)
+	if hii.indexG.HasNext() {
+		hii.key, _ = hii.indexG.NextUncompressed()
+		hii.total = uint64(hs.indexFile.getter.Size())
+		hii.uptoTxNum = txNum
+		hii.hasNext = true
+	} else {
+		hii.hasNext = false
+	}
+	hii.advance()
+	return &hii
+}
+
+func (hii *HistoryIteratorInc) advance() {
+	if !hii.hasNext {
+		return
+	}
+	if hii.key == nil {
+		hii.hasNext = false
+		return
+	}
+	val, _ := hii.indexG.NextUncompressed()
+	hii.nextKey = hii.key
+	ef, _ := eliasfano32.ReadEliasFano(val)
+	n, ok := ef.Search(hii.uptoTxNum)
+	if !ok {
+		hii.key = nil
+		return
+	}
+	var txKey [8]byte
+	binary.BigEndian.PutUint64(txKey[:], n)
+	offset := hii.r.Lookup2(txKey[:], hii.key)
+	hii.historyG.Reset(offset)
+	if hii.compressVals {
+		hii.nextVal, _ = hii.historyG.Next(nil)
+	} else {
+		hii.nextVal, _ = hii.historyG.NextUncompressed()
+	}
+	hii.nextTxNum = n
+	if hii.indexG.HasNext() {
+		hii.key, _ = hii.indexG.NextUncompressed()
+	} else {
+		hii.key = nil
+	}
+}
+
+func (hii *HistoryIteratorInc) HasNext() bool {
+	return hii.hasNext
+}
+
+func (hii *HistoryIteratorInc) Next() ([]byte, []byte, uint64) {
+	k, v, t := hii.nextKey, hii.nextVal, hii.nextTxNum
+	hii.advance()
+	return k, v, t
 }
