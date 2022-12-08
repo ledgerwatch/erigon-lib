@@ -315,32 +315,33 @@ func (hii *HistoryIteratorInc) advance() {
 	if !hii.hasNext {
 		return
 	}
+	for hii.key != nil {
+		val, _ := hii.indexG.NextUncompressed()
+		hii.nextKey = hii.key
+		key := hii.key
+		if hii.indexG.HasNext() {
+			hii.key, _ = hii.indexG.NextUncompressed()
+		} else {
+			hii.key = nil
+		}
+		ef, _ := eliasfano32.ReadEliasFano(val)
+		n, ok := ef.Search(hii.uptoTxNum)
+		if ok {
+			var txKey [8]byte
+			binary.BigEndian.PutUint64(txKey[:], n)
+			offset := hii.r.Lookup2(txKey[:], key)
+			hii.historyG.Reset(offset)
+			if hii.compressVals {
+				hii.nextVal, _ = hii.historyG.Next(nil)
+			} else {
+				hii.nextVal, _ = hii.historyG.NextUncompressed()
+			}
+			hii.nextTxNum = n
+			break
+		}
+	}
 	if hii.key == nil {
 		hii.hasNext = false
-		return
-	}
-	val, _ := hii.indexG.NextUncompressed()
-	hii.nextKey = hii.key
-	ef, _ := eliasfano32.ReadEliasFano(val)
-	n, ok := ef.Search(hii.uptoTxNum)
-	if !ok {
-		hii.key = nil
-		return
-	}
-	var txKey [8]byte
-	binary.BigEndian.PutUint64(txKey[:], n)
-	offset := hii.r.Lookup2(txKey[:], hii.key)
-	hii.historyG.Reset(offset)
-	if hii.compressVals {
-		hii.nextVal, _ = hii.historyG.Next(nil)
-	} else {
-		hii.nextVal, _ = hii.historyG.NextUncompressed()
-	}
-	hii.nextTxNum = n
-	if hii.indexG.HasNext() {
-		hii.key, _ = hii.indexG.NextUncompressed()
-	} else {
-		hii.key = nil
 	}
 }
 

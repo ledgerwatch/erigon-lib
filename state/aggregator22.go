@@ -1182,18 +1182,6 @@ func (ac *Aggregator22Context) ReadAccountCodeSizeNoState(addr []byte, txNum uin
 	return len(code), noState, nil
 }
 
-func (ac *Aggregator22Context) IterateAccountsHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
-	return ac.accounts.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateStorageHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
-	return ac.storage.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateCodeHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
-	return ac.code.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
-}
-
 type FilesStats22 struct {
 }
 
@@ -1348,6 +1336,18 @@ func (as *AggregatorStep) MaxTxNumStorage(addr []byte, loc []byte) (bool, uint64
 
 func (as *AggregatorStep) MaxTxNumCode(addr []byte) (bool, uint64) {
 	return as.code.MaxTxNum(addr)
+}
+
+func (as *AggregatorStep) IterateAccountsHistory(txNum uint64) *HistoryIteratorInc {
+	return as.accounts.interateHistoryBeforeTxNum(txNum)
+}
+
+func (as *AggregatorStep) IterateStorageHistory(txNum uint64) *HistoryIteratorInc {
+	return as.storage.interateHistoryBeforeTxNum(txNum)
+}
+
+func (as *AggregatorStep) IterateCodeHistory(txNum uint64) *HistoryIteratorInc {
+	return as.code.interateHistoryBeforeTxNum(txNum)
 }
 
 func (as *AggregatorStep) Clone() *AggregatorStep {
