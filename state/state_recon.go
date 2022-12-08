@@ -18,9 +18,7 @@ package state
 
 import (
 	"bytes"
-	"container/heap"
 	"encoding/binary"
-	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -28,36 +26,6 @@ import (
 )
 
 // Algorithms for reconstituting the state from state history
-
-func (hc *HistoryContext) IsMaxTxNum(key []byte, txNum uint64) bool {
-	var found bool
-	var foundTxNum uint64
-	hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: txNum, endTxNum: txNum}, func(item ctxItem) bool {
-		if item.endTxNum <= txNum {
-			return true
-		}
-		if item.startTxNum > txNum {
-			if !found || foundTxNum != txNum {
-				return false
-			}
-		}
-		if item.reader.Empty() {
-			return true
-		}
-		offset := item.reader.Lookup(key)
-		g := item.getter
-		g.Reset(offset)
-		if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
-			eliasVal, _ := g.NextUncompressed()
-			found = true
-			foundTxNum = eliasfano32.Max(eliasVal)
-			// if there is still chance to find higher ef.Max() than txNum, we continue
-			return foundTxNum == txNum
-		}
-		return true
-	})
-	return found && txNum == foundTxNum
-}
 
 type ReconItem struct {
 	g           *compress.Getter
@@ -176,20 +144,6 @@ func (hs *HistoryStep) iterateTxs(uptoTxNum uint64) *ScanIteratorInc {
 	return &sii
 }
 
-type HistoryIterator struct {
-	hc           *HistoryContext
-	h            ReconHeap
-	key          []byte
-	val          []byte
-	fromKey      []byte
-	toKey        []byte
-	txNum        uint64
-	progress     uint64
-	total        uint64
-	hasNext      bool
-	compressVals bool
-}
-
 type HistoryIteratorInc struct {
 	uptoTxNum    uint64
 	indexG       *compress.Getter
@@ -197,100 +151,10 @@ type HistoryIteratorInc struct {
 	r            *recsplit.IndexReader
 	key          []byte
 	nextKey      []byte
-	val          []byte
 	nextVal      []byte
-	fromKey      []byte
-	toKey        []byte
-	txNum        uint64
 	nextTxNum    uint64
-	progress     uint64
-	total        uint64
 	hasNext      bool
 	compressVals bool
-}
-
-func (hi *HistoryIterator) advance() {
-	for hi.h.Len() > 0 {
-		top := heap.Pop(&hi.h).(*ReconItem)
-		key := top.key
-		val, offset := top.g.NextUncompressed()
-		hi.progress += offset - top.lastOffset
-		top.lastOffset = offset
-		if top.g.HasNext() {
-			top.key, _ = top.g.NextUncompressed()
-			if hi.toKey == nil || bytes.Compare(top.key, hi.toKey) <= 0 {
-				heap.Push(&hi.h, top)
-			}
-		}
-		if bytes.Equal(hi.key, key) {
-			continue
-		}
-		ef, _ := eliasfano32.ReadEliasFano(val)
-		n, ok := ef.Search(hi.txNum)
-		if !ok {
-			continue
-		}
-		hi.key = key
-		var txKey [8]byte
-		binary.BigEndian.PutUint64(txKey[:], n)
-		historyItem, ok := hi.hc.historyFiles.Get(ctxItem{startTxNum: top.startTxNum, endTxNum: top.endTxNum})
-		if !ok {
-			panic(fmt.Errorf("no %s file found for [%x]", hi.hc.h.filenameBase, hi.key))
-		}
-		offset = historyItem.reader.Lookup2(txKey[:], hi.key)
-		g := historyItem.getter
-		g.Reset(offset)
-		if hi.compressVals {
-			hi.val, _ = g.Next(nil)
-		} else {
-			hi.val, _ = g.NextUncompressed()
-		}
-		hi.hasNext = true
-		return
-	}
-	hi.hasNext = false
-}
-
-func (hi *HistoryIterator) HasNext() bool {
-	return hi.hasNext
-}
-
-func (hi *HistoryIterator) Next() ([]byte, []byte, uint64) {
-	k, v, p := hi.key, hi.val, hi.progress
-	hi.advance()
-	return k, v, p
-}
-
-func (hi *HistoryIterator) Total() uint64 {
-	return hi.total
-}
-
-// Creates iterator that provides history values for the state just before transaction txNum
-func (hc *HistoryContext) iterateHistoryBeforeTxNum(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
-	var hi HistoryIterator
-	heap.Init(&hi.h)
-	hc.indexFiles.Ascend(func(item ctxItem) bool {
-		g := item.getter
-		g.Reset(0)
-		for g.HasNext() {
-			key, offset := g.NextUncompressed()
-			if fromKey == nil || bytes.Compare(key, fromKey) > 0 {
-				heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
-				break
-			} else {
-				g.SkipUncompressed()
-			}
-		}
-		hi.total += uint64(item.getter.Size())
-		return true
-	})
-	hi.hc = hc
-	hi.compressVals = hc.h.compressVals
-	hi.txNum = txNum
-	hi.fromKey = fromKey
-	hi.toKey = toKey
-	hi.advance()
-	return &hi
 }
 
 func (hs *HistoryStep) interateHistoryBeforeTxNum(txNum uint64) *HistoryIteratorInc {
@@ -302,7 +166,6 @@ func (hs *HistoryStep) interateHistoryBeforeTxNum(txNum uint64) *HistoryIterator
 	hii.indexG.Reset(0)
 	if hii.indexG.HasNext() {
 		hii.key, _ = hii.indexG.NextUncompressed()
-		hii.total = uint64(hs.indexFile.getter.Size())
 		hii.uptoTxNum = txNum
 		hii.hasNext = true
 	} else {

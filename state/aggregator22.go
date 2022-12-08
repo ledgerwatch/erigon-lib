@@ -1138,25 +1138,6 @@ func (ac *Aggregator22Context) TraceToIterator(addr []byte, startTxNum, endTxNum
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (ac *Aggregator22Context) IsMaxAccountsTxNum(addr []byte, txNum uint64) bool {
-	return ac.accounts.IsMaxTxNum(addr, txNum)
-}
-
-func (ac *Aggregator22Context) IsMaxStorageTxNum(addr []byte, loc []byte, txNum uint64) bool {
-	if cap(ac.keyBuf) < len(addr)+len(loc) {
-		ac.keyBuf = make([]byte, len(addr)+len(loc))
-	} else if len(ac.keyBuf) != len(addr)+len(loc) {
-		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
-	}
-	copy(ac.keyBuf, addr)
-	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storage.IsMaxTxNum(ac.keyBuf, txNum)
-}
-
-func (ac *Aggregator22Context) IsMaxCodeTxNum(addr []byte, txNum uint64) bool {
-	return ac.code.IsMaxTxNum(addr, txNum)
-}
-
 func (ac *Aggregator22Context) ReadAccountDataNoStateWithRecent(addr []byte, txNum uint64) ([]byte, bool, error) {
 	return ac.accounts.GetNoStateWithRecent(addr, txNum, ac.tx)
 }
