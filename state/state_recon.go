@@ -81,12 +81,8 @@ func (rh *ReconHeap) Pop() interface{} {
 
 type ScanIteratorInc struct {
 	g         *compress.Getter
-	nextKey   []byte
 	key       []byte
-	uptoTxNum uint64
 	nextTxNum uint64
-	nextDel   bool
-	total     uint64
 	hasNext   bool
 }
 
@@ -100,13 +96,7 @@ func (sii *ScanIteratorInc) advance() {
 	}
 	val, _ := sii.g.NextUncompressed()
 	max := eliasfano32.Max(val)
-	sii.nextKey = sii.key
 	sii.nextTxNum = max
-	if max < sii.uptoTxNum {
-		sii.nextDel = false
-	} else {
-		sii.nextDel = true
-	}
 	if sii.g.HasNext() {
 		sii.key, _ = sii.g.NextUncompressed()
 	} else {
@@ -118,24 +108,18 @@ func (sii *ScanIteratorInc) HasNext() bool {
 	return sii.hasNext
 }
 
-func (si *ScanIteratorInc) Next() ([]byte, uint64, bool) {
-	k, n, d := si.nextKey, si.nextTxNum, si.nextDel
+func (si *ScanIteratorInc) Next() uint64 {
+	n := si.nextTxNum
 	si.advance()
-	return k, n, d
+	return n
 }
 
-func (sii *ScanIteratorInc) Total() uint64 {
-	return sii.total
-}
-
-func (hs *HistoryStep) iterateTxs(uptoTxNum uint64) *ScanIteratorInc {
+func (hs *HistoryStep) iterateTxs() *ScanIteratorInc {
 	var sii ScanIteratorInc
 	sii.g = hs.indexFile.getter
 	sii.g.Reset(0)
 	if sii.g.HasNext() {
 		sii.key, _ = sii.g.NextUncompressed()
-		sii.total = uint64(hs.indexFile.getter.Size())
-		sii.uptoTxNum = uptoTxNum
 		sii.hasNext = true
 	} else {
 		sii.hasNext = false
@@ -152,7 +136,6 @@ type HistoryIteratorInc struct {
 	key          []byte
 	nextKey      []byte
 	nextVal      []byte
-	nextTxNum    uint64
 	hasNext      bool
 	compressVals bool
 }
@@ -200,7 +183,6 @@ func (hii *HistoryIteratorInc) advance() {
 			} else {
 				hii.nextVal, _ = hii.historyG.NextUncompressed()
 			}
-			hii.nextTxNum = n
 			break
 		}
 	}
@@ -213,8 +195,8 @@ func (hii *HistoryIteratorInc) HasNext() bool {
 	return hii.hasNext
 }
 
-func (hii *HistoryIteratorInc) Next() ([]byte, []byte, uint64) {
-	k, v, t := hii.nextKey, hii.nextVal, hii.nextTxNum
+func (hii *HistoryIteratorInc) Next() ([]byte, []byte) {
+	k, v := hii.nextKey, hii.nextVal
 	hii.advance()
-	return k, v, t
+	return k, v
 }

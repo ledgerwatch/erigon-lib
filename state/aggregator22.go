@@ -1291,16 +1291,16 @@ func (as *AggregatorStep) TxNumRange() (uint64, uint64) {
 	return as.accounts.indexFile.startTxNum, as.accounts.indexFile.endTxNum
 }
 
-func (as *AggregatorStep) IterateAccountsTxs(txNum uint64) *ScanIteratorInc {
-	return as.accounts.iterateTxs(txNum)
+func (as *AggregatorStep) IterateAccountsTxs() *ScanIteratorInc {
+	return as.accounts.iterateTxs()
 }
 
-func (as *AggregatorStep) IterateStorageTxs(txNum uint64) *ScanIteratorInc {
-	return as.storage.iterateTxs(txNum)
+func (as *AggregatorStep) IterateStorageTxs() *ScanIteratorInc {
+	return as.storage.iterateTxs()
 }
 
-func (as *AggregatorStep) IterateCodeTxs(txNum uint64) *ScanIteratorInc {
-	return as.code.iterateTxs(txNum)
+func (as *AggregatorStep) IterateCodeTxs() *ScanIteratorInc {
+	return as.code.iterateTxs()
 }
 
 func (as *AggregatorStep) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64) {
