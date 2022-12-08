@@ -1,0 +1,4 @@
+remote_theme: pages-themes/modernist@v0.2.0
+show_downloads: false
+plugins:
+- jekyll-remote-theme

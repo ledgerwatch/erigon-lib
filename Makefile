@@ -61,7 +61,7 @@ grpc: protoc-all
 		remote/kv.proto remote/ethbackend.proto \
 		downloader/downloader.proto \
 		txpool/txpool.proto txpool/mining.proto
-	rm -rf vendor
+# rm -rf vendor
 
 $(GOBINREL)/moq: | $(GOBINREL)
 	$(GOBUILD) -o "$(GOBIN)/moq" github.com/matryer/moq
