@@ -42,36 +42,40 @@ var _ SentryServer = &SentryServerMock{}
 //			PeerMinBlockFunc: func(contextMoqParam context.Context, peerMinBlockRequest *PeerMinBlockRequest) (*emptypb.Empty, error) {
 //				panic("mock out the PeerMinBlock method")
 //			},
-//			PeersFunc: func(contextMoqParam context.Context, empty *emptypb.Empty) (*PeersReply, error) {
-//				panic("mock out the Peers method")
-//			},
-//			PenalizePeerFunc: func(contextMoqParam context.Context, penalizePeerRequest *PenalizePeerRequest) (*emptypb.Empty, error) {
-//				panic("mock out the PenalizePeer method")
-//			},
-//			SendMessageByIdFunc: func(contextMoqParam context.Context, sendMessageByIdRequest *SendMessageByIdRequest) (*SentPeers, error) {
-//				panic("mock out the SendMessageById method")
-//			},
-//			SendMessageByMinBlockFunc: func(contextMoqParam context.Context, sendMessageByMinBlockRequest *SendMessageByMinBlockRequest) (*SentPeers, error) {
-//				panic("mock out the SendMessageByMinBlock method")
-//			},
-//			SendMessageToAllFunc: func(contextMoqParam context.Context, outboundMessageData *OutboundMessageData) (*SentPeers, error) {
-//				panic("mock out the SendMessageToAll method")
-//			},
-//			SendMessageToRandomPeersFunc: func(contextMoqParam context.Context, sendMessageToRandomPeersRequest *SendMessageToRandomPeersRequest) (*SentPeers, error) {
-//				panic("mock out the SendMessageToRandomPeers method")
-//			},
-//			SetStatusFunc: func(contextMoqParam context.Context, statusData *StatusData) (*SetStatusReply, error) {
-//				panic("mock out the SetStatus method")
-//			},
-//			mustEmbedUnimplementedSentryServerFunc: func()  {
-//				panic("mock out the mustEmbedUnimplementedSentryServer method")
-//			},
+//
+//	PeerUselessFunc: func(contextMoqParam context.Context, peerUselessRequest *PeerUselessRequest) (*emptypb.Empty, error) {
+//					panic("mock out the PeerUseless method")
+//				},
+//				PeersFunc: func(contextMoqParam context.Context, empty *emptypb.Empty) (*PeersReply, error) {
+//					panic("mock out the Peers method")
+//				},
+//				PenalizePeerFunc: func(contextMoqParam context.Context, penalizePeerRequest *PenalizePeerRequest) (*emptypb.Empty, error) {
+//					panic("mock out the PenalizePeer method")
+//				},
+//				SendMessageByIdFunc: func(contextMoqParam context.Context, sendMessageByIdRequest *SendMessageByIdRequest) (*SentPeers, error) {
+//					panic("mock out the SendMessageById method")
+//				},
+//				SendMessageByMinBlockFunc: func(contextMoqParam context.Context, sendMessageByMinBlockRequest *SendMessageByMinBlockRequest) (*SentPeers, error) {
+//					panic("mock out the SendMessageByMinBlock method")
+//				},
+//				SendMessageToAllFunc: func(contextMoqParam context.Context, outboundMessageData *OutboundMessageData) (*SentPeers, error) {
+//					panic("mock out the SendMessageToAll method")
+//				},
+//				SendMessageToRandomPeersFunc: func(contextMoqParam context.Context, sendMessageToRandomPeersRequest *SendMessageToRandomPeersRequest) (*SentPeers, error) {
+//					panic("mock out the SendMessageToRandomPeers method")
+//				},
+//				SetStatusFunc: func(contextMoqParam context.Context, statusData *StatusData) (*SetStatusReply, error) {
+//					panic("mock out the SetStatus method")
+//				},
+//				mustEmbedUnimplementedSentryServerFunc: func()  {
+//					panic("mock out the mustEmbedUnimplementedSentryServer method")
+//				},
+//			}
+//
+//			// use mockedSentryServer in code that requires SentryServer
+//			// and then make assertions.
+//
 //		}
-//
-//		// use mockedSentryServer in code that requires SentryServer
-//		// and then make assertions.
-//
-//	}
 type SentryServerMock struct {
 	// HandShakeFunc mocks the HandShake method.
 	HandShakeFunc func(contextMoqParam context.Context, empty *emptypb.Empty) (*HandShakeReply, error)
@@ -93,6 +97,9 @@ type SentryServerMock struct {
 
 	// PeerMinBlockFunc mocks the PeerMinBlock method.
 	PeerMinBlockFunc func(contextMoqParam context.Context, peerMinBlockRequest *PeerMinBlockRequest) (*emptypb.Empty, error)
+
+	// PeerUselessFunc mocks the PeerUseless method.
+	PeerUselessFunc func(contextMoqParam context.Context, peerUselessRequest *PeerUselessRequest) (*emptypb.Empty, error)
 
 	// PeersFunc mocks the Peers method.
 	PeersFunc func(contextMoqParam context.Context, empty *emptypb.Empty) (*PeersReply, error)
@@ -169,6 +176,13 @@ type SentryServerMock struct {
 			// PeerMinBlockRequest is the peerMinBlockRequest argument value.
 			PeerMinBlockRequest *PeerMinBlockRequest
 		}
+		// PeerUseless holds details about calls to the PeerUseless method.
+		PeerUseless []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// PeerUselessRequest is the peerUselessRequest argument value.
+			PeerUselessRequest *PeerUselessRequest
+		}
 		// Peers holds details about calls to the Peers method.
 		Peers []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -229,6 +243,7 @@ type SentryServerMock struct {
 	lockPeerCount                          sync.RWMutex
 	lockPeerEvents                         sync.RWMutex
 	lockPeerMinBlock                       sync.RWMutex
+	lockPeerUseless                        sync.RWMutex
 	lockPeers                              sync.RWMutex
 	lockPenalizePeer                       sync.RWMutex
 	lockSendMessageById                    sync.RWMutex
@@ -514,6 +529,46 @@ func (mock *SentryServerMock) PeerMinBlockCalls() []struct {
 	mock.lockPeerMinBlock.RLock()
 	calls = mock.calls.PeerMinBlock
 	mock.lockPeerMinBlock.RUnlock()
+	return calls
+}
+
+// PeerUseless calls PeerUselessFunc.
+func (mock *SentryServerMock) PeerUseless(contextMoqParam context.Context, peerUselessRequest *PeerUselessRequest) (*emptypb.Empty, error) {
+	callInfo := struct {
+		ContextMoqParam    context.Context
+		PeerUselessRequest *PeerUselessRequest
+	}{
+		ContextMoqParam:    contextMoqParam,
+		PeerUselessRequest: peerUselessRequest,
+	}
+	mock.lockPeerUseless.Lock()
+	mock.calls.PeerUseless = append(mock.calls.PeerUseless, callInfo)
+	mock.lockPeerUseless.Unlock()
+	if mock.PeerUselessFunc == nil {
+		var (
+			emptyOut *emptypb.Empty
+			errOut   error
+		)
+		return emptyOut, errOut
+	}
+	return mock.PeerUselessFunc(contextMoqParam, peerUselessRequest)
+}
+
+// PeerUselessCalls gets all the calls that were made to PeerUseless.
+// Check the length with:
+//
+//	len(mockedSentryServer.PeerUselessCalls())
+func (mock *SentryServerMock) PeerUselessCalls() []struct {
+	ContextMoqParam    context.Context
+	PeerUselessRequest *PeerUselessRequest
+} {
+	var calls []struct {
+		ContextMoqParam    context.Context
+		PeerUselessRequest *PeerUselessRequest
+	}
+	mock.lockPeerUseless.RLock()
+	calls = mock.calls.PeerUseless
+	mock.lockPeerUseless.RUnlock()
 	return calls
 }
 
@@ -855,33 +910,37 @@ var _ SentryClient = &SentryClientMock{}
 //			PeerMinBlockFunc: func(ctx context.Context, in *PeerMinBlockRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 //				panic("mock out the PeerMinBlock method")
 //			},
-//			PeersFunc: func(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error) {
-//				panic("mock out the Peers method")
-//			},
-//			PenalizePeerFunc: func(ctx context.Context, in *PenalizePeerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-//				panic("mock out the PenalizePeer method")
-//			},
-//			SendMessageByIdFunc: func(ctx context.Context, in *SendMessageByIdRequest, opts ...grpc.CallOption) (*SentPeers, error) {
-//				panic("mock out the SendMessageById method")
-//			},
-//			SendMessageByMinBlockFunc: func(ctx context.Context, in *SendMessageByMinBlockRequest, opts ...grpc.CallOption) (*SentPeers, error) {
-//				panic("mock out the SendMessageByMinBlock method")
-//			},
-//			SendMessageToAllFunc: func(ctx context.Context, in *OutboundMessageData, opts ...grpc.CallOption) (*SentPeers, error) {
-//				panic("mock out the SendMessageToAll method")
-//			},
-//			SendMessageToRandomPeersFunc: func(ctx context.Context, in *SendMessageToRandomPeersRequest, opts ...grpc.CallOption) (*SentPeers, error) {
-//				panic("mock out the SendMessageToRandomPeers method")
-//			},
-//			SetStatusFunc: func(ctx context.Context, in *StatusData, opts ...grpc.CallOption) (*SetStatusReply, error) {
-//				panic("mock out the SetStatus method")
-//			},
+//
+//	PeerUselessFunc: func(ctx context.Context, in *PeerUselessRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+//					panic("mock out the PeerUseless method")
+//				},
+//				PeersFunc: func(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error) {
+//					panic("mock out the Peers method")
+//				},
+//				PenalizePeerFunc: func(ctx context.Context, in *PenalizePeerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+//					panic("mock out the PenalizePeer method")
+//				},
+//				SendMessageByIdFunc: func(ctx context.Context, in *SendMessageByIdRequest, opts ...grpc.CallOption) (*SentPeers, error) {
+//					panic("mock out the SendMessageById method")
+//				},
+//				SendMessageByMinBlockFunc: func(ctx context.Context, in *SendMessageByMinBlockRequest, opts ...grpc.CallOption) (*SentPeers, error) {
+//					panic("mock out the SendMessageByMinBlock method")
+//				},
+//				SendMessageToAllFunc: func(ctx context.Context, in *OutboundMessageData, opts ...grpc.CallOption) (*SentPeers, error) {
+//					panic("mock out the SendMessageToAll method")
+//				},
+//				SendMessageToRandomPeersFunc: func(ctx context.Context, in *SendMessageToRandomPeersRequest, opts ...grpc.CallOption) (*SentPeers, error) {
+//					panic("mock out the SendMessageToRandomPeers method")
+//				},
+//				SetStatusFunc: func(ctx context.Context, in *StatusData, opts ...grpc.CallOption) (*SetStatusReply, error) {
+//					panic("mock out the SetStatus method")
+//				},
+//			}
+//
+//			// use mockedSentryClient in code that requires SentryClient
+//			// and then make assertions.
+//
 //		}
-//
-//		// use mockedSentryClient in code that requires SentryClient
-//		// and then make assertions.
-//
-//	}
 type SentryClientMock struct {
 	// HandShakeFunc mocks the HandShake method.
 	HandShakeFunc func(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HandShakeReply, error)
@@ -903,6 +962,9 @@ type SentryClientMock struct {
 
 	// PeerMinBlockFunc mocks the PeerMinBlock method.
 	PeerMinBlockFunc func(ctx context.Context, in *PeerMinBlockRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+
+	// PeerUselessFunc mocks the PeerUseless method.
+	PeerUselessFunc func(ctx context.Context, in *PeerUselessRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 
 	// PeersFunc mocks the Peers method.
 	PeersFunc func(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error)
@@ -990,6 +1052,15 @@ type SentryClientMock struct {
 			// Opts is the opts argument value.
 			Opts []grpc.CallOption
 		}
+		// PeerUseless holds details about calls to the PeerUseless method.
+		PeerUseless []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// In is the in argument value.
+			In *PeerUselessRequest
+			// Opts is the opts argument value.
+			Opts []grpc.CallOption
+		}
 		// Peers holds details about calls to the Peers method.
 		Peers []struct {
 			// Ctx is the ctx argument value.
@@ -1061,6 +1132,7 @@ type SentryClientMock struct {
 	lockPeerCount                sync.RWMutex
 	lockPeerEvents               sync.RWMutex
 	lockPeerMinBlock             sync.RWMutex
+	lockPeerUseless              sync.RWMutex
 	lockPeers                    sync.RWMutex
 	lockPenalizePeer             sync.RWMutex
 	lockSendMessageById          sync.RWMutex
@@ -1375,6 +1447,50 @@ func (mock *SentryClientMock) PeerMinBlockCalls() []struct {
 	mock.lockPeerMinBlock.RLock()
 	calls = mock.calls.PeerMinBlock
 	mock.lockPeerMinBlock.RUnlock()
+	return calls
+}
+
+// PeerUseless calls PeerUselessFunc.
+func (mock *SentryClientMock) PeerUseless(ctx context.Context, in *PeerUselessRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	callInfo := struct {
+		Ctx  context.Context
+		In   *PeerUselessRequest
+		Opts []grpc.CallOption
+	}{
+		Ctx:  ctx,
+		In:   in,
+		Opts: opts,
+	}
+	mock.lockPeerUseless.Lock()
+	mock.calls.PeerUseless = append(mock.calls.PeerUseless, callInfo)
+	mock.lockPeerUseless.Unlock()
+	if mock.PeerUselessFunc == nil {
+		var (
+			emptyOut *emptypb.Empty
+			errOut   error
+		)
+		return emptyOut, errOut
+	}
+	return mock.PeerUselessFunc(ctx, in, opts...)
+}
+
+// PeerUselessCalls gets all the calls that were made to PeerUseless.
+// Check the length with:
+//
+//	len(mockedSentryClient.PeerUselessCalls())
+func (mock *SentryClientMock) PeerUselessCalls() []struct {
+	Ctx  context.Context
+	In   *PeerUselessRequest
+	Opts []grpc.CallOption
+} {
+	var calls []struct {
+		Ctx  context.Context
+		In   *PeerUselessRequest
+		Opts []grpc.CallOption
+	}
+	mock.lockPeerUseless.RLock()
+	calls = mock.calls.PeerUseless
+	mock.lockPeerUseless.RUnlock()
 	return calls
 }
 
