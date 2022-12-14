@@ -636,7 +636,6 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	for _, item := range files {
 		g := item.decompressor.MakeGetter()
 		g.Reset(0)
-		//fmt.Printf("lsdf: %d\n", item.startTxNum/ii.aggregationStep)
 		if g.HasNext() {
 			key, _ := g.Next(nil)
 			val, _ := g.Next(nil)
@@ -783,6 +782,9 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		}
 		var cp CursorHeap
 		heap.Init(&cp)
+		for _, hi := range historyFiles { // full-scan, because it's ok to have different amount files. by unclean-shutdown.
+			fmt.Printf("see .v file: %s\n", hi.decompressor.FileName())
+		}
 		for i, item := range indexFiles {
 			g := item.decompressor.MakeGetter()
 			g.Reset(0)
@@ -798,8 +800,6 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 				}
 				if g2 == nil {
 					panic(fmt.Sprintf("for file: %s, not found corresponding file to merge", g.FileName()))
-				} else {
-					fmt.Printf("search2: %s\n", g2.FileName())
 				}
 				key, _ := g.NextUncompressed()
 				val, _ := g.NextUncompressed()
@@ -917,6 +917,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		historyIn = &filesItem{startTxNum: r.historyStartTxNum, endTxNum: r.historyEndTxNum, decompressor: decomp, index: index}
 		closeItem = false
 	}
+
 	closeIndex = false
 	return
 }

@@ -87,38 +87,11 @@ func NewHistory(
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
-	for {
-		files, err := os.ReadDir(dir)
-		if err != nil {
-			return nil, err
-		}
-		uselessFiles := h.scanStateFiles(files)
-		if len(uselessFiles) == 0 {
-			break
-		}
-		for _, f := range uselessFiles {
-			log.Debug("[snapshots] delete redundant file", "history", h.filenameBase, "name", f)
-			_ = os.Remove(filepath.Join(h.dir, f))
-		}
-		h.files.Clear(true)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
 	}
-
-	if maxV, ok := h.files.Max(); ok {
-		for h.InvertedIndex.files.Len() > 0 {
-			iiMax, _ := h.InvertedIndex.files.Max()
-			if iiMax.startTxNum <= maxV.startTxNum {
-				break
-			}
-			log.Debug("[snapshots] see more .ef files than .v, exclude", "name", fmt.Sprintf("%s.%d-%d", h.filenameBase, iiMax.startTxNum/h.aggregationStep, iiMax.endTxNum/h.aggregationStep))
-			h.InvertedIndex.files.DeleteMax()
-		}
-	}
-
-	if maxV, ok := h.files.Max(); ok {
-		if iiMax, ok := h.InvertedIndex.files.Max(); ok && iiMax.startTxNum < maxV.startTxNum {
-			log.Warn("[snapshots] see more .v files than .ef")
-		}
-	}
+	_ = h.scanStateFiles(files)
 
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
@@ -159,41 +132,17 @@ func (h *History) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		{
-			var subSet, superSet *filesItem
-			h.files.DescendLessOrEqual(item, func(it *filesItem) bool {
+			var subSets []*filesItem
+			var superSet *filesItem
+			h.files.Ascend(func(it *filesItem) bool {
 				if it.isSubsetOf(item) {
-					subSet = it
+					subSets = append(subSets, it)
 				} else if item.isSubsetOf(it) {
 					superSet = it
 				}
 				return true
 			})
-			if subSet != nil {
-				h.files.Delete(subSet)
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
-					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
-				)
-			}
-			if superSet != nil {
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, startStep, endStep),
-					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, startStep, endStep),
-				)
-				continue
-			}
-		}
-		{
-			var subSet, superSet *filesItem
-			h.files.AscendGreaterOrEqual(item, func(it *filesItem) bool {
-				if it.isSubsetOf(item) {
-					subSet = it
-				} else if item.isSubsetOf(it) {
-					superSet = it
-				}
-				return false
-			})
-			if subSet != nil {
+			for _, subSet := range subSets {
 				h.files.Delete(subSet)
 				uselessFiles = append(uselessFiles,
 					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),

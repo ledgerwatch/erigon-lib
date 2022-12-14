@@ -24,6 +24,7 @@ func TestFindMergeRangeMustHandleAbsenseOfSomeFiles(t *testing.T) {
 		h.files.ReplaceOrInsert(&filesItem{startTxNum: 1, endTxNum: 2})
 
 		r := h.findMergeRange(4, 32)
+		assert.True(t, r.history)
 		assert.Equal(t, r.historyEndTxNum, uint64(2))
 		assert.Equal(t, r.indexEndTxNum, uint64(2))
 	})
@@ -38,8 +39,9 @@ func TestFindMergeRangeMustHandleAbsenseOfSomeFiles(t *testing.T) {
 		h.files.ReplaceOrInsert(&filesItem{startTxNum: 1, endTxNum: 2})
 
 		r := h.findMergeRange(4, 32)
+		assert.True(t, r.history)
 		assert.Equal(t, uint64(2), r.historyEndTxNum)
-		assert.Equal(t, uint64(4), r.indexEndTxNum)
+		assert.Equal(t, uint64(2), r.indexEndTxNum)
 	})
 }
 

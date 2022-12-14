@@ -82,22 +82,11 @@ func NewInvertedIndex(
 		indexTable:      indexTable,
 		workers:         1,
 	}
-	for {
-		files, err := os.ReadDir(dir)
-		if err != nil {
-			return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
-		}
-		uselessFiles := ii.scanStateFiles(files)
-		if len(uselessFiles) == 0 {
-			break
-		}
-
-		for _, f := range uselessFiles {
-			log.Debug("[snapshots] delete redundant file", "history", ii.filenameBase, "name", f)
-			_ = os.Remove(filepath.Join(ii.dir, f))
-		}
-		ii.files.Clear(true)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
+	_ = ii.scanStateFiles(files)
 	if err := ii.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
@@ -137,41 +126,18 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []str
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		{
-			var subSet, superSet *filesItem
-			ii.files.DescendLessOrEqual(item, func(it *filesItem) bool {
+			var subSets []*filesItem
+			var superSet *filesItem
+			ii.files.Ascend(func(it *filesItem) bool {
 				if it.isSubsetOf(item) {
-					subSet = it
+					subSets = append(subSets, it)
 				} else if item.isSubsetOf(it) {
 					superSet = it
 				}
 				return true
 			})
-			if subSet != nil {
-				ii.files.Delete(subSet)
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, subSet.startTxNum/ii.aggregationStep, subSet.endTxNum/ii.aggregationStep),
-					fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, subSet.startTxNum/ii.aggregationStep, subSet.endTxNum/ii.aggregationStep),
-				)
-			}
-			if superSet != nil {
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, startStep, endStep),
-					fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, startStep, endStep),
-				)
-				continue
-			}
-		}
-		{
-			var subSet, superSet *filesItem
-			ii.files.AscendGreaterOrEqual(item, func(it *filesItem) bool {
-				if it.isSubsetOf(item) {
-					subSet = it
-				} else if item.isSubsetOf(it) {
-					superSet = it
-				}
-				return false
-			})
-			if subSet != nil {
+
+			for _, subSet := range subSets {
 				ii.files.Delete(subSet)
 				uselessFiles = append(uselessFiles,
 					fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, subSet.startTxNum/ii.aggregationStep, subSet.endTxNum/ii.aggregationStep),
