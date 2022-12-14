@@ -121,14 +121,37 @@ func NewDomain(
 	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals); err != nil {
 		return nil, err
 	}
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
+	for {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, err
+		}
+		uselessFiles := d.scanStateFiles(files)
+		if len(uselessFiles) == 0 {
+			break
+		}
+		for _, f := range uselessFiles {
+			_ = os.Remove(filepath.Join(d.dir, f))
+		}
+		d.files.Clear(true)
 	}
-	uselessFiles := d.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		_ = os.Remove(filepath.Join(d.dir, f))
+	if maxV, ok := d.files.Max(); ok {
+		for d.InvertedIndex.files.Len() > 0 {
+			iiMax, _ := d.InvertedIndex.files.Max()
+			if iiMax.startTxNum <= maxV.startTxNum {
+				break
+			}
+			log.Debug("[snapshots] see more .ef files than .kv, exclude", "name", fmt.Sprintf("%s.%d-%d", d.filenameBase, iiMax.startTxNum/d.aggregationStep, iiMax.endTxNum/d.aggregationStep))
+			d.InvertedIndex.files.DeleteMax()
+		}
 	}
+
+	if maxV, ok := d.files.Max(); ok {
+		if iiMax, ok := d.InvertedIndex.files.Max(); ok && iiMax.startTxNum < maxV.startTxNum {
+			log.Warn("[snapshots] see more .kv files than .ef")
+		}
+	}
+
 	if err = d.openFiles(); err != nil {
 		return nil, err
 	}

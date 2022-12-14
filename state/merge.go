@@ -636,6 +636,7 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	for _, item := range files {
 		g := item.decompressor.MakeGetter()
 		g.Reset(0)
+		//fmt.Printf("lsdf: %d\n", item.startTxNum/ii.aggregationStep)
 		if g.HasNext() {
 			key, _ := g.Next(nil)
 			val, _ := g.Next(nil)
@@ -786,7 +787,20 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 			g := item.decompressor.MakeGetter()
 			g.Reset(0)
 			if g.HasNext() {
-				g2 := historyFiles[i].decompressor.MakeGetter()
+				var g2 *compress.Getter
+				fmt.Printf("search1: for %s found %d-%d, %s\n", g.FileName(), historyFiles[i].endTxNum/h.aggregationStep, historyFiles[i].endTxNum/h.aggregationStep, historyFiles[i].decompressor.FileName())
+				for _, hi := range historyFiles { // full-scan, because it's ok to have different amount files. by unclean-shutdown.
+					fmt.Printf("check: %s\n", hi.decompressor.FileName())
+					if hi.startTxNum == item.startTxNum && hi.endTxNum == item.endTxNum {
+						g2 = hi.decompressor.MakeGetter()
+						break
+					}
+				}
+				if g2 == nil {
+					panic(fmt.Sprintf("for file: %s, not found corresponding file to merge", g.FileName()))
+				} else {
+					fmt.Printf("search2: %s\n", g2.FileName())
+				}
 				key, _ := g.NextUncompressed()
 				val, _ := g.NextUncompressed()
 				heap.Push(&cp, &CursorItem{

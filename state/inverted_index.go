@@ -82,15 +82,23 @@ func NewInvertedIndex(
 		indexTable:      indexTable,
 		workers:         1,
 	}
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
+	for {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
+		}
+		uselessFiles := ii.scanStateFiles(files)
+		if len(uselessFiles) == 0 {
+			break
+		}
+
+		for _, f := range uselessFiles {
+			log.Debug("[snapshots] delete redundant file", "history", ii.filenameBase, "name", f)
+			_ = os.Remove(filepath.Join(ii.dir, f))
+		}
+		ii.files.Clear(true)
 	}
-	uselessFiles := ii.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		_ = os.Remove(filepath.Join(ii.dir, f))
-	}
-	if err = ii.openFiles(); err != nil {
+	if err := ii.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
 	return &ii, nil

@@ -87,14 +87,39 @@ func NewHistory(
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
+	for {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			return nil, err
+		}
+		uselessFiles := h.scanStateFiles(files)
+		if len(uselessFiles) == 0 {
+			break
+		}
+		for _, f := range uselessFiles {
+			log.Debug("[snapshots] delete redundant file", "history", h.filenameBase, "name", f)
+			_ = os.Remove(filepath.Join(h.dir, f))
+		}
+		h.files.Clear(true)
 	}
-	uselessFiles := h.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		_ = os.Remove(filepath.Join(h.dir, f))
+
+	if maxV, ok := h.files.Max(); ok {
+		for h.InvertedIndex.files.Len() > 0 {
+			iiMax, _ := h.InvertedIndex.files.Max()
+			if iiMax.startTxNum <= maxV.startTxNum {
+				break
+			}
+			log.Debug("[snapshots] see more .ef files than .v, exclude", "name", fmt.Sprintf("%s.%d-%d", h.filenameBase, iiMax.startTxNum/h.aggregationStep, iiMax.endTxNum/h.aggregationStep))
+			h.InvertedIndex.files.DeleteMax()
+		}
 	}
+
+	if maxV, ok := h.files.Max(); ok {
+		if iiMax, ok := h.InvertedIndex.files.Max(); ok && iiMax.startTxNum < maxV.startTxNum {
+			log.Warn("[snapshots] see more .v files than .ef")
+		}
+	}
+
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
 	}

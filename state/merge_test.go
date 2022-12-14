@@ -4,10 +4,44 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/google/btree"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
+
+func TestFindMergeRangeMustHandleAbsenseOfSomeFiles(t *testing.T) {
+	t.Run("not equal amount of files", func(t *testing.T) {
+		ii := &InvertedIndex{aggregationStep: 1, files: btree.NewG[*filesItem](32, filesItemLess)}
+		ii.files.ReplaceOrInsert(&filesItem{startTxNum: 0, endTxNum: 1})
+		ii.files.ReplaceOrInsert(&filesItem{startTxNum: 1, endTxNum: 2})
+		ii.files.ReplaceOrInsert(&filesItem{startTxNum: 2, endTxNum: 3})
+		ii.files.ReplaceOrInsert(&filesItem{startTxNum: 3, endTxNum: 4})
+
+		h := &History{InvertedIndex: ii, files: btree.NewG[*filesItem](32, filesItemLess)}
+		h.files.ReplaceOrInsert(&filesItem{startTxNum: 0, endTxNum: 1})
+		h.files.ReplaceOrInsert(&filesItem{startTxNum: 1, endTxNum: 2})
+
+		r := h.findMergeRange(4, 32)
+		assert.Equal(t, r.historyEndTxNum, uint64(2))
+		assert.Equal(t, r.indexEndTxNum, uint64(2))
+	})
+	t.Run("not equal amount of files", func(t *testing.T) {
+		ii := &InvertedIndex{aggregationStep: 1, files: btree.NewG[*filesItem](32, filesItemLess)}
+		ii.files.ReplaceOrInsert(&filesItem{startTxNum: 0, endTxNum: 2})
+		ii.files.ReplaceOrInsert(&filesItem{startTxNum: 2, endTxNum: 3})
+		ii.files.ReplaceOrInsert(&filesItem{startTxNum: 3, endTxNum: 4})
+
+		h := &History{InvertedIndex: ii, files: btree.NewG[*filesItem](32, filesItemLess)}
+		h.files.ReplaceOrInsert(&filesItem{startTxNum: 0, endTxNum: 1})
+		h.files.ReplaceOrInsert(&filesItem{startTxNum: 1, endTxNum: 2})
+
+		r := h.findMergeRange(4, 32)
+		assert.Equal(t, uint64(2), r.historyEndTxNum)
+		assert.Equal(t, uint64(4), r.indexEndTxNum)
+	})
+}
 
 func Test_mergeEliasFano(t *testing.T) {
 	t.Skip()
