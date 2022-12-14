@@ -429,6 +429,25 @@ func (sf Agg22StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
+func (a *Aggregator22) BuildFiles(ctx context.Context, db kv.RoDB) (err error) {
+	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
+		return nil
+	}
+
+	// trying to create as much small-step-files as possible:
+	// - to reduce amount of small merges
+	// - to remove old data from db as early as possible
+	// - during files build, may happen commit of new data. on each loop step getting latest id in db
+	step := a.EndTxNumMinimax() / a.aggregationStep
+	for ; step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep; step++ {
+		if err := a.buildFilesInBackground(ctx, step, db); err != nil {
+			log.Warn("buildFilesInBackground", "err", err)
+			break
+		}
+	}
+	return nil
+}
+
 func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) (err error) {
 	closeAll := true
 	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
