@@ -73,25 +73,25 @@ func (a *Aggregator22) ReopenFiles() error {
 	dir := a.dir
 	aggregationStep := a.aggregationStep
 	var err error
-	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */); err != nil {
+	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */); err != nil {
+	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */); err != nil {
+	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, false); err != nil {
+	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, false, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, false); err != nil {
+	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, false, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, false); err != nil {
+	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, false, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, false); err != nil {
+	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, false, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
@@ -472,6 +472,25 @@ func (sf Agg22StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
+func (a *Aggregator22) BuildFiles(ctx context.Context, db kv.RoDB) (err error) {
+	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
+		return nil
+	}
+
+	// trying to create as much small-step-files as possible:
+	// - to reduce amount of small merges
+	// - to remove old data from db as early as possible
+	// - during files build, may happen commit of new data. on each loop step getting latest id in db
+	step := a.EndTxNumMinimax() / a.aggregationStep
+	for ; step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep; step++ {
+		if err := a.buildFilesInBackground(ctx, step, db); err != nil {
+			log.Warn("buildFilesInBackground", "err", err)
+			break
+		}
+	}
+	return nil
+}
+
 func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) (err error) {
 	closeAll := true
 	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
@@ -653,10 +672,10 @@ func (a *Aggregator22) FinishWrites() {
 }
 
 type flusher interface {
-	Flush(tx kv.RwTx) error
+	Flush(ctx context.Context, tx kv.RwTx) error
 }
 
-func (a *Aggregator22) Flush(tx kv.RwTx) error {
+func (a *Aggregator22) Flush(ctx context.Context, tx kv.RwTx) error {
 	flushers := []flusher{
 		a.accounts.Rotate(),
 		a.storage.Rotate(),
@@ -668,7 +687,7 @@ func (a *Aggregator22) Flush(tx kv.RwTx) error {
 	}
 	defer func(t time.Time) { log.Debug("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
 	for _, f := range flushers {
-		if err := f.Flush(tx); err != nil {
+		if err := f.Flush(ctx, tx); err != nil {
 			return err
 		}
 	}
@@ -698,7 +717,7 @@ func (a *Aggregator22) PruneWithTiemout(ctx context.Context, timeout time.Durati
 }
 
 func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
-	//a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
+	a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
 	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
 

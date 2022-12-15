@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -118,14 +117,15 @@ func NewDomain(
 		files:     btree.NewG[*filesItem](32, filesItemLess),
 	}
 	var err error
-	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals); err != nil {
+	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals, []string{"kv"}); err != nil {
 		return nil, err
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	d.scanStateFiles(files)
+	_ = d.scanStateFiles(files)
+
 	if err = d.openFiles(); err != nil {
 		return nil, err
 	}
@@ -141,10 +141,9 @@ func (d *Domain) GetAndResetStats() DomainStats {
 	return r
 }
 
-func (d *Domain) scanStateFiles(files []fs.DirEntry) {
+func (d *Domain) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
 	re := regexp.MustCompile("^" + d.filenameBase + ".([0-9]+)-([0-9]+).kv$")
 	var err error
-	var uselessFiles []string
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -174,41 +173,17 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 		startTxNum, endTxNum := startStep*d.aggregationStep, endStep*d.aggregationStep
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		{
-			var subSet, superSet *filesItem
-			d.files.DescendLessOrEqual(item, func(it *filesItem) bool {
+			var subSets []*filesItem
+			var superSet *filesItem
+			d.files.Ascend(func(it *filesItem) bool {
 				if it.isSubsetOf(item) {
-					subSet = it
+					subSets = append(subSets, it)
 				} else if item.isSubsetOf(it) {
 					superSet = it
 				}
 				return true
 			})
-			if subSet != nil {
-				d.files.Delete(subSet)
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, subSet.startTxNum/d.aggregationStep, subSet.endTxNum/d.aggregationStep),
-					fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, subSet.startTxNum/d.aggregationStep, subSet.endTxNum/d.aggregationStep),
-				)
-			}
-			if superSet != nil {
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, startStep, endStep),
-					fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, startStep, endStep),
-				)
-				continue
-			}
-		}
-		{
-			var subSet, superSet *filesItem
-			d.files.AscendGreaterOrEqual(item, func(it *filesItem) bool {
-				if it.isSubsetOf(item) {
-					subSet = it
-				} else if item.isSubsetOf(it) {
-					superSet = it
-				}
-				return false
-			})
-			if subSet != nil {
+			for _, subSet := range subSets {
 				d.files.Delete(subSet)
 				uselessFiles = append(uselessFiles,
 					fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, subSet.startTxNum/d.aggregationStep, subSet.endTxNum/d.aggregationStep),
@@ -225,10 +200,7 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) {
 		}
 		d.files.ReplaceOrInsert(item)
 	}
-	if len(uselessFiles) > 0 {
-		log.Info("[snapshots] history can delete", "files", strings.Join(uselessFiles, ","))
-	}
-
+	return uselessFiles
 }
 
 func (d *Domain) openFiles() error {
