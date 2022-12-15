@@ -74,6 +74,7 @@ func NewHistory(
 	historyValsTable string,
 	settingsTable string,
 	compressVals bool,
+	integrityFileExtensions []string,
 ) (*History, error) {
 	h := History{
 		files:            btree.NewG[*filesItem](32, filesItemLess),
@@ -83,7 +84,7 @@ func NewHistory(
 		workers:          1,
 	}
 	var err error
-	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable)
+	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, append(integrityFileExtensions, "v"))
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
@@ -91,7 +92,7 @@ func NewHistory(
 	if err != nil {
 		return nil, err
 	}
-	_ = h.scanStateFiles(files)
+	_ = h.scanStateFiles(files, integrityFileExtensions)
 
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
@@ -99,9 +100,10 @@ func NewHistory(
 	return &h, nil
 }
 
-func (h *History) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
+func (h *History) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []string) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
+Loop:
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -130,6 +132,15 @@ func (h *History) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
 		}
 
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
+
+		for _, ext := range integrityFileExtensions {
+			requiredFile := fmt.Sprintf("%s.%d-%d.%s", h.filenameBase, startStep, endStep, ext)
+			if !dir.FileExist(filepath.Join(h.dir, requiredFile)) {
+				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				continue Loop
+			}
+		}
+
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		{
 			var subSets []*filesItem
@@ -328,8 +339,8 @@ func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []
 		//var mergeOnce bool
 		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 			ci1 := cp[0]
-			ef, _ := eliasfano32.ReadEliasFano(ci1.val)
-			for i := uint64(0); i < ef.Count(); i++ {
+			keysCount := eliasfano32.Count(ci1.val)
+			for i := uint64(0); i < keysCount; i++ {
 				if compressVals {
 					valBuf, _ = ci1.dg2.Next(valBuf[:0])
 				} else {
@@ -339,7 +350,7 @@ func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []
 					return count, err
 				}
 			}
-			count += int(ef.Count())
+			count += int(keysCount)
 			if ci1.dg.HasNext() {
 				ci1.key, _ = ci1.dg.NextUncompressed()
 				ci1.val, _ = ci1.dg.NextUncompressed()

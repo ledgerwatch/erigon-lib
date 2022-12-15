@@ -71,6 +71,7 @@ func NewInvertedIndex(
 	filenameBase string,
 	indexKeysTable string,
 	indexTable string,
+	integrityFileExtensions []string,
 ) (*InvertedIndex, error) {
 	ii := InvertedIndex{
 		dir:             dir,
@@ -86,16 +87,17 @@ func NewInvertedIndex(
 	if err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
-	_ = ii.scanStateFiles(files)
+	_ = ii.scanStateFiles(files, integrityFileExtensions)
 	if err := ii.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
 	return &ii, nil
 }
 
-func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
+func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []string) {
 	re := regexp.MustCompile("^" + ii.filenameBase + ".([0-9]+)-([0-9]+).ef$")
 	var err error
+Loop:
 	for _, f := range files {
 		if !f.Type().IsRegular() {
 			continue
@@ -124,6 +126,15 @@ func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []str
 		}
 
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
+
+		for _, ext := range integrityFileExtensions {
+			requiredFile := fmt.Sprintf("%s.%d-%d.%s", ii.filenameBase, startStep, endStep, ext)
+			if !dir.FileExist(filepath.Join(ii.dir, requiredFile)) {
+				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				continue Loop
+			}
+		}
+
 		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
 		{
 			var subSets []*filesItem

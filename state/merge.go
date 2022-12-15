@@ -310,6 +310,11 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 		}
 		return true
 	})
+
+	// history is behind idx: then merge only history
+	if r.index && (r.historyEndTxNum < r.indexEndTxNum) {
+		r.index, r.indexStartTxNum, r.indexEndTxNum = false, 0, 0
+	}
 	return r
 }
 
@@ -373,6 +378,9 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64) ([]*fil
 func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles []*filesItem, startJ int) {
 	if r.index {
 		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum)
+		for _, f := range indexFiles {
+			fmt.Printf("add idx to merge range: %s, %d-%d\n", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
+		}
 	}
 	if r.history {
 		startJ = 0
@@ -396,12 +404,16 @@ func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles 
 		if r.index && len(indexFiles) != len(historyFiles) {
 			var sIdx, sHist []string
 			for _, f := range indexFiles {
-				_, fName := filepath.Split(f.index.FilePath())
-				sIdx = append(sIdx, fmt.Sprintf("%+v", fName))
+				if f.index != nil {
+					_, fName := filepath.Split(f.index.FilePath())
+					sIdx = append(sIdx, fmt.Sprintf("%+v", fName))
+				}
 			}
 			for _, f := range historyFiles {
-				_, fName := filepath.Split(f.decompressor.FilePath())
-				sHist = append(sHist, fmt.Sprintf("%+v", fName))
+				if f.decompressor != nil {
+					_, fName := filepath.Split(f.decompressor.FilePath())
+					sHist = append(sHist, fmt.Sprintf("%+v", fName))
+				}
 			}
 			log.Warn("something wrong with files for merge", "idx", strings.Join(sIdx, ","), "hist", strings.Join(sHist, ","))
 		}
@@ -782,17 +794,12 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		}
 		var cp CursorHeap
 		heap.Init(&cp)
-		for _, hi := range historyFiles { // full-scan, because it's ok to have different amount files. by unclean-shutdown.
-			fmt.Printf("see .v file: %s\n", hi.decompressor.FileName())
-		}
-		for i, item := range indexFiles {
+		for _, item := range indexFiles {
 			g := item.decompressor.MakeGetter()
 			g.Reset(0)
 			if g.HasNext() {
 				var g2 *compress.Getter
-				fmt.Printf("search1: for %s found %d-%d, %s\n", g.FileName(), historyFiles[i].endTxNum/h.aggregationStep, historyFiles[i].endTxNum/h.aggregationStep, historyFiles[i].decompressor.FileName())
 				for _, hi := range historyFiles { // full-scan, because it's ok to have different amount files. by unclean-shutdown.
-					fmt.Printf("check: %s\n", hi.decompressor.FileName())
 					if hi.startTxNum == item.startTxNum && hi.endTxNum == item.endTxNum {
 						g2 = hi.decompressor.MakeGetter()
 						break
@@ -826,8 +833,12 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 			// Advance all the items that have this key (including the top)
 			for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 				ci1 := cp[0]
-				ef, _ := eliasfano32.ReadEliasFano(ci1.val)
-				for i := uint64(0); i < ef.Count(); i++ {
+				count := eliasfano32.Count(ci1.val)
+				for i := uint64(0); i < count; i++ {
+					if !ci1.dg2.HasNext() {
+						panic(fmt.Errorf("assert: no value??? %s, i=%d, count=%d, lastKey=%x, ci1.key=%x", ci1.dg2.FileName(), i, count, lastKey, ci1.key))
+					}
+
 					if h.compressVals {
 						valBuf, _ = ci1.dg2.Next(valBuf[:0])
 						if err = comp.AddWord(valBuf); err != nil {
@@ -840,7 +851,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 						}
 					}
 				}
-				keyCount += int(ef.Count())
+				keyCount += int(count)
 				if ci1.dg.HasNext() {
 					ci1.key, _ = ci1.dg.NextUncompressed()
 					ci1.val, _ = ci1.dg.NextUncompressed()
