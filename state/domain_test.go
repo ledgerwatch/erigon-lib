@@ -505,6 +505,7 @@ func TestScanFiles(t *testing.T) {
 	var err error
 	d, err = NewDomain(path, path, d.aggregationStep, d.filenameBase, d.keysTable, d.valsTable, d.indexKeysTable, d.historyValsTable, d.settingsTable, d.indexTable, d.prefixLen, d.compressVals)
 	require.NoError(t, err)
+	defer d.Close()
 	d.SetTxNum(txNum)
 	// Check the history
 	checkHistory(t, db, d, txs)
