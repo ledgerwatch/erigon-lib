@@ -378,9 +378,6 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64) ([]*fil
 func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles []*filesItem, startJ int) {
 	if r.index {
 		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum)
-		for _, f := range indexFiles {
-			fmt.Printf("add idx to merge range: %s, %d-%d\n", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		}
 	}
 	if r.history {
 		startJ = 0
