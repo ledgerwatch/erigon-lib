@@ -26,12 +26,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ledgerwatch/log/v3"
-
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
+	"github.com/ledgerwatch/log/v3"
 )
 
 func (d *Domain) endTxNumMinimax() uint64 {
@@ -101,7 +101,7 @@ func (d *Domain) findMergeRange(maxEndTxNum, maxSpan uint64) DomainRanges {
 		}
 		endStep := item.endTxNum / d.aggregationStep
 		spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
-		span := spanStep * d.aggregationStep
+		span := cmp.Min(spanStep*d.aggregationStep, maxSpan)
 		start := item.endTxNum - span
 		if start < item.startTxNum {
 			if !r.values || start < r.valuesStartTxNum {
@@ -208,10 +208,7 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 		}
 		endStep := item.endTxNum / ii.aggregationStep
 		spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
-		span := spanStep * ii.aggregationStep
-		if span > maxSpan {
-			span = maxSpan
-		}
+		span := cmp.Min(spanStep*ii.aggregationStep, maxSpan)
 		start := item.endTxNum - span
 		if start < item.startTxNum {
 			if !minFound || start < startTxNum {
@@ -296,10 +293,7 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 		}
 		endStep := item.endTxNum / h.aggregationStep
 		spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
-		span := spanStep * h.aggregationStep
-		if span > maxSpan {
-			span = maxSpan
-		}
+		span := cmp.Min(spanStep*h.aggregationStep, maxSpan)
 		start := item.endTxNum - span
 		if start < item.startTxNum {
 			if !r.history || start < r.historyStartTxNum {
@@ -440,7 +434,7 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 	}
 	var comp *compress.Compressor
 	//var decomp *compress.Decompressor
-	var closeItem bool = true
+	var closeItem = true
 	defer func() {
 		if closeItem {
 			if comp != nil {
@@ -492,7 +486,7 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 		}
 
 		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
-		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.tmpdir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
+		if comp, err = compress.NewCompressor(ctx, "merge", datPath, d.tmpdir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
 		}
 		var cp CursorHeap
@@ -616,7 +610,7 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	var comp *compress.Compressor
 	var decomp *compress.Decompressor
 	var err error
-	var closeItem bool = true
+	var closeItem = true
 	defer func() {
 		if closeItem {
 			if comp != nil {
@@ -759,7 +753,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		var decomp *compress.Decompressor
 		var rs *recsplit.RecSplit
 		var index *recsplit.Index
-		var closeItem bool = true
+		var closeItem = true
 		defer func() {
 			if closeItem {
 				if comp != nil {
@@ -786,7 +780,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		}()
 		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
-		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, h.tmpdir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
+		if comp, err = compress.NewCompressor(ctx, "merge", datPath, h.tmpdir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
 			return nil, nil, fmt.Errorf("merge %s history compressor: %w", h.filenameBase, err)
 		}
 		var cp CursorHeap

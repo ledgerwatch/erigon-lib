@@ -34,6 +34,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/c2h5oh/datasize"
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/semaphore"
@@ -130,7 +131,7 @@ Loop:
 		for _, ext := range integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", ii.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(ii.dir, requiredFile)) {
-				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists. %s", name, requiredFile, dbg.Stack()))
 				continue Loop
 			}
 		}

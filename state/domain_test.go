@@ -495,21 +495,14 @@ func TestMergeFiles(t *testing.T) {
 func TestScanFiles(t *testing.T) {
 	path, db, d, txs := filledDomain(t)
 	defer db.Close()
-	defer func() {
-		d.Close()
-	}()
-	var err error
-	var tx kv.RwTx
-	defer func() {
-		if tx != nil {
-			tx.Rollback()
-		}
-	}()
+	defer d.Close()
 
 	collateAndMerge(t, db, nil, d, txs)
 	// Recreate domain and re-scan the files
 	txNum := d.txNum
 	d.Close()
+
+	var err error
 	d, err = NewDomain(path, path, d.aggregationStep, d.filenameBase, d.keysTable, d.valsTable, d.indexKeysTable, d.historyValsTable, d.settingsTable, d.indexTable, d.prefixLen, d.compressVals)
 	require.NoError(t, err)
 	d.SetTxNum(txNum)
