@@ -91,7 +91,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 	err = h.AddPrevValue([]byte("key3"), nil, nil)
 	require.NoError(err)
 
-	err = h.Rotate().Flush(tx)
+	err = h.Rotate().Flush(ctx, tx)
 	require.NoError(err)
 
 	c, err := h.collate(0, 0, 8, tx, logEvery)
@@ -189,7 +189,7 @@ func TestHistoryAfterPrune(t *testing.T) {
 	err = h.AddPrevValue([]byte("key3"), nil, nil)
 	require.NoError(t, err)
 
-	err = h.Rotate().Flush(tx)
+	err = h.Rotate().Flush(ctx, tx)
 	require.NoError(t, err)
 
 	c, err := h.collate(0, 0, 16, tx, logEvery)
@@ -249,11 +249,11 @@ func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 			}
 		}
 		if txNum%10 == 0 {
-			err = h.Rotate().Flush(tx)
+			err = h.Rotate().Flush(ctx, tx)
 			require.NoError(tb, err)
 		}
 	}
-	err = h.Rotate().Flush(tx)
+	err = h.Rotate().Flush(ctx, tx)
 	require.NoError(tb, err)
 	err = tx.Commit()
 	require.NoError(tb, err)

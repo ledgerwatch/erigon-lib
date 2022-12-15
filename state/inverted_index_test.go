@@ -82,7 +82,7 @@ func TestInvIndexCollationBuild(t *testing.T) {
 	err = ii.Add([]byte("key3"))
 	require.NoError(t, err)
 
-	err = ii.Rotate().Flush(tx)
+	err = ii.Rotate().Flush(ctx, tx)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestInvIndexAfterPrune(t *testing.T) {
 	err = ii.Add([]byte("key3"))
 	require.NoError(t, err)
 
-	err = ii.Rotate().Flush(tx)
+	err = ii.Rotate().Flush(ctx, tx)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
@@ -229,11 +229,11 @@ func filledInvIndexOfSize(t *testing.T, txs, aggStep, module uint64) (string, kv
 			}
 		}
 		if txNum%10 == 0 {
-			err = ii.Rotate().Flush(tx)
+			err = ii.Rotate().Flush(ctx, tx)
 			require.NoError(t, err)
 		}
 	}
-	err = ii.Rotate().Flush(tx)
+	err = ii.Rotate().Flush(ctx, tx)
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)

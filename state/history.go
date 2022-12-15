@@ -468,11 +468,11 @@ type historyFlusher struct {
 	i *invertedIndexWAL
 }
 
-func (f historyFlusher) Flush(tx kv.RwTx) error {
-	if err := f.i.Flush(tx); err != nil {
+func (f historyFlusher) Flush(ctx context.Context, tx kv.RwTx) error {
+	if err := f.i.Flush(ctx, tx); err != nil {
 		return err
 	}
-	if err := f.h.flush(tx); err != nil {
+	if err := f.h.flush(ctx, tx); err != nil {
 		return err
 	}
 	return nil
@@ -525,7 +525,7 @@ func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
 	return w
 }
 
-func (h *historyWAL) flush(tx kv.RwTx) error {
+func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if h.discard {
 		return nil
 	}
@@ -533,7 +533,7 @@ func (h *historyWAL) flush(tx kv.RwTx) error {
 	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
 		return err
 	}
-	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{}); err != nil {
+	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
 	h.close()
