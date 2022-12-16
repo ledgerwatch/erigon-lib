@@ -625,18 +625,15 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 
 			mt := best.ms[i]
 
-			if len(toSkip) > 0 {
-				skip := false
-				for _, id := range toSkip {
-					if mt.Tx.IDHash == id {
-						skip = true
-						break
-					}
+			skip := false
+			for _, id := range toSkip {
+				if mt.Tx.IDHash == id {
+					skip = true
+					break
 				}
-				if skip {
-					fmt.Printf("skipping yielded")
-					continue
-				}
+			}
+			if skip {
+				continue
 			}
 
 			if mt.Tx.Gas >= p.blockGasLimit.Load() {
