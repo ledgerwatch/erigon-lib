@@ -249,9 +249,6 @@ const (
 
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
-	// EIP-4895 - Beacon chain push withdrawals as operations
-	Withdrawals = "Withdrawal" //  withdrawal_index_u64 -> rlp(withdrawal)
-
 	// EthTx - stores only txs of canonical blocks. As a result - id's used in this table are also
 	// canonical - same across all nodex in network - regardless reorgs. Transactions of
 	// non-canonical blocs are not removed, but moved to NonCanonicalTransaction - then during re-org don't
@@ -415,12 +412,11 @@ const (
 	RCodeIdx     = "RCodeIdx"
 
 	PlainStateR    = "PlainStateR"    // temporary table for PlainState reconstitution
+	PlainStateD    = "PlainStateD"    // temporary table for PlainStare reconstitution, deletes
 	CodeR          = "CodeR"          // temporary table for Code reconstitution
+	CodeD          = "CodeD"          // temporary table for Code reconstitution, deletes
 	PlainContractR = "PlainContractR" // temporary table for PlainContract reconstitution
-
-	XAccount = "XAccount"
-	XStorage = "XStorage"
-	XCode    = "XCode"
+	PlainContractD = "PlainContractD" // temporary table for PlainContract reconstitution, deletes
 
 	// Erigon-CL
 	BeaconState = "BeaconState"
@@ -476,7 +472,6 @@ var ChaindataTables = []string{
 	ContractCode,
 	HeaderNumber,
 	BlockBody,
-	Withdrawals,
 	Receipts,
 	TxLookup,
 	ConfigTable,
@@ -600,12 +595,12 @@ var DownloaderTables = []string{
 	BittorrentInfo,
 }
 var ReconTables = []string{
-	XAccount,
-	XStorage,
-	XCode,
 	PlainStateR,
+	PlainStateD,
 	CodeR,
+	CodeD,
 	PlainContractR,
+	PlainContractD,
 }
 
 // ChaindataDeprecatedTables - list of buckets which can be programmatically deleted - for example after migration
@@ -696,7 +691,11 @@ var ChaindataTablesCfg = TableCfg{
 var TxpoolTablesCfg = TableCfg{}
 var SentryTablesCfg = TableCfg{}
 var DownloaderTablesCfg = TableCfg{}
-var ReconTablesCfg = TableCfg{}
+var ReconTablesCfg = TableCfg{
+	PlainStateD:    {Flags: DupSort},
+	CodeD:          {Flags: DupSort},
+	PlainContractD: {Flags: DupSort},
+}
 
 func sortBuckets() {
 	sort.SliceStable(ChaindataTables, func(i, j int) bool {
