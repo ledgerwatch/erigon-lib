@@ -230,6 +230,7 @@ type metaTx struct {
 	timestamp                 uint64 // when it was added to pool
 	subPool                   SubPoolMarker
 	currentSubPool            SubPoolType
+	alreadyYielded            bool
 }
 
 func newMetaTx(slot *types.TxSlot, isLocal bool, timestmap uint64) *metaTx {
@@ -600,9 +601,7 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 func (p *TxPool) AddNewGoodPeer(peerID types.PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                      { return p.started.Load() }
 
-// Best - returns top `n` elements of pending queue
-// id doesn't perform full copy of txs, however underlying elements are immutable
-func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error) {
+func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64, isYielding bool) (bool, error) {
 	// First wait for the corresponding block to arrive
 	if p.lastSeenBlock.Load() < onTopOf {
 		return false, nil // Too early
@@ -618,13 +617,17 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 
 		best := p.pending.best
 		for i := 0; j < int(n) && i < len(best.ms); i++ {
-
 			// if we wouldn't have enough gas for a standard transaction then quit out early
 			if availableGas < fixedgas.TxGas {
 				break
 			}
 
 			mt := best.ms[i]
+
+			if isYielding && mt.alreadyYielded {
+				continue
+			}
+
 			if mt.Tx.Gas >= p.blockGasLimit.Load() {
 				// Skip transactions with very large gas limit
 				continue
@@ -654,6 +657,9 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 			txs.Txs[j] = rlpTx
 			copy(txs.Senders.At(j), sender)
 			txs.IsLocal[j] = isLocal
+			if isYielding {
+				mt.alreadyYielded = true
+			}
 			j++
 		}
 		return true, nil
@@ -667,6 +673,23 @@ func (p *TxPool) Best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		}
 	}
 	return success, err
+}
+
+func (p *TxPool) ResetYieldedStatus() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	best := p.pending.best
+	for i := 0; i < len(best.ms); i++ {
+		best.ms[i].alreadyYielded = false
+	}
+}
+
+func (p *TxPool) YieldBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error) {
+	return p.best(n, txs, tx, onTopOf, availableGas, true)
+}
+
+func (p *TxPool) PeekBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error) {
+	return p.best(n, txs, tx, onTopOf, availableGas, false)
 }
 
 func (p *TxPool) CountContent() (int, int, int) {

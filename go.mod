@@ -15,7 +15,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/holiman/uint256 v1.2.1
-	github.com/ledgerwatch/interfaces v0.0.0-20221201072604-256480b3c8af
+	github.com/ledgerwatch/interfaces v0.0.0-20221211220920-f1265f3c9706
 	github.com/ledgerwatch/log/v3 v3.6.0
 	github.com/ledgerwatch/secp256k1 v1.0.0
 	github.com/ledgerwatch/trackerslist v1.0.0
@@ -24,7 +24,7 @@ require (
 	github.com/quasilyte/go-ruleguard/dsl v0.3.21
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.1
-	github.com/torquem-ch/mdbx-go v0.26.3
+	github.com/torquem-ch/mdbx-go v0.27.0
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.3.0
 	golang.org/x/exp v0.0.0-20221126150942-6ab00d035af9

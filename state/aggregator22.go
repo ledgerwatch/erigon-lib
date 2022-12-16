@@ -71,25 +71,25 @@ func (a *Aggregator22) ReopenFiles() error {
 	dir := a.dir
 	aggregationStep := a.aggregationStep
 	var err error
-	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */); err != nil {
+	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */); err != nil {
+	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */); err != nil {
+	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx); err != nil {
+	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx); err != nil {
+	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx); err != nil {
+	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
-	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx); err != nil {
+	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, nil); err != nil {
 		return fmt.Errorf("ReopenFiles: %w", err)
 	}
 	a.recalcMaxTxNum()
@@ -429,6 +429,25 @@ func (sf Agg22StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
+func (a *Aggregator22) BuildFiles(ctx context.Context, db kv.RoDB) (err error) {
+	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
+		return nil
+	}
+
+	// trying to create as much small-step-files as possible:
+	// - to reduce amount of small merges
+	// - to remove old data from db as early as possible
+	// - during files build, may happen commit of new data. on each loop step getting latest id in db
+	step := a.EndTxNumMinimax() / a.aggregationStep
+	for ; step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep; step++ {
+		if err := a.buildFilesInBackground(ctx, step, db); err != nil {
+			log.Warn("buildFilesInBackground", "err", err)
+			break
+		}
+	}
+	return nil
+}
+
 func (a *Aggregator22) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) (err error) {
 	closeAll := true
 	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
@@ -610,10 +629,10 @@ func (a *Aggregator22) FinishWrites() {
 }
 
 type flusher interface {
-	Flush(tx kv.RwTx) error
+	Flush(ctx context.Context, tx kv.RwTx) error
 }
 
-func (a *Aggregator22) Flush(tx kv.RwTx) error {
+func (a *Aggregator22) Flush(ctx context.Context, tx kv.RwTx) error {
 	flushers := []flusher{
 		a.accounts.Rotate(),
 		a.storage.Rotate(),
@@ -625,7 +644,7 @@ func (a *Aggregator22) Flush(tx kv.RwTx) error {
 	}
 	defer func(t time.Time) { log.Debug("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
 	for _, f := range flushers {
-		if err := f.Flush(tx); err != nil {
+		if err := f.Flush(ctx, tx); err != nil {
 			return err
 		}
 	}
@@ -643,13 +662,19 @@ func (a *Aggregator22) CanPruneFrom(tx kv.Tx) uint64 {
 	}
 	return math2.MaxUint64
 }
-func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
-	//a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
-	defer func(t time.Time) {
-		if time.Since(t) > time.Second {
-			log.Debug(fmt.Sprintf("prune took: %s\n", time.Since(t)))
+
+func (a *Aggregator22) PruneWithTiemout(ctx context.Context, timeout time.Duration) error {
+	t := time.Now()
+	for a.CanPrune(a.rwTx) && time.Since(t) < timeout {
+		if err := a.Prune(ctx, 1_000); err != nil { // prune part of retired data, before commit
+			return err
 		}
-	}(time.Now())
+	}
+	return nil
+}
+
+func (a *Aggregator22) Prune(ctx context.Context, limit uint64) error {
+	a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
 	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
 
@@ -772,7 +797,7 @@ func (a *Aggregator22) findMergeRange(maxEndTxNum, maxSpan uint64) Ranges22 {
 	r.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum = a.logTopics.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum = a.tracesFrom.findMergeRange(maxEndTxNum, maxSpan)
 	r.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum = a.tracesTo.findMergeRange(maxEndTxNum, maxSpan)
-	log.Info(fmt.Sprintf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r))
+	//log.Info(fmt.Sprintf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r))
 	return r
 }
 
@@ -989,7 +1014,7 @@ func (a *Aggregator22) deleteFiles(outs SelectedStaticFiles22) error {
 // we can set it to 0, because no re-org on this blocks are possible
 func (a *Aggregator22) KeepInDB(v uint64) { a.keepInDB = v }
 
-func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
+func (a *Aggregator22) BuildFilesInBackground(ctx context.Context, db kv.RoDB) error {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return nil
 	}
@@ -1018,7 +1043,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		// - to remove old data from db as early as possible
 		// - during files build, may happen commit of new data. on each loop step getting latest id in db
 		for step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep {
-			if err := a.buildFilesInBackground(context.Background(), step, db); err != nil {
+			if err := a.buildFilesInBackground(ctx, step, db); err != nil {
 				log.Warn("buildFilesInBackground", "err", err)
 				break
 			}
@@ -1031,7 +1056,7 @@ func (a *Aggregator22) BuildFilesInBackground(db kv.RoDB) error {
 		defer a.workingMerge.Store(true)
 		go func() {
 			defer a.workingMerge.Store(false)
-			if err := a.MergeLoop(context.Background(), 1); err != nil {
+			if err := a.MergeLoop(ctx, 1); err != nil {
 				log.Warn("merge", "err", err)
 			}
 		}()
@@ -1138,25 +1163,6 @@ func (ac *Aggregator22Context) TraceToIterator(addr []byte, startTxNum, endTxNum
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (ac *Aggregator22Context) IsMaxAccountsTxNum(addr []byte, txNum uint64) bool {
-	return ac.accounts.IsMaxTxNum(addr, txNum)
-}
-
-func (ac *Aggregator22Context) IsMaxStorageTxNum(addr []byte, loc []byte, txNum uint64) bool {
-	if cap(ac.keyBuf) < len(addr)+len(loc) {
-		ac.keyBuf = make([]byte, len(addr)+len(loc))
-	} else if len(ac.keyBuf) != len(addr)+len(loc) {
-		ac.keyBuf = ac.keyBuf[:len(addr)+len(loc)]
-	}
-	copy(ac.keyBuf, addr)
-	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storage.IsMaxTxNum(ac.keyBuf, txNum)
-}
-
-func (ac *Aggregator22Context) IsMaxCodeTxNum(addr []byte, txNum uint64) bool {
-	return ac.code.IsMaxTxNum(addr, txNum)
-}
-
 func (ac *Aggregator22Context) ReadAccountDataNoStateWithRecent(addr []byte, txNum uint64) ([]byte, bool, error) {
 	return ac.accounts.GetNoStateWithRecent(addr, txNum, ac.tx)
 }
@@ -1207,30 +1213,6 @@ func (ac *Aggregator22Context) ReadAccountCodeSizeNoState(addr []byte, txNum uin
 		return 0, false, err
 	}
 	return len(code), noState, nil
-}
-
-func (ac *Aggregator22Context) IterateAccountsHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
-	return ac.accounts.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateStorageHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
-	return ac.storage.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateCodeHistory(fromKey, toKey []byte, txNum uint64) *HistoryIterator {
-	return ac.code.iterateHistoryBeforeTxNum(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateAccountsReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
-	return ac.accounts.iterateReconTxs(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateStorageReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
-	return ac.storage.iterateReconTxs(fromKey, toKey, txNum)
-}
-
-func (ac *Aggregator22Context) IterateCodeReconTxs(fromKey, toKey []byte, txNum uint64) *ScanIterator {
-	return ac.code.iterateReconTxs(fromKey, toKey, txNum)
 }
 
 type FilesStats22 struct {
@@ -1298,4 +1280,114 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 		log.Warn("lastIdInDB", "err", err)
 	}
 	return lstInDb
+}
+
+// AggregatorStep is used for incremental reconstitution, it allows
+// accessing history in isolated way for each step
+type AggregatorStep struct {
+	a        *Aggregator22
+	accounts *HistoryStep
+	storage  *HistoryStep
+	code     *HistoryStep
+	keyBuf   []byte
+}
+
+func (a *Aggregator22) MakeSteps() []*AggregatorStep {
+	accountSteps := a.accounts.MakeSteps()
+	steps := make([]*AggregatorStep, len(accountSteps))
+	for i, accountStep := range accountSteps {
+		steps[i] = &AggregatorStep{
+			a:        a,
+			accounts: accountStep,
+		}
+	}
+	storageSteps := a.storage.MakeSteps()
+	for i, storageStep := range storageSteps {
+		steps[i].storage = storageStep
+	}
+	codeSteps := a.code.MakeSteps()
+	for i, codeStep := range codeSteps {
+		steps[i].code = codeStep
+	}
+	return steps
+}
+
+func (as *AggregatorStep) TxNumRange() (uint64, uint64) {
+	return as.accounts.indexFile.startTxNum, as.accounts.indexFile.endTxNum
+}
+
+func (as *AggregatorStep) IterateAccountsTxs() *ScanIteratorInc {
+	return as.accounts.iterateTxs()
+}
+
+func (as *AggregatorStep) IterateStorageTxs() *ScanIteratorInc {
+	return as.storage.iterateTxs()
+}
+
+func (as *AggregatorStep) IterateCodeTxs() *ScanIteratorInc {
+	return as.code.iterateTxs()
+}
+
+func (as *AggregatorStep) ReadAccountDataNoState(addr []byte, txNum uint64) ([]byte, bool, uint64) {
+	return as.accounts.GetNoState(addr, txNum)
+}
+
+func (as *AggregatorStep) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, uint64) {
+	if cap(as.keyBuf) < len(addr)+len(loc) {
+		as.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(as.keyBuf) != len(addr)+len(loc) {
+		as.keyBuf = as.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(as.keyBuf, addr)
+	copy(as.keyBuf[len(addr):], loc)
+	return as.storage.GetNoState(as.keyBuf, txNum)
+}
+
+func (as *AggregatorStep) ReadAccountCodeNoState(addr []byte, txNum uint64) ([]byte, bool, uint64) {
+	return as.code.GetNoState(addr, txNum)
+}
+
+func (as *AggregatorStep) ReadAccountCodeSizeNoState(addr []byte, txNum uint64) (int, bool, uint64) {
+	code, noState, stateTxNum := as.code.GetNoState(addr, txNum)
+	return len(code), noState, stateTxNum
+}
+
+func (as *AggregatorStep) MaxTxNumAccounts(addr []byte) (bool, uint64) {
+	return as.accounts.MaxTxNum(addr)
+}
+
+func (as *AggregatorStep) MaxTxNumStorage(addr []byte, loc []byte) (bool, uint64) {
+	if cap(as.keyBuf) < len(addr)+len(loc) {
+		as.keyBuf = make([]byte, len(addr)+len(loc))
+	} else if len(as.keyBuf) != len(addr)+len(loc) {
+		as.keyBuf = as.keyBuf[:len(addr)+len(loc)]
+	}
+	copy(as.keyBuf, addr)
+	copy(as.keyBuf[len(addr):], loc)
+	return as.storage.MaxTxNum(as.keyBuf)
+}
+
+func (as *AggregatorStep) MaxTxNumCode(addr []byte) (bool, uint64) {
+	return as.code.MaxTxNum(addr)
+}
+
+func (as *AggregatorStep) IterateAccountsHistory(txNum uint64) *HistoryIteratorInc {
+	return as.accounts.interateHistoryBeforeTxNum(txNum)
+}
+
+func (as *AggregatorStep) IterateStorageHistory(txNum uint64) *HistoryIteratorInc {
+	return as.storage.interateHistoryBeforeTxNum(txNum)
+}
+
+func (as *AggregatorStep) IterateCodeHistory(txNum uint64) *HistoryIteratorInc {
+	return as.code.interateHistoryBeforeTxNum(txNum)
+}
+
+func (as *AggregatorStep) Clone() *AggregatorStep {
+	return &AggregatorStep{
+		a:        as.a,
+		accounts: as.accounts.Clone(),
+		storage:  as.storage.Clone(),
+		code:     as.code.Clone(),
+	}
 }
