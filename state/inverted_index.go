@@ -950,16 +950,19 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		return err
 	}
 	defer idxC.Close()
-	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
+	for ; err == nil && k != nil; k, v, err = keysCursor.NextDup() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		if err = idxC.DeleteExact(v, k); err != nil {
-			return err
+		for ; err == nil && k != nil; k, v, err = keysCursor.NextNoDup() {
+			if err = idxC.DeleteExact(v, k); err != nil {
+				return err
+			}
 		}
+
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
-		if err = keysCursor.DeleteCurrent(); err != nil {
+		if err = keysCursor.DeleteCurrentDuplicates(); err != nil {
 			return err
 		}
 		select {
