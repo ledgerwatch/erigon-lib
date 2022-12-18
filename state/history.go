@@ -997,13 +997,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
-	for k, _, err := historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, _, err = historyKeysCursor.Next() {
-		txNum := binary.BigEndian.Uint64(k)
-		if txNum >= txTo {
-			break
-		}
-		panic(1)
-	}
 	return nil
 }
 
