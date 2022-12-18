@@ -959,8 +959,16 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 			break
 		}
 		for ; err == nil && k != nil; k, v, err = keysCursor.NextDup() {
-			if err = idxC.DeleteExact(v, k); err != nil {
-				return err
+			for vv, err := idxC.SeekBothRange(v, k); vv != nil; _, vv, err = idxC.NextDup() {
+				if err != nil {
+					return err
+				}
+				if binary.BigEndian.Uint64(vv) >= txTo {
+					break
+				}
+				if err = idxC.DeleteCurrent(); err != nil {
+					return err
+				}
 			}
 		}
 
