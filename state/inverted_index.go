@@ -314,7 +314,7 @@ func (ii *InvertedIndex) DiscardHistory(tmpdir string) {
 func (ii *InvertedIndex) StartWrites(tmpdir string) {
 	ii.walLock.Lock()
 	defer ii.walLock.Unlock()
-	ii.wal = ii.newWriter(tmpdir, WALCollectorRam > 0, false)
+	ii.wal = ii.newWriter(tmpdir, true, false)
 }
 func (ii *InvertedIndex) FinishWrites() {
 	ii.walLock.Lock()
