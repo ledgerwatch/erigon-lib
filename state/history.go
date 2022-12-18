@@ -977,17 +977,20 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 				return err
 			}
 
-			for vv, err := idxC.SeekBothRange(v[:len(v)-8], k); vv != nil; _, vv, err = idxC.NextDup() {
-				if err != nil {
-					return err
-				}
-				if binary.BigEndian.Uint64(vv) >= txTo {
-					break
-				}
-				if err = idxC.DeleteCurrent(); err != nil {
-					return err
-				}
+			if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
+				return err
 			}
+			//for vv, err := idxC.SeekBothRange(v[:len(v)-8], k); vv != nil; _, vv, err = idxC.NextDup() {
+			//	if err != nil {
+			//		return err
+			//	}
+			//	if binary.BigEndian.Uint64(vv) >= txTo {
+			//		break
+			//	}
+			//	if err = idxC.DeleteCurrent(); err != nil {
+			//		return err
+			//	}
+			//}
 		}
 
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
