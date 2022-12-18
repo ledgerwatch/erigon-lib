@@ -979,13 +979,6 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
 	}
-	for k, _, err := keysCursor.Seek(txKey[:]); err == nil && k != nil; k, _, err = keysCursor.Next() {
-		txNum := binary.BigEndian.Uint64(k)
-		if txNum >= txTo {
-			break
-		}
-		panic(1)
-	}
 	return nil
 }
 
