@@ -39,14 +39,14 @@ type LoadFunc func(k, v []byte, table CurrentTableReader, next LoadNextFunc) err
 // Collector performs the job of ETL Transform, but can also be used without "E" (Extract) part
 // as a Collect Transform Load
 type Collector struct {
-	extractNextFunc ExtractNextFunc
-	flushBuffer     func([]byte, bool) error
-	logPrefix       string
-	dataProviders   []dataProvider
-	logLvl          log.Lvl
-	bufType         int
-	allFlushed      bool
-	autoClean       bool
+	flushBuffer    func([]byte, bool) error
+	logPrefix      string
+	dataProviders  []dataProvider
+	logLvl         log.Lvl
+	bufType        int
+	allFlushed     bool
+	autoClean      bool
+	sortableBuffer Buffer
 }
 
 // NewCollectorFromFiles creates collector from existing files (left over from previous unsuccessful loading)
@@ -110,20 +110,22 @@ func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 		return nil
 	}
 
-	c.extractNextFunc = func(originalK, k []byte, v []byte) error {
-		sortableBuffer.Put(k, v)
-		if sortableBuffer.CheckFlushSize() {
-			if err := c.flushBuffer(originalK, false); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
+	c.sortableBuffer = sortableBuffer
 	return c
 }
 
 func (c *Collector) Collect(k, v []byte) error {
 	return c.extractNextFunc(k, k, v)
+}
+
+func (c *Collector) extractNextFunc(originalK, k []byte, v []byte) error {
+	c.sortableBuffer.Put(k, v)
+	if c.sortableBuffer.CheckFlushSize() {
+		if err := c.flushBuffer(originalK, false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Collector) LogLvl(v log.Lvl) { c.logLvl = v }
