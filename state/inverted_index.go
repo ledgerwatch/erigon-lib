@@ -60,7 +60,7 @@ type InvertedIndex struct {
 	aggregationStep uint64
 	txNum           uint64
 	workers         int
-	txNumBytes      [8]byte
+	txNumBytes      []byte
 
 	wal     *invertedIndexWAL
 	walLock sync.RWMutex
@@ -83,6 +83,7 @@ func NewInvertedIndex(
 		indexKeysTable:  indexKeysTable,
 		indexTable:      indexTable,
 		workers:         1,
+		txNumBytes:      make([]byte, 8),
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -292,7 +293,7 @@ func (ii *InvertedIndex) SetTx(tx kv.RwTx) {
 
 func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 	ii.txNum = txNum
-	binary.BigEndian.PutUint64(ii.txNumBytes[:], ii.txNum)
+	binary.BigEndian.PutUint64(ii.txNumBytes, ii.txNum)
 }
 
 func (ii *InvertedIndex) add(key, indexKey []byte) (err error) {
@@ -410,18 +411,18 @@ func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
 	}
 
 	if ii.buffered {
-		if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
+		if err := ii.indexKeys.Collect(ii.ii.txNumBytes, key); err != nil {
 			return err
 		}
 
-		if err := ii.index.Collect(indexKey, ii.ii.txNumBytes[:]); err != nil {
+		if err := ii.index.Collect(indexKey, ii.ii.txNumBytes); err != nil {
 			return err
 		}
 	} else {
-		if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes[:], key); err != nil {
+		if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes, key); err != nil {
 			return err
 		}
-		if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes[:]); err != nil {
+		if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes); err != nil {
 			return err
 		}
 	}
