@@ -147,7 +147,7 @@ func TestIncrementRead(t *testing.T) {
 }
 
 func TestHasDelete(t *testing.T) {
-	_, tx, c := BaseCase(t)
+	_, tx, _ := BaseCase(t)
 
 	table := "Table"
 
@@ -413,7 +413,7 @@ func TestSeekBothExact(t *testing.T) {
 }
 
 func TestNextDups(t *testing.T) {
-	_, tx, c := BaseCase(t)
+	_, tx, _ := BaseCase(t)
 
 	table := "Table"
 
