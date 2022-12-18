@@ -18,7 +18,6 @@ package mdbx
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -476,27 +475,6 @@ func TestNextDups(t *testing.T) {
 
 func TestCurrentDup(t *testing.T) {
 	_, _, c := BaseCase(t)
-
-	for k, v, err := c.First(); err == nil && k != nil; k, v, err = c.NextNoDup() {
-		fmt.Printf("l1: %s, %s\n", k, v)
-		for ; err == nil && k != nil; k, v, err = c.NextDup() {
-			fmt.Printf("l2: %s, %s\n", k, v)
-		}
-		kk, vv, err := c.Current()
-		fmt.Printf("l3: %s, %s, %s\n", kk, vv, err)
-		c.DeleteCurrentDuplicates()
-	}
-
-	fmt.Printf("----\n")
-	for k, v, err := c.First(); err == nil && k != nil; k, v, err = c.NextNoDup() {
-		fmt.Printf("l1: %s, %s\n", k, v)
-		for ; err == nil && k != nil; k, v, err = c.NextDup() {
-			fmt.Printf("l2: %s, %s\n", k, v)
-		}
-		kk, vv, err := c.Current()
-		fmt.Printf("l3: %s, %s, %s\n", kk, vv, err)
-		//c.DeleteCurrentDuplicates()
-	}
 
 	count, err := c.CountDuplicates()
 	require.Nil(t, err)
