@@ -586,6 +586,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		//}
 
 		if h.buffered {
+			_, _ = historyKey[lk:], original
 			//if err := h.historyVals.Collect(historyKey[lk:], original); err != nil {
 			//	return err
 			//}

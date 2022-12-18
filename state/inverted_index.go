@@ -410,6 +410,8 @@ func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
 	}
 
 	if ii.buffered {
+		_, _ = ii.ii.txNumBytes[:], key
+		_, _ = indexKey, ii.ii.txNumBytes[:]
 		//if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
 		//	return err
 		//}
