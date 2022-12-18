@@ -950,12 +950,15 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		return err
 	}
 	defer idxC.Close()
-	for ; err == nil && k != nil; k, v, err = keysCursor.NextDup() {
+
+	// Invariant: if some `txNum=N` pruned - it's pruned Fully
+	// Means: can use DeleteCurrentDuplicates all values of given `txNum`
+	for ; err == nil && k != nil; k, v, err = keysCursor.NextNoDup() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		for ; err == nil && k != nil; k, v, err = keysCursor.NextNoDup() {
+		for ; err == nil && k != nil; k, v, err = keysCursor.NextDup() {
 			if err = idxC.DeleteExact(v, k); err != nil {
 				return err
 			}
@@ -975,6 +978,13 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
+	}
+	for k, _, err := keysCursor.Seek(txKey[:]); err == nil && k != nil; k, _, err = keysCursor.Next() {
+		txNum := binary.BigEndian.Uint64(k)
+		if txNum >= txTo {
+			break
+		}
+		panic(1)
 	}
 	return nil
 }
