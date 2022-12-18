@@ -763,6 +763,9 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 			if rs != nil {
 				rs.Close()
 			}
+			for _, bm := range collation.indexBitmaps {
+				bitmapdb.ReturnToPool64(bm)
+			}
 		}
 	}()
 	historyIdxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, step, step+1))

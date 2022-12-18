@@ -826,6 +826,9 @@ func (ii *InvertedIndex) buildFiles(ctx context.Context, step uint64, bitmaps ma
 			if index != nil {
 				index.Close()
 			}
+			for _, bm := range bitmaps {
+				bitmapdb.ReturnToPool64(bm)
+			}
 		}
 	}()
 	txNumFrom := step * ii.aggregationStep
