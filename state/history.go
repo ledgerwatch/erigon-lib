@@ -1667,6 +1667,7 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 		if item.startTxNum > toTxNum {
 			return true
 		}
+		log.Warn("make step", "name", h.filenameBase, "step", item.startTxNum/h.aggregationStep)
 
 		step := &HistoryStep{
 			compressVals: h.compressVals,

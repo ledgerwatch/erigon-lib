@@ -1294,6 +1294,7 @@ type AggregatorStep struct {
 
 func (a *Aggregator22) MakeSteps() []*AggregatorStep {
 	to := a.maxTxNum.Load()
+	log.Warn("dbg", "to", to/a.aggregationStep)
 	accountSteps := a.accounts.MakeSteps(to)
 	steps := make([]*AggregatorStep, len(accountSteps))
 	for i, accountStep := range accountSteps {
