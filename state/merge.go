@@ -45,17 +45,6 @@ func (d *Domain) endTxNumMinimax() uint64 {
 	return minimax
 }
 
-func (d *Domain) endIndexedTxNumMinimax() uint64 {
-	var max uint64
-	d.files.Ascend(func(item *filesItem) bool {
-		if item.index != nil {
-			max = cmp.Max(max, item.endTxNum)
-		}
-		return true
-	})
-	return cmp.Min(max, d.History.endIndexedTxNumMinimax())
-}
-
 func (ii *InvertedIndex) endTxNumMinimax() uint64 {
 	var minimax uint64
 	if max, ok := ii.files.Max(); ok {
