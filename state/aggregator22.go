@@ -1298,7 +1298,6 @@ func (a *Aggregator22) MakeSteps() []*AggregatorStep {
 		cmp.Min(a.accounts.endIndexedTxNumMinimax(), a.storage.endIndexedTxNumMinimax()),
 		a.code.endIndexedTxNumMinimax(),
 	)
-	log.Warn("[snapshots] not all files are indexed", "files", to/a.aggregationStep, "indexed", indexedMax/a.aggregationStep)
 	if to != indexedMax {
 		log.Warn("[snapshots] not all files are indexed", "files", to/a.aggregationStep, "indexed", indexedMax/a.aggregationStep)
 		to = cmp.Min(to, indexedMax)
