@@ -1668,6 +1668,9 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 			return true
 		}
 
+		if h.filenameBase == "account" {
+			fmt.Printf("acci: %s\n", item.decompressor.FileName())
+		}
 		step := &HistoryStep{
 			compressVals: h.compressVals,
 			indexItem:    item,
@@ -1688,6 +1691,9 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 		}
 		if item.startTxNum > toTxNum {
 			return true
+		}
+		if h.filenameBase == "account" {
+			fmt.Printf("acch: %s\n", item.decompressor.FileName())
 		}
 		log.Warn("make step", "name", h.filenameBase, "step", item.startTxNum/h.aggregationStep)
 		steps[i].historyItem = item
