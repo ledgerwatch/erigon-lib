@@ -1658,15 +1658,12 @@ type HistoryStep struct {
 	historyFile  ctxItem
 }
 
+// MakeSteps [0, toTxNum)
 func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 	var steps []*HistoryStep
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
-		}
-		if h.filenameBase == "accounts" {
-			log.Warn("check", "item.startTxNum > toTxNum", fmt.Sprintf("%d > %d", item.startTxNum, toTxNum))
-			fmt.Printf("acci: %s\n", item.decompressor.FileName())
 		}
 		if item.startTxNum >= toTxNum {
 			return true
@@ -1693,10 +1690,6 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 		if item.startTxNum >= toTxNum {
 			return true
 		}
-		if h.filenameBase == "accounts" {
-			fmt.Printf("acch: %s\n", item.decompressor.FileName())
-		}
-		log.Warn("make step", "name", h.filenameBase, "step", item.startTxNum/h.aggregationStep)
 		steps[i].historyItem = item
 		steps[i].historyFile = ctxItem{
 			startTxNum: item.startTxNum,
@@ -1711,10 +1704,6 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 }
 
 func (hs *HistoryStep) Clone() *HistoryStep {
-	fmt.Printf("dbg: %s\n", hs.indexItem.decompressor.FileName())
-	fmt.Printf("dbg2: %t\n", hs.historyItem == nil)
-	fmt.Printf("dbg3: %t\n", hs.historyItem.decompressor == nil)
-	fmt.Printf("dbg4: %t\n", hs.historyItem.index == nil)
 	return &HistoryStep{
 		compressVals: hs.compressVals,
 		indexItem:    hs.indexItem,
