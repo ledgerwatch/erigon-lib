@@ -45,6 +45,17 @@ func (d *Domain) endTxNumMinimax() uint64 {
 	return minimax
 }
 
+func (d *Domain) endIndexedTxNumMinimax() uint64 {
+	var max uint64
+	d.files.Ascend(func(item *filesItem) bool {
+		if item.index != nil {
+			max = cmp.Max(max, item.endTxNum)
+		}
+		return true
+	})
+	return cmp.Min(max, d.History.endIndexedTxNumMinimax())
+}
+
 func (ii *InvertedIndex) endTxNumMinimax() uint64 {
 	var minimax uint64
 	if max, ok := ii.files.Max(); ok {
@@ -54,6 +65,16 @@ func (ii *InvertedIndex) endTxNumMinimax() uint64 {
 		}
 	}
 	return minimax
+}
+func (ii *InvertedIndex) endIndexedTxNumMinimax() uint64 {
+	var max uint64
+	ii.files.Ascend(func(item *filesItem) bool {
+		if item.index != nil {
+			max = cmp.Max(max, item.endTxNum)
+		}
+		return true
+	})
+	return max
 }
 
 func (h *History) endTxNumMinimax() uint64 {
@@ -65,6 +86,16 @@ func (h *History) endTxNumMinimax() uint64 {
 		}
 	}
 	return minimax
+}
+func (h *History) endIndexedTxNumMinimax() uint64 {
+	var max uint64
+	h.files.Ascend(func(item *filesItem) bool {
+		if item.index != nil {
+			max = cmp.Max(max, item.endTxNum)
+		}
+		return true
+	})
+	return cmp.Min(max, h.InvertedIndex.endIndexedTxNumMinimax())
 }
 
 type DomainRanges struct {

@@ -1294,7 +1294,14 @@ type AggregatorStep struct {
 
 func (a *Aggregator22) MakeSteps() []*AggregatorStep {
 	to := a.maxTxNum.Load()
-	log.Warn("dbg", "to", to/a.aggregationStep)
+	indexedMax := cmp.Min(
+		cmp.Min(a.accounts.endIndexedTxNumMinimax(), a.storage.endIndexedTxNumMinimax()),
+		a.code.endIndexedTxNumMinimax(),
+	)
+	if to != indexedMax {
+		log.Warn("[snapshots] not all files are indexed", "files", to/a.aggregationStep, "indexed", indexedMax/a.aggregationStep)
+		to = cmp.Min(to, indexedMax)
+	}
 	accountSteps := a.accounts.MakeSteps(to)
 	steps := make([]*AggregatorStep, len(accountSteps))
 	for i, accountStep := range accountSteps {
