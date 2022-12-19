@@ -1667,7 +1667,6 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 		if item.startTxNum > toTxNum {
 			return true
 		}
-		log.Warn("make step", "name", h.filenameBase, "step", item.startTxNum/h.aggregationStep)
 
 		step := &HistoryStep{
 			compressVals: h.compressVals,
@@ -1687,6 +1686,10 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 		if item.index == nil {
 			return false
 		}
+		if item.startTxNum > toTxNum {
+			return true
+		}
+		log.Warn("make step", "name", h.filenameBase, "step", item.startTxNum/h.aggregationStep)
 		steps[i].historyItem = item
 		steps[i].historyFile = ctxItem{
 			startTxNum: item.startTxNum,
@@ -1702,7 +1705,8 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 
 func (hs *HistoryStep) Clone() *HistoryStep {
 	fmt.Printf("dbg: %s\n", hs.indexItem.decompressor.FileName())
-	fmt.Printf("dbg2: %s\n", hs.historyItem.decompressor.FileName())
+	fmt.Printf("dbg2: %t\n", hs.historyItem == nil)
+	fmt.Printf("dbg3: %t\n", hs.historyItem.decompressor == nil)
 	return &HistoryStep{
 		compressVals: hs.compressVals,
 		indexItem:    hs.indexItem,
