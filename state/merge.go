@@ -90,9 +90,10 @@ func (h *History) endTxNumMinimax() uint64 {
 func (h *History) endIndexedTxNumMinimax() uint64 {
 	var max uint64
 	h.files.Ascend(func(item *filesItem) bool {
-		if item.index != nil {
-			max = cmp.Max(max, item.endTxNum)
+		if item.index == nil {
+			return false
 		}
+		max = cmp.Max(max, item.endTxNum)
 		return true
 	})
 	return cmp.Min(max, h.InvertedIndex.endIndexedTxNumMinimax())
