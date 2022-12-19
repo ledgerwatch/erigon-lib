@@ -1707,6 +1707,7 @@ func (hs *HistoryStep) Clone() *HistoryStep {
 	fmt.Printf("dbg: %s\n", hs.indexItem.decompressor.FileName())
 	fmt.Printf("dbg2: %t\n", hs.historyItem == nil)
 	fmt.Printf("dbg3: %t\n", hs.historyItem.decompressor == nil)
+	fmt.Printf("dbg4: %t\n", hs.historyItem.index == nil)
 	return &HistoryStep{
 		compressVals: hs.compressVals,
 		indexItem:    hs.indexItem,
