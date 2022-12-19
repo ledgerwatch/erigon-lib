@@ -1668,7 +1668,7 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 			log.Warn("check", "item.startTxNum > toTxNum", fmt.Sprintf("%d > %d", item.startTxNum, toTxNum))
 			fmt.Printf("acci: %s\n", item.decompressor.FileName())
 		}
-		if item.startTxNum > toTxNum {
+		if item.startTxNum >= toTxNum {
 			return true
 		}
 
@@ -1690,7 +1690,7 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 		if item.index == nil {
 			return false
 		}
-		if item.startTxNum > toTxNum {
+		if item.startTxNum >= toTxNum {
 			return true
 		}
 		if h.filenameBase == "accounts" {
