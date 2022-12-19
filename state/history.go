@@ -1658,12 +1658,16 @@ type HistoryStep struct {
 	historyFile  ctxItem
 }
 
-func (h *History) MakeSteps() []*HistoryStep {
+func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 	var steps []*HistoryStep
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
 		}
+		if item.startTxNum > toTxNum {
+			return true
+		}
+
 		step := &HistoryStep{
 			compressVals: h.compressVals,
 			indexItem:    item,
