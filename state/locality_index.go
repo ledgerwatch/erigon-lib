@@ -21,6 +21,7 @@ import (
 	"container/heap"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"math/bits"
@@ -248,6 +249,7 @@ func (l *FixedBitamps) At(i int) *roaring64.Bitmap {
 	l.mask.Clear()
 	l.mask.AddRange(base, base+l.bitsPerBitmap)
 	l.mask.And(l.bm)
+	//TODO: maybe use roaring.AddOffset
 	m2 := roaring64.New()
 	for _, n := range l.mask.ToArray() {
 		m2.Add(n - base)
@@ -279,14 +281,14 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "prefix", hex.EncodeToString(k[:4]), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		default:
 		}
 	}
 	dense1.bm.RunOptimize()
 	dense2.bm.RunOptimize()
 	log.Info("bitmaps", "name", li.filenameBase, "dense1_kb", dense1.bm.GetSerializedSizeInBytes()/1024, "dense2_kb", dense2.bm.GetSerializedSizeInBytes()/1024)
-	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetSerializedSizeInBytes()*dense1.bitsPerBitmap/1024)
+	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetCardinality()*dense1.bitsPerBitmap/1024)
 	log.Info("bitmaps", "name", li.filenameBase, "len1", dense1.bm.GetCardinality(), "len2", dense2.bm.GetCardinality())
 
 	log.Info("res", "name", li.filenameBase, "res1", dense1.At(100).ToArray(), "res2", dense2.At(100).ToArray())
@@ -313,7 +315,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "prefix", hex.EncodeToString(k[:4]), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		default:
 		}
 	}
@@ -355,7 +357,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build step2", "name", li.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+				log.Info("[LocalityIndex] build step2", "name", li.filenameBase, "prefix", hex.EncodeToString(k[:4]), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
 			default:
 			}
 		}
