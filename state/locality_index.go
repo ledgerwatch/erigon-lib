@@ -31,7 +31,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/RoaringBitmap/roaring"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
@@ -225,12 +224,13 @@ func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxEx
 type FixedBitamps struct {
 	bm            *roaring64.Bitmap
 	mask          *roaring64.Bitmap
+	small         *roaring64.Bitmap
 	bitsPerBitmap uint64
 	i             uint64
 }
 
 func NewFixedBitamps(bitsPerBitmap uint64) *FixedBitamps {
-	return &FixedBitamps{bm: roaring64.New(), mask: roaring64.New(), bitsPerBitmap: bitsPerBitmap}
+	return &FixedBitamps{bitsPerBitmap: bitsPerBitmap, bm: roaring64.New(), mask: roaring64.New(), small: roaring64.New()}
 }
 func (l *FixedBitamps) AddUint64EncodedBitmap(filesBitmap uint64) {
 	for n := bits.TrailingZeros64(filesBitmap); filesBitmap != 0; n = bits.TrailingZeros64(filesBitmap) {
@@ -250,12 +250,14 @@ func (l *FixedBitamps) At(i int) *roaring64.Bitmap {
 	l.mask.Clear()
 	l.mask.AddRange(base, base+l.bitsPerBitmap)
 	l.mask.And(l.bm)
+	it := l.mask.Iterator()
+
 	//TODO: maybe use roaring.AddOffset
-	m2 := roaring64.New()
-	for _, n := range l.mask.ToArray() {
-		m2.Add(n - base)
+	l.small.Clear()
+	for it.HasNext() {
+		l.small.Add(it.Next() - base)
 	}
-	return m2
+	return l.small
 }
 
 func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toStep uint64) (files *LocalityIndexFiles, err error) {
@@ -291,16 +293,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetCardinality()*dense1.bitsPerBitmap/8/1024)
 	log.Info("bitmaps", "name", li.filenameBase, "len1", dense1.bm.GetCardinality())
 
-	log.Info("res", "name", li.filenameBase, "res1", dense1.At(100).ToArray())
-	log.Info("res", "name", li.filenameBase, "res1", dense1.At(10000).ToArray())
-	r32 := roaring.New()
-	for _, n := range dense1.bm.ToArray() {
-		r32.Add(uint32(n))
-	}
-	r32.RunOptimize()
-	log.Info("res32", "name", li.filenameBase, "len32_kb", r32.GetFrozenSizeInBytes()/1024)
-
-	panic(1)
 	//ef1 := eliasfano32.NewEliasFano(dense1.GetCardinality(), dense1.Maximum())
 	//for _, i := range dense1.ToArray() {
 	//	ef1.AddOffset(i)

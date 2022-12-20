@@ -179,7 +179,6 @@ func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 	if err := a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex); err != nil {
 		return err
 	}
-	return nil
 
 	wg := sync.WaitGroup{}
 	errs := make(chan error, 7+3)
