@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/VictoriaMetrics/metrics"
 )
 
@@ -366,3 +367,22 @@ type RwCursorDupSort interface {
 }
 
 var ErrNotSupported = errors.New("not supported")
+
+// ---- Temporal part
+type History string
+type InvertedIdx string
+type TemporalRoDb interface {
+	RoDB
+	BeginTemporalRo(ctx context.Context) (TemporalTx, error)
+	ViewTemporal(ctx context.Context, f func(tx TemporalTx) error) error
+}
+type TemporalTx interface {
+	Tx
+	HistoryGetNoState(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
+	InvertedIndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (bitmap *roaring64.Bitmap, err error)
+}
+
+type TemporalRwDB interface {
+	RwDB
+	TemporalRoDb
+}
