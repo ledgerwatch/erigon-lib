@@ -298,7 +298,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		r32.Add(uint32(n))
 	}
 	r32.RunOptimize()
-	log.Info("res32", "name", li.filenameBase, "len32", r32.GetFrozenSizeInBytes())
+	log.Info("res32", "name", li.filenameBase, "len32_kb", r32.GetFrozenSizeInBytes()/1024)
 
 	panic(1)
 	//ef1 := eliasfano32.NewEliasFano(dense1.GetCardinality(), dense1.Maximum())

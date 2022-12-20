@@ -170,11 +170,11 @@ func (a *Aggregator22) BuildOptionalMissedIndices(ctx context.Context) {
 }
 
 func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) error {
-	if err := a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex); err != nil {
-		return err
-	}
 	if err := a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex); err != nil {
 		panic(err)
+	}
+	if err := a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex); err != nil {
+		return err
 	}
 	if err := a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex); err != nil {
 		return err
