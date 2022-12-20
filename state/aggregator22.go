@@ -1226,6 +1226,9 @@ func (ac *Aggregator22Context) ReadAccountStorageNoStateWithRecent(addr []byte, 
 	copy(ac.keyBuf[len(addr):], loc)
 	return ac.storage.GetNoStateWithRecent(ac.keyBuf, txNum, ac.tx)
 }
+func (ac *Aggregator22Context) ReadAccountStorageNoStateWithRecent2(key []byte, txNum uint64) ([]byte, bool, error) {
+	return ac.storage.GetNoStateWithRecent(key, txNum, ac.tx)
+}
 
 func (ac *Aggregator22Context) ReadAccountStorageNoState(addr []byte, loc []byte, txNum uint64) ([]byte, bool, error) {
 	if cap(ac.keyBuf) < len(addr)+len(loc) {
@@ -1338,7 +1341,16 @@ type AggregatorStep struct {
 }
 
 func (a *Aggregator22) MakeSteps() []*AggregatorStep {
-	accountSteps := a.accounts.MakeSteps()
+	to := a.maxTxNum.Load()
+	indexedMax := cmp.Min(
+		cmp.Min(a.accounts.endIndexedTxNumMinimax(), a.storage.endIndexedTxNumMinimax()),
+		a.code.endIndexedTxNumMinimax(),
+	)
+	if to != indexedMax {
+		log.Warn("[snapshots] not all files are indexed", "files", to/a.aggregationStep, "indexed", indexedMax/a.aggregationStep)
+		to = cmp.Min(to, indexedMax)
+	}
+	accountSteps := a.accounts.MakeSteps(to)
 	steps := make([]*AggregatorStep, len(accountSteps))
 	for i, accountStep := range accountSteps {
 		steps[i] = &AggregatorStep{
@@ -1346,11 +1358,11 @@ func (a *Aggregator22) MakeSteps() []*AggregatorStep {
 			accounts: accountStep,
 		}
 	}
-	storageSteps := a.storage.MakeSteps()
+	storageSteps := a.storage.MakeSteps(to)
 	for i, storageStep := range storageSteps {
 		steps[i].storage = storageStep
 	}
-	codeSteps := a.code.MakeSteps()
+	codeSteps := a.code.MakeSteps(to)
 	for i, codeStep := range codeSteps {
 		steps[i].code = codeStep
 	}
