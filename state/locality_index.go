@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -219,17 +220,92 @@ func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxEx
 	return toStep, dir.FileExist(filepath.Join(li.dir, fName))
 }
 
+type FixedBitamps struct {
+	bm            *roaring64.Bitmap
+	mask          *roaring64.Bitmap
+	bitsPerBitmap uint64
+	i             uint64
+}
+
+func NewFixedBitamps(bitsPerBitmap uint64) *FixedBitamps {
+	return &FixedBitamps{bm: roaring64.New(), mask: roaring64.New(), bitsPerBitmap: bitsPerBitmap}
+}
+func (l *FixedBitamps) AddUint64EncodedBitmap(filesBitmap uint64) {
+	for n := bits.TrailingZeros64(filesBitmap); filesBitmap != 0; n = bits.TrailingZeros64(filesBitmap) {
+		filesBitmap = (filesBitmap >> (n + 1)) << (n + 1) // clear first N bits
+		l.bm.Add(l.bitsPerBitmap*l.i + uint64(n))
+	}
+	l.i++
+}
+func (l *FixedBitamps) AddArrayUint64(v []uint64) {
+	for _, n := range v {
+		l.bm.Add(l.bitsPerBitmap*l.i + n)
+	}
+	l.i++
+}
+func (l *FixedBitamps) At(i int) *roaring64.Bitmap {
+	base := uint64(i) * l.bitsPerBitmap
+	l.mask.Clear()
+	l.mask.AddRange(base, base+l.bitsPerBitmap)
+	l.mask.And(l.bm)
+	m2 := roaring64.New()
+	for _, n := range l.mask.ToArray() {
+		m2.Add(n - base)
+	}
+	return m2
+}
+
 func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toStep uint64) (files *LocalityIndexFiles, err error) {
 	defer ii.EnableMadvNormalReadAhead().DisableReadAhead()
 
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 
+	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
+	total := float64(it.Total())
+	dense1 := NewFixedBitamps(it.FilesAmount())
+	dense2 := NewFixedBitamps(128)
+
+	log.Info("bitmaps", "name", li.filenameBase, "bitsPerBitmap", dense1.bitsPerBitmap)
+
+	i := uint64(0)
+	for it.HasNext() {
+		k, filesBitmap, progress := it.Next()
+		dense1.AddUint64EncodedBitmap(filesBitmap)
+		dense2.AddUint64EncodedBitmap(filesBitmap)
+
+		i++
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-logEvery.C:
+			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "k", fmt.Sprintf("%x", k), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+		default:
+		}
+	}
+	dense1.bm.RunOptimize()
+	dense2.bm.RunOptimize()
+	log.Info("bitmaps", "name", li.filenameBase, "dense1_kb", dense1.bm.GetSerializedSizeInBytes()/1024, "dense2_kb", dense2.bm.GetSerializedSizeInBytes()/1024)
+	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetSerializedSizeInBytes()*dense1.bitsPerBitmap/1024)
+	log.Info("bitmaps", "name", li.filenameBase, "len1", dense1.bm.GetCardinality(), "len2", dense2.bm.GetCardinality())
+
+	log.Info("res", "name", li.filenameBase, "res1", dense1.At(100).ToArray(), "res2", dense2.At(100).ToArray())
+	log.Info("res", "name", li.filenameBase, "res1", dense1.At(10000).ToArray(), "res2", dense2.At(10000).ToArray())
+
+	panic(1)
+	//ef1 := eliasfano32.NewEliasFano(dense1.GetCardinality(), dense1.Maximum())
+	//for _, i := range dense1.ToArray() {
+	//	ef1.AddOffset(i)
+	//}
+	//ef1.Build()
+	//ef1Bytes := ef1.AppendBytes(nil)
+	//log.Info("er", "name", li.filenameBase, "len1", len(ef1Bytes))
+
 	fromStep := uint64(0)
 
 	count := 0
-	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
-	total := float64(it.Total())
+	it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
+	total = float64(it.Total())
 	for it.HasNext() {
 		k, _, progress := it.Next()
 		count++
@@ -311,6 +387,7 @@ func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumT
 }
 
 func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedIndex) error {
+	//return nil
 	if li == nil {
 		return nil
 	}
@@ -355,21 +432,24 @@ type LocalityIterator struct {
 	nextKey    []byte
 	key        []byte
 	progress   uint64
-	total      uint64
 	hasNext    bool
+
+	total, filesAmount uint64
 }
 
 func (si *LocalityIterator) advance() {
 	for si.h.Len() > 0 {
 		top := heap.Pop(&si.h).(*ReconItem)
 		key := top.key
+		//log.Info("[LI]", "top.g", top.g.FileName())
+		//fmt.Printf("key: %x, %s.%d-%d\n", top.key, si.hc.ii.filenameBase, top.startTxNum/si.hc.ii.aggregationStep, top.endTxNum/si.hc.ii.aggregationStep)
 		_, offset := top.g.NextUncompressed()
 		si.progress += offset - top.lastOffset
 		top.lastOffset = offset
 
 		inStep := uint32(top.startTxNum / si.hc.ii.aggregationStep)
 		if top.g.HasNext() {
-			log.Info("[LI]", "top.g", top.g.FileName())
+			//log.Info("[LI]", "top.g", top.g.FileName())
 			top.key, _ = top.g.NextUncompressed()
 			heap.Push(&si.h, top)
 		}
@@ -417,8 +497,9 @@ func (si *LocalityIterator) advance() {
 	si.hasNext = false
 }
 
-func (si *LocalityIterator) HasNext() bool { return si.hasNext }
-func (si *LocalityIterator) Total() uint64 { return si.total }
+func (si *LocalityIterator) HasNext() bool       { return si.hasNext }
+func (si *LocalityIterator) Total() uint64       { return si.total }
+func (si *LocalityIterator) FilesAmount() uint64 { return si.filesAmount }
 
 func (si *LocalityIterator) Next() ([]byte, uint64, uint64) {
 	si.advance()
@@ -440,6 +521,7 @@ func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityI
 			heap.Push(&si.h, &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset})
 		}
 		si.total += uint64(item.getter.Size())
+		si.filesAmount++
 		return true
 	})
 	si.advance()
