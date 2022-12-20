@@ -266,7 +266,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 	total := float64(it.Total())
 	dense1 := NewFixedBitamps(it.FilesAmount())
-	dense2 := NewFixedBitamps(128)
+	//dense2 := NewFixedBitamps(128)
 
 	log.Info("bitmaps", "name", li.filenameBase, "bitsPerBitmap", dense1.bitsPerBitmap)
 
@@ -274,7 +274,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	for it.HasNext() {
 		k, filesBitmap, progress := it.Next()
 		dense1.AddUint64EncodedBitmap(filesBitmap)
-		dense2.AddUint64EncodedBitmap(filesBitmap)
+		//dense2.AddUint64EncodedBitmap(filesBitmap)
 
 		i++
 		select {
@@ -286,13 +286,12 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		}
 	}
 	dense1.bm.RunOptimize()
-	dense2.bm.RunOptimize()
-	log.Info("bitmaps", "name", li.filenameBase, "dense1_kb", dense1.bm.GetSerializedSizeInBytes()/1024, "dense2_kb", dense2.bm.GetSerializedSizeInBytes()/1024)
-	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetCardinality()*dense1.bitsPerBitmap/1024)
-	log.Info("bitmaps", "name", li.filenameBase, "len1", dense1.bm.GetCardinality(), "len2", dense2.bm.GetCardinality())
+	log.Info("bitmaps", "name", li.filenameBase, "dense1_kb", dense1.bm.GetSerializedSizeInBytes()/1024)
+	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetCardinality()*dense1.bitsPerBitmap/8/1024)
+	log.Info("bitmaps", "name", li.filenameBase, "len1", dense1.bm.GetCardinality())
 
-	log.Info("res", "name", li.filenameBase, "res1", dense1.At(100).ToArray(), "res2", dense2.At(100).ToArray())
-	log.Info("res", "name", li.filenameBase, "res1", dense1.At(10000).ToArray(), "res2", dense2.At(10000).ToArray())
+	log.Info("res", "name", li.filenameBase, "res1", dense1.At(100).ToArray())
+	log.Info("res", "name", li.filenameBase, "res1", dense1.At(10000).ToArray())
 
 	panic(1)
 	//ef1 := eliasfano32.NewEliasFano(dense1.GetCardinality(), dense1.Maximum())
