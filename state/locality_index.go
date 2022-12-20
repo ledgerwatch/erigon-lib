@@ -34,6 +34,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
+	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -260,11 +261,13 @@ func (l *FixedBitamps) At(i int) *roaring64.Bitmap {
 	return l.small
 }
 
-func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toStep uint64) (files *LocalityIndexFiles, err error) {
+func (li *LocalityIndex) buildFiles2(ctx context.Context, ii *InvertedIndex, toStep uint64) (err error) {
 	defer ii.EnableMadvNormalReadAhead().DisableReadAhead()
 
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
+
+	fromStep := uint64(0)
 
 	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 	total := float64(it.Total())
@@ -273,16 +276,20 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	log.Info("bitmaps", "name", li.filenameBase, "bitsPerBitmap", dense1.bitsPerBitmap)
 
+	compressor, _ := compress.NewCompressor(ctx, "", filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.lc", li.filenameBase, fromStep, toStep)), li.tmpdir, compress.MinPatternScore, 16, log.LvlTrace)
 	i := uint64(0)
 	for it.HasNext() {
 		k, filesBitmap, progress := it.Next()
 		dense1.AddUint64EncodedBitmap(filesBitmap)
 		//dense2.AddUint64EncodedBitmap(filesBitmap)
+		a := make([]byte, 128)
+		binary.BigEndian.PutUint64(a, filesBitmap)
+		compressor.AddWord(a)
 
 		i++
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-logEvery.C:
 			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "prefix", hex.EncodeToString(k[:4]), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
 		default:
@@ -292,20 +299,21 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	log.Info("bitmaps", "name", li.filenameBase, "dense1_kb", dense1.bm.GetSerializedSizeInBytes()/1024)
 	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetCardinality()*dense1.bitsPerBitmap/8/1024)
 	log.Info("bitmaps", "name", li.filenameBase, "len1", dense1.bm.GetCardinality())
+	return compressor.Compress()
+}
 
-	//ef1 := eliasfano32.NewEliasFano(dense1.GetCardinality(), dense1.Maximum())
-	//for _, i := range dense1.ToArray() {
-	//	ef1.AddOffset(i)
-	//}
-	//ef1.Build()
-	//ef1Bytes := ef1.AppendBytes(nil)
-	//log.Info("er", "name", li.filenameBase, "len1", len(ef1Bytes))
+func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toStep uint64) (files *LocalityIndexFiles, err error) {
+	return nil, nil
+	defer ii.EnableMadvNormalReadAhead().DisableReadAhead()
+
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
 
 	fromStep := uint64(0)
 
 	count := 0
-	it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
-	total = float64(it.Total())
+	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
+	total := float64(it.Total())
 	for it.HasNext() {
 		k, _, progress := it.Next()
 		count++
@@ -387,7 +395,13 @@ func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumT
 }
 
 func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedIndex) error {
-	//return nil
+	toStep, _ := li.missedIdxFiles(ii)
+	err := li.buildFiles2(ctx, ii, toStep)
+	if err != nil {
+		return err
+	}
+	return nil
+
 	if li == nil {
 		return nil
 	}
