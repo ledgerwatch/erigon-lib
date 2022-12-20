@@ -11,11 +11,11 @@ import (
 
 func TestFixedBitmaps(t *testing.T) {
 	bm := NewFixedBitamps(3)
-	bm.AddUint64(0b10)
-	bm.AddUint64(0b1)
-	bm.AddUint64(0b1)
-	bm.AddUint64(0b111)
-	bm.AddUint64(0b101)
+	bm.AddUint64EncodedBitmap(0b10)
+	bm.AddUint64EncodedBitmap(0b1)
+	bm.AddUint64EncodedBitmap(0b1)
+	bm.AddUint64EncodedBitmap(0b111)
+	bm.AddUint64EncodedBitmap(0b101)
 	require.Equal(t, []uint64{1}, bm.At(0).ToArray())
 	require.Equal(t, []uint64{0}, bm.At(1).ToArray())
 	require.Equal(t, []uint64{0}, bm.At(2).ToArray())

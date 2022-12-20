@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
@@ -292,6 +293,12 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	log.Info("res", "name", li.filenameBase, "res1", dense1.At(100).ToArray())
 	log.Info("res", "name", li.filenameBase, "res1", dense1.At(10000).ToArray())
+	r32 := roaring.New()
+	for _, n := range dense1.bm.ToArray() {
+		r32.Add(uint32(n))
+	}
+	r32.RunOptimize()
+	log.Info("res32", "name", li.filenameBase, "len32", r32.GetFrozenSizeInBytes())
 
 	panic(1)
 	//ef1 := eliasfano32.NewEliasFano(dense1.GetCardinality(), dense1.Maximum())
