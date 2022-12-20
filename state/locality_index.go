@@ -282,7 +282,7 @@ func (li *LocalityIndex) buildFiles2(ctx context.Context, ii *InvertedIndex, toS
 		k, filesBitmap, progress := it.Next()
 		dense1.AddUint64EncodedBitmap(filesBitmap)
 		//dense2.AddUint64EncodedBitmap(filesBitmap)
-		a := make([]byte, 128)
+		a := make([]byte, 16)
 		binary.BigEndian.PutUint64(a, filesBitmap)
 		compressor.AddWord(a)
 
