@@ -925,7 +925,7 @@ func (x *RangeReq) GetPageToken() string {
 	return ""
 }
 
-// Temporal methods
+//Temporal methods
 type DomainGetReq struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
