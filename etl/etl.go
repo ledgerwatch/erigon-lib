@@ -91,9 +91,8 @@ func Transform(
 	buffer := getBufferByType(args.BufferType, bufferSize)
 	collector := NewCollector(logPrefix, tmpdir, buffer)
 	defer collector.Close()
-
 	t := time.Now()
-	if err := extractBucketIntoFiles(logPrefix, db, fromBucket, args.ExtractStartKey, args.ExtractEndKey, collector, extractFunc, args.Quit, args.LogDetailsExtract); err != nil {
+	if err := ExtractBucketCancelVerboseCollector(logPrefix, db, fromBucket, args.ExtractStartKey, args.ExtractEndKey, collector, extractFunc, args.Quit, args.LogDetailsExtract); err != nil {
 		return err
 	}
 	log.Trace(fmt.Sprintf("[%s] Extraction finished", logPrefix), "took", time.Since(t))
@@ -104,8 +103,67 @@ func Transform(
 	return collector.Load(db, toBucket, loadFunc, args)
 }
 
-// extractBucketIntoFiles - [startkey, endkey)
-func extractBucketIntoFiles(
+// Extract - [startkey, endkey)
+func Extract(
+	c kv.Cursor, //cursor to use
+	startkey []byte, // start key
+	endkey []byte, // end key. if endkey=nil, go until end
+	extractFunc ExtractFunc, // this is the function that is run on every key value in the range
+	extractNextFunc ExtractNextFunc, // this is the function called to the third arg in the extractFunc
+	hookBefore ExtractNextFunc, // called before the key value pair is extracted
+	hookAfter ExtractNextFunc, // called after key value pair is extracted
+) error {
+	for k, v, e := c.Seek(startkey); k != nil; k, v, e = c.Next() {
+		if e != nil {
+			return e
+		}
+		if hookBefore != nil {
+			err := hookBefore(k, k, v)
+			if err != nil {
+				return err
+			}
+		}
+		if endkey != nil && bytes.Compare(k, endkey) >= 0 {
+			// endKey is exclusive bound: [startkey, endkey)
+			return nil
+		}
+		if err := extractFunc(k, v, extractNextFunc); err != nil {
+			return err
+		}
+		if hookAfter != nil {
+			err := hookAfter(k, k, v)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ExtractBucket - [startkey, endkey)
+func ExtractBucket(
+	db kv.Tx, // db tx to use
+	bucket string, // bucket to read from
+	startkey []byte, // start key
+	endkey []byte, // end key. if endkey=nil, go until end
+	extractFunc ExtractFunc, // this is the function that is run on every key value in the range
+	extractNextFunc ExtractNextFunc, // this is the function called to the third arg in the extractFunc
+	hookBefore ExtractNextFunc, // called before the key value pair is extracted
+	hookAfter ExtractNextFunc, // called after key value pair is extracted
+) error {
+	c, err := db.Cursor(bucket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if err := Extract(c, startkey, endkey, extractFunc, extractNextFunc, hookBefore, hookAfter); err != nil {
+		return err
+	}
+	return nil
+}
+
+// VerboseExtractBucketIntoCollector - [startkey, endkey)
+func ExtractBucketCancelVerboseCollector(
 	logPrefix string,
 	db kv.Tx,
 	bucket string,
@@ -118,16 +176,7 @@ func extractBucketIntoFiles(
 ) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-
-	c, err := db.Cursor(bucket)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	for k, v, e := c.Seek(startkey); k != nil; k, v, e = c.Next() {
-		if e != nil {
-			return e
-		}
+	beforeHook := ExtractNextFunc(func(originalK, k, v []byte) error {
 		if err := common.Stopped(quit); err != nil {
 			return err
 		}
@@ -140,16 +189,12 @@ func extractBucketIntoFiles(
 			} else {
 				logArs = append(logArs, "current_prefix", makeCurrentKeyStr(k))
 			}
-
 			log.Info(fmt.Sprintf("[%s] ETL [1/2] Extracting", logPrefix), logArs...)
 		}
-		if endkey != nil && bytes.Compare(k, endkey) >= 0 {
-			// endKey is exclusive bound: [startkey, endkey)
-			return nil
-		}
-		if err := extractFunc(k, v, collector.extractNextFunc); err != nil {
-			return err
-		}
+		return nil
+	})
+	if err := ExtractBucket(db, bucket, startkey, endkey, extractFunc, collector.extractNextFunc, beforeHook, nil); err != nil {
+		return err
 	}
 	return collector.flushBuffer(nil, true)
 }
