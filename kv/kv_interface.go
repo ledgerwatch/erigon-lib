@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/VictoriaMetrics/metrics"
 )
 
@@ -379,10 +378,36 @@ type TemporalRoDb interface {
 type TemporalTx interface {
 	Tx
 	HistoryGetNoState(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
-	InvertedIndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (bitmap *roaring64.Bitmap, err error)
+	InvertedIndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps Iter[uint64], err error)
 }
 
 type TemporalRwDB interface {
 	RwDB
 	TemporalRoDb
+}
+
+// Iter - Iterator-like interface designed for grpc server-side streaming: 1 client request -> much responses from server
+// Grpc Server send batch(array) of values. Client can process one-by-one by .Next() method, or use more performant .NextBatch()
+// Iter is very limited - client has no way to terminate it (but client can cancel whole read transaction)
+// Tx does 1-1 match to "grpc-stream". During 1 TX - can be created many `Iter`, `Cursor`.
+type Iter[T any] interface {
+	Next() (T, error)
+	NextBatch() ([]T, error)
+	HasNext() bool
+	Close()
+}
+
+type ArrIter[T any] struct {
+	arr []T
+	i   int
+}
+
+func IterFromArray[T any](arr []T) Iter[T]     { return &ArrIter[T]{arr: arr} }
+func (it *ArrIter[T]) NextBatch() ([]T, error) { return it.arr[it.i:], nil }
+func (it *ArrIter[T]) HasNext() bool           { return it.i < len(it.arr) }
+func (it *ArrIter[T]) Close()                  {}
+func (it *ArrIter[T]) Next() (T, error) {
+	v := it.arr[it.i]
+	it.i++
+	return v, nil
 }
