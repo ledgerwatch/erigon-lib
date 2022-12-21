@@ -23,6 +23,15 @@ import (
 	"github.com/VictoriaMetrics/metrics"
 )
 
+//Naming:
+//  ts - TimeStamp
+//  tx - Database Transaction
+//  txn - Ethereum Transaction (and TxNum - is also number of Etherum Transaction)
+//  RoTx - Read-Only Database Transaction
+//  RwTx - Read-Write Database Transaction
+//  k - key
+//  v - value
+
 const ReadersLimit = 32000 // MDBX_READERS_LIMIT=32767
 
 var (
