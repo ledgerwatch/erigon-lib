@@ -53,44 +53,44 @@ var (
 	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)        //nolint
 	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)         //nolint
 
-	DbPgopsNewly    = metrics.NewCounter(`db_pgops_newly`)    //nolint
-	DbPgopsCow      = metrics.NewCounter(`db_pgops_cow`)      //nolint
-	DbPgopsClone    = metrics.NewCounter(`db_pgops_clone`)    //nolint
-	DbPgopsSplit    = metrics.NewCounter(`db_pgops_split`)    //nolint
-	DbPgopsMerge    = metrics.NewCounter(`db_pgops_merge`)    //nolint
-	DbPgopsSpill    = metrics.NewCounter(`db_pgops_spill`)    //nolint
-	DbPgopsUnspill  = metrics.NewCounter(`db_pgops_unspill`)  //nolint
-	DbPgopsWops     = metrics.NewCounter(`db_pgops_wops`)     //nolint
-	DbPgopsPrefault = metrics.NewCounter(`db_pgop_prefault`)  //nolint
-	DbPgopsMinicore = metrics.NewCounter(`db_pgops_minicore`) //nolint
-	DbPgopsMsync    = metrics.NewCounter(`db_pgops_msync`)    //nolint
-	DbPgopsFsync    = metrics.NewCounter(`db_pgops_fsync`)    //nolint
-	DbMiLastPgNo    = metrics.NewCounter(`db_mi_last_pgno`)   //nolint
+	DbPgopsNewly   = metrics.NewCounter(`db_pgops_newly`)   //nolint
+	DbPgopsCow     = metrics.NewCounter(`db_pgops_cow`)     //nolint
+	DbPgopsClone   = metrics.NewCounter(`db_pgops_clone`)   //nolint
+	DbPgopsSplit   = metrics.NewCounter(`db_pgops_split`)   //nolint
+	DbPgopsMerge   = metrics.NewCounter(`db_pgops_merge`)   //nolint
+	DbPgopsSpill   = metrics.NewCounter(`db_pgops_spill`)   //nolint
+	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`) //nolint
+	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)    //nolint
+	//DbPgopsPrefault = metrics.NewCounter(`db_pgop_prefault`)  //nolint
+	//DbPgopsMinicore = metrics.NewCounter(`db_pgops_minicore`) //nolint
+	DbPgopsMsync = metrics.NewCounter(`db_pgops_msync`)  //nolint
+	DbPgopsFsync = metrics.NewCounter(`db_pgops_fsync`)  //nolint
+	DbMiLastPgNo = metrics.NewCounter(`db_mi_last_pgno`) //nolint
 
-	DbGcWorkRtime          = metrics.GetOrCreateSummary(`db_gc_work_rtime`)          //nolint
-	DbGcWorkRsteps         = metrics.NewCounter(`db_gc_work_rsteps`)                 //nolint
-	DbGcWorkRxpages        = metrics.NewCounter(`db_gc_work_rxpages`)                //nolint
-	DbGcSelfRtime          = metrics.GetOrCreateSummary(`db_gc_self_rtime`)          //nolint
-	DbGcSelfXtime          = metrics.GetOrCreateSummary(`db_gc_self_xtime`)          //nolint
-	DbGcWorkXtime          = metrics.GetOrCreateSummary(`db_gc_work_xtime`)          //nolint
-	DbGcSelfRsteps         = metrics.NewCounter(`db_gc_self_rsteps`)                 //nolint
-	DbGcWloops             = metrics.NewCounter(`db_gc_wloop`)                       //nolint
-	DbGcCoalescences       = metrics.NewCounter(`db_gc_coalescences`)                //nolint
-	DbGcWipes              = metrics.NewCounter(`db_gc_wipes`)                       //nolint
-	DbGcFlushes            = metrics.NewCounter(`db_gc_flushes`)                     //nolint
-	DbGcKicks              = metrics.NewCounter(`db_gc_kicks`)                       //nolint
-	DbGcWorkMajflt         = metrics.NewCounter(`db_gc_work_majflt`)                 //nolint
-	DbGcSelfMajflt         = metrics.NewCounter(`db_gc_self_majflt`)                 //nolint
-	DbGcWorkCounter        = metrics.NewCounter(`db_gc_work_counter`)                //nolint
-	DbGcSelfCounter        = metrics.NewCounter(`db_gc_self_counter`)                //nolint
-	DbGcSelfXpages         = metrics.NewCounter(`db_gc_self_xpages`)                 //nolint
-	DbGcWorkPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_work_pnl_merge_time`) //nolint
-	DbGcWorkPnlMergeVolume = metrics.NewCounter(`db_gc_work_pnl_merge_volume`)       //nolint
-	DbGcWorkPnlMergeCalls  = metrics.NewCounter(`db_gc_work_pnl_merge_calls`)        //nolint
-
-	DbGcSelfPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_slef_pnl_merge_time`) //nolint
-	DbGcSelfPnlMergeVolume = metrics.NewCounter(`db_gc_slef_pnl_merge_volume`)       //nolint
-	DbGcSelfPnlMergeCalls  = metrics.NewCounter(`db_gc_slef_pnl_merge_calls`)        //nolint
+	DbGcWorkRtime    = metrics.GetOrCreateSummary(`db_gc_work_rtime`) //nolint
+	DbGcWorkRsteps   = metrics.NewCounter(`db_gc_work_rsteps`)        //nolint
+	DbGcWorkRxpages  = metrics.NewCounter(`db_gc_work_rxpages`)       //nolint
+	DbGcSelfRtime    = metrics.GetOrCreateSummary(`db_gc_self_rtime`) //nolint
+	DbGcSelfXtime    = metrics.GetOrCreateSummary(`db_gc_self_xtime`) //nolint
+	DbGcWorkXtime    = metrics.GetOrCreateSummary(`db_gc_work_xtime`) //nolint
+	DbGcSelfRsteps   = metrics.NewCounter(`db_gc_self_rsteps`)        //nolint
+	DbGcWloops       = metrics.NewCounter(`db_gc_wloop`)              //nolint
+	DbGcCoalescences = metrics.NewCounter(`db_gc_coalescences`)       //nolint
+	DbGcWipes        = metrics.NewCounter(`db_gc_wipes`)              //nolint
+	DbGcFlushes      = metrics.NewCounter(`db_gc_flushes`)            //nolint
+	DbGcKicks        = metrics.NewCounter(`db_gc_kicks`)              //nolint
+	DbGcWorkMajflt   = metrics.NewCounter(`db_gc_work_majflt`)        //nolint
+	DbGcSelfMajflt   = metrics.NewCounter(`db_gc_self_majflt`)        //nolint
+	DbGcWorkCounter  = metrics.NewCounter(`db_gc_work_counter`)       //nolint
+	DbGcSelfCounter  = metrics.NewCounter(`db_gc_self_counter`)       //nolint
+	DbGcSelfXpages   = metrics.NewCounter(`db_gc_self_xpages`)        //nolint
+	//DbGcWorkPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_work_pnl_merge_time`) //nolint
+	//DbGcWorkPnlMergeVolume = metrics.NewCounter(`db_gc_work_pnl_merge_volume`)       //nolint
+	//DbGcWorkPnlMergeCalls  = metrics.NewCounter(`db_gc_work_pnl_merge_calls`)        //nolint
+	//
+	//DbGcSelfPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_slef_pnl_merge_time`) //nolint
+	//DbGcSelfPnlMergeVolume = metrics.NewCounter(`db_gc_slef_pnl_merge_volume`)       //nolint
+	//DbGcSelfPnlMergeCalls  = metrics.NewCounter(`db_gc_slef_pnl_merge_calls`)        //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
 	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`) //nolint
