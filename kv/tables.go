@@ -420,9 +420,9 @@ const (
 
 	// Erigon-CL
 	BeaconState = "BeaconState"
-	// [slot + block root] => [signature + block without execution payload]
+	// [slot] => [signature + block without execution payload]
 	BeaconBlocks = "BeaconBlock"
-	// [slot + block root] => [attestation list (ssz)]
+	// [slot] => [attestation list (ssz)]
 	Attestetations = "Attestetations"
 	// LightClientStore => LightClientStore object
 	// LightClientFinalityUpdate => latest finality update
