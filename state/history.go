@@ -1219,6 +1219,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 		return nil, ok, err
 	}
 	if ok {
+		fmt.Printf("dbg1: %x, %d -> %x\n", key, txNum, v)
 		return v, true, nil
 	}
 
@@ -1231,6 +1232,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 		return nil, ok, err
 	}
 	if ok {
+		fmt.Printf("dbg2: %x, %d -> %x\n", key, txNum, v)
 		return v, true, nil
 	}
 	return nil, false, err
