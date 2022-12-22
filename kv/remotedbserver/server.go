@@ -33,6 +33,16 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+// MaxTxTTL - kv interface provide high-consistancy guaranties: Serializable Isolations Level https://en.wikipedia.org/wiki/Isolation_(database_systems)
+// But it comes with cost: DB will start grow if run too long read transactions (hours)
+// We decided limit TTL of transaction to `MaxTxTTL`
+//
+// It means you sill have `Serializable` if tx living < `MaxTxTTL`
+// You start have Read Committed Level if tx living > `MaxTxTTL`
+//
+// It's done by `renew` method: after `renew` call reader will see all changes committed after last `renew` call.
+//
+// Erigon has much Historical data - which is immutable: reading of historical data for hours still gives you consistant data.
 const MaxTxTTL = 60 * time.Second
 
 // KvServiceAPIVersion - use it to track changes in API
@@ -106,6 +116,8 @@ func (s *KvServer) begin(ctx context.Context) (id txnID, err error) {
 	s.txsLocks[id] = &sync.Mutex{}
 	return id, nil
 }
+
+// renew - rollback and begin tx without changing it's `id`
 func (s *KvServer) renew(ctx context.Context, id txnID) (err error) {
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
@@ -139,6 +151,15 @@ func (s *KvServer) rollback(id txnID) {
 		delete(s.txsLocks, id)
 	}
 }
+
+// with - provides exclusive access to `tx` object. Use it if you need open Cursor or run another method of `tx` object.
+// it's ok to use same `kv.RoTx` from different goroutines, but such use must be guarded by `with` method.
+//
+//	!Important: client may open multiple Cursors and multiple Streams on same `tx` in same time
+//	it means server must do limited amount of work inside `with` method (periodically release `tx` for other streams)
+//	long-living server-side streams must read limited-portion of data inside `with`, send this portion to
+//	client, portion of data it to client, then read next portion in another `with` call.
+//	It will allow cooperative access to `tx` object
 func (s *KvServer) with(id txnID, f func(kv.Tx) error) error {
 	s.txsLock.RLock()
 	tx, ok := s.txs[id]
