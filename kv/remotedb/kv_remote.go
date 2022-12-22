@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"runtime"
 
 	"github.com/ledgerwatch/log/v3"
@@ -155,7 +157,7 @@ func (db *RemoteKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		streamCancelFn()
 		return nil, err
 	}
-	return &remoteTx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn, viewID: msg.TxID, id: msg.TxID}, nil
+	return &remoteTx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn, viewID: msg.ViewID, id: msg.TxID}, nil
 }
 
 func (db *RemoteKV) BeginRw(ctx context.Context) (kv.RwTx, error) {
@@ -600,9 +602,60 @@ func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.las
 
 // Temporal Methods
 func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
-	return nil, false, fmt.Errorf("remoteTx: doesn't support temporal yet")
+	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxID: tx.id, Name: string(name), K: k, Ts: ts})
+	if err != nil {
+		return nil, false, err
+	}
+	return reply.V, reply.Ok, nil
 }
 
 func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.Iter[uint64], err error) {
-	return nil, fmt.Errorf("remoteTx: doesn't support temporal yet")
+	//TODO: maybe add ctx.WithCancel
+	stream, err := tx.db.remoteKV.IndexRange(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Name: string(name), K: k, FromTs: fromTs, ToTs: toTs})
+	if err != nil {
+		return nil, err
+	}
+	return &streamIter2[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }}, nil
+}
+
+type grpcStream[Msg any] interface {
+	Recv() (Msg, error)
+	CloseSend() error
+}
+
+type streamIter2[Msg any, Res any] struct {
+	stream  grpcStream[Msg]
+	unwrap  func(Msg) []Res
+	lastErr error
+	last    []Res
+	i       int
+}
+
+func (it *streamIter2[Msg, Res]) NextBatch() ([]Res, error) { return it.last[it.i:], nil }
+func (it *streamIter2[Msg, Res]) HasNext() bool {
+	if it.lastErr != nil {
+		return true
+	}
+	if it.i < len(it.last) {
+		return true
+	}
+
+	it.i = 0
+	msg, err := it.stream.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return false
+		}
+		it.lastErr = err
+		return true
+	}
+	it.last = it.unwrap(msg)
+	return len(it.last) > 0
+}
+
+func (it *streamIter2[Msg, Res]) Close() { _ = it.stream.CloseSend() }
+func (it *streamIter2[Msg, Res]) Next() (Res, error) {
+	v := it.last[it.i]
+	it.i++
+	return v, nil
 }
