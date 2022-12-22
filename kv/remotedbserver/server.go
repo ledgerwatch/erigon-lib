@@ -105,6 +105,7 @@ func (s *KvServer) Version(context.Context, *emptypb.Empty) (*types.VersionReply
 }
 
 func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
+	fmt.Printf("server dbg: begin %d\n", id)
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
 	tx, errBegin := s.kv.BeginRo(ctx)
@@ -119,6 +120,7 @@ func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
 
 // renew - rollback and begin tx without changing it's `id`
 func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
+	fmt.Printf("server dbg: renew %d\n", id)
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
 	txLock, ok := s.txsLocks[id]
@@ -140,6 +142,7 @@ func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 }
 
 func (s *KvServer) rollback(id uint64) {
+	fmt.Printf("server dbg: rollback %d\n", id)
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
 	tx, ok := s.txs[id]
@@ -161,6 +164,7 @@ func (s *KvServer) rollback(id uint64) {
 //	client, portion of data it to client, then read next portion in another `with` call.
 //	It will allow cooperative access to `tx` object
 func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
+	fmt.Printf("server dbg: with %d\n", id)
 	s.txsLock.RLock()
 	tx, ok := s.txs[id]
 	txLock := s.txsLocks[id]
@@ -475,6 +479,7 @@ func (s *StateChangePubSub) remove(id uint) {
 
 // Temporal methods
 func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (reply *remote.HistoryGetReply, err error) {
+	fmt.Printf("server dbg: HistoryGet\n")
 	reply = &remote.HistoryGetReply{}
 	if err := s.with(req.TxID, func(tx kv.Tx) error {
 		ttx, ok := tx.(kv.TemporalTx)
