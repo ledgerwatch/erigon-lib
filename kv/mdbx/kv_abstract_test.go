@@ -241,7 +241,7 @@ func TestRemoteKvStream(t *testing.T) {
 
 		// it must be possible to Stream and manipulate cursors in same time
 		cnt := 0
-		require.NoError(tx.ForEach(kv.PlainState, nil, func(k, v []byte) error {
+		require.NoError(tx.ForEach(kv.PlainState, nil, func(_, _ []byte) error {
 			if cnt == 0 {
 				k, v, err = c.Next()
 				require.NoError(err)
