@@ -477,7 +477,6 @@ func (s *StateChangePubSub) remove(id uint) {
 
 // Temporal methods
 func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (reply *remote.HistoryGetReply, err error) {
-	fmt.Printf("server dbg: HistoryGet\n")
 	reply = &remote.HistoryGetReply{}
 	if err := s.with(req.TxID, func(tx kv.Tx) error {
 		ttx, ok := tx.(kv.TemporalTx)
