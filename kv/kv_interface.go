@@ -384,8 +384,9 @@ type TemporalRoDb interface {
 }
 type TemporalTx interface {
 	Tx
-	HistoryGetNoState(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
-	InvertedIndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps Iter[uint64], err error)
+	// HistoryGet 1 record from the History. History doesn't store current value - use `DomainGet()` instead.
+	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
+	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps Iter[uint64], err error)
 }
 
 type TemporalRwDB interface {

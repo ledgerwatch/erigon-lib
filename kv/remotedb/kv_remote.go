@@ -599,10 +599,10 @@ func (c *remoteCursorDupSort) PrevNoDup() ([]byte, []byte, error) { return c.pre
 func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.lastDup() }
 
 // Temporal Methods
-func (tx *remoteTx) HistoryGetNoState(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
+func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
 	return nil, false, fmt.Errorf("remoteTx: doesn't support temporal yet")
 }
 
-func (tx *remoteTx) InvertedIndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.Iter[uint64], err error) {
+func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.Iter[uint64], err error) {
 	return nil, fmt.Errorf("remoteTx: doesn't support temporal yet")
 }

@@ -26,10 +26,12 @@ import (
 	"time"
 
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -68,8 +70,8 @@ type KvServer struct {
 	//v3 fields
 	txIdGen  atomic.Uint64
 	txsLock  *sync.RWMutex
-	txs      map[txnID]kv.Tx
-	txsLocks map[txnID]*sync.Mutex
+	txs      map[uint64]kv.Tx
+	txsLocks map[uint64]*sync.Mutex
 }
 
 type Snapsthots interface {
@@ -80,7 +82,7 @@ func NewKvServer(ctx context.Context, db kv.RoDB, snapshots Snapsthots, historyS
 	return &KvServer{
 		kv: db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
 		blockSnapshots: snapshots, historySnapshots: historySnapshots,
-		txs: map[txnID]kv.Tx{}, txsLocks: map[txnID]*sync.Mutex{}, txsLock: &sync.RWMutex{},
+		txs: map[uint64]kv.Tx{}, txsLocks: map[uint64]*sync.Mutex{}, txsLock: &sync.RWMutex{},
 	}
 }
 
@@ -102,23 +104,21 @@ func (s *KvServer) Version(context.Context, *emptypb.Empty) (*types.VersionReply
 	return dbSchemaVersion, nil
 }
 
-type txnID int
-
-func (s *KvServer) begin(ctx context.Context) (id txnID, err error) {
+func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
 	tx, errBegin := s.kv.BeginRo(ctx)
 	if errBegin != nil {
 		return 0, errBegin
 	}
-	id = txnID(s.txIdGen.Inc())
+	id = s.txIdGen.Inc()
 	s.txs[id] = tx
 	s.txsLocks[id] = &sync.Mutex{}
 	return id, nil
 }
 
 // renew - rollback and begin tx without changing it's `id`
-func (s *KvServer) renew(ctx context.Context, id txnID) (err error) {
+func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
 	txLock, ok := s.txsLocks[id]
@@ -139,7 +139,7 @@ func (s *KvServer) renew(ctx context.Context, id txnID) (err error) {
 	return nil
 }
 
-func (s *KvServer) rollback(id txnID) {
+func (s *KvServer) rollback(id uint64) {
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
 	tx, ok := s.txs[id]
@@ -160,7 +160,7 @@ func (s *KvServer) rollback(id txnID) {
 //	long-living server-side streams must read limited-portion of data inside `with`, send this portion to
 //	client, portion of data it to client, then read next portion in another `with` call.
 //	It will allow cooperative access to `tx` object
-func (s *KvServer) with(id txnID, f func(kv.Tx) error) error {
+func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
 	s.txsLock.RLock()
 	tx, ok := s.txs[id]
 	txLock := s.txsLocks[id]
@@ -471,4 +471,52 @@ func (s *StateChangePubSub) remove(id uint) {
 	}
 	close(ch)
 	delete(s.chans, id)
+}
+
+// Temporal methods
+func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (reply *remote.HistoryGetReply, err error) {
+	reply = &remote.HistoryGetReply{}
+	if err := s.with(req.TxID, func(tx kv.Tx) error {
+		ttx, ok := tx.(kv.TemporalTx)
+		if !ok {
+			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
+		}
+		reply.V, reply.Ok, err = ttx.HistoryGet(kv.History(req.Name), req.K, req.Ts)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return reply, nil
+}
+func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexRangeServer) error {
+	const step = 1024 // make sure `s.with` has limited time
+	for currentEnd := req.FromTs + step; currentEnd < req.ToTs; currentEnd += step {
+		currentEnd = cmp.Min(req.ToTs, currentEnd)
+		if err := s.with(req.TxID, func(tx kv.Tx) error {
+			ttx, ok := tx.(kv.TemporalTx)
+			if !ok {
+				return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
+			}
+			it, err := ttx.IndexRange(kv.InvertedIdx(req.Name), req.K, req.FromTs, currentEnd)
+			if err != nil {
+				return err
+			}
+			for it.HasNext() {
+				batch, err := it.NextBatch()
+				if err != nil {
+					return err
+				}
+				if err := stream.Send(&remote.IndexRangeReply{Timestamps: slices.Clone(batch)}); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
