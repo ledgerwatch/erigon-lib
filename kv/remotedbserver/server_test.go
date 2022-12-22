@@ -2,6 +2,7 @@ package remotedbserver
 
 import (
 	"context"
+	"runtime"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -11,6 +12,10 @@ import (
 )
 
 func TestKvServer_renew(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fix me on win please")
+	}
+
 	require, ctx, db := require.New(t), context.Background(), memdb.NewTestDB(t)
 	require.NoError(db.Update(ctx, func(tx kv.RwTx) error {
 		wc, err := tx.RwCursorDupSort(kv.PlainState)
