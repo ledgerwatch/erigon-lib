@@ -190,7 +190,7 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 		viewID = tx.ViewID()
 		return nil
 	})
-	if err := stream.Send(&remote.Pair{TxID: viewID}); err != nil {
+	if err := stream.Send(&remote.Pair{ViewID: viewID, TxID: id}); err != nil {
 		return fmt.Errorf("server-side error: %w", err)
 	}
 
