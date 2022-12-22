@@ -29,6 +29,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"go.uber.org/atomic"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -53,14 +54,24 @@ type KvServer struct {
 	blockSnapshots     Snapsthots
 	historySnapshots   Snapsthots
 	ctx                context.Context
+
+	//v3 fields
+	txIdGen  atomic.Uint64
+	txsLock  *sync.RWMutex
+	txs      map[txnID]kv.Tx
+	txsLocks map[txnID]*sync.Mutex
 }
 
 type Snapsthots interface {
 	Files() []string
 }
 
-func NewKvServer(ctx context.Context, kv kv.RoDB, snapshots Snapsthots, historySnapshots Snapsthots) *KvServer {
-	return &KvServer{kv: kv, stateChangeStreams: newStateChangeStreams(), ctx: ctx, blockSnapshots: snapshots, historySnapshots: historySnapshots}
+func NewKvServer(ctx context.Context, db kv.RoDB, snapshots Snapsthots, historySnapshots Snapsthots) *KvServer {
+	return &KvServer{
+		kv: db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
+		blockSnapshots: snapshots, historySnapshots: historySnapshots,
+		txs: map[txnID]kv.Tx{}, txsLocks: map[txnID]*sync.Mutex{}, txsLock: &sync.RWMutex{},
+	}
 }
 
 // Version returns the service-side interface version number
@@ -81,17 +92,89 @@ func (s *KvServer) Version(context.Context, *emptypb.Empty) (*types.VersionReply
 	return dbSchemaVersion, nil
 }
 
+type txnID int
+
+func (s *KvServer) begin(ctx context.Context) (id txnID, err error) {
+	s.txsLock.Lock()
+	defer s.txsLock.Unlock()
+	tx, errBegin := s.kv.BeginRo(ctx)
+	if errBegin != nil {
+		return 0, errBegin
+	}
+	id = txnID(s.txIdGen.Inc())
+	s.txs[id] = tx
+	s.txsLocks[id] = &sync.Mutex{}
+	fmt.Printf("begin %d\n", id)
+	return id, nil
+}
+func (s *KvServer) renew(ctx context.Context, id txnID) (err error) {
+	s.txsLock.Lock()
+	defer s.txsLock.Unlock()
+	txLock, ok := s.txsLocks[id]
+	if !ok {
+		txLock = &sync.Mutex{}
+		s.txsLocks[id] = txLock
+	}
+	txLock.Lock()
+	defer txLock.Unlock()
+	if tx, ok := s.txs[id]; ok {
+		tx.Rollback()
+	}
+	tx, errBegin := s.kv.BeginRo(ctx)
+	if errBegin != nil {
+		return err
+	}
+	fmt.Printf("renew: %d\n", id)
+	s.txs[id] = tx
+	return nil
+}
+
+func (s *KvServer) rollback(id txnID) {
+	fmt.Printf("rollback: %d\n", id)
+	s.txsLock.Lock()
+	defer s.txsLock.Unlock()
+	tx, ok := s.txs[id]
+	if ok {
+		txLock := s.txsLocks[id]
+		txLock.Lock()
+		defer txLock.Unlock()
+		tx.Rollback()
+		delete(s.txsLocks, id)
+	}
+}
+func (s *KvServer) with(id txnID, f func(kv.Tx) error) error {
+	fmt.Printf("with %d\n", id)
+
+	s.txsLock.RLock()
+	tx, ok := s.txs[id]
+	txLock, _ := s.txsLocks[id]
+	s.txsLock.RUnlock()
+	if !ok {
+		fmt.Printf("no? %d\n", id)
+		for _id := range s.txs {
+			fmt.Printf("see %d\n", _id)
+		}
+		return context.Canceled
+	}
+
+	txLock.Lock()
+	defer txLock.Unlock()
+	return f(tx)
+}
+
 func (s *KvServer) Tx(stream remote.KV_TxServer) error {
-	tx, errBegin := s.kv.BeginRo(stream.Context())
+	id, errBegin := s.begin(stream.Context())
 	if errBegin != nil {
 		return fmt.Errorf("server-side error: %w", errBegin)
 	}
-	rollback := func() {
-		tx.Rollback()
-	}
-	defer rollback()
+	defer s.rollback(id)
 
-	if err := stream.Send(&remote.Pair{TxID: tx.ViewID()}); err != nil {
+	var viewID uint64
+	s.with(id, func(tx kv.Tx) error {
+		viewID = tx.ViewID()
+		return nil
+	})
+	if err := stream.Send(&remote.Pair{TxID: viewID}); err != nil {
 		return fmt.Errorf("server-side error: %w", err)
 	}
 
@@ -129,35 +212,37 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 				c.v = bytesCopy(v)
 			}
 
-			tx.Rollback()
-			tx, errBegin = s.kv.BeginRo(stream.Context())
-			if errBegin != nil {
-				return fmt.Errorf("server-side error, BeginRo: %w", errBegin)
+			if err := s.renew(stream.Context(), id); err != nil {
+				return err
 			}
-
-			for _, c := range cursors { // restore all cursors position
-				var err error
-				c.c, err = tx.Cursor(c.bucket)
-				if err != nil {
-					return err
-				}
-				switch casted := c.c.(type) {
-				case kv.CursorDupSort:
-					v, err := casted.SeekBothRange(c.k, c.v)
+			if err := s.with(id, func(tx kv.Tx) error {
+				for _, c := range cursors { // restore all cursors position
+					var err error
+					c.c, err = tx.Cursor(c.bucket)
 					if err != nil {
-						return fmt.Errorf("server-side error: %w", err)
+						return err
 					}
-					if v == nil { // it may happen that key where we stopped disappeared after transaction reopen, then just move to next key
-						_, _, err = casted.Next()
+					switch casted := c.c.(type) {
+					case kv.CursorDupSort:
+						v, err := casted.SeekBothRange(c.k, c.v)
 						if err != nil {
 							return fmt.Errorf("server-side error: %w", err)
 						}
-					}
-				case kv.Cursor:
-					if _, _, err := c.c.Seek(c.k); err != nil {
-						return fmt.Errorf("server-side error: %w", err)
+						if v == nil { // it may happen that key where we stopped disappeared after transaction reopen, then just move to next key
+							_, _, err = casted.Next()
+							if err != nil {
+								return fmt.Errorf("server-side error: %w", err)
+							}
+						}
+					case kv.Cursor:
+						if _, _, err := c.c.Seek(c.k); err != nil {
+							return fmt.Errorf("server-side error: %w", err)
+						}
 					}
 				}
+				return nil
+			}); err != nil {
+				return err
 			}
 		}
 
@@ -173,8 +258,13 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 		case remote.Op_OPEN:
 			CursorID++
 			var err error
-			c, err = tx.Cursor(in.BucketName)
-			if err != nil {
+			if err := s.with(id, func(tx kv.Tx) error {
+				c, err = tx.Cursor(in.BucketName)
+				if err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
 				return err
 			}
 			cursors[CursorID] = &CursorInfo{
@@ -188,8 +278,13 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 		case remote.Op_OPEN_DUP_SORT:
 			CursorID++
 			var err error
-			c, err = tx.CursorDupSort(in.BucketName)
-			if err != nil {
+			if err := s.with(id, func(tx kv.Tx) error {
+				c, err = tx.CursorDupSort(in.BucketName)
+				if err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
 				return err
 			}
 			cursors[CursorID] = &CursorInfo{

@@ -42,7 +42,7 @@ type remoteTx struct {
 	db                 *RemoteKV
 	statelessCursors   map[string]kv.Cursor
 	cursors            []*remoteCursor
-	id                 uint64
+	viewID, id         uint64
 	streamingRequested bool
 }
 
@@ -154,7 +154,7 @@ func (db *RemoteKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		streamCancelFn()
 		return nil, err
 	}
-	return &remoteTx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn, id: msg.TxID}, nil
+	return &remoteTx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn, viewID: msg.TxID, id: msg.TxID}, nil
 }
 
 func (db *RemoteKV) BeginRw(ctx context.Context) (kv.RwTx, error) {
@@ -178,7 +178,7 @@ func (db *RemoteKV) Update(ctx context.Context, f func(tx kv.RwTx) error) (err e
 	return fmt.Errorf("remote db provider doesn't support .Update method")
 }
 
-func (tx *remoteTx) ViewID() uint64  { return tx.id }
+func (tx *remoteTx) ViewID() uint64  { return tx.viewID }
 func (tx *remoteTx) CollectMetrics() {}
 func (tx *remoteTx) IncrementSequence(bucket string, amount uint64) (uint64, error) {
 	panic("not implemented yet")
