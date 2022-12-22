@@ -186,10 +186,12 @@ func (s *KvServer) Tx(stream remote.KV_TxServer) error {
 	defer s.rollback(id)
 
 	var viewID uint64
-	s.with(id, func(tx kv.Tx) error {
+	if err := s.with(id, func(tx kv.Tx) error {
 		viewID = tx.ViewID()
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 	if err := stream.Send(&remote.Pair{ViewID: viewID, TxID: id}); err != nil {
 		return fmt.Errorf("server-side error: %w", err)
 	}
