@@ -142,10 +142,10 @@ func (s *KvServer) rollback(id txnID) {
 func (s *KvServer) with(id txnID, f func(kv.Tx) error) error {
 	s.txsLock.RLock()
 	tx, ok := s.txs[id]
-	txLock, _ := s.txsLocks[id]
+	txLock := s.txsLocks[id]
 	s.txsLock.RUnlock()
 	if !ok {
-		return context.Canceled
+		return fmt.Errorf("txn %d already rollback", id)
 	}
 
 	txLock.Lock()
