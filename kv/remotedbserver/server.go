@@ -104,7 +104,6 @@ func (s *KvServer) begin(ctx context.Context) (id txnID, err error) {
 	id = txnID(s.txIdGen.Inc())
 	s.txs[id] = tx
 	s.txsLocks[id] = &sync.Mutex{}
-	fmt.Printf("begin %d\n", id)
 	return id, nil
 }
 func (s *KvServer) renew(ctx context.Context, id txnID) (err error) {
@@ -124,13 +123,11 @@ func (s *KvServer) renew(ctx context.Context, id txnID) (err error) {
 	if errBegin != nil {
 		return err
 	}
-	fmt.Printf("renew: %d\n", id)
 	s.txs[id] = tx
 	return nil
 }
 
 func (s *KvServer) rollback(id txnID) {
-	fmt.Printf("rollback: %d\n", id)
 	s.txsLock.Lock()
 	defer s.txsLock.Unlock()
 	tx, ok := s.txs[id]
@@ -143,17 +140,11 @@ func (s *KvServer) rollback(id txnID) {
 	}
 }
 func (s *KvServer) with(id txnID, f func(kv.Tx) error) error {
-	fmt.Printf("with %d\n", id)
-
 	s.txsLock.RLock()
 	tx, ok := s.txs[id]
 	txLock, _ := s.txsLocks[id]
 	s.txsLock.RUnlock()
 	if !ok {
-		fmt.Printf("no? %d\n", id)
-		for _id := range s.txs {
-			fmt.Printf("see %d\n", _id)
-		}
 		return context.Canceled
 	}
 
