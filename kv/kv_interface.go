@@ -23,7 +23,7 @@ import (
 	"github.com/VictoriaMetrics/metrics"
 )
 
-//Naming:
+//Variables Naming:
 //  ts - TimeStamp
 //  tx - Database Transaction
 //  txn - Ethereum Transaction (and TxNum - is also number of Etherum Transaction)
@@ -31,6 +31,13 @@ import (
 //  RwTx - Read-Write Database Transaction
 //  k - key
 //  v - value
+
+//Methods Naming:
+// Get: exact match of criterias
+// Range: [from, to)
+// Each: [from, INF)
+// Prefix: Has(k, prefix)
+// Amount: [from, INF) AND maximum N records
 
 const ReadersLimit = 32000 // MDBX_READERS_LIMIT=32767
 
