@@ -580,21 +580,18 @@ func (c *remoteCursorDupSort) PutNoDupData(key, value []byte) error { panic("not
 func (c *remoteCursorDupSort) DeleteCurrentDuplicates() error       { panic("not supported") }
 func (c *remoteCursorDupSort) CountDuplicates() (uint64, error)     { panic("not supported") }
 
-func (c *remoteCursorDupSort) FirstDup() ([]byte, error) {
-	return c.firstDup()
+func (c *remoteCursorDupSort) FirstDup() ([]byte, error)          { return c.firstDup() }
+func (c *remoteCursorDupSort) NextDup() ([]byte, []byte, error)   { return c.nextDup() }
+func (c *remoteCursorDupSort) NextNoDup() ([]byte, []byte, error) { return c.nextNoDup() }
+func (c *remoteCursorDupSort) PrevDup() ([]byte, []byte, error)   { return c.prevDup() }
+func (c *remoteCursorDupSort) PrevNoDup() ([]byte, []byte, error) { return c.prevNoDup() }
+func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.lastDup() }
+
+// Temporal Methods
+func (tx *remoteTx) HistoryGetNoState(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
+	return nil, false, fmt.Errorf("remoteTx: doesn't support temporal yet")
 }
-func (c *remoteCursorDupSort) NextDup() ([]byte, []byte, error) {
-	return c.nextDup()
-}
-func (c *remoteCursorDupSort) NextNoDup() ([]byte, []byte, error) {
-	return c.nextNoDup()
-}
-func (c *remoteCursorDupSort) PrevDup() ([]byte, []byte, error) {
-	return c.prevDup()
-}
-func (c *remoteCursorDupSort) PrevNoDup() ([]byte, []byte, error) {
-	return c.prevNoDup()
-}
-func (c *remoteCursorDupSort) LastDup() ([]byte, error) {
-	return c.lastDup()
+
+func (tx *remoteTx) InvertedIndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.Iter[uint64], err error) {
+	return nil, fmt.Errorf("remoteTx: doesn't support temporal yet")
 }
