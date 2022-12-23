@@ -88,7 +88,7 @@ type Snapsthots interface {
 
 func NewKvServer(ctx context.Context, db kv.RoDB, snapshots Snapsthots, historySnapshots Snapsthots) *KvServer {
 	return &KvServer{
-		trace: true,
+		trace: false,
 		kv:    db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
 		blockSnapshots: snapshots, historySnapshots: historySnapshots,
 		txs: map[uint64]threadSafeTx{}, txsMapLock: &sync.RWMutex{},
@@ -131,7 +131,7 @@ func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
 // renew - rollback and begin tx without changing it's `id`
 func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 	if s.trace {
-		log.Info(fmt.Sprintf("[kv_server] renew %d %s\n", id, dbg.Stack()))
+		log.Info(fmt.Sprintf("[kv_server] renew %d %s\n", id, dbg.Stack()[:2]))
 	}
 	s.txsMapLock.Lock()
 	defer s.txsMapLock.Unlock()
@@ -151,7 +151,7 @@ func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 
 func (s *KvServer) rollback(id uint64) {
 	if s.trace {
-		log.Info(fmt.Sprintf("[kv_server] rollback %d %s\n", id, dbg.Stack()))
+		log.Info(fmt.Sprintf("[kv_server] rollback %d %s\n", id, dbg.Stack()[:2]))
 	}
 	s.txsMapLock.Lock()
 	defer s.txsMapLock.Unlock()
@@ -181,16 +181,16 @@ func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
 	}
 
 	if s.trace {
-		log.Info(fmt.Sprintf("[kv_server] with %d try lock %s\n", id, dbg.Stack()))
+		log.Info(fmt.Sprintf("[kv_server] with %d try lock %s\n", id, dbg.Stack()[:2]))
 	}
 	tx.Lock()
 	if s.trace {
-		log.Info(fmt.Sprintf("[kv_server] with %d can lock %s\n", id, dbg.Stack()))
+		log.Info(fmt.Sprintf("[kv_server] with %d can lock %s\n", id, dbg.Stack()[:2]))
 	}
 	defer func() {
 		tx.Unlock()
 		if s.trace {
-			log.Info(fmt.Sprintf("[kv_server] with %d unlock %s\n", id, dbg.Stack()))
+			log.Info(fmt.Sprintf("[kv_server] with %d unlock %s\n", id, dbg.Stack()[:2]))
 		}
 	}()
 	return f(tx.Tx)
@@ -516,15 +516,10 @@ func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (r
 	return reply, nil
 }
 func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexRangeServer) error {
-	fmt.Printf("remote server000\n")
-
 	const step = 1024 // make sure `s.with` has limited time
-	fmt.Printf("remote server001:  %d-%d\n", req.FromTs, req.ToTs)
 	for from := req.FromTs; from < req.ToTs; from += step {
 		to := cmp.Min(req.ToTs, from+step)
-		fmt.Printf("remote server002:  %d-%d\n", from, to)
 		if err := s.with(req.TxID, func(tx kv.Tx) error {
-			fmt.Printf("remote server003:  %d-%d\n", from, to)
 			ttx, ok := tx.(kv.TemporalTx)
 			if !ok {
 				return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
@@ -544,7 +539,6 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 			}
 			return nil
 		}); err != nil {
-			fmt.Printf("remote server008: %s\n", err)
 			return err
 		}
 	}
