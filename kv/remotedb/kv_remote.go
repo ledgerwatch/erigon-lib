@@ -610,13 +610,11 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 }
 
 func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.Iter[uint64], err error) {
-	fmt.Printf("kv_remote IndexRange\n")
 	//TODO: maybe add ctx.WithCancel
 	stream, err := tx.db.remoteKV.IndexRange(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Name: string(name), K: k, FromTs: fromTs, ToTs: toTs})
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("kv_remote IndexRange\n")
 	it := &streamIter2[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }}
 	return it, nil
 }
