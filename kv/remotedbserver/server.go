@@ -502,7 +502,7 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 		to := cmp.Min(req.ToTs, from+step)
 		fmt.Printf("remote server002:  %d-%d\n", from, to)
 		if err := s.with(req.TxID, func(tx kv.Tx) error {
-			fmt.Printf("remote server: %T\n", tx)
+			fmt.Printf("remote server003:  %d-%d\n", from, to)
 			ttx, ok := tx.(kv.TemporalTx)
 			if !ok {
 				return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
@@ -522,6 +522,7 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 			}
 			return nil
 		}); err != nil {
+			fmt.Printf("remote server008: %s\n", err)
 			return err
 		}
 	}
