@@ -253,7 +253,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		for i := keyNum; i < 976; i += keyNum {
 			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
 			require.True(t, it.HasNext(), label)
-			n, err := it.NextValue()
+			n, err := it.Next()
 			require.NoError(t, err)
 			require.Equal(t, i, n, label)
 		}
@@ -271,7 +271,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		for i := keyNum * ((400 + keyNum - 1) / keyNum); i < txs; i += keyNum {
 			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
 			require.True(t, it.HasNext(), label)
-			n, err := it.NextValue()
+			n, err := it.Next()
 			require.NoError(t, err)
 			require.Equal(t, i, n, label)
 		}
