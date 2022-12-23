@@ -72,10 +72,14 @@ type KvServer struct {
 	//v3 fields
 	txIdGen    atomic.Uint64
 	txsMapLock *sync.RWMutex
-	txs        map[uint64]kv.Tx
-	txsLocks   map[uint64]*sync.Mutex
+	txs        map[uint64]threadSafeTx
 
 	trace bool
+}
+
+type threadSafeTx struct {
+	kv.Tx
+	sync.Mutex
 }
 
 type Snapsthots interface {
@@ -87,7 +91,7 @@ func NewKvServer(ctx context.Context, db kv.RoDB, snapshots Snapsthots, historyS
 		trace: true,
 		kv:    db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
 		blockSnapshots: snapshots, historySnapshots: historySnapshots,
-		txs: map[uint64]kv.Tx{}, txsLocks: map[uint64]*sync.Mutex{}, txsMapLock: &sync.RWMutex{},
+		txs: map[uint64]threadSafeTx{}, txsMapLock: &sync.RWMutex{},
 	}
 }
 
@@ -117,8 +121,7 @@ func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
 		return 0, errBegin
 	}
 	id = s.txIdGen.Inc()
-	s.txs[id] = tx
-	s.txsLocks[id] = &sync.Mutex{}
+	s.txs[id] = threadSafeTx{Tx: tx}
 	return id, nil
 }
 
@@ -129,21 +132,17 @@ func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 	}
 	s.txsMapLock.Lock()
 	defer s.txsMapLock.Unlock()
-	txLock, ok := s.txsLocks[id]
-	if !ok {
-		txLock = &sync.Mutex{}
-		s.txsLocks[id] = txLock
-	}
-	txLock.Lock()
-	defer txLock.Unlock()
-	if tx, ok := s.txs[id]; ok {
+	tx, ok := s.txs[id]
+	if ok {
+		tx.Lock()
+		defer tx.Unlock()
 		tx.Rollback()
 	}
-	tx, errBegin := s.kv.BeginRo(ctx)
+	newTx, errBegin := s.kv.BeginRo(ctx)
 	if errBegin != nil {
 		return err
 	}
-	s.txs[id] = tx
+	s.txs[id] = threadSafeTx{Tx: newTx}
 	return nil
 }
 
@@ -155,11 +154,9 @@ func (s *KvServer) rollback(id uint64) {
 	defer s.txsMapLock.Unlock()
 	tx, ok := s.txs[id]
 	if ok {
-		txLock := s.txsLocks[id]
-		txLock.Lock()
-		defer txLock.Unlock()
+		tx.Lock()
+		defer tx.Unlock()
 		tx.Rollback()
-		delete(s.txsLocks, id)
 		delete(s.txs, id)
 	}
 }
@@ -175,21 +172,20 @@ func (s *KvServer) rollback(id uint64) {
 func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
 	s.txsMapLock.RLock()
 	tx, ok := s.txs[id]
-	txLock, ok2 := s.txsLocks[id]
 	s.txsMapLock.RUnlock()
-	if !ok || !ok2 {
+	if !ok {
 		return fmt.Errorf("txn %d already rollback", id)
 	}
 
 	if s.trace {
 		log.Info(fmt.Sprintf("[kv_server] with %d try lock %s\n", id, dbg.Stack()))
 	}
-	txLock.Lock()
+	tx.Lock()
 	if s.trace {
 		log.Info(fmt.Sprintf("[kv_server] with %d can lock %s\n", id, dbg.Stack()))
 	}
 	defer func() {
-		txLock.Unlock()
+		tx.Unlock()
 		if s.trace {
 			log.Info(fmt.Sprintf("[kv_server] with %d unlock %s\n", id, dbg.Stack()))
 		}
