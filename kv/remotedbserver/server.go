@@ -530,7 +530,7 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 			}
 			defer it.Close()
 			for it.HasNext() {
-				batch, err := it.NextValues()
+				batch, err := it.NextBatch()
 				if err != nil {
 					return err
 				}

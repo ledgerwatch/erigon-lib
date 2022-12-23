@@ -386,7 +386,7 @@ type TemporalTx interface {
 	Tx
 	// HistoryGet 1 record from the History. History doesn't store current value - use `DomainGet()` instead.
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
-	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps ValStream[uint64], err error)
+	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps UnaryStream[uint64], err error)
 }
 
 type TemporalRwDB interface {
@@ -403,15 +403,9 @@ type Stream[K, V any] interface {
 	HasNext() bool
 	Close()
 }
-type KeyStream[K any] interface {
-	NextKey() (K, error)
-	NextKeys() ([]K, error)
-	HasNext() bool
-	Close()
-}
-type ValStream[V any] interface {
-	NextValue() (V, error)
-	NextValues() ([]V, error)
+type UnaryStream[V any] interface {
+	Next() (V, error)
+	NextBatch() ([]V, error)
 	HasNext() bool
 	Close()
 }
@@ -421,15 +415,15 @@ type ArrStream[V any] struct {
 	i   int
 }
 
-func StreamArray[V any](arr []V) ValStream[V] { return &ArrStream[V]{arr: arr} }
-func (it *ArrStream[V]) HasNext() bool        { return it.i < len(it.arr) }
-func (it *ArrStream[V]) Close()               {}
-func (it *ArrStream[V]) NextValue() (V, error) {
+func StreamArray[V any](arr []V) UnaryStream[V] { return &ArrStream[V]{arr: arr} }
+func (it *ArrStream[V]) HasNext() bool          { return it.i < len(it.arr) }
+func (it *ArrStream[V]) Close()                 {}
+func (it *ArrStream[V]) Next() (V, error) {
 	v := it.arr[it.i]
 	it.i++
 	return v, nil
 }
-func (it *ArrStream[V]) NextValues() ([]V, error) {
+func (it *ArrStream[V]) NextBatch() ([]V, error) {
 	v := it.arr[it.i:]
 	it.i = len(it.arr)
 	return v, nil

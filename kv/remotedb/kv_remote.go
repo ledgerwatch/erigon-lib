@@ -609,13 +609,13 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 	return reply.V, reply.Ok, nil
 }
 
-func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.ValStream[uint64], err error) {
+func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.UnaryStream[uint64], err error) {
 	//TODO: maybe add ctx.WithCancel
 	stream, err := tx.db.remoteKV.IndexRange(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Name: string(name), K: k, FromTs: fromTs, ToTs: toTs})
 	if err != nil {
 		return nil, err
 	}
-	it := &grpc2ValStream[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }}
+	it := &grpc2UnaryStream[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }}
 	return it, nil
 }
 
@@ -624,7 +624,7 @@ type grpcStream[Msg any] interface {
 	CloseSend() error
 }
 
-type grpc2ValStream[Msg any, Res any] struct {
+type grpc2UnaryStream[Msg any, Res any] struct {
 	stream  grpcStream[Msg]
 	unwrap  func(Msg) []Res
 	lastErr error
@@ -632,12 +632,12 @@ type grpc2ValStream[Msg any, Res any] struct {
 	i       int
 }
 
-func (it *grpc2ValStream[Msg, Res]) NextValues() ([]Res, error) {
+func (it *grpc2UnaryStream[Msg, Res]) NextBatch() ([]Res, error) {
 	v := it.last[it.i:]
 	it.i = len(it.last)
 	return v, nil
 }
-func (it *grpc2ValStream[Msg, Res]) HasNext() bool {
+func (it *grpc2UnaryStream[Msg, Res]) HasNext() bool {
 	if it.lastErr != nil {
 		return true
 	}
@@ -657,10 +657,10 @@ func (it *grpc2ValStream[Msg, Res]) HasNext() bool {
 	it.last = it.unwrap(msg)
 	return len(it.last) > 0
 }
-func (it *grpc2ValStream[Msg, Res]) Close() {
+func (it *grpc2UnaryStream[Msg, Res]) Close() {
 	//_ = it.stream.CloseSend()
 }
-func (it *grpc2ValStream[Msg, Res]) NextValue() (Res, error) {
+func (it *grpc2UnaryStream[Msg, Res]) Next() (Res, error) {
 	v := it.last[it.i]
 	it.i++
 	return v, nil
