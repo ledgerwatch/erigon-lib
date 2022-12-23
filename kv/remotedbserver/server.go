@@ -72,7 +72,7 @@ type KvServer struct {
 	//v3 fields
 	txIdGen    atomic.Uint64
 	txsMapLock *sync.RWMutex
-	txs        map[uint64]threadSafeTx
+	txs        map[uint64]*threadSafeTx
 
 	trace bool
 }
@@ -91,7 +91,7 @@ func NewKvServer(ctx context.Context, db kv.RoDB, snapshots Snapsthots, historyS
 		trace: false,
 		kv:    db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
 		blockSnapshots: snapshots, historySnapshots: historySnapshots,
-		txs: map[uint64]threadSafeTx{}, txsMapLock: &sync.RWMutex{},
+		txs: map[uint64]*threadSafeTx{}, txsMapLock: &sync.RWMutex{},
 	}
 }
 
@@ -124,7 +124,7 @@ func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
 		return 0, errBegin
 	}
 	id = s.txIdGen.Inc()
-	s.txs[id] = threadSafeTx{Tx: tx}
+	s.txs[id] = &threadSafeTx{Tx: tx}
 	return id, nil
 }
 
@@ -145,7 +145,7 @@ func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 	if errBegin != nil {
 		return err
 	}
-	s.txs[id] = threadSafeTx{Tx: newTx}
+	s.txs[id] = &threadSafeTx{Tx: newTx}
 	return nil
 }
 
