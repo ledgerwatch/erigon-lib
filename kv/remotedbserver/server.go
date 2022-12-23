@@ -124,6 +124,9 @@ func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
 
 // renew - rollback and begin tx without changing it's `id`
 func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
+	if s.trace {
+		log.Info(fmt.Sprintf("[kv_server] renew %d %s\n", id, dbg.Stack()))
+	}
 	s.txsMapLock.Lock()
 	defer s.txsMapLock.Unlock()
 	txLock, ok := s.txsLocks[id]
@@ -145,6 +148,9 @@ func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 }
 
 func (s *KvServer) rollback(id uint64) {
+	if s.trace {
+		log.Info(fmt.Sprintf("[kv_server] rollback %d %s\n", id, dbg.Stack()))
+	}
 	s.txsMapLock.Lock()
 	defer s.txsMapLock.Unlock()
 	tx, ok := s.txs[id]
@@ -154,6 +160,7 @@ func (s *KvServer) rollback(id uint64) {
 		defer txLock.Unlock()
 		tx.Rollback()
 		delete(s.txsLocks, id)
+		delete(s.txs, id)
 	}
 }
 
