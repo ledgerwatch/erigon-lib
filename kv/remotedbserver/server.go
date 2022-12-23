@@ -516,7 +516,7 @@ func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (r
 	return reply, nil
 }
 func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexRangeServer) error {
-	const step = 1024 // make sure `s.with` has limited time
+	const step = 4096 // make sure `s.with` has limited time
 	for from := req.FromTs; from < req.ToTs; from += step {
 		to := cmp.Min(req.ToTs, from+step)
 		if err := s.with(req.TxID, func(tx kv.Tx) error {
