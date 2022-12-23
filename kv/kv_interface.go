@@ -411,15 +411,15 @@ type ArrIter[T any] struct {
 }
 
 func IterFromArray[T any](arr []T) Iter[T] { return &ArrIter[T]{arr: arr} }
-func (it *ArrIter[T]) NextBatch() ([]T, error) {
-	v := it.arr[it.i:]
-	it.i = len(it.arr)
-	return v, nil
-}
-func (it *ArrIter[T]) HasNext() bool { return it.i < len(it.arr) }
-func (it *ArrIter[T]) Close()        {}
+func (it *ArrIter[T]) HasNext() bool       { return it.i < len(it.arr) }
+func (it *ArrIter[T]) Close()              {}
 func (it *ArrIter[T]) Next() (T, error) {
 	v := it.arr[it.i]
 	it.i++
+	return v, nil
+}
+func (it *ArrIter[T]) NextBatch() ([]T, error) {
+	v := it.arr[it.i:]
+	it.i = len(it.arr)
 	return v, nil
 }
