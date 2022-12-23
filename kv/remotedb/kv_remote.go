@@ -618,8 +618,10 @@ func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint6
 	}
 	fmt.Printf("kv_remote IndexRange\n")
 	it := &streamIter2[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }}
+
+	has := it.HasNext()
 	n, err := it.Next()
-	fmt.Printf("kv_remote IndexRange next: %d, %s\n", n, err)
+	fmt.Printf("kv_remote IndexRange next: %t, %d, %s\n", has, n, err)
 	return it, nil
 }
 
