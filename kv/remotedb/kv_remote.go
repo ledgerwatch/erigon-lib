@@ -657,7 +657,9 @@ func (it *streamIter2[Msg, Res]) HasNext() bool {
 	it.last = it.unwrap(msg)
 	return len(it.last) > 0
 }
-func (it *streamIter2[Msg, Res]) Close() { _ = it.stream.CloseSend() }
+func (it *streamIter2[Msg, Res]) Close() {
+	//_ = it.stream.CloseSend()
+}
 func (it *streamIter2[Msg, Res]) Next() (Res, error) {
 	v := it.last[it.i]
 	it.i++
