@@ -68,10 +68,10 @@ type KvServer struct {
 	ctx                context.Context
 
 	//v3 fields
-	txIdGen  atomic.Uint64
-	txsLock  *sync.RWMutex
-	txs      map[uint64]kv.Tx
-	txsLocks map[uint64]*sync.Mutex
+	txIdGen    atomic.Uint64
+	txsMapLock *sync.RWMutex
+	txs        map[uint64]kv.Tx
+	txsLocks   map[uint64]*sync.Mutex
 }
 
 type Snapsthots interface {
@@ -82,7 +82,7 @@ func NewKvServer(ctx context.Context, db kv.RoDB, snapshots Snapsthots, historyS
 	return &KvServer{
 		kv: db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
 		blockSnapshots: snapshots, historySnapshots: historySnapshots,
-		txs: map[uint64]kv.Tx{}, txsLocks: map[uint64]*sync.Mutex{}, txsLock: &sync.RWMutex{},
+		txs: map[uint64]kv.Tx{}, txsLocks: map[uint64]*sync.Mutex{}, txsMapLock: &sync.RWMutex{},
 	}
 }
 
@@ -105,8 +105,8 @@ func (s *KvServer) Version(context.Context, *emptypb.Empty) (*types.VersionReply
 }
 
 func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
-	s.txsLock.Lock()
-	defer s.txsLock.Unlock()
+	s.txsMapLock.Lock()
+	defer s.txsMapLock.Unlock()
 	tx, errBegin := s.kv.BeginRo(ctx)
 	if errBegin != nil {
 		return 0, errBegin
@@ -119,8 +119,8 @@ func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
 
 // renew - rollback and begin tx without changing it's `id`
 func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
-	s.txsLock.Lock()
-	defer s.txsLock.Unlock()
+	s.txsMapLock.Lock()
+	defer s.txsMapLock.Unlock()
 	txLock, ok := s.txsLocks[id]
 	if !ok {
 		txLock = &sync.Mutex{}
@@ -140,8 +140,8 @@ func (s *KvServer) renew(ctx context.Context, id uint64) (err error) {
 }
 
 func (s *KvServer) rollback(id uint64) {
-	s.txsLock.Lock()
-	defer s.txsLock.Unlock()
+	s.txsMapLock.Lock()
+	defer s.txsMapLock.Unlock()
 	tx, ok := s.txs[id]
 	if ok {
 		txLock := s.txsLocks[id]
@@ -161,16 +161,23 @@ func (s *KvServer) rollback(id uint64) {
 //	client, portion of data it to client, then read next portion in another `with` call.
 //	It will allow cooperative access to `tx` object
 func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
-	s.txsLock.RLock()
+	fmt.Printf("with 00\n")
+
+	s.txsMapLock.RLock()
+	fmt.Printf("with 01\n")
 	tx, ok := s.txs[id]
+	fmt.Printf("with 02\n")
 	txLock := s.txsLocks[id]
-	s.txsLock.RUnlock()
+	s.txsMapLock.RUnlock()
 	if !ok {
+		fmt.Printf("with 0\n")
 		return fmt.Errorf("txn %d already rollback", id)
 	}
+	fmt.Printf("with 1\n")
 
 	txLock.Lock()
 	defer txLock.Unlock()
+	fmt.Printf("with 2\n")
 	return f(tx)
 }
 
