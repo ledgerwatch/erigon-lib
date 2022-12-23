@@ -27,6 +27,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -161,23 +162,21 @@ func (s *KvServer) rollback(id uint64) {
 //	client, portion of data it to client, then read next portion in another `with` call.
 //	It will allow cooperative access to `tx` object
 func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
-	fmt.Printf("with 00\n")
-
 	s.txsMapLock.RLock()
-	fmt.Printf("with 01\n")
 	tx, ok := s.txs[id]
-	fmt.Printf("with 02\n")
 	txLock := s.txsLocks[id]
 	s.txsMapLock.RUnlock()
 	if !ok {
-		fmt.Printf("with 0\n")
 		return fmt.Errorf("txn %d already rollback", id)
 	}
-	fmt.Printf("with 1\n")
 
+	fmt.Printf("with %d try lock %s\n", id, dbg.Stack())
 	txLock.Lock()
-	defer txLock.Unlock()
-	fmt.Printf("with 2\n")
+	fmt.Printf("with %d can lock %s\n", id, dbg.Stack())
+	defer func() {
+		txLock.Unlock()
+		fmt.Printf("with %d ulock %s\n", id, dbg.Stack())
+	}()
 	return f(tx)
 }
 
