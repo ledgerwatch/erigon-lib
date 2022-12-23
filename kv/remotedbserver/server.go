@@ -114,6 +114,9 @@ func (s *KvServer) Version(context.Context, *emptypb.Empty) (*types.VersionReply
 }
 
 func (s *KvServer) begin(ctx context.Context) (id uint64, err error) {
+	if s.trace {
+		log.Info(fmt.Sprintf("[kv_server] begin %d %s\n", id, dbg.Stack()))
+	}
 	s.txsMapLock.Lock()
 	defer s.txsMapLock.Unlock()
 	tx, errBegin := s.kv.BeginRo(ctx)
