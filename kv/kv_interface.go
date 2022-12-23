@@ -394,43 +394,44 @@ type TemporalRwDB interface {
 	TemporalRoDb
 }
 
-// Iter - Iterator-like interface designed for grpc server-side streaming: 1 client request -> much responses from server
+// Stream - Iterator-like interface designed for grpc server-side streaming: 1 client request -> much responses from server
 // Grpc Server send batch(array) of values. Client can process one-by-one by .Next() method, or use more performant .NextBatch()
 // Iter is very limited - client has no way to terminate it (but client can cancel whole read transaction)
 // Tx does 1-1 match to "grpc-stream". During 1 TX - can be created many `Iter`, `Cursor`.
-type Iter[K, V any] interface {
-	KeyStream[K]
-	ValStream[V]
+type Stream[K, V any] interface {
 	Next() (K, V, error)
-}
-
-type ValStream[T any] interface {
-	NextValue() (T, error)
-	NextValues() ([]T, error)
-	HasNext() bool
-	Close()
-}
-type KeyStream[T any] interface {
-	NextKey() (T, error)
-	NextKeys() ([]T, error)
 	HasNext() bool
 	Close()
 }
 
-type ArrIter[T any] struct {
-	arr []T
+type ValStream[K any] interface {
+	NextValue() (K, error)
+	NextValues() ([]K, error)
+	HasNext() bool
+	Close()
+}
+
+type KeyStream[V any] interface {
+	NextKey() (V, error)
+	NextKeys() ([]V, error)
+	HasNext() bool
+	Close()
+}
+
+type ArrStream[V any] struct {
+	arr []V
 	i   int
 }
 
-func StreamArray[T any](arr []T) ValStream[T] { return &ArrIter[T]{arr: arr} }
-func (it *ArrIter[T]) HasNext() bool          { return it.i < len(it.arr) }
-func (it *ArrIter[T]) Close()                 {}
-func (it *ArrIter[T]) NextValue() (T, error) {
+func StreamArray[V any](arr []V) ValStream[V] { return &ArrStream[V]{arr: arr} }
+func (it *ArrStream[V]) HasNext() bool        { return it.i < len(it.arr) }
+func (it *ArrStream[V]) Close()               {}
+func (it *ArrStream[V]) NextValue() (V, error) {
 	v := it.arr[it.i]
 	it.i++
 	return v, nil
 }
-func (it *ArrIter[T]) NextValues() ([]T, error) {
+func (it *ArrStream[V]) NextValues() ([]V, error) {
 	v := it.arr[it.i:]
 	it.i = len(it.arr)
 	return v, nil
