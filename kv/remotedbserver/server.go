@@ -73,6 +73,8 @@ type KvServer struct {
 	txsMapLock *sync.RWMutex
 	txs        map[uint64]kv.Tx
 	txsLocks   map[uint64]*sync.Mutex
+
+	trace bool
 }
 
 type Snapsthots interface {
