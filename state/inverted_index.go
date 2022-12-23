@@ -577,6 +577,8 @@ func (it *InvertedIterator) NextBatch() ([]uint64, error) {
 
 func (it *InvertedIterator) next() uint64 {
 	n := it.nextN
+	fmt.Printf("IterateRange.next: %d\n", n)
+
 	it.advance()
 	return n
 }
@@ -610,6 +612,7 @@ type InvertedIndexContext struct {
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
 func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
+	fmt.Printf("IterateRange: %s, %d,%d\n", ic.ii.filenameBase, startTxNum, endTxNum)
 	it := &InvertedIterator{
 		key:         key,
 		startTxNum:  startTxNum,
