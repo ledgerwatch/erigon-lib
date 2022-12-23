@@ -31,6 +31,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -83,7 +84,8 @@ type Snapsthots interface {
 
 func NewKvServer(ctx context.Context, db kv.RoDB, snapshots Snapsthots, historySnapshots Snapsthots) *KvServer {
 	return &KvServer{
-		kv: db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
+		trace: true,
+		kv:    db, stateChangeStreams: newStateChangeStreams(), ctx: ctx,
 		blockSnapshots: snapshots, historySnapshots: historySnapshots,
 		txs: map[uint64]kv.Tx{}, txsLocks: map[uint64]*sync.Mutex{}, txsMapLock: &sync.RWMutex{},
 	}
@@ -172,12 +174,18 @@ func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
 		return fmt.Errorf("txn %d already rollback", id)
 	}
 
-	fmt.Printf("with %d try lock %s\n", id, dbg.Stack())
+	if s.trace {
+		log.Info(fmt.Sprintf("[kv_server] with %d try lock %s\n", id, dbg.Stack()))
+	}
 	txLock.Lock()
-	fmt.Printf("with %d can lock %s\n", id, dbg.Stack())
+	if s.trace {
+		log.Info(fmt.Sprintf("[kv_server] with %d can lock %s\n", id, dbg.Stack()))
+	}
 	defer func() {
 		txLock.Unlock()
-		fmt.Printf("with %d ulock %s\n", id, dbg.Stack())
+		if s.trace {
+			log.Info(fmt.Sprintf("[kv_server] with %d unlock %s\n", id, dbg.Stack()))
+		}
 	}()
 	return f(tx)
 }
