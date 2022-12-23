@@ -494,6 +494,7 @@ func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (r
 	return reply, nil
 }
 func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexRangeServer) error {
+	fmt.Printf("remote server000\n")
 
 	const step = 1024 // make sure `s.with` has limited time
 	for currentEnd := req.FromTs + step; currentEnd < req.ToTs; currentEnd += step {
