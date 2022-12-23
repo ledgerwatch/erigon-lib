@@ -497,8 +497,10 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 	fmt.Printf("remote server000\n")
 
 	const step = 1024 // make sure `s.with` has limited time
+	fmt.Printf("remote server001:  %d-%d\n", req.FromTs, req.ToTs)
 	for from := req.FromTs; from < req.ToTs; from += step {
 		to := cmp.Min(req.ToTs, from+step)
+		fmt.Printf("remote server002:  %d-%d\n", from, to)
 		if err := s.with(req.TxID, func(tx kv.Tx) error {
 			fmt.Printf("remote server: %T\n", tx)
 			ttx, ok := tx.(kv.TemporalTx)
