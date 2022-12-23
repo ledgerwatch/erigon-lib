@@ -404,16 +404,16 @@ type Stream[K, V any] interface {
 	Close()
 }
 
-type ValStream[K any] interface {
-	NextValue() (K, error)
-	NextValues() ([]K, error)
+type ValStream[V any] interface {
+	NextValue() (V, error)
+	NextValues() ([]V, error)
 	HasNext() bool
 	Close()
 }
 
-type KeyStream[V any] interface {
-	NextKey() (V, error)
-	NextKeys() ([]V, error)
+type KeyStream[K any] interface {
+	NextKey() (K, error)
+	NextKeys() ([]K, error)
 	HasNext() bool
 	Close()
 }
