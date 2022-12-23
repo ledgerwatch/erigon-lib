@@ -386,7 +386,7 @@ type TemporalTx interface {
 	Tx
 	// HistoryGet 1 record from the History. History doesn't store current value - use `DomainGet()` instead.
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
-	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps Iter[uint64], err error)
+	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps ValStream[uint64], err error)
 }
 
 type TemporalRwDB interface {
@@ -398,9 +398,21 @@ type TemporalRwDB interface {
 // Grpc Server send batch(array) of values. Client can process one-by-one by .Next() method, or use more performant .NextBatch()
 // Iter is very limited - client has no way to terminate it (but client can cancel whole read transaction)
 // Tx does 1-1 match to "grpc-stream". During 1 TX - can be created many `Iter`, `Cursor`.
-type Iter[T any] interface {
-	Next() (T, error)
-	NextBatch() ([]T, error)
+type Iter[K, V any] interface {
+	KeyStream[K]
+	ValStream[V]
+	Next() (K, V, error)
+}
+
+type ValStream[T any] interface {
+	NextValue() (T, error)
+	NextValues() ([]T, error)
+	HasNext() bool
+	Close()
+}
+type KeyStream[T any] interface {
+	NextKey() (T, error)
+	NextKeys() ([]T, error)
 	HasNext() bool
 	Close()
 }
@@ -410,15 +422,15 @@ type ArrIter[T any] struct {
 	i   int
 }
 
-func IterFromArray[T any](arr []T) Iter[T] { return &ArrIter[T]{arr: arr} }
-func (it *ArrIter[T]) HasNext() bool       { return it.i < len(it.arr) }
-func (it *ArrIter[T]) Close()              {}
-func (it *ArrIter[T]) Next() (T, error) {
+func StreamArray[T any](arr []T) ValStream[T] { return &ArrIter[T]{arr: arr} }
+func (it *ArrIter[T]) HasNext() bool          { return it.i < len(it.arr) }
+func (it *ArrIter[T]) Close()                 {}
+func (it *ArrIter[T]) NextValue() (T, error) {
 	v := it.arr[it.i]
 	it.i++
 	return v, nil
 }
-func (it *ArrIter[T]) NextBatch() ([]T, error) {
+func (it *ArrIter[T]) NextValues() ([]T, error) {
 	v := it.arr[it.i:]
 	it.i = len(it.arr)
 	return v, nil

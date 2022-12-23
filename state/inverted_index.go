@@ -566,8 +566,8 @@ func (it *InvertedIterator) HasNext() bool {
 	return it.hasNextInFiles || it.hasNextInDb
 }
 
-func (it *InvertedIterator) Next() (uint64, error) { return it.next(), nil }
-func (it *InvertedIterator) NextBatch() ([]uint64, error) {
+func (it *InvertedIterator) NextValue() (uint64, error) { return it.next(), nil }
+func (it *InvertedIterator) NextValues() ([]uint64, error) {
 	it.res = append(it.res[:0], it.next())
 	for it.HasNext() && len(it.res) < 128 {
 		it.res = append(it.res, it.next())
