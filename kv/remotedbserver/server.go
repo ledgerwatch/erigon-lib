@@ -497,15 +497,15 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 	fmt.Printf("remote server000\n")
 
 	const step = 1024 // make sure `s.with` has limited time
-	for currentFrom := req.FromTs; currentFrom < req.ToTs; currentFrom += step {
-		currentEnd := cmp.Min(req.ToTs, currentFrom+step)
+	for from := req.FromTs; from < req.ToTs; from += step {
+		to := cmp.Min(req.ToTs, from+step)
 		if err := s.with(req.TxID, func(tx kv.Tx) error {
 			fmt.Printf("remote server: %T\n", tx)
 			ttx, ok := tx.(kv.TemporalTx)
 			if !ok {
 				return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 			}
-			it, err := ttx.IndexRange(kv.InvertedIdx(req.Name), req.K, currentFrom, currentEnd)
+			it, err := ttx.IndexRange(kv.InvertedIdx(req.Name), req.K, from, to)
 			if err != nil {
 				return err
 			}
