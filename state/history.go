@@ -1609,7 +1609,8 @@ func (hi *HistoryIterator2) advanceInDb() {
 		}
 		val, err := hi.roTx.GetOne(hi.valsTable, valNum)
 		if err != nil {
-			panic(err)
+			hi.nextErr, hi.hasNext = err, true
+			return
 		}
 		hi.nextVal = val
 		return
