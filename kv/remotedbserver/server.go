@@ -190,7 +190,7 @@ func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
 			log.Info(fmt.Sprintf("[kv_server] with %d unlock %s\n", id, dbg.Stack()))
 		}
 	}()
-	return f(tx)
+	return f(tx.Tx)
 }
 
 func (s *KvServer) Tx(stream remote.KV_TxServer) error {
