@@ -168,9 +168,9 @@ func (s *KvServer) rollback(id uint64) {
 func (s *KvServer) with(id uint64, f func(kv.Tx) error) error {
 	s.txsMapLock.RLock()
 	tx, ok := s.txs[id]
-	txLock := s.txsLocks[id]
+	txLock, ok2 := s.txsLocks[id]
 	s.txsMapLock.RUnlock()
-	if !ok {
+	if !ok || !ok2 {
 		return fmt.Errorf("txn %d already rollback", id)
 	}
 
