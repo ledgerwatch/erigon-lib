@@ -403,17 +403,15 @@ type Stream[K, V any] interface {
 	HasNext() bool
 	Close()
 }
-
-type ValStream[V any] interface {
-	NextValue() (V, error)
-	NextValues() ([]V, error)
-	HasNext() bool
-	Close()
-}
-
 type KeyStream[K any] interface {
 	NextKey() (K, error)
 	NextKeys() ([]K, error)
+	HasNext() bool
+	Close()
+}
+type ValStream[V any] interface {
+	NextValue() (V, error)
+	NextValues() ([]V, error)
 	HasNext() bool
 	Close()
 }
