@@ -400,6 +400,8 @@ type TemporalRwDB interface {
 // Tx does 1-1 match to "grpc-stream". During 1 TX - can be created many `Iter`, `Cursor`.
 //
 // No `Close` method: all streams produced by TemporalTx will be closed inside `tx.Rollback()` (by casting to `kv.Closer`)
+//
+// K, V are valid only until next .Next() call
 type Stream[K, V any] interface {
 	Next() (K, V, error)
 	HasNext() bool
