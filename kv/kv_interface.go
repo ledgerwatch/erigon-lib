@@ -398,16 +398,16 @@ type TemporalRwDB interface {
 // Grpc Server send batch(array) of values. Client can process one-by-one by .Next() method, or use more performant .NextBatch()
 // Iter is very limited - client has no way to terminate it (but client can cancel whole read transaction)
 // Tx does 1-1 match to "grpc-stream". During 1 TX - can be created many `Iter`, `Cursor`.
+//
+// No `Close` method: all streams produced by TemporalTx will be closed inside `tx.Rollback()` (by casting to `kv.Closer`)
 type Stream[K, V any] interface {
 	Next() (K, V, error)
 	HasNext() bool
-	Close()
 }
 type UnaryStream[V any] interface {
 	Next() (V, error)
 	NextBatch() ([]V, error)
 	HasNext() bool
-	Close()
 }
 
 type ArrStream[V any] struct {
