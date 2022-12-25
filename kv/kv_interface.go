@@ -37,8 +37,8 @@ import (
 //Methods Naming:
 // Get: exact match of criterias
 // Range: [from, to). Range(from, nil) means [from, EndOfTable). Range(nil, to) means [StartOfTable, to).
-// Each: [from, INF)
-// Prefix: HasPrefix(k, prefix)
+// Each: Range(from, nil)
+// Prefix: `Range(Table, prefix, dbutils.NextSubtree(prefix))`
 // Amount: [from, INF) AND maximum N records
 
 const ReadersLimit = 32000 // MDBX_READERS_LIMIT=32767
