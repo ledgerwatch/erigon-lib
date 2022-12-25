@@ -321,7 +321,7 @@ type cursor2stream struct {
 
 func (s *cursor2stream) Close() { s.c.Close() }
 func (s *cursor2stream) HasNext() bool {
-	return s.toPrefix != nil && bytes.Compare(s.nextK, s.toPrefix) < 0
+	return (s.toPrefix == nil && s.nextK != nil) || bytes.Compare(s.nextK, s.toPrefix) < 0
 }
 func (s *cursor2stream) Next() ([]byte, []byte, error) {
 	k, v, err := s.nextK, s.nextV, s.nextErr
