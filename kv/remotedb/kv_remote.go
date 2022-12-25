@@ -306,7 +306,7 @@ func (tx *remoteTx) newStreamCursor(table string) (*cursor2stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &cursor2stream{c: c}
+	s := &cursor2stream{c: c, ctx: tx.ctx}
 	tx.streams = append(tx.streams, s)
 	return s, nil
 }
@@ -316,6 +316,7 @@ type cursor2stream struct {
 	nextK, nextV []byte
 	nextErr      error
 	toPrefix     []byte
+	ctx          context.Context
 }
 
 func (s *cursor2stream) Close() { s.c.Close() }
@@ -324,6 +325,11 @@ func (s *cursor2stream) HasNext() bool {
 }
 func (s *cursor2stream) Next() ([]byte, []byte, error) {
 	k, v, err := s.nextK, s.nextV, s.nextErr
+	select {
+	case <-s.ctx.Done():
+		return nil, nil, s.ctx.Err()
+	default:
+	}
 	s.nextK, s.nextV, s.nextErr = s.c.Next()
 	return k, v, err
 }
