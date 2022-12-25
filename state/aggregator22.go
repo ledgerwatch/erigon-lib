@@ -182,15 +182,15 @@ func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 	g, ctx := errgroup.WithContext(ctx)
 	if a.accounts != nil {
 		g.Go(func() error { return a.accounts.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.accounts.localityIndex.BuildMissedIndices(ctx, sem) })
+		g.Go(func() error { return a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex) })
 	}
 	if a.storage != nil {
 		g.Go(func() error { return a.storage.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.storage.localityIndex.BuildMissedIndices(ctx, sem) })
+		g.Go(func() error { return a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex) })
 	}
 	if a.code != nil {
 		g.Go(func() error { return a.code.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.code.localityIndex.BuildMissedIndices(ctx, sem) })
+		g.Go(func() error { return a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex) })
 	}
 	if a.logAddrs != nil {
 		g.Go(func() error { return a.logAddrs.BuildMissedIndices(ctx, sem) })
