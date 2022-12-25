@@ -589,6 +589,9 @@ func (tx *MdbxTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byt
 }
 
 func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+	if toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
+		return nil, fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
+	}
 	s, err := tx.newStreamCursor(table)
 	if err != nil {
 		return nil, err
@@ -617,7 +620,13 @@ type cursor2stream struct {
 
 func (s *cursor2stream) Close() { s.c.Close() }
 func (s *cursor2stream) HasNext() bool {
-	return (s.toPrefix == nil && s.nextK != nil) || bytes.Compare(s.nextK, s.toPrefix) < 0
+	if s.toPrefix == nil {
+		return s.nextK != nil
+	}
+	if s.nextK == nil {
+		return false
+	}
+	return bytes.Compare(s.nextK, s.toPrefix) < 0
 }
 func (s *cursor2stream) Next() ([]byte, []byte, error) {
 	k, v, err := s.nextK, s.nextV, s.nextErr

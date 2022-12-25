@@ -36,7 +36,7 @@ import (
 
 //Methods Naming:
 // Get: exact match of criterias
-// Range: [from, to)
+// Range: [from, to). Range(from, nil) means [from, EndOfTable). Range(nil, to) means [StartOfTable, to).
 // Each: [from, INF)
 // Prefix: HasPrefix(k, prefix)
 // Amount: [from, INF) AND maximum N records
