@@ -511,6 +511,7 @@ type MdbxTx struct {
 	tx               *mdbx.Txn
 	db               *MdbxKV
 	cursors          map[uint64]*mdbx.Cursor
+	streams          []kv.Closer
 	statelessCursors map[string]kv.Cursor
 	readOnly         bool
 	cursorID         uint64
@@ -579,6 +580,43 @@ func (tx *MdbxTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byt
 	}
 	return nil
 }
+
+func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+	s, err := tx.newStreamCursor(table)
+	if err != nil {
+		return nil, err
+	}
+	s.toPrefix = toPrefix
+	s.nextK, s.nextV, s.nextErr = s.c.Seek(fromPrefix)
+	return s, nil
+}
+func (tx *MdbxTx) newStreamCursor(table string) (*cursor2stream, error) {
+	c, err := tx.Cursor(table)
+	if err != nil {
+		return nil, err
+	}
+	s := &cursor2stream{c: c}
+	tx.streams = append(tx.streams, s)
+	return s, nil
+}
+
+type cursor2stream struct {
+	c            kv.Cursor
+	nextK, nextV []byte
+	nextErr      error
+	toPrefix     []byte
+}
+
+func (s *cursor2stream) Close() { s.c.Close() }
+func (s *cursor2stream) HasNext() bool {
+	return s.toPrefix != nil && bytes.Compare(s.nextK, s.toPrefix) < 0
+}
+func (s *cursor2stream) Next() ([]byte, []byte, error) {
+	k, v, err := s.nextK, s.nextV, s.nextErr
+	s.nextK, s.nextV, s.nextErr = s.c.Next()
+	return k, v, err
+}
+
 func (tx *MdbxTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, walker func(k, v []byte) error) error {
 	if amount == 0 {
 		return nil
@@ -917,6 +955,11 @@ func (tx *MdbxTx) closeCursors() {
 		}
 	}
 	tx.cursors = nil
+	for _, c := range tx.streams {
+		if c != nil {
+			c.Close()
+		}
+	}
 	tx.statelessCursors = nil
 }
 

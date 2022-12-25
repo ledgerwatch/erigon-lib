@@ -88,6 +88,26 @@ func TestSeekBothRange(t *testing.T) {
 	require.Equal(t, "value3.3", string(v))
 }
 
+func TestRange(t *testing.T) {
+	_, tx, _ := BaseCase(t)
+
+	it, err := tx.Range("Table", []byte("key1"), []byte("key2"))
+	require.NoError(t, err)
+	require.True(t, it.HasNext())
+	k, v, err := it.Next()
+	require.NoError(t, err)
+	require.Equal(t, "key1", string(k))
+	require.Equal(t, "value1.1", string(v))
+
+	require.True(t, it.HasNext())
+	k, v, err = it.Next()
+	require.NoError(t, err)
+	require.Equal(t, "key1", string(k))
+	require.Equal(t, "value1.3", string(v))
+
+	require.False(t, it.HasNext())
+}
+
 func TestLastDup(t *testing.T) {
 	db, tx, _ := BaseCase(t)
 
