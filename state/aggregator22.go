@@ -23,13 +23,13 @@ import (
 	math2 "math"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	common2 "github.com/ledgerwatch/erigon-lib/common"
@@ -179,88 +179,33 @@ func (a *Aggregator22) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 	if err := a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex); err != nil {
 		return err
 	}
-
-	wg := sync.WaitGroup{}
-	errs := make(chan error, 7+3)
+	g, ctx := errgroup.WithContext(ctx)
 	if a.accounts != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.accounts.BuildMissedIndices(ctx, sem)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex)
-		}()
+		g.Go(func() error { return a.accounts.BuildMissedIndices(ctx, sem) })
+		g.Go(func() error { return a.accounts.localityIndex.BuildMissedIndices(ctx, sem) })
 	}
 	if a.storage != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.storage.BuildMissedIndices(ctx, sem)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex)
-		}()
+		g.Go(func() error { return a.storage.BuildMissedIndices(ctx, sem) })
+		g.Go(func() error { return a.storage.localityIndex.BuildMissedIndices(ctx, sem) })
 	}
 	if a.code != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.code.BuildMissedIndices(ctx, sem)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex)
-		}()
+		g.Go(func() error { return a.code.BuildMissedIndices(ctx, sem) })
+		g.Go(func() error { return a.code.localityIndex.BuildMissedIndices(ctx, sem) })
 	}
 	if a.logAddrs != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.logAddrs.BuildMissedIndices(ctx, sem)
-		}()
+		g.Go(func() error { return a.logAddrs.BuildMissedIndices(ctx, sem) })
 	}
 	if a.logTopics != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.logTopics.BuildMissedIndices(ctx, sem)
-		}()
+		g.Go(func() error { return a.logTopics.BuildMissedIndices(ctx, sem) })
 	}
 	if a.tracesFrom != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.tracesFrom.BuildMissedIndices(ctx, sem)
-		}()
+		g.Go(func() error { return a.tracesFrom.BuildMissedIndices(ctx, sem) })
 	}
 	if a.tracesTo != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- a.tracesTo.BuildMissedIndices(ctx, sem)
-		}()
+		g.Go(func() error { return a.tracesTo.BuildMissedIndices(ctx, sem) })
 	}
 
-	go func() {
-		wg.Wait()
-		close(errs)
-	}()
-	var lastError error
-	for err := range errs {
-		if err != nil {
-			lastError = err
-		}
-	}
-	return lastError
+	return g.Wait()
 }
 
 func (a *Aggregator22) SetLogPrefix(v string) { a.logPrefix = v }
@@ -1202,19 +1147,19 @@ func (a *Aggregator22) EnableMadvNormal() *Aggregator22 {
 	return a
 }
 
-func (ac *Aggregator22Context) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+func (ac *Aggregator22Context) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
 	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (ac *Aggregator22Context) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+func (ac *Aggregator22Context) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
 	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, roTx)
 }
 
-func (ac *Aggregator22Context) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+func (ac *Aggregator22Context) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
 	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
-func (ac *Aggregator22Context) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
+func (ac *Aggregator22Context) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
 }
 
@@ -1311,6 +1256,7 @@ func (a *Aggregator22) MakeContext() *Aggregator22Context {
 	}
 }
 func (ac *Aggregator22Context) SetTx(tx kv.Tx) { ac.tx = tx }
+func (ac *Aggregator22Context) Close()         {}
 
 // BackgroundResult - used only indicate that some work is done
 // no much reason to pass exact results by this object, just get latest state when need

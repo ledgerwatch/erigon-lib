@@ -31,12 +31,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/c2h5oh/datasize"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
@@ -194,40 +196,27 @@ func (ii *InvertedIndex) missedIdxFiles() (l []*filesItem) {
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
 func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
 	missedFiles := ii.missedIdxFiles()
-	errs := make(chan error, len(missedFiles))
-	wg := sync.WaitGroup{}
-
+	g, ctx := errgroup.WithContext(ctx)
 	for _, item := range missedFiles {
-		if err := sem.Acquire(ctx, 1); err != nil {
-			errs <- err
-			break
-		}
-		wg.Add(1)
-		go func(item *filesItem) {
+		item := item
+		g.Go(func() error {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return err
+			}
 			defer sem.Release(1)
-			defer wg.Done()
 			fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
 			fName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep)
 			idxPath := filepath.Join(ii.dir, fName)
 			log.Info("[snapshots] build idx", "file", fName)
 			_, err := buildIndex(ctx, item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false)
 			if err != nil {
-				errs <- err
+				return err
 			}
-		}(item)
+			return nil
+		})
 	}
-	go func() {
-		wg.Wait()
-		close(errs)
-	}()
-	var lastError error
-	for err := range errs {
-		if err != nil {
-			lastError = err
-		}
-	}
-	if lastError != nil {
-		return lastError
+	if err := g.Wait(); err != nil {
+		return err
 	}
 	return ii.openFiles()
 }
@@ -472,7 +461,8 @@ type InvertedIterator struct {
 	stack          []ctxItem
 	startTxNum     uint64
 	endTxNum       uint64
-	next           uint64
+	nextN          uint64
+	res            []uint64
 	hasNextInFiles bool
 	hasNextInDb    bool
 }
@@ -509,7 +499,7 @@ func (it *InvertedIterator) advanceInFiles() {
 			}
 			if n >= it.startTxNum {
 				it.hasNextInFiles = true
-				it.next = n
+				it.nextN = n
 				return
 			}
 		}
@@ -551,7 +541,7 @@ func (it *InvertedIterator) advanceInDb() {
 		}
 		if n >= it.startTxNum {
 			it.hasNextInDb = true
-			it.next = n
+			it.nextN = n
 			return
 		}
 	}
@@ -576,10 +566,39 @@ func (it *InvertedIterator) HasNext() bool {
 	return it.hasNextInFiles || it.hasNextInDb
 }
 
-func (it *InvertedIterator) Next() uint64 {
-	n := it.next
+func (it *InvertedIterator) Next() (uint64, error) { return it.next(), nil }
+func (it *InvertedIterator) NextBatch() ([]uint64, error) {
+	it.res = append(it.res[:0], it.next())
+	for it.HasNext() && len(it.res) < 128 {
+		it.res = append(it.res, it.next())
+	}
+	return it.res, nil
+}
+
+func (it *InvertedIterator) next() uint64 {
+	n := it.nextN
 	it.advance()
 	return n
+}
+func (it *InvertedIterator) ToBitamp() *roaring64.Bitmap {
+	bm := bitmapdb.NewBitmap64()
+	for it.HasNext() {
+		bm.Add(it.next())
+	}
+	return bm
+}
+func (it *InvertedIterator) ToArray() (res []uint64) {
+	for it.HasNext() {
+		res = append(res, it.next())
+	}
+	return res
+}
+func (it *InvertedIterator) ToBitamp32() *roaring.Bitmap {
+	bm := bitmapdb.NewBitmap()
+	for it.HasNext() {
+		bm.Add(uint32(it.next()))
+	}
+	return bm
 }
 
 type InvertedIndexContext struct {
@@ -590,16 +609,16 @@ type InvertedIndexContext struct {
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
-func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum uint64, roTx kv.Tx) InvertedIterator {
-	it := InvertedIterator{
-		key:        key,
-		startTxNum: startTxNum,
-		endTxNum:   endTxNum,
-		indexTable: ic.ii.indexTable,
-		roTx:       roTx,
+func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
+	it := &InvertedIterator{
+		key:         key,
+		startTxNum:  startTxNum,
+		endTxNum:    endTxNum,
+		indexTable:  ic.ii.indexTable,
+		roTx:        roTx,
+		hasNextInDb: true,
 	}
 	var search ctxItem
-	it.hasNextInDb = true
 	search.startTxNum = 0
 	search.endTxNum = startTxNum
 	ic.files.DescendGreaterThan(search, func(item ctxItem) bool {

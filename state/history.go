@@ -36,6 +36,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -260,23 +261,19 @@ func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighte
 		return err
 	}
 	missedFiles := h.missedIdxFiles()
-	errs := make(chan error, len(missedFiles)) // +1 for locality index
-	wg := sync.WaitGroup{}
-
+	g, ctx := errgroup.WithContext(ctx)
 	for _, item := range missedFiles {
-		if err := sem.Acquire(ctx, 1); err != nil {
-			errs <- err
-			break
-		}
-		wg.Add(1)
-		go func(item *filesItem) {
+		item := item
+		g.Go(func() error {
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return err
+			}
 			defer sem.Release(1)
-			defer wg.Done()
 
 			search := &filesItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum}
 			iiItem, ok := h.InvertedIndex.files.Get(search)
 			if !ok {
-				return
+				return nil
 			}
 
 			fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
@@ -285,23 +282,13 @@ func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighte
 			log.Info("[snapshots] build idx", "file", fName)
 			count, err := iterateForVi(item, iiItem, h.compressVals, func(v []byte) error { return nil })
 			if err != nil {
-				errs <- err
+				return err
 			}
-			errs <- buildVi(item, iiItem, idxPath, h.tmpdir, count, false /* values */, h.compressVals)
-		}(item)
+			return buildVi(item, iiItem, idxPath, h.tmpdir, count, false /* values */, h.compressVals)
+		})
 	}
-	go func() {
-		wg.Wait()
-		close(errs)
-	}()
-	var lastError error
-	for err := range errs {
-		if err != nil {
-			lastError = err
-		}
-	}
-	if lastError != nil {
-		return lastError
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	return h.openFiles()
@@ -1565,7 +1552,10 @@ func (hc *HistoryContext) IterateRecentlyChanged(startTxNum, endTxNum uint64, ro
 	it := hc.IterateRecentlyChangedUnordered(startTxNum, endTxNum, roTx)
 	defer it.Close()
 	for it.HasNext() {
-		k, v := it.Next()
+		k, v, err := it.Next()
+		if err != nil {
+			return err
+		}
 		if err := col.Collect(k, v); err != nil {
 			return err
 		}
@@ -1598,6 +1588,7 @@ type HistoryIterator2 struct {
 	valsTable     string
 	nextKey       []byte
 	nextVal       []byte
+	nextErr       error
 	endTxNum      uint64
 	startTxNum    uint64
 	advDbCnt      int
@@ -1619,20 +1610,23 @@ func (hi *HistoryIterator2) advanceInDb() {
 	var err error
 	if hi.txNum2kCursor == nil {
 		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
-			panic(err)
+			hi.nextErr, hi.hasNext = err, true
+			return
 		}
 		if k, v, err = hi.txNum2kCursor.Seek(hi.startTxKey[:]); err != nil {
-			// TODO pass error properly around
-			panic(err)
+			hi.nextErr, hi.hasNext = err, true
+			return
 		}
 	} else {
 		if k, v, err = hi.txNum2kCursor.NextDup(); err != nil {
-			panic(err)
+			hi.nextErr, hi.hasNext = err, true
+			return
 		}
 		if k == nil {
 			k, v, err = hi.txNum2kCursor.NextNoDup()
 			if err != nil {
-				panic(err)
+				hi.nextErr, hi.hasNext = err, true
+				return
 			}
 			if k != nil && binary.BigEndian.Uint64(k) >= hi.endTxNum {
 				k = nil // end
@@ -1652,7 +1646,8 @@ func (hi *HistoryIterator2) advanceInDb() {
 		}
 		val, err := hi.roTx.GetOne(hi.valsTable, valNum)
 		if err != nil {
-			panic(err)
+			hi.nextErr, hi.hasNext = err, true
+			return
 		}
 		hi.nextVal = val
 		return
@@ -1666,10 +1661,13 @@ func (hi *HistoryIterator2) HasNext() bool {
 	return hi.hasNext
 }
 
-func (hi *HistoryIterator2) Next() ([]byte, []byte) {
-	k, v := hi.nextKey, hi.nextVal
+func (hi *HistoryIterator2) Next() ([]byte, []byte, error) {
+	k, v, err := hi.nextKey, hi.nextVal, hi.nextErr
+	if err != nil {
+		return nil, nil, err
+	}
 	hi.advanceInDb()
-	return k, v
+	return k, v, nil
 }
 
 func (h *History) DisableReadAhead() {
