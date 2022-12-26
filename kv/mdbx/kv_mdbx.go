@@ -592,6 +592,11 @@ func (tx *MdbxTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byt
 	return nil
 }
 
+func (tx *MdbxTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
+	nextPrefix, _ := kv.NextSubtree(prefix)
+	return tx.Range(table, prefix, nextPrefix)
+}
+
 func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
 	if toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
 		return nil, fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
