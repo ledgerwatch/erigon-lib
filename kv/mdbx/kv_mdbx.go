@@ -593,7 +593,10 @@ func (tx *MdbxTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byt
 }
 
 func (tx *MdbxTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
-	nextPrefix, _ := kv.NextSubtree(prefix)
+	nextPrefix, ok := kv.NextSubtree(prefix)
+	if !ok {
+		return tx.Range(table, prefix, nil)
+	}
 	return tx.Range(table, prefix, nextPrefix)
 }
 

@@ -294,7 +294,10 @@ func (tx *remoteTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, w
 // TODO: implement by server-side stream
 
 func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
-	nextPrefix, _ := kv.NextSubtree(prefix)
+	nextPrefix, ok := kv.NextSubtree(prefix)
+	if !ok {
+		return tx.Range(table, prefix, nil)
+	}
 	return tx.Range(table, prefix, nextPrefix)
 }
 
