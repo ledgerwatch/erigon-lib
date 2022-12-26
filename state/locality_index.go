@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
@@ -31,10 +30,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
-	"github.com/ledgerwatch/erigon-lib/compress"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
 )
@@ -221,89 +219,7 @@ func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxEx
 	fName := fmt.Sprintf("%s.%d-%d.li", li.filenameBase, 0, toStep)
 	return toStep, dir.FileExist(filepath.Join(li.dir, fName))
 }
-
-type FixedBitamps struct {
-	bm            *roaring64.Bitmap
-	mask          *roaring64.Bitmap
-	small         *roaring64.Bitmap
-	bitsPerBitmap uint64
-	i             uint64
-}
-
-func NewFixedBitamps(bitsPerBitmap uint64) *FixedBitamps {
-	return &FixedBitamps{bitsPerBitmap: bitsPerBitmap, bm: roaring64.New(), mask: roaring64.New(), small: roaring64.New()}
-}
-func (l *FixedBitamps) AddUint64EncodedBitmap(filesBitmap uint64) {
-	for n := bits.TrailingZeros64(filesBitmap); filesBitmap != 0; n = bits.TrailingZeros64(filesBitmap) {
-		filesBitmap = (filesBitmap >> (n + 1)) << (n + 1) // clear first N bits
-		l.bm.Add(l.bitsPerBitmap*l.i + uint64(n))
-	}
-	l.i++
-}
-func (l *FixedBitamps) AddArrayUint64(v []uint64) {
-	for _, n := range v {
-		l.bm.Add(l.bitsPerBitmap*l.i + n)
-	}
-	l.i++
-}
-func (l *FixedBitamps) At(i int) *roaring64.Bitmap {
-	base := uint64(i) * l.bitsPerBitmap
-	l.mask.Clear()
-	l.mask.AddRange(base, base+l.bitsPerBitmap)
-	l.mask.And(l.bm)
-	it := l.mask.Iterator()
-
-	//TODO: maybe use roaring.AddOffset
-	l.small.Clear()
-	for it.HasNext() {
-		l.small.Add(it.Next() - base)
-	}
-	return l.small
-}
-
-func (li *LocalityIndex) buildFiles2(ctx context.Context, ii *InvertedIndex, toStep uint64) (err error) {
-	defer ii.EnableMadvNormalReadAhead().DisableReadAhead()
-
-	logEvery := time.NewTicker(30 * time.Second)
-	defer logEvery.Stop()
-
-	fromStep := uint64(0)
-
-	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
-	total := float64(it.Total())
-	dense1 := NewFixedBitamps(it.FilesAmount())
-	//dense2 := NewFixedBitamps(128)
-
-	log.Info("bitmaps", "name", li.filenameBase, "bitsPerBitmap", dense1.bitsPerBitmap)
-
-	compressor, _ := compress.NewCompressor(ctx, "", filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.lc", li.filenameBase, fromStep, toStep)), li.tmpdir, compress.MinPatternScore, 16, log.LvlTrace)
-	i := uint64(0)
-	for it.HasNext() {
-		k, filesBitmap, progress := it.Next()
-		dense1.AddUint64EncodedBitmap(filesBitmap)
-		//dense2.AddUint64EncodedBitmap(filesBitmap)
-		a := make([]byte, 16)
-		binary.BigEndian.PutUint64(a, filesBitmap)
-		compressor.AddWord(a)
-
-		i++
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-logEvery.C:
-			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "prefix", hex.EncodeToString(k[:4]), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
-		default:
-		}
-	}
-	dense1.bm.RunOptimize()
-	log.Info("bitmaps", "name", li.filenameBase, "dense1_kb", dense1.bm.GetSerializedSizeInBytes()/1024)
-	log.Info("bitmaps", "name", li.filenameBase, "naive1_kb", dense1.bm.GetCardinality()*dense1.bitsPerBitmap/8/1024)
-	log.Info("bitmaps", "name", li.filenameBase, "len1", dense1.bm.GetCardinality())
-	return compressor.Compress()
-}
-
 func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toStep uint64) (files *LocalityIndexFiles, err error) {
-	return nil, nil
 	defer ii.EnableMadvNormalReadAhead().DisableReadAhead()
 
 	logEvery := time.NewTicker(30 * time.Second)
@@ -328,6 +244,11 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	fName := fmt.Sprintf("%s.%d-%d.li", li.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(li.dir, fName)
+	filePath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.l", li.filenameBase, fromStep, toStep))
+	dense1, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(total))
+	if err != nil {
+		return nil, err
+	}
 
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
@@ -343,19 +264,21 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
 
-	bm := make([]byte, 8)
 	total = float64(it.Total())
 
+	i := uint64(0)
 	for {
 		it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 		for it.HasNext() {
-			k, filesBitmap, progress := it.Next()
-			binary.BigEndian.PutUint64(bm, filesBitmap)
+
+			k, inFiles, progress := it.Next()
+			dense1.AddArray(i, inFiles)
 
 			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
 			//fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
 			//}
-			if err = rs.AddKey(k, filesBitmap); err != nil {
+
+			if err = rs.AddKey(k, i); err != nil {
 				return nil, err
 			}
 
@@ -378,6 +301,9 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			break
 		}
 	}
+	if err := dense1.Build(); err != nil {
+		return nil, err
+	}
 
 	idx, err := recsplit.OpenIndex(idxPath)
 	if err != nil {
@@ -395,13 +321,6 @@ func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumT
 }
 
 func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedIndex) error {
-	toStep, _ := li.missedIdxFiles(ii)
-	err := li.buildFiles2(ctx, ii, toStep)
-	if err != nil {
-		return err
-	}
-	return nil
-
 	if li == nil {
 		return nil
 	}
@@ -439,14 +358,15 @@ func (sf LocalityIndexFiles) Close() {
 }
 
 type LocalityIterator struct {
-	hc         *InvertedIndexContext
-	h          ReconHeap
-	bitmap     uint64
-	nextBitmap uint64
-	nextKey    []byte
-	key        []byte
-	progress   uint64
-	hasNext    bool
+	hc               *InvertedIndexContext
+	h                ReconHeap
+	bitmap           uint64
+	nextBitmap       uint64
+	files, nextFiles []uint64
+	nextKey          []byte
+	key              []byte
+	progress         uint64
+	hasNext          bool
 
 	total, filesAmount uint64
 }
@@ -477,6 +397,7 @@ func (si *LocalityIterator) advance() {
 			if si.key == nil {
 				si.key = key
 				si.bitmap |= 1 << inFile
+				si.files = append(si.files, uint64(inFile))
 				//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
 				//	fmt.Printf("it1: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
 				//}
@@ -486,11 +407,14 @@ func (si *LocalityIterator) advance() {
 			//	fmt.Printf("it2 finish: %x, %b\n", si.key, si.bitmap)
 			//}
 
-			si.nextBitmap = si.bitmap
+			//si.nextBitmap = si.bitmap
+			si.nextFiles, si.files = si.files, si.nextFiles
 			si.nextKey = si.key
-			si.bitmap = 0
+			//si.bitmap = 0
+			si.files = si.files[:0]
 
-			si.bitmap |= 1 << inFile
+			//si.bitmap |= 1 << inFile
+			si.files = append(si.files, uint64(inFile))
 			si.key = key
 
 			//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
@@ -500,13 +424,15 @@ func (si *LocalityIterator) advance() {
 			si.hasNext = true
 			return
 		}
-		si.bitmap |= 1 << inFile
+		//si.bitmap |= 1 << inFile
+		si.files = append(si.files, uint64(inFile))
 
 		//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
 		//	fmt.Printf("it3 add: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
 		//}
 	}
-	si.nextBitmap, si.bitmap = si.bitmap, si.nextBitmap
+	//si.nextBitmap, si.bitmap = si.bitmap, si.nextBitmap
+	si.nextFiles, si.files = si.files, si.nextFiles
 	si.nextKey = si.key
 	si.hasNext = false
 }
@@ -515,9 +441,9 @@ func (si *LocalityIterator) HasNext() bool       { return si.hasNext }
 func (si *LocalityIterator) Total() uint64       { return si.total }
 func (si *LocalityIterator) FilesAmount() uint64 { return si.filesAmount }
 
-func (si *LocalityIterator) Next() ([]byte, uint64, uint64) {
+func (si *LocalityIterator) Next() ([]byte, []uint64, uint64) {
 	si.advance()
-	return si.nextKey, si.nextBitmap, si.progress
+	return si.nextKey, si.nextFiles, si.progress
 }
 
 func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
