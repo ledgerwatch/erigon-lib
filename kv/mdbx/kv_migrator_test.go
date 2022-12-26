@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
@@ -100,6 +101,7 @@ func TestReadOnlyMode(t *testing.T) {
 		}
 	}).MustOpen()
 	db1.Close()
+	time.Sleep(10 * time.Millisecond) // win sometime need time to close file
 
 	db2 := mdbx.NewMDBX(logger).Readonly().Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
@@ -114,6 +116,7 @@ func TestReadOnlyMode(t *testing.T) {
 
 	c, err := tx.Cursor(kv.Headers)
 	require.NoError(t, err)
+	defer c.Close()
 	_, _, err = c.Seek([]byte("some prefix"))
 	require.NoError(t, err)
 }
