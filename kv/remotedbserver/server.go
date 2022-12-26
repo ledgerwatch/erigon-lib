@@ -550,9 +550,16 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 	if req.ToPrefix != nil && bytes.Compare(req.FromPrefix, req.ToPrefix) >= 0 {
 		return fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", req.FromPrefix, req.ToPrefix)
 	}
-	var lastKey []byte
+	var k, v []byte
+
+	if req.FromPrefix == nil {
+		req.FromPrefix = []byte{}
+	}
 	const step = 1024 // make sure `s.with` has limited time
-	for from := req.FromPrefix; bytes.Compare(from, req.ToPrefix) < 0; from = lastKey {
+	for from := req.FromPrefix; from != nil; from = k {
+		if req.ToPrefix != nil && bytes.Compare(from, req.ToPrefix) >= 0 {
+			break
+		}
 		resp := &remote.Pairs{}
 		if err := s.with(req.TxID, func(tx kv.Tx) error {
 			c, err := tx.Cursor(req.Table)
@@ -561,11 +568,11 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 			}
 			defer c.Close()
 			i := 0
-			for k, v, err := c.Seek(from); k != nil; k, v, err = c.Next() {
+			for k, v, err = c.Seek(from); k != nil; k, v, err = c.Next() {
 				if err != nil {
 					return err
 				}
-				if req.ToPrefix != nil && bytes.Compare(k, req.ToPrefix) < 0 {
+				if req.ToPrefix != nil && bytes.Compare(k, req.ToPrefix) >= 0 {
 					break
 				}
 
@@ -574,10 +581,10 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 
 				i++
 				if i > step {
-					lastKey = common.Copy(k)
 					break
 				}
 			}
+			k = common.Copy(k)
 			return nil
 		}); err != nil {
 			return err
