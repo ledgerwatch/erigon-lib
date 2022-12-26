@@ -47,13 +47,12 @@ func OpenFixedSizeBitmaps(indexFile string, bitsPerBitmap int) (*FixedSizeBitmap
 }
 
 type FixedSizeBitmapsWriter struct {
-	bitmap.Bitmap
 	f *os.File
 
-	mmapHandle2 *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
-	indexFile   string
-	data        []byte // slice of correct size for the index to work with
-	mmapHandle1 []byte // mmap handle for unix (this is used to close mmap)
+	mmapHandle2               *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
+	indexFile, tmpIdxFilePath string
+	data                      []byte // slice of correct size for the index to work with
+	mmapHandle1               []byte // mmap handle for unix (this is used to close mmap)
 
 	w             *bufio.Writer
 	size          int
@@ -62,20 +61,20 @@ type FixedSizeBitmapsWriter struct {
 
 func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint64) (*FixedSizeBitmapsWriter, error) {
 	idx := &FixedSizeBitmapsWriter{
-		indexFile:     indexFile,
-		bitsPerBitmap: uint64(bitsPerBitmap),
+		indexFile:      indexFile,
+		tmpIdxFilePath: indexFile + ".tmp",
+		bitsPerBitmap:  uint64(bitsPerBitmap),
+		size:           bitsPerBitmap * int(amount),
 	}
 	var err error
-	idx.f, err = os.Create(indexFile)
+	idx.f, err = os.Create(idx.tmpIdxFilePath)
 	if err != nil {
 		return nil, err
 	}
-	idx.size = bitsPerBitmap * int(amount)
 	if idx.mmapHandle1, idx.mmapHandle2, err = mmap.Mmap(idx.f, int(idx.size)); err != nil {
 		return nil, err
 	}
 	idx.data = idx.mmapHandle1[:idx.size]
-	idx.Bitmap = bitmap.FromBytes(idx.data)
 	if err := mmap.MadviseNormal(idx.mmapHandle1); err != nil {
 		return nil, err
 	}
@@ -94,6 +93,8 @@ func (w *FixedSizeBitmapsWriter) Build() error {
 	if err := w.f.Sync(); err != nil {
 		return err
 	}
+	_ = w.f.Close()
+	_ = os.Rename(w.tmpIdxFilePath, w.indexFile)
 	return nil
 }
 
