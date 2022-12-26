@@ -636,7 +636,7 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 }
 
 func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
-	stream, err := tx.db.remoteKV.Range(tx.ctx, &remote.RangeReq{TxID: tx.id, Table: string(table), FromPrefix: fromPrefix, ToPrefix: toPrefix})
+	stream, err := tx.db.remoteKV.Range(tx.ctx, &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix})
 	if err != nil {
 		return nil, err
 	}
