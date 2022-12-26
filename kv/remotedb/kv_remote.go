@@ -228,15 +228,13 @@ func (tx *remoteTx) statelessCursor(bucket string) (kv.Cursor, error) {
 
 func (tx *remoteTx) BucketSize(name string) (uint64, error) { panic("not implemented") }
 
-// TODO: this must be optimized - and implemented as single command on server, with server-side buffered streaming
 func (tx *remoteTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
+	it, err := tx.Range(bucket, fromPrefix, nil)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
+	for it.HasNext() {
+		k, v, err := it.Next()
 		if err != nil {
 			return err
 		}
@@ -247,20 +245,15 @@ func (tx *remoteTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v [
 	return nil
 }
 
-// TODO: this must be optimized - and implemented as single command on server, with server-side buffered streaming
 func (tx *remoteTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
+	it, err := tx.Prefix(bucket, prefix)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(prefix); k != nil; k, v, err = c.Next() {
+	for it.HasNext() {
+		k, v, err := it.Next()
 		if err != nil {
 			return err
-		}
-		if !bytes.HasPrefix(k, prefix) {
-			break
 		}
 		if err := walker(k, v); err != nil {
 			return err
@@ -269,6 +262,7 @@ func (tx *remoteTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []b
 	return nil
 }
 
+// TODO: this must be deprecated
 func (tx *remoteTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, walker func(k, v []byte) error) error {
 	if amount == 0 {
 		return nil
