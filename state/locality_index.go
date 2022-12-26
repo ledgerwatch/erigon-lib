@@ -309,7 +309,11 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	if err != nil {
 		return nil, err
 	}
-	return &LocalityIndexFiles{index: idx}, nil
+	bm, err := bitmapdb.OpenFixedSizeBitmaps(filePath, int(it.FilesAmount()))
+	if err != nil {
+		return nil, err
+	}
+	return &LocalityIndexFiles{index: idx, bm: bm}, nil
 }
 
 func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumTo uint64) {
@@ -349,6 +353,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 
 type LocalityIndexFiles struct {
 	index *recsplit.Index
+	bm    *bitmapdb.FixedSizeBitmaps
 }
 
 func (sf LocalityIndexFiles) Close() {
