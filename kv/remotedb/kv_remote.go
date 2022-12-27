@@ -45,6 +45,7 @@ type remoteTx struct {
 	db                 *RemoteKV
 	statelessCursors   map[string]kv.Cursor
 	cursors            []*remoteCursor
+	streams            []kv.Closer
 	viewID, id         uint64
 	streamingRequested bool
 }
@@ -203,6 +204,9 @@ func (tx *remoteTx) Rollback() {
 	// don't close opened cursors - just close stream, server will cleanup everything well
 	tx.closeGrpcStream()
 	tx.db.roTxsLimiter.Release(1)
+	for _, c := range tx.streams {
+		c.Close()
+	}
 }
 func (tx *remoteTx) DBSize() (uint64, error) { panic("not implemented") }
 
@@ -224,15 +228,13 @@ func (tx *remoteTx) statelessCursor(bucket string) (kv.Cursor, error) {
 
 func (tx *remoteTx) BucketSize(name string) (uint64, error) { panic("not implemented") }
 
-// TODO: this must be optimized - and implemented as single command on server, with server-side buffered streaming
 func (tx *remoteTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
+	it, err := tx.Range(bucket, fromPrefix, nil)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
+	for it.HasNext() {
+		k, v, err := it.Next()
 		if err != nil {
 			return err
 		}
@@ -243,20 +245,15 @@ func (tx *remoteTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v [
 	return nil
 }
 
-// TODO: this must be optimized - and implemented as single command on server, with server-side buffered streaming
 func (tx *remoteTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
+	it, err := tx.Prefix(bucket, prefix)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(prefix); k != nil; k, v, err = c.Next() {
+	for it.HasNext() {
+		k, v, err := it.Next()
 		if err != nil {
 			return err
-		}
-		if !bytes.HasPrefix(k, prefix) {
-			break
 		}
 		if err := walker(k, v); err != nil {
 			return err
@@ -265,6 +262,7 @@ func (tx *remoteTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []b
 	return nil
 }
 
+// TODO: this must be deprecated
 func (tx *remoteTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, walker func(k, v []byte) error) error {
 	if amount == 0 {
 		return nil
@@ -605,7 +603,7 @@ func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.las
 
 // Temporal Methods
 func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
-	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxID: tx.id, Name: string(name), K: k, Ts: ts})
+	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxID: tx.id, Table: string(name), K: k, Ts: ts})
 	if err != nil {
 		return nil, false, err
 	}
@@ -614,17 +612,85 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 
 func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.UnaryStream[uint64], err error) {
 	//TODO: maybe add ctx.WithCancel
-	stream, err := tx.db.remoteKV.IndexRange(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Name: string(name), K: k, FromTs: fromTs, ToTs: toTs})
+	stream, err := tx.db.remoteKV.IndexRange(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: fromTs, ToTs: toTs})
 	if err != nil {
 		return nil, err
 	}
 	it := &grpc2UnaryStream[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }}
+	//tx.streams = append(tx.streams, it)
+	return it, nil
+}
+
+func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
+	nextPrefix, ok := kv.NextSubtree(prefix)
+	if !ok {
+		return tx.Range(table, prefix, nil)
+	}
+	return tx.Range(table, prefix, nextPrefix)
+}
+
+func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+	stream, err := tx.db.remoteKV.Range(tx.ctx, &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix})
+	if err != nil {
+		return nil, err
+	}
+	it := &grpc2Pairs[*remote.Pairs]{stream: stream}
+	//tx.streams = append(tx.streams, it)
 	return it, nil
 }
 
 type grpcStream[Msg any] interface {
 	Recv() (Msg, error)
 	CloseSend() error
+}
+
+type parisMsg interface {
+	GetKeys() [][]byte
+	GetValues() [][]byte
+}
+type grpc2Pairs[Msg parisMsg] struct {
+	stream     grpcStream[Msg]
+	lastErr    error
+	lastKeys   [][]byte
+	lastValues [][]byte
+	i          int
+}
+
+func (it *grpc2Pairs[Msg]) NextBatch() ([][]byte, [][]byte, error) {
+	keys := it.lastKeys[it.i:]
+	values := it.lastValues[it.i:]
+	it.i = len(it.lastKeys)
+	return keys, values, nil
+}
+func (it *grpc2Pairs[Msg]) HasNext() bool {
+	if it.lastErr != nil {
+		return true
+	}
+	if it.i < len(it.lastKeys) {
+		return true
+	}
+
+	it.i = 0
+	msg, err := it.stream.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return false
+		}
+		it.lastErr = err
+		return true
+	}
+	it.lastKeys = msg.GetKeys()
+	it.lastValues = msg.GetValues()
+	return len(it.lastKeys) > 0
+}
+func (it *grpc2Pairs[Msg]) Close() {
+	//_ = it.stream.CloseSend()
+}
+func (it *grpc2Pairs[Msg]) Next() ([]byte, []byte, error) {
+	k := it.lastKeys[it.i]
+	v := it.lastValues[it.i]
+	it.i++
+	return k, v, nil
 }
 
 type grpc2UnaryStream[Msg any, Res any] struct {
