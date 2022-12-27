@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
-	"math/bits"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -50,6 +49,7 @@ type LocalityIndex struct {
 	aggregationStep uint64 // Directory where static files are created
 
 	file *filesItem
+	bm   *bitmapdb.FixedSizeBitmaps
 }
 
 func NewLocalityIndex(
@@ -159,41 +159,43 @@ func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 	return nil
 }
 
-func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, orSearchFromTxn uint64, ok1, ok2 bool) {
+func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, orSearchFromTxn uint64, ok1, ok2 bool) {
 	if li == nil || li.file == nil || li.file.index == nil {
 		return exactShard1, exactShard2, fromTxNum, false, false
 	}
 
-	exactShard1, exactShard2, ok1, ok2 = li.lookup(r, key, fromTxNum)
+	exactShard1, exactShard2, ok1, ok2 = li.lookup(r, bm, key, fromTxNum)
 	return exactShard1, exactShard2, cmp.Max(li.file.endTxNum+1, fromTxNum), ok1, ok2
 }
 
 // prevents searching key in many files
 // LocalityIndex return exactly 2 file (step)
-func (li *LocalityIndex) lookup(r *recsplit.IndexReader, key []byte, fromTxNum uint64) (exactShardNum1, exactShardNum2 uint64, ok1, ok2 bool) {
+func (li *LocalityIndex) lookup(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, key []byte, fromTxNum uint64) (exactShardNum1, exactShardNum2 uint64, ok1, ok2 bool) {
 	if li == nil || li.file == nil || li.file.index == nil {
 		return 0, 0, false, false
 	}
 
-	fileNumbers := r.Lookup(key)
+	n := r.Lookup(key)
+	fileNumbers := bm.At(n)
 	fromFileNum := fromTxNum / li.aggregationStep / StepsInBiggestFile
 	if fromFileNum > 0 {
-		fileNumbers = (fileNumbers >> fromFileNum) << fromFileNum // clear first N bits
+		fileNumbers = fileNumbers[fromFileNum:]
+		//fileNumbers = (fileNumbers >> fromFileNum) << fromFileNum // clear first N bits
 	}
 	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 	//	fmt.Printf("locIndex2: %x, %b\n", key, fileNumbers)
 	//}
-	if fileNumbers > 0 {
+	if len(fileNumbers) > 0 {
 		ok1 = true
-		n := bits.TrailingZeros64(fileNumbers)
+		//n := bits.TrailingZeros64(fileNumbers)
+		n := fileNumbers[0]
 		exactShardNum1 = uint64(n * StepsInBiggestFile)
-		//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-		//	fmt.Printf("locIndex3: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
-		//}
-		fileNumbers = (fileNumbers >> (n + 1)) << (n + 1) // clear first N bits
-		if fileNumbers > 0 {
+		//fileNumbers = (fileNumbers >> (n + 1)) << (n + 1) // clear first N bits
+		fileNumbers = fileNumbers[1:]
+		if len(fileNumbers) > 0 {
 			ok2 = true
-			n = bits.TrailingZeros64(fileNumbers)
+			//n = bits.TrailingZeros64(fileNumbers)
+			n = fileNumbers[0]
 			exactShardNum2 = uint64(n * StepsInBiggestFile)
 			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 			//	fmt.Printf("locIndex4: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
@@ -264,7 +266,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	i := uint64(0)
 	for {
-		dense1, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(total))
+		dense, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(total))
 		if err != nil {
 			return nil, err
 		}
@@ -273,7 +275,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		for it.HasNext() {
 
 			k, inFiles, progress := it.Next()
-			dense1.AddArray(i, inFiles)
+			dense.AddArray(i, inFiles)
 			if err = rs.AddKey(k, i); err != nil {
 				return nil, err
 			}
@@ -291,7 +293,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			}
 		}
 
-		if err := dense1.Build(); err != nil {
+		if err := dense.Build(); err != nil {
 			return nil, err
 		}
 
@@ -324,6 +326,7 @@ func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumT
 		endTxNum:   txNumTo,
 		index:      sf.index,
 	}
+	li.bm = sf.bm
 }
 
 func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedIndex) error {
