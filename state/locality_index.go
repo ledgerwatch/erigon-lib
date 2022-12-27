@@ -245,10 +245,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	fName := fmt.Sprintf("%s.%d-%d.li", li.filenameBase, fromStep, toStep)
 	idxPath := filepath.Join(li.dir, fName)
 	filePath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.l", li.filenameBase, fromStep, toStep))
-	dense1, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(total))
-	if err != nil {
-		return nil, err
-	}
 
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
@@ -268,19 +264,23 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	i := uint64(0)
 	for {
+		dense1, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(total))
+		if err != nil {
+			return nil, err
+		}
+
 		it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 		for it.HasNext() {
 
 			k, inFiles, progress := it.Next()
 			dense1.AddArray(i, inFiles)
+			if err = rs.AddKey(k, i); err != nil {
+				return nil, err
+			}
 
 			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
 			//fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
 			//}
-
-			if err = rs.AddKey(k, i); err != nil {
-				return nil, err
-			}
 
 			select {
 			case <-ctx.Done():
@@ -290,6 +290,11 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			default:
 			}
 		}
+
+		if err := dense1.Build(); err != nil {
+			return nil, err
+		}
+
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
 				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
@@ -300,9 +305,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		} else {
 			break
 		}
-	}
-	if err := dense1.Build(); err != nil {
-		return nil, err
 	}
 
 	idx, err := recsplit.OpenIndex(idxPath)

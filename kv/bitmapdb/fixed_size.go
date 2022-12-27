@@ -19,13 +19,15 @@ type FixedSizeBitmaps struct {
 	data        []byte // slice of correct size for the index to work with
 	mmapHandle1 []byte // mmap handle for unix (this is used to close mmap)
 
-	size    int64
-	modTime time.Time
+	bitsPerBitmap int
+	size          int64
+	modTime       time.Time
 }
 
 func OpenFixedSizeBitmaps(indexFile string, bitsPerBitmap int) (*FixedSizeBitmaps, error) {
 	idx := &FixedSizeBitmaps{
-		indexFile: indexFile,
+		indexFile:     indexFile,
+		bitsPerBitmap: bitsPerBitmap,
 	}
 	var err error
 	idx.f, err = os.Open(indexFile)
