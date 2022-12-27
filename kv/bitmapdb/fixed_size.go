@@ -11,7 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	mmap2 "github.com/blevesearch/mmap-go"
+	mmap2 "github.com/edsrzf/mmap-go"
 	"github.com/kelindar/bitmap"
 )
 

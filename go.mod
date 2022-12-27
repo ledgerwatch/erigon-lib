@@ -8,7 +8,6 @@ require (
 	github.com/anacrolix/go-libutp v1.2.0
 	github.com/anacrolix/log v0.13.2-0.20220711050817-613cb738ef30
 	github.com/anacrolix/torrent v1.47.0
-	github.com/blevesearch/mmap-go v1.0.4
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/go-stack/stack v1.8.1

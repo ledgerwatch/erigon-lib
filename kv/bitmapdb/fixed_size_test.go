@@ -1,38 +1,11 @@
 package bitmapdb
 
 import (
-	"bufio"
-	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/blevesearch/mmap-go"
 	"github.com/stretchr/testify/require"
 )
-
-func TestFixedSizeBitmaps2(t *testing.T) {
-	tmpDir, require := t.TempDir(), require.New(t)
-	fPath := tmpDir + "/a.tmp"
-	f, err := os.Create(fPath)
-	require.NoError(err)
-	m, err := mmap.MapRegion(f, 1*os.Getpagesize(), mmap.RDWR, 0, 0)
-	require.NoError(err)
-	wr := bufio.NewWriter(f)
-	_, err = f.Write(make([]byte, os.Getpagesize()))
-	wr.Flush()
-
-	require.NoError(err)
-	m[1] = 1
-	m.Flush()
-	//f.Sync()
-	m.Unmap()
-	//f.Close()
-
-	m2, err := mmap.Map(f, mmap.RDONLY, 0)
-	require.NoError(err)
-	fmt.Printf("%x\n", m2[1])
-}
 
 func TestFixedSizeBitmaps(t *testing.T) {
 
