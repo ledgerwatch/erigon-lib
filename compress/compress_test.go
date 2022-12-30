@@ -25,9 +25,34 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ledgerwatch/erigon-lib/mmap"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDelOpenedFile(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	fPath := filepath.Join(dir, "test.txt")
+	err := os.Remove(fPath)
+	require.NoError(err)
+	f, err := os.Create(fPath)
+	require.NoError(err)
+	_, err = f.Write([]byte("alex"))
+	require.NoError(err)
+	stat, err := f.Stat()
+	require.NoError(err)
+	sz := stat.Size()
+	err = f.Close()
+	require.NoError(err)
+
+	h1, h2, err := mmap.Mmap(f, int(sz))
+	require.NoError(err)
+	err = os.Remove(fPath)
+	require.NoError(err)
+	err = mmap.Munmap(h1, h2)
+	require.NoError(err)
+}
 
 func TestCompressEmptyDict(t *testing.T) {
 	tmpDir := t.TempDir()
