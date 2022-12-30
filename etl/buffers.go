@@ -26,7 +26,6 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
 const (
@@ -52,7 +51,7 @@ type Buffer interface {
 	Write(io.Writer) error
 	Sort()
 	CheckFlushSize() bool
-	SetComparator(cmp kv.CmpFunc)
+	//SetComparator(cmp kv.CmpFunc)
 }
 
 type sortableBufferEntry struct {
@@ -73,7 +72,7 @@ func NewSortableBuffer(bufferOptimalSize datasize.ByteSize) *sortableBuffer {
 }
 
 type sortableBuffer struct {
-	comparator  kv.CmpFunc
+	//comparator  kv.CmpFunc
 	offsets     []int
 	lens        []int
 	data        []byte
@@ -103,19 +102,19 @@ func (b *sortableBuffer) Len() int {
 	return len(b.offsets) / 2
 }
 
-func (b *sortableBuffer) SetComparator(cmp kv.CmpFunc) {
-	b.comparator = cmp
-}
+//func (b *sortableBuffer) SetComparator(cmp kv.CmpFunc) {
+//	b.comparator = cmp
+//}
 
 func (b *sortableBuffer) Less(i, j int) bool {
 	i2, j2 := i*2, j*2
 	ki := b.data[b.offsets[i2] : b.offsets[i2]+b.lens[i2]]
 	kj := b.data[b.offsets[j2] : b.offsets[j2]+b.lens[j2]]
-	if b.comparator != nil {
-		vi := b.data[b.offsets[i2+1] : b.offsets[i2+1]+b.lens[i2+1]]
-		vj := b.data[b.offsets[j2+1] : b.offsets[j2+1]+b.lens[j2+1]]
-		return b.comparator(ki, kj, vi, vj) < 0
-	}
+	//if b.comparator != nil {
+	//	vi := b.data[b.offsets[i2+1] : b.offsets[i2+1]+b.lens[i2+1]]
+	//	vj := b.data[b.offsets[j2+1] : b.offsets[j2+1]+b.lens[j2+1]]
+	//	return b.comparator(ki, kj, vi, vj) < 0
+	//}
 	return bytes.Compare(ki, kj) < 0
 }
 
@@ -180,8 +179,8 @@ func NewAppendBuffer(bufferOptimalSize datasize.ByteSize) *appendSortableBuffer 
 }
 
 type appendSortableBuffer struct {
-	entries     map[string][]byte
-	comparator  kv.CmpFunc
+	entries map[string][]byte
+	//comparator  kv.CmpFunc
 	sortedBuf   []sortableBufferEntry
 	size        int
 	optimalSize int
@@ -197,9 +196,9 @@ func (b *appendSortableBuffer) Put(k, v []byte) {
 	b.entries[string(k)] = stored
 }
 
-func (b *appendSortableBuffer) SetComparator(cmp kv.CmpFunc) {
-	b.comparator = cmp
-}
+//func (b *appendSortableBuffer) SetComparator(cmp kv.CmpFunc) {
+//	b.comparator = cmp
+//}
 
 func (b *appendSortableBuffer) Size() int {
 	return b.size
@@ -216,9 +215,9 @@ func (b *appendSortableBuffer) Sort() {
 }
 
 func (b *appendSortableBuffer) Less(i, j int) bool {
-	if b.comparator != nil {
-		return b.comparator(b.sortedBuf[i].key, b.sortedBuf[j].key, b.sortedBuf[i].value, b.sortedBuf[j].value) < 0
-	}
+	//if b.comparator != nil {
+	//	return b.comparator(b.sortedBuf[i].key, b.sortedBuf[j].key, b.sortedBuf[i].value, b.sortedBuf[j].value) < 0
+	//}
 	return bytes.Compare(b.sortedBuf[i].key, b.sortedBuf[j].key) < 0
 }
 
@@ -272,16 +271,16 @@ func NewOldestEntryBuffer(bufferOptimalSize datasize.ByteSize) *oldestEntrySorta
 }
 
 type oldestEntrySortableBuffer struct {
-	entries     map[string][]byte
-	comparator  kv.CmpFunc
+	entries map[string][]byte
+	//comparator  kv.CmpFunc
 	sortedBuf   []sortableBufferEntry
 	size        int
 	optimalSize int
 }
 
-func (b *oldestEntrySortableBuffer) SetComparator(cmp kv.CmpFunc) {
-	b.comparator = cmp
-}
+//func (b *oldestEntrySortableBuffer) SetComparator(cmp kv.CmpFunc) {
+//	b.comparator = cmp
+//}
 
 func (b *oldestEntrySortableBuffer) Put(k, v []byte) {
 	_, ok := b.entries[string(k)]
@@ -310,9 +309,9 @@ func (b *oldestEntrySortableBuffer) Sort() {
 }
 
 func (b *oldestEntrySortableBuffer) Less(i, j int) bool {
-	if b.comparator != nil {
-		return b.comparator(b.sortedBuf[i].key, b.sortedBuf[j].key, b.sortedBuf[i].value, b.sortedBuf[j].value) < 0
-	}
+	//if b.comparator != nil {
+	//	return b.comparator(b.sortedBuf[i].key, b.sortedBuf[j].key, b.sortedBuf[i].value, b.sortedBuf[j].value) < 0
+	//}
 	return bytes.Compare(b.sortedBuf[i].key, b.sortedBuf[j].key) < 0
 }
 
