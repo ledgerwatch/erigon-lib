@@ -164,58 +164,19 @@ func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 	return nil
 }
 
+// LocalityIndex return exactly 2 file (step)
+// prevents searching key in many files
 func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, orSearchFromTxn uint64, ok1, ok2 bool) {
 	if li == nil || li.file == nil || li.file.index == nil {
 		return exactShard1, exactShard2, fromTxNum, false, false
 	}
 
-	exactShard1, exactShard2, ok1, ok2 = li.lookup(r, bm, key, fromTxNum)
-	return exactShard1, exactShard2, cmp.Max(li.file.endTxNum+1, fromTxNum), ok1, ok2
-}
-
-// prevents searching key in many files
-// LocalityIndex return exactly 2 file (step)
-func (li *LocalityIndex) lookup(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, key []byte, fromTxNum uint64) (exactShardNum1, exactShardNum2 uint64, ok1, ok2 bool) {
-	if li == nil || li.file == nil || li.file.index == nil {
-		return 0, 0, false, false
-	}
-
-	n := r.Lookup(key)
-	fileNumbers, err := bm.At(n)
+	fromFileNum := fromTxNum / li.aggregationStep / StepsInBiggestFile
+	fn1, fn2, ok1, ok2, err := bm.First2At(r.Lookup(key), fromFileNum)
 	if err != nil {
 		panic(err)
 	}
-	fromFileNum := fromTxNum / li.aggregationStep / StepsInBiggestFile
-	if fromFileNum > 0 {
-		fileNumbers = fileNumbers[fromFileNum:]
-		//fileNumbers = (fileNumbers >> fromFileNum) << fromFileNum // clear first N bits
-	}
-	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-	//	fmt.Printf("locIndex2: %x, %b\n", key, fileNumbers)
-	//}
-	if len(fileNumbers) > 0 {
-		ok1 = true
-		//n := bits.TrailingZeros64(fileNumbers)
-		n := fileNumbers[0]
-		exactShardNum1 = uint64(n * StepsInBiggestFile)
-		//fileNumbers = (fileNumbers >> (n + 1)) << (n + 1) // clear first N bits
-		fileNumbers = fileNumbers[1:]
-		if len(fileNumbers) > 0 {
-			ok2 = true
-			//n = bits.TrailingZeros64(fileNumbers)
-			n = fileNumbers[0]
-			exactShardNum2 = uint64(n * StepsInBiggestFile)
-			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-			//	fmt.Printf("locIndex4: %x, %b, %d, %d\n", key, fileNumbers, n, exactShardNum)
-			//}
-		}
-	}
-	//TODO: can't early return, because maybe index returned false-positive...
-
-	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
-	//	fmt.Printf("foundExactShard: %x, %t, %d, %d, stepSize=%d\n", key, foundExactShard1, exactShard1, exactShard2, hc.h.aggregationStep)
-	//}
-	return exactShardNum1, exactShardNum2, ok1, ok2
+	return fn1 * StepsInBiggestFile, fn2 * StepsInBiggestFile, cmp.Max(li.file.endTxNum+1, fromTxNum), ok1, ok2
 }
 
 func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxExists bool) {

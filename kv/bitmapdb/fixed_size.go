@@ -98,7 +98,7 @@ func (bm *FixedSizeBitmaps) At(item uint64) (res []uint64, err error) {
 	return res, nil
 }
 
-func (bm *FixedSizeBitmaps) First2At(item uint64) (fst uint64, snd uint64, ok, ok2 bool, err error) {
+func (bm *FixedSizeBitmaps) First2At(item, after uint64) (fst uint64, snd uint64, ok, ok2 bool, err error) {
 	if item > bm.amount {
 		return 0, 0, false, false, fmt.Errorf("too big item number: %d > %d", item, bm.amount)
 	}
@@ -114,13 +114,15 @@ func (bm *FixedSizeBitmaps) First2At(item uint64) (fst uint64, snd uint64, ok, o
 		}
 		for bit := bitFrom; bit < bitTo; bit++ {
 			if bm.data[i]&(1<<bit) != 0 {
-				if !ok {
-					ok = true
-					fst = j
-				} else {
-					ok2 = true
-					snd = j
-					return
+				if j >= after {
+					if !ok {
+						ok = true
+						fst = j
+					} else {
+						ok2 = true
+						snd = j
+						return
+					}
 				}
 			}
 			j++
