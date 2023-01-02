@@ -3,11 +3,19 @@ module github.com/ledgerwatch/erigon-lib
 go 1.18
 
 require (
+	github.com/ledgerwatch/interfaces v0.0.0-20221226080656-9ea2ff13ca12
+	github.com/ledgerwatch/log/v3 v3.7.0
+	github.com/ledgerwatch/secp256k1 v1.0.0
+	github.com/ledgerwatch/trackerslist v1.0.0
+	github.com/torquem-ch/mdbx-go v0.27.5
+)
+
+require (
 	github.com/RoaringBitmap/roaring v1.2.1
 	github.com/VictoriaMetrics/metrics v1.23.0
 	github.com/anacrolix/go-libutp v1.2.0
-	github.com/anacrolix/log v0.13.2-0.20220711050817-613cb738ef30
-	github.com/anacrolix/torrent v1.47.0
+	github.com/anacrolix/log v0.13.2-0.20221123232138-02e2764801c3
+	github.com/anacrolix/torrent v1.48.0
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/go-stack/stack v1.8.1
@@ -15,18 +23,12 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
 	github.com/holiman/uint256 v1.2.1
-	github.com/kelindar/bitmap v1.4.1
-	github.com/ledgerwatch/interfaces v0.0.0-20221226080656-9ea2ff13ca12
-	github.com/ledgerwatch/log/v3 v3.6.0
-	github.com/ledgerwatch/secp256k1 v1.0.0
-	github.com/ledgerwatch/trackerslist v1.0.0
 	github.com/matryer/moq v0.3.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/quasilyte/go-ruleguard/dsl v0.3.21
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.1
 	github.com/tidwall/btree v1.5.0
-	github.com/torquem-ch/mdbx-go v0.27.0
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.4.0
 	golang.org/x/exp v0.0.0-20221217163422-3c43f8badb15
@@ -39,11 +41,11 @@ require (
 )
 
 require (
-	crawshaw.io/sqlite v0.3.3-0.20210127221821-98b1f83c5508 // indirect
+	crawshaw.io/sqlite v0.3.3-0.20220618202545-d1964889ea3c // indirect
 	github.com/ajwerner/btree v0.0.0-20211221152037-f427b3e689c0 // indirect
 	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
 	github.com/anacrolix/chansync v0.3.0 // indirect
-	github.com/anacrolix/dht/v2 v2.19.0 // indirect
+	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444 // indirect
 	github.com/anacrolix/envpprof v1.2.1 // indirect
 	github.com/anacrolix/generics v0.0.0-20220618083756-f99e35403a60 // indirect
 	github.com/anacrolix/missinggo v1.3.0 // indirect
@@ -71,7 +73,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.12 // indirect
 	github.com/lispad/go-generics-tools v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.16 // indirect
+	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/pion/datachannel v1.5.2 // indirect
 	github.com/pion/dtls/v2 v2.1.5 // indirect
