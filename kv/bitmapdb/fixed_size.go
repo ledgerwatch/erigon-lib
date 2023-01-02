@@ -163,6 +163,9 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 		return nil, err
 	}
 
+	if err := growFileToSize(idx.f, 4*1024*1024); err != nil {
+		return nil, err
+	}
 	{ //resize
 		wr := bufio.NewWriterSize(idx.f, 4*1024*1024)
 		page := make([]byte, pageSize)
@@ -193,6 +196,22 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 	idx.amount = binary.BigEndian.Uint64(idx.metaData[1 : 8+1])
 
 	return idx, nil
+}
+
+func growFileToSize(f *os.File, size int) error {
+	pageSize := os.Getpagesize()
+
+	wr := bufio.NewWriterSize(f, size)
+	page := make([]byte, pageSize)
+	for i := 0; i < size/pageSize; i++ {
+		if _, err := wr.Write(page); err != nil {
+			return err
+		}
+	}
+	if err := wr.Flush(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func castToArrU64(in []byte) []uint64 {
