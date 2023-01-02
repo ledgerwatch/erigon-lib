@@ -164,22 +164,8 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 		return nil, err
 	}
 
-	if err := growFileToSize(idx.f, 4*1024*1024); err != nil {
+	if err := growFileToSize(idx.f, idx.size); err != nil {
 		return nil, err
-	}
-	{ //resize
-		wr := bufio.NewWriterSize(idx.f, 4*1024*1024)
-		page := make([]byte, pageSize)
-		for i := 0; i < idx.size/pageSize; i++ {
-			_, err = wr.Write(page)
-		}
-		if err != nil {
-			return nil, err
-		}
-		err = wr.Flush()
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	idx.m, err = mmap2.MapRegion(idx.f, idx.size, mmap2.RDWR, 0, 0)
