@@ -139,6 +139,11 @@ func (li *LocalityIndex) openFiles() (err error) {
 	if err != nil {
 		return fmt.Errorf("LocalityIndex.openFiles: %w, %s", err, idxPath)
 	}
+	dataPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.l", li.filenameBase, fromStep, toStep))
+	li.bm, err = bitmapdb.OpenFixedSizeBitmaps(dataPath, int((toStep-fromStep)/StepsInBiggestFile))
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -185,6 +190,7 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeB
 		fileNumbers = fileNumbers[fromFileNum:]
 		//fileNumbers = (fileNumbers >> fromFileNum) << fromFileNum // clear first N bits
 	}
+	fmt.Printf("fn: %d\n", fileNumbers)
 	//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
 	//	fmt.Printf("locIndex2: %x, %b\n", key, fileNumbers)
 	//}
