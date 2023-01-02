@@ -1093,6 +1093,7 @@ func (h *History) MakeContext() *HistoryContext {
 	})
 	if hc.h.localityIndex != nil {
 		hc.lr = hc.h.localityIndex.NewIdxReader()
+		hc.locBm = hc.h.localityIndex.bm
 	}
 
 	return &hc

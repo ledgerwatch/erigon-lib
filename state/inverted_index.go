@@ -430,7 +430,7 @@ func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
 }
 
 func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
-	var ic = InvertedIndexContext{ii: ii}
+	var ic = InvertedIndexContext{ii: ii, localityIndex: ii.localityIndex}
 	ic.files = btree.NewG[ctxItem](32, ctxItemLess)
 	ii.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
@@ -602,8 +602,9 @@ func (it *InvertedIterator) ToBitamp32() *roaring.Bitmap {
 }
 
 type InvertedIndexContext struct {
-	ii    *InvertedIndex
-	files *btree.BTreeG[ctxItem]
+	ii            *InvertedIndex
+	files         *btree.BTreeG[ctxItem]
+	localityIndex *LocalityIndex
 }
 
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
