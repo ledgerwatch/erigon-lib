@@ -1272,19 +1272,25 @@ func (a *AggregatorV3) MakeSteps() []*AggregatorStep {
 		to = cmp.Min(to, indexedMax)
 	}
 	accountSteps := a.accounts.MakeSteps(to)
+	log.Warn("steps", "acc", len(accountSteps))
 	steps := make([]*AggregatorStep, len(accountSteps))
 	for i, accountStep := range accountSteps {
 		steps[i] = &AggregatorStep{
 			a:        a,
 			accounts: accountStep,
 		}
+		log.Warn("step", fmt.Sprintf("%d-%d\n", accountStep.historyFile.startTxNum/a.aggregationStep, accountStep.historyFile.endTxNum/a.aggregationStep))
 	}
 	storageSteps := a.storage.MakeSteps(to)
+	log.Warn("steps", "storage", len(storageSteps))
 	for i, storageStep := range storageSteps {
+		log.Warn("step", fmt.Sprintf("%d-%d\n", storageStep.historyFile.startTxNum/a.aggregationStep, storageStep.historyFile.endTxNum/a.aggregationStep))
 		steps[i].storage = storageStep
 	}
 	codeSteps := a.code.MakeSteps(to)
+	log.Warn("steps", "code", len(codeSteps))
 	for i, codeStep := range codeSteps {
+		log.Warn("step", fmt.Sprintf("%d-%d\n", codeStep.historyFile.startTxNum/a.aggregationStep, codeStep.historyFile.endTxNum/a.aggregationStep))
 		steps[i].code = codeStep
 	}
 	return steps
