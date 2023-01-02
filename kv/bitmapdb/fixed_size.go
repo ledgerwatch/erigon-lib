@@ -20,13 +20,11 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"math/bits"
 	"os"
 	"reflect"
 	"time"
 	"unsafe"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/c2h5oh/datasize"
 	mmap2 "github.com/edsrzf/mmap-go"
 )
@@ -240,49 +238,4 @@ func (w *FixedSizeBitmapsWriter) Build() error {
 	_ = w.f.Close()
 	_ = os.Rename(w.tmpIdxFilePath, w.indexFile)
 	return nil
-}
-
-type RoaringEncodedFixedBitamps struct {
-	bm            *roaring64.Bitmap
-	mask          *roaring64.Bitmap
-	small         *roaring64.Bitmap
-	bitsPerBitmap uint64
-	i             uint64
-}
-
-func NewFixedBitamps(bitsPerBitmap uint64) *RoaringEncodedFixedBitamps {
-	return &RoaringEncodedFixedBitamps{bitsPerBitmap: bitsPerBitmap, bm: roaring64.New(), mask: roaring64.New(), small: roaring64.New()}
-}
-func (l *RoaringEncodedFixedBitamps) AddUint64EncodedBitmap(filesBitmap uint64) {
-	for n := bits.TrailingZeros64(filesBitmap); filesBitmap != 0; n = bits.TrailingZeros64(filesBitmap) {
-		filesBitmap = (filesBitmap >> (n + 1)) << (n + 1) // clear first N bits
-		l.bm.Add(l.bitsPerBitmap*l.i + uint64(n))
-	}
-	l.i++
-}
-func (l *RoaringEncodedFixedBitamps) AddArrayUint16(v []uint16) {
-	for _, n := range v {
-		l.bm.Add(l.bitsPerBitmap*l.i + uint64(n))
-	}
-	l.i++
-}
-func (l *RoaringEncodedFixedBitamps) AddArrayUint64(v []uint64) {
-	for _, n := range v {
-		l.bm.Add(l.bitsPerBitmap*l.i + n)
-	}
-	l.i++
-}
-func (l *RoaringEncodedFixedBitamps) At(i int) *roaring64.Bitmap {
-	base := uint64(i) * l.bitsPerBitmap
-	l.mask.Clear()
-	l.mask.AddRange(base, base+l.bitsPerBitmap)
-	l.mask.And(l.bm)
-	it := l.mask.Iterator()
-
-	//TODO: maybe use roaring.AddOffset
-	l.small.Clear()
-	for it.HasNext() {
-		l.small.Add(it.Next() - base)
-	}
-	return l.small
 }

@@ -276,9 +276,10 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 		it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 		for it.HasNext() {
-
 			k, inFiles, progress := it.Next()
-			dense.AddArray(i, inFiles)
+			if err := dense.AddArray(i, inFiles); err != nil {
+				return nil, err
+			}
 			if err = rs.AddKey(k, i); err != nil {
 				return nil, err
 			}
@@ -373,11 +374,8 @@ func (sf LocalityIndexFiles) Close() {
 type LocalityIterator struct {
 	hc               *InvertedIndexContext
 	h                ReconHeap
-	bitmap           uint64
-	nextBitmap       uint64
 	files, nextFiles []uint64
-	nextKey          []byte
-	key              []byte
+	key, nextKey     []byte
 	progress         uint64
 	hasNext          bool
 
@@ -409,7 +407,6 @@ func (si *LocalityIterator) advance() {
 		if !bytes.Equal(key, si.key) {
 			if si.key == nil {
 				si.key = key
-				si.bitmap |= 1 << inFile
 				si.files = append(si.files, uint64(inFile))
 				//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
 				//	fmt.Printf("it1: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
@@ -420,13 +417,10 @@ func (si *LocalityIterator) advance() {
 			//	fmt.Printf("it2 finish: %x, %b\n", si.key, si.bitmap)
 			//}
 
-			//si.nextBitmap = si.bitmap
 			si.nextFiles, si.files = si.files, si.nextFiles
 			si.nextKey = si.key
-			//si.bitmap = 0
 			si.files = si.files[:0]
 
-			//si.bitmap |= 1 << inFile
 			si.files = append(si.files, uint64(inFile))
 			si.key = key
 
@@ -437,14 +431,12 @@ func (si *LocalityIterator) advance() {
 			si.hasNext = true
 			return
 		}
-		//si.bitmap |= 1 << inFile
 		si.files = append(si.files, uint64(inFile))
 
 		//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
 		//	fmt.Printf("it3 add: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
 		//}
 	}
-	//si.nextBitmap, si.bitmap = si.bitmap, si.nextBitmap
 	si.nextFiles, si.files = si.files, si.nextFiles
 	si.nextKey = si.key
 	si.hasNext = false
