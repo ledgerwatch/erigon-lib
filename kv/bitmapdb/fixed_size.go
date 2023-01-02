@@ -27,6 +27,7 @@ import (
 	"unsafe"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/c2h5oh/datasize"
 	mmap2 "github.com/edsrzf/mmap-go"
 )
 
@@ -200,10 +201,11 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 
 func growFileToSize(f *os.File, size int) error {
 	pageSize := os.Getpagesize()
+	pages := (size / pageSize) + 1 // must be multiplier of pageSize
 
-	wr := bufio.NewWriterSize(f, 512*4096)
+	wr := bufio.NewWriterSize(f, int(4*datasize.MB))
 	page := make([]byte, pageSize)
-	for i := 0; i < size/pageSize; i++ {
+	for i := 0; i < pages; i++ {
 		if _, err := wr.Write(page); err != nil {
 			return err
 		}
