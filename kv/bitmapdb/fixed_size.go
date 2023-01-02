@@ -201,7 +201,7 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 func growFileToSize(f *os.File, size int) error {
 	pageSize := os.Getpagesize()
 
-	wr := bufio.NewWriterSize(f, size)
+	wr := bufio.NewWriterSize(f, 512*4096)
 	page := make([]byte, pageSize)
 	for i := 0; i < size/pageSize; i++ {
 		if _, err := wr.Write(page); err != nil {
