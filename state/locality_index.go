@@ -176,7 +176,10 @@ func (li *LocalityIndex) lookup(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeB
 	}
 
 	n := r.Lookup(key)
-	fileNumbers := bm.At(n)
+	fileNumbers, err := bm.At(n)
+	if err != nil {
+		panic(err)
+	}
 	fromFileNum := fromTxNum / li.aggregationStep / StepsInBiggestFile
 	if fromFileNum > 0 {
 		fileNumbers = fileNumbers[fromFileNum:]
