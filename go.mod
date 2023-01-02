@@ -25,7 +25,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.1
 	github.com/tidwall/btree v1.5.0
-	github.com/torquem-ch/mdbx-go v0.27.1-0.20221231092922-91d4dede9e40
+	github.com/torquem-ch/mdbx-go v0.27.1-0.20230102023026-4020dc352233
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.4.0
 	golang.org/x/exp v0.0.0-20221217163422-3c43f8badb15
