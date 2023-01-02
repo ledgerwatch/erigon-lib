@@ -151,7 +151,7 @@ func (a *AggregatorV3) closeFiles() {
 	}
 }
 
-func (a *Aggregator22) BuildOptionalMissedIndices(ctx context.Context) {
+func (a *AggregatorV3) BuildOptionalMissedIndices(ctx context.Context) {
 	if a.workingOptionalIndices.Load() {
 		return
 	}
@@ -1062,7 +1062,7 @@ func (a *AggregatorV3) BuildFilesInBackground(db kv.RoDB) error {
 				log.Warn("merge", "err", err)
 			}
 
-			a.BuildOptionalMissedIndices(ctx)
+			a.BuildOptionalMissedIndices(a.ctx)
 		}()
 	}()
 
