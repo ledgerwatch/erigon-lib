@@ -934,6 +934,7 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		return nil
 	}
 	txFrom = binary.BigEndian.Uint64(k)
+	log.Warn("prune", "from", txFrom/h.aggregationStep, "to", txTo/h.aggregationStep, "step", h.aggregationStep, "limit", limit, "stack", dbg.Stack())
 	if limit != math.MaxUint64 && limit != 0 {
 		txTo = cmp.Min(txTo, txFrom+limit)
 	}
