@@ -235,10 +235,10 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	total = float64(it.Total())
 
-	log.Warn("dbg", "bitmap size", it.FilesAmount(), "items", total)
+	log.Warn("dbg", "bitmap size", it.FilesAmount(), "items", total, "unique items", count)
 	i := uint64(0)
 	for {
-		dense, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(total))
+		dense, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(count))
 		if err != nil {
 			return nil, err
 		}
