@@ -231,7 +231,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
 
-	log.Warn("dbg", "bitmap size", it.FilesAmount(), "unique items", count)
 	i := uint64(0)
 	for {
 		dense, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(count))
