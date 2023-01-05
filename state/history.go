@@ -355,7 +355,7 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, coun
 	log.Debug("[snapshots] build idx", "file", fName)
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:    count,
-		Enums:       true,
+		Enums:       false,
 		BucketSize:  2000,
 		LeafSize:    8,
 		TmpDir:      tmpdir,
@@ -804,7 +804,7 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 	}
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   collation.historyCount,
-		Enums:      true,
+		Enums:      false,
 		BucketSize: 2000,
 		LeafSize:   8,
 		TmpDir:     h.tmpdir,
