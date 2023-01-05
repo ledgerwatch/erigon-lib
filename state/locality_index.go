@@ -249,9 +249,6 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 				return nil, err
 			}
 			i++
-			//if bytes.Equal(k, hex.MustDecodeString("e0a2bd4258d2768837baa26a28fe71dc079f84c7")) {
-			//fmt.Printf(".l file: %x, %b\n", k, filesBitmap)
-			//}
 
 			select {
 			case <-ctx.Done():
