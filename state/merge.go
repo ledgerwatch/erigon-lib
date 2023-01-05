@@ -741,7 +741,6 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	if outItem.index, err = buildIndex(ctx, outItem.decompressor, idxPath, ii.tmpdir, keyCount, false /* values */); err != nil {
 		return nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
-
 	closeItem = false
 	return outItem, nil
 }
@@ -884,7 +883,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		}
 		if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
 			KeyCount:   keyCount,
-			Enums:      true,
+			Enums:      false,
 			BucketSize: 2000,
 			LeafSize:   8,
 			TmpDir:     h.tmpdir,
@@ -1054,7 +1053,6 @@ func (li *LocalityIndex) deleteFiles(out *filesItem) error {
 	}
 
 	idxPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.li", li.filenameBase, out.startTxNum/li.aggregationStep, out.endTxNum/li.aggregationStep))
-	fmt.Printf("del: %s\n", idxPath)
 	_ = os.Remove(idxPath) // may not exist
 	return nil
 }
