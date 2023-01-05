@@ -582,10 +582,6 @@ func (rs *RecSplit) Build() error {
 		}
 	}
 
-	rs.indexW.Flush()
-	st, _ := rs.indexF.Stat()
-	fmt.Printf("size_mb1: %d\n", st.Size()/1024/1024)
-
 	log.Log(rs.lvl, "[index] write", "file", rs.indexFileName)
 	if rs.enums {
 		rs.offsetEf = eliasfano32.NewEliasFano(rs.keysAdded, rs.maxOffset)
@@ -628,6 +624,7 @@ func (rs *RecSplit) Build() error {
 			return fmt.Errorf("writing start seed: %w", err)
 		}
 	}
+	fmt.Printf("size seeds:  %d\n", 8*len(rs.startSeed))
 
 	if rs.enums {
 		if err := rs.indexW.WriteByte(1); err != nil {

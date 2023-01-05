@@ -92,6 +92,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 	idx.bytesPerRec = int(idx.data[16])
 	idx.recMask = (uint64(1) << (8 * idx.bytesPerRec)) - 1
 	offset := 16 + 1 + int(idx.keyCount)*idx.bytesPerRec
+	fmt.Printf("open: sz_kb=%d, offset_kb=%d\n", idx.size/1024, offset/1024)
 
 	if offset < 0 {
 		return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexFile)
@@ -128,6 +129,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 		idx.offsetEf, size = eliasfano32.ReadEliasFano(idx.data[offset:])
 		offset += size
 	}
+	fmt.Printf("open2: sz_kb=%d, offset_kb=%d\n", idx.size/1024, offset/1024)
 	// Size of golomb rice params
 	golombParamSize := binary.BigEndian.Uint16(idx.data[offset:])
 	offset += 4
@@ -141,6 +143,8 @@ func OpenIndex(indexFile string) (*Index, error) {
 			computeGolombRice(i, idx.golombRice, idx.leafSize, idx.primaryAggrBound, idx.secondaryAggrBound)
 		}
 	}
+	fmt.Printf("open3: sz_kb=%d, offset_kb=%d\n", idx.size/1024, offset/1024)
+
 	l := binary.BigEndian.Uint64(idx.data[offset:])
 	offset += 8
 	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&idx.data[offset]))
