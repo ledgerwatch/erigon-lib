@@ -209,7 +209,9 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 
 	bucket := remap(bucketHash, idx.bucketCount)
 	cumKeys, cumKeysNext, bitPos := idx.ef.Get3(bucket)
+	fmt.Printf("alex idx lookup: bucket=%d,cumKeys=%d,cumKeysNext=%d,bitPos=%d\n", bucket, cumKeys, cumKeysNext, bitPos)
 	m := uint16(cumKeysNext - cumKeys) // Number of keys in this bucket
+	fmt.Printf("alex idx lookup: m=%d\n", m)
 	gr.ReadReset(int(bitPos), idx.skipBits(m))
 	var level int
 	for m > idx.secondaryAggrBound { // fanout = 2
@@ -258,6 +260,8 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	b := gr.ReadNext(idx.golombParam(m))
 	rec := int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
 	pos := 1 + 8 + idx.bytesPerRec*(rec+1)
+	fmt.Printf("alex idx lookup: b=%d, rec=%d, pos=%d, idx.bytesPerRec=%d, idx.recMask=%x\n", b, rec, pos, idx.bytesPerRec, idx.recMask)
+
 	return binary.BigEndian.Uint64(idx.data[pos:]) & idx.recMask
 }
 

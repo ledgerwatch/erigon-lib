@@ -582,6 +582,10 @@ func (rs *RecSplit) Build() error {
 		}
 	}
 
+	rs.indexW.Flush()
+	st, _ := os.Stat(tmpIdxFilePath)
+	fmt.Printf("size_mb1: %d\n", st.Size()/1024/1024)
+
 	log.Log(rs.lvl, "[index] write", "file", rs.indexFileName)
 	if rs.enums {
 		rs.offsetEf = eliasfano32.NewEliasFano(rs.keysAdded, rs.maxOffset)
@@ -595,6 +599,11 @@ func (rs *RecSplit) Build() error {
 	// Construct Elias Fano index
 	rs.ef.Build(rs.bucketSizeAcc, rs.bucketPosAcc)
 	rs.built = true
+
+	rs.indexW.Flush()
+	st, _ = os.Stat(tmpIdxFilePath)
+	fmt.Printf("size_mb2: %d\n", st.Size()/1024/1024)
+
 	// Write out bucket count, bucketSize, leafSize
 	binary.BigEndian.PutUint64(rs.numBuf[:], rs.bucketCount)
 	if _, err := rs.indexW.Write(rs.numBuf[:8]); err != nil {
@@ -623,6 +632,11 @@ func (rs *RecSplit) Build() error {
 			return fmt.Errorf("writing start seed: %w", err)
 		}
 	}
+
+	rs.indexW.Flush()
+	st, _ = os.Stat(tmpIdxFilePath)
+	fmt.Printf("size_mb3: %d\n", st.Size()/1024/1024)
+
 	if rs.enums {
 		if err := rs.indexW.WriteByte(1); err != nil {
 			return fmt.Errorf("writing enums = true: %w", err)
@@ -647,10 +661,17 @@ func (rs *RecSplit) Build() error {
 	if err := rs.gr.Write(rs.indexW); err != nil {
 		return fmt.Errorf("writing golomb rice: %w", err)
 	}
+
+	rs.indexW.Flush()
+	st, _ = os.Stat(tmpIdxFilePath)
+	fmt.Printf("size_mb4: %d\n", st.Size()/1024/1024)
 	// Write out elias fano
 	if err := rs.ef.Write(rs.indexW); err != nil {
 		return fmt.Errorf("writing elias fano: %w", err)
 	}
+	rs.indexW.Flush()
+	st, _ = os.Stat(tmpIdxFilePath)
+	fmt.Printf("size_mb5: %d\n", st.Size()/1024/1024)
 
 	_ = rs.indexW.Flush()
 	_ = rs.indexF.Sync()
