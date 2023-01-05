@@ -18,6 +18,7 @@ package recsplit
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math/bits"
 	"unsafe"
@@ -163,6 +164,7 @@ const maxDataSize = 0xFFFFFFFFFFFF
 func (g *GolombRice) Write(w io.Writer) error {
 	var numBuf [8]byte
 	binary.BigEndian.PutUint64(numBuf[:], uint64(len(g.data)))
+	fmt.Printf("size gr: %d\n", uint64(len(g.data))*8)
 	if _, e := w.Write(numBuf[:]); e != nil {
 		return e
 	}

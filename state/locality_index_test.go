@@ -23,17 +23,17 @@ func TestLocality(t *testing.T) {
 	t.Run("locality iterator", func(t *testing.T) {
 		it := ii.MakeContext().iterateKeysLocality(math.MaxUint64)
 		require.True(it.HasNext())
-		key, bitmap, _ := it.Next()
+		key, bitmap := it.Next()
 		require.Equal(uint64(2), binary.BigEndian.Uint64(key))
 		require.Equal([]uint64{0, 1}, bitmap)
 		require.True(it.HasNext())
-		key, bitmap, _ = it.Next()
+		key, bitmap = it.Next()
 		require.Equal(uint64(3), binary.BigEndian.Uint64(key))
 		require.Equal([]uint64{0, 1}, bitmap)
 
 		var last []byte
 		for it.HasNext() {
-			key, _, _ = it.Next()
+			key, _ = it.Next()
 			last = key
 		}
 		require.Equal(Module, binary.BigEndian.Uint64(last))

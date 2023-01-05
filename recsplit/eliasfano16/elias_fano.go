@@ -544,6 +544,7 @@ func (ef *DoubleEliasFano) Write(w io.Writer) error {
 	if _, e := w.Write(numBuf[:]); e != nil {
 		return e
 	}
+	fmt.Printf("sz ef: %d\n", len(ef.data)*8)
 	p := (*[maxDataSize]byte)(unsafe.Pointer(&ef.data[0]))
 	b := (*p)[:]
 	if _, e := w.Write(b[:len(ef.data)*8]); e != nil {
