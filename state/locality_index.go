@@ -356,14 +356,11 @@ func (si *LocalityIterator) advance() {
 	for si.h2.Len() > 0 {
 		top := si.h2.Pop()
 		key := top.key
-		//log.Info("[LI]", "top.g", top.g.FileName())
-		//fmt.Printf("key: %x, %s.%d-%d\n", top.key, si.hc.ii.filenameBase, top.startTxNum/si.hc.ii.aggregationStep, top.endTxNum/si.hc.ii.aggregationStep)
 		_, offset := top.g.NextUncompressed()
 		si.progress += offset - top.lastOffset
 		top.lastOffset = offset
 		inStep := uint32(top.startTxNum / si.hc.ii.aggregationStep)
 		if top.g.HasNext() {
-			//log.Info("[LI]", "top.g", top.g.FileName())
 			top.key, _ = top.g.NextUncompressed()
 			si.h2.Push(top)
 		}
@@ -377,34 +374,18 @@ func (si *LocalityIterator) advance() {
 			if si.key == nil {
 				si.key = key
 				si.files = append(si.files, uint64(inFile))
-				//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
-				//	fmt.Printf("it1: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
-				//}
 				continue
 			}
-			//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
-			//	fmt.Printf("it2 finish: %x, %b\n", si.key, si.bitmap)
-			//}
 
 			si.nextFiles, si.files = si.files, si.nextFiles[:0]
 			si.nextKey = si.key
-			//si.files = si.files[:0]
 
 			si.files = append(si.files, uint64(inFile))
 			si.key = key
-
-			//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
-			//	fmt.Printf("it2 new: %x, step=%d, file=%d, %b\n", si.key, inStep, inFile, si.bitmap)
-			//}
-
 			si.hasNext = true
 			return
 		}
 		si.files = append(si.files, uint64(inFile))
-
-		//if bytes.HasPrefix(key, hex.MustDecodeString("e0")) {
-		//	fmt.Printf("it3 add: %x, step=%d, file=%d, %b\n", key, inStep, inFile, si.bitmap)
-		//}
 	}
 	si.nextFiles, si.files = si.files, si.nextFiles[:0]
 	si.nextKey = si.key
