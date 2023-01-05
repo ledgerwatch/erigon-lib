@@ -28,7 +28,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -166,9 +165,12 @@ func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 
 // LocalityIndex return exactly 2 file (step)
 // prevents searching key in many files
-func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, orSearchFromTxn uint64, ok1, ok2 bool) {
-	if li == nil || li.file == nil || li.file.index == nil {
-		return exactShard1, exactShard2, fromTxNum, false, false
+func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, lastIndexedTxNum uint64, ok1, ok2 bool) {
+	if li == nil || r == nil || bm == nil {
+		return 0, 0, 0, false, false
+	}
+	if fromTxNum > li.file.endTxNum {
+		return 0, 0, fromTxNum, false, false
 	}
 
 	fromFileNum := fromTxNum / li.aggregationStep / StepsInBiggestFile
@@ -176,7 +178,7 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.Fi
 	if err != nil {
 		panic(err)
 	}
-	return fn1 * StepsInBiggestFile, fn2 * StepsInBiggestFile, cmp.Max(li.file.endTxNum+1, fromTxNum), ok1, ok2
+	return fn1 * StepsInBiggestFile, fn2 * StepsInBiggestFile, li.file.endTxNum, ok1, ok2
 }
 
 func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxExists bool) {
