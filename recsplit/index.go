@@ -259,7 +259,6 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	b := gr.ReadNext(idx.golombParam(m))
 	rec := int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
 	pos := 1 + 8 + idx.bytesPerRec*(rec+1)
-	fmt.Printf("alex idx lookup: b=%d, rec=%d, pos=%d, idx.bytesPerRec=%d, idx.recMask=%x\n", b, rec, pos, idx.bytesPerRec, idx.recMask)
 
 	return binary.BigEndian.Uint64(idx.data[pos:]) & idx.recMask
 }
