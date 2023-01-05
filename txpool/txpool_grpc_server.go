@@ -17,6 +17,7 @@
 package txpool
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -90,6 +91,9 @@ func (*GrpcDisabled) Pending(ctx context.Context, empty *emptypb.Empty) (*txpool
 func (*GrpcDisabled) OnAdd(request *txpool_proto.OnAddRequest, server txpool_proto.Txpool_OnAddServer) error {
 	return ErrPoolDisabled
 }
+func (*GrpcDisabled) Search(ctx context.Context, request *txpool_proto.SearchRequest) (*txpool_proto.SearchReply, error) {
+	return nil, ErrPoolDisabled
+}
 func (*GrpcDisabled) Status(ctx context.Context, request *txpool_proto.StatusRequest) (*txpool_proto.StatusReply, error) {
 	return nil, ErrPoolDisabled
 }
@@ -114,14 +118,14 @@ func NewGrpcServer(ctx context.Context, txPool txPool, db kv.RoDB, chainID uint2
 func (s *GrpcServer) Version(context.Context, *emptypb.Empty) (*types2.VersionReply, error) {
 	return TxPoolAPIVersion, nil
 }
-func convertSubPoolType(t SubPoolType) txpool_proto.AllReply_TxnType {
+func convertSubPoolType(t SubPoolType) txpool_proto.Txn_TxnType {
 	switch t {
 	case PendingSubPool:
-		return txpool_proto.AllReply_PENDING
+		return txpool_proto.Txn_PENDING
 	case BaseFeeSubPool:
-		return txpool_proto.AllReply_BASE_FEE
+		return txpool_proto.Txn_BASE_FEE
 	case QueuedSubPool:
-		return txpool_proto.AllReply_QUEUED
+		return txpool_proto.Txn_QUEUED
 	default:
 		panic("unknown")
 	}
@@ -133,11 +137,11 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 	}
 	defer tx.Rollback()
 	reply := &txpool_proto.AllReply{}
-	reply.Txs = make([]*txpool_proto.AllReply_Tx, 0, 32)
+	reply.Txs = make([]*txpool_proto.Txn, 0, 32)
 	var senderArr [20]byte
 	s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
 		copy(senderArr[:], sender) // TODO: optimize
-		reply.Txs = append(reply.Txs, &txpool_proto.AllReply_Tx{
+		reply.Txs = append(reply.Txs, &txpool_proto.Txn{
 			Sender:  gointerfaces.ConvertAddressToH160(senderArr),
 			TxnType: convertSubPoolType(t),
 			RlpTx:   common.Copy(rlp),
@@ -167,6 +171,30 @@ func (s *GrpcServer) Pending(ctx context.Context, _ *emptypb.Empty) (*txpool_pro
 			IsLocal: txSlots.IsLocal[i],
 		})
 	}
+	return reply, nil
+}
+
+func (s *GrpcServer) Search(ctx context.Context, in *txpool_proto.SearchRequest) (*txpool_proto.SearchReply, error) {
+	tx, err := s.db.BeginRo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	reply := &txpool_proto.SearchReply{}
+	reply.Txs = make([]*txpool_proto.Txn, 0, 32)
+	var senderArr [20]byte
+	senderFilter := in.GetFilter().GetFrom()
+	s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
+		if bytes.Compare(sender, senderFilter) == 0 {
+			log.Info("Transaction in the txpool found")
+			copy(senderArr[:], sender) // TODO: optimize
+			reply.Txs = append(reply.Txs, &txpool_proto.Txn{
+				Sender:  gointerfaces.ConvertAddressToH160(senderArr),
+				TxnType: convertSubPoolType(t),
+				RlpTx:   common.Copy(rlp),
+			})
+		}
+	}, tx)
 	return reply, nil
 }
 

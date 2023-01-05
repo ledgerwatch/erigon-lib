@@ -39,6 +39,8 @@ type TxpoolClient interface {
 	Pending(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PendingReply, error)
 	// subscribe to new transactions add event
 	OnAdd(ctx context.Context, in *OnAddRequest, opts ...grpc.CallOption) (Txpool_OnAddClient, error)
+	// returns transactions from tx pool for criteria (type / filter)
+	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error)
 	// returns high level status
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
 	// returns nonce for given account
@@ -139,6 +141,15 @@ func (x *txpoolOnAddClient) Recv() (*OnAddReply, error) {
 	return m, nil
 }
 
+func (c *txpoolClient) Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error) {
+	out := new(SearchReply)
+	err := c.cc.Invoke(ctx, "/txpool.Txpool/Search", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *txpoolClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error) {
 	out := new(StatusReply)
 	err := c.cc.Invoke(ctx, "/txpool.Txpool/Status", in, out, opts...)
@@ -176,6 +187,8 @@ type TxpoolServer interface {
 	Pending(context.Context, *emptypb.Empty) (*PendingReply, error)
 	// subscribe to new transactions add event
 	OnAdd(*OnAddRequest, Txpool_OnAddServer) error
+	// returns transactions from tx pool for criteria (type / filter)
+	Search(context.Context, *SearchRequest) (*SearchReply, error)
 	// returns high level status
 	Status(context.Context, *StatusRequest) (*StatusReply, error)
 	// returns nonce for given account
@@ -207,6 +220,9 @@ func (UnimplementedTxpoolServer) Pending(context.Context, *emptypb.Empty) (*Pend
 }
 func (UnimplementedTxpoolServer) OnAdd(*OnAddRequest, Txpool_OnAddServer) error {
 	return status.Errorf(codes.Unimplemented, "method OnAdd not implemented")
+}
+func (UnimplementedTxpoolServer) Search(context.Context, *SearchRequest) (*SearchReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Search not implemented")
 }
 func (UnimplementedTxpoolServer) Status(context.Context, *StatusRequest) (*StatusReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
@@ -356,6 +372,24 @@ func (x *txpoolOnAddServer) Send(m *OnAddReply) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Txpool_Search_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TxpoolServer).Search(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/txpool.Txpool/Search",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TxpoolServer).Search(ctx, req.(*SearchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Txpool_Status_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StatusRequest)
 	if err := dec(in); err != nil {
@@ -422,6 +456,10 @@ var Txpool_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Pending",
 			Handler:    _Txpool_Pending_Handler,
+		},
+		{
+			MethodName: "Search",
+			Handler:    _Txpool_Search_Handler,
 		},
 		{
 			MethodName: "Status",

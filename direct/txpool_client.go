@@ -112,6 +112,10 @@ func (c *TxPoolOnAddC) Context() context.Context { return c.ctx }
 
 // -- end OnAdd
 
+func (s *TxPoolClient) Search(ctx context.Context, in *txpool_proto.SearchRequest, opts ...grpc.CallOption) (*txpool_proto.SearchReply, error) {
+	return s.server.Search(ctx, in)
+}
+
 func (s *TxPoolClient) Status(ctx context.Context, in *txpool_proto.StatusRequest, opts ...grpc.CallOption) (*txpool_proto.StatusReply, error) {
 	return s.server.Status(ctx, in)
 }
