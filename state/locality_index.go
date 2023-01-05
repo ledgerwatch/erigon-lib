@@ -204,13 +204,13 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	for it.HasNext() {
 		_, _ = it.Next()
 		count++
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-logEvery.C:
-			log.Info("[LocalityIndex] build", "name", li.filenameBase, "progress", fmt.Sprintf("%.2f%%", it.Progress()/2))
-		default:
-		}
+		//select {
+		//case <-ctx.Done():
+		//	return nil, ctx.Err()
+		//case <-logEvery.C:
+		//	log.Info("[LocalityIndex] build", "name", li.filenameBase, "progress", fmt.Sprintf("%.2f%%", it.Progress()/2))
+		//default:
+		//}
 	}
 
 	fName := fmt.Sprintf("%s.%d-%d.li", li.filenameBase, fromStep, toStep)
