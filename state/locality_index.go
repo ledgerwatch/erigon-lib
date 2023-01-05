@@ -19,7 +19,6 @@ package state
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
@@ -202,15 +201,14 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	count := 0
 	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
-	total := float64(it.Total())
 	for it.HasNext() {
-		k, _, progress := it.Next()
+		_, _ = it.Next()
 		count++
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-logEvery.C:
-			log.Info("[LocalityIndex] build step1", "name", li.filenameBase, "prefix", hex.EncodeToString(k[:4]), "progress", fmt.Sprintf("%.2f%%", ((float64(progress)/total)*100)/2))
+			log.Info("[LocalityIndex] build", "name", li.filenameBase, "progress", fmt.Sprintf("%.2f%%", it.Progress()/2))
 		default:
 		}
 	}
@@ -233,9 +231,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
 
-	total = float64(it.Total())
-
-	log.Warn("dbg", "bitmap size", it.FilesAmount(), "items", total, "unique items", count)
+	log.Warn("dbg", "bitmap size", it.FilesAmount(), "unique items", count)
 	i := uint64(0)
 	for {
 		dense, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(count))
@@ -245,7 +241,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 		it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 		for it.HasNext() {
-			k, inFiles, progress := it.Next()
+			k, inFiles := it.Next()
 			if err := dense.AddArray(i, inFiles); err != nil {
 				return nil, err
 			}
@@ -261,7 +257,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-logEvery.C:
-				log.Info("[LocalityIndex] build step2", "name", li.filenameBase, "prefix", hex.EncodeToString(k[:4]), "progress", fmt.Sprintf("%.2f%%", 50+((float64(progress)/total)*100)/2))
+				log.Info("[LocalityIndex] build step2", "name", li.filenameBase, "progress", fmt.Sprintf("%.2f%%", 50+it.Progress()/2))
 			default:
 			}
 		}
@@ -348,7 +344,7 @@ type LocalityIterator struct {
 	progress         uint64
 	hasNext          bool
 
-	total, filesAmount uint64
+	totalOffsets, filesAmount uint64
 }
 
 func reconLessOlder(i, j ReconItem) bool {
@@ -418,13 +414,15 @@ func (si *LocalityIterator) advance() {
 	si.hasNext = false
 }
 
-func (si *LocalityIterator) HasNext() bool       { return si.hasNext }
-func (si *LocalityIterator) Total() uint64       { return si.total }
+func (si *LocalityIterator) HasNext() bool { return si.hasNext }
+func (si *LocalityIterator) Progress() float64 {
+	return ((float64(si.progress) / float64(si.totalOffsets)) * 100) / 2
+}
 func (si *LocalityIterator) FilesAmount() uint64 { return si.filesAmount }
 
-func (si *LocalityIterator) Next() ([]byte, []uint64, uint64) {
+func (si *LocalityIterator) Next() ([]byte, []uint64) {
 	si.advance()
-	return si.nextKey, si.nextFiles, si.progress
+	return si.nextKey, si.nextFiles
 }
 
 func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
@@ -443,7 +441,7 @@ func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityI
 			heapItem := ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset}
 			si.h2.Push(heapItem)
 		}
-		si.total += uint64(item.getter.Size())
+		si.totalOffsets += uint64(item.getter.Size())
 		si.filesAmount++
 		return true
 	})
