@@ -649,7 +649,7 @@ func (rs *RecSplit) Build() error {
 	if _, err := rs.indexW.Write(rs.numBuf[:4]); err != nil {
 		return fmt.Errorf("writing golomb rice param size: %w", err)
 	}
-	fmt.Printf("size: %s, %d, %d\n", tmpIdxFilePath, len(rs.gr.data)*8/1024/1024, len(rs.ef.Data())*8/1024/1024)
+	fmt.Printf("size: %s, %d, %d\n", tmpIdxFilePath, len(rs.gr.data)*8/1024, len(rs.ef.Data())*8/1024)
 	// Write out golomb rice
 	if err := rs.gr.Write(rs.indexW); err != nil {
 		return fmt.Errorf("writing golomb rice: %w", err)
