@@ -219,7 +219,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
-		Enums:      true,
+		Enums:      false,
 		BucketSize: 2000,
 		LeafSize:   8,
 		TmpDir:     li.tmpdir,
