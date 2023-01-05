@@ -18,6 +18,7 @@ package state
 
 import (
 	"bytes"
+	"container/heap"
 	"context"
 	"fmt"
 	"io/fs"
@@ -31,7 +32,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/lispad/go-generics-tools/binheap"
 )
 
 const LocalityIndexUint64Limit = 64 //bitmap spend 1 bit per file, stored as uint64
@@ -332,9 +332,21 @@ func (sf LocalityIndexFiles) Close() {
 	}
 }
 
+type ReconHeapOlderFirst struct {
+	ReconHeap
+}
+
+func (rh ReconHeapOlderFirst) Less(i, j int) bool {
+	c := bytes.Compare(rh.ReconHeap[i].key, rh.ReconHeap[j].key)
+	if c == 0 {
+		return rh.ReconHeap[i].txNum >= rh.ReconHeap[j].txNum
+	}
+	return c < 0
+}
+
 type LocalityIterator struct {
 	hc               *InvertedIndexContext
-	heap             binheap.Heap[ReconItem]
+	h                ReconHeapOlderFirst
 	files, nextFiles []uint64
 	key, nextKey     []byte
 	progress         uint64
@@ -343,24 +355,9 @@ type LocalityIterator struct {
 	totalOffsets, filesAmount uint64
 }
 
-func reconLessOlder(i, j ReconItem) bool {
-	c := bytes.Compare(i.key, j.key)
-	if c == 0 {
-		return i.txNum > j.txNum
-	}
-	return c < 0
-}
-func reconPtrLessOlder(i, j *ReconItem) bool {
-	c := bytes.Compare(i.key, j.key)
-	if c == 0 {
-		return i.txNum > j.txNum
-	}
-	return c < 0
-}
-
 func (si *LocalityIterator) advance() {
-	for si.heap.Len() > 0 {
-		top := si.heap.Pop()
+	for si.h.Len() > 0 {
+		top := heap.Pop(&si.h).(*ReconItem)
 		key := top.key
 		_, offset := top.g.NextUncompressed()
 		si.progress += offset - top.lastOffset
@@ -368,7 +365,7 @@ func (si *LocalityIterator) advance() {
 		inStep := uint32(top.startTxNum / si.hc.ii.aggregationStep)
 		if top.g.HasNext() {
 			top.key, _ = top.g.NextUncompressed()
-			si.heap.Push(top)
+			heap.Push(&si.h, top)
 		}
 
 		inFile := inStep / StepsInBiggestFile
@@ -410,7 +407,7 @@ func (si *LocalityIterator) Next() ([]byte, []uint64) {
 }
 
 func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
-	si := &LocalityIterator{hc: ic, heap: binheap.EmptyHeap[ReconItem](reconLessOlder)}
+	si := &LocalityIterator{hc: ic}
 	ic.files.Ascend(func(item ctxItem) bool {
 		if (item.endTxNum-item.startTxNum)/ic.ii.aggregationStep != StepsInBiggestFile {
 			return false
@@ -422,8 +419,8 @@ func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityI
 		if g.HasNext() {
 			key, offset := g.NextUncompressed()
 
-			heapItem := ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset}
-			si.heap.Push(heapItem)
+			heapItem := &ReconItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum, g: g, txNum: ^item.endTxNum, key: key, startOffset: offset, lastOffset: offset}
+			heap.Push(&si.h, heapItem)
 		}
 		si.totalOffsets += uint64(item.getter.Size())
 		si.filesAmount++
