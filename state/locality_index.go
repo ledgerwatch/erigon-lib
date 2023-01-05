@@ -169,7 +169,7 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.Fi
 	if li == nil || r == nil || bm == nil {
 		return 0, 0, 0, false, false
 	}
-	if fromTxNum > li.file.endTxNum {
+	if fromTxNum >= li.file.endTxNum {
 		return 0, 0, fromTxNum, false, false
 	}
 
