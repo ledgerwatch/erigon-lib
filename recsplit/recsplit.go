@@ -600,10 +600,6 @@ func (rs *RecSplit) Build() error {
 	rs.ef.Build(rs.bucketSizeAcc, rs.bucketPosAcc)
 	rs.built = true
 
-	rs.indexW.Flush()
-	st, _ = rs.indexF.Stat()
-	fmt.Printf("size_mb2: %d\n", st.Size()/1024/1024)
-
 	// Write out bucket count, bucketSize, leafSize
 	binary.BigEndian.PutUint64(rs.numBuf[:], rs.bucketCount)
 	if _, err := rs.indexW.Write(rs.numBuf[:8]); err != nil {
@@ -633,10 +629,6 @@ func (rs *RecSplit) Build() error {
 		}
 	}
 
-	rs.indexW.Flush()
-	st, _ = rs.indexF.Stat()
-	fmt.Printf("size_mb3: %d\n", st.Size()/1024/1024)
-
 	if rs.enums {
 		if err := rs.indexW.WriteByte(1); err != nil {
 			return fmt.Errorf("writing enums = true: %w", err)
@@ -657,21 +649,15 @@ func (rs *RecSplit) Build() error {
 	if _, err := rs.indexW.Write(rs.numBuf[:4]); err != nil {
 		return fmt.Errorf("writing golomb rice param size: %w", err)
 	}
+	fmt.Printf("size: %s, %d, %d\n", tmpIdxFilePath, len(rs.gr.data)*8/1024/1024, len(rs.ef.Data())*8/1024/1024)
 	// Write out golomb rice
 	if err := rs.gr.Write(rs.indexW); err != nil {
 		return fmt.Errorf("writing golomb rice: %w", err)
 	}
-
-	rs.indexW.Flush()
-	st, _ = rs.indexF.Stat()
-	fmt.Printf("size_mb4: %d\n", st.Size()/1024/1024)
 	// Write out elias fano
 	if err := rs.ef.Write(rs.indexW); err != nil {
 		return fmt.Errorf("writing elias fano: %w", err)
 	}
-	rs.indexW.Flush()
-	st, _ = rs.indexF.Stat()
-	fmt.Printf("size_mb5: %d\n", st.Size()/1024/1024)
 
 	_ = rs.indexW.Flush()
 	_ = rs.indexF.Sync()
