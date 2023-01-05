@@ -583,7 +583,7 @@ func (rs *RecSplit) Build() error {
 	}
 
 	rs.indexW.Flush()
-	st, _ := os.Stat(tmpIdxFilePath)
+	st, _ := rs.indexF.Stat()
 	fmt.Printf("size_mb1: %d\n", st.Size()/1024/1024)
 
 	log.Log(rs.lvl, "[index] write", "file", rs.indexFileName)
@@ -601,7 +601,7 @@ func (rs *RecSplit) Build() error {
 	rs.built = true
 
 	rs.indexW.Flush()
-	st, _ = os.Stat(tmpIdxFilePath)
+	st, _ = rs.indexF.Stat()
 	fmt.Printf("size_mb2: %d\n", st.Size()/1024/1024)
 
 	// Write out bucket count, bucketSize, leafSize
@@ -634,7 +634,7 @@ func (rs *RecSplit) Build() error {
 	}
 
 	rs.indexW.Flush()
-	st, _ = os.Stat(tmpIdxFilePath)
+	st, _ = rs.indexF.Stat()
 	fmt.Printf("size_mb3: %d\n", st.Size()/1024/1024)
 
 	if rs.enums {
@@ -663,14 +663,14 @@ func (rs *RecSplit) Build() error {
 	}
 
 	rs.indexW.Flush()
-	st, _ = os.Stat(tmpIdxFilePath)
+	st, _ = rs.indexF.Stat()
 	fmt.Printf("size_mb4: %d\n", st.Size()/1024/1024)
 	// Write out elias fano
 	if err := rs.ef.Write(rs.indexW); err != nil {
 		return fmt.Errorf("writing elias fano: %w", err)
 	}
 	rs.indexW.Flush()
-	st, _ = os.Stat(tmpIdxFilePath)
+	st, _ = rs.indexF.Stat()
 	fmt.Printf("size_mb5: %d\n", st.Size()/1024/1024)
 
 	_ = rs.indexW.Flush()
