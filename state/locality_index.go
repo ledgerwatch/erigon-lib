@@ -245,7 +245,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 			if err := dense.AddArray(i, inFiles); err != nil {
 				return nil, err
 			}
-			if err = rs.AddKey(k, i); err != nil {
+			if err = rs.AddKey(k, 0); err != nil {
 				return nil, err
 			}
 			i++

@@ -884,7 +884,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		}
 		if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
 			KeyCount:   keyCount,
-			Enums:      false,
+			Enums:      true,
 			BucketSize: 2000,
 			LeafSize:   8,
 			TmpDir:     h.tmpdir,

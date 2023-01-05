@@ -823,7 +823,7 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
 		KeyCount:   count,
-		Enums:      false,
+		Enums:      true,
 		BucketSize: 2000,
 		LeafSize:   8,
 		TmpDir:     tmpdir,

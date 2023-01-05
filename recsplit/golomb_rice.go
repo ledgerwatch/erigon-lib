@@ -18,7 +18,6 @@ package recsplit
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"math/bits"
 	"unsafe"
@@ -27,7 +26,7 @@ import (
 )
 
 // Optimal Golomb-Rice parameters for leaves
-var bijMemo []uint32 = []uint32{0, 0, 0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 21, 22, 23, 25, 26, 28, 29, 30}
+var bijMemo = []uint32{0, 0, 0, 1, 3, 4, 5, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 21, 22, 23, 25, 26, 28, 29, 30}
 
 // GolombRice can build up the golomb-rice encoding of the sequeuce of numbers, as well as read the numbers back from it.
 type GolombRice struct {
@@ -164,7 +163,6 @@ const maxDataSize = 0xFFFFFFFFFFFF
 func (g *GolombRice) Write(w io.Writer) error {
 	var numBuf [8]byte
 	binary.BigEndian.PutUint64(numBuf[:], uint64(len(g.data)))
-	fmt.Printf("size gr: %d\n", uint64(len(g.data))*8)
 	if _, e := w.Write(numBuf[:]); e != nil {
 		return e
 	}
