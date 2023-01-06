@@ -150,7 +150,9 @@ type FixedSizeBitmapsWriter struct {
 
 func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint64) (*FixedSizeBitmapsWriter, error) {
 	pageSize := os.Getpagesize()
-	size := ((bitsPerBitmap*int(amount))/pageSize + 1) * pageSize // must be page-size-aligned
+	//TODO: use math.SafeMul()
+	bytesAmount := (bitsPerBitmap * int(amount)) / 8
+	size := (bytesAmount/pageSize + 1) * pageSize // must be page-size-aligned
 	log.Warn("FixedSize", "bitsPerBitamp", bitsPerBitmap, "amount", amount, "size_mb", size/1024/1024)
 	idx := &FixedSizeBitmapsWriter{
 		indexFile:      indexFile,
