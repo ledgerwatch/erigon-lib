@@ -26,6 +26,8 @@ import (
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/common/bitutil"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 // EliasFano algo overview https://www.antoniomallia.it/sorted-integers-compression-with-elias-fano-encoding.html
@@ -147,6 +149,20 @@ func (ef *EliasFano) Build() {
 	}
 }
 
+func (ef *EliasFano) estimateByJumpTable(i uint64) uint64 {
+	lower := i * ef.l
+	idx64 := lower / 64
+
+	jumpSuperQ := (i / superQ) * superQSize
+	jumpInsideSuperQ := (i % superQ) / q
+	idx64 = jumpSuperQ + 1 + (jumpInsideSuperQ >> 1)
+	shift := 32 * (jumpInsideSuperQ % 2)
+	mask := uint64(0xffffffff) << shift
+	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
+	fmt.Printf("alex: %d, %d\n", (jump-i)<<ef.l, (ef.jump[jumpSuperQ+1]-i)<<ef.l)
+	return (jump - i) << ef.l
+}
+
 func (ef *EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord uint64, lower uint64) {
 	lower = i * ef.l
 	idx64 := lower / 64
@@ -162,8 +178,11 @@ func (ef *EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord
 	shift = 32 * (jumpInsideSuperQ % 2)
 	mask := uint64(0xffffffff) << shift
 	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
-
 	currWord = jump / 64
+
+	pr := message.NewPrinter(language.English)
+	//pr.Printf("jump: %d->%d->%d\n", i, jumpSuperQ, jump)
+	pr.Printf("upper: %d+%d->%d\n", currWord*64-i, sel, (currWord*64+uint64(sel)-i)<<ef.l)
 	window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
 	d := int(i & qMask)
 
@@ -205,6 +224,8 @@ func (ef *EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 func (ef *EliasFano) Search(offset uint64) (uint64, bool) {
 	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
 		val, _, _, _, _ := ef.get(uint64(i))
+		pr := message.NewPrinter(language.English)
+		pr.Printf("search: %d, est=%d\n", val, ef.estimateByJumpTable(uint64(i)))
 		return val >= offset
 	}))
 	if i <= ef.count {
@@ -241,6 +262,19 @@ type EliasFanoIter struct {
 
 func (efi *EliasFanoIter) HasNext() bool {
 	return efi.idx <= efi.ef.count
+}
+
+func (efi *EliasFanoIter) Seek(v uint64) uint64 {
+	//i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
+	//	val, _, _, _, _ := ef.get(uint64(i))
+	//	pr := message.NewPrinter(language.English)
+	//	pr.Printf("search: %d\n", val)
+	//	return val >= offset
+	//}))
+	//if i <= ef.count {
+	//	return ef.Get(i), true
+	//}
+	return 0
 }
 
 func (efi *EliasFanoIter) Next() uint64 {

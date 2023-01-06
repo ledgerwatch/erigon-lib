@@ -15,6 +15,8 @@ func TestFixedSizeBitmaps(t *testing.T) {
 	idxPath := filepath.Join(tmpDir, "idx.tmp")
 	wr, err := NewFixedSizeBitmapsWriter(idxPath, 14, 7)
 	require.NoError(err)
+	defer wr.Close()
+
 	must(wr.AddArray(0, []uint64{3, 9, 11}))
 	must(wr.AddArray(1, []uint64{1, 2, 3}))
 	must(wr.AddArray(2, []uint64{4, 8, 13}))
@@ -29,6 +31,7 @@ func TestFixedSizeBitmaps(t *testing.T) {
 
 	bm, err := OpenFixedSizeBitmaps(idxPath, 14)
 	require.NoError(err)
+	defer bm.Close()
 
 	at := func(item uint64) []uint64 {
 		n, err := bm.At(item)
@@ -71,6 +74,8 @@ func TestFixedSizeBitmaps(t *testing.T) {
 
 	bm2, _ := NewFixedSizeBitmapsWriter(idxPath, 128, 100)
 	require.Equal((128/8*100/os.Getpagesize()+1)*os.Getpagesize(), bm2.size)
+	defer bm2.Close()
 	bm3, _ := NewFixedSizeBitmapsWriter(idxPath, 128, 1000)
 	require.Equal((128/8*1000/os.Getpagesize()+1)*os.Getpagesize(), bm3.size)
+	defer bm3.Close()
 }

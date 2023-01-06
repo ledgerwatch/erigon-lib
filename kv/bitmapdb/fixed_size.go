@@ -71,6 +71,16 @@ func OpenFixedSizeBitmaps(indexFile string, bitsPerBitmap int) (*FixedSizeBitmap
 
 	return idx, nil
 }
+
+func (bm *FixedSizeBitmaps) Close() {
+	if bm.m != nil {
+		_ = bm.m.Unmap()
+	}
+	if bm.f != nil {
+		_ = bm.f.Close()
+	}
+}
+
 func (bm *FixedSizeBitmaps) At(item uint64) (res []uint64, err error) {
 	if item > bm.amount {
 		return nil, fmt.Errorf("too big item number: %d > %d", item, bm.amount)
@@ -186,7 +196,11 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 
 	return idx, nil
 }
+func (w *FixedSizeBitmapsWriter) Close() {
 
+	_ = w.m.Unmap()
+	_ = w.f.Close()
+}
 func growFileToSize(f *os.File, size int) error {
 	pageSize := os.Getpagesize()
 	pages := size / pageSize
@@ -235,10 +249,19 @@ func (w *FixedSizeBitmapsWriter) Build() error {
 	if err := w.f.Sync(); err != nil {
 		return err
 	}
+
 	if err := w.m.Unmap(); err != nil {
 		return err
 	}
-	_ = w.f.Close()
-	_ = os.Rename(w.tmpIdxFilePath, w.indexFile)
+	w.m = nil
+
+	if err := w.f.Close(); err != nil {
+		return err
+	}
+	w.f = nil
+
+	if err := os.Rename(w.tmpIdxFilePath, w.indexFile); err != nil {
+		return err
+	}
 	return nil
 }

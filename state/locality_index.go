@@ -149,6 +149,9 @@ func (li *LocalityIndex) closeFiles() {
 	if li.file.index != nil {
 		li.file.index.Close()
 	}
+	if li.bm != nil {
+		li.bm.Close()
+	}
 }
 
 func (li *LocalityIndex) Close() {
@@ -237,6 +240,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		if err != nil {
 			return nil, err
 		}
+		defer dense.Close()
 
 		it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
 		for it.HasNext() {
