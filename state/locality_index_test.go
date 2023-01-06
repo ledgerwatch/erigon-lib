@@ -50,7 +50,7 @@ func TestLocality(t *testing.T) {
 		require.NoError(err)
 		require.Equal([]uint64{0, 1}, res)
 		res, err = files.bm.At(32)
-		require.NoError(err)
+		require.Error(err)
 		require.Empty(res)
 	})
 
