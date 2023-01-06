@@ -1,6 +1,7 @@
 package bitmapdb
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -67,4 +68,9 @@ func TestFixedSizeBitmaps(t *testing.T) {
 
 	_, err = bm.At(8)
 	require.Error(err)
+
+	bm2, _ := NewFixedSizeBitmapsWriter(idxPath, 128, 100)
+	require.Equal((128/8*100/os.Getpagesize()+1)*os.Getpagesize(), bm2.size)
+	bm3, _ := NewFixedSizeBitmapsWriter(idxPath, 128, 1000)
+	require.Equal((128/8*1000/os.Getpagesize()+1)*os.Getpagesize(), bm3.size)
 }
