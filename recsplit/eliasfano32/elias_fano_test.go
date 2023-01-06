@@ -18,12 +18,9 @@ package eliasfano32
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/text/language"
-	"golang.org/x/text/message"
 )
 
 func TestEliasFano(t *testing.T) {
@@ -88,21 +85,4 @@ func TestIterator(t *testing.T) {
 		assert.Equal(t, offsets[i], efi.Next(), "iter")
 		i++
 	}
-}
-
-func TestJump(t *testing.T) {
-	count := uint64(1_000_000)
-	maxOffset := count * 16
-	ef := NewEliasFano(count, maxOffset)
-	for offset := uint64(0); offset < count; offset++ {
-		ef.AddOffset(offset * 16)
-	}
-	ef.Build()
-	v := ef.Get(count - 1)
-	fmt.Printf("v: %d\n", v)
-	fmt.Printf("v: %d\n", len(ef.jump))
-
-	v, ok := ef.Search((count - 1) * 16)
-	pr := message.NewPrinter(language.English)
-	pr.Printf("search res: %d, %t\n", v, ok)
 }
