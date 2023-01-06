@@ -334,6 +334,9 @@ func (sf LocalityIndexFiles) Close() {
 	if sf.index != nil {
 		sf.index.Close()
 	}
+	if sf.bm != nil {
+		sf.bm.Close()
+	}
 }
 
 type LocalityIterator struct {
