@@ -46,8 +46,10 @@ func TestLocality(t *testing.T) {
 		require.NoError(err)
 		require.Equal([]uint64{0, 1}, res)
 		res, err = files.bm.At(1)
+		require.NoError(err)
 		require.Equal([]uint64{0, 1}, res)
 		res, err = files.bm.At(32)
+		require.NoError(err)
 		require.Empty(res)
 	})
 
@@ -75,6 +77,6 @@ func TestLocality(t *testing.T) {
 		require.False(ok2)
 		require.Equal(uint64(1*StepsInBiggestFile), v1)
 		require.Equal(uint64(0*StepsInBiggestFile), v2)
-		require.Equal(uint64(2*li.aggregationStep*StepsInBiggestFile), from)
+		require.Equal(2*li.aggregationStep*StepsInBiggestFile, from)
 	})
 }

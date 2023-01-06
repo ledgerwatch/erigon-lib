@@ -66,7 +66,7 @@ func OpenFixedSizeBitmaps(indexFile string, bitsPerBitmap int) (*FixedSizeBitmap
 	idx.metaData = idx.m[:64]
 	idx.data = castToArrU64(idx.m[64:])
 
-	idx.version = uint8(idx.metaData[0])
+	idx.version = idx.metaData[0]
 	idx.amount = binary.BigEndian.Uint64(idx.metaData[1 : 8+1])
 
 	return idx, nil
@@ -78,7 +78,7 @@ func (bm *FixedSizeBitmaps) At(item uint64) (res []uint64, err error) {
 
 	n := bm.bitsPerBitmap * int(item)
 	blkFrom, bitFrom := n/64, n%64
-	blkTo := int((n+bm.bitsPerBitmap)/64) + 1
+	blkTo := (n+bm.bitsPerBitmap)/64 + 1
 	bitTo := 64
 
 	var j uint64
