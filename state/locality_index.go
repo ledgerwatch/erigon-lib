@@ -412,7 +412,6 @@ func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityI
 			heap.Push(&si.h, heapItem)
 		}
 		si.totalOffsets += uint64(item.getter.Size())
-		log.Warn("files", "name", ic.localityIndex.filenameBase, "item", fmt.Sprintf("%d-%d", item.startTxNum/ic.ii.aggregationStep, item.endTxNum/ic.ii.aggregationStep))
 		si.filesAmount++
 		return true
 	})
