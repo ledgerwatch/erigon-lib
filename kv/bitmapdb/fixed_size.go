@@ -104,7 +104,7 @@ func (bm *FixedSizeBitmaps) First2At(item, after uint64) (fst uint64, snd uint64
 	}
 	n := bm.bitsPerBitmap * int(item)
 	blkFrom, bitFrom := n/64, n%64
-	blkTo := int((n+bm.bitsPerBitmap)/64) + 1
+	blkTo := (n+bm.bitsPerBitmap)/64 + 1
 	bitTo := 64
 
 	var j uint64
