@@ -27,6 +27,7 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	mmap2 "github.com/edsrzf/mmap-go"
+	"github.com/ledgerwatch/log/v3"
 )
 
 type FixedSizeBitmaps struct {
@@ -149,7 +150,8 @@ type FixedSizeBitmapsWriter struct {
 
 func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint64) (*FixedSizeBitmapsWriter, error) {
 	pageSize := os.Getpagesize()
-	size := (bitsPerBitmap*int(amount)/pageSize + 1) * pageSize // must be multiplier of page-size
+	size := ((bitsPerBitmap*int(amount))/pageSize + 1) * pageSize // must be page-size-aligned
+	log.Warn("FixedSize", "bitsPerBitamp", bitsPerBitmap, "amount", amount, "size_mb", size/1024/1024)
 	idx := &FixedSizeBitmapsWriter{
 		indexFile:      indexFile,
 		tmpIdxFilePath: indexFile + ".tmp",
@@ -187,8 +189,8 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 
 func growFileToSize(f *os.File, size int) error {
 	pageSize := os.Getpagesize()
-	pages := (size / pageSize) + 1 // must be multiplier of pageSize
-
+	pages := size / pageSize
+	fmt.Printf("alex: resize_kb=%d\n", pages*pageSize/1024)
 	wr := bufio.NewWriterSize(f, int(4*datasize.MB))
 	page := make([]byte, pageSize)
 	for i := 0; i < pages; i++ {
