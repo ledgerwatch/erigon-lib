@@ -948,52 +948,7 @@ func (tx *MdbxTx) Commit() error {
 		kv.DbGcSelfPnlMergeTime.Update(latency.GCDetails.SelfPnlMergeTime.Seconds())
 		kv.DbGcSelfPnlMergeVolume.Set(uint64(latency.GCDetails.SelfPnlMergeVolume))
 		kv.DbGcSelfPnlMergeCalls.Set(uint64(latency.GCDetails.SelfPnlMergeCalls))
-
-		//log.Info("Commit metrics. Latency: {"+strings.Join([]string{
-		//	fmt.Sprintf("Preparation=%s", latency.Preparation),
-		//	fmt.Sprintf("Audit=%s", latency.Audit),
-		//	fmt.Sprintf("Write=%s", latency.Write),
-		//	fmt.Sprintf("Sync=%s", latency.Sync),
-		//	fmt.Sprintf("Ending=%s", latency.Ending),
-		//	fmt.Sprintf("Whole=%s", latency.Whole),
-		//	fmt.Sprintf("GCWallClock=%s", latency.GCWallClock),
-		//	fmt.Sprintf("GCCpuTime=%s", latency.GCCpuTime),
-		//	fmt.Sprintf("WorkRtime=%s", latency.GCDetails.WorkRtime),
-		//	fmt.Sprintf("SelfRtime=%s", latency.GCDetails.SelfRtime),
-		//	//fmt.Sprintf("WorkPnlMergeTime=%s", latency.GCDetails.WorkPnlMergeTime),
-		//	//fmt.Sprintf("SelfPnlMergeTime=%s", latency.GCDetails.SelfPnlMergeTime),
-		//}, ",")+"}, gc: {"+strings.Join([]string{
-		//	//fmt.Sprintf("WorkPnlMergeCalls=%d", latency.GCDetails.WorkPnlMergeCalls),
-		//	//fmt.Sprintf("WorkPnlMergeVolume=%d", latency.GCDetails.WorkPnlMergeVolume),
-		//	//fmt.Sprintf("SelfPnlMergeCalls=%d", latency.GCDetails.SelfPnlMergeCalls),
-		//	//fmt.Sprintf("SelfPnlMergeVolume=%d", latency.GCDetails.SelfPnlMergeVolume),
-		//	fmt.Sprintf("WorkRsteps=%d", latency.GCDetails.WorkRsteps),
-		//	fmt.Sprintf("SelfRsteps=%d", latency.GCDetails.SelfRsteps),
-		//	fmt.Sprintf("WorkRxpages=%d", latency.GCDetails.WorkRxpages),
-		//	fmt.Sprintf("SelfXpages=%d", latency.GCDetails.SelfXpages),
-		//	fmt.Sprintf("WorkMajflt=%d", latency.GCDetails.WorkMajflt),
-		//	fmt.Sprintf("SelfMajflt=%d", latency.GCDetails.SelfMajflt),
-		//	fmt.Sprintf("WorkCounter=%d", latency.GCDetails.WorkCounter),
-		//	fmt.Sprintf("SelfCounter=%d", latency.GCDetails.SelfCounter),
-		//	fmt.Sprintf("Wloops=%d", latency.GCDetails.Wloops),
-		//	fmt.Sprintf("Coalescences=%d", latency.GCDetails.Coalescences),
-		//	fmt.Sprintf("Wipes=%d", latency.GCDetails.Wipes),
-		//	fmt.Sprintf("Flushes=%d", latency.GCDetails.Flushes),
-		//	fmt.Sprintf("Kicks=%d", latency.GCDetails.Kicks),
-		//}, ",")+"}", "stack", dbg.Stack())
 	}
-
-	//if latency.Whole > slowTx {
-	//	log.Info("Commit",
-	//		"preparation", latency.Preparation,
-	//		"gc", latency.GC,
-	//		"audit", latency.Audit,
-	//		"write", latency.Write,
-	//		"fsync", latency.Sync,
-	//		"ending", latency.Ending,
-	//		"whole", latency.Whole,
-	//	)
-	//}
 
 	return nil
 }
