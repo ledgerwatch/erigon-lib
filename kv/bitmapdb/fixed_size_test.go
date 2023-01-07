@@ -72,10 +72,12 @@ func TestFixedSizeBitmaps(t *testing.T) {
 	_, err = bm.At(8)
 	require.Error(err)
 
-	bm2, _ := NewFixedSizeBitmapsWriter(idxPath, 128, 100)
+	bm2, err := NewFixedSizeBitmapsWriter(idxPath, 128, 100)
+	require.NoError(err)
 	require.Equal((128/8*100/os.Getpagesize()+1)*os.Getpagesize(), bm2.size)
 	defer bm2.Close()
-	bm3, _ := NewFixedSizeBitmapsWriter(idxPath, 128, 1000)
+	bm3, err := NewFixedSizeBitmapsWriter(idxPath, 128, 1000)
+	require.NoError(err)
 	require.Equal((128/8*1000/os.Getpagesize()+1)*os.Getpagesize(), bm3.size)
 	defer bm3.Close()
 }

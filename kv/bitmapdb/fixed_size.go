@@ -170,6 +170,9 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 		amount:         amount,
 		version:        1,
 	}
+
+	_ = os.Remove(idx.tmpIdxFilePath)
+
 	var err error
 	idx.f, err = os.Create(idx.tmpIdxFilePath)
 	if err != nil {
@@ -260,6 +263,7 @@ func (w *FixedSizeBitmapsWriter) Build() error {
 	}
 	w.f = nil
 
+	_ = os.Remove(w.indexFile)
 	if err := os.Rename(w.tmpIdxFilePath, w.indexFile); err != nil {
 		return err
 	}
