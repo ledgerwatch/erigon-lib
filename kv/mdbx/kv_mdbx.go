@@ -78,7 +78,7 @@ func NewMDBX(log log.Logger) MdbxOpts {
 		dirtySpace: 2 * (memory.TotalMemory() / 42),
 
 		growthStep:     2 * datasize.GB,
-		mergeThreshold: 2 * 8192,
+		mergeThreshold: 3 * 8192,
 	}
 	return opts
 }
