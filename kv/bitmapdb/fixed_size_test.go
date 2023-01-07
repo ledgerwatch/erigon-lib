@@ -80,6 +80,7 @@ func TestPageAlined(t *testing.T) {
 	require.NoError(err)
 	require.Equal((128/8*100/os.Getpagesize()+1)*os.Getpagesize(), bm2.size)
 	defer bm2.Close()
+	bm2.Close()
 	bm3, err := NewFixedSizeBitmapsWriter(idxPath, 128, 1000)
 	require.NoError(err)
 	require.Equal((128/8*1000/os.Getpagesize()+1)*os.Getpagesize(), bm3.size)
