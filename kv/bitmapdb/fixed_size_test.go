@@ -71,7 +71,11 @@ func TestFixedSizeBitmaps(t *testing.T) {
 
 	_, err = bm.At(8)
 	require.Error(err)
+}
 
+func TestPageAlined(t *testing.T) {
+	tmpDir, require := t.TempDir(), require.New(t)
+	idxPath := filepath.Join(tmpDir, "idx.tmp")
 	bm2, err := NewFixedSizeBitmapsWriter(idxPath, 128, 100)
 	require.NoError(err)
 	require.Equal((128/8*100/os.Getpagesize()+1)*os.Getpagesize(), bm2.size)
