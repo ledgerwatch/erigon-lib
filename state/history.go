@@ -1242,6 +1242,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 		return nil, ok, err
 	}
 	if ok {
+		fmt.Printf("GetNoStateWithRecent: %d, %x\n", txNum, v)
 		return v, true, nil
 	}
 
