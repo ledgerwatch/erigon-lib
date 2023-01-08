@@ -28,6 +28,7 @@ import (
 )
 
 func FindByHistory(indexC kv.Cursor, changesC kv.CursorDupSort, storage bool, key []byte, timestamp uint64) ([]byte, bool, error) {
+	fmt.Printf("FindByHistory: %d\n", timestamp)
 	var csBucket string
 	if storage {
 		csBucket = kv.StorageChangeSet
