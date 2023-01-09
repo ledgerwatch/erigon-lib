@@ -31,7 +31,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RoaringBitmap/roaring"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/c2h5oh/datasize"
 	"github.com/google/btree"
@@ -580,23 +579,16 @@ func (it *InvertedIterator) next() uint64 {
 	it.advance()
 	return n
 }
-func (it *InvertedIterator) ToBitamp() *roaring64.Bitmap {
-	bm := bitmapdb.NewBitmap64()
-	for it.HasNext() {
-		bm.Add(it.next())
-	}
-	return bm
-}
 func (it *InvertedIterator) ToArray() (res []uint64) {
 	for it.HasNext() {
 		res = append(res, it.next())
 	}
 	return res
 }
-func (it *InvertedIterator) ToBitamp32() *roaring.Bitmap {
-	bm := bitmapdb.NewBitmap()
+func (it *InvertedIterator) ToBitmap() *roaring64.Bitmap {
+	bm := roaring64.NewBitmap()
 	for it.HasNext() {
-		bm.Add(uint32(it.next()))
+		bm.Add(it.next())
 	}
 	return bm
 }

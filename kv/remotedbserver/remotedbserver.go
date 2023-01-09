@@ -32,6 +32,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -545,14 +546,9 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 			if err != nil {
 				return err
 			}
-			for it.HasNext() {
-				batch, err := it.NextBatch()
-				if err != nil {
-					return err
-				}
-				if err := stream.Send(&remote.IndexRangeReply{Timestamps: batch}); err != nil {
-					return err
-				}
+			bm := it.(bitmapdb.ToBitamp).ToBitmap()
+			if err := stream.Send(&remote.IndexRangeReply{Timestamps: bm.ToArray()}); err != nil {
+				return err
 			}
 			return nil
 		}); err != nil {
