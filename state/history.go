@@ -1072,9 +1072,9 @@ func (h *History) MakeContext() *HistoryContext {
 		if item.index == nil {
 			return true
 		}
-		if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
-			return true
-		}
+		//if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
+		//	return true
+		//}
 		hc.indexFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
@@ -1313,10 +1313,6 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 		}
 		return v, true, nil
 	}
-	if hc.trace {
-		fmt.Printf("hist: db: not found\n")
-	}
-
 	return nil, false, nil
 }
 
