@@ -1130,7 +1130,10 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		eliasVal, _ := g.NextUncompressed()
 		ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 		n, ok := ef.Search(txNum)
-
+		if hc.trace {
+			n2, _ := ef.Search(n + 1)
+			fmt.Printf("hist: in files: %s %d->%d->%d, %x\n", hc.h.filenameBase, txNum, n, n2, key)
+		}
 		if ok {
 			foundTxNum = n
 			foundEndTxNum = item.endTxNum
@@ -1279,7 +1282,7 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	if foundTxNumVal != nil {
 		if hc.trace {
 			_, vv, _ := indexCursor.NextDup()
-			fmt.Printf("hist in db: %d->%d->%d, %x\n", txNum, u64or0(foundTxNumVal), u64or0(vv), key)
+			fmt.Printf("hist: in-db: %s, %d->%d->%d, %x\n", hc.h.filenameBase, txNum, u64or0(foundTxNumVal), u64or0(vv), key)
 		}
 
 		var historyKeysCursor kv.CursorDupSort
