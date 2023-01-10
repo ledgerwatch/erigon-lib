@@ -1,7 +1,7 @@
 /*
    Copyright 2022 Erigon contributors
 
-   Licensed under the Apache License, Version 2.0 (the "License");
+   Licensed under the Apache License, VerSsion 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
 
@@ -47,7 +47,7 @@ func testDbAndDomain(t *testing.T, prefixLen int) (string, kv.RwDB, *Domain) {
 	historyValsTable := "HistoryVals"
 	settingsTable := "Settings"
 	indexTable := "Index"
-	db := mdbx.NewMDBX(logger).Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+	db := mdbx.NewMDBX(logger).InMem(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
 			keysTable:        kv.TableCfgItem{Flags: kv.DupSort},
 			valsTable:        kv.TableCfgItem{},

@@ -1,3 +1,19 @@
+/*
+   Copyright 2022 Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package kv
 
 import (
@@ -173,4 +189,38 @@ func LastKey(tx Tx, table string) ([]byte, error) {
 		return nil, err
 	}
 	return k, nil
+}
+
+type ArrStream[V any] struct {
+	arr []V
+	i   int
+}
+
+func StreamArray[V any](arr []V) UnaryStream[V] { return &ArrStream[V]{arr: arr} }
+func (it *ArrStream[V]) HasNext() bool          { return it.i < len(it.arr) }
+func (it *ArrStream[V]) Close()                 {}
+func (it *ArrStream[V]) Next() (V, error) {
+	v := it.arr[it.i]
+	it.i++
+	return v, nil
+}
+func (it *ArrStream[V]) NextBatch() ([]V, error) {
+	v := it.arr[it.i:]
+	it.i = len(it.arr)
+	return v, nil
+}
+
+// NextSubtree does []byte++. Returns false if overflow.
+func NextSubtree(in []byte) ([]byte, bool) {
+	r := make([]byte, len(in))
+	copy(r, in)
+	for i := len(r) - 1; i >= 0; i-- {
+		if r[i] != 255 {
+			r[i]++
+			return r, true
+		}
+
+		r = r[:i] // make it shorter, because in tries after 11ff goes 12, but not 1200
+	}
+	return nil, false
 }

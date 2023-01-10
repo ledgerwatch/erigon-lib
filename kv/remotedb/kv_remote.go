@@ -3,7 +3,10 @@ package remotedb
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"runtime"
 
 	"github.com/ledgerwatch/log/v3"
@@ -42,7 +45,8 @@ type remoteTx struct {
 	db                 *RemoteKV
 	statelessCursors   map[string]kv.Cursor
 	cursors            []*remoteCursor
-	id                 uint64
+	streams            []kv.Closer
+	viewID, id         uint64
 	streamingRequested bool
 }
 
@@ -105,6 +109,7 @@ func NewRemote(v gointerfaces.Version, logger log.Logger, remoteKV remote.KVClie
 }
 
 func (db *RemoteKV) PageSize() uint64        { panic("not implemented") }
+func (db *RemoteKV) ReadOnly() bool          { return true }
 func (db *RemoteKV) AllBuckets() kv.TableCfg { return db.buckets }
 
 func (db *RemoteKV) EnsureVersionCompatibility() bool {
@@ -154,7 +159,7 @@ func (db *RemoteKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		streamCancelFn()
 		return nil, err
 	}
-	return &remoteTx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn, id: msg.TxID}, nil
+	return &remoteTx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn, viewID: msg.ViewID, id: msg.TxID}, nil
 }
 
 func (db *RemoteKV) BeginRw(ctx context.Context) (kv.RwTx, error) {
@@ -177,8 +182,11 @@ func (db *RemoteKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error
 func (db *RemoteKV) Update(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
 	return fmt.Errorf("remote db provider doesn't support .Update method")
 }
+func (db *RemoteKV) UpdateAsync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
+	return fmt.Errorf("remote db provider doesn't support .Update method")
+}
 
-func (tx *remoteTx) ViewID() uint64  { return tx.id }
+func (tx *remoteTx) ViewID() uint64  { return tx.viewID }
 func (tx *remoteTx) CollectMetrics() {}
 func (tx *remoteTx) IncrementSequence(bucket string, amount uint64) (uint64, error) {
 	panic("not implemented yet")
@@ -197,6 +205,9 @@ func (tx *remoteTx) Rollback() {
 	// don't close opened cursors - just close stream, server will cleanup everything well
 	tx.closeGrpcStream()
 	tx.db.roTxsLimiter.Release(1)
+	for _, c := range tx.streams {
+		c.Close()
+	}
 }
 func (tx *remoteTx) DBSize() (uint64, error) { panic("not implemented") }
 
@@ -218,15 +229,13 @@ func (tx *remoteTx) statelessCursor(bucket string) (kv.Cursor, error) {
 
 func (tx *remoteTx) BucketSize(name string) (uint64, error) { panic("not implemented") }
 
-// TODO: this must be optimized - and implemented as single command on server, with server-side buffered streaming
 func (tx *remoteTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
+	it, err := tx.Range(bucket, fromPrefix, nil)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
+	for it.HasNext() {
+		k, v, err := it.Next()
 		if err != nil {
 			return err
 		}
@@ -237,20 +246,15 @@ func (tx *remoteTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v [
 	return nil
 }
 
-// TODO: this must be optimized - and implemented as single command on server, with server-side buffered streaming
 func (tx *remoteTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
+	it, err := tx.Prefix(bucket, prefix)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(prefix); k != nil; k, v, err = c.Next() {
+	for it.HasNext() {
+		k, v, err := it.Next()
 		if err != nil {
 			return err
-		}
-		if !bytes.HasPrefix(k, prefix) {
-			break
 		}
 		if err := walker(k, v); err != nil {
 			return err
@@ -259,6 +263,7 @@ func (tx *remoteTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []b
 	return nil
 }
 
+// TODO: this must be deprecated
 func (tx *remoteTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, walker func(k, v []byte) error) error {
 	if amount == 0 {
 		return nil
@@ -281,29 +286,29 @@ func (tx *remoteTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, w
 	return nil
 }
 
-func (tx *remoteTx) GetOne(bucket string, key []byte) (val []byte, err error) {
+func (tx *remoteTx) GetOne(bucket string, k []byte) (val []byte, err error) {
 	c, err := tx.statelessCursor(bucket)
 	if err != nil {
 		return nil, err
 	}
-	_, val, err = c.SeekExact(key)
+	_, val, err = c.SeekExact(k)
 	return val, err
 }
 
-func (tx *remoteTx) Has(bucket string, key []byte) (bool, error) {
+func (tx *remoteTx) Has(bucket string, k []byte) (bool, error) {
 	c, err := tx.statelessCursor(bucket)
 	if err != nil {
 		return false, err
 	}
-	k, _, err := c.Seek(key)
+	kk, _, err := c.Seek(k)
 	if err != nil {
 		return false, err
 	}
-	return bytes.Equal(key, k), nil
+	return bytes.Equal(k, kk), nil
 }
 
-func (c *remoteCursor) SeekExact(key []byte) (k, val []byte, err error) {
-	return c.seekExact(key)
+func (c *remoteCursor) SeekExact(k []byte) (key, val []byte, err error) {
+	return c.seekExact(k)
 }
 
 func (c *remoteCursor) Prev() ([]byte, []byte, error) {
@@ -325,12 +330,22 @@ func (tx *remoteTx) Cursor(bucket string) (kv.Cursor, error) {
 	return c, nil
 }
 
-func (c *remoteCursor) Put(key []byte, value []byte) error            { panic("not supported") }
-func (c *remoteCursor) PutNoOverwrite(key []byte, value []byte) error { panic("not supported") }
-func (c *remoteCursor) Append(key []byte, value []byte) error         { panic("not supported") }
-func (c *remoteCursor) Delete(k []byte) error                         { panic("not supported") }
-func (c *remoteCursor) DeleteCurrent() error                          { panic("not supported") }
-func (c *remoteCursor) Count() (uint64, error)                        { panic("not supported") }
+func (c *remoteCursor) Put(k []byte, v []byte) error            { panic("not supported") }
+func (c *remoteCursor) PutNoOverwrite(k []byte, v []byte) error { panic("not supported") }
+func (c *remoteCursor) Append(k []byte, v []byte) error         { panic("not supported") }
+func (c *remoteCursor) Delete(k []byte) error                   { panic("not supported") }
+func (c *remoteCursor) DeleteCurrent() error                    { panic("not supported") }
+func (c *remoteCursor) Count() (uint64, error) {
+	if err := c.stream.Send(&remote.Cursor{Cursor: c.id, Op: remote.Op_COUNT}); err != nil {
+		return 0, err
+	}
+	pair, err := c.stream.Recv()
+	if err != nil {
+		return 0, err
+	}
+	return binary.BigEndian.Uint64(pair.V), nil
+
+}
 
 func (c *remoteCursor) first() ([]byte, []byte, error) {
 	if err := c.stream.Send(&remote.Cursor{Cursor: c.id, Op: remote.Op_FIRST}); err != nil {
@@ -566,35 +581,157 @@ func (tx *remoteTx) CursorDupSort(bucket string) (kv.CursorDupSort, error) {
 	return &remoteCursorDupSort{remoteCursor: c}, nil
 }
 
-func (c *remoteCursorDupSort) SeekBothExact(key, value []byte) ([]byte, []byte, error) {
-	return c.seekBothExact(key, value)
+func (c *remoteCursorDupSort) SeekBothExact(k, v []byte) ([]byte, []byte, error) {
+	return c.seekBothExact(k, v)
 }
 
-func (c *remoteCursorDupSort) SeekBothRange(key, value []byte) ([]byte, error) {
-	return c.getBothRange(key, value)
+func (c *remoteCursorDupSort) SeekBothRange(k, v []byte) ([]byte, error) {
+	return c.getBothRange(k, v)
 }
 
-func (c *remoteCursorDupSort) DeleteExact(k1, k2 []byte) error      { panic("not supported") }
-func (c *remoteCursorDupSort) AppendDup(k []byte, v []byte) error   { panic("not supported") }
-func (c *remoteCursorDupSort) PutNoDupData(key, value []byte) error { panic("not supported") }
-func (c *remoteCursorDupSort) DeleteCurrentDuplicates() error       { panic("not supported") }
-func (c *remoteCursorDupSort) CountDuplicates() (uint64, error)     { panic("not supported") }
+func (c *remoteCursorDupSort) DeleteExact(k1, k2 []byte) error    { panic("not supported") }
+func (c *remoteCursorDupSort) AppendDup(k []byte, v []byte) error { panic("not supported") }
+func (c *remoteCursorDupSort) PutNoDupData(k, v []byte) error     { panic("not supported") }
+func (c *remoteCursorDupSort) DeleteCurrentDuplicates() error     { panic("not supported") }
+func (c *remoteCursorDupSort) CountDuplicates() (uint64, error)   { panic("not supported") }
 
-func (c *remoteCursorDupSort) FirstDup() ([]byte, error) {
-	return c.firstDup()
+func (c *remoteCursorDupSort) FirstDup() ([]byte, error)          { return c.firstDup() }
+func (c *remoteCursorDupSort) NextDup() ([]byte, []byte, error)   { return c.nextDup() }
+func (c *remoteCursorDupSort) NextNoDup() ([]byte, []byte, error) { return c.nextNoDup() }
+func (c *remoteCursorDupSort) PrevDup() ([]byte, []byte, error)   { return c.prevDup() }
+func (c *remoteCursorDupSort) PrevNoDup() ([]byte, []byte, error) { return c.prevNoDup() }
+func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.lastDup() }
+
+// Temporal Methods
+func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
+	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxID: tx.id, Table: string(name), K: k, Ts: ts})
+	if err != nil {
+		return nil, false, err
+	}
+	return reply.V, reply.Ok, nil
 }
-func (c *remoteCursorDupSort) NextDup() ([]byte, []byte, error) {
-	return c.nextDup()
+
+func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.UnaryStream[uint64], err error) {
+	//TODO: maybe add ctx.WithCancel
+	stream, err := tx.db.remoteKV.IndexRange(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: fromTs, ToTs: toTs})
+	if err != nil {
+		return nil, err
+	}
+	it := &grpc2UnaryStream[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }}
+	//tx.streams = append(tx.streams, it)
+	return it, nil
 }
-func (c *remoteCursorDupSort) NextNoDup() ([]byte, []byte, error) {
-	return c.nextNoDup()
+
+func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
+	nextPrefix, ok := kv.NextSubtree(prefix)
+	if !ok {
+		return tx.Range(table, prefix, nil)
+	}
+	return tx.Range(table, prefix, nextPrefix)
 }
-func (c *remoteCursorDupSort) PrevDup() ([]byte, []byte, error) {
-	return c.prevDup()
+
+func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+	stream, err := tx.db.remoteKV.Range(tx.ctx, &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix})
+	if err != nil {
+		return nil, err
+	}
+	it := &grpc2Pairs[*remote.Pairs]{stream: stream}
+	//tx.streams = append(tx.streams, it)
+	return it, nil
 }
-func (c *remoteCursorDupSort) PrevNoDup() ([]byte, []byte, error) {
-	return c.prevNoDup()
+
+type grpcStream[Msg any] interface {
+	Recv() (Msg, error)
+	CloseSend() error
 }
-func (c *remoteCursorDupSort) LastDup() ([]byte, error) {
-	return c.lastDup()
+
+type parisMsg interface {
+	GetKeys() [][]byte
+	GetValues() [][]byte
+}
+type grpc2Pairs[Msg parisMsg] struct {
+	stream     grpcStream[Msg]
+	lastErr    error
+	lastKeys   [][]byte
+	lastValues [][]byte
+	i          int
+}
+
+func (it *grpc2Pairs[Msg]) NextBatch() ([][]byte, [][]byte, error) {
+	keys := it.lastKeys[it.i:]
+	values := it.lastValues[it.i:]
+	it.i = len(it.lastKeys)
+	return keys, values, nil
+}
+func (it *grpc2Pairs[Msg]) HasNext() bool {
+	if it.lastErr != nil {
+		return true
+	}
+	if it.i < len(it.lastKeys) {
+		return true
+	}
+
+	it.i = 0
+	msg, err := it.stream.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return false
+		}
+		it.lastErr = err
+		return true
+	}
+	it.lastKeys = msg.GetKeys()
+	it.lastValues = msg.GetValues()
+	return len(it.lastKeys) > 0
+}
+func (it *grpc2Pairs[Msg]) Close() {
+	//_ = it.stream.CloseSend()
+}
+func (it *grpc2Pairs[Msg]) Next() ([]byte, []byte, error) {
+	k := it.lastKeys[it.i]
+	v := it.lastValues[it.i]
+	it.i++
+	return k, v, nil
+}
+
+type grpc2UnaryStream[Msg any, Res any] struct {
+	stream  grpcStream[Msg]
+	unwrap  func(Msg) []Res
+	lastErr error
+	last    []Res
+	i       int
+}
+
+func (it *grpc2UnaryStream[Msg, Res]) NextBatch() ([]Res, error) {
+	v := it.last[it.i:]
+	it.i = len(it.last)
+	return v, nil
+}
+func (it *grpc2UnaryStream[Msg, Res]) HasNext() bool {
+	if it.lastErr != nil {
+		return true
+	}
+	if it.i < len(it.last) {
+		return true
+	}
+
+	it.i = 0
+	msg, err := it.stream.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return false
+		}
+		it.lastErr = err
+		return true
+	}
+	it.last = it.unwrap(msg)
+	return len(it.last) > 0
+}
+func (it *grpc2UnaryStream[Msg, Res]) Close() {
+	//_ = it.stream.CloseSend()
+}
+func (it *grpc2UnaryStream[Msg, Res]) Next() (Res, error) {
+	v := it.last[it.i]
+	it.i++
+	return v, nil
 }

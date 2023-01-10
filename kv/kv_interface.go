@@ -23,6 +23,30 @@ import (
 	"github.com/VictoriaMetrics/metrics"
 )
 
+//Variables Naming:
+//  ts - TimeStamp
+//  tx - Database Transaction
+//  txn - Ethereum Transaction (and TxNum - is also number of Etherum Transaction)
+//  RoTx - Read-Only Database Transaction
+//  RwTx - Read-Write Database Transaction
+//  k - key
+//  v - value
+//  Cursor - low-level mdbx-tide api to walk over Table
+//  Stream - high-level simplified api for iteration over Table, InvertedIndex, History, Domain, ...
+
+//Methods Naming:
+//  Get: exact match of criterias
+//  Range: [from, to). Range(from, nil) means [from, EndOfTable). Range(nil, to) means [StartOfTable, to).
+//  Each: Range(from, nil)
+//  Prefix: `Range(Table, prefix, kv.NextSubtree(prefix))`
+//  Amount: [from, INF) AND maximum N records
+
+//Entity Naming:
+//  State: simple table in db
+//  InvertedIndex: supports range-scans
+//  History: can return value of key K as of given TimeStamp. Doesn't know about latest/current value of key K. Returns NIL if K not changed after TimeStamp.
+//  Domain: as History but also aware about latest/current value of key K.
+
 const ReadersLimit = 32000 // MDBX_READERS_LIMIT=32767
 
 var (
@@ -35,23 +59,53 @@ var (
 	TxUnspill = metrics.NewCounter(`tx_unspill`) //nolint
 	TxDirty   = metrics.NewCounter(`tx_dirty`)   //nolint
 
-	DbCommitPreparation = metrics.GetOrCreateSummary(`db_commit_seconds{phase="preparation"}`) //nolint
-	DbCommitGc          = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc"}`)          //nolint
-	DbCommitAudit       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="audit"}`)       //nolint
-	DbCommitWrite       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="write"}`)       //nolint
-	DbCommitSync        = metrics.GetOrCreateSummary(`db_commit_seconds{phase="sync"}`)        //nolint
-	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)      //nolint
-	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)       //nolint
+	DbCommitPreparation = metrics.GetOrCreateSummary(`db_commit_seconds{phase="preparation"}`)   //nolint
+	DbGCWallClock       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_wall_clock"}`) //nolint
+	DbGCCpuTime         = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_cpu_time"}`)   //nolint
+	DbCommitAudit       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="audit"}`)         //nolint
+	DbCommitWrite       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="write"}`)         //nolint
+	DbCommitSync        = metrics.GetOrCreateSummary(`db_commit_seconds{phase="sync"}`)          //nolint
+	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)        //nolint
+	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)         //nolint
 
-	DbPgopsNewly   = metrics.NewCounter(`db_pgops_newly`)           //nolint
-	DbPgopsCow     = metrics.NewCounter(`db_pgops_cow`)             //nolint
-	DbPgopsClone   = metrics.NewCounter(`db_pgops_clone`)           //nolint
-	DbPgopsSplit   = metrics.NewCounter(`db_pgops_split`)           //nolint
-	DbPgopsMerge   = metrics.NewCounter(`db_pgops_merge`)           //nolint
-	DbPgopsSpill   = metrics.NewCounter(`db_pgops_spill`)           //nolint
-	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`)         //nolint
-	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)            //nolint
-	DbPgopsGcrtime = metrics.GetOrCreateSummary(`db_pgops_gcrtime`) //nolint
+	DbPgopsNewly    = metrics.NewCounter(`db_pgops{phase="newly"}`)    //nolint
+	DbPgopsCow      = metrics.NewCounter(`db_pgops{phase="cow"}`)      //nolint
+	DbPgopsClone    = metrics.NewCounter(`db_pgops{phase="clone"}`)    //nolint
+	DbPgopsSplit    = metrics.NewCounter(`db_pgops{phase="split"}`)    //nolint
+	DbPgopsMerge    = metrics.NewCounter(`db_pgops{phase="merge"}`)    //nolint
+	DbPgopsSpill    = metrics.NewCounter(`db_pgops{phase="spill"}`)    //nolint
+	DbPgopsUnspill  = metrics.NewCounter(`db_pgops{phase="unspill"}`)  //nolint
+	DbPgopsWops     = metrics.NewCounter(`db_pgops{phase="wops"}`)     //nolint
+	DbPgopsPrefault = metrics.NewCounter(`db_pgops{phase="prefault"}`) //nolint
+	DbPgopsMinicore = metrics.NewCounter(`db_pgops{phase="minicore"}`) //nolint
+	DbPgopsMsync    = metrics.NewCounter(`db_pgops{phase="msync"}`)    //nolint
+	DbPgopsFsync    = metrics.NewCounter(`db_pgops{phase="fsync"}`)    //nolint
+	DbMiLastPgNo    = metrics.NewCounter(`db_mi_last_pgno`)            //nolint
+
+	DbGcWorkRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_rtime"}`) //nolint
+	DbGcWorkRsteps   = metrics.NewCounter(`db_gc{phase="work_rsteps"}`)                //nolint
+	DbGcWorkRxpages  = metrics.NewCounter(`db_gc{phase="work_rxpages"}`)               //nolint
+	DbGcSelfRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_rtime"}`) //nolint
+	DbGcSelfXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_xtime"}`) //nolint
+	DbGcWorkXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_xtime"}`) //nolint
+	DbGcSelfRsteps   = metrics.NewCounter(`db_gc{phase="self_rsteps"}`)                //nolint
+	DbGcWloops       = metrics.NewCounter(`db_gc{phase="wloop"}`)                      //nolint
+	DbGcCoalescences = metrics.NewCounter(`db_gc{phase="coalescences"}`)               //nolint
+	DbGcWipes        = metrics.NewCounter(`db_gc{phase="wipes"}`)                      //nolint
+	DbGcFlushes      = metrics.NewCounter(`db_gc{phase="flushes"}`)                    //nolint
+	DbGcKicks        = metrics.NewCounter(`db_gc{phase="kicks"}`)                      //nolint
+	DbGcWorkMajflt   = metrics.NewCounter(`db_gc{phase="work_majflt"}`)                //nolint
+	DbGcSelfMajflt   = metrics.NewCounter(`db_gc{phase="self_majflt"}`)                //nolint
+	DbGcWorkCounter  = metrics.NewCounter(`db_gc{phase="work_counter"}`)               //nolint
+	DbGcSelfCounter  = metrics.NewCounter(`db_gc{phase="self_counter"}`)               //nolint
+	DbGcSelfXpages   = metrics.NewCounter(`db_gc{phase="self_xpages"}`)                //nolint
+
+	//DbGcWorkPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_pnl_seconds{phase="work_merge_time"}`) //nolint
+	//DbGcWorkPnlMergeVolume = metrics.NewCounter(`db_gc_pnl{phase="work_merge_volume"}`)               //nolint
+	//DbGcWorkPnlMergeCalls  = metrics.NewCounter(`db_gc{phase="work_merge_calls"}`)                    //nolint
+	//DbGcSelfPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_pnl_seconds{phase="slef_merge_time"}`) //nolint
+	//DbGcSelfPnlMergeVolume = metrics.NewCounter(`db_gc_pnl{phase="self_merge_volume"}`)               //nolint
+	//DbGcSelfPnlMergeCalls  = metrics.NewCounter(`db_gc_pnl{phase="slef_merge_calls"}`)                //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
 	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`) //nolint
@@ -68,6 +122,7 @@ const (
 	SentryDB     Label = 2
 	ConsensusDB  Label = 3
 	DownloaderDB Label = 4
+	InMem        Label = 5
 )
 
 func (l Label) String() string {
@@ -82,6 +137,8 @@ func (l Label) String() string {
 		return "consensus"
 	case DownloaderDB:
 		return "downloader"
+	case InMem:
+		return "inMem"
 	default:
 		return "unknown"
 	}
@@ -89,7 +146,7 @@ func (l Label) String() string {
 
 type Has interface {
 	// Has indicates whether a key exists in the database.
-	Has(bucket string, key []byte) (bool, error)
+	Has(table string, key []byte) (bool, error)
 }
 type GetPut interface {
 	Getter
@@ -99,16 +156,16 @@ type Getter interface {
 	Has
 
 	// GetOne references a readonly section of memory that must not be accessed after txn has terminated
-	GetOne(bucket string, key []byte) (val []byte, err error)
+	GetOne(table string, key []byte) (val []byte, err error)
 
 	// ForEach iterates over entries with keys greater or equal to fromPrefix.
 	// walker is called for each eligible entry.
 	// If walker returns an error:
 	//   - implementations of local db - stop
 	//   - implementations of remote db - do not handle this error and may finish (send all entries to client) before error happen.
-	ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error
-	ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error
-	ForAmount(bucket string, prefix []byte, amount uint32, walker func(k, v []byte) error) error
+	ForEach(table string, fromPrefix []byte, walker func(k, v []byte) error) error
+	ForPrefix(table string, prefix []byte, walker func(k, v []byte) error) error
+	ForAmount(table string, prefix []byte, amount uint32, walker func(k, v []byte) error) error
 }
 
 // Putter wraps the database write operations.
@@ -130,7 +187,7 @@ type Closer interface {
 // RoDB - Read-only version of KV.
 type RoDB interface {
 	Closer
-
+	ReadOnly() bool
 	View(ctx context.Context, f func(tx Tx) error) error
 
 	// BeginRo - creates transaction
@@ -179,6 +236,7 @@ type RwDB interface {
 	RoDB
 
 	Update(ctx context.Context, f func(tx RwTx) error) error
+	UpdateAsync(ctx context.Context, f func(tx RwTx) error) error
 
 	BeginRw(ctx context.Context) (RwTx, error)
 	BeginRwAsync(ctx context.Context) (RwTx, error)
@@ -194,9 +252,9 @@ type StatelessReadTx interface {
 	// Can be called for a read transaction to retrieve the current sequence value, and the increment must be zero.
 	// Sequence changes become visible outside the current write transaction after it is committed, and discarded on abort.
 	// Starts from 0.
-	ReadSequence(bucket string) (uint64, error)
+	ReadSequence(table string) (uint64, error)
 
-	BucketSize(bucket string) (uint64, error)
+	BucketSize(table string) (uint64, error)
 }
 
 type StatelessWriteTx interface {
@@ -222,9 +280,9 @@ type StatelessWriteTx interface {
 		}
 		// use id
 	*/
-	IncrementSequence(bucket string, amount uint64) (uint64, error)
-	Append(bucket string, k, v []byte) error
-	AppendDup(bucket string, k, v []byte) error
+	IncrementSequence(table string, amount uint64) (uint64, error)
+	Append(table string, k, v []byte) error
+	AppendDup(table string, k, v []byte) error
 }
 
 type StatelessRwTx interface {
@@ -250,12 +308,19 @@ type Tx interface {
 	//
 	// Cursor, also provides a grain of magic - it can use a declarative configuration - and automatically break
 	// long keys into DupSort key/values. See docs for `bucket.go:TableCfgItem`
-	Cursor(bucket string) (Cursor, error)
-	CursorDupSort(bucket string) (CursorDupSort, error) // CursorDupSort - can be used if bucket has mdbx.DupSort flag
+	Cursor(table string) (Cursor, error)
+	CursorDupSort(table string) (CursorDupSort, error) // CursorDupSort - can be used if bucket has mdbx.DupSort flag
 
-	ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error
-	ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error
-	ForAmount(bucket string, prefix []byte, amount uint32, walker func(k, v []byte) error) error
+	ForEach(table string, fromPrefix []byte, walker func(k, v []byte) error) error
+	ForPrefix(table string, prefix []byte, walker func(k, v []byte) error) error
+	ForAmount(table string, prefix []byte, amount uint32, walker func(k, v []byte) error) error
+
+	// Range [from, to)
+	// Range(from, nil) means [from, EndOfTable)
+	// Range(nil, to) means [StartOfTable, to)
+	// PrefixScan can be implemented as `Range(Table, prefix, kv.NextSubtree(prefix))`
+	Range(table string, fromPrefix, toPrefix []byte) (Pairs, error)
+	Prefix(table string, prefix []byte) (Pairs, error)
 
 	DBSize() (uint64, error)
 }
@@ -271,8 +336,8 @@ type RwTx interface {
 	StatelessWriteTx
 	BucketMigrator
 
-	RwCursor(bucket string) (RwCursor, error)
-	RwCursorDupSort(bucket string) (RwCursorDupSort, error)
+	RwCursor(table string) (RwCursor, error)
+	RwCursorDupSort(table string) (RwCursorDupSort, error)
 
 	// CollectMetrics - does collect all DB-related and Tx-related metrics
 	// this method exists only in RwTx to avoid concurrency
@@ -357,3 +422,43 @@ type RwCursorDupSort interface {
 }
 
 var ErrNotSupported = errors.New("not supported")
+
+// ---- Temporal part
+type (
+	Domain      string
+	History     string
+	InvertedIdx string
+)
+type TemporalRoDb interface {
+	RoDB
+	BeginTemporalRo(ctx context.Context) (TemporalTx, error)
+	ViewTemporal(ctx context.Context, f func(tx TemporalTx) error) error
+}
+type TemporalTx interface {
+	Tx
+	DomainGet(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
+	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
+	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps UnaryStream[uint64], err error)
+}
+
+type TemporalRwDB interface {
+	RwDB
+	TemporalRoDb
+}
+
+// Stream - Iterator-like interface designed for grpc server-side streaming: 1 client request -> much responses from server
+//   - K, V are valid only until next .Next() call (TODO: extend it to whole Tx lifetime?)
+//   - No `Close` method: all streams produced by TemporalTx will be closed inside `tx.Rollback()` (by casting to `kv.Closer`)
+//   - automatically checks cancelation of `ctx` passed to `db.Begin(ctx)`, can skip this
+//     check in loops on stream. Stream has very limited API - user has no way to
+//     terminate it - but user can specify more strict conditions when creating stream (then server knows better when to stop)
+type Stream[K, V any] interface {
+	Next() (K, V, error)
+	HasNext() bool
+}
+type UnaryStream[V any] interface {
+	Next() (V, error)
+	NextBatch() ([]V, error)
+	HasNext() bool
+}
+type Pairs Stream[[]byte, []byte]

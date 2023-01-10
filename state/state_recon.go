@@ -79,6 +79,18 @@ func (rh *ReconHeap) Pop() interface{} {
 	return x
 }
 
+type ReconHeapOlderFirst struct {
+	ReconHeap
+}
+
+func (rh ReconHeapOlderFirst) Less(i, j int) bool {
+	c := bytes.Compare(rh.ReconHeap[i].key, rh.ReconHeap[j].key)
+	if c == 0 {
+		return rh.ReconHeap[i].txNum >= rh.ReconHeap[j].txNum
+	}
+	return c < 0
+}
+
 type ScanIteratorInc struct {
 	g         *compress.Getter
 	key       []byte
@@ -108,10 +120,10 @@ func (sii *ScanIteratorInc) HasNext() bool {
 	return sii.hasNext
 }
 
-func (si *ScanIteratorInc) Next() uint64 {
+func (si *ScanIteratorInc) Next() (uint64, error) {
 	n := si.nextTxNum
 	si.advance()
-	return n
+	return n, nil
 }
 
 func (hs *HistoryStep) iterateTxs() *ScanIteratorInc {
@@ -197,8 +209,8 @@ func (hii *HistoryIteratorInc) HasNext() bool {
 	return hii.hasNext
 }
 
-func (hii *HistoryIteratorInc) Next() ([]byte, []byte) {
+func (hii *HistoryIteratorInc) Next() ([]byte, []byte, error) {
 	k, v := hii.nextKey, hii.nextVal
 	hii.advance()
-	return k, v
+	return k, v, nil
 }

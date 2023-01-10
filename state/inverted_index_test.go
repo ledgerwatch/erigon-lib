@@ -43,14 +43,14 @@ func testDbAndInvertedIndex(t *testing.T, aggStep uint64) (string, kv.RwDB, *Inv
 	logger := log.New()
 	keysTable := "Keys"
 	indexTable := "Index"
-	db := mdbx.NewMDBX(logger).Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+	db := mdbx.NewMDBX(logger).InMem(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
 			keysTable:  kv.TableCfgItem{Flags: kv.DupSort},
 			indexTable: kv.TableCfgItem{Flags: kv.DupSort},
 		}
 	}).MustOpen()
 	t.Cleanup(db.Close)
-	ii, err := NewInvertedIndex(path, path, aggStep, "inv" /* filenameBase */, keysTable, indexTable, nil)
+	ii, err := NewInvertedIndex(path, path, aggStep, "inv" /* filenameBase */, keysTable, indexTable, false, nil)
 	require.NoError(t, err)
 	t.Cleanup(ii.Close)
 	return path, db, ii
@@ -253,7 +253,8 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		for i := keyNum; i < 976; i += keyNum {
 			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
 			require.True(t, it.HasNext(), label)
-			n := it.Next()
+			n, err := it.Next()
+			require.NoError(t, err)
 			require.Equal(t, i, n, label)
 		}
 		require.False(t, it.HasNext())
@@ -270,7 +271,8 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		for i := keyNum * ((400 + keyNum - 1) / keyNum); i < txs; i += keyNum {
 			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
 			require.True(t, it.HasNext(), label)
-			n := it.Next()
+			n, err := it.Next()
+			require.NoError(t, err)
 			require.Equal(t, i, n, label)
 		}
 		require.False(t, it.HasNext())
@@ -301,7 +303,7 @@ func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 			var found bool
 			var startTxNum, endTxNum uint64
 			maxEndTxNum := ii.endTxNumMinimax()
-			maxSpan := ii.aggregationStep * 32
+			maxSpan := ii.aggregationStep * StepsInBiggestFile
 			for found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan); found; found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan) {
 				outs, _ := ii.staticFilesInRange(startTxNum, endTxNum)
 				in, err := ii.mergeFiles(ctx, outs, startTxNum, endTxNum, 1)
@@ -358,7 +360,7 @@ func TestInvIndexScanFiles(t *testing.T) {
 	ii.Close()
 	// Recreate InvertedIndex to scan the files
 	var err error
-	ii, err = NewInvertedIndex(path, path, ii.aggregationStep, ii.filenameBase, ii.indexKeysTable, ii.indexTable, nil)
+	ii, err = NewInvertedIndex(path, path, ii.aggregationStep, ii.filenameBase, ii.indexKeysTable, ii.indexTable, false, nil)
 	require.NoError(t, err)
 	defer ii.Close()
 

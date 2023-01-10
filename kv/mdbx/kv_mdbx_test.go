@@ -37,12 +37,15 @@ func BaseCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursorDupSort) {
 			kv.Sequence: kv.TableCfgItem{},
 		}
 	}).MustOpen()
+	t.Cleanup(db.Close)
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
+	t.Cleanup(tx.Rollback)
 
 	c, err := tx.RwCursorDupSort(table)
 	require.NoError(t, err)
+	t.Cleanup(c.Close)
 
 	// Insert some dupsorted records
 	require.NoError(t, c.Put([]byte("key1"), []byte("value1.1")))
@@ -73,10 +76,7 @@ func iteration(t *testing.T, c kv.RwCursorDupSort, start []byte, val []byte) ([]
 }
 
 func TestSeekBothRange(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, _, c := BaseCase(t)
 
 	v, err := c.SeekBothRange([]byte("key2"), []byte("value1.2"))
 	require.NoError(t, err)
@@ -88,11 +88,42 @@ func TestSeekBothRange(t *testing.T) {
 	require.Equal(t, "value3.3", string(v))
 }
 
+func TestRange(t *testing.T) {
+	_, tx, _ := BaseCase(t)
+
+	//[from, to)
+	it, err := tx.Range("Table", []byte("key1"), []byte("key3"))
+	require.NoError(t, err)
+	require.True(t, it.HasNext())
+	k, v, err := it.Next()
+	require.NoError(t, err)
+	require.Equal(t, "key1", string(k))
+	require.Equal(t, "value1.1", string(v))
+
+	require.True(t, it.HasNext())
+	k, v, err = it.Next()
+	require.NoError(t, err)
+	require.Equal(t, "key1", string(k))
+	require.Equal(t, "value1.3", string(v))
+
+	require.False(t, it.HasNext())
+	require.False(t, it.HasNext())
+
+	// [from, nil) means [from, INF)
+	it, err = tx.Range("Table", []byte("key1"), nil)
+	require.NoError(t, err)
+	cnt := 0
+	for it.HasNext() {
+		_, _, err := it.Next()
+		require.NoError(t, err)
+		cnt++
+	}
+	require.Equal(t, 4, cnt)
+
+}
+
 func TestLastDup(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	db, tx, _ := BaseCase(t)
 
 	err := tx.Commit()
 	require.NoError(t, err)
@@ -118,10 +149,7 @@ func TestLastDup(t *testing.T) {
 }
 
 func TestPutGet(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, tx, c := BaseCase(t)
 
 	require.NoError(t, c.Put([]byte(""), []byte("value1.1")))
 
@@ -136,11 +164,7 @@ func TestPutGet(t *testing.T) {
 }
 
 func TestIncrementRead(t *testing.T) {
-	db, tx, c := BaseCase(t)
-
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, tx, _ := BaseCase(t)
 
 	table := "Table"
 
@@ -157,10 +181,7 @@ func TestIncrementRead(t *testing.T) {
 }
 
 func TestHasDelete(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, tx, _ := BaseCase(t)
 
 	table := "Table"
 
@@ -194,10 +215,7 @@ func TestHasDelete(t *testing.T) {
 }
 
 func TestForAmount(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, tx, _ := BaseCase(t)
 
 	table := "Table"
 
@@ -243,10 +261,7 @@ func TestForAmount(t *testing.T) {
 }
 
 func TestForPrefix(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, tx, _ := BaseCase(t)
 
 	table := "Table"
 
@@ -279,10 +294,7 @@ func TestForPrefix(t *testing.T) {
 }
 
 func TestAppendFirstLast(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, tx, c := BaseCase(t)
 
 	table := "Table"
 
@@ -311,10 +323,7 @@ func TestAppendFirstLast(t *testing.T) {
 }
 
 func TestNextPrevCurrent(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, _, c := BaseCase(t)
 
 	k, v, err := c.First()
 	require.Nil(t, err)
@@ -372,10 +381,7 @@ func TestNextPrevCurrent(t *testing.T) {
 }
 
 func TestSeek(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, _, c := BaseCase(t)
 
 	k, v, err := c.Seek([]byte("k"))
 	require.Nil(t, err)
@@ -397,10 +403,7 @@ func TestSeek(t *testing.T) {
 }
 
 func TestSeekExact(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, _, c := BaseCase(t)
 
 	k, v, err := c.SeekExact([]byte("key3"))
 	require.Nil(t, err)
@@ -416,10 +419,7 @@ func TestSeekExact(t *testing.T) {
 }
 
 func TestSeekBothExact(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, _, c := BaseCase(t)
 
 	k, v, err := c.SeekBothExact([]byte("key1"), []byte("value1.2"))
 	require.Nil(t, err)
@@ -447,10 +447,7 @@ func TestSeekBothExact(t *testing.T) {
 }
 
 func TestNextDups(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, tx, _ := BaseCase(t)
 
 	table := "Table"
 
@@ -511,10 +508,7 @@ func TestNextDups(t *testing.T) {
 }
 
 func TestCurrentDup(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, _, c := BaseCase(t)
 
 	count, err := c.CountDuplicates()
 	require.Nil(t, err)
@@ -534,10 +528,7 @@ func TestCurrentDup(t *testing.T) {
 }
 
 func TestDupDelete(t *testing.T) {
-	db, tx, c := BaseCase(t)
-	defer db.Close()
-	defer tx.Rollback()
-	defer c.Close()
+	_, _, c := BaseCase(t)
 
 	k, _, err := c.Current()
 	require.Nil(t, err)

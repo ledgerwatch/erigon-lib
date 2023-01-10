@@ -66,7 +66,6 @@ type TransformArgs struct {
 	Quit              <-chan struct{}
 	LogDetailsExtract AdditionalLogArguments
 	LogDetailsLoad    AdditionalLogArguments
-	Comparator        kv.CmpFunc
 	// [ExtractStartKey, ExtractEndKey)
 	ExtractStartKey []byte
 	ExtractEndKey   []byte
@@ -138,7 +137,7 @@ func extractBucketIntoFiles(
 			if additionalLogArguments != nil {
 				logArs = append(logArs, additionalLogArguments(k, v)...)
 			} else {
-				logArs = append(logArs, "current key", makeCurrentKeyStr(k))
+				logArs = append(logArs, "current_prefix", makeCurrentKeyStr(k))
 			}
 
 			log.Info(fmt.Sprintf("[%s] ETL [1/2] Extracting", logPrefix), logArs...)

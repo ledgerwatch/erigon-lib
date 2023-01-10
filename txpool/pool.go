@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/VictoriaMetrics/metrics"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/go-stack/stack"
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/simplelru"
@@ -601,22 +602,22 @@ func (p *TxPool) IsLocal(idHash []byte) bool {
 func (p *TxPool) AddNewGoodPeer(peerID types.PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                      { return p.started.Load() }
 
-func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64, isYielding bool) (bool, error) {
+func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64, toSkip mapset.Set[[32]byte]) (bool, int, error) {
 	// First wait for the corresponding block to arrive
 	if p.lastSeenBlock.Load() < onTopOf {
-		return false, nil // Too early
+		return false, 0, nil // Too early
 	}
 
 	txs.Resize(uint(cmp.Min(int(n), len(p.pending.best.ms))))
-	j := 0
 	var toRemove []*metaTx
+	count := 0
 
 	success, err := func() (bool, error) {
 		p.lock.Lock()
 		defer p.lock.Unlock()
 
 		best := p.pending.best
-		for i := 0; j < int(n) && i < len(best.ms); i++ {
+		for i := 0; count < int(n) && i < len(best.ms); i++ {
 			// if we wouldn't have enough gas for a standard transaction then quit out early
 			if availableGas < fixedgas.TxGas {
 				break
@@ -624,7 +625,7 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 
 			mt := best.ms[i]
 
-			if isYielding && mt.alreadyYielded {
+			if toSkip.Contains(mt.Tx.IDHash) {
 				continue
 			}
 
@@ -654,17 +655,15 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 				availableGas -= intrinsicGas
 			}
 
-			txs.Txs[j] = rlpTx
-			copy(txs.Senders.At(j), sender)
-			txs.IsLocal[j] = isLocal
-			if isYielding {
-				mt.alreadyYielded = true
-			}
-			j++
+			txs.Txs[count] = rlpTx
+			copy(txs.Senders.At(count), sender)
+			txs.IsLocal[count] = isLocal
+			toSkip.Add(mt.Tx.IDHash)
+			count++
 		}
 		return true, nil
 	}()
-	txs.Resize(uint(j))
+	txs.Resize(uint(count))
 	if len(toRemove) > 0 {
 		p.lock.Lock()
 		defer p.lock.Unlock()
@@ -672,7 +671,7 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 			p.pending.Remove(mt)
 		}
 	}
-	return success, err
+	return success, count, err
 }
 
 func (p *TxPool) ResetYieldedStatus() {
@@ -684,12 +683,14 @@ func (p *TxPool) ResetYieldedStatus() {
 	}
 }
 
-func (p *TxPool) YieldBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error) {
-	return p.best(n, txs, tx, onTopOf, availableGas, true)
+func (p *TxPool) YieldBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64, toSkip mapset.Set[[32]byte]) (bool, int, error) {
+	return p.best(n, txs, tx, onTopOf, availableGas, toSkip)
 }
 
 func (p *TxPool) PeekBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error) {
-	return p.best(n, txs, tx, onTopOf, availableGas, false)
+	set := mapset.NewSet[[32]byte]()
+	onTime, _, err := p.best(n, txs, tx, onTopOf, availableGas, set)
+	return onTime, err
 }
 
 func (p *TxPool) CountContent() (int, int, int) {
@@ -1614,12 +1615,16 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
-	if err := tx.ForEach(kv.RecentLocalTransaction, nil, func(k, v []byte) error {
-		//fmt.Printf("is local restored from db: %x\n", k)
-		p.isLocalLRU.Add(string(v), struct{}{})
-		return nil
-	}); err != nil {
+	it, err := tx.Range(kv.RecentLocalTransaction, nil, nil)
+	if err != nil {
 		return err
+	}
+	for it.HasNext() {
+		_, v, err := it.Next()
+		if err != nil {
+			return err
+		}
+		p.isLocalLRU.Add(string(v), struct{}{})
 	}
 
 	txs := types.TxSlots{}
@@ -1627,15 +1632,23 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	parseCtx.WithSender(false)
 
 	i := 0
-	if err := tx.ForEach(kv.PoolTransaction, nil, func(k, v []byte) error {
+	it, err = tx.Range(kv.PoolTransaction, nil, nil)
+	if err != nil {
+		return err
+	}
+	for it.HasNext() {
+		k, v, err := it.Next()
+		if err != nil {
+			return err
+		}
 		addr, txRlp := v[:20], v[20:]
 		txn := &types.TxSlot{}
 
-		_, err := parseCtx.ParseTransaction(txRlp, 0, txn, nil, false /* hasEnvelope */, nil)
+		_, err = parseCtx.ParseTransaction(txRlp, 0, txn, nil, false /* hasEnvelope */, nil)
 		if err != nil {
 			err = fmt.Errorf("err: %w, rlp: %x", err, txRlp)
 			log.Warn("[txpool] fromDB: parseTransaction", "err", err)
-			return nil
+			continue
 		}
 		txn.Rlp = nil // means that we don't need store it in db anymore
 
@@ -1652,9 +1665,6 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		txs.IsLocal[i] = isLocalTx
 		copy(txs.Senders.At(i), addr)
 		i++
-		return nil
-	}); err != nil {
-		return err
 	}
 
 	var pendingBaseFee uint64

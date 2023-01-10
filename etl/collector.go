@@ -140,7 +140,7 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 		}
 	}
 	if err := loadFilesIntoBucket(c.logPrefix, db, toBucket, c.bufType, c.dataProviders, loadFunc, args); err != nil {
-		return err
+		return fmt.Errorf("loadIntoTable %s: %w", toBucket, err)
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func (c *Collector) Close() {
 // this continues until all providers have reached their EOF.
 func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType int, providers []dataProvider, loadFunc LoadFunc, args TransformArgs) error {
 
-	h := &Heap{comparator: args.Comparator}
+	h := &Heap{}
 	heap.Init(h)
 	for i, provider := range providers {
 		if key, value, err := provider.Next(nil, nil); err == nil {
@@ -227,7 +227,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 			if args.LogDetailsLoad != nil {
 				logArs = append(logArs, args.LogDetailsLoad(k, v)...)
 			} else {
-				logArs = append(logArs, "current key", makeCurrentKeyStr(k))
+				logArs = append(logArs, "current_prefix", makeCurrentKeyStr(k))
 			}
 
 			log.Info(fmt.Sprintf("[%s] ETL [2/2] Loading", logPrefix), logArs...)
@@ -293,7 +293,7 @@ func makeCurrentKeyStr(k []byte) string {
 	} else if k[0] == 0 && k[1] == 0 && k[2] == 0 && k[3] == 0 && len(k) >= 8 { // if key has leading zeroes, show a bit more info
 		currentKeyStr = hex.EncodeToString(k)
 	} else {
-		currentKeyStr = fmt.Sprintf("%x...", k[:4])
+		currentKeyStr = hex.EncodeToString(k[:4])
 	}
 	return currentKeyStr
 }
