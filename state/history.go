@@ -1249,8 +1249,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if roTx == nil {
 		return nil, false, fmt.Errorf("roTx is nil")
 	}
-	fmt.Printf("dbg txNum: %d\n", txNum)
-	v, ok, err = hc.getNoStateFromDB(key, txNum+2, roTx)
+	v, ok, err = hc.getNoStateFromDB(key, txNum, roTx)
 	if err != nil {
 		return nil, ok, err
 	}
@@ -1272,7 +1271,11 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
 		return nil, false, err
 	}
+
 	if foundTxNumVal != nil {
+		_, vv, _ := indexCursor.NextDup()
+		fmt.Printf("hist in db: %d->%d->%d, %x\n", txNum, u64or0(foundTxNumVal), u64or0(vv), key)
+
 		var historyKeysCursor kv.CursorDupSort
 		if historyKeysCursor, err = tx.CursorDupSort(hc.h.indexKeysTable); err != nil {
 			return nil, false, err
@@ -1292,6 +1295,8 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 			return nil, false, err
 		}
 		return v, true, nil
+	} else {
+		fmt.Printf("not in hist: %x\n", key)
 	}
 	return nil, false, nil
 }
@@ -1774,4 +1779,11 @@ func (hs *HistoryStep) Clone() *HistoryStep {
 			reader:     recsplit.NewIndexReader(hs.historyItem.index),
 		},
 	}
+}
+
+func u64or0(in []byte) (v uint64) {
+	if len(in) > 0 {
+		v = binary.BigEndian.Uint64(in)
+	}
+	return v
 }
