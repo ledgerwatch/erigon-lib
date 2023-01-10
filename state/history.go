@@ -93,7 +93,7 @@ func NewHistory(
 	if err != nil {
 		return nil, err
 	}
-	_ = h.scanStateFiles(files, append(integrityFileExtensions, "vi", "ef", "efi"))
+	_ = h.scanStateFiles(files, integrityFileExtensions)
 
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
@@ -102,7 +102,7 @@ func NewHistory(
 }
 
 func (h *History) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []string) {
-	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).vi$")
+	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
 Loop:
 	for _, f := range files {
@@ -1088,9 +1088,9 @@ func (h *History) MakeContext() *HistoryContext {
 		if item.index == nil {
 			return true
 		}
-		if item.startTxNum > h.endTxNumMinimax() {
-			return true
-		}
+		//if item.startTxNum > h.endTxNumMinimax() {
+		//	return true
+		//}
 		it := ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
@@ -1251,15 +1251,9 @@ func (hs *HistoryStep) MaxTxNum(key []byte) (bool, uint64) {
 // GetNoStateWithRecent searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
-	if hc.trace {
-		fmt.Printf("hist: GetNoStateWithRecent\n")
-	}
 	v, ok, err := hc.GetNoState(key, txNum)
 	if err != nil {
 		return nil, ok, err
-	}
-	if hc.trace {
-		fmt.Printf("hist: file: found=%t\n", ok)
 	}
 	if ok {
 		return v, true, nil
@@ -1273,10 +1267,6 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if err != nil {
 		return nil, ok, err
 	}
-	if hc.trace {
-		fmt.Printf("hist: db: found=%t\n", ok)
-	}
-
 	if ok {
 		return v, true, nil
 	}
@@ -1295,7 +1285,6 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
 		return nil, false, err
 	}
-
 	if foundTxNumVal != nil {
 		if hc.trace {
 			_, vv, _ := indexCursor.NextDup()
