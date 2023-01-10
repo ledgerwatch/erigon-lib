@@ -93,7 +93,7 @@ func NewHistory(
 	if err != nil {
 		return nil, err
 	}
-	_ = h.scanStateFiles(files, integrityFileExtensions)
+	_ = h.scanStateFiles(files, append(integrityFileExtensions, "vi", "ef", "efi"))
 
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
