@@ -1307,8 +1307,6 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 			return nil, false, err
 		}
 		return v, true, nil
-	} else {
-		fmt.Printf("not in hist: %x\n", key)
 	}
 	return nil, false, nil
 }
