@@ -1070,7 +1070,7 @@ func (h *History) MakeContext() *HistoryContext {
 	}
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
-			return false
+			return true
 		}
 		if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
 			return true
@@ -1086,7 +1086,7 @@ func (h *History) MakeContext() *HistoryContext {
 	hc.historyFiles = btree.NewG[ctxItem](32, ctxItemLess)
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
-			return false
+			return true
 		}
 		if item.startTxNum > h.endTxNumMinimax() {
 			return true
