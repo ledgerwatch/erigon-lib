@@ -1058,12 +1058,16 @@ type HistoryContext struct {
 	lr    *recsplit.IndexReader
 	locBm *bitmapdb.FixedSizeBitmaps
 
-	tx kv.Tx
+	tx    kv.Tx
+	trace bool
 }
 
 func (h *History) MakeContext() *HistoryContext {
-	var hc = HistoryContext{h: h}
-	hc.indexFiles = btree.NewG[ctxItem](32, ctxItemLess)
+	var hc = HistoryContext{
+		h:          h,
+		trace:      true,
+		indexFiles: btree.NewG[ctxItem](32, ctxItemLess),
+	}
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
@@ -1273,8 +1277,10 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	}
 
 	if foundTxNumVal != nil {
-		_, vv, _ := indexCursor.NextDup()
-		fmt.Printf("hist in db: %d->%d->%d, %x\n", txNum, u64or0(foundTxNumVal), u64or0(vv), key)
+		if hc.trace {
+			_, vv, _ := indexCursor.NextDup()
+			fmt.Printf("hist in db: %d->%d->%d, %x\n", txNum, u64or0(foundTxNumVal), u64or0(vv), key)
+		}
 
 		var historyKeysCursor kv.CursorDupSort
 		if historyKeysCursor, err = tx.CursorDupSort(hc.h.indexKeysTable); err != nil {
