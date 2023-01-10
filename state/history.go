@@ -1249,7 +1249,8 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if roTx == nil {
 		return nil, false, fmt.Errorf("roTx is nil")
 	}
-	v, ok, err = hc.getNoStateFromDB(key, txNum+1, roTx)
+	fmt.Printf("dbg txNum: %d\n", txNum)
+	v, ok, err = hc.getNoStateFromDB(key, txNum+2, roTx)
 	if err != nil {
 		return nil, ok, err
 	}
