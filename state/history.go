@@ -1132,7 +1132,8 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		n, ok := ef.Search(txNum)
 		if hc.trace {
 			n2, _ := ef.Search(n + 1)
-			fmt.Printf("hist: files: %s %d->%d->%d, %x\n", hc.h.filenameBase, txNum, n, n2, key)
+			n3, _ := ef.Search(n - 1)
+			fmt.Printf("hist: files: %s %d<-%d->%d->%d, %x\n", hc.h.filenameBase, n3, txNum, n, n2, key)
 		}
 		if ok {
 			foundTxNum = n
@@ -1282,7 +1283,9 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	if foundTxNumVal != nil {
 		if hc.trace {
 			_, vv, _ := indexCursor.NextDup()
-			fmt.Printf("hist: db: %s, %d->%d->%d, %x\n", hc.h.filenameBase, txNum, u64or0(foundTxNumVal), u64or0(vv), key)
+			indexCursor.Prev()
+			_, prevV, _ := indexCursor.Prev()
+			fmt.Printf("hist: db: %s, %d<-%d->%d->%d, %x\n", hc.h.filenameBase, u64or0(prevV), txNum, u64or0(foundTxNumVal), u64or0(vv), key)
 		}
 
 		var historyKeysCursor kv.CursorDupSort
