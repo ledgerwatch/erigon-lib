@@ -1066,7 +1066,7 @@ func (h *History) MakeContext() *HistoryContext {
 	var hc = HistoryContext{
 		h:          h,
 		indexFiles: btree.NewG[ctxItem](32, ctxItemLess),
-		trace:      false,
+		trace:      true,
 	}
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
