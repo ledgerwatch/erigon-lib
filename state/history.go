@@ -1249,10 +1249,11 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if err != nil {
 		return nil, ok, err
 	}
+	if hc.trace {
+		fmt.Printf("hist: file: found=%t\n", ok)
+	}
+
 	if ok {
-		if hc.trace {
-			fmt.Printf("hist: found in file\n")
-		}
 		return v, true, nil
 	}
 
@@ -1264,8 +1265,11 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if err != nil {
 		return nil, ok, err
 	}
+	if hc.trace {
+		fmt.Printf("hist: db: found=%t\n", ok)
+	}
+
 	if ok {
-		fmt.Printf("hist: found in db\n")
 		return v, true, nil
 	}
 	return nil, false, err
@@ -1312,6 +1316,10 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 		}
 		return v, true, nil
 	}
+	if hc.trace {
+		fmt.Printf("hist: db: not found\n")
+	}
+
 	return nil, false, nil
 }
 
