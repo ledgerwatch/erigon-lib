@@ -148,6 +148,9 @@ Loop:
 			var superSet *filesItem
 			h.files.Ascend(func(it *filesItem) bool {
 				if it.isSubsetOf(item) {
+					a := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, it.startTxNum/h.aggregationStep, it.endTxNum/h.aggregationStep)
+					b := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+					log.Debug(fmt.Sprintf("[snapshots] skip %s it's subset of %s", a, b))
 					subSets = append(subSets, it)
 				} else if item.isSubsetOf(it) {
 					superSet = it
