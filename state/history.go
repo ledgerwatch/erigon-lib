@@ -1245,7 +1245,7 @@ func (hs *HistoryStep) MaxTxNum(key []byte) (bool, uint64) {
 // GetNoStateWithRecent searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
-	v, ok, err := hc.GetNoState(key, txNum-1)
+	v, ok, err := hc.GetNoState(key, txNum)
 	if err != nil {
 		return nil, ok, err
 	}
