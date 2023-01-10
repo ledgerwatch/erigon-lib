@@ -1175,7 +1175,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		search.startTxNum = foundStartTxNum
 		search.endTxNum = foundEndTxNum
 		if historyItem, ok = hc.historyFiles.Get(search); !ok {
-			return nil, false, fmt.Errorf("no %s file found for [%x]", hc.h.filenameBase, key)
+			return nil, false, fmt.Errorf("hist file not found: key=%x, %s.%d-%d", key, hc.h.filenameBase, foundStartTxNum/hc.h.aggregationStep, foundEndTxNum/hc.h.aggregationStep)
 		}
 		var txKey [8]byte
 		binary.BigEndian.PutUint64(txKey[:], foundTxNum)
@@ -1255,7 +1255,6 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if hc.trace {
 		fmt.Printf("hist: file: found=%t\n", ok)
 	}
-
 	if ok {
 		return v, true, nil
 	}
