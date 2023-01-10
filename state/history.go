@@ -1072,6 +1072,9 @@ func (h *History) MakeContext() *HistoryContext {
 		if item.index == nil {
 			return false
 		}
+		if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
+			return true
+		}
 		hc.indexFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
@@ -1084,6 +1087,9 @@ func (h *History) MakeContext() *HistoryContext {
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil {
 			return false
+		}
+		if item.startTxNum > h.endTxNumMinimax() {
+			return true
 		}
 		it := ctxItem{
 			startTxNum: item.startTxNum,
