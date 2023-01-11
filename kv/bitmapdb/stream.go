@@ -19,6 +19,9 @@ func (it *BitmapStream) Next() (uint64, error)                { return it.it.Nex
 func (it *BitmapStream) ToBitmap() (*roaring64.Bitmap, error) { return it.bm, nil }
 
 func CastBitmapTo64(in *roaring.Bitmap) *roaring64.Bitmap {
+	if in == nil {
+		return nil
+	}
 	bm := NewBitmap64()
 	for _, v := range in.ToArray() {
 		bm.Add(uint64(v))
