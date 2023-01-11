@@ -32,6 +32,10 @@ import (
 
 const MaxUint32 = 1<<32 - 1
 
+type ToBitamp interface {
+	ToBitamp() (*roaring64.Bitmap, error)
+}
+
 var roaringPool = sync.Pool{
 	New: func() any {
 		return roaring.New()
