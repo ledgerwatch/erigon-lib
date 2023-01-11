@@ -22,11 +22,9 @@ func CastBitmapTo64(in *roaring.Bitmap) *roaring64.Bitmap {
 	if in == nil {
 		return nil
 	}
-	casted := make([]uint64, in.GetCardinality())
 	bm := NewBitmap64()
 	for _, v := range in.ToArray() {
-		casted = append(casted, uint64(v))
+		bm.Add(uint64(v))
 	}
-	bm.AddMany(casted)
 	return bm
 }
