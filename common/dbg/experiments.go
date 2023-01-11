@@ -252,12 +252,12 @@ var (
 )
 
 func StopAfterReconst() bool {
-	writeMapOnce.Do(func() {
+	stopAfterReconstOnce.Do(func() {
 		v, _ := os.LookupEnv("STOP_AFTER_RECONSTITUTE")
 		if v == "true" {
-			writeMap = true
+			stopAfterReconst = true
 			log.Info("[Experiment]", "STOP_AFTER_RECONSTITUTE", writeMap)
 		}
 	})
-	return writeMap
+	return stopAfterReconst
 }
