@@ -12,13 +12,91 @@ import (
 
 const (
 	FieldElementsPerBlob = 4096
+
+	BlobSize = FieldElementsPerBlob * 32 // blob size in bytes - each field element is 32 bytes
+
+	ProofSize = 48 // kzg proof size
 )
 
 type BlobTxNetworkWrapper struct {
 	Tx                 SignedBlobTx
-	BlobKZGs           [][48]byte
-	Blobs              [][FieldElementsPerBlob * 32]byte
-	KZGAggregatedProof [48]byte
+	BlobKZGs           [][ProofSize]byte
+	Blobs              [][BlobSize]byte
+	KZGAggregatedProof [ProofSize]byte
+}
+
+func (b BlobTxNetworkWrapper) FixedLength() uint64 { return 0 }
+func (b *BlobTxNetworkWrapper) Deserialize(dr *codec.DecodingReader) error {
+	var kzgs kzgsView
+	var blobs blobsView
+	var proof proofView
+	err := dr.Container(&b.Tx, &kzgs, &blobs, &proof)
+	if err != nil {
+		return err
+	}
+	b.BlobKZGs = [][ProofSize]byte(kzgs)
+	b.Blobs = [][BlobSize]byte(blobs)
+	b.KZGAggregatedProof = [ProofSize]byte(proof)
+	return nil
+}
+
+type kzgsView [][ProofSize]byte
+
+func (k kzgsView) FixedLength() uint64 { return 0 }
+func (k *kzgsView) Deserialize(dr *codec.DecodingReader) error {
+	scope := dr.Scope()
+	if scope%ProofSize != 0 {
+		return fmt.Errorf("scope not a multiple of ProofSize. got: %v", scope)
+	}
+	length := scope / ProofSize
+	if length > 1<<24 /*MAX_VERSIONED_HASHES_LIST_SIZE*/ {
+		return fmt.Errorf("access list too long: %v", length)
+	}
+	hashes := make([]byte, scope)
+	_, err := dr.Read(hashes)
+	if err != nil {
+		return err
+	}
+	*k = make([][ProofSize]byte, length)
+	for i := 0; i < int(length); i++ {
+		copy((*k)[i][:], hashes[i*ProofSize:i*ProofSize+ProofSize])
+	}
+	return nil
+}
+
+type blobsView [][BlobSize]byte
+
+func (bv blobsView) FixedLength() uint64 { return 0 }
+func (bv *blobsView) Deserialize(dr *codec.DecodingReader) error {
+	scope := dr.Scope()
+	if scope%BlobSize != 0 {
+		return fmt.Errorf("scope not a multiple of BlobSize. got: %v", scope)
+	}
+	length := scope / BlobSize
+	if length > 1<<24 /*LIMIT_BLOBS_PER_TX*/ {
+		return fmt.Errorf("blobs list too long: %v", length)
+	}
+	blobs := make([]byte, scope)
+	_, err := dr.Read(blobs)
+	if err != nil {
+		return err
+	}
+	*bv = make([][BlobSize]byte, length)
+	for i := 0; i < int(length); i++ {
+		copy((*bv)[i][:], blobs[i*BlobSize:i*BlobSize+BlobSize])
+	}
+	return nil
+}
+
+type proofView [ProofSize]byte
+
+func (pv proofView) FixedLength() uint64 { return ProofSize }
+func (pv *proofView) Deserialize(dr *codec.DecodingReader) error {
+	_, err := dr.Read((*pv)[:])
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 type SignedBlobTx struct {
@@ -176,17 +254,13 @@ type blobVersionedHashesView [][32]byte
 
 func (b blobVersionedHashesView) FixedLength() uint64 { return 0 }
 func (b *blobVersionedHashesView) Deserialize(dr *codec.DecodingReader) error {
-	*b = nil
 	scope := dr.Scope()
-	if scope == 0 {
-		return nil
-	}
 	if scope%32 != 0 {
 		return fmt.Errorf("scope not a multiple of 32. got: %v", scope)
 	}
 	length := scope / 32
 	if length > 1<<24 /*MAX_VERSIONED_HASHES_LIST_SIZE*/ {
-		return fmt.Errorf("access list too long: %v", length)
+		return fmt.Errorf("versioned hash list too long: %v", length)
 	}
 	hashes := make([]byte, scope)
 	_, err := dr.Read(hashes)
