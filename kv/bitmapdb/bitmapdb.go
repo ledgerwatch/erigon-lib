@@ -342,12 +342,12 @@ func Get64(db kv.Tx, bucket string, key []byte, from, to uint64) (*roaring64.Bit
 			break
 		}
 		bm := NewBitmap64()
-		defer ReturnToPool64(bm)
 		_, err := bm.ReadFrom(bytes.NewReader(v))
 		if err != nil {
 			return nil, err
 		}
 		chunks = append(chunks, bm)
+		ReturnToPool64(bm)
 		if binary.BigEndian.Uint64(k[len(k)-8:]) >= to {
 			break
 		}
