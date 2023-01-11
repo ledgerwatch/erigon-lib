@@ -464,12 +464,14 @@ type InvertedIterator struct {
 	res            []uint64
 	hasNextInFiles bool
 	hasNextInDb    bool
+	bm             *roaring64.Bitmap
 }
 
 func (it *InvertedIterator) Close() {
 	if it.cursor != nil {
 		it.cursor.Close()
 	}
+	bitmapdb.ReturnToPool64(it.bm)
 }
 
 func (it *InvertedIterator) advanceInFiles() {
@@ -586,7 +588,8 @@ func (it *InvertedIterator) ToArray() (res []uint64) {
 	return res
 }
 func (it *InvertedIterator) ToBitmap() (*roaring64.Bitmap, error) {
-	bm := roaring64.NewBitmap()
+	it.bm = bitmapdb.NewBitmap64()
+	bm := it.bm
 	for it.HasNext() {
 		bm.Add(it.next())
 	}
@@ -648,6 +651,7 @@ func (it *InvertedIterator1) Close() {
 	if it.cursor != nil {
 		it.cursor.Close()
 	}
+
 }
 
 func (it *InvertedIterator1) advanceInFiles() {

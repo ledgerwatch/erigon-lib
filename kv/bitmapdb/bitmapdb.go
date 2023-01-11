@@ -44,6 +44,9 @@ func NewBitmap() *roaring.Bitmap {
 	return a
 }
 func ReturnToPool(a *roaring.Bitmap) {
+	if a == nil {
+		return
+	}
 	roaringPool.Put(a)
 }
 
@@ -59,6 +62,9 @@ func NewBitmap64() *roaring64.Bitmap {
 	return a
 }
 func ReturnToPool64(a *roaring64.Bitmap) {
+	if a == nil {
+		return
+	}
 	roaring64Pool.Put(a)
 }
 
