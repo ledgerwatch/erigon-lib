@@ -701,17 +701,16 @@ type grpc2U64Stream[Msg any] struct {
 	grpc2UnaryStream[Msg, uint64]
 }
 
-func (it *grpc2U64Stream[Msg]) ToBitmap() *roaring64.Bitmap {
+func (it *grpc2U64Stream[Msg]) ToBitmap() (*roaring64.Bitmap, error) {
 	bm := roaring64.New()
 	for it.HasNext() {
 		batch, err := it.NextBatch()
 		if err != nil {
-			log.Warn("kv_remote: ToBitmap", "err", err)
-			return bm
+			return nil, err
 		}
 		bm.AddMany(batch)
 	}
-	return bm
+	return bm, nil
 }
 
 type grpc2UnaryStream[Msg any, Res any] struct {

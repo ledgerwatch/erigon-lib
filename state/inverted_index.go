@@ -585,12 +585,12 @@ func (it *InvertedIterator) ToArray() (res []uint64) {
 	}
 	return res
 }
-func (it *InvertedIterator) ToBitmap() *roaring64.Bitmap {
+func (it *InvertedIterator) ToBitmap() (*roaring64.Bitmap, error) {
 	bm := roaring64.NewBitmap()
 	for it.HasNext() {
 		bm.Add(it.next())
 	}
-	return bm
+	return bm, nil
 }
 
 type InvertedIndexContext struct {

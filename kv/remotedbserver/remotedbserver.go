@@ -546,7 +546,10 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 			if err != nil {
 				return err
 			}
-			bm := it.(bitmapdb.ToBitamp).ToBitmap()
+			bm, err := it.(bitmapdb.ToBitamp).ToBitmap()
+			if err != nil {
+				return err
+			}
 			if err := stream.Send(&remote.IndexRangeReply{Timestamps: bm.ToArray()}); err != nil {
 				return err
 			}

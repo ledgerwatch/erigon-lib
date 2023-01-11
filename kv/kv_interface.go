@@ -464,6 +464,6 @@ type UnaryStream[V any] interface {
 }
 type U64Stream interface {
 	UnaryStream[uint64]
-	ToBitmap() *roaring64.Bitmap
+	ToBitmap() (*roaring64.Bitmap, error)
 }
 type Pairs Stream[[]byte, []byte]
