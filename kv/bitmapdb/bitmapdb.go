@@ -419,6 +419,6 @@ func Bytesmask(fixedbits int) (fixedbytes int, mask byte) {
 	return fixedbytes, mask
 }
 
-type ToBitamp interface {
+type ToBitmap interface {
 	ToBitmap() (*roaring64.Bitmap, error)
 }
