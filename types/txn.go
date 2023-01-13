@@ -28,6 +28,7 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/secp256k1"
+	"github.com/protolambda/ztyp/codec"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -105,6 +106,7 @@ const (
 	LegacyTxType     byte = 0
 	AccessListTxType byte = 1
 	DynamicFeeTxType byte = 2
+	BlobTxType       byte = 5
 )
 
 var ErrParseTxn = fmt.Errorf("%w transaction", rlp.ErrParse)
@@ -154,6 +156,13 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
 	if !legacy {
 		slot.Type = payload[p]
+		if slot.Type == BlobTxType {
+			// TODO: Parsing the blob transaction requires we know the "scope" of the encoding
+			// since it is SSZ format. We assume the scope ends at the last byte of the payload
+			// argument; this currently seems to always be the case, but does not seem to be
+			// mandated by this function's contract.
+			return len(payload), ctx.ParseBlobTransaction(payload[p:], slot, sender)
+		}
 		if _, err = ctx.Keccak1.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err)
 		}
@@ -463,6 +472,36 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 	slot.Size = uint32(p - pos)
 	return p, nil
+}
+
+func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, sender []byte) error {
+	slot.Rlp = payload // includes type byte
+	ctx.Keccak1.Write(payload)
+	ctx.Keccak1.(io.Reader).Read(slot.IDHash[:32])
+
+	payload = payload[1:]
+	// payload should now include the SSZ encoded tx and nothing more
+	tx := BlobTxNetworkWrapper{}
+	buf := bytes.NewReader(payload)
+	dr := codec.NewDecodingReader(buf, uint64(len(payload)))
+	if err := tx.Deserialize(dr); err != nil {
+		return fmt.Errorf("%w: deserializing blob tx ssz: %s", ErrParseTxn, err)
+	}
+	m := tx.Tx.Message
+	slot.Nonce = m.Nonce
+	slot.Tip = m.MaxPriorityFeePerGas
+	slot.FeeCap = m.MaxFeePerGas
+	slot.Gas = m.Gas
+	slot.Creation = m.Creation
+	slot.Value = m.Value
+	slot.DataLen = m.DataLen
+	slot.DataNonZeroLen = m.DataNonZeroLen
+	slot.AlAddrCount = m.AccessListAddressCount
+	slot.AlStorCount = m.AccessListKeyCount
+
+	// TODO: extract sender, validate blobs.
+
+	return nil
 }
 
 type PeerID *types.H512

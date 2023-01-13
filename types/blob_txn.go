@@ -122,6 +122,7 @@ type BlobTx struct {
 	Creation               bool // true if To field is nil, indicating contract creation
 	Value                  uint256.Int
 	DataLen                int // length of the Data in bytes
+	DataNonZeroLen         int
 	AccessListAddressCount int // number of addresses in access list
 	AccessListKeyCount     int // number of storage keys in access list
 
@@ -155,6 +156,11 @@ func (tx *BlobTx) Deserialize(dr *codec.DecodingReader) error {
 	}
 	tx.Value = uint256.Int(value)
 	tx.DataLen = len(data)
+	for _, byt := range data {
+		if byt != 0 {
+			tx.DataNonZeroLen++
+		}
+	}
 	tx.BlobVersionedHashes = [][32]byte(blobVersionedHashes)
 	tx.AccessListAddressCount = accessList.addresses
 	tx.AccessListKeyCount = accessList.keys
