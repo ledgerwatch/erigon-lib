@@ -555,7 +555,7 @@ func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad 
 	return nil
 }
 
-func (a *AggregatorV3) Warmup(txFrom, limit uint64) {
+func (a *AggregatorV3) Warmup(ctx context.Context, txFrom, limit uint64) {
 	if a.db == nil {
 		return
 	}
@@ -568,14 +568,14 @@ func (a *AggregatorV3) Warmup(txFrom, limit uint64) {
 	a.warmupWorking.Store(true)
 	go func() {
 		defer a.warmupWorking.Store(false)
-		if err := a.db.View(context.Background(), func(tx kv.Tx) error {
-			if err := a.accounts.warmup(txFrom, limit, tx); err != nil {
+		if err := a.db.View(ctx, func(tx kv.Tx) error {
+			if err := a.accounts.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.storage.warmup(txFrom, limit, tx); err != nil {
+			if err := a.storage.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
-			if err := a.code.warmup(txFrom, limit, tx); err != nil {
+			if err := a.code.warmup(ctx, txFrom, limit, tx); err != nil {
 				return err
 			}
 			if err := a.logAddrs.warmup(txFrom, limit, tx); err != nil {
@@ -676,7 +676,11 @@ func (a *AggregatorV3) PruneWithTiemout(ctx context.Context, timeout time.Durati
 }
 
 func (a *AggregatorV3) Prune(ctx context.Context, limit uint64) error {
-	a.Warmup(0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
+	//ctx, cancel := context.WithCancel(ctx)
+	//defer cancel()
+	//go func() {
+	//	a.Warmup(ctx, 0, cmp.Max(a.aggregationStep, limit)) // warmup is asyn and moving faster than data deletion
+	//}()
 	return a.prune(ctx, 0, a.maxTxNum.Load(), limit)
 }
 

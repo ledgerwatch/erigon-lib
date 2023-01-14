@@ -871,7 +871,7 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 	})
 }
 
-func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
+func (h *History) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) error {
 	historyKeysCursor, err := tx.CursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
@@ -902,6 +902,12 @@ func (h *History) warmup(txFrom, limit uint64, tx kv.Tx) error {
 		txTo = txFrom + limit
 	}
 	for ; err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+		if err != nil {
+			return err
+		}
+		if err = ctx.Err(); err != nil {
+			return err
+		}
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
