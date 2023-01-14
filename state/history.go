@@ -1287,10 +1287,10 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	}
 	if foundTxNumVal != nil {
 		if hc.trace {
-			_, vv, _ := indexCursor.NextDup()
-			indexCursor.Prev()
-			_, prevV, _ := indexCursor.Prev()
-			fmt.Printf("hist: db: %s, %d<-%d->%d->%d, %x\n", hc.h.filenameBase, u64or0(prevV), txNum, u64or0(foundTxNumVal), u64or0(vv), key)
+			//_, vv, _ := indexCursor.NextDup()
+			//indexCursor.Prev()
+			//_, prevV, _ := indexCursor.Prev()
+			//fmt.Printf("hist: db: %s, %d<-%d->%d->%d, %x\n", hc.h.filenameBase, u64or0(prevV), txNum, u64or0(foundTxNumVal), u64or0(vv), key)
 		}
 
 		var historyKeysCursor kv.CursorDupSort
@@ -1414,13 +1414,10 @@ func (hi *WalkAsOfIter) advanceInFiles() {
 			}
 			if hi.to == nil || bytes.Compare(top.key, hi.to) < 0 {
 				heap.Push(&hi.h, top)
-			} else {
-				fmt.Printf("skip1: %x,%x\n", top.key, hi.to)
 			}
 		}
 
 		if hi.from != nil && bytes.Compare(key, hi.from) < 0 { //TODO: replace by Seek()
-			fmt.Printf("skip2: %x,%x\n", key, hi.from)
 			continue
 		}
 
