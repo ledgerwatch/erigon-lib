@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/google/btree"
-	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -384,12 +383,6 @@ func TestIterateChanged(t *testing.T) {
 	var keys, vals []string
 	ic := h.MakeContext()
 	ic.SetTx(roTx)
-
-	itt := ic.WalkAsOf(995, []byte(hexutility.MustDecodeString("0100000000000002")), nil, roTx, 100)
-	for itt.HasNext() {
-		kk, vv, errr := itt.Next()
-		fmt.Printf("a: %x, %x, %s\n", kk, vv, errr)
-	}
 
 	it := ic.IterateChanged(2, 20, roTx)
 	defer it.Close()
