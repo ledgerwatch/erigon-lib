@@ -1222,6 +1222,18 @@ func (ac *Aggregator22Context) ReadAccountCodeSizeNoState(addr []byte, txNum uin
 	return len(code), noState, nil
 }
 
+func (ac *Aggregator22Context) AccountHistoryIterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx) *HistoryIterator1 {
+	return ac.accounts.IterateChanged(startTxNum, endTxNum, roTx)
+}
+
+func (ac *Aggregator22Context) StorageHistoryIterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx) *HistoryIterator1 {
+	return ac.storage.IterateChanged(startTxNum, endTxNum, roTx)
+}
+
+func (ac *Aggregator22Context) StorageHistoricalStateRange(startTxNum uint64, from, to []byte, amount int, roTx kv.Tx) *WalkAsOfIter {
+	return ac.storage.WalkAsOf(startTxNum, from, to, roTx, amount)
+}
+
 type FilesStats22 struct {
 }
 
