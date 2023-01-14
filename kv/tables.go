@@ -359,6 +359,8 @@ const (
 	BorTxLookup = "BlockBorTransactionLookup" // transaction_hash -> block_num_u64
 	BorSeparate = "BorSeparate"
 
+	BodiesStage = "BodiesStage" // Table for temporarily holding bodies
+
 	// Downloader
 	BittorrentCompletion = "BittorrentCompletion"
 	BittorrentInfo       = "BittorrentInfo"
@@ -532,6 +534,9 @@ var ChaindataTables = []string{
 	BorReceipts,
 	BorTxLookup,
 	BorSeparate,
+
+	BodiesStage,
+
 	AccountKeys,
 	AccountVals,
 	AccountHistoryKeys,
