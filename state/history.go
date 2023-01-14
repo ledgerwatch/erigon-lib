@@ -1559,7 +1559,7 @@ func (hi *WalkAsOfIter) Next() ([]byte, []byte, error) {
 	hi.k = append(hi.k[:0], hi.nextKey...)
 	hi.v = append(hi.v[:0], hi.nextVal...)
 	hi.advance()
-	return common.Copy(hi.k), common.Copy(hi.v), nil
+	return hi.k, hi.v, nil
 }
 
 func (hc *HistoryContext) IterateChanged(startTxNum, endTxNum uint64, roTx kv.Tx) *HistoryIterator1 {
