@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/holiman/uint256"
+	"github.com/protolambda/go-kzg/eth"
 	"github.com/protolambda/ztyp/codec"
 	"github.com/protolambda/ztyp/view"
 )
@@ -13,9 +14,13 @@ import (
 const (
 	FieldElementsPerBlob = 4096
 
-	BlobSize = FieldElementsPerBlob * 32 // blob size in bytes - each field element is 32 bytes
+	FieldElementSize = 32
+
+	BlobSize = FieldElementsPerBlob * FieldElementSize // blob size in bytes
 
 	ProofSize = 48 // kzg proof size
+
+	MaxBlobsPerBlock = 4
 )
 
 type BlobTxNetworkWrapper struct {
@@ -301,5 +306,53 @@ func (sig *ECDSASignature) Deserialize(dr *codec.DecodingReader) error {
 	sig.V = data[0]
 	copy(sig.R[:], data[1:33])
 	copy(sig.S[:], data[33:len])
+	return nil
+}
+
+type blobSequence [][BlobSize]byte
+
+func (s blobSequence) At(i int) eth.Blob { return blob(s[i]) }
+func (s blobSequence) Len() int          { return len(s) }
+
+type blob [BlobSize]byte
+
+func (s blob) At(i int) [FieldElementSize]byte {
+	r := [FieldElementSize]byte{}
+	if i*FieldElementSize+FieldElementSize > len(s) {
+		return r
+	}
+	copy(r[:], s[i*FieldElementSize:i*FieldElementSize+FieldElementSize])
+	return r
+}
+func (s blob) Len() int { return len(s) / FieldElementSize }
+
+type kzgSequence [][ProofSize]byte
+
+func (s kzgSequence) At(i int) eth.KZGCommitment { return eth.KZGCommitment(s[i]) }
+func (s kzgSequence) Len() int                   { return len(s) }
+
+func VerifyBlobs(blobKZGs [][ProofSize]byte, blobs [][BlobSize]byte, kzgAggregatedProof [ProofSize]byte, blobVersionedHashes [][32]byte) error {
+	l1 := len(blobKZGs)
+	l2 := len(blobs)
+	l3 := len(blobVersionedHashes)
+	if l1 != l2 || l2 != l3 {
+		return fmt.Errorf("lengths don't match %v %v %v", l1, l2, l3)
+	}
+	if l1 > MaxBlobsPerBlock {
+		return fmt.Errorf("number of blobs exceeds max: %v", l1)
+	}
+	ok, err := eth.VerifyAggregateKZGProof(blobSequence(blobs), kzgSequence(blobKZGs), eth.KZGProof(kzgAggregatedProof))
+	if err != nil {
+		return fmt.Errorf("error during proof verification: %v", err)
+	}
+	if !ok {
+		return fmt.Errorf("failed to verify kzg")
+	}
+	for i, h := range blobVersionedHashes {
+		computed := eth.KZGToVersionedHash(eth.KZGCommitment(blobKZGs[i]))
+		if computed != h {
+			return fmt.Errorf("versioned hash %d supposedly %s but does not match computed %s", i, h, computed)
+		}
+	}
 	return nil
 }

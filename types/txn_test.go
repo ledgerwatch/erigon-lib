@@ -26,7 +26,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 	"github.com/ledgerwatch/erigon-lib/rlp"
 )
@@ -36,16 +35,18 @@ func TestParseBlobTransaction(t *testing.T) {
 	ctx := NewTxParseContext(*new(uint256.Int).SetUint64(1))
 	tx, txSender := &TxSlot{}, [20]byte{}
 
-	// Prepare the payload, which is an RLP encoded string consisting of the blob tx type byte
-	// followed by the ssz encoded transaction data.
-	ssz := common.MustDecodeHex(strings.TrimSpace(blobTxNetworkWrapperHex))
-	stringLen := rlp.StringLen(len(ssz) + 1)
-	payload := make([]byte, stringLen)
-	rlp.EncodeString(append([]byte{byte(BlobTxType)}, ssz...), payload)
+	ssz := hexutility.MustDecodeHex(strings.TrimSpace(blobTxNetworkWrapperHex))
+	payload := append([]byte{byte(BlobTxType)}, ssz...)
 	parseEnd, err := ctx.ParseTransaction(payload, 0, tx, txSender[:], false /* hasEnvelope */, nil)
 
 	require.NoError(err)
 	require.Equal(len(payload), parseEnd)
+
+	// Same test only with an rlp tx envelope.
+	stringLen := rlp.StringLen(len(ssz) + 1)
+	payload = make([]byte, stringLen)
+	rlp.EncodeString(append([]byte{byte(BlobTxType)}, ssz...), payload)
+	parseEnd, err = ctx.ParseTransaction(payload, 0, tx, txSender[:], true /* hasEnvelope */, nil)
 
 	// TODO: test that tx fields are set properly. Need a better input transaction as this example
 	// has zeros for all fields other than the blobs.

@@ -161,7 +161,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			// since it is SSZ format. We assume the scope ends at the last byte of the payload
 			// argument; this currently seems to always be the case, but does not seem to be
 			// mandated by this function's contract.
-			return len(payload), ctx.ParseBlobTransaction(payload[p:], slot, sender)
+			return len(payload), ctx.ParseBlobTransaction(payload[p:], slot, sender, validateHash)
 		}
 		if _, err = ctx.Keccak1.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err)
@@ -474,10 +474,15 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	return p, nil
 }
 
-func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, sender []byte) error {
+func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, sender []byte, validateHash func([]byte) error) error {
 	slot.Rlp = payload // includes type byte
 	ctx.Keccak1.Write(payload)
 	ctx.Keccak1.(io.Reader).Read(slot.IDHash[:32])
+	if validateHash != nil {
+		if err := validateHash(slot.IDHash[:32]); err != nil {
+			return err
+		}
+	}
 
 	payload = payload[1:]
 	// payload should now include the SSZ encoded tx and nothing more
