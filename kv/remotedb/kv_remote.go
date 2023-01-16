@@ -632,8 +632,13 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 	}
 	return tx.Range(table, prefix, nextPrefix)
 }
-func (tx *remoteTx) RangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit uint64) (kv.Pairs, error) {
-	stream, err := tx.db.remoteKV.Range(tx.ctx, &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend, Limit: limit})
+func (tx *remoteTx) RangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (kv.Pairs, error) {
+	req := &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend}
+	if limit >= 0 {
+		ulimit := uint64(limit)
+		req.Limit = &ulimit
+	}
+	stream, err := tx.db.remoteKV.Range(tx.ctx, req)
 	if err != nil {
 		return nil, err
 	}
