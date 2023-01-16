@@ -321,6 +321,7 @@ type Tx interface {
 	// Range(nil, to) means [StartOfTable, to)
 	// PrefixScan can be implemented as `Range(Table, prefix, kv.NextSubtree(prefix))`
 	Range(table string, fromPrefix, toPrefix []byte) (Pairs, error)
+	RangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAsk bool, limit uint64) (Pairs, error)
 	Prefix(table string, prefix []byte) (Pairs, error)
 
 	DBSize() (uint64, error)

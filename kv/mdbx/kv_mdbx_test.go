@@ -120,6 +120,16 @@ func TestRange(t *testing.T) {
 	}
 	require.Equal(t, 4, cnt)
 
+	//
+	it, err = tx.RangeOrderLimit("Table", nil, []byte("key1"), false, 0)
+	require.NoError(t, err)
+	cnt = 0
+	for it.HasNext() {
+		_, _, err := it.Next()
+		require.NoError(t, err)
+		cnt++
+	}
+	require.Equal(t, 4, cnt)
 }
 
 func TestLastDup(t *testing.T) {

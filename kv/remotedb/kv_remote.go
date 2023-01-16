@@ -632,15 +632,18 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 	}
 	return tx.Range(table, prefix, nextPrefix)
 }
-
-func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
-	stream, err := tx.db.remoteKV.Range(tx.ctx, &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix})
+func (tx *remoteTx) RangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit uint64) (kv.Pairs, error) {
+	stream, err := tx.db.remoteKV.Range(tx.ctx, &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend, Limit: limit})
 	if err != nil {
 		return nil, err
 	}
 	it := &grpc2Pairs[*remote.Pairs]{stream: stream}
 	//tx.streams = append(tx.streams, it)
 	return it, nil
+}
+
+func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+	return tx.RangeOrderLimit(table, fromPrefix, toPrefix, true, 0)
 }
 
 type grpcStream[Msg any] interface {

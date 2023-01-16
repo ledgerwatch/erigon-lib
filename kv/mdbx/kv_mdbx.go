@@ -601,17 +601,33 @@ func (tx *MdbxTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 	return tx.Range(table, prefix, nextPrefix)
 }
 
-func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
-	if toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
+func (tx *MdbxTx) RangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit uint64) (kv.Pairs, error) {
+	if orderAscend && toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
 		return nil, fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
+	}
+	if !orderAscend && fromPrefix != nil && bytes.Compare(toPrefix, fromPrefix) >= 0 {
+		return nil, fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", toPrefix, fromPrefix)
 	}
 	s, err := tx.newStreamCursor(table)
 	if err != nil {
 		return nil, err
 	}
+	s.fromPrefix = fromPrefix
 	s.toPrefix = toPrefix
-	s.nextK, s.nextV, s.nextErr = s.c.Seek(fromPrefix)
+	s.orderAscend = orderAscend
+	s.limit = limit
+	if orderAscend {
+		s.nextK, s.nextV, s.nextErr = s.c.Seek(fromPrefix)
+	} else {
+		s.nextK, s.nextV, s.nextErr = s.c.SeekExact(toPrefix)
+		if s.nextK == nil { // no such key
+			s.nextK, s.nextV, s.nextErr = s.c.Prev()
+		}
+	}
 	return s, nil
+}
+func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+	return tx.RangeOrderLimit(table, fromPrefix, toPrefix, true, 0)
 }
 func (tx *MdbxTx) newStreamCursor(table string) (*cursor2stream, error) {
 	c, err := tx.Cursor(table)
@@ -624,22 +640,33 @@ func (tx *MdbxTx) newStreamCursor(table string) (*cursor2stream, error) {
 }
 
 type cursor2stream struct {
-	c            kv.Cursor
-	nextK, nextV []byte
-	nextErr      error
-	toPrefix     []byte
-	ctx          context.Context
+	c                    kv.Cursor
+	nextK, nextV         []byte
+	nextErr              error
+	fromPrefix, toPrefix []byte
+	orderAscend          bool
+	limit                uint64
+	ctx                  context.Context
 }
 
 func (s *cursor2stream) Close() { s.c.Close() }
 func (s *cursor2stream) HasNext() bool {
-	if s.toPrefix == nil {
-		return s.nextK != nil
+	if s.nextErr != nil {
+		return true
 	}
 	if s.nextK == nil {
 		return false
 	}
-	return bytes.Compare(s.nextK, s.toPrefix) < 0
+	if s.orderAscend {
+		if s.toPrefix == nil {
+			return s.nextK != nil
+		}
+		return bytes.Compare(s.nextK, s.toPrefix) < 0
+	}
+	if s.fromPrefix == nil {
+		return s.nextK != nil
+	}
+	return bytes.Compare(s.nextK, s.fromPrefix) > 0
 }
 func (s *cursor2stream) Next() ([]byte, []byte, error) {
 	k, v, err := s.nextK, s.nextV, s.nextErr
@@ -648,7 +675,11 @@ func (s *cursor2stream) Next() ([]byte, []byte, error) {
 		return nil, nil, s.ctx.Err()
 	default:
 	}
-	s.nextK, s.nextV, s.nextErr = s.c.Next()
+	if s.orderAscend {
+		s.nextK, s.nextV, s.nextErr = s.c.Next()
+	} else {
+		s.nextK, s.nextV, s.nextErr = s.c.Prev()
+	}
 	return k, v, err
 }
 
