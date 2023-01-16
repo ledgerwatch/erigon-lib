@@ -632,7 +632,7 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 	}
 	return tx.Range(table, prefix, nextPrefix)
 }
-func (tx *remoteTx) RangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (kv.Pairs, error) {
+func (tx *remoteTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (kv.Pairs, error) {
 	req := &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend}
 	if limit >= 0 {
 		ulimit := uint64(limit)
@@ -648,7 +648,13 @@ func (tx *remoteTx) RangeOrderLimit(table string, fromPrefix, toPrefix []byte, o
 }
 
 func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
-	return tx.RangeOrderLimit(table, fromPrefix, toPrefix, true, 0)
+	return tx.RangeAscend(table, fromPrefix, toPrefix, -1)
+}
+func (tx *remoteTx) RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
+	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, true, limit)
+}
+func (tx *remoteTx) RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
+	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, false, limit)
 }
 
 type grpcStream[Msg any] interface {
