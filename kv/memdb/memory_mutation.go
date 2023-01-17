@@ -215,7 +215,10 @@ func (m *MemoryMutation) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 func (m *MemoryMutation) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
 	panic("please implement me")
 }
-func (m *MemoryMutation) RangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (kv.Pairs, error) {
+func (m *MemoryMutation) RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
+	panic("please implement me")
+}
+func (m *MemoryMutation) RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
 	panic("please implement me")
 }
 
