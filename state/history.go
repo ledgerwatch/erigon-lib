@@ -1293,10 +1293,10 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	}
 	if foundTxNumVal != nil {
 		if hc.trace {
-			//_, vv, _ := indexCursor.NextDup()
-			//indexCursor.Prev()
-			//_, prevV, _ := indexCursor.Prev()
-			//fmt.Printf("hist: db: %s, %d<-%d->%d->%d, %x\n", hc.h.filenameBase, u64or0(prevV), txNum, u64or0(foundTxNumVal), u64or0(vv), key)
+			_, vv, _ := indexCursor.NextDup()
+			indexCursor.Prev()
+			_, prevV, _ := indexCursor.Prev()
+			fmt.Printf("hist: db: %s, %d<-%d->%d->%d, %x\n", hc.h.filenameBase, u64or0(prevV), txNum, u64or0(foundTxNumVal), u64or0(vv), key)
 		}
 
 		var historyKeysCursor kv.CursorDupSort
@@ -2045,4 +2045,11 @@ func (hs *HistoryStep) Clone() *HistoryStep {
 			reader:     recsplit.NewIndexReader(hs.historyItem.index),
 		},
 	}
+}
+
+func u64or0(in []byte) (v uint64) {
+	if len(in) > 0 {
+		v = binary.BigEndian.Uint64(in)
+	}
+	return v
 }
