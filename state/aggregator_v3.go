@@ -19,6 +19,7 @@ package state
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	math2 "math"
 	"runtime"
@@ -443,7 +444,9 @@ func (a *AggregatorV3) BuildFiles(ctx context.Context, db kv.RoDB) (err error) {
 	step := a.EndTxNumMinimax() / a.aggregationStep
 	for ; step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep; step++ {
 		if err := a.buildFilesInBackground(ctx, step, db); err != nil {
-			log.Warn("buildFilesInBackground", "err", err)
+			if !errors.Is(err, context.Canceled) {
+				log.Warn("buildFilesInBackground", "err", err)
+			}
 			break
 		}
 	}
