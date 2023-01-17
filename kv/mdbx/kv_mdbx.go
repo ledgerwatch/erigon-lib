@@ -1733,7 +1733,7 @@ func (tx *MdbxTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, ord
 	if orderAscend {
 		s.nextK, s.nextV, s.nextErr = s.c.Seek(fromPrefix)
 	} else {
-		if toPrefix == nil {
+		if fromPrefix == nil {
 			s.nextK, s.nextV, s.nextErr = s.c.Last()
 		} else {
 			s.nextK, s.nextV, s.nextErr = s.c.SeekExact(fromPrefix)
@@ -1788,10 +1788,7 @@ func (s *cursor2stream) HasNext() bool {
 	//Asc:  [from, to) AND from > to
 	//Desc: [from, to) AND from < to
 	cmp := bytes.Compare(s.nextK, s.toPrefix)
-	if s.orderAscend {
-		return cmp < 0
-	}
-	return cmp > 0
+	return (s.orderAscend && cmp < 0) || (!s.orderAscend && cmp > 0)
 }
 func (s *cursor2stream) Next() ([]byte, []byte, error) {
 	select {

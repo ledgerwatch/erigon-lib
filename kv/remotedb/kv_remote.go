@@ -705,6 +705,9 @@ func (it *grpc2Pairs[Msg]) Close() {
 	//_ = it.stream.CloseSend()
 }
 func (it *grpc2Pairs[Msg]) Next() ([]byte, []byte, error) {
+	if it.lastErr != nil {
+		return nil, nil, it.lastErr
+	}
 	k := it.lastKeys[it.i]
 	v := it.lastValues[it.i]
 	it.i++
