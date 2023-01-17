@@ -109,7 +109,7 @@ func (c *Config) String() string {
 		)
 	}
 
-	return fmt.Sprintf("{ChainID: %v, Homestead: %v, DAO: %v, DAO Support: %v, Tangerine Whistle: %v, Spurious Dragon: %v, Byzantium: %v, Constantinople: %v, Petersburg: %v, Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, Gray Glacier: %v, Terminal Total Difficulty: %v, Merge Netsplit: %v, Shanghai: %v, Cancun: %v, Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v, Homestead: %v, DAO: %v, DAO Support: %v, Tangerine Whistle: %v, Spurious Dragon: %v, Byzantium: %v, Constantinople: %v, Petersburg: %v, Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, Gray Glacier: %v, Terminal Total Difficulty: %v, Merge Netsplit: %v, Shanghai: %v, Sharding: %v, Cancun: %v, Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -128,6 +128,7 @@ func (c *Config) String() string {
 		c.TerminalTotalDifficulty,
 		c.MergeNetsplitBlock,
 		c.ShanghaiTime,
+		c.ShardingForkTime,
 		c.CancunTime,
 		engine,
 	)
@@ -676,6 +677,7 @@ func (c *Config) Rules(num uint64, time uint64) *Rules {
 		IsBerlin:              c.IsBerlin(num),
 		IsLondon:              c.IsLondon(num),
 		IsShanghai:            c.IsShanghai(time),
+		IsSharding:            c.IsSharding(time),
 		IsCancun:              c.IsCancun(time),
 		IsNano:                c.IsNano(num),
 		IsMoran:               c.IsMoran(num),
