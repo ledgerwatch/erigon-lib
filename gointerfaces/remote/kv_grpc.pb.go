@@ -39,6 +39,10 @@ type KVClient interface {
 	DomainGet(ctx context.Context, in *DomainGetReq, opts ...grpc.CallOption) (*DomainGetReply, error)
 	HistoryGet(ctx context.Context, in *HistoryGetReq, opts ...grpc.CallOption) (*HistoryGetReply, error)
 	IndexRange(ctx context.Context, in *IndexRangeReq, opts ...grpc.CallOption) (KV_IndexRangeClient, error)
+	// Range [from, to)
+	// Range(from, nil) means [from, EndOfTable)
+	// Range(nil, to)   means [StartOfTable, to)
+	// If orderAscend=false server expecting `from`<`to`. Example: Range("B", "A")
 	Range(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (KV_RangeClient, error)
 }
 
@@ -232,6 +236,10 @@ type KVServer interface {
 	DomainGet(context.Context, *DomainGetReq) (*DomainGetReply, error)
 	HistoryGet(context.Context, *HistoryGetReq) (*HistoryGetReply, error)
 	IndexRange(*IndexRangeReq, KV_IndexRangeServer) error
+	// Range [from, to)
+	// Range(from, nil) means [from, EndOfTable)
+	// Range(nil, to)   means [StartOfTable, to)
+	// If orderAscend=false server expecting `from`<`to`. Example: Range("B", "A")
 	Range(*RangeReq, KV_RangeServer) error
 	mustEmbedUnimplementedKVServer()
 }

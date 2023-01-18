@@ -60,6 +60,8 @@ type ETHBACKENDClient interface {
 	// Peers collects and returns peers information from all running sentry instances.
 	Peers(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error)
 	PendingBlock(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PendingBlockReply, error)
+	EngineGetPayloadBodiesByHashV1(ctx context.Context, in *EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error)
+	EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error)
 }
 
 type eTHBACKENDClient struct {
@@ -286,6 +288,24 @@ func (c *eTHBACKENDClient) PendingBlock(ctx context.Context, in *emptypb.Empty, 
 	return out, nil
 }
 
+func (c *eTHBACKENDClient) EngineGetPayloadBodiesByHashV1(ctx context.Context, in *EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error) {
+	out := new(EngineGetPayloadBodiesV1Response)
+	err := c.cc.Invoke(ctx, "/remote.ETHBACKEND/EngineGetPayloadBodiesByHashV1", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *eTHBACKENDClient) EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error) {
+	out := new(EngineGetPayloadBodiesV1Response)
+	err := c.cc.Invoke(ctx, "/remote.ETHBACKEND/EngineGetPayloadBodiesByRangeV1", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ETHBACKENDServer is the server API for ETHBACKEND service.
 // All implementations must embed UnimplementedETHBACKENDServer
 // for forward compatibility
@@ -326,6 +346,8 @@ type ETHBACKENDServer interface {
 	// Peers collects and returns peers information from all running sentry instances.
 	Peers(context.Context, *emptypb.Empty) (*PeersReply, error)
 	PendingBlock(context.Context, *emptypb.Empty) (*PendingBlockReply, error)
+	EngineGetPayloadBodiesByHashV1(context.Context, *EngineGetPayloadBodiesByHashV1Request) (*EngineGetPayloadBodiesV1Response, error)
+	EngineGetPayloadBodiesByRangeV1(context.Context, *EngineGetPayloadBodiesByRangeV1Request) (*EngineGetPayloadBodiesV1Response, error)
 	mustEmbedUnimplementedETHBACKENDServer()
 }
 
@@ -389,6 +411,12 @@ func (UnimplementedETHBACKENDServer) Peers(context.Context, *emptypb.Empty) (*Pe
 }
 func (UnimplementedETHBACKENDServer) PendingBlock(context.Context, *emptypb.Empty) (*PendingBlockReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PendingBlock not implemented")
+}
+func (UnimplementedETHBACKENDServer) EngineGetPayloadBodiesByHashV1(context.Context, *EngineGetPayloadBodiesByHashV1Request) (*EngineGetPayloadBodiesV1Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayloadBodiesByHashV1 not implemented")
+}
+func (UnimplementedETHBACKENDServer) EngineGetPayloadBodiesByRangeV1(context.Context, *EngineGetPayloadBodiesByRangeV1Request) (*EngineGetPayloadBodiesV1Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayloadBodiesByRangeV1 not implemented")
 }
 func (UnimplementedETHBACKENDServer) mustEmbedUnimplementedETHBACKENDServer() {}
 
@@ -756,6 +784,42 @@ func _ETHBACKEND_PendingBlock_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ETHBACKEND_EngineGetPayloadBodiesByHashV1_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EngineGetPayloadBodiesByHashV1Request)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByHashV1(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/remote.ETHBACKEND/EngineGetPayloadBodiesByHashV1",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByHashV1(ctx, req.(*EngineGetPayloadBodiesByHashV1Request))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ETHBACKEND_EngineGetPayloadBodiesByRangeV1_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EngineGetPayloadBodiesByRangeV1Request)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByRangeV1(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/remote.ETHBACKEND/EngineGetPayloadBodiesByRangeV1",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByRangeV1(ctx, req.(*EngineGetPayloadBodiesByRangeV1Request))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ETHBACKEND_ServiceDesc is the grpc.ServiceDesc for ETHBACKEND service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -830,6 +894,14 @@ var ETHBACKEND_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PendingBlock",
 			Handler:    _ETHBACKEND_PendingBlock_Handler,
+		},
+		{
+			MethodName: "EngineGetPayloadBodiesByHashV1",
+			Handler:    _ETHBACKEND_EngineGetPayloadBodiesByHashV1_Handler,
+		},
+		{
+			MethodName: "EngineGetPayloadBodiesByRangeV1",
+			Handler:    _ETHBACKEND_EngineGetPayloadBodiesByRangeV1_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

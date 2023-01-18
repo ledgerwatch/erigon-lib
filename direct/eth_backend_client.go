@@ -70,6 +70,14 @@ func (s *EthBackendClientDirect) EngineGetPayloadV2(ctx context.Context, in *rem
 	return s.server.EngineGetPayloadV2(ctx, in)
 }
 
+func (s *EthBackendClientDirect) EngineGetPayloadBodiesByHashV1(ctx context.Context, in *remote.EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*remote.EngineGetPayloadBodiesV1Response, error) {
+	return s.server.EngineGetPayloadBodiesByHashV1(ctx, in)
+}
+
+func (s *EthBackendClientDirect) EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *remote.EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*remote.EngineGetPayloadBodiesV1Response, error) {
+	return s.server.EngineGetPayloadBodiesByRangeV1(ctx, in)
+}
+
 func (s *EthBackendClientDirect) Version(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*types.VersionReply, error) {
 	return s.server.Version(ctx, in)
 }
