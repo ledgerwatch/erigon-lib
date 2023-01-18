@@ -208,14 +208,14 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if opts.verbosity != -1 {
 		err = env.SetDebug(mdbx.LogLvl(opts.verbosity), mdbx.DbgDoNotChange, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
 		if err != nil {
-			return nil, fmt.Errorf("db verbosity set: %w", err)
+			return nil, fmt.Errorf("db verbosity set: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
 	if err = env.SetOption(mdbx.OptMaxDB, 200); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("db: OptMaxDB: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 	}
 	if err = env.SetOption(mdbx.OptMaxReaders, kv.ReadersLimit); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("db: OptMaxReaders: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 	}
 
 	if opts.mapSize == 0 {
@@ -226,11 +226,11 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if opts.flags&mdbx.Accede == 0 {
 		if opts.inMem {
 			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(2*datasize.MB), 0, 4*1024); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("db: SetGeometry: %w", err)
 			}
 		} else {
 			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), -1, int(opts.pageSize)); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("db: SetGeometry: %w", err)
 			}
 		}
 
@@ -257,8 +257,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	opts.pageSize = uint64(in.PageSize)
 
 	//nolint
-	if opts.flags&mdbx.Accede == 0 && opts.flags&mdbx.Readonly == 0 {
-	}
+	//if opts.flags&mdbx.Accede == 0 && opts.flags&mdbx.Readonly == 0 {
+	//}
 	// erigon using big transactions
 	// increase "page measured" options. need do it after env.Open() because default are depend on pageSize known only after env.Open()
 	if opts.flags&mdbx.Readonly == 0 {
@@ -271,38 +271,38 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 
 		txnDpInitial, err := env.GetOption(mdbx.OptTxnDpInitial)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("db: OptTxnDpInitial: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 		if err = env.SetOption(mdbx.OptTxnDpInitial, txnDpInitial*2); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("db: OptTxnDpInitial: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 		dpReserveLimit, err := env.GetOption(mdbx.OptDpReverseLimit)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("db: OptDpReverseLimit: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 		if err = env.SetOption(mdbx.OptDpReverseLimit, dpReserveLimit*2); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("db: OptDpReverseLimit: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 
 		if err = env.SetOption(mdbx.OptTxnDpLimit, opts.dirtySpace/opts.pageSize); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("db: OptTxnDpLimit: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 		// must be in the range from 12.5% (almost empty) to 50% (half empty)
 		// which corresponds to the range from 8192 and to 32768 in units respectively
 		if err = env.SetOption(mdbx.OptMergeThreshold16dot16Percent, opts.mergeThreshold); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("db: OptMergeThreshold16dot16Percent: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
 
 	dirtyPagesLimit, err := env.GetOption(mdbx.OptTxnDpLimit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("db: OptTxnDpLimit: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 	}
 
 	if opts.syncPeriod != 0 {
 		if err = env.SetSyncPeriod(opts.syncPeriod); err != nil {
 			env.Close()
-			return nil, err
+			return nil, fmt.Errorf("db: SetSyncPeriod: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
 	//if err := env.SetOption(mdbx.OptSyncBytes, uint64(math2.MaxUint64)); err != nil {
@@ -330,7 +330,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 
 	buckets := bucketSlice(db.buckets)
 	if err := db.openDBIs(buckets); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("db: openDBIs: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 	}
 
 	// Configure buckets and open deprecated buckets
@@ -348,7 +348,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 					db.buckets[name] = cnfCopy
 					continue // if deprecated bucket couldn't be open - then it's deleted and it's fine
 				} else {
-					return fmt.Errorf("bucket: %s, %w", name, createErr)
+					return fmt.Errorf("bucket: %s, %w, label: %s, trace: %s", name, createErr, opts.label.String(), stack2.Trace().String())
 				}
 			}
 			cnfCopy.DBI = kv.DBI(dbi)
