@@ -203,7 +203,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 	env, err := mdbx.NewEnv()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("db: NewEnv: %w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 	}
 	if opts.verbosity != -1 {
 		err = env.SetDebug(mdbx.LogLvl(opts.verbosity), mdbx.DbgDoNotChange, mdbx.LoggerDoNotChange) // temporary disable error, because it works if call it 1 time, but returns error if call it twice in same process (what often happening in tests)
