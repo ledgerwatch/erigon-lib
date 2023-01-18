@@ -28,7 +28,6 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/secp256k1"
-	"github.com/protolambda/ztyp/codec"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -79,6 +78,28 @@ func NewTxParseContext(chainID uint256.Int) *TxParseContext {
 	ctx.cfg.ChainID.Set(&chainID)
 	ctx.ChainIDMul.Mul(&chainID, u256.N2)
 	return ctx
+}
+
+// recover sender address after appropriately populating ctx.Sighash, ctx.R & ctx.S
+func (ctx *TxParseContext) RecoverSender(vByte byte, sender []byte) error {
+	binary.BigEndian.PutUint64(ctx.Sig[0:8], ctx.R[3])
+	binary.BigEndian.PutUint64(ctx.Sig[8:16], ctx.R[2])
+	binary.BigEndian.PutUint64(ctx.Sig[16:24], ctx.R[1])
+	binary.BigEndian.PutUint64(ctx.Sig[24:32], ctx.R[0])
+	binary.BigEndian.PutUint64(ctx.Sig[32:40], ctx.S[3])
+	binary.BigEndian.PutUint64(ctx.Sig[40:48], ctx.S[2])
+	binary.BigEndian.PutUint64(ctx.Sig[48:56], ctx.S[1])
+	binary.BigEndian.PutUint64(ctx.Sig[56:64], ctx.S[0])
+	ctx.Sig[64] = vByte
+	if _, err := secp256k1.RecoverPubkeyWithContext(secp256k1.DefaultContext, ctx.Sighash[:], ctx.Sig[:], ctx.buf[:0]); err != nil {
+		return err
+	}
+	ctx.Keccak2.Reset()
+	ctx.Keccak2.Write(ctx.buf[1:65])
+	ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
+	//take last 20 bytes as address
+	copy(sender, ctx.buf[12:32])
+	return nil
 }
 
 // TxSlot contains information extracted from an Ethereum transaction, which is enough to manage it inside the transaction.
@@ -443,32 +464,11 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			}
 		}
 	}
-	// Squeeze Sighash
-	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.Sighash[:32])
-	//ctx.keccak2.Sum(ctx.Sighash[:0])
-	binary.BigEndian.PutUint64(ctx.Sig[0:8], ctx.R[3])
-	binary.BigEndian.PutUint64(ctx.Sig[8:16], ctx.R[2])
-	binary.BigEndian.PutUint64(ctx.Sig[16:24], ctx.R[1])
-	binary.BigEndian.PutUint64(ctx.Sig[24:32], ctx.R[0])
-	binary.BigEndian.PutUint64(ctx.Sig[32:40], ctx.S[3])
-	binary.BigEndian.PutUint64(ctx.Sig[40:48], ctx.S[2])
-	binary.BigEndian.PutUint64(ctx.Sig[48:56], ctx.S[1])
-	binary.BigEndian.PutUint64(ctx.Sig[56:64], ctx.S[0])
-	ctx.Sig[64] = vByte
-	// recover sender
-	if _, err = secp256k1.RecoverPubkeyWithContext(secp256k1.DefaultContext, ctx.Sighash[:], ctx.Sig[:], ctx.buf[:0]); err != nil {
+
+	ctx.Keccak2.(io.Reader).Read(ctx.Sighash[:32])
+	if err := ctx.RecoverSender(vByte, sender); err != nil {
 		return 0, fmt.Errorf("%w: recovering sender from signature: %s", ErrParseTxn, err)
 	}
-	//apply keccak to the public key
-	ctx.Keccak2.Reset()
-	if _, err = ctx.Keccak2.Write(ctx.buf[1:65]); err != nil {
-		return 0, fmt.Errorf("%w: computing sender from public key: %s", ErrParseTxn, err)
-	}
-	// squeeze the hash of the public key
-	//ctx.keccak2.Sum(ctx.buf[:0])
-	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
-	//take last 20 bytes as address
-	copy(sender, ctx.buf[12:32])
 
 	slot.Size = uint32(p - pos)
 	return p, nil
@@ -476,6 +476,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, sender []byte, validateHash func([]byte) error) error {
 	slot.Rlp = payload // includes type byte
+	slot.Size = uint32(len(payload))
 	ctx.Keccak1.Write(payload)
 	ctx.Keccak1.(io.Reader).Read(slot.IDHash[:32])
 	if validateHash != nil {
@@ -486,26 +487,51 @@ func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, se
 
 	payload = payload[1:]
 	// payload should now include the SSZ encoded tx and nothing more
-	tx := BlobTxNetworkWrapper{}
-	buf := bytes.NewReader(payload)
-	dr := codec.NewDecodingReader(buf, uint64(len(payload)))
-	if err := tx.Deserialize(dr); err != nil {
+	tx := wrapper{}
+	if err := tx.Deserialize(payload); err != nil {
 		return fmt.Errorf("%w: deserializing blob tx ssz: %s", ErrParseTxn, err)
 	}
-	m := tx.Tx.Message
-	slot.Nonce = m.Nonce
-	slot.Tip = m.MaxPriorityFeePerGas
-	slot.FeeCap = m.MaxFeePerGas
-	slot.Gas = m.Gas
-	slot.Creation = m.Creation
-	slot.Value = m.Value
-	slot.DataLen = m.DataLen
-	slot.DataNonZeroLen = m.DataNonZeroLen
-	slot.AlAddrCount = m.AccessListAddressCount
-	slot.AlStorCount = m.AccessListKeyCount
+	slot.Nonce = tx.nonce
+	slot.Tip = tx.maxPriorityFeePerGas
+	slot.FeeCap = tx.maxFeePerGas
+	slot.Gas = tx.gas
+	slot.Creation = tx.creation
+	slot.Value = tx.value
+	slot.DataLen = tx.dataLen
+	slot.DataNonZeroLen = tx.dataNonZeroLen
+	slot.AlAddrCount = tx.accessListAddressCount
+	slot.AlStorCount = tx.accessListKeyCount
 
-	// TODO: extract sender, validate blobs.
+	err := tx.VerifyBlobs(payload)
+	if err != nil {
+		return fmt.Errorf("%w: blob verification failed: %s", ErrParseTxn, err)
+	}
 
+	if !ctx.withSender {
+		return nil
+	}
+
+	// Verify the tx signature
+	vByte := payload[tx.sigOffset]
+	ctx.R, err = readUint256(payload, tx.sigOffset+1)
+	if err != nil {
+		return fmt.Errorf("%w: failed to extract sig.R: %s", ErrParseTxn, err)
+	}
+	ctx.S, err = readUint256(payload, tx.sigOffset+33)
+	if err != nil {
+		return fmt.Errorf("%w: failed to extract sig.V: %s", ErrParseTxn, err)
+	}
+	if !crypto.TransactionSignatureIsValid(vByte, &ctx.R, &ctx.S, false) {
+		return fmt.Errorf("%w: invalid v, r, s: %d, %s, %s", ErrParseTxn, vByte, &ctx.R, &ctx.S)
+	}
+
+	// Recover sender address
+	ctx.Keccak2.Write([]byte{byte(BlobTxType)})
+	ctx.Keccak2.Write(payload[tx.sigHashStart:tx.sigHashEnd])
+	ctx.Keccak2.(io.Reader).Read(ctx.Sighash[:32])
+	if err := ctx.RecoverSender(vByte, sender); err != nil {
+		return fmt.Errorf("%w: recovering sender from signature: %s", ErrParseTxn, err)
+	}
 	return nil
 }
 

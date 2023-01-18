@@ -18,6 +18,7 @@ package types
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,10 +36,9 @@ func TestParseBlobTransaction(t *testing.T) {
 	ctx := NewTxParseContext(*new(uint256.Int).SetUint64(1))
 	tx, txSender := &TxSlot{}, [20]byte{}
 
-	ssz := hexutility.MustDecodeHex(strings.TrimSpace(blobTxNetworkWrapperHex))
+	ssz := hexutility.MustDecodeHex(strings.TrimSpace(blobTxHex))
 	payload := append([]byte{byte(BlobTxType)}, ssz...)
 	parseEnd, err := ctx.ParseTransaction(payload, 0, tx, txSender[:], false /* hasEnvelope */, nil)
-
 	require.NoError(err)
 	require.Equal(len(payload), parseEnd)
 
@@ -48,8 +48,44 @@ func TestParseBlobTransaction(t *testing.T) {
 	rlp.EncodeString(append([]byte{byte(BlobTxType)}, ssz...), payload)
 	parseEnd, err = ctx.ParseTransaction(payload, 0, tx, txSender[:], true /* hasEnvelope */, nil)
 
-	// TODO: test that tx fields are set properly. Need a better input transaction as this example
-	// has zeros for all fields other than the blobs.
+	if tx.Nonce != 10 {
+		t.Errorf("Expected nonce == 10, got: %v", tx.Nonce)
+	}
+	if tx.Tip.Uint64() != 42 {
+		t.Errorf("Expected Tip == 42, got %v", tx.Tip)
+	}
+	if tx.FeeCap.Uint64() != 10 {
+		t.Errorf("Expected FeeCap == 10, got %v", tx.FeeCap.Uint64())
+	}
+	if tx.Gas != 123457 {
+		t.Errorf("Expected gas == 123457, got %v", tx.Gas)
+	}
+	if tx.Creation == true {
+		t.Errorf("Expected !tx.Creation")
+	}
+	if tx.Value.Uint64() != 100 {
+		t.Errorf("Expected Value == 100, got %v", tx.Value.Uint64())
+	}
+	if tx.DataLen != 6 {
+		t.Errorf("Expected DataLen == 6, got %v", tx.DataLen)
+	}
+	if tx.AlAddrCount != 2 {
+		t.Errorf("Expected 2 addresses in access list, got %v", tx.AlAddrCount)
+	}
+	if tx.AlStorCount != 3 {
+		t.Errorf("Expected 3 keys in access list, got %v", tx.AlStorCount)
+	}
+
+	// One more test with the no-blob tx & known sender
+	ssz = hexutility.MustDecodeHex(blobTxCreateHex)
+	payload = append([]byte{byte(BlobTxType)}, ssz...)
+	parseEnd, err = ctx.ParseTransaction(payload, 0, tx, txSender[:], false /* hasEnvelope */, nil)
+	require.NoError(err)
+	require.Equal(len(payload), parseEnd)
+	sender := fmt.Sprintf("%x", txSender)
+	if sender != blobTxCreateSender {
+		t.Errorf("Wrong sender. Expected %v, got: %v", blobTxCreateSender, sender)
+	}
 }
 
 func TestParseTransactionRLP(t *testing.T) {

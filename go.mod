@@ -26,6 +26,7 @@ require (
 	github.com/holiman/uint256 v1.2.1
 	github.com/matryer/moq v0.3.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
+	github.com/protolambda/go-kzg v0.0.0-20221224134646-c91cee5e954e
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.8.1
@@ -95,8 +96,6 @@ require (
 	github.com/pion/webrtc/v3 v3.1.42 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/protolambda/go-kzg v0.0.0-20221224134646-c91cee5e954e // indirect
-	github.com/protolambda/ztyp v0.2.2 // indirect
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417 // indirect
 	github.com/valyala/fastrand v1.1.0 // indirect
 	github.com/valyala/histogram v1.2.0 // indirect
