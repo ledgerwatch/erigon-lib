@@ -56,7 +56,7 @@ func FuzzSingleEliasFano(f *testing.F) {
 			}
 		}
 
-		it := ef.Iterator()
+		it := ef.Iterator(0)
 		for it.HasNext() {
 			it.Next()
 		}

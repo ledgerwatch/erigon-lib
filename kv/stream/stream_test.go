@@ -327,6 +327,14 @@ func TestName(t *testing.T) {
 //  // values contains a concatenation of all values in the row.
 //  bytes values = 2;
 
+// Request(from, limit) -> (N, nextFrom),  Request(nextFrom, limit) -> (N, nil)
+// Request(from, limit) -> (N, hasNext=true),  Request(nextFrom, limit) -> (N, hasNext=false): server just need internally read Limit+1
+//
+// Request(from, limit) -> InteractiveStream(N, nextFrom),  Request(nextFrom, limit) -> (N, nil))
+
+// TODO: remotedbserver - txs leak... when to close them? insider rollback check non-locked tx.ttl? When do we renew?
+// stream will not help
+
 // no Limit in request
 // request (from, N) - merge on client
 // stream (all) - push from server - merge on client

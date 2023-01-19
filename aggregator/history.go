@@ -208,7 +208,7 @@ func (hr *HistoryReader) searchInHistory(bitmapType, historyType FileType, key [
 			}
 			eliasVal, _ = g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-			it := ef.Iterator()
+			it := ef.Iterator(0)
 			if trace {
 				for it.HasNext() {
 					fmt.Printf(" %d", it.Next())

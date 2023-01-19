@@ -75,9 +75,9 @@ func Test_mergeEliasFano(t *testing.T) {
 	first.Build()
 	firstBytes := first.AppendBytes(nil)
 
-	fit := first.Iterator()
+	fit := first.Iterator(0)
 	for fit.HasNext() {
-		v := fit.Next()
+		v, _ := fit.Next()
 		require.Contains(t, firstList, int(v))
 	}
 
@@ -96,9 +96,9 @@ func Test_mergeEliasFano(t *testing.T) {
 	second.Build()
 	secondBytes := second.AppendBytes(nil)
 
-	sit := second.Iterator()
+	sit := second.Iterator(0)
 	for sit.HasNext() {
-		v := sit.Next()
+		v, _ := sit.Next()
 		require.Contains(t, secondList, int(v))
 	}
 
@@ -114,9 +114,9 @@ func Test_mergeEliasFano(t *testing.T) {
 	require.EqualValues(t, mergedLists[len(mergedLists)-1], merged.Max())
 	require.EqualValues(t, merged.Max(), eliasfano32.Max(menc))
 
-	mit := merged.Iterator()
+	mit := merged.Iterator(0)
 	for mit.HasNext() {
-		v := mit.Next()
+		v, _ := mit.Next()
 		require.Contains(t, mergedLists, int(v))
 	}
 }

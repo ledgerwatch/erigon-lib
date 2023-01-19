@@ -613,26 +613,6 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 	return reply, nil
 }
 
-// see: https://cloud.google.com/apis/design/design_patterns
-func marshalPagination(m proto.Message) (string, error) {
-	pageToken, err := proto.Marshal(m)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(pageToken), nil
-}
-
-func unmarshalPagination(pageToken string, m proto.Message) error {
-	token, err := base64.StdEncoding.DecodeString(pageToken)
-	if err != nil {
-		return err
-	}
-	if err = proto.Unmarshal(token, m); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) error {
 	orderAscend, fromPrefix, toPrefix := req.OrderAscend, req.FromPrefix, req.ToPrefix
 	if orderAscend && fromPrefix != nil && toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
@@ -652,7 +632,7 @@ func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) e
 	var err error
 	var skipFirst = false
 
-	limit := int(req.Limit)
+	limit := int(req.PageSize)
 	step := cmp.Min(s.rangeStep, limit) // make sure `s.with` has limited time
 	for from := fromPrefix; ; from = k {
 		if (req.OrderAscend && from == nil) || limit == 0 {
@@ -720,17 +700,30 @@ func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) e
 }
 
 func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pairs, error) {
+	from := req.FromPrefix
+	if req.PageToken != "" {
+		var pagination remote.ParisPagination
+		if err := unmarshalPagination(req.PageToken, &pagination); err != nil {
+			return nil, err
+		}
+		from = pagination.NextKey
+	}
+	limit := int(req.PageSize)
+	if limit == -1 || limit > PageSizeLimit {
+		limit = PageSizeLimit
+	}
+
 	reply := &remote.Pairs{}
 	var err error
 	if err = s.with(req.TxId, func(tx kv.Tx) error {
 		var it kv.Pairs
 		if req.OrderAscend {
-			it, err = tx.StreamAscend(req.Table, req.FromPrefix, req.ToPrefix, int(req.Limit))
+			it, err = tx.StreamAscend(req.Table, from, req.ToPrefix, limit)
 			if err != nil {
 				return err
 			}
 		} else {
-			it, err = tx.StreamDescend(req.Table, req.FromPrefix, req.ToPrefix, int(req.Limit))
+			it, err = tx.StreamDescend(req.Table, from, req.ToPrefix, limit)
 			if err != nil {
 				return err
 			}
@@ -743,9 +736,37 @@ func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pai
 			reply.Keys = append(reply.Keys, k)
 			reply.Values = append(reply.Values, v)
 		}
+		if len(reply.Keys) == PageSizeLimit {
+			reply.NextPageToken, err = marshalPagination(&remote.ParisPagination{NextKey: reply.Keys[len(reply.Keys)-1]})
+			if err != nil {
+				return err
+			}
+			reply.Keys = reply.Keys[:len(reply.Keys)-1]
+			reply.Values = reply.Values[:len(reply.Values)-1]
+		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 	return reply, nil
+}
+
+// see: https://cloud.google.com/apis/design/design_patterns
+func marshalPagination(m proto.Message) (string, error) {
+	pageToken, err := proto.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(pageToken), nil
+}
+
+func unmarshalPagination(pageToken string, m proto.Message) error {
+	token, err := base64.StdEncoding.DecodeString(pageToken)
+	if err != nil {
+		return err
+	}
+	if err = proto.Unmarshal(token, m); err != nil {
+		return err
+	}
+	return nil
 }

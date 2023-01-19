@@ -3,8 +3,10 @@ package stream
 import (
 	"bytes"
 	"fmt"
+	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/stretchr/testify/require"
 )
 
 type ArrStream[V any] struct {
@@ -12,9 +14,15 @@ type ArrStream[V any] struct {
 	i   int
 }
 
-func Array[V any](arr []V) kv.UnaryStream[V] { return &ArrStream[V]{arr: arr} }
-func (it *ArrStream[V]) HasNext() bool       { return it.i < len(it.arr) }
-func (it *ArrStream[V]) Close()              {}
+func ReverseArray[V any](arr []V) *ArrStream[V] {
+	for i, j := 0, len(arr)-1; i < j; i, j = i+1, j-1 {
+		arr[i], arr[j] = arr[j], arr[i]
+	}
+	return Array(arr)
+}
+func Array[V any](arr []V) *ArrStream[V] { return &ArrStream[V]{arr: arr} }
+func (it *ArrStream[V]) HasNext() bool   { return it.i < len(it.arr) }
+func (it *ArrStream[V]) Close()          {}
 func (it *ArrStream[V]) Next() (V, error) {
 	v := it.arr[it.i]
 	it.i++
@@ -24,6 +32,42 @@ func (it *ArrStream[V]) NextBatch() ([]V, error) {
 	v := it.arr[it.i:]
 	it.i = len(it.arr)
 	return v, nil
+}
+
+func Equal[V comparable](s1, s2 kv.UnaryStream[V]) bool {
+	for s1.HasNext() && s2.HasNext() {
+		k1, e1 := s1.Next()
+		k2, e2 := s2.Next()
+		if k1 != k2 || e1 != e2 {
+			return false
+		}
+	}
+
+	return !s1.HasNext() && !s2.HasNext()
+}
+
+func ExpectEqual[V comparable](t testing.TB, s1, s2 kv.UnaryStream[V]) {
+	//t.Helper()
+	for s1.HasNext() && s2.HasNext() {
+		k1, e1 := s1.Next()
+		k2, e2 := s2.Next()
+		require.Equal(t, k1, k2)
+		require.Equal(t, e1, e2)
+	}
+
+	has1 := s1.HasNext()
+	has2 := s2.HasNext()
+	var label string
+	if has1 {
+		v1, _ := s1.Next()
+		label = fmt.Sprintf("v1: %v", v1)
+	}
+	if has2 {
+		v2, _ := s2.Next()
+		label += fmt.Sprintf(" v2: %v", v2)
+	}
+	require.False(t, has1, label)
+	require.False(t, has2, label)
 }
 
 // MergePairsStream - merge 2 kv.Pairs streams to 1 in lexicographically order

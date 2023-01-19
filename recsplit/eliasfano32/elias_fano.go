@@ -26,6 +26,7 @@ import (
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/common/bitutil"
+	"github.com/ledgerwatch/erigon-lib/kv/stream"
 )
 
 // EliasFano algo overview https://www.antoniomallia.it/sorted-integers-compression-with-elias-fano-encoding.html
@@ -225,8 +226,22 @@ func (ef *EliasFano) Count() uint64 {
 	return ef.count + 1
 }
 
-func (ef *EliasFano) Iterator() *EliasFanoIter {
-	return &EliasFanoIter{ef: ef, upperMask: 1, upperStep: uint64(1) << ef.l}
+func (ef *EliasFano) Iterator(seek uint64) *EliasFanoIter {
+	it := &EliasFanoIter{ef: ef, upperMask: 1, upperStep: uint64(1) << ef.l}
+	return it
+}
+func (ef *EliasFano) ReverseIterator(seek uint64) *stream.ArrStream[uint64] {
+	//TODO: this is very un-optimal, need implement proper reverse-iterator
+	it := ef.Iterator(seek)
+	var values []uint64
+	for it.HasNext() {
+		v, err := it.Next()
+		if err != nil {
+			panic(err)
+		}
+		values = append(values, v)
+	}
+	return stream.ReverseArray[uint64](values)
 }
 
 type EliasFanoIter struct {
@@ -239,11 +254,25 @@ type EliasFanoIter struct {
 	upperStep uint64
 }
 
+func (efi *EliasFanoIter) seek(seek uint64) (uint64, bool) {
+	//TODO: unoptimal
+	for efi.HasNext() {
+		n, err := efi.Next()
+		if err != nil {
+			panic(err)
+		}
+		if n >= seek {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
 func (efi *EliasFanoIter) HasNext() bool {
 	return efi.idx <= efi.ef.count
 }
 
-func (efi *EliasFanoIter) Next() uint64 {
+func (efi *EliasFanoIter) Next() (uint64, error) {
 	idx64 := efi.lowerIdx >> 6
 	shift := efi.lowerIdx & 63
 	lower := efi.ef.lowerBits[idx64] >> shift
@@ -266,7 +295,7 @@ func (efi *EliasFanoIter) Next() uint64 {
 	efi.lowerIdx += efi.ef.l
 	efi.idx++
 	val := (lower & efi.ef.lowerBitsMask) | efi.upper
-	return val
+	return val, nil
 }
 
 // Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read

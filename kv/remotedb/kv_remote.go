@@ -606,7 +606,7 @@ func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.las
 
 // Temporal Methods
 func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
-	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxID: tx.id, Table: string(name), K: k, Ts: ts})
+	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxId: tx.id, Table: string(name), K: k, Ts: ts})
 	if err != nil {
 		return nil, false, err
 	}
@@ -616,7 +616,7 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps kv.U64Stream, err error) {
 	//TODO: auto-paginate it
 	const pageSize = 4096
-	req := &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), Limit: int64(limit)}
+	req := &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)}
 	reply, err := tx.db.remoteKV.IndexRange(tx.ctx, req)
 	if err != nil {
 		return nil, err
@@ -661,7 +661,7 @@ func (it *idxPaginatedRange) HasNext() bool {
 	}
 	it.currentFrom = it.currentTo
 	it.currentTo += 4096
-	req := &remote.IndexRangeReq{TxID: it.tx.id, Table: string(it.table), K: it.k, FromTs: it.currentFrom, ToTs: it.currentTo}
+	req := &remote.IndexRangeReq{TxId: it.tx.id, Table: string(it.table), K: it.k, FromTs: it.currentFrom, ToTs: it.currentTo}
 	reply, err := it.tx.db.remoteKV.IndexRange(it.tx.ctx, req)
 	if err != nil {
 		panic(err)
@@ -691,7 +691,7 @@ func (it *idxPaginatedRange) Next() ([]byte, []byte, error) {
 
 func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps kv.U64Stream, err error) {
 	//TODO: maybe add ctx.WithCancel
-	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), Limit: int64(limit)})
+	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)})
 	if err != nil {
 		return nil, err
 	}
@@ -710,7 +710,7 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 	return tx.Stream(table, prefix, nextPrefix)
 }
 func (tx *remoteTx) streamOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (kv.Pairs, error) {
-	req := &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend, Limit: int64(limit)}
+	req := &remote.RangeReq{TxId: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend, PageSize: int32(limit)}
 	stream, err := tx.db.remoteKV.Stream(tx.ctx, req)
 	if err != nil {
 		return nil, err

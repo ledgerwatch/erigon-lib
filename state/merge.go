@@ -436,14 +436,16 @@ func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles 
 func mergeEfs(preval, val, buf []byte) ([]byte, error) {
 	preef, _ := eliasfano32.ReadEliasFano(preval)
 	ef, _ := eliasfano32.ReadEliasFano(val)
-	preIt := preef.Iterator()
-	efIt := ef.Iterator()
+	preIt := preef.Iterator(0)
+	efIt := ef.Iterator(0)
 	newEf := eliasfano32.NewEliasFano(preef.Count()+ef.Count(), ef.Max())
 	for preIt.HasNext() {
-		newEf.AddOffset(preIt.Next())
+		v, _ := preIt.Next()
+		newEf.AddOffset(v)
 	}
 	for efIt.HasNext() {
-		newEf.AddOffset(efIt.Next())
+		v, _ := efIt.Next()
+		newEf.AddOffset(v)
 	}
 	newEf.Build()
 	return newEf.AppendBytes(buf), nil
@@ -906,9 +908,9 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 				keyBuf, _ = g.NextUncompressed()
 				valBuf, _ = g.NextUncompressed()
 				ef, _ := eliasfano32.ReadEliasFano(valBuf)
-				efIt := ef.Iterator()
+				efIt := ef.Iterator(0)
 				for efIt.HasNext() {
-					txNum := efIt.Next()
+					txNum, _ := efIt.Next()
 					binary.BigEndian.PutUint64(txKey[:], txNum)
 					historyKey = append(append(historyKey[:0], txKey[:]...), keyBuf...)
 					if err = rs.AddKey(historyKey, valOffset); err != nil {

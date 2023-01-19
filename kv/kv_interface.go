@@ -424,7 +424,9 @@ type CursorDupSort interface {
 	FirstDup() ([]byte, error)                       // FirstDup - position at first data item of current key
 	NextDup() ([]byte, []byte, error)                // NextDup - position at next data item of current key
 	NextNoDup() ([]byte, []byte, error)              // NextNoDup - position at first data item of next key
-	LastDup() ([]byte, error)                        // LastDup - position at last data item of current key
+	PrevDup() ([]byte, []byte, error)
+	PrevNoDup() ([]byte, []byte, error)
+	LastDup() ([]byte, error) // LastDup - position at last data item of current key
 
 	CountDuplicates() (uint64, error) // CountDuplicates - number of duplicates for the current key
 }
