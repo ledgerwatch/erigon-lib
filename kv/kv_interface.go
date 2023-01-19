@@ -457,8 +457,8 @@ type TemporalTx interface {
 	DomainGet(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
 
-	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps U64Stream, err error)
-	IndexStream(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps U64Stream, err error)
+	IndexRange(name InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps U64Stream, err error)
+	IndexStream(name InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps U64Stream, err error)
 }
 
 type TemporalRwDB interface {

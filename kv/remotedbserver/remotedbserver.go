@@ -538,14 +538,14 @@ func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (r
 }
 func (s *KvServer) IndexStream(req *remote.IndexRangeReq, stream remote.KV_IndexStreamServer) error {
 	const step = 4096 // make sure `s.with` has limited time
-	for from := req.FromTs; from < req.ToTs; from += step {
-		to := cmp.Min(req.ToTs, from+step)
+	var last int
+	for from := int(req.FromTs); from < int(req.ToTs); from = last {
 		if err := s.with(req.TxID, func(tx kv.Tx) error {
 			ttx, ok := tx.(kv.TemporalTx)
 			if !ok {
 				return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 			}
-			it, err := ttx.IndexRange(kv.InvertedIdx(req.Table), req.K, from, to)
+			it, err := ttx.IndexRange(kv.InvertedIdx(req.Table), req.K, from, int(req.ToTs), step)
 			if err != nil {
 				return err
 			}
@@ -556,6 +556,7 @@ func (s *KvServer) IndexStream(req *remote.IndexRangeReq, stream remote.KV_Index
 			if err := stream.Send(&remote.IndexRangeReply{Timestamps: bm.ToArray()}); err != nil {
 				return err
 			}
+			last = int(bm.Maximum())
 			return nil
 		}); err != nil {
 			return err
@@ -571,7 +572,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 		if !ok {
 			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 		}
-		it, err := ttx.IndexRange(kv.InvertedIdx(req.Table), req.K, req.FromTs, req.ToTs)
+		it, err := ttx.IndexRange(kv.InvertedIdx(req.Table), req.K, int(req.FromTs), int(req.ToTs), int(req.Limit))
 		if err != nil {
 			return err
 		}
@@ -602,18 +603,12 @@ func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) e
 		fromPrefix = []byte{}
 	}
 
-	limit := -1
-	if req.Limit != nil {
-		limit = int(*req.Limit)
-	}
 	var it kv.Pairs
 	var err error
 	var skipFirst = false
 
-	step := s.rangeStep
-	if limit > 0 {
-		step = cmp.Min(s.rangeStep, limit) // make sure `s.with` has limited time
-	}
+	limit := int(req.Limit)
+	step := cmp.Min(s.rangeStep, limit) // make sure `s.with` has limited time
 	for from := fromPrefix; ; from = k {
 		if (req.OrderAscend && from == nil) || limit == 0 {
 			break
@@ -680,21 +675,17 @@ func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) e
 }
 
 func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pairs, error) {
-	limit := -1
-	if req.Limit != nil {
-		limit = int(*req.Limit)
-	}
 	reply := &remote.Pairs{}
 	var err error
 	if err = s.with(req.TxID, func(tx kv.Tx) error {
 		var it kv.Pairs
 		if req.OrderAscend {
-			it, err = tx.StreamAscend(req.Table, req.FromPrefix, req.ToPrefix, limit)
+			it, err = tx.StreamAscend(req.Table, req.FromPrefix, req.ToPrefix, int(req.Limit))
 			if err != nil {
 				return err
 			}
 		} else {
-			it, err = tx.StreamDescend(req.Table, req.FromPrefix, req.ToPrefix, limit)
+			it, err = tx.StreamDescend(req.Table, req.FromPrefix, req.ToPrefix, int(req.Limit))
 			if err != nil {
 				return err
 			}

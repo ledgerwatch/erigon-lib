@@ -1738,12 +1738,12 @@ type cursor2stream struct {
 	fromPrefix, toPrefix, nextK, nextV []byte
 	err                                error
 	orderAscend                        bool
-	limit                              int
+	limit                              int64
 	ctx                                context.Context
 }
 
 func (tx *MdbxTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (*cursor2stream, error) {
-	s := &cursor2stream{ctx: tx.ctx, fromPrefix: fromPrefix, toPrefix: toPrefix, orderAscend: orderAscend, limit: limit}
+	s := &cursor2stream{ctx: tx.ctx, fromPrefix: fromPrefix, toPrefix: toPrefix, orderAscend: orderAscend, limit: int64(limit)}
 	tx.streams = append(tx.streams, s)
 	return s.init(table, tx)
 }

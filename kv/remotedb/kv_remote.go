@@ -613,10 +613,10 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 	return reply.V, reply.Ok, nil
 }
 
-func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.U64Stream, err error) {
+func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps kv.U64Stream, err error) {
 	//TODO: auto-paginate it
 	const pageSize = 4096
-	req := &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: fromTs, ToTs: toTs}
+	req := &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), Limit: int64(limit)}
 	reply, err := tx.db.remoteKV.IndexRange(tx.ctx, req)
 	if err != nil {
 		return nil, err
@@ -629,13 +629,13 @@ func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs uint6
 
 type idxPaginatedRange struct {
 	k            []byte
-	fromTs, toTs uint64
+	fromTs, toTs int64
 	err          error
 	table        kv.InvertedIdx
 
 	tx                     *remoteTx
 	i                      int
-	currentFrom, currentTo uint64
+	currentFrom, currentTo int64
 	currentPage            *roaring64.Bitmap
 	currentPageIt          roaring64.IntIterable64
 }
@@ -650,13 +650,12 @@ func (it *idxPaginatedRange) HasNext() bool {
 	if it.err != nil {
 		return true
 	}
-	if it.i < len(it.lastKeys) {
-		return true
-	}
-
 	if it.currentPageIt.HasNext() {
 		return true
 	}
+	//if it.currentPage.GetCardinality() <  {
+	//	return true
+	//}
 	if it.currentTo == it.toTs {
 
 	}
@@ -665,7 +664,7 @@ func (it *idxPaginatedRange) HasNext() bool {
 	req := &remote.IndexRangeReq{TxID: it.tx.id, Table: string(it.table), K: it.k, FromTs: it.currentFrom, ToTs: it.currentTo}
 	reply, err := it.tx.db.remoteKV.IndexRange(it.tx.ctx, req)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 	bm := bitmapdb.NewBitmap64()
 	bm.AddMany(reply.Timestamps)
@@ -674,7 +673,7 @@ func (it *idxPaginatedRange) HasNext() bool {
 
 	it.currentPageIt.HasNext()
 
-	return len(it.lastKeys) > 0
+	return it.currentPageIt.HasNext()
 }
 func (it *idxPaginatedRange) Close() {
 	//_ = it.stream.CloseSend()
@@ -683,15 +682,16 @@ func (it *idxPaginatedRange) Next() ([]byte, []byte, error) {
 	if it.err != nil {
 		return nil, nil, it.err
 	}
-	k := it.lastKeys[it.i]
-	v := it.lastValues[it.i]
+	//k := it.lastKeys[it.i]
+	//v := it.lastValues[it.i]
 	it.i++
-	return k, v, nil
+	//return k, v, nil
+	return nil, nil, nil
 }
 
-func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps kv.U64Stream, err error) {
+func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps kv.U64Stream, err error) {
 	//TODO: maybe add ctx.WithCancel
-	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: fromTs, ToTs: toTs})
+	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxID: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), Limit: int64(limit)})
 	if err != nil {
 		return nil, err
 	}
@@ -710,11 +710,7 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
 	return tx.Stream(table, prefix, nextPrefix)
 }
 func (tx *remoteTx) streamOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (kv.Pairs, error) {
-	req := &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend}
-	if limit >= 0 {
-		ulimit := uint64(limit)
-		req.Limit = &ulimit
-	}
+	req := &remote.RangeReq{TxID: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend, Limit: int64(limit)}
 	stream, err := tx.db.remoteKV.Stream(tx.ctx, req)
 	if err != nil {
 		return nil, err

@@ -35,7 +35,7 @@ var _ KVClient = &KVClientMock{}
 //				panic("mock out the IndexStream method")
 //			},
 //			RangeFunc: func(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (*Pairs, error) {
-//				panic("mock out the Stream method")
+//				panic("mock out the Range method")
 //			},
 //			SnapshotsFunc: func(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error) {
 //				panic("mock out the Snapshots method")
