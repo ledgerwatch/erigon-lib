@@ -37,9 +37,9 @@ import (
 
 //Methods Naming:
 //  Get: exact match of criterias
-//  Range: [from, to). Range(from, nil) means [from, EndOfTable). Range(nil, to) means [StartOfTable, to).
-//  Each: Range(from, nil)
-//  Prefix: `Range(Table, prefix, kv.NextSubtree(prefix))`
+//  Stream: [from, to). Stream(from, nil) means [from, EndOfTable). Stream(nil, to) means [StartOfTable, to).
+//  Each: Stream(from, nil)
+//  Prefix: `Stream(Table, prefix, kv.NextSubtree(prefix))`
 //  Amount: [from, INF) AND maximum N records
 
 //Entity Naming:
@@ -314,20 +314,27 @@ type Tx interface {
 
 	DBSize() (uint64, error)
 
-	// --- High-Level methods: more abstract, server-side-streaming-friendly ---
+	// --- High-Level methods: 1request -> stream of server-side pushes ---
 
 	// Range [from, to)
 	// Range(from, nil) means [from, EndOfTable)
 	// Range(nil, to)   means [StartOfTable, to)
 	Range(table string, fromPrefix, toPrefix []byte) (Pairs, error)
+	// Stream is like Range, but for requesting huge data (Example: full table scan). Client can't stop it.
+	Stream(table string, fromPrefix, toPrefix []byte) (Pairs, error)
 	// RangeAscend - like Range [from, to) but also allow pass Limit parameters
 	// Limit -1 means Unlimited
 	RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
+	StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
 	// RangeDescend - is like Range [from, to), but expecing `from`<`to`
 	// example: RangeDescend("Table", "B", "A", -1)
 	RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
+	StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
 	// Prefix - is exactly Range(Table, prefix, kv.NextSubtree(prefix))
 	Prefix(table string, prefix []byte) (Pairs, error)
+
+	// --- High-Level methods: 1request -> 1page of values in response -> send next page request ---
+	// Paginate(table string, fromPrefix, toPrefix []byte) (PairsStream, error)
 
 	// --- High-Level deprecated methods ---
 
@@ -449,7 +456,9 @@ type TemporalTx interface {
 	Tx
 	DomainGet(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
+
 	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps U64Stream, err error)
+	IndexStream(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps U64Stream, err error)
 }
 
 type TemporalRwDB interface {
@@ -476,4 +485,5 @@ type U64Stream interface {
 	UnaryStream[uint64]
 	ToBitmap() (*roaring64.Bitmap, error)
 }
+
 type Pairs Stream[[]byte, []byte]

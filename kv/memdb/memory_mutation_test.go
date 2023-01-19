@@ -14,6 +14,8 @@
 package memdb
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,6 +23,52 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
+
+func BenchmarkName(b *testing.B) {
+	db := NewTestDB(b)
+	db.UpdateAsync(context.Background(), func(tx kv.RwTx) error {
+		for i := 0; i < 100_000; i++ {
+			key := []byte(fmt.Sprintf("%x\n", i))
+			tx.Put(kv.HashedAccounts, key, key)
+		}
+		return nil
+	})
+
+	b.Run("a", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			db.View(context.Background(), func(tx kv.Tx) error {
+				it, err := tx.Stream(kv.HashedAccounts, nil, nil)
+				if err != nil {
+					return err
+				}
+				for it.HasNext() {
+					_, _, err := it.Next()
+					if err != nil {
+						return err
+					}
+
+				}
+				return nil
+			})
+		}
+	})
+	b.Run("a", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			db.View(context.Background(), func(tx kv.Tx) error {
+				it, err := tx.Cursor(kv.HashedAccounts)
+				if err != nil {
+					return err
+				}
+				for k, _, err := it.First(); k != nil; k, _, err = it.Next() {
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
+	})
+}
 
 func initializeDbNonDupSort(rwTx kv.RwTx) {
 	rwTx.Put(kv.HashedAccounts, []byte("AAAA"), []byte("value"))

@@ -536,7 +536,7 @@ func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (r
 	}
 	return reply, nil
 }
-func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexRangeServer) error {
+func (s *KvServer) IndexStream(req *remote.IndexRangeReq, stream remote.KV_IndexStreamServer) error {
 	const step = 4096 // make sure `s.with` has limited time
 	for from := req.FromTs; from < req.ToTs; from += step {
 		to := cmp.Min(req.ToTs, from+step)
@@ -564,13 +564,36 @@ func (s *KvServer) IndexRange(req *remote.IndexRangeReq, stream remote.KV_IndexR
 	return nil
 }
 
-func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) error {
+func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*remote.IndexRangeReply, error) {
+	reply := &remote.IndexRangeReply{}
+	if err := s.with(req.TxID, func(tx kv.Tx) error {
+		ttx, ok := tx.(kv.TemporalTx)
+		if !ok {
+			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
+		}
+		it, err := ttx.IndexRange(kv.InvertedIdx(req.Table), req.K, req.FromTs, req.ToTs)
+		if err != nil {
+			return err
+		}
+		bm, err := it.ToBitmap()
+		if err != nil {
+			return err
+		}
+		reply.Timestamps = bm.ToArray()
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return reply, nil
+}
+
+func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) error {
 	orderAscend, fromPrefix, toPrefix := req.OrderAscend, req.FromPrefix, req.ToPrefix
 	if orderAscend && fromPrefix != nil && toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
-		return fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
+		return fmt.Errorf("tx.Stream: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
 	}
 	if !orderAscend && fromPrefix != nil && toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) <= 0 {
-		return fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", toPrefix, fromPrefix)
+		return fmt.Errorf("tx.Stream: %x must be lexicographicaly before %x", toPrefix, fromPrefix)
 	}
 
 	var k, v []byte
@@ -603,7 +626,7 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 			}
 		}
 
-		resp := &remote.Pairs{}
+		reply := &remote.Pairs{}
 		if err = s.with(req.TxID, func(tx kv.Tx) error {
 			if orderAscend {
 				it, err = tx.RangeAscend(req.Table, from, toPrefix, step)
@@ -622,8 +645,8 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 				if err != nil {
 					return err
 				}
-				resp.Keys = append(resp.Keys, k)
-				resp.Values = append(resp.Values, v)
+				reply.Keys = append(reply.Keys, k)
+				reply.Values = append(reply.Values, v)
 				limit--
 			}
 			if k != nil {
@@ -632,8 +655,8 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 					k = append(k, []byte{01}...)
 				} else {
 					if skipFirst {
-						resp.Keys = resp.Keys[1:]
-						resp.Values = resp.Values[1:]
+						reply.Keys = reply.Keys[1:]
+						reply.Values = reply.Values[1:]
 					}
 					skipFirst = true
 					//TODO: prevvvv???
@@ -645,8 +668,8 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 			return err
 		}
 
-		if len(resp.Keys) > 0 {
-			if err := stream.Send(resp); err != nil {
+		if len(reply.Keys) > 0 {
+			if err := stream.Send(reply); err != nil {
 				return err
 			}
 		} else {
@@ -654,4 +677,39 @@ func (s *KvServer) Range(req *remote.RangeReq, stream remote.KV_RangeServer) err
 		}
 	}
 	return nil
+}
+
+func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pairs, error) {
+	limit := -1
+	if req.Limit != nil {
+		limit = int(*req.Limit)
+	}
+	reply := &remote.Pairs{}
+	var err error
+	if err = s.with(req.TxID, func(tx kv.Tx) error {
+		var it kv.Pairs
+		if req.OrderAscend {
+			it, err = tx.StreamAscend(req.Table, req.FromPrefix, req.ToPrefix, limit)
+			if err != nil {
+				return err
+			}
+		} else {
+			it, err = tx.StreamDescend(req.Table, req.FromPrefix, req.ToPrefix, limit)
+			if err != nil {
+				return err
+			}
+		}
+		for it.HasNext() {
+			k, v, err := it.Next()
+			if err != nil {
+				return err
+			}
+			reply.Keys = append(reply.Keys, k)
+			reply.Values = append(reply.Values, v)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return reply, nil
 }
