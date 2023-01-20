@@ -545,7 +545,7 @@ func (it *InvertedIterator) advanceInDb() {
 			panic(err)
 		}
 		var k []byte
-		if k, v, err = it.cursor.SeekExact(it.key); err != nil {
+		if k, _, err = it.cursor.SeekExact(it.key); err != nil {
 			panic(err)
 		}
 		if k == nil {
