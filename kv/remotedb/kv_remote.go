@@ -641,12 +641,6 @@ type idxPaginatedRange struct {
 	currentPageIt          roaring64.IntIterable64
 }
 
-//	func (it *idxPaginatedRange) NextBatch() ([][]byte, [][]byte, error) {
-//		keys := it.lastKeys[it.i:]
-//		values := it.lastValues[it.i:]
-//		it.i = len(it.lastKeys)
-//		return keys, values, nil
-//	}
 func (it *idxPaginatedRange) HasNext() bool {
 	if it.err != nil {
 		return true
@@ -654,9 +648,6 @@ func (it *idxPaginatedRange) HasNext() bool {
 	if it.currentPageIt.HasNext() {
 		return true
 	}
-	//if it.currentPage.GetCardinality() <  {
-	//	return true
-	//}
 	if it.currentTo == it.toTs {
 
 	}
@@ -677,16 +668,12 @@ func (it *idxPaginatedRange) HasNext() bool {
 	return it.currentPageIt.HasNext()
 }
 func (it *idxPaginatedRange) Close() {
-	//_ = it.stream.CloseSend()
 }
 func (it *idxPaginatedRange) Next() ([]byte, []byte, error) {
 	if it.err != nil {
 		return nil, nil, it.err
 	}
-	//k := it.lastKeys[it.i]
-	//v := it.lastValues[it.i]
 	it.i++
-	//return k, v, nil
 	return nil, nil, nil
 }
 

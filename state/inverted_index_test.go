@@ -112,7 +112,7 @@ func TestInvIndexCollationBuild(t *testing.T) {
 		w, _ = g.Next(w[:0])
 		ef, _ := eliasfano32.ReadEliasFano(w)
 		var ints []uint64
-		it := ef.Iterator(0)
+		it := ef.Iterator()
 		for it.HasNext() {
 			v, _ := it.Next()
 			ints = append(ints, v)
@@ -250,7 +250,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 		var k [8]byte
 		binary.BigEndian.PutUint64(k[:], keyNum)
-		it, err := ic.IterateRange(k[:], 0, 976, nil)
+		it, err := ic.IterateRange(k[:], 0, 976, true, -1, nil)
 		require.NoError(t, err)
 		defer it.Close()
 		var values []uint64
@@ -264,7 +264,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		}
 		require.False(t, it.HasNext())
 
-		reverseStream, err := ic.iterateRange(k[:], 976, 0, false, -1, nil)
+		reverseStream, err := ic.IterateRange(k[:], 976, 0, false, -1, nil)
 		require.NoError(t, err)
 		defer it.Close()
 		stream.ExpectEqual[uint64](t, stream.ReverseArray(values), reverseStream)
@@ -276,7 +276,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 		var k [8]byte
 		binary.BigEndian.PutUint64(k[:], keyNum)
-		it, err := ic.IterateRange(k[:], 400, 1000, roTx)
+		it, err := ic.IterateRange(k[:], 400, 1000, true, -1, roTx)
 		require.NoError(t, err)
 		defer it.Close()
 		var values []uint64
@@ -290,7 +290,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		}
 		require.False(t, it.HasNext())
 
-		reverseStream, err := ic.iterateRange(k[:], 1000-1, 400-1, false, -1, roTx)
+		reverseStream, err := ic.IterateRange(k[:], 1000-1, 400-1, false, -1, roTx)
 		require.NoError(t, err)
 		defer it.Close()
 		stream.ExpectEqual[uint64](t, stream.ReverseArray(values), reverseStream)

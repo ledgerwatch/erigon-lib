@@ -80,7 +80,7 @@ func TestIterator(t *testing.T) {
 		ef.AddOffset(offset)
 	}
 	ef.Build()
-	efi := ef.Iterator(0)
+	efi := ef.Iterator()
 	i := 0
 	var values []uint64
 	for efi.HasNext() {

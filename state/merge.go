@@ -436,8 +436,8 @@ func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles 
 func mergeEfs(preval, val, buf []byte) ([]byte, error) {
 	preef, _ := eliasfano32.ReadEliasFano(preval)
 	ef, _ := eliasfano32.ReadEliasFano(val)
-	preIt := preef.Iterator(0)
-	efIt := ef.Iterator(0)
+	preIt := preef.Iterator()
+	efIt := ef.Iterator()
 	newEf := eliasfano32.NewEliasFano(preef.Count()+ef.Count(), ef.Max())
 	for preIt.HasNext() {
 		v, _ := preIt.Next()
@@ -908,7 +908,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 				keyBuf, _ = g.NextUncompressed()
 				valBuf, _ = g.NextUncompressed()
 				ef, _ := eliasfano32.ReadEliasFano(valBuf)
-				efIt := ef.Iterator(0)
+				efIt := ef.Iterator()
 				for efIt.HasNext() {
 					txNum, _ := efIt.Next()
 					binary.BigEndian.PutUint64(txKey[:], txNum)

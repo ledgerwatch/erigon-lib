@@ -384,7 +384,7 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, coun
 			keyBuf, _ = g.NextUncompressed()
 			valBuf, _ = g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(valBuf)
-			efIt := ef.Iterator(0)
+			efIt := ef.Iterator()
 			for efIt.HasNext() {
 				txNum, _ := efIt.Next()
 				binary.BigEndian.PutUint64(txKey[:], txNum)

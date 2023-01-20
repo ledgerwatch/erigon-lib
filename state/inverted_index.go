@@ -497,7 +497,7 @@ func (it *InvertedIterator) advanceInFiles() {
 				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 
 				if it.orderAscend {
-					it.efIt = ef.Iterator(it.startTxNum)
+					it.efIt = ef.Iterator()
 				} else {
 					it.efIt = ef.ReverseIterator(it.startTxNum)
 				}

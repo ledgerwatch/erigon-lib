@@ -226,13 +226,13 @@ func (ef *EliasFano) Count() uint64 {
 	return ef.count + 1
 }
 
-func (ef *EliasFano) Iterator(seek uint64) *EliasFanoIter {
+func (ef *EliasFano) Iterator() *EliasFanoIter {
 	it := &EliasFanoIter{ef: ef, upperMask: 1, upperStep: uint64(1) << ef.l}
 	return it
 }
 func (ef *EliasFano) ReverseIterator(seek uint64) *stream.ArrStream[uint64] {
 	//TODO: this is very un-optimal, need implement proper reverse-iterator
-	it := ef.Iterator(seek)
+	it := ef.Iterator()
 	var values []uint64
 	for it.HasNext() {
 		v, err := it.Next()

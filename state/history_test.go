@@ -125,7 +125,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 		w, _ = g.Next(w[:0])
 		ef, _ := eliasfano32.ReadEliasFano(w)
 		var ints []uint64
-		it := ef.Iterator(0)
+		it := ef.Iterator()
 		for it.HasNext() {
 			v, _ := it.Next()
 			ints = append(ints, v)

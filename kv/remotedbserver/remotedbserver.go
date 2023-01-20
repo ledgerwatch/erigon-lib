@@ -681,8 +681,6 @@ func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) e
 						reply.Values = reply.Values[1:]
 					}
 					skipFirst = true
-					//TODO: prevvvv???
-					//k = k, []byte{01}...)
 				}
 			}
 			return nil
