@@ -259,8 +259,8 @@ const (
 	NonCanonicalTxs = "NonCanonicalTransaction" // tbl_sequence_u64 -> rlp(tx)
 	MaxTxNum        = "MaxTxNum"                // block_number_u64 -> max_tx_num_in_block_u64
 
-	// EthTxV2 - stores only txs of canonical blocks. Here key is txID + block_hash.
-	EthTxV2 = "BlockTransactionV2" // tbl_sequence_u64 -> rlp(tx)
+	// EthTxV3 - stores only txs of canonical blocks. Here key is txID + block_hash.
+	EthTxV3 = "BlockTransactionV3" // tbl_sequence_u64 -> rlp(tx)
 
 	Receipts = "Receipt"        // block_num_u64 -> canonical block receipts (non-canonical are not stored)
 	Log      = "TransactionLog" // block_num_u64 + txId -> logs of transaction
@@ -517,7 +517,7 @@ var ChaindataTables = []string{
 	Log,
 	Sequence,
 	EthTx,
-	EthTxV2,
+	EthTxV3,
 	NonCanonicalTxs,
 	TrieOfAccounts,
 	TrieOfStorage,
