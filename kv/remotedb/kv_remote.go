@@ -616,7 +616,6 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 
 func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps stream.U64, err error) {
 	//TODO: auto-paginate it
-	const pageSize = 4096
 	req := &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)}
 	reply, err := tx.db.remoteKV.IndexRange(tx.ctx, req)
 	if err != nil {

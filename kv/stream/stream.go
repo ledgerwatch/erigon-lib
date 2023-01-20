@@ -35,6 +35,7 @@ func (it *ArrStream[V]) NextBatch() ([]V, error) {
 }
 
 func ExpectEqual[V comparable](tb testing.TB, s1, s2 Unary[V]) {
+	tb.Helper()
 	for s1.HasNext() && s2.HasNext() {
 		k1, e1 := s1.Next()
 		k2, e2 := s2.Next()
