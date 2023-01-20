@@ -7,6 +7,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/constraints"
 )
 
 type ArrStream[V any] struct {
@@ -70,9 +71,9 @@ func ExpectEqual[V comparable](t testing.TB, s1, s2 kv.UnaryStream[V]) {
 	require.False(t, has2, label)
 }
 
-// MergePairsStream - merge 2 kv.Pairs streams to 1 in lexicographically order
+// UnionPairsStream - merge 2 kv.Pairs streams to 1 in lexicographically order
 // 1-st stream has higher priority - when 2 streams return same key
-type MergePairsStream struct {
+type UnionPairsStream struct {
 	x, y               kv.Pairs
 	xHasNext, yHasNext bool
 	xNextK, xNextV     []byte
@@ -80,14 +81,14 @@ type MergePairsStream struct {
 	nextErr            error
 }
 
-func MergePairs(x, y kv.Pairs) *MergePairsStream {
-	m := &MergePairsStream{x: x, y: y}
+func MergePairs(x, y kv.Pairs) *UnionPairsStream {
+	m := &UnionPairsStream{x: x, y: y}
 	m.advanceX()
 	m.advanceY()
 	return m
 }
-func (m *MergePairsStream) HasNext() bool { return m.xHasNext || m.yHasNext }
-func (m *MergePairsStream) advanceX() {
+func (m *UnionPairsStream) HasNext() bool { return m.xHasNext || m.yHasNext }
+func (m *UnionPairsStream) advanceX() {
 	if m.nextErr != nil {
 		m.xNextK, m.xNextV = nil, nil
 		return
@@ -97,7 +98,7 @@ func (m *MergePairsStream) advanceX() {
 		m.xNextK, m.xNextV, m.nextErr = m.x.Next()
 	}
 }
-func (m *MergePairsStream) advanceY() {
+func (m *UnionPairsStream) advanceY() {
 	if m.nextErr != nil {
 		m.yNextK, m.yNextV = nil, nil
 		return
@@ -107,7 +108,7 @@ func (m *MergePairsStream) advanceY() {
 		m.yNextK, m.yNextV, m.nextErr = m.y.Next()
 	}
 }
-func (m *MergePairsStream) Next() ([]byte, []byte, error) {
+func (m *UnionPairsStream) Next() ([]byte, []byte, error) {
 	if m.nextErr != nil {
 		return nil, nil, m.nextErr
 	}
@@ -139,9 +140,70 @@ func (m *MergePairsStream) Next() ([]byte, []byte, error) {
 	m.advanceY()
 	return k, v, err
 }
-func (m *MergePairsStream) ToArray() (keys, values [][]byte, err error) { return NaivePairs2Arr(m) }
+func (m *UnionPairsStream) ToArray() (keys, values [][]byte, err error) { return ToPairsArr(m) }
 
-func NaivePairs2Arr(it kv.Pairs) (keys, values [][]byte, err error) {
+// UnionPairsStream - merge 2 kv.Pairs streams to 1 in lexicographically order
+// 1-st stream has higher priority - when 2 streams return same key
+type IntersectStream[T constraints.Ordered] struct {
+	x, y               kv.UnaryStream[T]
+	xHasNext, yHasNext bool
+	xNextK, yNextK     T
+	err                error
+}
+
+func Intersect[T constraints.Ordered](x, y kv.UnaryStream[T]) *IntersectStream[T] {
+	m := &IntersectStream[T]{x: x, y: y}
+	m.advance()
+	return m
+}
+func (m *IntersectStream[T]) HasNext() bool { return m.xHasNext && m.yHasNext }
+func (m *IntersectStream[T]) advance() {
+	m.advanceX()
+	m.advanceY()
+	for m.xHasNext && m.yHasNext {
+		if m.err != nil {
+			break
+		}
+		if m.xNextK < m.yNextK {
+			m.advanceX()
+			continue
+		} else if m.xNextK == m.yNextK {
+			return
+		} else {
+			m.advanceY()
+			continue
+		}
+	}
+	m.xHasNext = false
+}
+
+func (m *IntersectStream[T]) advanceX() {
+	if m.err != nil {
+		return
+	}
+	m.xHasNext = m.x.HasNext()
+	if m.xHasNext {
+		m.xNextK, m.err = m.x.Next()
+	}
+}
+func (m *IntersectStream[T]) advanceY() {
+	if m.err != nil {
+		return
+	}
+	m.yHasNext = m.y.HasNext()
+	if m.yHasNext {
+		m.yNextK, m.err = m.y.Next()
+	}
+}
+func (m *IntersectStream[T]) Next() (T, error) {
+	k, err := m.xNextK, m.err
+	m.advance()
+	return k, err
+}
+
+//func (m *IntersectStream) ToArray() (keys, values [][]byte, err error) { return Naive2Arr(m) }
+
+func ToPairsArr(it kv.Pairs) (keys, values [][]byte, err error) {
 	for it.HasNext() {
 		k, v, err := it.Next()
 		if err != nil {
@@ -151,6 +213,17 @@ func NaivePairs2Arr(it kv.Pairs) (keys, values [][]byte, err error) {
 		values = append(values, v)
 	}
 	return keys, values, nil
+}
+
+func ToArr[T any](it kv.UnaryStream[T]) (res []T, err error) {
+	for it.HasNext() {
+		k, err := it.Next()
+		if err != nil {
+			return res, nil
+		}
+		res = append(res, k)
+	}
+	return res, err
 }
 
 // PairsWithErrorStream - return N, keys and then error

@@ -2,7 +2,6 @@ package stream_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -93,212 +92,15 @@ func (s *ArrStream2) Next() (int, error) {
 	return v, s.err
 }
 
-func TestName(t *testing.T) {
-	ctx := context.Background()
-	l := []int{1, 2, 3, 4, 5, 6, 7}
-	s1, _ := Array2(ctx, l, 2, 4, true, -1)
-	for s1.HasNext() {
-		v, _ := s1.Next()
-		fmt.Printf("s1: %d\n", v)
-	}
-	s1, _ = Array2(ctx, l, 4, 2, false, -1)
-	for s1.HasNext() {
-		v, _ := s1.Next()
-		fmt.Printf("s2: %d\n", v)
-	}
+func TestIntersect(t *testing.T) {
+	s1 := stream.Array[uint64]([]uint64{1, 3, 4, 5, 6, 7})
+	s2 := stream.Array[uint64]([]uint64{2, 3, 7})
+	s3 := stream.Intersect[uint64](s1, s2)
+
+	res, err := stream.ToArr[uint64](s3)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{3, 7}, res)
 }
-
-//type PaginateIdx struct {
-//	from, to int
-//	i        int
-//	asc      bool
-//	limit    int
-//	err      error
-//	ctx      context.Context
-//}
-//
-//func NewPaginateIdx(ctx context.Context, from, to int, limit int, request func(from, to int, limit int) *kv.U64Stream) (*PaginateIdx, error) {
-//	s := &PaginateIdx{from: from, to: to, limit: limit, ctx: ctx}
-//	return s.init()
-//}
-//
-//func (s *PaginateIdx) init() (*PaginateIdx, error) {
-//	if s.from != -1 { // no initial position
-//		if s.asc {
-//			s.i = 0
-//		} else {
-//			s.i = len(s.arr) - 1
-//		}
-//		return s, nil
-//	}
-//
-//	if s.asc {
-//		for _, v := range s.arr {
-//			if v >= s.from {
-//				break
-//			}
-//			s.i++
-//		}
-//	} else {
-//		// seek exactly to given key or previous one
-//		for _, v := range s.arr {
-//			if v >= s.from {
-//				break
-//			}
-//			s.i++
-//		}
-//	}
-//	return s, nil
-//}
-//
-//func (s *PaginateIdx) HasNext() bool {
-//	if s.err != nil { // always true, then .Next() call will return this error
-//		return true
-//	}
-//	if s.limit == 0 { // limit reached
-//		return false
-//	}
-//	if (s.asc && s.i == len(s.arr)) || (!s.asc && s.i == 0) { // end of table
-//		return false
-//	}
-//	if s.to == -1 { // no early-end
-//		return true
-//	}
-//
-//	//Asc:  [from, to) AND from > to
-//	//Desc: [from, to) AND from < to
-//	//cmp := bytes.Compare(s.nextK, s.toPrefix)
-//	//return (s.orderAscend && cmp < 0) || (!s.orderAscend && cmp > 0)
-//	return (s.asc && s.arr[s.i] < s.to) || (!s.asc && s.arr[s.i] > s.to)
-//}
-//func (s *PaginateIdx) Close() {}
-//func (s *PaginateIdx) Next() (int, error) {
-//	select {
-//	case <-s.ctx.Done():
-//		return 0, s.ctx.Err()
-//	default:
-//	}
-//
-//	v := s.arr[s.i]
-//	if s.asc {
-//		s.i++
-//	} else {
-//		s.i--
-//	}
-//	s.limit--
-//	return v, s.err
-//}
-
-//func TestName2(t *testing.T) {
-//	ctx := context.Background()
-//	l := []int{1, 2, 3, 4, 5, 6, 7}
-//	s1, _ := Array2(ctx, l, 2, 4, true, -1)
-//	for s1.HasNext() {
-//		v, _ := s1.Next()
-//		fmt.Printf("s1: %d\n", v)
-//	}
-//	s1, _ = Array2(ctx, l, 4, 2, false, -1)
-//	for s1.HasNext() {
-//		v, _ := s1.Next()
-//		fmt.Printf("s2: %d\n", v)
-//	}
-//}
-
-//type PaginatePairs struct {
-//	from, to int
-//	i        int
-//	asc      bool
-//	limit    int
-//	err      error
-//	ctx      context.Context
-//}
-//
-//func NewPaginatePairs(ctx context.Context, from, to int, limit int) (*PaginatePairs, error) {
-//	s := &PaginatePairs{from: from, to: to, limit: limit, ctx: ctx}
-//	return s.init()
-//}
-//
-//func (s *PaginatePairs) init() (*IntersectU64, error) {
-//	if s.from != -1 { // no initial position
-//		if s.asc {
-//			s.i = 0
-//		} else {
-//			s.i = len(s.arr) - 1
-//		}
-//		return s, nil
-//	}
-//
-//	if s.asc {
-//		for _, v := range s.arr {
-//			if v >= s.from {
-//				break
-//			}
-//			s.i++
-//		}
-//	} else {
-//		// seek exactly to given key or previous one
-//		for _, v := range s.arr {
-//			if v >= s.from {
-//				break
-//			}
-//			s.i++
-//		}
-//	}
-//	return s, nil
-//}
-//
-//func (s *PaginatePairs) HasNext() bool {
-//	if s.err != nil { // always true, then .Next() call will return this error
-//		return true
-//	}
-//	if s.limit == 0 { // limit reached
-//		return false
-//	}
-//	if (s.asc && s.i == len(s.arr)) || (!s.asc && s.i == 0) { // end of table
-//		return false
-//	}
-//	if s.to == -1 { // no early-end
-//		return true
-//	}
-//
-//	//Asc:  [from, to) AND from > to
-//	//Desc: [from, to) AND from < to
-//	//cmp := bytes.Compare(s.nextK, s.toPrefix)
-//	//return (s.orderAscend && cmp < 0) || (!s.orderAscend && cmp > 0)
-//	return (s.asc && s.arr[s.i] < s.to) || (!s.asc && s.arr[s.i] > s.to)
-//}
-//func (s *PaginatePairs) Close() {}
-//func (s *PaginatePairs) Next() (int, error) {
-//	select {
-//	case <-s.ctx.Done():
-//		return 0, s.ctx.Err()
-//	default:
-//	}
-//
-//	v := s.arr[s.i]
-//	if s.asc {
-//		s.i++
-//	} else {
-//		s.i--
-//	}
-//	s.limit--
-//	return v, s.err
-//}
-
-//func TestName2(t *testing.T) {
-//	ctx := context.Background()
-//	l := []int{1, 2, 3, 4, 5, 6, 7}
-//	s1, _ := Array2(ctx, l, 2, 4, true, -1)
-//	for s1.HasNext() {
-//		v, _ := s1.Next()
-//		fmt.Printf("s1: %d\n", v)
-//	}
-//	s1, _ = Array2(ctx, l, 4, 2, false, -1)
-//	for s1.HasNext() {
-//		v, _ := s1.Next()
-//		fmt.Printf("s2: %d\n", v)
-//	}
-//}
 
 // Contraversial use-cases:
 // - peek merge unlimited iterators until result>=PageSize. It require "Stop" primitive and better to be less eager.
