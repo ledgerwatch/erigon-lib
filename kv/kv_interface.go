@@ -20,8 +20,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/VictoriaMetrics/metrics"
+	"github.com/ledgerwatch/erigon-lib/kv/stream"
 )
 
 //Variables Naming:
@@ -319,19 +319,19 @@ type Tx interface {
 	// Range [from, to)
 	// Range(from, nil) means [from, EndOfTable)
 	// Range(nil, to)   means [StartOfTable, to)
-	Range(table string, fromPrefix, toPrefix []byte) (Pairs, error)
+	Range(table string, fromPrefix, toPrefix []byte) (stream.Kv, error)
 	// Stream is like Range, but for requesting huge data (Example: full table scan). Client can't stop it.
-	Stream(table string, fromPrefix, toPrefix []byte) (Pairs, error)
+	Stream(table string, fromPrefix, toPrefix []byte) (stream.Kv, error)
 	// RangeAscend - like Range [from, to) but also allow pass Limit parameters
 	// Limit -1 means Unlimited
-	RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
-	StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
+	RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error)
+	StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error)
 	// RangeDescend - is like Range [from, to), but expecing `from`<`to`
 	// example: RangeDescend("Table", "B", "A", -1)
-	RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
-	StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (Pairs, error)
+	RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error)
+	StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error)
 	// Prefix - is exactly Range(Table, prefix, kv.NextSubtree(prefix))
-	Prefix(table string, prefix []byte) (Pairs, error)
+	Prefix(table string, prefix []byte) (stream.Kv, error)
 
 	// --- High-Level methods: 1request -> 1page of values in response -> send next page request ---
 	// Paginate(table string, fromPrefix, toPrefix []byte) (PairsStream, error)
@@ -459,33 +459,11 @@ type TemporalTx interface {
 	DomainGet(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
 
-	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64, orderAscend bool, limit int) (timestamps U64Stream, err error)
-	IndexStream(name InvertedIdx, k []byte, fromTs, toTs uint64, orderAscend bool, limit int) (timestamps U64Stream, err error)
+	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64, orderAscend bool, limit int) (timestamps stream.U64, err error)
+	IndexStream(name InvertedIdx, k []byte, fromTs, toTs uint64, orderAscend bool, limit int) (timestamps stream.U64, err error)
 }
 
 type TemporalRwDB interface {
 	RwDB
 	TemporalRoDb
 }
-
-// Stream - Iterator-like interface designed for grpc server-side streaming: 1 client request -> much responses from server
-//   - K, V are valid only until next .Next() call (TODO: extend it to whole Tx lifetime?)
-//   - No `Close` method: all streams produced by TemporalTx will be closed inside `tx.Rollback()` (by casting to `kv.Closer`)
-//   - automatically checks cancelation of `ctx` passed to `db.Begin(ctx)`, can skip this
-//     check in loops on stream. Stream has very limited API - user has no way to
-//     terminate it - but user can specify more strict conditions when creating stream (then server knows better when to stop)
-type Stream[K, V any] interface {
-	Next() (K, V, error)
-	HasNext() bool
-}
-type UnaryStream[V any] interface {
-	Next() (V, error)
-	//NextBatch() ([]V, error)
-	HasNext() bool
-}
-type U64Stream interface {
-	UnaryStream[uint64]
-	ToBitmap() (*roaring64.Bitmap, error)
-}
-
-type Pairs Stream[[]byte, []byte]

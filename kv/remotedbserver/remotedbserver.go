@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
+	stream2 "github.com/ledgerwatch/erigon-lib/kv/stream"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
@@ -551,7 +553,7 @@ func (s *KvServer) IndexStream(req *remote.IndexRangeReq, stream remote.KV_Index
 			if err != nil {
 				return err
 			}
-			bm, err := it.ToBitmap()
+			bm, err := it.(bitmapdb.ToBitamp).ToBitmap()
 			if err != nil {
 				return err
 			}
@@ -593,7 +595,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 		if err != nil {
 			return err
 		}
-		bm, err := it.ToBitmap()
+		bm, err := it.(bitmapdb.ToBitmap).ToBitmap()
 		if err != nil {
 			return err
 		}
@@ -616,10 +618,10 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) error {
 	orderAscend, fromPrefix, toPrefix := req.OrderAscend, req.FromPrefix, req.ToPrefix
 	if orderAscend && fromPrefix != nil && toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
-		return fmt.Errorf("tx.Stream: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
+		return fmt.Errorf("tx.Dual: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
 	}
 	if !orderAscend && fromPrefix != nil && toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) <= 0 {
-		return fmt.Errorf("tx.Stream: %x must be lexicographicaly before %x", toPrefix, fromPrefix)
+		return fmt.Errorf("tx.Dual: %x must be lexicographicaly before %x", toPrefix, fromPrefix)
 	}
 
 	var k, v []byte
@@ -628,7 +630,7 @@ func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) e
 		fromPrefix = []byte{}
 	}
 
-	var it kv.Pairs
+	var it stream2.Kv
 	var err error
 	var skipFirst = false
 
@@ -716,7 +718,7 @@ func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pai
 	reply := &remote.Pairs{}
 	var err error
 	if err = s.with(req.TxId, func(tx kv.Tx) error {
-		var it kv.Pairs
+		var it stream2.Kv
 		if req.OrderAscend {
 			it, err = tx.StreamAscend(req.Table, from, req.ToPrefix, limit)
 			if err != nil {

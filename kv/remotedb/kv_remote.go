@@ -11,6 +11,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
+	"github.com/ledgerwatch/erigon-lib/kv/stream"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
@@ -613,7 +614,7 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 	return reply.V, reply.Ok, nil
 }
 
-func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps kv.U64Stream, err error) {
+func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps stream.U64, err error) {
 	//TODO: auto-paginate it
 	const pageSize = 4096
 	req := &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)}
@@ -689,7 +690,7 @@ func (it *idxPaginatedRange) Next() ([]byte, []byte, error) {
 	return nil, nil, nil
 }
 
-func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps kv.U64Stream, err error) {
+func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps stream.U64, err error) {
 	//TODO: maybe add ctx.WithCancel
 	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)})
 	if err != nil {
@@ -702,14 +703,14 @@ func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, lim
 	return it, nil
 }
 
-func (tx *remoteTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
+func (tx *remoteTx) Prefix(table string, prefix []byte) (stream.Kv, error) {
 	nextPrefix, ok := kv.NextSubtree(prefix)
 	if !ok {
 		return tx.Stream(table, prefix, nil)
 	}
 	return tx.Stream(table, prefix, nextPrefix)
 }
-func (tx *remoteTx) streamOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (kv.Pairs, error) {
+func (tx *remoteTx) streamOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (stream.Kv, error) {
 	req := &remote.RangeReq{TxId: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: orderAscend, PageSize: int32(limit)}
 	stream, err := tx.db.remoteKV.Stream(tx.ctx, req)
 	if err != nil {
@@ -720,22 +721,22 @@ func (tx *remoteTx) streamOrderLimit(table string, fromPrefix, toPrefix []byte, 
 	return it, nil
 }
 
-func (tx *remoteTx) Stream(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+func (tx *remoteTx) Stream(table string, fromPrefix, toPrefix []byte) (stream.Kv, error) {
 	return tx.StreamAscend(table, fromPrefix, toPrefix, -1)
 }
-func (tx *remoteTx) StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
+func (tx *remoteTx) StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error) {
 	return tx.streamOrderLimit(table, fromPrefix, toPrefix, true, limit)
 }
-func (tx *remoteTx) StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
+func (tx *remoteTx) StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error) {
 	return tx.streamOrderLimit(table, fromPrefix, toPrefix, false, limit)
 }
-func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
+func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (stream.Kv, error) {
 	return tx.Stream(table, fromPrefix, toPrefix)
 }
-func (tx *remoteTx) RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
+func (tx *remoteTx) RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error) {
 	return tx.StreamAscend(table, fromPrefix, toPrefix, limit)
 }
-func (tx *remoteTx) RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (kv.Pairs, error) {
+func (tx *remoteTx) RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (stream.Kv, error) {
 	return tx.StreamDescend(table, fromPrefix, toPrefix, limit)
 }
 

@@ -35,6 +35,7 @@ import (
 	"github.com/c2h5oh/datasize"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
+	"github.com/ledgerwatch/erigon-lib/kv/stream"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -459,7 +460,7 @@ type InvertedIterator struct {
 
 	roTx       kv.Tx
 	cursor     kv.CursorDupSort
-	efIt       kv.UnaryStream[uint64]
+	efIt       stream.Unary[uint64]
 	indexTable string
 	stack      []ctxItem
 

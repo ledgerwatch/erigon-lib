@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
 )
@@ -35,7 +34,7 @@ func (it *ArrStream[V]) NextBatch() ([]V, error) {
 	return v, nil
 }
 
-func Equal[V comparable](s1, s2 kv.UnaryStream[V]) bool {
+func Equal[V comparable](s1, s2 Unary[V]) bool {
 	for s1.HasNext() && s2.HasNext() {
 		k1, e1 := s1.Next()
 		k2, e2 := s2.Next()
@@ -47,7 +46,7 @@ func Equal[V comparable](s1, s2 kv.UnaryStream[V]) bool {
 	return !s1.HasNext() && !s2.HasNext()
 }
 
-func ExpectEqual[V comparable](t testing.TB, s1, s2 kv.UnaryStream[V]) {
+func ExpectEqual[V comparable](t testing.TB, s1, s2 Unary[V]) {
 	//t.Helper()
 	for s1.HasNext() && s2.HasNext() {
 		k1, e1 := s1.Next()
@@ -74,14 +73,14 @@ func ExpectEqual[V comparable](t testing.TB, s1, s2 kv.UnaryStream[V]) {
 // UnionPairsStream - merge 2 kv.Pairs streams to 1 in lexicographically order
 // 1-st stream has higher priority - when 2 streams return same key
 type UnionPairsStream struct {
-	x, y               kv.Pairs
+	x, y               Kv
 	xHasNext, yHasNext bool
 	xNextK, xNextV     []byte
 	yNextK, yNextV     []byte
 	err                error
 }
 
-func UnionPairs(x, y kv.Pairs) *UnionPairsStream {
+func UnionPairs(x, y Kv) *UnionPairsStream {
 	m := &UnionPairsStream{x: x, y: y}
 	m.advanceX()
 	m.advanceY()
@@ -139,25 +138,32 @@ func (m *UnionPairsStream) ToArray() (keys, values [][]byte, err error) { return
 
 // UnionStream
 type UnionStream[T constraints.Ordered] struct {
-	x, y               kv.UnaryStream[T]
-	xHasNext, yHasNext bool
-	xNextK, yNextK     T
-	err                error
+	x, y           Unary[T]
+	xHas, yHas     bool
+	xNextK, yNextK T
+	limit          int
+	err            error
 }
 
-func Union[T constraints.Ordered](x, y kv.UnaryStream[T]) *UnionStream[T] {
-	m := &UnionStream[T]{x: x, y: y}
+func UnionLimit[T constraints.Ordered](x, y Unary[T], limit int) *UnionStream[T] {
+	m := &UnionStream[T]{x: x, y: y, limit: limit}
 	m.advanceX()
 	m.advanceY()
 	return m
 }
-func (m *UnionStream[T]) HasNext() bool { return m.xHasNext || m.yHasNext }
+func Union[T constraints.Ordered](x, y Unary[T]) *UnionStream[T] {
+	return UnionLimit[T](x, y, -1)
+}
+
+func (m *UnionStream[T]) HasNext() bool {
+	return (m.err != nil || m.xHas || m.yHas) && m.limit != 0
+}
 func (m *UnionStream[T]) advanceX() {
 	if m.err != nil {
 		return
 	}
-	m.xHasNext = m.x.HasNext()
-	if m.xHasNext {
+	m.xHas = m.x.HasNext()
+	if m.xHas {
 		m.xNextK, m.err = m.x.Next()
 	}
 }
@@ -165,8 +171,8 @@ func (m *UnionStream[T]) advanceY() {
 	if m.err != nil {
 		return
 	}
-	m.yHasNext = m.y.HasNext()
-	if m.yHasNext {
+	m.yHas = m.y.HasNext()
+	if m.yHas {
 		m.yNextK, m.err = m.y.Next()
 	}
 }
@@ -174,8 +180,7 @@ func (m *UnionStream[T]) Next() (res T, err error) {
 	if m.err != nil {
 		return res, m.err
 	}
-	if m.xHasNext && m.yHasNext {
-
+	if m.xHas && m.yHas {
 		if m.xNextK < m.yNextK {
 			k, err := m.xNextK, m.err
 			m.advanceX()
@@ -190,7 +195,7 @@ func (m *UnionStream[T]) Next() (res T, err error) {
 		m.advanceY()
 		return k, err
 	}
-	if m.xHasNext {
+	if m.xHas {
 		k, err := m.xNextK, m.err
 		m.advanceX()
 		return k, err
@@ -202,13 +207,13 @@ func (m *UnionStream[T]) Next() (res T, err error) {
 
 // IntersectStream
 type IntersectStream[T constraints.Ordered] struct {
-	x, y               kv.UnaryStream[T]
+	x, y               Unary[T]
 	xHasNext, yHasNext bool
 	xNextK, yNextK     T
 	err                error
 }
 
-func Intersect[T constraints.Ordered](x, y kv.UnaryStream[T]) *IntersectStream[T] {
+func Intersect[T constraints.Ordered](x, y Unary[T]) *IntersectStream[T] {
 	m := &IntersectStream[T]{x: x, y: y}
 	m.advance()
 	return m
@@ -260,7 +265,7 @@ func (m *IntersectStream[T]) Next() (T, error) {
 
 //func (m *IntersectStream[T]) ToArray() (res []T, err error) { return ToArr[T](m) }
 
-func ParisToArray(s kv.Pairs) ([][]byte, [][]byte, error) {
+func ParisToArray(s Kv) ([][]byte, [][]byte, error) {
 	keys, values := make([][]byte, 0), make([][]byte, 0) //nolint
 	for s.HasNext() {
 		k, v, err := s.Next()
@@ -273,7 +278,7 @@ func ParisToArray(s kv.Pairs) ([][]byte, [][]byte, error) {
 	return keys, values, nil
 }
 
-func ToArr[T any](s kv.UnaryStream[T]) ([]T, error) {
+func ToArr[T any](s Unary[T]) ([]T, error) {
 	res := make([]T, 0)
 	for s.HasNext() {
 		k, err := s.Next()
@@ -304,14 +309,14 @@ func (m *PairsWithErrorStream) Next() ([]byte, []byte, error) {
 
 // TransformStream - analog `map` (in terms of map-filter-reduce pattern)
 type TransformStream[K, V any] struct {
-	it        kv.Stream[K, V]
+	it        Dual[K, V]
 	transform func(K, V) (K, V)
 }
 
-func TransformPairs(it kv.Pairs, transform func(k, v []byte) ([]byte, []byte)) *TransformStream[[]byte, []byte] {
+func TransformPairs(it Kv, transform func(k, v []byte) ([]byte, []byte)) *TransformStream[[]byte, []byte] {
 	return &TransformStream[[]byte, []byte]{it: it, transform: transform}
 }
-func Transform[K, V any](it kv.Stream[K, V], transform func(K, V) (K, V)) *TransformStream[K, V] {
+func Transform[K, V any](it Dual[K, V], transform func(K, V) (K, V)) *TransformStream[K, V] {
 	return &TransformStream[K, V]{it: it, transform: transform}
 }
 func (m *TransformStream[K, V]) HasNext() bool { return m.it.HasNext() }
@@ -326,14 +331,14 @@ func (m *TransformStream[K, V]) Next() (K, V, error) {
 
 // FilterStream - analog `map` (in terms of map-filter-reduce pattern)
 type FilterStream[K, V any] struct {
-	it     kv.Stream[K, V]
+	it     Dual[K, V]
 	filter func(K, V) bool
 }
 
-func FilterPairs(it kv.Pairs, filter func(k, v []byte) bool) *FilterStream[[]byte, []byte] {
+func FilterPairs(it Kv, filter func(k, v []byte) bool) *FilterStream[[]byte, []byte] {
 	return &FilterStream[[]byte, []byte]{it: it, filter: filter}
 }
-func Filter[K, V any](it kv.Stream[K, V], filter func(K, V) bool) *FilterStream[K, V] {
+func Filter[K, V any](it Dual[K, V], filter func(K, V) bool) *FilterStream[K, V] {
 	return &FilterStream[K, V]{it: it, filter: filter}
 }
 func (m *FilterStream[K, V]) HasNext() bool { return m.it.HasNext() }

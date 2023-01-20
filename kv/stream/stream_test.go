@@ -23,9 +23,9 @@ func TestIntersect(t *testing.T) {
 // Contraversial use-cases:
 // - peek merge unlimited iterators until result>=PageSize. It require "Stop" primitive and better to be less eager.
 // - get precise range/limit, maybe big
-// Then we have 2 API's: Stream (rename Stream to Stream in kv_interface.go) and Cursor.
+// Then we have 2 API's: Dual (rename Dual to Dual in kv_interface.go) and Cursor.
 // But we want have Cursor+requestBatch operation - to avoid too many network ping-pong.
-// invIdx.Stream() and invIdx.Paginate() (c.NextPage())
+// invIdx.Dual() and invIdx.Paginate() (c.NextPage())
 //
 
 // Cockroach:
@@ -36,9 +36,9 @@ func TestIntersect(t *testing.T) {
 // 2. []Pair; where Pair{k,v []byte}
 
 // Vitess:
-// 1. Exec/Stream methods
+// 1. Exec/Dual methods
 // But has separated class for each RealtionalAlgebra operator: InMemSort.run()/Intersect.run()
-// then operator implementation use hardcoded Exec/Stream method.
+// then operator implementation use hardcoded Exec/Dual method.
 // 2. Pairs has struct:
 //  // A length of -1 means that the field is NULL. While
 //  // reading values, you have to accummulate the length
