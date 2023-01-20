@@ -254,20 +254,6 @@ type EliasFanoIter struct {
 	upperStep uint64
 }
 
-func (efi *EliasFanoIter) seek(seek uint64) (uint64, bool) {
-	//TODO: unoptimal
-	for efi.HasNext() {
-		n, err := efi.Next()
-		if err != nil {
-			panic(err)
-		}
-		if n >= seek {
-			return n, true
-		}
-	}
-	return 0, false
-}
-
 func (efi *EliasFanoIter) HasNext() bool {
 	return efi.idx <= efi.ef.count
 }
