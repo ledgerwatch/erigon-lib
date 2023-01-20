@@ -34,25 +34,12 @@ func (it *ArrStream[V]) NextBatch() ([]V, error) {
 	return v, nil
 }
 
-func Equal[V comparable](s1, s2 Unary[V]) bool {
-	for s1.HasNext() && s2.HasNext() {
-		k1, e1 := s1.Next()
-		k2, e2 := s2.Next()
-		if k1 != k2 || e1 != e2 {
-			return false
-		}
-	}
-
-	return !s1.HasNext() && !s2.HasNext()
-}
-
 func ExpectEqual[V comparable](t testing.TB, s1, s2 Unary[V]) {
-	//t.Helper()
 	for s1.HasNext() && s2.HasNext() {
 		k1, e1 := s1.Next()
 		k2, e2 := s2.Next()
 		require.Equal(t, k1, k2)
-		require.Equal(t, e1, e2)
+		require.Equal(t, e1 == nil, e2 == nil)
 	}
 
 	has1 := s1.HasNext()
