@@ -423,7 +423,7 @@ type ExecutionPayload struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Version       uint32        `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"` // Engine API version
+	Version       uint32        `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"` // v1 - no withdrawals, v2 - with withdrawals
 	ParentHash    *H256         `protobuf:"bytes,2,opt,name=parentHash,proto3" json:"parentHash,omitempty"`
 	Coinbase      *H160         `protobuf:"bytes,3,opt,name=coinbase,proto3" json:"coinbase,omitempty"`
 	StateRoot     *H256         `protobuf:"bytes,4,opt,name=stateRoot,proto3" json:"stateRoot,omitempty"`

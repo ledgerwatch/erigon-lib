@@ -502,7 +502,7 @@ type EnginePayloadAttributes struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Version               uint32              `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"` // Engine API version
+	Version               uint32              `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"` // v1 - no withdrawals, v2 - with withdrawals
 	Timestamp             uint64              `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	PrevRandao            *types.H256         `protobuf:"bytes,3,opt,name=prevRandao,proto3" json:"prevRandao,omitempty"`
 	SuggestedFeeRecipient *types.H160         `protobuf:"bytes,4,opt,name=suggestedFeeRecipient,proto3" json:"suggestedFeeRecipient,omitempty"`
