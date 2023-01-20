@@ -465,7 +465,7 @@ type InvertedIterator struct {
 
 	nextN                       uint64
 	hasNextInDb, hasNextInFiles bool
-	nextErrInDB, extErrInFile   error
+	nextErrInDB, nextErrInFile  error
 
 	res []uint64
 	bm  *roaring64.Bitmap
@@ -643,7 +643,13 @@ func (it *InvertedIterator) advance() {
 }
 
 func (it *InvertedIterator) HasNext() bool {
-	return it.limit != 0 && (it.hasNextInFiles || it.hasNextInDb)
+	if it.nextErrInDB != nil || it.nextErrInFile != nil { // always true, then .Next() call will return this error
+		return true
+	}
+	if it.limit == 0 { // limit reached
+		return false
+	}
+	return it.hasNextInFiles || it.hasNextInDb
 }
 
 func (it *InvertedIterator) Next() (uint64, error) { return it.next(), nil }
