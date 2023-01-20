@@ -247,28 +247,28 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	ctx := context.Background()
 	ic := ii.MakeContext()
 	// Check the iterator ranges first without roTx
-	//for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
-	//	var k [8]byte
-	//	binary.BigEndian.PutUint64(k[:], keyNum)
-	//	it, err := ic.IterateRange(k[:], 0, 976, nil)
-	//	require.NoError(t, err)
-	//	defer it.Close()
-	//	var values []uint64
-	//	for i := keyNum; i < 976; i += keyNum {
-	//		label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
-	//		require.True(t, it.HasNext(), label)
-	//		n, err := it.Next()
-	//		require.NoError(t, err)
-	//		require.Equal(t, i, n, label)
-	//		values = append(values, n)
-	//	}
-	//	require.False(t, it.HasNext())
-	//
-	//	reverseStream, err := ic.iterateRange(k[:], 976, 0, false, -1, nil)
-	//	require.NoError(t, err)
-	//	defer it.Close()
-	//	stream.ExpectEqual[uint64](t, stream.ReverseArray(values), reverseStream)
-	//}
+	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+		var k [8]byte
+		binary.BigEndian.PutUint64(k[:], keyNum)
+		it, err := ic.IterateRange(k[:], 0, 976, nil)
+		require.NoError(t, err)
+		defer it.Close()
+		var values []uint64
+		for i := keyNum; i < 976; i += keyNum {
+			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
+			require.True(t, it.HasNext(), label)
+			n, err := it.Next()
+			require.NoError(t, err)
+			require.Equal(t, i, n, label)
+			values = append(values, n)
+		}
+		require.False(t, it.HasNext())
+
+		reverseStream, err := ic.iterateRange(k[:], 976, 0, false, -1, nil)
+		require.NoError(t, err)
+		defer it.Close()
+		stream.ExpectEqual[uint64](t, stream.ReverseArray(values), reverseStream)
+	}
 	// Now check ranges that require access to DB
 	roTx, err := db.BeginRo(ctx)
 	require.NoError(t, err)
