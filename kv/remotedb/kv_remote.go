@@ -628,55 +628,6 @@ func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limi
 	return bitmapdb.NewBitmapStream(bm), nil
 }
 
-type idxPaginatedRange struct {
-	k            []byte
-	fromTs, toTs int64
-	err          error
-	table        kv.InvertedIdx
-
-	tx                     *remoteTx
-	i                      int
-	currentFrom, currentTo int64
-	currentPage            *roaring64.Bitmap
-	currentPageIt          roaring64.IntIterable64
-}
-
-func (it *idxPaginatedRange) HasNext() bool {
-	if it.err != nil {
-		return true
-	}
-	if it.currentPageIt.HasNext() {
-		return true
-	}
-	if it.currentTo == it.toTs {
-
-	}
-	it.currentFrom = it.currentTo
-	it.currentTo += 4096
-	req := &remote.IndexRangeReq{TxId: it.tx.id, Table: string(it.table), K: it.k, FromTs: it.currentFrom, ToTs: it.currentTo}
-	reply, err := it.tx.db.remoteKV.IndexRange(it.tx.ctx, req)
-	if err != nil {
-		panic(err)
-	}
-	bm := bitmapdb.NewBitmap64()
-	bm.AddMany(reply.Timestamps)
-	it.currentPage = bm
-	it.currentPageIt = bm.Iterator()
-
-	it.currentPageIt.HasNext()
-
-	return it.currentPageIt.HasNext()
-}
-func (it *idxPaginatedRange) Close() {
-}
-func (it *idxPaginatedRange) Next() ([]byte, []byte, error) {
-	if it.err != nil {
-		return nil, nil, it.err
-	}
-	it.i++
-	return nil, nil, nil
-}
-
 func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps stream.U64, err error) {
 	//TODO: maybe add ctx.WithCancel
 	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)})
