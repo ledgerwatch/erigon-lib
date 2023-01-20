@@ -551,9 +551,24 @@ func (it *InvertedIterator) advanceInDb() {
 			it.hasNextInDb = false
 			return
 		}
-		//TODO: Seek to right sub-key
-		if !it.orderAscend {
-			v, _ = it.cursor.LastDup()
+		//Asc:  [from, to) AND from > to
+		//Desc: [from, to) AND from < to
+		var keyBytes [8]byte
+		binary.BigEndian.PutUint64(keyBytes[:], it.startTxNum)
+		if v, err = it.cursor.SeekBothRange(it.key, keyBytes[:]); err != nil {
+			panic(err)
+		}
+		if v == nil {
+			if !it.orderAscend {
+				_, v, _ = it.cursor.PrevDup()
+				if err != nil {
+					panic(err)
+				}
+			}
+			if v == nil {
+				it.hasNextInDb = false
+				return
+			}
 		}
 	} else {
 		if it.orderAscend {
