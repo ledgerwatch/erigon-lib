@@ -691,10 +691,7 @@ type InvertedIndexContext struct {
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
-func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum uint64, roTx kv.Tx) (*InvertedIterator, error) {
-	return ic.iterateRange(key, startTxNum, endTxNum, true, -1, roTx)
-}
-func (ic *InvertedIndexContext) iterateRange(key []byte, startTxNum, endTxNum uint64, orderAscend bool, limit int, roTx kv.Tx) (*InvertedIterator, error) {
+func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum uint64, orderAscend bool, limit int, roTx kv.Tx) (*InvertedIterator, error) {
 	if orderAscend && startTxNum > endTxNum {
 		return nil, fmt.Errorf("startTxNum=%d epected to be lower than endTxNum=%d", startTxNum, endTxNum)
 	}
