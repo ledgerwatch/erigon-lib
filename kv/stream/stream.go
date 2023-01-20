@@ -78,10 +78,10 @@ type UnionPairsStream struct {
 	xHasNext, yHasNext bool
 	xNextK, xNextV     []byte
 	yNextK, yNextV     []byte
-	nextErr            error
+	err                error
 }
 
-func MergePairs(x, y kv.Pairs) *UnionPairsStream {
+func UnionPairs(x, y kv.Pairs) *UnionPairsStream {
 	m := &UnionPairsStream{x: x, y: y}
 	m.advanceX()
 	m.advanceY()
@@ -89,61 +89,118 @@ func MergePairs(x, y kv.Pairs) *UnionPairsStream {
 }
 func (m *UnionPairsStream) HasNext() bool { return m.xHasNext || m.yHasNext }
 func (m *UnionPairsStream) advanceX() {
-	if m.nextErr != nil {
-		m.xNextK, m.xNextV = nil, nil
+	if m.err != nil {
 		return
 	}
 	m.xHasNext = m.x.HasNext()
 	if m.xHasNext {
-		m.xNextK, m.xNextV, m.nextErr = m.x.Next()
+		m.xNextK, m.xNextV, m.err = m.x.Next()
 	}
 }
 func (m *UnionPairsStream) advanceY() {
-	if m.nextErr != nil {
-		m.yNextK, m.yNextV = nil, nil
+	if m.err != nil {
 		return
 	}
 	m.yHasNext = m.y.HasNext()
 	if m.yHasNext {
-		m.yNextK, m.yNextV, m.nextErr = m.y.Next()
+		m.yNextK, m.yNextV, m.err = m.y.Next()
 	}
 }
 func (m *UnionPairsStream) Next() ([]byte, []byte, error) {
-	if m.nextErr != nil {
-		return nil, nil, m.nextErr
-	}
-	if !m.xHasNext && !m.yHasNext {
-		panic(1)
+	if m.err != nil {
+		return nil, nil, m.err
 	}
 	if m.xHasNext && m.yHasNext {
 		cmp := bytes.Compare(m.xNextK, m.yNextK)
 		if cmp < 0 {
-			k, v, err := m.xNextK, m.xNextV, m.nextErr
+			k, v, err := m.xNextK, m.xNextV, m.err
 			m.advanceX()
 			return k, v, err
 		} else if cmp == 0 {
-			k, v, err := m.xNextK, m.xNextV, m.nextErr
+			k, v, err := m.xNextK, m.xNextV, m.err
 			m.advanceX()
 			m.advanceY()
 			return k, v, err
 		}
-		k, v, err := m.yNextK, m.yNextV, m.nextErr
+		k, v, err := m.yNextK, m.yNextV, m.err
 		m.advanceY()
 		return k, v, err
 	}
 	if m.xHasNext {
-		k, v, err := m.xNextK, m.xNextV, m.nextErr
+		k, v, err := m.xNextK, m.xNextV, m.err
 		m.advanceX()
 		return k, v, err
 	}
-	k, v, err := m.yNextK, m.yNextV, m.nextErr
+	k, v, err := m.yNextK, m.yNextV, m.err
 	m.advanceY()
 	return k, v, err
 }
-func (m *UnionPairsStream) ToArray() (keys, values [][]byte, err error) { return ToPairsArr(m) }
+func (m *UnionPairsStream) ToArray() (keys, values [][]byte, err error) { return ParisToArray(m) }
 
-// UnionPairsStream - merge 2 kv.Pairs streams to 1 in lexicographically order
-// 1-st stream has higher priority - when 2 streams return same key
+// UnionStream
+type UnionStream[T constraints.Ordered] struct {
+	x, y               kv.UnaryStream[T]
+	xHasNext, yHasNext bool
+	xNextK, yNextK     T
+	err                error
+}
+
+func Union[T constraints.Ordered](x, y kv.UnaryStream[T]) *UnionStream[T] {
+	m := &UnionStream[T]{x: x, y: y}
+	m.advanceX()
+	m.advanceY()
+	return m
+}
+func (m *UnionStream[T]) HasNext() bool { return m.xHasNext || m.yHasNext }
+func (m *UnionStream[T]) advanceX() {
+	if m.err != nil {
+		return
+	}
+	m.xHasNext = m.x.HasNext()
+	if m.xHasNext {
+		m.xNextK, m.err = m.x.Next()
+	}
+}
+func (m *UnionStream[T]) advanceY() {
+	if m.err != nil {
+		return
+	}
+	m.yHasNext = m.y.HasNext()
+	if m.yHasNext {
+		m.yNextK, m.err = m.y.Next()
+	}
+}
+func (m *UnionStream[T]) Next() (res T, err error) {
+	if m.err != nil {
+		return res, m.err
+	}
+	if m.xHasNext && m.yHasNext {
+
+		if m.xNextK < m.yNextK {
+			k, err := m.xNextK, m.err
+			m.advanceX()
+			return k, err
+		} else if m.xNextK == m.yNextK {
+			k, err := m.xNextK, m.err
+			m.advanceX()
+			m.advanceY()
+			return k, err
+		}
+		k, err := m.yNextK, m.err
+		m.advanceY()
+		return k, err
+	}
+	if m.xHasNext {
+		k, err := m.xNextK, m.err
+		m.advanceX()
+		return k, err
+	}
+	k, err := m.yNextK, m.err
+	m.advanceY()
+	return k, err
+}
+
+// IntersectStream
 type IntersectStream[T constraints.Ordered] struct {
 	x, y               kv.UnaryStream[T]
 	xHasNext, yHasNext bool
@@ -201,11 +258,12 @@ func (m *IntersectStream[T]) Next() (T, error) {
 	return k, err
 }
 
-//func (m *IntersectStream) ToArray() (keys, values [][]byte, err error) { return Naive2Arr(m) }
+//func (m *IntersectStream[T]) ToArray() (res []T, err error) { return ToArr[T](m) }
 
-func ToPairsArr(it kv.Pairs) (keys, values [][]byte, err error) {
-	for it.HasNext() {
-		k, v, err := it.Next()
+func ParisToArray(s kv.Pairs) ([][]byte, [][]byte, error) {
+	keys, values := make([][]byte, 0), make([][]byte, 0) //nolint
+	for s.HasNext() {
+		k, v, err := s.Next()
 		if err != nil {
 			return keys, values, err
 		}
@@ -215,15 +273,16 @@ func ToPairsArr(it kv.Pairs) (keys, values [][]byte, err error) {
 	return keys, values, nil
 }
 
-func ToArr[T any](it kv.UnaryStream[T]) (res []T, err error) {
-	for it.HasNext() {
-		k, err := it.Next()
+func ToArr[T any](s kv.UnaryStream[T]) ([]T, error) {
+	res := make([]T, 0)
+	for s.HasNext() {
+		k, err := s.Next()
 		if err != nil {
-			return res, nil
+			return res, err
 		}
 		res = append(res, k)
 	}
-	return res, err
+	return res, nil
 }
 
 // PairsWithErrorStream - return N, keys and then error

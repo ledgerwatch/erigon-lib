@@ -10,88 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type ArrStream2 struct {
-	arr      []int
-	from, to int
-	i        int
-	asc      bool
-	limit    int
-	err      error
-	ctx      context.Context
-}
-
-func Array2(ctx context.Context, arr []int, from, to int, asc bool, limit int) (kv.UnaryStream[int], error) {
-	s := &ArrStream2{arr: arr, from: from, to: to, asc: asc, limit: limit, ctx: ctx}
-	return s.init()
-}
-
-func (s *ArrStream2) init() (*ArrStream2, error) {
-	if s.from != -1 { // no initial position
-		if s.asc {
-			s.i = 0
-		} else {
-			s.i = len(s.arr) - 1
-		}
-		return s, nil
-	}
-
-	if s.asc {
-		for _, v := range s.arr {
-			if v >= s.from {
-				break
-			}
-			s.i++
-		}
-	} else {
-		// seek exactly to given key or previous one
-		for _, v := range s.arr {
-			if v >= s.from {
-				break
-			}
-			s.i++
-		}
-	}
-	return s, nil
-}
-
-func (s *ArrStream2) HasNext() bool {
-	if s.err != nil { // always true, then .Next() call will return this error
-		return true
-	}
-	if s.limit == 0 { // limit reached
-		return false
-	}
-	if (s.asc && s.i == len(s.arr)) || (!s.asc && s.i == 0) { // end of table
-		return false
-	}
-	if s.to == -1 { // no early-end
-		return true
-	}
-
-	//Asc:  [from, to) AND from > to
-	//Desc: [from, to) AND from < to
-	//cmp := bytes.Compare(s.nextK, s.toPrefix)
-	//return (s.orderAscend && cmp < 0) || (!s.orderAscend && cmp > 0)
-	return (s.asc && s.arr[s.i] < s.to) || (!s.asc && s.arr[s.i] > s.to)
-}
-func (s *ArrStream2) Close() {}
-func (s *ArrStream2) Next() (int, error) {
-	select {
-	case <-s.ctx.Done():
-		return 0, s.ctx.Err()
-	default:
-	}
-
-	v := s.arr[s.i]
-	if s.asc {
-		s.i++
-	} else {
-		s.i--
-	}
-	s.limit--
-	return v, s.err
-}
-
 func TestIntersect(t *testing.T) {
 	s1 := stream.Array[uint64]([]uint64{1, 3, 4, 5, 6, 7})
 	s2 := stream.Array[uint64]([]uint64{2, 3, 7})
@@ -141,7 +59,41 @@ func TestIntersect(t *testing.T) {
 // request (from, N) - merge on client
 // stream (all) - push from server - merge on client
 
-func TestMerge(t *testing.T) {
+func TestUnion(t *testing.T) {
+	t.Run("arrays", func(t *testing.T) {
+		s1 := stream.Array[uint64]([]uint64{1, 3, 4, 5, 6, 7})
+		s2 := stream.Array[uint64]([]uint64{2, 3, 7, 8})
+		s3 := stream.Union[uint64](s1, s2)
+		res, err := stream.ToArr[uint64](s3)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, res)
+	})
+	t.Run("empty left", func(t *testing.T) {
+		s1 := stream.Array[uint64]([]uint64{})
+		s2 := stream.Array[uint64]([]uint64{2, 3, 7, 8})
+		s3 := stream.Union[uint64](s1, s2)
+		res, err := stream.ToArr[uint64](s3)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{2, 3, 7, 8}, res)
+	})
+	t.Run("empty right", func(t *testing.T) {
+		s1 := stream.Array[uint64]([]uint64{1, 3, 4, 5, 6, 7})
+		s2 := stream.Array[uint64]([]uint64{})
+		s3 := stream.Union[uint64](s1, s2)
+		res, err := stream.ToArr[uint64](s3)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{1, 3, 4, 5, 6, 7}, res)
+	})
+	t.Run("empty", func(t *testing.T) {
+		s1 := stream.Array[uint64]([]uint64{})
+		s2 := stream.Array[uint64]([]uint64{})
+		s3 := stream.Union[uint64](s1, s2)
+		res, err := stream.ToArr[uint64](s3)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{}, res)
+	})
+}
+func TestUnionPairs(t *testing.T) {
 	db := memdb.NewTestDB(t)
 	ctx := context.Background()
 	t.Run("simple", func(t *testing.T) {
@@ -155,7 +107,7 @@ func TestMerge(t *testing.T) {
 		_ = tx.Put(kv.PlainState, []byte{3}, []byte{9})
 		it, _ := tx.Stream(kv.AccountsHistory, nil, nil)
 		it2, _ := tx.Stream(kv.PlainState, nil, nil)
-		keys, values, err := stream.MergePairs(it, it2).ToArray()
+		keys, values, err := stream.UnionPairs(it, it2).ToArray()
 		require.NoError(err)
 		require.Equal([][]byte{{1}, {2}, {3}, {4}}, keys)
 		require.Equal([][]byte{{1}, {9}, {1}, {1}}, values)
@@ -168,7 +120,7 @@ func TestMerge(t *testing.T) {
 		_ = tx.Put(kv.PlainState, []byte{3}, []byte{9})
 		it, _ := tx.Stream(kv.AccountsHistory, nil, nil)
 		it2, _ := tx.Stream(kv.PlainState, nil, nil)
-		keys, _, err := stream.MergePairs(it, it2).ToArray()
+		keys, _, err := stream.UnionPairs(it, it2).ToArray()
 		require.NoError(err)
 		require.Equal([][]byte{{2}, {3}}, keys)
 	})
@@ -181,7 +133,7 @@ func TestMerge(t *testing.T) {
 		_ = tx.Put(kv.AccountsHistory, []byte{4}, []byte{1})
 		it, _ := tx.Stream(kv.AccountsHistory, nil, nil)
 		it2, _ := tx.Stream(kv.PlainState, nil, nil)
-		keys, _, err := stream.MergePairs(it, it2).ToArray()
+		keys, _, err := stream.UnionPairs(it, it2).ToArray()
 		require.NoError(err)
 		require.Equal([][]byte{{1}, {3}, {4}}, keys)
 	})
@@ -191,7 +143,7 @@ func TestMerge(t *testing.T) {
 		defer tx.Rollback()
 		it, _ := tx.Stream(kv.AccountsHistory, nil, nil)
 		it2, _ := tx.Stream(kv.PlainState, nil, nil)
-		m := stream.MergePairs(it, it2)
+		m := stream.UnionPairs(it, it2)
 		require.False(m.HasNext())
 	})
 	t.Run("error handling", func(t *testing.T) {
@@ -200,7 +152,7 @@ func TestMerge(t *testing.T) {
 		defer tx.Rollback()
 		it := stream.PairsWithError(10)
 		it2 := stream.PairsWithError(12)
-		keys, _, err := stream.MergePairs(it, it2).ToArray()
+		keys, _, err := stream.UnionPairs(it, it2).ToArray()
 		require.Equal("expected error at iteration: 10", err.Error())
 		require.Equal(10, len(keys))
 	})
