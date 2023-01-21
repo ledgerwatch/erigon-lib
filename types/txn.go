@@ -121,6 +121,7 @@ type TxSlot struct {
 	Creation       bool     // Set to true if "To" field of the transaction is not set
 	Type           byte     // Transaction type
 	Size           uint32   // Size of the payload
+	Blobs          int      // Set to the # of blobs contained by the transaction
 }
 
 const (
@@ -501,6 +502,7 @@ func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, se
 	slot.DataNonZeroLen = tx.dataNonZeroLen
 	slot.AlAddrCount = tx.accessListAddressCount
 	slot.AlStorCount = tx.accessListKeyCount
+	slot.Blobs = tx.numBlobHashes
 
 	err := tx.VerifyBlobs(payload)
 	if err != nil {
