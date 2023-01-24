@@ -129,22 +129,18 @@ type UnionStream[T constraints.Ordered] struct {
 	x, y           Unary[T]
 	xHas, yHas     bool
 	xNextK, yNextK T
-	limit          int
 	err            error
 }
 
-func UnionLimit[T constraints.Ordered](x, y Unary[T], limit int) *UnionStream[T] {
-	m := &UnionStream[T]{x: x, y: y, limit: limit}
+func Union[T constraints.Ordered](x, y Unary[T]) *UnionStream[T] {
+	m := &UnionStream[T]{x: x, y: y}
 	m.advanceX()
 	m.advanceY()
 	return m
 }
-func Union[T constraints.Ordered](x, y Unary[T]) *UnionStream[T] {
-	return UnionLimit[T](x, y, -1)
-}
 
 func (m *UnionStream[T]) HasNext() bool {
-	return (m.err != nil || m.xHas || m.yHas) && m.limit != 0
+	return m.err != nil || m.xHas || m.yHas
 }
 func (m *UnionStream[T]) advanceX() {
 	if m.err != nil {
