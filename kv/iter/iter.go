@@ -34,7 +34,12 @@ func (it *ArrStream[V]) NextBatch() ([]V, error) {
 	return v, nil
 }
 
-func Range[T constraints.Integer](from, to T) *RangeIter[T] { return &RangeIter[T]{i: from, to: to} }
+func Range[T constraints.Integer](from, to T) *RangeIter[T] {
+	if from == to {
+		to++
+	}
+	return &RangeIter[T]{i: from, to: to}
+}
 
 type RangeIter[T constraints.Integer] struct {
 	i, to T
