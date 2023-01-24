@@ -34,6 +34,20 @@ func (it *ArrStream[V]) NextBatch() ([]V, error) {
 	return v, nil
 }
 
+func Range[T constraints.Integer](from, to T) *RangeIter[T] { return &RangeIter[T]{i: from, to: to} }
+
+type RangeIter[T constraints.Integer] struct {
+	i, to T
+}
+
+func (it *RangeIter[T]) HasNext() bool { return it.i < it.to }
+func (it *RangeIter[T]) Close()        {}
+func (it *RangeIter[T]) Next() (T, error) {
+	v := it.i
+	it.i++
+	return v, nil
+}
+
 func ExpectEqual[V comparable](tb testing.TB, s1, s2 Unary[V]) {
 	tb.Helper()
 	for s1.HasNext() && s2.HasNext() {

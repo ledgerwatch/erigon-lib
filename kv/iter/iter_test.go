@@ -143,3 +143,18 @@ func TestIntersect(t *testing.T) {
 		require.Equal(t, []uint64{}, res)
 	})
 }
+
+func TestRange(t *testing.T) {
+	t.Run("range", func(t *testing.T) {
+		s1 := iter.Range[uint64](1, 4)
+		res, err := iter.ToArr[uint64](s1)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{1, 2, 3}, res)
+	})
+	t.Run("empty", func(t *testing.T) {
+		s1 := iter.Range[uint64](1, 1)
+		res, err := iter.ToArr[uint64](s1)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{1}, res)
+	})
+}
