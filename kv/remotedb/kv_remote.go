@@ -625,6 +625,15 @@ func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limi
 	}), nil
 }
 
+func (tx *remoteTx) Prefix(table string, prefix []byte) (iter.KV, error) {
+	nextPrefix, ok := kv.NextSubtree(prefix)
+	if !ok {
+		return tx.Range(table, prefix, nil)
+	}
+	return tx.Range(table, prefix, nextPrefix)
+}
+
+/*
 func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps iter.U64, err error) {
 	//TODO: maybe add ctx.WithCancel
 	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)})
@@ -636,14 +645,6 @@ func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, lim
 	}
 	tx.streams = append(tx.streams, it)
 	return it, nil
-}
-
-func (tx *remoteTx) Prefix(table string, prefix []byte) (iter.KV, error) {
-	nextPrefix, ok := kv.NextSubtree(prefix)
-	if !ok {
-		return tx.Range(table, prefix, nil)
-	}
-	return tx.Range(table, prefix, nextPrefix)
 }
 
 /*
