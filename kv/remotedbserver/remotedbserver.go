@@ -602,6 +602,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 				return err
 			}
 			reply.Timestamps = append(reply.Timestamps, v)
+			limit--
 		}
 		if len(reply.Timestamps) == PageSizeLimit && it.HasNext() {
 			next, err := it.Next()
