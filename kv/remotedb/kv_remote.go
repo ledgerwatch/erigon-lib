@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
-	"io"
 	"runtime"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
@@ -690,6 +687,7 @@ func (tx *remoteTx) RangeDescend(table string, fromPrefix, toPrefix []byte, limi
 	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, order.Desc, limit)
 }
 
+/*
 type grpcStream[Msg any] interface {
 	Recv() (Msg, error)
 	CloseSend() error
@@ -804,3 +802,4 @@ func (it *grpc2UnaryStream[Msg, Res]) Next() (Res, error) {
 	it.i++
 	return v, nil
 }
+*/
