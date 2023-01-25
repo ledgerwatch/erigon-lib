@@ -615,7 +615,7 @@ func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, 
 }
 
 func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps iter.U64, err error) {
-	return PaginatedArray[uint64](func(pageToken string) (arr []uint64, nextPageToken string, err error) {
+	return iter.Paginated[uint64](func(pageToken string) (arr []uint64, nextPageToken string, err error) {
 		req := &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), PageSize: int32(limit)}
 		reply, err := tx.db.remoteKV.IndexRange(tx.ctx, req)
 		if err != nil {
@@ -623,39 +623,6 @@ func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limi
 		}
 		return reply.Timestamps, reply.NextPageToken, err
 	}), nil
-}
-
-type nextPageF[T any] func(pageToken string) (arr []T, nextPageToken string, err error)
-type PaginatedArr[T any] struct {
-	arr           []T
-	i             int
-	err           error
-	nextPage      nextPageF[T]
-	nextPageToken string
-	initialized   bool
-}
-
-func PaginatedArray[T any](f nextPageF[T]) *PaginatedArr[T] { return &PaginatedArr[T]{nextPage: f} }
-func (it *PaginatedArr[T]) HasNext() bool {
-	if it.err != nil || it.i < len(it.arr) {
-		return true
-	}
-	if it.initialized && it.nextPageToken == "" {
-		return false
-	}
-	it.initialized = true
-	it.i = 0
-	it.arr, it.nextPageToken, it.err = it.nextPage(it.nextPageToken)
-	return it.err != nil || it.i < len(it.arr)
-}
-func (it *PaginatedArr[T]) Close() {}
-func (it *PaginatedArr[T]) Next() (v T, err error) {
-	if it.err != nil {
-		return v, it.err
-	}
-	v = it.arr[it.i]
-	it.i++
-	return v, nil
 }
 
 func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps iter.U64, err error) {

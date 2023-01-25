@@ -358,3 +358,36 @@ func (m *FilterStream[K, V]) Next() (k K, v V, err error) {
 	}
 	return k, v, nil
 }
+
+type NextPageF[T any] func(pageToken string) (arr []T, nextPageToken string, err error)
+type PaginatedIter[T any] struct {
+	arr           []T
+	i             int
+	err           error
+	nextPage      NextPageF[T]
+	nextPageToken string
+	initialized   bool
+}
+
+func Paginated[T any](f NextPageF[T]) *PaginatedIter[T] { return &PaginatedIter[T]{nextPage: f} }
+func (it *PaginatedIter[T]) HasNext() bool {
+	if it.err != nil || it.i < len(it.arr) {
+		return true
+	}
+	if it.initialized && it.nextPageToken == "" {
+		return false
+	}
+	it.initialized = true
+	it.i = 0
+	it.arr, it.nextPageToken, it.err = it.nextPage(it.nextPageToken)
+	return it.err != nil || it.i < len(it.arr)
+}
+func (it *PaginatedIter[T]) Close() {}
+func (it *PaginatedIter[T]) Next() (v T, err error) {
+	if it.err != nil {
+		return v, it.err
+	}
+	v = it.arr[it.i]
+	it.i++
+	return v, nil
+}
