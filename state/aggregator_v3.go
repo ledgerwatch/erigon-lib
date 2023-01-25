@@ -74,6 +74,7 @@ func NewAggregator22(ctx context.Context, dir, tmpdir string, aggregationStep ui
 }
 
 func (a *AggregatorV3) ReopenFiles() error {
+	fmt.Printf("repoen files: %s\n", dbg.Stack())
 	dir := a.dir
 	aggregationStep := a.aggregationStep
 	var err error
