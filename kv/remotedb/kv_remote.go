@@ -645,16 +645,8 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (iter.KV, error) {
 	}
 	return tx.Range(table, prefix, nextPrefix)
 }
-func (tx *remoteTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error) {
-	return iter.PaginateKV(func(pageToken string) (keys [][]byte, values [][]byte, nextPageToken string, err error) {
-		req := &remote.RangeReq{TxId: tx.id, Table: string(table), FromPrefix: fromPrefix, ToPrefix: toPrefix, PageSize: int32(limit)}
-		reply, err := tx.db.remoteKV.Range(tx.ctx, req)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		return reply.Keys, reply.Values, reply.NextPageToken, nil
-	}), nil
-}
+
+/*
 func (tx *remoteTx) streamOrderLimit(table string, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error) {
 	req := &remote.RangeReq{TxId: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: bool(asc), PageSize: int32(limit)}
 	stream, err := tx.db.remoteKV.Stream(tx.ctx, req)
@@ -674,6 +666,18 @@ func (tx *remoteTx) StreamAscend(table string, fromPrefix, toPrefix []byte, limi
 }
 func (tx *remoteTx) StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
 	return tx.streamOrderLimit(table, fromPrefix, toPrefix, false, limit)
+}
+*/
+
+func (tx *remoteTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error) {
+	return iter.PaginateKV(func(pageToken string) (keys [][]byte, values [][]byte, nextPageToken string, err error) {
+		req := &remote.RangeReq{TxId: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, PageSize: int32(limit)}
+		reply, err := tx.db.remoteKV.Range(tx.ctx, req)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return reply.Keys, reply.Values, reply.NextPageToken, nil
+	}), nil
 }
 func (tx *remoteTx) Range(table string, fromPrefix, toPrefix []byte) (iter.KV, error) {
 	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, order.Asc, -1)
