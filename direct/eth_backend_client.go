@@ -58,17 +58,8 @@ func (s *EthBackendClientDirect) EngineForkChoiceUpdated(ctx context.Context, in
 	return s.server.EngineForkChoiceUpdated(ctx, in)
 }
 
-<<<<<<< HEAD
 func (s *EthBackendClientDirect) EngineGetPayload(ctx context.Context, in *remote.EngineGetPayloadRequest, opts ...grpc.CallOption) (*remote.EngineGetPayloadResponse, error) {
 	return s.server.EngineGetPayload(ctx, in)
-=======
-func (s *EthBackendClientDirect) EngineNewPayloadV3(ctx context.Context, in *types.ExecutionPayloadV3, opts ...grpc.CallOption) (*remote.EnginePayloadStatus, error) {
-	return s.server.EngineNewPayloadV3(ctx, in)
-}
-
-func (s *EthBackendClientDirect) EngineForkChoiceUpdatedV1(ctx context.Context, in *remote.EngineForkChoiceUpdatedRequest, opts ...grpc.CallOption) (*remote.EngineForkChoiceUpdatedReply, error) {
-	return s.server.EngineForkChoiceUpdatedV1(ctx, in)
->>>>>>> 9a6e6a55 (add updated ethbackend protos)
 }
 
 func (s *EthBackendClientDirect) EngineGetPayloadBodiesByHashV1(ctx context.Context, in *remote.EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*remote.EngineGetPayloadBodiesV1Response, error) {
@@ -77,10 +68,6 @@ func (s *EthBackendClientDirect) EngineGetPayloadBodiesByHashV1(ctx context.Cont
 
 func (s *EthBackendClientDirect) EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *remote.EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*remote.EngineGetPayloadBodiesV1Response, error) {
 	return s.server.EngineGetPayloadBodiesByRangeV1(ctx, in)
-}
-
-func (s *EthBackendClientDirect) EngineGetPayloadV3(ctx context.Context, in *remote.EngineGetPayloadRequest, opts ...grpc.CallOption) (*types.ExecutionPayloadV3, error) {
-	return s.server.EngineGetPayloadV3(ctx, in)
 }
 
 func (s *EthBackendClientDirect) EngineGetBlobsBundleV1(ctx context.Context, in *remote.EngineGetBlobsBundleRequest, opts ...grpc.CallOption) (*types.BlobsBundleV1, error) {
