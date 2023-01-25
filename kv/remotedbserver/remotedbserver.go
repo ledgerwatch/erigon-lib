@@ -17,7 +17,6 @@
 package remotedbserver
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -27,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
@@ -36,7 +34,6 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
@@ -541,6 +538,8 @@ func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (r
 	}
 	return reply, nil
 }
+
+/*
 func (s *KvServer) IndexStream(req *remote.IndexRangeReq, stream remote.KV_IndexStreamServer) error {
 	const step = 4096 // make sure `s.with` has limited time
 	var last int
@@ -570,11 +569,13 @@ func (s *KvServer) IndexStream(req *remote.IndexRangeReq, stream remote.KV_Index
 	return nil
 }
 
+*/
+
 const PageSizeLimit = 4 * 4096
 
 func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*remote.IndexRangeReply, error) {
 	reply := &remote.IndexRangeReply{}
-	from := int(req.FromTs)
+	from, limit := int(req.FromTs), int(req.Limit)
 	if req.PageToken != "" {
 		var pagination remote.IndexPagination
 		if err := unmarshalPagination(req.PageToken, &pagination); err != nil {
@@ -582,9 +583,8 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 		}
 		from = int(pagination.NextTimeStamp)
 	}
-	limit := int(req.PageSize)
-	if limit <= 0 || limit > PageSizeLimit {
-		limit = PageSizeLimit
+	if req.PageSize <= 0 || req.PageSize > PageSizeLimit {
+		req.PageSize = PageSizeLimit
 	}
 
 	if err := s.with(req.TxId, func(tx kv.Tx) error {
@@ -608,7 +608,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 			if err != nil {
 				return err
 			}
-			reply.NextPageToken, err = marshalPagination(&remote.IndexPagination{NextTimeStamp: int64(next)})
+			reply.NextPageToken, err = marshalPagination(&remote.IndexPagination{NextTimeStamp: int64(next), Limit: int64(limit)})
 			if err != nil {
 				return err
 			}
@@ -620,6 +620,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 	return reply, nil
 }
 
+/*
 func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) error {
 	orderAscend, fromPrefix, toPrefix := req.OrderAscend, req.FromPrefix, req.ToPrefix
 	if orderAscend && fromPrefix != nil && toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
@@ -703,19 +704,19 @@ func (s *KvServer) Stream(req *remote.RangeReq, stream remote.KV_StreamServer) e
 	}
 	return nil
 }
+*/
 
 func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pairs, error) {
-	from := req.FromPrefix
+	from, limit := req.FromPrefix, int(req.Limit)
 	if req.PageToken != "" {
 		var pagination remote.ParisPagination
 		if err := unmarshalPagination(req.PageToken, &pagination); err != nil {
 			return nil, err
 		}
-		from = pagination.NextKey
+		from, limit = pagination.NextKey, int(pagination.Limit)
 	}
-	limit := int(req.PageSize)
-	if limit == -1 || limit == 0 || limit > PageSizeLimit {
-		limit = PageSizeLimit
+	if req.PageSize <= 0 || req.PageSize > PageSizeLimit {
+		req.PageSize = PageSizeLimit
 	}
 
 	reply := &remote.Pairs{}
@@ -740,13 +741,14 @@ func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pai
 			}
 			reply.Keys = append(reply.Keys, k)
 			reply.Values = append(reply.Values, v)
+			limit--
 		}
 		if len(reply.Keys) == PageSizeLimit && it.HasNext() {
 			nextK, _, err := it.Next()
 			if err != nil {
 				return err
 			}
-			reply.NextPageToken, err = marshalPagination(&remote.ParisPagination{NextKey: nextK})
+			reply.NextPageToken, err = marshalPagination(&remote.ParisPagination{NextKey: nextK, Limit: int64(limit)})
 			if err != nil {
 				return err
 			}
