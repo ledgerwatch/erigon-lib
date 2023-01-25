@@ -583,7 +583,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 		from = int(pagination.NextTimeStamp)
 	}
 	limit := int(req.PageSize)
-	if limit == -1 || limit == 0 || limit > PageSizeLimit {
+	if limit <= 0 || limit > PageSizeLimit {
 		limit = PageSizeLimit
 	}
 
@@ -596,18 +596,22 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 		if err != nil {
 			return err
 		}
-		bm, err := it.(bitmapdb.ToBitmap).ToBitmap()
-		if err != nil {
-			return err
-		}
-		timestamps := bm.ToArray()
-
-		if len(timestamps) == PageSizeLimit {
-			reply.NextPageToken, err = marshalPagination(&remote.IndexPagination{NextTimeStamp: int64(timestamps[len(timestamps)-1])})
+		for it.HasNext() {
+			v, err := it.Next()
 			if err != nil {
 				return err
 			}
-			reply.Timestamps = timestamps[:len(reply.Timestamps)-1]
+			reply.Timestamps = append(reply.Timestamps, v)
+		}
+		if len(reply.Timestamps) == PageSizeLimit && it.HasNext() {
+			next, err := it.Next()
+			if err != nil {
+				return err
+			}
+			reply.NextPageToken, err = marshalPagination(&remote.IndexPagination{NextTimeStamp: int64(next)})
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
@@ -738,12 +742,14 @@ func (s *KvServer) Range(ctx context.Context, req *remote.RangeReq) (*remote.Pai
 			reply.Values = append(reply.Values, v)
 		}
 		if len(reply.Keys) == PageSizeLimit && it.HasNext() {
-			reply.NextPageToken, err = marshalPagination(&remote.ParisPagination{NextKey: reply.Keys[len(reply.Keys)-1]})
+			nextK, _, err := it.Next()
 			if err != nil {
 				return err
 			}
-			reply.Keys = reply.Keys[:len(reply.Keys)-1]
-			reply.Values = reply.Values[:len(reply.Values)-1]
+			reply.NextPageToken, err = marshalPagination(&remote.ParisPagination{NextKey: nextK})
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {

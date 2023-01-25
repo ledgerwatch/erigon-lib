@@ -201,14 +201,15 @@ func TestRemoteKvVersion(t *testing.T) {
 	require.True(t, a.EnsureVersionCompatibility())
 }
 
-func TestRemoteKvStream(t *testing.T) {
+func TestRemoteKvRange(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fix me on win please")
 	}
 	ctx, writeDB := context.Background(), memdb.NewTestDB(t)
 	grpcServer, conn := grpc.NewServer(), bufconn.Listen(1024*1024)
 	go func() {
-		remote.RegisterKVServer(grpcServer, remotedbserver.NewKvServer(ctx, writeDB, nil, nil))
+		kvServer := remotedbserver.NewKvServer(ctx, writeDB, nil, nil)
+		remote.RegisterKVServer(grpcServer, kvServer)
 		if err := grpcServer.Serve(conn); err != nil {
 			log.Error("private RPC server fail", "err", err)
 		}
