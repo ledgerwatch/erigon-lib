@@ -28,6 +28,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -1158,20 +1159,20 @@ func (a *AggregatorV3) EnableMadvNormal() *AggregatorV3 {
 	return a
 }
 
-func (ac *AggregatorV3Context) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, orderAscend bool, limit int, roTx kv.Tx) (*InvertedIterator, error) {
-	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, orderAscend, limit, roTx)
+func (ac *AggregatorV3Context) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, asc order.By, limit int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, asc, limit, roTx)
 }
 
-func (ac *AggregatorV3Context) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, orderAscend bool, limit int, roTx kv.Tx) (*InvertedIterator, error) {
-	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, orderAscend, limit, roTx)
+func (ac *AggregatorV3Context) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, asc order.By, limit int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, asc, limit, roTx)
 }
 
-func (ac *AggregatorV3Context) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, orderAscend bool, limit int, roTx kv.Tx) (*InvertedIterator, error) {
-	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, orderAscend, limit, roTx)
+func (ac *AggregatorV3Context) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, asc order.By, limit int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, asc, limit, roTx)
 }
 
-func (ac *AggregatorV3Context) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, orderAscend bool, limit int, roTx kv.Tx) (*InvertedIterator, error) {
-	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, orderAscend, limit, roTx)
+func (ac *AggregatorV3Context) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, asc order.By, limit int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, asc, limit, roTx)
 }
 
 func (ac *AggregatorV3Context) ReadAccountDataNoStateWithRecent(addr []byte, txNum uint64) ([]byte, bool, error) {
