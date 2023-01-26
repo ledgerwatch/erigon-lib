@@ -581,7 +581,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 		if err := unmarshalPagination(req.PageToken, &pagination); err != nil {
 			return nil, err
 		}
-		from = int(pagination.NextTimeStamp)
+		from, limit = int(pagination.NextTimeStamp), int(pagination.Limit)
 	}
 	if req.PageSize <= 0 || req.PageSize > PageSizeLimit {
 		req.PageSize = PageSizeLimit
