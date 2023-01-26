@@ -36,6 +36,7 @@ import (
 	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -454,9 +455,9 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 // InvertedIterator must be closed after use to prevent leaking of resources like cursor
 type InvertedIterator struct {
 	key                  []byte
-	startTxNum, endTxNum uint64
+	startTxNum, endTxNum int
 	limit                int
-	orderAscend          bool
+	orderAscend          order.By
 
 	roTx       kv.Tx
 	cursor     kv.CursorDupSort
@@ -499,20 +500,22 @@ func (it *InvertedIterator) advanceInFiles() {
 				if it.orderAscend {
 					it.efIt = ef.Iterator()
 				} else {
-					it.efIt = ef.ReverseIterator(it.startTxNum)
+					it.efIt = ef.ReverseIterator()
 				}
 			}
 		}
 
 		//TODO: add seek method
+		//Asc:  [from, to) AND from > to
+		//Desc: [from, to) AND from < to
 		if it.orderAscend {
 			for it.efIt.HasNext() {
 				n, _ := it.efIt.Next()
-				if n >= it.endTxNum {
+				if it.endTxNum >= 0 && int(n) >= it.endTxNum {
 					it.hasNextInFiles = false
 					return
 				}
-				if n >= it.startTxNum {
+				if int(n) >= it.startTxNum {
 					it.hasNextInFiles = true
 					it.nextN = n
 					return
@@ -521,11 +524,11 @@ func (it *InvertedIterator) advanceInFiles() {
 		} else {
 			for it.efIt.HasNext() {
 				n, _ := it.efIt.Next()
-				if n <= it.endTxNum {
+				if int(n) <= it.endTxNum {
 					it.hasNextInFiles = false
 					return
 				}
-				if n <= it.startTxNum {
+				if it.startTxNum >= 0 && int(n) <= it.startTxNum {
 					it.hasNextInFiles = true
 					it.nextN = n
 					return
@@ -555,20 +558,35 @@ func (it *InvertedIterator) advanceInDb() {
 		//Asc:  [from, to) AND from > to
 		//Desc: [from, to) AND from < to
 		var keyBytes [8]byte
-		binary.BigEndian.PutUint64(keyBytes[:], it.startTxNum)
-		if v, err = it.cursor.SeekBothRange(it.key, keyBytes[:]); err != nil {
-			panic(err)
-		}
-		if v == nil {
-			if !it.orderAscend {
-				_, v, _ = it.cursor.PrevDup()
+		if it.startTxNum < 0 {
+			if it.orderAscend {
+				_, v, err = it.cursor.First()
+				if err != nil {
+					// TODO pass error properly around
+					panic(err)
+				}
+			} else {
+				_, v, err = it.cursor.Last()
 				if err != nil {
 					panic(err)
 				}
 			}
+		} else {
+			binary.BigEndian.PutUint64(keyBytes[:], uint64(it.startTxNum))
+			if v, err = it.cursor.SeekBothRange(it.key, keyBytes[:]); err != nil {
+				panic(err)
+			}
 			if v == nil {
-				it.hasNextInDb = false
-				return
+				if !it.orderAscend {
+					_, v, _ = it.cursor.PrevDup()
+					if err != nil {
+						panic(err)
+					}
+				}
+				if v == nil {
+					it.hasNextInDb = false
+					return
+				}
 			}
 		}
 	} else {
@@ -586,6 +604,8 @@ func (it *InvertedIterator) advanceInDb() {
 		}
 	}
 
+	//Asc:  [from, to) AND from > to
+	//Desc: [from, to) AND from < to
 	if it.orderAscend {
 		for ; v != nil; _, v, err = it.cursor.NextDup() {
 			if err != nil {
@@ -593,11 +613,11 @@ func (it *InvertedIterator) advanceInDb() {
 				panic(err)
 			}
 			n := binary.BigEndian.Uint64(v)
-			if n >= it.endTxNum {
+			if it.endTxNum >= 0 && int(n) >= it.endTxNum {
 				it.hasNextInDb = false
 				return
 			}
-			if n >= it.startTxNum {
+			if int(n) >= it.startTxNum {
 				it.hasNextInDb = true
 				it.nextN = n
 				return
@@ -610,11 +630,11 @@ func (it *InvertedIterator) advanceInDb() {
 				panic(err)
 			}
 			n := binary.BigEndian.Uint64(v)
-			if n <= it.endTxNum {
+			if int(n) <= it.endTxNum {
 				it.hasNextInDb = false
 				return
 			}
-			if n <= it.startTxNum {
+			if it.startTxNum >= 0 && int(n) <= it.startTxNum {
 				it.hasNextInDb = true
 				it.nextN = n
 				return
@@ -692,11 +712,11 @@ type InvertedIndexContext struct {
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
-func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum uint64, orderAscend bool, limit int, roTx kv.Tx) (*InvertedIterator, error) {
-	if orderAscend && startTxNum > endTxNum {
+func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (*InvertedIterator, error) {
+	if asc && (startTxNum >= 0 && endTxNum >= 0) && startTxNum > endTxNum {
 		return nil, fmt.Errorf("startTxNum=%d epected to be lower than endTxNum=%d", startTxNum, endTxNum)
 	}
-	if !orderAscend && startTxNum < endTxNum {
+	if !asc && (startTxNum >= 0 && endTxNum >= 0) && startTxNum < endTxNum {
 		return nil, fmt.Errorf("startTxNum=%d epected to be bigger than endTxNum=%d", startTxNum, endTxNum)
 	}
 
@@ -707,37 +727,67 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum ui
 		indexTable:  ic.ii.indexTable,
 		roTx:        roTx,
 		hasNextInDb: true,
-		orderAscend: orderAscend,
+		orderAscend: asc,
 		limit:       limit,
 	}
-	if orderAscend {
+	if asc {
 		var search ctxItem
 		search.startTxNum = 0
-		search.endTxNum = startTxNum
-		ic.files.DescendGreaterThan(search, func(item ctxItem) bool {
-			if item.startTxNum < endTxNum {
+		if startTxNum < 0 {
+			search.endTxNum = 0
+		} else {
+			search.endTxNum = uint64(startTxNum)
+		}
+		if endTxNum < 0 {
+			ic.files.DescendGreaterThan(search, func(item ctxItem) bool {
 				it.stack = append(it.stack, item)
 				it.hasNextInFiles = true
-			}
-			if item.endTxNum >= endTxNum {
-				it.hasNextInDb = false
-			}
-			return true
-		})
+				if int(item.endTxNum) >= endTxNum {
+					it.hasNextInDb = false
+				}
+				return true
+			})
+		} else {
+			ic.files.DescendGreaterThan(search, func(item ctxItem) bool {
+				if int(item.startTxNum) < endTxNum {
+					it.stack = append(it.stack, item)
+					it.hasNextInFiles = true
+				}
+				if int(item.endTxNum) >= endTxNum {
+					it.hasNextInDb = false
+				}
+				return true
+			})
+		}
 	} else {
 		var search ctxItem
 		search.startTxNum = 0
-		search.endTxNum = startTxNum
-		ic.files.AscendLessThan(search, func(item ctxItem) bool {
-			if item.startTxNum < startTxNum {
+		if startTxNum < 0 {
+			search.endTxNum = 0
+		} else {
+			search.endTxNum = uint64(startTxNum)
+		}
+		if endTxNum < 0 {
+			ic.files.AscendLessThan(search, func(item ctxItem) bool {
 				it.stack = append(it.stack, item)
 				it.hasNextInFiles = true
-			}
-			if item.endTxNum >= startTxNum {
-				it.hasNextInDb = false
-			}
-			return true
-		})
+				if int(item.endTxNum) >= startTxNum {
+					it.hasNextInDb = false
+				}
+				return true
+			})
+		} else {
+			ic.files.AscendLessThan(search, func(item ctxItem) bool {
+				if int(item.startTxNum) < startTxNum {
+					it.stack = append(it.stack, item)
+					it.hasNextInFiles = true
+				}
+				if int(item.endTxNum) >= startTxNum {
+					it.hasNextInDb = false
+				}
+				return true
+			})
+		}
 	}
 	it.advance()
 	return it, nil

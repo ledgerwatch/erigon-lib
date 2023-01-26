@@ -2,12 +2,25 @@ package iter
 
 import (
 	"bytes"
-	"fmt"
-	"testing"
 
-	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
 )
+
+var (
+	EmptyU64 = &EmptyUnary[uint64]{}
+	EmptyKV  = &EmptyDual[[]byte, []byte]{}
+)
+
+type (
+	EmptyUnary[T any]   struct{}
+	EmptyDual[K, V any] struct{}
+)
+
+func (EmptyUnary[T]) HasNext() bool                 { return false }
+func (EmptyUnary[T]) Next() (v T, err error)        { return v, err }
+func (EmptyDual[K, V]) HasNext() bool               { return false }
+func (EmptyDual[K, V]) Next() (k K, v V, err error) { return k, v, err }
 
 type ArrStream[V any] struct {
 	arr []V
@@ -15,6 +28,7 @@ type ArrStream[V any] struct {
 }
 
 func ReverseArray[V any](arr []V) *ArrStream[V] {
+	arr = slices.Clone(arr)
 	for i, j := 0, len(arr)-1; i < j; i, j = i+1, j-1 {
 		arr[i], arr[j] = arr[j], arr[i]
 	}
@@ -53,33 +67,9 @@ func (it *RangeIter[T]) Next() (T, error) {
 	return v, nil
 }
 
-func ExpectEqual[V comparable](tb testing.TB, s1, s2 Unary[V]) {
-	tb.Helper()
-	for s1.HasNext() && s2.HasNext() {
-		k1, e1 := s1.Next()
-		k2, e2 := s2.Next()
-		require.Equal(tb, k1, k2)
-		require.Equal(tb, e1 == nil, e2 == nil)
-	}
-
-	has1 := s1.HasNext()
-	has2 := s2.HasNext()
-	var label string
-	if has1 {
-		v1, _ := s1.Next()
-		label = fmt.Sprintf("v1: %v", v1)
-	}
-	if has2 {
-		v2, _ := s2.Next()
-		label += fmt.Sprintf(" v2: %v", v2)
-	}
-	require.False(tb, has1, label)
-	require.False(tb, has2, label)
-}
-
-// UnionPairsStream - merge 2 kv.Pairs streams to 1 in lexicographically order
+// UnionKVIter - merge 2 kv.Pairs streams to 1 in lexicographically order
 // 1-st stream has higher priority - when 2 streams return same key
-type UnionPairsStream struct {
+type UnionKVIter struct {
 	x, y               KV
 	xHasNext, yHasNext bool
 	xNextK, xNextV     []byte
@@ -87,14 +77,23 @@ type UnionPairsStream struct {
 	err                error
 }
 
-func UnionPairs(x, y KV) *UnionPairsStream {
-	m := &UnionPairsStream{x: x, y: y}
+func UnionKV(x, y KV) KV {
+	if x == nil && y == nil {
+		return EmptyKV
+	}
+	if x == nil {
+		return y
+	}
+	if y == nil {
+		return x
+	}
+	m := &UnionKVIter{x: x, y: y}
 	m.advanceX()
 	m.advanceY()
 	return m
 }
-func (m *UnionPairsStream) HasNext() bool { return m.xHasNext || m.yHasNext }
-func (m *UnionPairsStream) advanceX() {
+func (m *UnionKVIter) HasNext() bool { return m.xHasNext || m.yHasNext }
+func (m *UnionKVIter) advanceX() {
 	if m.err != nil {
 		return
 	}
@@ -103,7 +102,7 @@ func (m *UnionPairsStream) advanceX() {
 		m.xNextK, m.xNextV, m.err = m.x.Next()
 	}
 }
-func (m *UnionPairsStream) advanceY() {
+func (m *UnionKVIter) advanceY() {
 	if m.err != nil {
 		return
 	}
@@ -112,7 +111,7 @@ func (m *UnionPairsStream) advanceY() {
 		m.yNextK, m.yNextV, m.err = m.y.Next()
 	}
 }
-func (m *UnionPairsStream) Next() ([]byte, []byte, error) {
+func (m *UnionKVIter) Next() ([]byte, []byte, error) {
 	if m.err != nil {
 		return nil, nil, m.err
 	}
@@ -141,27 +140,36 @@ func (m *UnionPairsStream) Next() ([]byte, []byte, error) {
 	m.advanceY()
 	return k, v, err
 }
-func (m *UnionPairsStream) ToArray() (keys, values [][]byte, err error) { return ParisToArray(m) }
+func (m *UnionKVIter) ToArray() (keys, values [][]byte, err error) { return ToKVArray(m) }
 
-// UnionStream
-type UnionStream[T constraints.Ordered] struct {
+// UnionIter
+type UnionIter[T constraints.Ordered] struct {
 	x, y           Unary[T]
 	xHas, yHas     bool
 	xNextK, yNextK T
 	err            error
 }
 
-func Union[T constraints.Ordered](x, y Unary[T]) *UnionStream[T] {
-	m := &UnionStream[T]{x: x, y: y}
+func Union[T constraints.Ordered](x, y Unary[T]) Unary[T] {
+	if x == nil && y == nil {
+		return &EmptyUnary[T]{}
+	}
+	if x == nil {
+		return y
+	}
+	if y == nil {
+		return x
+	}
+	m := &UnionIter[T]{x: x, y: y}
 	m.advanceX()
 	m.advanceY()
 	return m
 }
 
-func (m *UnionStream[T]) HasNext() bool {
+func (m *UnionIter[T]) HasNext() bool {
 	return m.err != nil || m.xHas || m.yHas
 }
-func (m *UnionStream[T]) advanceX() {
+func (m *UnionIter[T]) advanceX() {
 	if m.err != nil {
 		return
 	}
@@ -170,7 +178,7 @@ func (m *UnionStream[T]) advanceX() {
 		m.xNextK, m.err = m.x.Next()
 	}
 }
-func (m *UnionStream[T]) advanceY() {
+func (m *UnionIter[T]) advanceY() {
 	if m.err != nil {
 		return
 	}
@@ -179,7 +187,7 @@ func (m *UnionStream[T]) advanceY() {
 		m.yNextK, m.err = m.y.Next()
 	}
 }
-func (m *UnionStream[T]) Next() (res T, err error) {
+func (m *UnionIter[T]) Next() (res T, err error) {
 	if m.err != nil {
 		return res, m.err
 	}
@@ -208,21 +216,24 @@ func (m *UnionStream[T]) Next() (res T, err error) {
 	return k, err
 }
 
-// IntersectStream
-type IntersectStream[T constraints.Ordered] struct {
+// IntersectIter
+type IntersectIter[T constraints.Ordered] struct {
 	x, y               Unary[T]
 	xHasNext, yHasNext bool
 	xNextK, yNextK     T
 	err                error
 }
 
-func Intersect[T constraints.Ordered](x, y Unary[T]) *IntersectStream[T] {
-	m := &IntersectStream[T]{x: x, y: y}
+func Intersect[T constraints.Ordered](x, y Unary[T]) Unary[T] {
+	if x == nil || y == nil {
+		return &EmptyUnary[T]{}
+	}
+	m := &IntersectIter[T]{x: x, y: y}
 	m.advance()
 	return m
 }
-func (m *IntersectStream[T]) HasNext() bool { return m.xHasNext && m.yHasNext }
-func (m *IntersectStream[T]) advance() {
+func (m *IntersectIter[T]) HasNext() bool { return m.xHasNext && m.yHasNext }
+func (m *IntersectIter[T]) advance() {
 	m.advanceX()
 	m.advanceY()
 	for m.xHasNext && m.yHasNext {
@@ -242,7 +253,7 @@ func (m *IntersectStream[T]) advance() {
 	m.xHasNext = false
 }
 
-func (m *IntersectStream[T]) advanceX() {
+func (m *IntersectIter[T]) advanceX() {
 	if m.err != nil {
 		return
 	}
@@ -251,7 +262,7 @@ func (m *IntersectStream[T]) advanceX() {
 		m.xNextK, m.err = m.x.Next()
 	}
 }
-func (m *IntersectStream[T]) advanceY() {
+func (m *IntersectIter[T]) advanceY() {
 	if m.err != nil {
 		return
 	}
@@ -260,70 +271,23 @@ func (m *IntersectStream[T]) advanceY() {
 		m.yNextK, m.err = m.y.Next()
 	}
 }
-func (m *IntersectStream[T]) Next() (T, error) {
+func (m *IntersectIter[T]) Next() (T, error) {
 	k, err := m.xNextK, m.err
 	m.advance()
 	return k, err
 }
 
-//func (m *IntersectStream[T]) ToArray() (res []T, err error) { return ToArr[T](m) }
-
-func ParisToArray(s KV) ([][]byte, [][]byte, error) {
-	keys, values := make([][]byte, 0), make([][]byte, 0) //nolint
-	for s.HasNext() {
-		k, v, err := s.Next()
-		if err != nil {
-			return keys, values, err
-		}
-		keys = append(keys, k)
-		values = append(values, v)
-	}
-	return keys, values, nil
-}
-
-func ToArr[T any](s Unary[T]) ([]T, error) {
-	res := make([]T, 0)
-	for s.HasNext() {
-		k, err := s.Next()
-		if err != nil {
-			return res, err
-		}
-		res = append(res, k)
-	}
-	return res, nil
-}
-
-// PairsWithErrorStream - return N, keys and then error
-type PairsWithErrorStream struct {
-	errorAt, i int
-}
-
-func PairsWithError(errorAt int) *PairsWithErrorStream {
-	return &PairsWithErrorStream{errorAt: errorAt}
-}
-func (m *PairsWithErrorStream) HasNext() bool { return true }
-func (m *PairsWithErrorStream) Next() ([]byte, []byte, error) {
-	if m.i >= m.errorAt {
-		return nil, nil, fmt.Errorf("expected error at iteration: %d", m.errorAt)
-	}
-	m.i++
-	return []byte(fmt.Sprintf("%x", m.i)), []byte(fmt.Sprintf("%x", m.i)), nil
-}
-
-// TransformStream - analog `map` (in terms of map-filter-reduce pattern)
-type TransformStream[K, V any] struct {
+// TransformDualIter - analog `map` (in terms of map-filter-reduce pattern)
+type TransformDualIter[K, V any] struct {
 	it        Dual[K, V]
 	transform func(K, V) (K, V)
 }
 
-func TransformPairs(it KV, transform func(k, v []byte) ([]byte, []byte)) *TransformStream[[]byte, []byte] {
-	return &TransformStream[[]byte, []byte]{it: it, transform: transform}
+func TransformDual[K, V any](it Dual[K, V], transform func(K, V) (K, V)) *TransformDualIter[K, V] {
+	return &TransformDualIter[K, V]{it: it, transform: transform}
 }
-func Transform[K, V any](it Dual[K, V], transform func(K, V) (K, V)) *TransformStream[K, V] {
-	return &TransformStream[K, V]{it: it, transform: transform}
-}
-func (m *TransformStream[K, V]) HasNext() bool { return m.it.HasNext() }
-func (m *TransformStream[K, V]) Next() (K, V, error) {
+func (m *TransformDualIter[K, V]) HasNext() bool { return m.it.HasNext() }
+func (m *TransformDualIter[K, V]) Next() (K, V, error) {
 	k, v, err := m.it.Next()
 	if err != nil {
 		return k, v, err
@@ -356,5 +320,82 @@ func (m *FilterStream[K, V]) Next() (k K, v V, err error) {
 		}
 		return k, v, nil
 	}
+	return k, v, nil
+}
+
+// PaginatedIter - for remote-list pagination
+//
+//	Rationale: If an API does not support pagination from the start, supporting it later is troublesome because adding pagination breaks the API's behavior. Clients that are unaware that the API now uses pagination could incorrectly assume that they received a complete result, when in fact they only received the first page.
+//
+// To support pagination (returning list results in pages) in a List method, the API shall:
+//   - The client uses this field to request a specific page of the list results.
+//   - define an int32 field page_size in the List method's request message. Clients use this field to specify the maximum number of results to be returned by the server. The server may further constrain the maximum number of results returned in a single page. If the page_size is 0, the server will decide the number of results to be returned.
+//   - define a string field next_page_token in the List method's response message. This field represents the pagination token to retrieve the next page of results. If the value is "", it means no further results for the request.
+//
+// see: https://cloud.google.com/apis/design/design_patterns
+type Paginated[T any] struct {
+	arr           []T
+	i             int
+	err           error
+	nextPage      NextPageUnary[T]
+	nextPageToken string
+	initialized   bool
+}
+
+func Paginate[T any](f NextPageUnary[T]) *Paginated[T] { return &Paginated[T]{nextPage: f} }
+func (it *Paginated[T]) HasNext() bool {
+	if it.err != nil || it.i < len(it.arr) {
+		return true
+	}
+	if it.initialized && it.nextPageToken == "" {
+		return false
+	}
+	it.initialized = true
+	it.i = 0
+	it.arr, it.nextPageToken, it.err = it.nextPage(it.nextPageToken)
+	return it.err != nil || it.i < len(it.arr)
+}
+func (it *Paginated[T]) Close() {}
+func (it *Paginated[T]) Next() (v T, err error) {
+	if it.err != nil {
+		return v, it.err
+	}
+	v = it.arr[it.i]
+	it.i++
+	return v, nil
+}
+
+type PaginatedDual[K, V any] struct {
+	keys          []K
+	values        []V
+	i             int
+	err           error
+	nextPage      NextPageDual[K, V]
+	nextPageToken string
+	initialized   bool
+}
+
+func PaginateDual[K, V any](f NextPageDual[K, V]) *PaginatedDual[K, V] {
+	return &PaginatedDual[K, V]{nextPage: f}
+}
+func (it *PaginatedDual[K, V]) HasNext() bool {
+	if it.err != nil || it.i < len(it.keys) {
+		return true
+	}
+	if it.initialized && it.nextPageToken == "" {
+		return false
+	}
+	it.initialized = true
+	it.i = 0
+	it.keys, it.values, it.nextPageToken, it.err = it.nextPage(it.nextPageToken)
+	return it.err != nil || it.i < len(it.keys)
+}
+func (it *PaginatedDual[K, V]) Close() {}
+func (it *PaginatedDual[K, V]) Next() (k K, v V, err error) {
+	if it.err != nil {
+		return k, v, it.err
+	}
+	k, v = it.keys[it.i], it.values[it.i]
+	it.i++
 	return k, v, nil
 }
