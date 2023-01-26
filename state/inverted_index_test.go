@@ -304,7 +304,7 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		reverseStream, err := ic.IterateRange(k[:], 1000-1, 400-1, false, -1, roTx)
 		require.NoError(t, err)
 		defer it.Close()
-		iter.ExpectEqual[uint64](t, iter.ReverseArray(values), reverseStream)
+		iter.ExpectEqualU64(t, iter.ReverseArray(values), reverseStream)
 	}
 }
 
