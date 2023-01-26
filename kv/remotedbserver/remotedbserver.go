@@ -592,7 +592,7 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 		if !ok {
 			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 		}
-		it, err := ttx.IndexRange(kv.InvertedIdx(req.Table), req.K, uint64(from), uint64(req.ToTs), order.By(req.OrderAscend), limit)
+		it, err := ttx.IndexRange(kv.InvertedIdx(req.Table), req.K, from, int(req.ToTs), order.By(req.OrderAscend), limit)
 		if err != nil {
 			return err
 		}
