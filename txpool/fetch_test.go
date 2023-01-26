@@ -42,7 +42,7 @@ func TestFetch(t *testing.T) {
 	defer cancel()
 
 	m := NewMockSentry(ctx)
-	sentryClient := direct.NewSentryClientDirect([]uint{direct.ETH66, direct.ETH67, direct.ETH68}, m)
+	sentryClient := direct.NewSentryClientDirect(direct.ETH68, m)
 	pool := &PoolMock{}
 
 	fetch := NewFetch(ctx, []direct.SentryClient{sentryClient}, pool, &remote.KVClientMock{}, nil, nil, *u256.N1)
@@ -72,7 +72,7 @@ func TestSendTxPropagate(t *testing.T) {
 	defer cancelFn()
 	t.Run("few remote byHash", func(t *testing.T) {
 		m := NewMockSentry(ctx)
-		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect([]uint{direct.ETH66, direct.ETH67, direct.ETH68}, m)}, nil)
+		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect(direct.ETH68, m)}, nil)
 		send.BroadcastPooledTxs(testRlps(2))
 		send.AnnouncePooledTxs(toHashes(1, 42))
 
@@ -89,7 +89,7 @@ func TestSendTxPropagate(t *testing.T) {
 	})
 	t.Run("much remote byHash", func(t *testing.T) {
 		m := NewMockSentry(ctx)
-		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect([]uint{direct.ETH66, direct.ETH67, direct.ETH68}, m)}, nil)
+		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect(direct.ETH68, m)}, nil)
 		list := make(types3.Hashes, p2pTxPacketLimit*3)
 		for i := 0; i < len(list); i += 32 {
 			b := []byte(fmt.Sprintf("%x", i))
@@ -115,7 +115,7 @@ func TestSendTxPropagate(t *testing.T) {
 		m.SendMessageToAllFunc = func(contextMoqParam context.Context, outboundMessageData *sentry.OutboundMessageData) (*sentry.SentPeers, error) {
 			return &sentry.SentPeers{Peers: make([]*types.H512, 5)}, nil
 		}
-		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect([]uint{direct.ETH66, direct.ETH67, direct.ETH68}, m)}, nil)
+		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect(direct.ETH68, m)}, nil)
 		send.BroadcastPooledTxs(testRlps(2))
 		send.AnnouncePooledTxs(toHashes(1, 42))
 
@@ -131,7 +131,7 @@ func TestSendTxPropagate(t *testing.T) {
 		m.SendMessageToAllFunc = func(contextMoqParam context.Context, outboundMessageData *sentry.OutboundMessageData) (*sentry.SentPeers, error) {
 			return &sentry.SentPeers{Peers: make([]*types.H512, 5)}, nil
 		}
-		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect([]uint{direct.ETH66, direct.ETH67, direct.ETH68}, m)}, nil)
+		send := NewSend(ctx, []direct.SentryClient{direct.NewSentryClientDirect(direct.ETH68, m)}, nil)
 		expectPeers := toPeerIDs(1, 2, 42)
 		send.PropagatePooledTxsToPeersList(expectPeers, toHashes(1, 42))
 

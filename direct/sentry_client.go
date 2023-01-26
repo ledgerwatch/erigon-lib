@@ -102,7 +102,7 @@ var ProtoIds = map[uint]map[sentry.MessageId]struct{}{
 
 type SentryClient interface {
 	sentry.SentryClient
-	Protocols() []uint
+	Protocol() uint
 	Ready() bool
 	MarkDisconnected()
 }
@@ -110,8 +110,8 @@ type SentryClient interface {
 type SentryClientRemote struct {
 	sentry.SentryClient
 	sync.RWMutex
-	protocols []uint
-	ready     bool
+	protocol uint
+	ready    bool
 }
 
 var _ SentryClient = (*SentryClientRemote)(nil) // compile-time interface check
@@ -124,10 +124,10 @@ func NewSentryClientRemote(client sentry.SentryClient) *SentryClientRemote {
 	return &SentryClientRemote{SentryClient: client}
 }
 
-func (c *SentryClientRemote) Protocols() []uint {
+func (c *SentryClientRemote) Protocol() uint {
 	c.RLock()
 	defer c.RUnlock()
-	return c.protocols
+	return c.protocol
 }
 
 func (c *SentryClientRemote) Ready() bool {
@@ -149,20 +149,17 @@ func (c *SentryClientRemote) HandShake(ctx context.Context, in *emptypb.Empty, o
 	}
 	c.Lock()
 	defer c.Unlock()
-	c.protocols = nil
-	for _, p := range reply.Protocols {
-		switch p {
-		case sentry.Protocol_ETH65:
-			c.protocols = append(c.protocols, ETH65)
-		case sentry.Protocol_ETH66:
-			c.protocols = append(c.protocols, ETH66)
-		case sentry.Protocol_ETH67:
-			c.protocols = append(c.protocols, ETH67)
-		case sentry.Protocol_ETH68:
-			c.protocols = append(c.protocols, ETH68)
-		default:
-			return nil, fmt.Errorf("unexpected protocol: %d", p)
-		}
+	switch reply.Protocol {
+	case sentry.Protocol_ETH65:
+		c.protocol = ETH65
+	case sentry.Protocol_ETH66:
+		c.protocol = ETH66
+	case sentry.Protocol_ETH67:
+		c.protocol = ETH67
+	case sentry.Protocol_ETH68:
+		c.protocol = ETH68
+	default:
+		return nil, fmt.Errorf("unexpected protocol: %d", reply.Protocol)
 	}
 	c.ready = true
 	return reply, nil
@@ -172,9 +169,7 @@ func (c *SentryClientRemote) SetStatus(ctx context.Context, in *sentry.StatusDat
 }
 
 func (c *SentryClientRemote) Messages(ctx context.Context, in *sentry.MessagesRequest, opts ...grpc.CallOption) (sentry.Sentry_MessagesClient, error) {
-	for _, p := range c.Protocols() {
-		in.Ids = filterIds(in.Ids, p)
-	}
+	in.Ids = filterIds(in.Ids, c.Protocol())
 	return c.SentryClient.Messages(ctx, in, opts...)
 }
 
@@ -191,15 +186,15 @@ func (c *SentryClientRemote) PeerCount(ctx context.Context, in *sentry.PeerCount
 // SentryClientDirect implements SentryClient interface by connecting the instance of the client directly with the corresponding
 // instance of SentryServer
 type SentryClientDirect struct {
-	server    sentry.SentryServer
-	protocols []uint
+	server   sentry.SentryServer
+	protocol uint
 }
 
-func NewSentryClientDirect(protocols []uint, sentryServer sentry.SentryServer) *SentryClientDirect {
-	return &SentryClientDirect{protocols: protocols, server: sentryServer}
+func NewSentryClientDirect(protocol uint, sentryServer sentry.SentryServer) *SentryClientDirect {
+	return &SentryClientDirect{protocol: protocol, server: sentryServer}
 }
 
-func (c *SentryClientDirect) Protocols() []uint { return c.protocols }
+func (c *SentryClientDirect) Protocol() uint    { return c.protocol }
 func (c *SentryClientDirect) Ready() bool       { return true }
 func (c *SentryClientDirect) MarkDisconnected() {}
 
@@ -254,9 +249,7 @@ func (c *SentryClientDirect) PeerById(ctx context.Context, in *sentry.PeerByIdRe
 // -- start Messages
 
 func (c *SentryClientDirect) Messages(ctx context.Context, in *sentry.MessagesRequest, opts ...grpc.CallOption) (sentry.Sentry_MessagesClient, error) {
-	for _, p := range c.Protocols() {
-		in.Ids = filterIds(in.Ids, p)
-	}
+	in.Ids = filterIds(in.Ids, c.Protocol())
 	ch := make(chan *inboundMessageReply, 16384)
 	streamServer := &SentryMessagesStreamS{ch: ch, ctx: ctx}
 	go func() {
