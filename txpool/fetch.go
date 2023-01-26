@@ -159,6 +159,7 @@ func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryCl
 		sentry.MessageId_GET_POOLED_TRANSACTIONS_66,
 		sentry.MessageId_TRANSACTIONS_66,
 		sentry.MessageId_POOLED_TRANSACTIONS_66,
+		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_68,
 	}}, grpc.WaitForReady(true))
 	if err != nil {
 		select {
@@ -240,15 +241,10 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		if len(unknownHashes) > 0 {
 			var encodedRequest []byte
 			var messageID sentry.MessageId
-			switch req.Id {
-			case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66:
-				if encodedRequest, err = types2.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
-					return err
-				}
-				messageID = sentry.MessageId_GET_POOLED_TRANSACTIONS_66
-			default:
-				return fmt.Errorf("unexpected message: %s", req.Id.String())
+			if encodedRequest, err = types2.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
+				return err
 			}
+			messageID = sentry.MessageId_GET_POOLED_TRANSACTIONS_66
 			if _, err = sentryClient.SendMessageById(f.ctx, &sentry.SendMessageByIdRequest{
 				Data:   &sentry.OutboundMessageData{Id: messageID, Data: encodedRequest},
 				PeerId: req.PeerId,
@@ -256,6 +252,42 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				return err
 			}
 		}
+	case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_68:
+		/*
+			hashCount, pos, err := types2.ParseHashesCount(req.Data, 0)
+			if err != nil {
+				return fmt.Errorf("parsing NewPooledTransactionHashes: %w", err)
+			}
+			var hashbuf [32]byte
+			var unknownHashes types2.Hashes
+			for i := 0; i < hashCount; i++ {
+				_, pos, err = types2.ParseHash(req.Data, pos, hashbuf[:0])
+				if err != nil {
+					return fmt.Errorf("parsing NewPooledTransactionHashes: %w", err)
+				}
+				known, err := f.pool.IdHashKnown(tx, hashbuf[:])
+				if err != nil {
+					return err
+				}
+				if !known {
+					unknownHashes = append(unknownHashes, hashbuf[:]...)
+				}
+			}
+			if len(unknownHashes) > 0 {
+				var encodedRequest []byte
+				var messageID sentry.MessageId
+				if encodedRequest, err = types2.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
+					return err
+				}
+				messageID = sentry.MessageId_GET_POOLED_TRANSACTIONS_66
+				if _, err = sentryClient.SendMessageById(f.ctx, &sentry.SendMessageByIdRequest{
+					Data:   &sentry.OutboundMessageData{Id: messageID, Data: encodedRequest},
+					PeerId: req.PeerId,
+				}, &grpc.EmptyCallOption{}); err != nil {
+					return err
+				}
+			}
+		*/
 	case sentry.MessageId_GET_POOLED_TRANSACTIONS_66:
 		//TODO: handleInboundMessage is single-threaded - means it can accept as argument couple buffers (or analog of txParseContext). Protobuf encoding will copy data anyway, but DirectClient doesn't
 		var encodedRequest []byte
