@@ -305,6 +305,9 @@ func (w *wrapper) DeserializeMessage(payload []byte, begin, end int) error {
 }
 
 func (w *wrapper) DeserializeAccessList(payload []byte, begin, end int) error {
+	if begin == end {
+		return nil
+	}
 	originalBegin := begin
 	length, err := readLength(payload, begin, 1<<24)
 	if err != nil {
