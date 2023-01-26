@@ -127,20 +127,25 @@ func (f *Send) AnnouncePooledTxs(hashes types2.Hashes) (hashSentTo []int) {
 			if !sentryClient.Ready() {
 				continue
 			}
-			if hashes66 == nil {
-				hashes66 = &sentry.OutboundMessageData{
-					Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
-					Data: hashesData,
+			switch sentryClient.Protocol() {
+			case direct.ETH66, direct.ETH67:
+				if hashes66 == nil {
+					hashes66 = &sentry.OutboundMessageData{
+						Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+						Data: hashesData,
+					}
 				}
-			}
-			peers, err := sentryClient.SendMessageToAll(f.ctx, hashes66, &grpc.EmptyCallOption{})
-			if err != nil {
-				log.Debug("[txpool.send] AnnouncePooledTxs", "err", err)
-			}
-			if peers != nil {
-				for j, l := prev, pending.Len(); j < prev+l; j++ {
-					hashSentTo[j] = len(peers.Peers)
+				peers, err := sentryClient.SendMessageToAll(f.ctx, hashes66, &grpc.EmptyCallOption{})
+				if err != nil {
+					log.Debug("[txpool.send] AnnouncePooledTxs", "err", err)
 				}
+				if peers != nil {
+					for j, l := prev, pending.Len(); j < prev+l; j++ {
+						hashSentTo[j] = len(peers.Peers)
+					}
+				}
+			case direct.ETH68:
+				// TODO new format of NewPooledTransactionHashes
 			}
 		}
 		prev += pending.Len()
@@ -172,15 +177,20 @@ func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, txs []byte) 
 			}
 
 			for _, peer := range peers {
-				req66 := &sentry.SendMessageByIdRequest{
-					PeerId: peer,
-					Data: &sentry.OutboundMessageData{
-						Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
-						Data: data,
-					},
-				}
-				if _, err := sentryClient.SendMessageById(f.ctx, req66, &grpc.EmptyCallOption{}); err != nil {
-					log.Debug("[txpool.send] PropagatePooledTxsToPeersList", "err", err)
+				switch sentryClient.Protocol() {
+				case direct.ETH66, direct.ETH67:
+					req66 := &sentry.SendMessageByIdRequest{
+						PeerId: peer,
+						Data: &sentry.OutboundMessageData{
+							Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+							Data: data,
+						},
+					}
+					if _, err := sentryClient.SendMessageById(f.ctx, req66, &grpc.EmptyCallOption{}); err != nil {
+						log.Debug("[txpool.send] PropagatePooledTxsToPeersList", "err", err)
+					}
+				case direct.ETH68:
+					//TODO generate NewPooledTransactionHashes in new format
 				}
 			}
 		}
