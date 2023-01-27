@@ -467,6 +467,8 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				minedTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
 					minedTxs.Txs[i] = &types2.TxSlot{}
+					// TODO(eip-4844): Blob transactions here will be "unwrapped" variety, so parsing will fail.
+					// Ultimately we need to persist the wrapped versions somehow if we would like to replay them.
 					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
 						_, err := parseContext.ParseTransaction(change.Txs[i], 0, minedTxs.Txs[i], minedTxs.Senders.At(i), false /* hasEnvelope */, nil)
 						return err
