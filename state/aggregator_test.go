@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
@@ -425,22 +428,96 @@ func Test_EncodeCommitmentState(t *testing.T) {
 	require.EqualValues(t, cs.trieState, dec.trieState)
 }
 
-func Test_BtreeIndex(t *testing.T) {
-	count := uint64(2000000)
-	M := uint64(2048)
-	bt := newBtAlloc(count, M)
+func Test_BtreeIndex_Seek(t *testing.T) {
+	tmp := t.TempDir()
+	args := BtIndexWriterArgs{
+		Enums:       true,
+		IndexFile:   path.Join(tmp, "1M.bt"),
+		TmpDir:      tmp,
+		KeyCount:    1_000,
+		EtlBufLimit: 0,
+		Salt:        0,
+	}
+	iw, err := NewBtIndexWriter(args)
+	require.NoError(t, err)
 
-	for i := uint64(0); i < count; i++ {
-		bt.data[i] = uint64(i)
+	defer iw.Close()
+	defer os.RemoveAll(tmp)
+
+	rnd := rand.New(rand.NewSource(0))
+	keys := make([]byte, 52)
+	lookafter := make([][]byte, 0)
+	for i := 0; i < args.KeyCount; i++ {
+		n, err := rnd.Read(keys[:52])
+		require.EqualValues(t, n, 52)
+		require.NoError(t, err)
+
+		err = iw.AddKey(keys[:], uint64(i))
+		require.NoError(t, err)
+
+		if i%1000 < 5 {
+			lookafter = append(lookafter, common.Copy(keys))
+		}
 	}
 
-	//bt.traverse()
-	//bt.traverseTrick()
-	bt.traverseDfs()
+	require.NoError(t, iw.Build())
+	iw.Close()
 
-	bt.printSearchMx()
+	bt, err := OpenBtreeIndex(args.IndexFile, 4)
+	require.NoError(t, err)
+	require.EqualValues(t, bt.KeyCount(), args.KeyCount)
 
-	bt.findNode(16393)
+	idx := NewBtIndexReader(bt)
+
+	for i := 0; i < len(lookafter); i += 5 {
+		cur, err := idx.Seek(lookafter[i])
+		require.NoError(t, err)
+		//require.EqualValues(t, lookafter[i], cur.key)
+		require.EqualValues(t, uint64(i), cur.Value())
+		for j := 0; j < 5; j++ {
+			//require.EqualValues(t, lookafter[i+j], idx.Key())
+			require.EqualValues(t, uint64(i+j), cur.Value())
+			cur.Next()
+		}
+	}
+
+	bt.Close()
+}
+
+func Test_InitBtreeIndex(t *testing.T) {
+	tmp := t.TempDir()
+	args := BtIndexWriterArgs{
+		Enums:       true,
+		IndexFile:   path.Join(tmp, "100k.bt"),
+		TmpDir:      tmp,
+		KeyCount:    100,
+		EtlBufLimit: 0,
+		Salt:        0,
+	}
+	iw, err := NewBtIndexWriter(args)
+	require.NoError(t, err)
+
+	defer iw.Close()
+	defer os.RemoveAll(tmp)
+
+	rnd := rand.New(rand.NewSource(0))
+	keys := make([]byte, 52)
+	for i := 0; i < args.KeyCount; i++ {
+		n, err := rnd.Read(keys[:52])
+		require.EqualValues(t, n, 52)
+		require.NoError(t, err)
+
+		err = iw.AddKey(keys[:], uint64(i))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, iw.Build())
+	iw.Close()
+
+	bt, err := OpenBtreeIndex(args.IndexFile, 4)
+	require.NoError(t, err)
+	require.EqualValues(t, bt.KeyCount(), args.KeyCount)
+	bt.Close()
 }
 
 func Test_BtreeIndex_Allocation(t *testing.T) {
@@ -486,4 +563,3 @@ func Benchmark_BtreeIndex_Search(b *testing.B) {
 		bt.search(uint64(i % max))
 	}
 }
-
