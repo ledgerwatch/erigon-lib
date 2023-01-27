@@ -77,7 +77,7 @@ type (
 func ToU64Arr(s U64) ([]uint64, error)           { return ToArr[uint64](s) }
 func ToKVArray(s KV) ([][]byte, [][]byte, error) { return ToDualArray[[]byte, []byte](s) }
 
-func TransformKV(it KV, transform func(k, v []byte) ([]byte, []byte)) *TransformDualIter[[]byte, []byte] {
+func TransformKV(it KV, transform func(k, v []byte) ([]byte, []byte, error)) *TransformDualIter[[]byte, []byte] {
 	return TransformDual[[]byte, []byte](it, transform)
 }
 

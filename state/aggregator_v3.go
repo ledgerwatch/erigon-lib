@@ -1253,8 +1253,16 @@ func (ac *AggregatorV3Context) StorageHistoryIterateChanged(startTxNum, endTxNum
 	return ac.storage.IterateChanged(startTxNum, endTxNum, roTx)
 }
 
+func (ac *AggregatorV3Context) AccountHistoricalStateRange(startTxNum uint64, from, to []byte, amount int, roTx kv.Tx) *WalkAsOfIter {
+	return ac.accounts.WalkAsOf(startTxNum, from, to, roTx, amount)
+}
+
 func (ac *AggregatorV3Context) StorageHistoricalStateRange(startTxNum uint64, from, to []byte, amount int, roTx kv.Tx) *WalkAsOfIter {
 	return ac.storage.WalkAsOf(startTxNum, from, to, roTx, amount)
+}
+
+func (ac *AggregatorV3Context) CodeHistoricalStateRange(startTxNum uint64, from, to []byte, amount int, roTx kv.Tx) *WalkAsOfIter {
+	return ac.code.WalkAsOf(startTxNum, from, to, roTx, amount)
 }
 
 type FilesStats22 struct {
