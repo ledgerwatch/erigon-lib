@@ -61,6 +61,7 @@ type MdbxOpts struct {
 	flags          uint
 	pageSize       uint64
 	dirtySpace     uint64 // if exeed this space, modified pages will `spill` to disk
+	augmentLimit   uint64
 	mergeThreshold uint64
 	verbosity      kv.DBVerbosityLvl
 	label          kv.Label // marker to distinct db instances - one process may open many databases. for example to collect metrics of only 1 database
@@ -95,6 +96,10 @@ func (opts MdbxOpts) Label(label kv.Label) MdbxOpts {
 
 func (opts MdbxOpts) DirtySpace(s uint64) MdbxOpts {
 	opts.dirtySpace = s
+	return opts
+}
+func (opts MdbxOpts) Augment(s uint64) MdbxOpts {
+	opts.augmentLimit = s
 	return opts
 }
 
@@ -193,6 +198,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if dbg.DirtySpace() > 0 {
 		opts = opts.DirtySpace(dbg.DirtySpace()) //nolint
 	}
+	if dbg.AugmentLimit() > 0 {
+		opts = opts.Augment(dbg.AugmentLimit()) //nolint
+	}
 	if dbg.NoSync() {
 		opts = opts.Flags(func(u uint) uint { return u | mdbx.SafeNoSync }) //nolint
 	}
@@ -234,7 +242,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 				return nil, err
 			}
 		}
-		if err = env.SetOption(mdbx.OptRpAugmentLimit, 32*1024*1024); err != nil {
+
+		if err = env.SetOption(mdbx.OptRpAugmentLimit, opts.augmentLimit); err != nil {
 			return nil, err
 		}
 

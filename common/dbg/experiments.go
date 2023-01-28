@@ -79,6 +79,26 @@ func DirtySpace() uint64 {
 }
 
 var (
+	augmentLimit     uint64
+	augmentLimitOnce sync.Once
+)
+
+func AugmentLimit() uint64 {
+	augmentLimitOnce.Do(func() {
+		v, _ := os.LookupEnv("MDBX_AUGMENT_LIMIT_KB")
+		if v != "" {
+			i, err := strconv.Atoi(v)
+			if err != nil {
+				panic(err)
+			}
+			augmentLimit = uint64(i * 1024)
+			log.Info("[Experiment]", "MDBX_AUGMENT_LIMIT_KB", augmentLimit)
+		}
+	})
+	return augmentLimit
+}
+
+var (
 	noSync     bool
 	noSyncOnce sync.Once
 )
