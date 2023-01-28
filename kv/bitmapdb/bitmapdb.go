@@ -36,7 +36,7 @@ type ToBitamp interface {
 	ToBitmap() (*roaring64.Bitmap, error)
 }
 
-var roaringPool = sync.Pool{
+var roaringPool = &sync.Pool{
 	New: func() any {
 		return roaring.New()
 	},
