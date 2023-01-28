@@ -54,7 +54,7 @@ func ReturnToPool(a *roaring.Bitmap) {
 	roaringPool.Put(a)
 }
 
-var roaring64Pool = sync.Pool{
+var roaring64Pool = &sync.Pool{
 	New: func() any {
 		return roaring64.New()
 	},
