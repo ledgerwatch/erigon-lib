@@ -29,8 +29,8 @@ import (
 
 func DefaultPageSize() uint64 {
 	osPageSize := os.Getpagesize()
-	if osPageSize < 4096 { // reduce further may lead to errors (because some data is just big)
-		osPageSize = 4096
+	if osPageSize < 2*4096 { // reduce further may lead to errors (because some data is just big)
+		osPageSize = 2 * 4096
 	} else if osPageSize > mdbx.MaxPageSize {
 		osPageSize = mdbx.MaxPageSize
 	}
