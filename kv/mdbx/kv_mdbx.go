@@ -234,6 +234,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 				return nil, err
 			}
 		}
+		if err = env.SetOption(mdbx.OptRpAugmentLimit, 32*1024*1024); err != nil {
+			return nil, err
+		}
 
 		if err = os.MkdirAll(opts.path, 0744); err != nil {
 			return nil, fmt.Errorf("could not create dir: %s, %w", opts.path, err)
