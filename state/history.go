@@ -134,6 +134,7 @@ Loop:
 		}
 
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
+		frozen := endStep-startStep == StepsInBiggestFile
 
 		for _, ext := range integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", h.filenameBase, startStep, endStep, ext)
@@ -143,7 +144,7 @@ Loop:
 			}
 		}
 
-		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
 		{
 			var subSets []*filesItem
 			var superSet *filesItem
@@ -865,6 +866,7 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 		index:  sf.efHistoryIdx,
 	}, txNumFrom, txNumTo)
 	h.files.ReplaceOrInsert(&filesItem{
+		frozen:       (txNumTo-txNumFrom)/h.aggregationStep == StepsInBiggestFile,
 		startTxNum:   txNumFrom,
 		endTxNum:     txNumTo,
 		decompressor: sf.historyDecomp,

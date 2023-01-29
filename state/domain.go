@@ -34,6 +34,7 @@ import (
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
 	"github.com/ledgerwatch/log/v3"
+	atomic2 "go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -54,6 +55,8 @@ type filesItem struct {
 	index        *recsplit.Index
 	startTxNum   uint64
 	endTxNum     uint64
+	frozen       bool // is of size StepsInBiggestFile
+	refcount     atomic2.Uint64
 }
 
 func (i *filesItem) isSubsetOf(j *filesItem) bool {
@@ -171,7 +174,7 @@ func (d *Domain) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
 		}
 
 		startTxNum, endTxNum := startStep*d.aggregationStep, endStep*d.aggregationStep
-		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: endStep-startStep == StepsInBiggestFile}
 		{
 			var subSets []*filesItem
 			var superSet *filesItem
@@ -884,6 +887,7 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 		efHistoryIdx:    sf.efHistoryIdx,
 	}, txNumFrom, txNumTo)
 	d.files.ReplaceOrInsert(&filesItem{
+		frozen:       (txNumTo-txNumFrom)/d.aggregationStep == StepsInBiggestFile,
 		startTxNum:   txNumFrom,
 		endTxNum:     txNumTo,
 		decompressor: sf.valuesDecomp,

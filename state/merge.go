@@ -608,7 +608,8 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 		comp.Close()
 		comp = nil
 		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
-		valuesIn = &filesItem{startTxNum: r.valuesStartTxNum, endTxNum: r.valuesEndTxNum}
+		frozen := (r.valuesEndTxNum-r.valuesStartTxNum)/d.aggregationStep == StepsInBiggestFile
+		valuesIn = &filesItem{startTxNum: r.valuesStartTxNum, endTxNum: r.valuesEndTxNum, frozen: frozen}
 		if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
@@ -736,7 +737,8 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	comp.Close()
 	comp = nil
 	idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, startTxNum/ii.aggregationStep, endTxNum/ii.aggregationStep))
-	outItem = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+	frozen := (endTxNum-startTxNum)/ii.aggregationStep == StepsInBiggestFile
+	outItem = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
 	if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 		return nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
@@ -939,7 +941,8 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		if index, err = recsplit.OpenIndex(idxPath); err != nil {
 			return nil, nil, fmt.Errorf("open %s idx: %w", h.filenameBase, err)
 		}
-		historyIn = &filesItem{startTxNum: r.historyStartTxNum, endTxNum: r.historyEndTxNum, decompressor: decomp, index: index}
+		frozen := (r.historyEndTxNum-r.historyStartTxNum)/h.aggregationStep == StepsInBiggestFile
+		historyIn = &filesItem{startTxNum: r.historyStartTxNum, endTxNum: r.historyEndTxNum, decompressor: decomp, index: index, frozen: frozen}
 		closeItem = false
 	}
 
@@ -958,8 +961,8 @@ func (d *Domain) integrateMergedFiles(valuesOuts, indexOuts, historyOuts []*file
 			panic("must not happen")
 		}
 		d.files.Delete(out)
-		out.decompressor.Close()
-		out.index.Close()
+		//out.decompressor.Close()
+		//out.index.Close()
 	}
 }
 
@@ -973,8 +976,8 @@ func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) 
 			panic("must not happen: " + ii.filenameBase)
 		}
 		ii.files.Delete(out)
-		out.decompressor.Close()
-		out.index.Close()
+		//out.decompressor.Close()
+		//out.index.Close()
 	}
 }
 
@@ -989,8 +992,8 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 			panic("must not happen: " + h.filenameBase)
 		}
 		h.files.Delete(out)
-		out.decompressor.Close()
-		out.index.Close()
+		//out.decompressor.Close()
+		//out.index.Close()
 	}
 }
 
@@ -999,8 +1002,8 @@ func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) er
 		return err
 	}
 	for _, out := range valuesOuts {
-		out.decompressor.Close()
-		out.index.Close()
+		//out.decompressor.Close()
+		//out.index.Close()
 
 		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, out.startTxNum/d.aggregationStep, out.endTxNum/d.aggregationStep))
 		if err := os.Remove(datPath); err != nil {
@@ -1014,8 +1017,8 @@ func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) er
 
 func (ii *InvertedIndex) deleteFiles(outs []*filesItem) error {
 	for _, out := range outs {
-		out.decompressor.Close()
-		out.index.Close()
+		//out.decompressor.Close()
+		//out.index.Close()
 
 		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
 		if err := os.Remove(datPath); err != nil {
@@ -1032,8 +1035,8 @@ func (h *History) deleteFiles(indexOuts, historyOuts []*filesItem) error {
 		return err
 	}
 	for _, out := range historyOuts {
-		out.decompressor.Close()
-		out.index.Close()
+		//out.decompressor.Close()
+		//out.index.Close()
 
 		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
 		if err := os.Remove(datPath); err != nil {
@@ -1049,11 +1052,13 @@ func (li *LocalityIndex) deleteFiles(out *filesItem) error {
 	if out == nil || out.index == nil {
 		return nil
 	}
-	out.index.Close()
+	//out.index.Close()
 	if li.file != nil && out.endTxNum == li.file.endTxNum { //paranoic protection against delettion of current file
 		return nil
 	}
 
+	dataPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.l", li.filenameBase, out.startTxNum/li.aggregationStep, out.endTxNum/li.aggregationStep))
+	_ = os.Remove(dataPath) // may not exist
 	idxPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.li", li.filenameBase, out.startTxNum/li.aggregationStep, out.endTxNum/li.aggregationStep))
 	_ = os.Remove(idxPath) // may not exist
 	return nil

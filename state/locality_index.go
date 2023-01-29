@@ -115,13 +115,14 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []str
 		}
 
 		startTxNum, endTxNum := startStep*li.aggregationStep, endStep*li.aggregationStep
+		frozen := endStep-startStep == StepsInBiggestFile
 		if li.file == nil {
-			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
 		} else if li.file.endTxNum < endTxNum {
 			uselessFiles = append(uselessFiles,
 				fmt.Sprintf("%s.%d-%d.li", li.filenameBase, li.file.startTxNum/li.aggregationStep, li.file.endTxNum/li.aggregationStep),
 			)
-			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum}
+			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
 		}
 	}
 	return uselessFiles
@@ -294,6 +295,7 @@ func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumT
 		startTxNum: txNumFrom,
 		endTxNum:   txNumTo,
 		index:      sf.index,
+		frozen:     (txNumTo-txNumFrom)/li.aggregationStep == StepsInBiggestFile,
 	}
 	li.bm = sf.bm
 }
