@@ -951,11 +951,10 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 }
 
 func (d *Domain) integrateMergedFiles(valuesOuts, indexOuts, historyOuts []*filesItem, valuesIn, indexIn, historyIn *filesItem) {
-	if valuesIn == nil {
-		return
-	}
 	d.History.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
-	d.files.ReplaceOrInsert(valuesIn)
+	if valuesIn != nil {
+		d.files.ReplaceOrInsert(valuesIn)
+	}
 	for _, out := range valuesOuts {
 		if out == nil {
 			panic("must not happen")
@@ -967,10 +966,9 @@ func (d *Domain) integrateMergedFiles(valuesOuts, indexOuts, historyOuts []*file
 }
 
 func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) {
-	if in == nil {
-		return
+	if in != nil {
+		ii.files.ReplaceOrInsert(in)
 	}
-	ii.files.ReplaceOrInsert(in)
 	for _, out := range outs {
 		if out == nil {
 			panic("must not happen: " + ii.filenameBase)
@@ -982,11 +980,11 @@ func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) 
 }
 
 func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, indexIn, historyIn *filesItem) {
-	if historyIn == nil {
-		return
-	}
 	h.InvertedIndex.integrateMergedFiles(indexOuts, indexIn)
-	h.files.ReplaceOrInsert(historyIn)
+	//TODO: handle collision
+	if historyIn != nil {
+		h.files.ReplaceOrInsert(historyIn)
+	}
 	for _, out := range historyOuts {
 		if out == nil {
 			panic("must not happen: " + h.filenameBase)
@@ -1002,8 +1000,7 @@ func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) er
 		return err
 	}
 	for _, out := range valuesOuts {
-		//out.decompressor.Close()
-		//out.index.Close()
+		out.deleted.Store(true)
 
 		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, out.startTxNum/d.aggregationStep, out.endTxNum/d.aggregationStep))
 		if err := os.Remove(datPath); err != nil {
@@ -1017,8 +1014,7 @@ func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) er
 
 func (ii *InvertedIndex) deleteFiles(outs []*filesItem) error {
 	for _, out := range outs {
-		//out.decompressor.Close()
-		//out.index.Close()
+		out.deleted.Store(true)
 
 		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
 		if err := os.Remove(datPath); err != nil {
@@ -1030,13 +1026,13 @@ func (ii *InvertedIndex) deleteFiles(outs []*filesItem) error {
 	return nil
 }
 
+// deleteFiles - remove file from filesystem, but doesn't close file-descriptor
 func (h *History) deleteFiles(indexOuts, historyOuts []*filesItem) error {
 	if err := h.InvertedIndex.deleteFiles(indexOuts); err != nil {
 		return err
 	}
 	for _, out := range historyOuts {
-		//out.decompressor.Close()
-		//out.index.Close()
+		out.deleted.Store(true)
 
 		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
 		if err := os.Remove(datPath); err != nil {
@@ -1052,7 +1048,7 @@ func (li *LocalityIndex) deleteFiles(out *filesItem) error {
 	if out == nil || out.index == nil {
 		return nil
 	}
-	//out.index.Close()
+	out.deleted.Store(true)
 	if li.file != nil && out.endTxNum == li.file.endTxNum { //paranoic protection against delettion of current file
 		return nil
 	}

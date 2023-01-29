@@ -379,14 +379,13 @@ func TestIterateChanged(t *testing.T) {
 	collateAndMergeHistory(t, db, h, txs)
 	ctx := context.Background()
 
-	roTx, err := db.BeginRo(ctx)
+	tx, err := db.BeginRo(ctx)
 	require.NoError(t, err)
-	defer roTx.Rollback()
+	defer tx.Rollback()
 	var keys, vals []string
 	ic := h.MakeContext()
-	ic.SetTx(roTx)
 
-	it := ic.IterateChanged(2, 20, order.Asc, -1, roTx)
+	it := ic.IterateChanged(2, 20, order.Asc, -1, tx)
 	defer it.Close()
 	for it.HasNext() {
 		k, v, err := it.Next()
@@ -435,7 +434,7 @@ func TestIterateChanged(t *testing.T) {
 		"",
 		"",
 		""}, vals)
-	it = ic.IterateChanged(995, 1000, order.Asc, -1, roTx)
+	it = ic.IterateChanged(995, 1000, order.Asc, -1, tx)
 	keys, vals = keys[:0], vals[:0]
 	for it.HasNext() {
 		k, v, err := it.Next()
@@ -477,7 +476,6 @@ func TestIterateChanged2(t *testing.T) {
 	defer roTx.Rollback()
 	var keys, vals []string
 	ic := h.MakeContext()
-	ic.SetTx(roTx)
 
 	ic.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
 		keys = append(keys, fmt.Sprintf("%x", k))

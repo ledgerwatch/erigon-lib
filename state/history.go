@@ -1084,11 +1084,18 @@ func (h *History) MakeContext() *HistoryContext {
 		//if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
 		//	return true
 		//}
+
+		if !item.frozen {
+			item.refcount.Inc()
+		}
+
 		hc.indexFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
 			reader:     recsplit.NewIndexReader(item.index),
+
+			src: item,
 		})
 		return true
 	})
@@ -1100,11 +1107,18 @@ func (h *History) MakeContext() *HistoryContext {
 		//if item.startTxNum > h.endTxNumMinimax() {
 		//	return true
 		//}
+
+		if !item.frozen {
+			item.refcount.Inc()
+		}
+
 		it := ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
 			reader:     recsplit.NewIndexReader(item.index),
+
+			src: item,
 		}
 		hc.historyFiles.ReplaceOrInsert(it)
 
@@ -1117,7 +1131,43 @@ func (h *History) MakeContext() *HistoryContext {
 
 	return &hc
 }
-func (hc *HistoryContext) SetTx(tx kv.Tx) { hc.tx = tx }
+func (hc *HistoryContext) Close() {
+	hc.indexFiles.Ascend(func(item ctxItem) bool {
+		if item.src.frozen || !item.src.deleted.Load() {
+			return true
+		}
+		//GC: last reader must close all removed files
+		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
+			if item.src.decompressor != nil {
+				item.src.decompressor.Close()
+				item.src.decompressor = nil
+			}
+			if item.src.index != nil {
+				item.src.index.Close()
+				item.src.index = nil
+			}
+		}
+		return true
+	})
+	hc.historyFiles.Ascend(func(item ctxItem) bool {
+		if item.src.frozen || !item.src.deleted.Load() {
+			return true
+		}
+
+		//GC: last reader must close all removed files
+		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
+			if item.src.decompressor != nil {
+				item.src.decompressor.Close()
+				item.src.decompressor = nil
+			}
+			if item.src.index != nil {
+				item.src.index.Close()
+				item.src.index = nil
+			}
+		}
+		return true
+	})
+}
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
 	exactStep1, exactStep2, lastIndexedTxNum, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.lr, hc.locBm, key, txNum)

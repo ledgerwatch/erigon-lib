@@ -473,6 +473,9 @@ func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64, 
 }
 
 func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethingDone bool, err error) {
+	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
+	defer ac.Close()
+
 	closeAll := true
 	maxSpan := a.aggregationStep * StepsInBiggestFile
 	r := a.findMergeRange(a.maxTxNum.Load(), maxSpan)
@@ -486,6 +489,7 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 			outs.Close()
 		}
 	}()
+
 	in, err := a.mergeFiles(ctx, outs, r, maxSpan, workers)
 	if err != nil {
 		return true, err
@@ -1305,7 +1309,15 @@ func (a *AggregatorV3) MakeContext() *AggregatorV3Context {
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
-func (ac *AggregatorV3Context) Close() {}
+func (ac *AggregatorV3Context) Close() {
+	ac.accounts.Close()
+	ac.storage.Close()
+	ac.code.Close()
+	ac.logAddrs.Close()
+	ac.logTopics.Close()
+	ac.tracesFrom.Close()
+	ac.tracesTo.Close()
+}
 
 // BackgroundResult - used only indicate that some work is done
 // no much reason to pass exact results by this object, just get latest state when need

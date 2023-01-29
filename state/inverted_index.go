@@ -438,16 +438,41 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 		if item.index == nil {
 			return false
 		}
+		if !item.frozen {
+			item.refcount.Inc()
+		}
 
 		ic.files.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
 			reader:     recsplit.NewIndexReader(item.index),
+
+			src: item,
 		})
 		return true
 	})
 	return &ic
+}
+
+func (ic *InvertedIndexContext) Close() {
+	ic.files.Ascend(func(item ctxItem) bool {
+		if item.src.frozen || !item.src.deleted.Load() {
+			return true
+		}
+		//GC: if it's last reader, close files (they already was removed from FS)
+		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
+			if item.src.decompressor != nil {
+				item.src.decompressor.Close()
+				item.src.decompressor = nil
+			}
+			if item.src.index != nil {
+				item.src.index.Close()
+				item.src.index = nil
+			}
+		}
+		return true
+	})
 }
 
 // InvertedIterator allows iteration over range of tx numbers

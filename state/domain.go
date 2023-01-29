@@ -55,8 +55,13 @@ type filesItem struct {
 	index        *recsplit.Index
 	startTxNum   uint64
 	endTxNum     uint64
-	frozen       bool // is of size StepsInBiggestFile
-	refcount     atomic2.Uint64
+
+	// Frozen: file of size StepsInBiggestFile. Completely immutable.
+	// Cold: file of size < StepsInBiggestFile. Immutable, but can be closed/removed after merge to bigger file.
+	// Hot: Stored in DB. Providing Snapshot-Isolation by CopyOnWrite.
+	frozen   bool //immutable, don't need atomic
+	deleted  atomic2.Bool
+	refcount atomic2.Uint64
 }
 
 func (i *filesItem) isSubsetOf(j *filesItem) bool {
@@ -427,6 +432,8 @@ type ctxItem struct {
 	reader     *recsplit.IndexReader
 	startTxNum uint64
 	endTxNum   uint64
+
+	src *filesItem
 }
 
 func ctxItemLess(i, j ctxItem) bool {
@@ -485,15 +492,44 @@ func (d *Domain) MakeContext() *DomainContext {
 		if item.index == nil {
 			return false
 		}
+
+		if !item.frozen {
+			item.refcount.Inc()
+		}
+
 		bt.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
 			reader:     recsplit.NewIndexReader(item.index),
+
+			src: item,
 		})
 		return true
 	})
 	return dc
+}
+
+func (dc *DomainContext) Close() {
+	dc.files.Ascend(func(item ctxItem) bool {
+		if item.src.frozen || !item.src.deleted.Load() {
+			return true
+		}
+
+		//GC: if it's last reader, close files (they already was removed from FS)
+		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
+			if item.src.decompressor != nil {
+				item.src.decompressor.Close()
+				item.src.decompressor = nil
+			}
+			if item.src.index != nil {
+				item.src.index.Close()
+				item.src.index = nil
+			}
+		}
+		return true
+	})
+	dc.hc.Close()
 }
 
 // IteratePrefix iterates over key-value pairs of the domain that start with given prefix
