@@ -1142,13 +1142,21 @@ func (hc *HistoryContext) Close() {
 		//GC: last reader must close all removed files
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
-				item.src.decompressor.Close()
-				_ = os.Remove(item.src.decompressor.FilePath())
+				if err := item.src.decompressor.Close(); err != nil {
+					panic(err)
+				}
+				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
+					panic(err)
+				}
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
-				item.src.index.Close()
-				_ = os.Remove(item.src.index.FilePath())
+				if err := item.src.index.Close(); err != nil {
+					panic(err)
+				}
+				if err := os.Remove(item.src.index.FilePath()); err != nil {
+					panic(err)
+				}
 				item.src.index = nil
 			}
 		}
