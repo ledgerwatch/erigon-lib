@@ -312,6 +312,8 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 
 func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	t.Helper()
+	ic := ii.MakeContext()
+	defer ic.Close()
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	ctx := context.Background()

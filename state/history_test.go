@@ -319,6 +319,9 @@ func TestHistoryHistory(t *testing.T) {
 
 func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 	tb.Helper()
+	hc := h.MakeContext()
+	defer hc.Close()
+
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	ctx := context.Background()
