@@ -329,6 +329,9 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
+	ac := a.MakeContext()
+	defer ac.Close()
+
 	maxEndTxNum := a.EndTxNumMinimax()
 	closeAll := true
 	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
