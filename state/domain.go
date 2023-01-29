@@ -522,10 +522,12 @@ func (dc *DomainContext) Close() {
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
 				item.src.decompressor.Close()
+				_ = os.Remove(item.src.decompressor.FilePath())
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
 				item.src.index.Close()
+				_ = os.Remove(item.src.index.FilePath())
 				item.src.index = nil
 			}
 		}

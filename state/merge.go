@@ -1002,12 +1002,12 @@ func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) er
 	for _, out := range valuesOuts {
 		out.deleted.Store(true)
 
-		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, out.startTxNum/d.aggregationStep, out.endTxNum/d.aggregationStep))
-		if err := os.Remove(datPath); err != nil {
-			return err
-		}
-		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, out.startTxNum/d.aggregationStep, out.endTxNum/d.aggregationStep))
-		_ = os.Remove(idxPath) // may not exist
+		//datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, out.startTxNum/d.aggregationStep, out.endTxNum/d.aggregationStep))
+		//if err := os.Remove(datPath); err != nil {
+		//	return err
+		//}
+		//idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, out.startTxNum/d.aggregationStep, out.endTxNum/d.aggregationStep))
+		//_ = os.Remove(idxPath) // may not exist
 	}
 	return nil
 }
@@ -1016,12 +1016,12 @@ func (ii *InvertedIndex) deleteFiles(outs []*filesItem) error {
 	for _, out := range outs {
 		out.deleted.Store(true)
 
-		datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
-		if err := os.Remove(datPath); err != nil {
-			return err
-		}
-		idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
-		_ = os.Remove(idxPath) // may not exist
+		//datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
+		//if err := os.Remove(datPath); err != nil {
+		//	return err
+		//}
+		//idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
+		//_ = os.Remove(idxPath) // may not exist
 	}
 	return nil
 }
@@ -1034,12 +1034,12 @@ func (h *History) deleteFiles(indexOuts, historyOuts []*filesItem) error {
 	for _, out := range historyOuts {
 		out.deleted.Store(true)
 
-		datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
-		if err := os.Remove(datPath); err != nil {
-			return err
-		}
-		idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
-		_ = os.Remove(idxPath) // may not exist
+		//datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
+		//if err := os.Remove(datPath); err != nil {
+		//	return err
+		//}
+		//idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
+		//_ = os.Remove(idxPath) // may not exist
 	}
 	return nil
 }

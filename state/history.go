@@ -221,10 +221,12 @@ func (h *History) closeFiles() {
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
+			_ = os.Remove(item.decompressor.FilePath())
 			item.decompressor = nil
 		}
 		if item.index != nil {
 			item.index.Close()
+			_ = os.Remove(item.index.FilePath())
 			item.index = nil
 		}
 		return true
@@ -1141,10 +1143,12 @@ func (hc *HistoryContext) Close() {
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
 				item.src.decompressor.Close()
+				_ = os.Remove(item.src.decompressor.FilePath())
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
 				item.src.index.Close()
+				_ = os.Remove(item.src.index.FilePath())
 				item.src.index = nil
 			}
 		}
@@ -1159,10 +1163,12 @@ func (hc *HistoryContext) Close() {
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
 				item.src.decompressor.Close()
+				_ = os.Remove(item.src.decompressor.FilePath())
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
 				item.src.index.Close()
+				_ = os.Remove(item.src.index.FilePath())
 				item.src.index = nil
 			}
 		}
