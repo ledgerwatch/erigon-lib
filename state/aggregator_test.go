@@ -79,6 +79,7 @@ func TestAggregator_Merge(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := agg.MakeContext()
+	defer dc.Close()
 	v, err := dc.ReadCommitment([]byte("roothash"), roTx)
 	require.NoError(t, err)
 
@@ -179,6 +180,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := anotherAgg.MakeContext()
+	defer dc.Close()
 	v, err := dc.ReadCommitment([]byte("key"), roTx)
 	require.NoError(t, err)
 
@@ -280,6 +282,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	t.Logf("seek to latest_tx=%d", latestTx)
 
 	ctx := newAgg.MakeContext()
+	defer ctx.Close()
 	miss := uint64(0)
 	for i, key := range keys {
 		stored, err := ctx.ReadAccountData(key[:length.Addr], newTx)
@@ -389,6 +392,7 @@ func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := agg.storage.MakeContext()
+	defer ctx.Close()
 	for _, key := range keys {
 		storedV, err := ctx.Get(key[:length.Addr], key[length.Addr:], tx)
 		require.NoError(t, err)

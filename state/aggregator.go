@@ -1039,7 +1039,16 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
-func (ac *AggregatorContext) Close() {}
+func (ac *AggregatorContext) Close() {
+	ac.accounts.Close()
+	ac.storage.Close()
+	ac.code.Close()
+	ac.commitment.Close()
+	ac.logAddrs.Close()
+	ac.logTopics.Close()
+	ac.tracesFrom.Close()
+	ac.tracesTo.Close()
+}
 
 func DecodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []byte) {
 	balance = new(uint256.Int)

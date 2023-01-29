@@ -255,9 +255,11 @@ func (d *Domain) closeFiles() {
 	d.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			item.decompressor.Close()
+			item.decompressor = nil
 		}
 		if item.index != nil {
 			item.index.Close()
+			item.index = nil
 		}
 		return true
 	})
