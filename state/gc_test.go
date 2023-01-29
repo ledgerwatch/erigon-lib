@@ -61,7 +61,7 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 		h.files = btree.NewG[*filesItem](32, filesItemLess)
 		h.scanStateFiles(files, nil)
 		newLastOnFs, _ := h.files.Max()
-		require.False(lastOnFs.startTxNum == lastOnFs.startTxNum && lastInView.endTxNum == newLastOnFs.endTxNum)
+		require.False(lastOnFs.startTxNum == newLastOnFs.startTxNum && lastInView.endTxNum == newLastOnFs.endTxNum)
 		hc.Close()
 	})
 

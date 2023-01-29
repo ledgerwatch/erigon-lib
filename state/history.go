@@ -1067,7 +1067,6 @@ type HistoryContext struct {
 	lr    *recsplit.IndexReader
 	locBm *bitmapdb.FixedSizeBitmaps
 
-	tx    kv.Tx
 	trace bool
 }
 
