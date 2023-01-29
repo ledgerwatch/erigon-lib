@@ -43,6 +43,7 @@ func TestRemove(t *testing.T) {
 	_, err = f.Write(make([]byte, 16*4096))
 	require.NoError(t, err)
 	err = f.Sync()
+	require.NoError(t, err)
 	err = f.Close()
 	require.NoError(t, err)
 
