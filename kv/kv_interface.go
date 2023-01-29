@@ -38,10 +38,10 @@ import (
 
 //Methods Naming:
 //  Get: exact match of criterias
-//  Stream: [from, to). Stream(from, nil) means [from, EndOfTable). Stream(nil, to) means [StartOfTable, to).
-//  Each: Stream(from, nil)
-//  Prefix: `Stream(Table, prefix, kv.NextSubtree(prefix))`
-//  Amount: [from, INF) AND maximum N records
+//  Range: [from, to). Stream(from, nil) means [from, EndOfTable). Stream(nil, to) means [StartOfTable, to).
+//  Each: Range(from, nil)
+//  Prefix: `Range(Table, prefix, kv.NextSubtree(prefix))`
+//  Limit: [from, INF) AND maximum N records
 
 //Entity Naming:
 //  State: simple table in db
