@@ -266,6 +266,8 @@ func checkHistoryHistory(t *testing.T, db kv.RwDB, h *History, txs uint64) {
 	t.Helper()
 	// Check the history
 	hc := h.MakeContext()
+	defer hc.Close()
+
 	for txNum := uint64(0); txNum <= txs; txNum++ {
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			valNum := txNum / keyNum
@@ -384,6 +386,7 @@ func TestIterateChanged(t *testing.T) {
 	defer tx.Rollback()
 	var keys, vals []string
 	ic := h.MakeContext()
+	defer ic.Close()
 
 	it := ic.IterateChanged(2, 20, order.Asc, -1, tx)
 	defer it.Close()
@@ -476,6 +479,7 @@ func TestIterateChanged2(t *testing.T) {
 	defer roTx.Rollback()
 	var keys, vals []string
 	ic := h.MakeContext()
+	defer ic.Close()
 
 	ic.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
 		keys = append(keys, fmt.Sprintf("%x", k))

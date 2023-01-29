@@ -247,6 +247,8 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	t.Helper()
 	ctx := context.Background()
 	ic := ii.MakeContext()
+	defer ic.Close()
+
 	// Check the iterator ranges first without roTx
 	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 		var k [8]byte
@@ -407,6 +409,7 @@ func TestChangedKeysIterator(t *testing.T) {
 		roTx.Rollback()
 	}()
 	ic := ii.MakeContext()
+	defer ic.Close()
 	it := ic.IterateChangedKeys(0, 20, roTx)
 	defer func() {
 		it.Close()
