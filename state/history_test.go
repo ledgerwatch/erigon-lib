@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -35,6 +36,26 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRemove(t *testing.T) {
+	f, err := os.Create("alex.txt")
+	require.NoError(t, err)
+	_, err = f.Write(make([]byte, 16*4096))
+	require.NoError(t, err)
+	err = f.Sync()
+	err = f.Close()
+	require.NoError(t, err)
+
+	f, err = os.Open("alex.txt")
+	require.NoError(t, err)
+	err = os.Remove("alex.txt")
+	require.NoError(t, err)
+	a := make([]byte, 16*4096)
+	_, err = f.Read(a)
+	require.NoError(t, err)
+	err = f.Close()
+	require.NoError(t, err)
+}
 
 func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 	tb.Helper()
