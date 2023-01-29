@@ -34,7 +34,7 @@ import (
 //  k - key
 //  v - value
 //  Cursor - low-level mdbx-tide api to walk over Table
-//  Stream - high-level simplified api for iteration over Table, InvertedIndex, History, Domain, ...
+//  Iter - high-level simplified api for iteration over Table, InvertedIndex, History, Domain, ...
 
 //Methods Naming:
 //  Get: exact match of criterias
