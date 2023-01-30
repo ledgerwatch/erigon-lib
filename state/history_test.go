@@ -223,7 +223,6 @@ func TestHistoryAfterPrune(t *testing.T) {
 func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 	tb.Helper()
 	path, db, h := testDbAndHistory(tb)
-	fmt.Printf("-----\n")
 	ctx := context.Background()
 	tx, err := db.BeginRw(ctx)
 	require.NoError(tb, err)
@@ -261,7 +260,6 @@ func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 	require.NoError(tb, err)
 	err = tx.Commit()
 	require.NoError(tb, err)
-	fmt.Printf("-----2\n")
 
 	return path, db, h, txs
 }

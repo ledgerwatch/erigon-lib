@@ -441,7 +441,7 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	var ic = InvertedIndexContext{ii: ii, localityIndex: ii.localityIndex}
 	ic.files = btree.NewG[ctxItem](32, ctxItemLess)
 	ii.files.Ascend(func(item *filesItem) bool {
-		if item.index == nil || item.deleted.Load() {
+		if item.index == nil || item.canDelete.Load() {
 			return true
 		}
 		if !item.frozen {
@@ -463,11 +463,12 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 
 func (ic *InvertedIndexContext) Close() {
 	ic.files.Ascend(func(item ctxItem) bool {
-		if item.src.frozen || !item.src.deleted.Load() {
+		if item.src.frozen {
 			return true
 		}
-		//GC: if it's last reader, close files (they already was removed from FS)
-		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
+		refCnt := item.src.refcount.Dec()
+		//GC: last reader responsible to remove useles files: close it and delete
+		if refCnt == 0 && item.src.canDelete.Load() {
 			if item.src.decompressor != nil {
 				if err := item.src.decompressor.Close(); err != nil {
 					log.Trace("close", "err", err, "file", item.src.index.FileName())

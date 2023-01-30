@@ -59,9 +59,9 @@ type filesItem struct {
 	// Frozen: file of size StepsInBiggestFile. Completely immutable.
 	// Cold: file of size < StepsInBiggestFile. Immutable, but can be closed/removed after merge to bigger file.
 	// Hot: Stored in DB. Providing Snapshot-Isolation by CopyOnWrite.
-	frozen   bool //immutable, don't need atomic
-	deleted  atomic2.Bool
-	refcount atomic2.Uint64
+	frozen    bool //immutable, don't need atomic
+	canDelete atomic2.Bool
+	refcount  atomic2.Uint64
 }
 
 func (i *filesItem) isSubsetOf(j *filesItem) bool {
@@ -518,12 +518,12 @@ func (d *Domain) MakeContext() *DomainContext {
 
 func (dc *DomainContext) Close() {
 	dc.files.Ascend(func(item ctxItem) bool {
-		if item.src.frozen || !item.src.deleted.Load() {
+		if item.src.frozen {
 			return true
 		}
-
-		//GC: if it's last reader, close files (they already was removed from FS)
-		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
+		refCnt := item.src.refcount.Dec()
+		//GC: last reader responsible to remove useles files: close it and delete
+		if refCnt == 0 && item.src.canDelete.Load() {
 			if item.src.decompressor != nil {
 				if err := item.src.decompressor.Close(); err != nil {
 					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
@@ -950,7 +950,7 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 // [txFrom; txTo)
 func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
 	// It is important to clean up tables in a specific order
-	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
+	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is canDelete from there, other tables will not be accessed
 	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
 	if err != nil {
 		return fmt.Errorf("%s keys cursor: %w", d.filenameBase, err)

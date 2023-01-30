@@ -1083,7 +1083,7 @@ func (h *History) MakeContext() *HistoryContext {
 		trace:      false,
 	}
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
-		if item.index == nil || item.deleted.Load() {
+		if item.index == nil || item.canDelete.Load() {
 			return true
 		}
 		//if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)
@@ -1137,16 +1137,13 @@ func (h *History) MakeContext() *HistoryContext {
 	return &hc
 }
 func (hc *HistoryContext) Close() {
-	//fmt.Printf("DBG: HistoryContext.Close %s\n", dbg.Stack())
 	hc.indexFiles.Ascend(func(item ctxItem) bool {
-		if item.src.frozen || !item.src.deleted.Load() {
-			//fmt.Printf("hist ctx skip: %t, %t, %s\n", item.src.frozen, item.src.deleted.Load(), item.src.decompressor.FilePath())
+		if item.src.frozen {
 			return true
 		}
-		//GC: last reader must close all removed files
 		refCnt := item.src.refcount.Dec()
-		//fmt.Printf("refcnt hist ctx: %d, %s\n", refCnt, item.src.decompressor.FilePath())
-		if refCnt == 0 {
+		//GC: last reader responsible to remove useles files: close it and delete
+		if refCnt == 0 && item.src.canDelete.Load() {
 			if item.src.decompressor != nil {
 				fmt.Printf("close: %s\n", item.src.decompressor.FilePath())
 				if err := item.src.decompressor.Close(); err != nil {
@@ -1173,7 +1170,7 @@ func (hc *HistoryContext) Close() {
 		return true
 	})
 	hc.historyFiles.Ascend(func(item ctxItem) bool {
-		if item.src.frozen || !item.src.deleted.Load() {
+		if item.src.frozen || !item.src.canDelete.Load() {
 			return true
 		}
 

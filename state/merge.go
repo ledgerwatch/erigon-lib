@@ -1009,7 +1009,7 @@ func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) er
 		return err
 	}
 	for _, out := range valuesOuts {
-		out.deleted.Store(true)
+		out.canDelete.Store(true)
 
 		//datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, out.startTxNum/d.aggregationStep, out.endTxNum/d.aggregationStep))
 		//if err := os.Remove(datPath); err != nil {
@@ -1023,9 +1023,9 @@ func (d *Domain) deleteFiles(valuesOuts, indexOuts, historyOuts []*filesItem) er
 
 func (ii *InvertedIndex) deleteFiles(outs []*filesItem) error {
 	for _, out := range outs {
-		fmt.Printf("mark deleted: %s\n", out.decompressor.FilePath())
-		fmt.Printf("mark deleted: %s\n", out.index.FilePath())
-		out.deleted.Store(true)
+		fmt.Printf("mark canDelete: %s\n", out.decompressor.FilePath())
+		fmt.Printf("mark canDelete: %s\n", out.index.FilePath())
+		out.canDelete.Store(true)
 
 		//datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, out.startTxNum/ii.aggregationStep, out.endTxNum/ii.aggregationStep))
 		//if err := os.Remove(datPath); err != nil {
@@ -1043,7 +1043,7 @@ func (h *History) deleteFiles(indexOuts, historyOuts []*filesItem) error {
 		return err
 	}
 	for _, out := range historyOuts {
-		out.deleted.Store(true)
+		out.canDelete.Store(true)
 
 		//datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, out.startTxNum/h.aggregationStep, out.endTxNum/h.aggregationStep))
 		//if err := os.Remove(datPath); err != nil {
@@ -1059,7 +1059,7 @@ func (li *LocalityIndex) deleteFiles(out *filesItem) error {
 	if out == nil || out.index == nil {
 		return nil
 	}
-	out.deleted.Store(true)
+	out.canDelete.Store(true)
 	if li.file != nil && out.endTxNum == li.file.endTxNum { //paranoic protection against delettion of current file
 		return nil
 	}

@@ -22,10 +22,10 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 
 		// - create immutable view
 		// - del cold file
-		// - read from deleted file
+		// - read from canDelete file
 		// - close view
 		// - open new view
-		// - make sure there is no deleted file
+		// - make sure there is no canDelete file
 		hc := h.MakeContext()
 		_ = hc
 		lastOnFs, _ := h.files.Max()
@@ -49,7 +49,7 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 
 		nonDeletedOnFs, _ := h.files.Max()
 		require.False(nonDeletedOnFs.frozen)
-		require.NotNil(nonDeletedOnFs.decompressor) // non-deleted files are not closed
+		require.NotNil(nonDeletedOnFs.decompressor) // non-canDelete files are not closed
 
 		hc = h.MakeContext()
 		newLastInView, _ := hc.historyFiles.Max()
@@ -71,7 +71,7 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 		defer tx.Rollback()
 
 		// - del cold file
-		// - new reader must not see deleted file
+		// - new reader must not see canDelete file
 		lastOnFs, _ := h.files.Max()
 		require.False(lastOnFs.frozen) // prepared dataset must have some non-frozen files. or it's bad dataset.
 		err = h.deleteFiles(nil, []*filesItem{lastOnFs})

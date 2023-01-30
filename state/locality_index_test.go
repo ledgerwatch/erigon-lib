@@ -19,7 +19,6 @@ func TestLocality(t *testing.T) {
 	defer li.Close()
 	err := li.BuildMissedIndices(ctx, ii)
 	require.NoError(err)
-
 	t.Run("locality iterator", func(t *testing.T) {
 		ic := ii.MakeContext()
 		defer ic.Close()
