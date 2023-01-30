@@ -341,7 +341,7 @@ func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 
 			for r = h.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = h.findMergeRange(maxEndTxNum, maxSpan) {
 				hc := h.MakeContext()
-				indexOuts, historyOuts, _ := h.staticFilesInRange(r)
+				indexOuts, historyOuts, _ := h.staticFilesInRange(r, hc)
 				indexIn, historyIn, err := h.mergeFiles(ctx, indexOuts, historyOuts, r, 1)
 				require.NoError(tb, err)
 				h.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)

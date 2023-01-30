@@ -185,40 +185,43 @@ func (s *staticFilesInRange) Close() {
 	}
 }
 
+/*
 // nolint
-func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
-	closeAll := true
-	for rng := d.findMergeRange(maxSpan, maxTxNum); rng.any(); rng = d.findMergeRange(maxTxNum, maxSpan) {
-		var sfr staticFilesInRange
-		sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, sfr.startJ = d.staticFilesInRange(rng)
-		defer func() {
-			if closeAll {
-				sfr.Close()
+
+	func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
+		closeAll := true
+		for rng := d.findMergeRange(maxSpan, maxTxNum); rng.any(); rng = d.findMergeRange(maxTxNum, maxSpan) {
+			var sfr staticFilesInRange
+			sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, sfr.startJ = d.staticFilesInRange(rng)
+			defer func() {
+				if closeAll {
+					sfr.Close()
+				}
+			}()
+
+			var mf mergedDomainFiles
+			if mf.values, mf.index, mf.history, err = d.mergeFiles(ctx, sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, rng, workers); err != nil {
+				return err
 			}
-		}()
+			defer func() {
+				if closeAll {
+					mf.Close()
+				}
+			}()
 
-		var mf mergedDomainFiles
-		if mf.values, mf.index, mf.history, err = d.mergeFiles(ctx, sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, rng, workers); err != nil {
-			return err
-		}
-		defer func() {
-			if closeAll {
-				mf.Close()
+			//defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
+			d.integrateMergedFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, mf.values, mf.index, mf.history)
+
+			if err := d.deleteFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles); err != nil {
+				return err
 			}
-		}()
 
-		//defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
-		d.integrateMergedFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, mf.values, mf.index, mf.history)
-
-		if err := d.deleteFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles); err != nil {
-			return err
+			log.Info(fmt.Sprintf("domain files mergedRange[%d, %d) name=%s span=%d \n", rng.valuesStartTxNum, rng.valuesEndTxNum, d.filenameBase, maxSpan))
 		}
-
-		log.Info(fmt.Sprintf("domain files mergedRange[%d, %d) name=%s span=%d \n", rng.valuesStartTxNum, rng.valuesEndTxNum, d.filenameBase, maxSpan))
+		closeAll = false
+		return nil
 	}
-	closeAll = false
-	return nil
-}
+*/
 
 func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint64, uint64) {
 	var minFound bool
@@ -243,6 +246,7 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 	return minFound, startTxNum, endTxNum
 }
 
+/*
 // nolint
 func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
 	closeAll := true
@@ -281,6 +285,7 @@ func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan 
 	closeAll = false
 	return nil
 }
+*/
 
 type HistoryRanges struct {
 	historyStartTxNum uint64
@@ -335,7 +340,7 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 
 // staticFilesInRange returns list of static files with txNum in specified range [startTxNum; endTxNum)
 // files are in the descending order of endTxNum
-func (d *Domain) staticFilesInRange(r DomainRanges) (valuesFiles, indexFiles, historyFiles []*filesItem, startJ int) {
+func (d *Domain) staticFilesInRange(r DomainRanges, dc *DomainContext) (valuesFiles, indexFiles, historyFiles []*filesItem, startJ int) {
 	if r.index || r.history {
 		indexFiles, historyFiles, startJ = d.History.staticFilesInRange(HistoryRanges{
 			historyStartTxNum: r.historyStartTxNum,
@@ -344,7 +349,7 @@ func (d *Domain) staticFilesInRange(r DomainRanges) (valuesFiles, indexFiles, hi
 			indexStartTxNum:   r.indexStartTxNum,
 			indexEndTxNum:     r.indexEndTxNum,
 			index:             r.index,
-		})
+		}, dc.hc)
 	}
 	if r.values {
 		d.files.Ascend(func(item *filesItem) bool {
@@ -367,7 +372,8 @@ func (d *Domain) staticFilesInRange(r DomainRanges) (valuesFiles, indexFiles, hi
 	return
 }
 
-func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64) ([]*filesItem, int) {
+func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *InvertedIndexContext) ([]*filesItem, int) {
+	_ = ic
 	var files []*filesItem
 	var startJ int
 	ii.files.Ascend(func(item *filesItem) bool {
@@ -390,9 +396,10 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64) ([]*fil
 	return files, startJ
 }
 
-func (h *History) staticFilesInRange(r HistoryRanges) (indexFiles, historyFiles []*filesItem, startJ int) {
+func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (indexFiles, historyFiles []*filesItem, startJ int) {
+	_ = hc // maybe will move this method to `hc` object
 	if r.index {
-		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum)
+		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum, nil)
 	}
 	if r.history {
 		startJ = 0

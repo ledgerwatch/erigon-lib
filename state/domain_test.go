@@ -443,7 +443,7 @@ func collateAndMerge(t *testing.T, db kv.RwDB, tx kv.RwTx, d *Domain, txs uint64
 			maxSpan := uint64(16 * 16)
 			for r = d.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = d.findMergeRange(maxEndTxNum, maxSpan) {
 				dc := d.MakeContext()
-				valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r)
+				valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r, dc)
 				valuesIn, indexIn, historyIn, err := d.mergeFiles(ctx, valuesOuts, indexOuts, historyOuts, r, 1)
 				require.NoError(t, err)
 				d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
@@ -480,13 +480,15 @@ func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
 	maxEndTxNum := d.endTxNumMinimax()
 	maxSpan := d.aggregationStep * d.aggregationStep
 	for r = d.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = d.findMergeRange(maxEndTxNum, maxSpan) {
-		valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r)
+		dc := d.MakeContext()
+		valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r, dc)
 		valuesIn, indexIn, historyIn, err := d.mergeFiles(ctx, valuesOuts, indexOuts, historyOuts, r, 1)
 		require.NoError(t, err)
 
 		d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
 		err = d.deleteFiles(valuesOuts, indexOuts, historyOuts)
 		require.NoError(t, err)
+		dc.Close()
 	}
 }
 

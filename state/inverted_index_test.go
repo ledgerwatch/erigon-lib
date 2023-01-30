@@ -310,8 +310,6 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 
 func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	t.Helper()
-	ic := ii.MakeContext()
-	defer ic.Close()
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	ctx := context.Background()
@@ -337,7 +335,7 @@ func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 			maxSpan := ii.aggregationStep * StepsInBiggestFile
 			for found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan); found; found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan) {
 				ic := ii.MakeContext()
-				outs, _ := ii.staticFilesInRange(startTxNum, endTxNum)
+				outs, _ := ii.staticFilesInRange(startTxNum, endTxNum, ic)
 				in, err := ii.mergeFiles(ctx, outs, startTxNum, endTxNum, 1)
 				require.NoError(t, err)
 				ii.integrateMergedFiles(outs, in)

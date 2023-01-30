@@ -252,9 +252,9 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		logEvery = time.NewTicker(time.Second * 30)
 		wg       sync.WaitGroup
 		errCh    = make(chan error, 8)
-		maxSpan  = StepsInBiggestFile * a.aggregationStep
-		txFrom   = step * a.aggregationStep
-		txTo     = (step + 1) * a.aggregationStep
+		//maxSpan  = StepsInBiggestFile * a.aggregationStep
+		txFrom = step * a.aggregationStep
+		txTo   = (step + 1) * a.aggregationStep
 		//workers  = 1
 	)
 	defer logEvery.Stop()
@@ -333,33 +333,51 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	defer ac.Close()
 
 	maxEndTxNum := a.EndTxNumMinimax()
-	closeAll := true
-	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
-		outs := a.staticFilesInRange(r)
-		defer func() {
-			if closeAll {
-				outs.Close()
-			}
-		}()
-
-		in, err := a.mergeFiles(ctx, outs, r, 1)
+	for {
+		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
 		if err != nil {
 			return err
 		}
-		a.integrateMergedFiles(outs, in)
-		defer func() {
-			if closeAll {
-				in.Close()
-			}
-		}()
-
-		if err = a.deleteFiles(outs); err != nil {
-			return err
+		if !somethingMerged {
+			break
 		}
 	}
-
-	closeAll = false
 	return nil
+}
+
+func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, workers int) (somethingDone bool, err error) {
+	closeAll := true
+	maxSpan := a.aggregationStep * StepsInBiggestFile
+	r := a.findMergeRange(maxEndTxNum, maxSpan)
+	if !r.any() {
+		return false, nil
+	}
+
+	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
+	defer ac.Close()
+
+	outs := a.staticFilesInRange(r, ac)
+	defer func() {
+		if closeAll {
+			outs.Close()
+		}
+	}()
+
+	in, err := a.mergeFiles(ctx, outs, r, workers)
+	if err != nil {
+		return true, err
+	}
+	defer func() {
+		if closeAll {
+			in.Close()
+		}
+	}()
+	a.integrateMergedFiles(outs, in)
+	if err = a.deleteFiles(outs); err != nil {
+		return true, err
+	}
+	closeAll = false
+	return true, nil
 }
 
 type Ranges struct {
@@ -447,31 +465,31 @@ func (sf SelectedStaticFiles) Close() {
 	}
 }
 
-func (a *Aggregator) staticFilesInRange(r Ranges) SelectedStaticFiles {
+func (a *Aggregator) staticFilesInRange(r Ranges, ac *AggregatorContext) SelectedStaticFiles {
 	var sf SelectedStaticFiles
 	if r.accounts.any() {
-		sf.accounts, sf.accountsIdx, sf.accountsHist, sf.accountsI = a.accounts.staticFilesInRange(r.accounts)
+		sf.accounts, sf.accountsIdx, sf.accountsHist, sf.accountsI = a.accounts.staticFilesInRange(r.accounts, ac.accounts)
 	}
 	if r.storage.any() {
-		sf.storage, sf.storageIdx, sf.storageHist, sf.storageI = a.storage.staticFilesInRange(r.storage)
+		sf.storage, sf.storageIdx, sf.storageHist, sf.storageI = a.storage.staticFilesInRange(r.storage, ac.storage)
 	}
 	if r.code.any() {
-		sf.code, sf.codeIdx, sf.codeHist, sf.codeI = a.code.staticFilesInRange(r.code)
+		sf.code, sf.codeIdx, sf.codeHist, sf.codeI = a.code.staticFilesInRange(r.code, ac.code)
 	}
 	if r.commitment.any() {
-		sf.commitment, sf.commitmentIdx, sf.commitmentHist, sf.commitmentI = a.commitment.staticFilesInRange(r.commitment)
+		sf.commitment, sf.commitmentIdx, sf.commitmentHist, sf.commitmentI = a.commitment.staticFilesInRange(r.commitment, ac.commitment)
 	}
 	if r.logAddrs {
-		sf.logAddrs, sf.logAddrsI = a.logAddrs.staticFilesInRange(r.logAddrsStartTxNum, r.logAddrsEndTxNum)
+		sf.logAddrs, sf.logAddrsI = a.logAddrs.staticFilesInRange(r.logAddrsStartTxNum, r.logAddrsEndTxNum, ac.logAddrs)
 	}
 	if r.logTopics {
-		sf.logTopics, sf.logTopicsI = a.logTopics.staticFilesInRange(r.logTopicsStartTxNum, r.logTopicsEndTxNum)
+		sf.logTopics, sf.logTopicsI = a.logTopics.staticFilesInRange(r.logTopicsStartTxNum, r.logTopicsEndTxNum, ac.logTopics)
 	}
 	if r.tracesFrom {
-		sf.tracesFrom, sf.tracesFromI = a.tracesFrom.staticFilesInRange(r.tracesFromStartTxNum, r.tracesFromEndTxNum)
+		sf.tracesFrom, sf.tracesFromI = a.tracesFrom.staticFilesInRange(r.tracesFromStartTxNum, r.tracesFromEndTxNum, ac.tracesFrom)
 	}
 	if r.tracesTo {
-		sf.tracesTo, sf.tracesToI = a.tracesTo.staticFilesInRange(r.tracesToStartTxNum, r.tracesToEndTxNum)
+		sf.tracesTo, sf.tracesToI = a.tracesTo.staticFilesInRange(r.tracesToStartTxNum, r.tracesToEndTxNum, ac.tracesTo)
 	}
 	return sf
 }

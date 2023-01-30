@@ -267,13 +267,13 @@ func (sf RSelectedStaticFiles) Close() {
 func (ri *ReadIndices) staticFilesInRange(r RRanges) RSelectedStaticFiles {
 	var sf RSelectedStaticFiles
 	if r.accounts {
-		sf.accounts, sf.accountsI = ri.accounts.staticFilesInRange(r.accountsStartTxNum, r.accountsEndTxNum)
+		sf.accounts, sf.accountsI = ri.accounts.staticFilesInRange(r.accountsStartTxNum, r.accountsEndTxNum, nil)
 	}
 	if r.storage {
-		sf.storage, sf.storageI = ri.storage.staticFilesInRange(r.storageStartTxNum, r.storageEndTxNum)
+		sf.storage, sf.storageI = ri.storage.staticFilesInRange(r.storageStartTxNum, r.storageEndTxNum, nil)
 	}
 	if r.code {
-		sf.code, sf.codeI = ri.code.staticFilesInRange(r.codeStartTxNum, r.codeEndTxNum)
+		sf.code, sf.codeI = ri.code.staticFilesInRange(r.codeStartTxNum, r.codeEndTxNum, nil)
 	}
 	return sf
 }
