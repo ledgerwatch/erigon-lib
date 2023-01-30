@@ -274,7 +274,7 @@ func (ii *InvertedIndex) closeFiles() {
 			if err := item.index.Close(); err != nil {
 				panic(err)
 			}
-			item.inde = nil
+			item.index = nil
 		}
 		return true
 	})
