@@ -109,6 +109,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 
 	sf, err := h.buildFiles(ctx, 0, c)
 	require.NoError(err)
+	defer sf.Close()
 	var valWords []string
 	g := sf.historyDecomp.MakeGetter()
 	g.Reset(0)

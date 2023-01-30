@@ -64,10 +64,12 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 
 		// - del cold file
 		// - new reader must not see canDelete file
+		hc := h.MakeContext()
 		lastOnFs, _ := h.files.Max()
 		require.False(lastOnFs.frozen) // prepared dataset must have some non-frozen files. or it's bad dataset.
 		err = h.deleteFiles(nil, []*filesItem{lastOnFs})
 		require.NoError(err)
+		hc.Close()
 
 		require.Nil(lastOnFs.decompressor)
 	})
