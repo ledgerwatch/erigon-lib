@@ -1146,6 +1146,7 @@ func (hc *HistoryContext) Close() {
 		//GC: last reader must close all removed files
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
+				fmt.Printf("del: %s\n", item.src.decompressor.FilePath())
 				if err := item.src.decompressor.Close(); err != nil {
 					panic(err)
 				}
