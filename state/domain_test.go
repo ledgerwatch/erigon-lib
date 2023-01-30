@@ -104,7 +104,6 @@ func TestCollationBuild(t *testing.T) {
 
 	sf, err := d.buildFiles(ctx, 0, c)
 	require.NoError(t, err)
-	defer sf.Close()
 	g := sf.valuesDecomp.MakeGetter()
 	g.Reset(0)
 	var words []string
@@ -205,7 +204,6 @@ func TestAfterPrune(t *testing.T) {
 
 	sf, err := d.buildFiles(ctx, 0, c)
 	require.NoError(t, err)
-	defer sf.Close()
 
 	d.integrateFiles(sf, 0, 16)
 	var v []byte

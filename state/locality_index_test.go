@@ -43,7 +43,6 @@ func TestLocality(t *testing.T) {
 
 	files, err := li.buildFiles(ctx, ii, ii.endTxNumMinimax()/ii.aggregationStep)
 	require.NoError(err)
-	defer files.Close()
 	t.Run("locality index: get full bitamp", func(t *testing.T) {
 		res, err := files.bm.At(0)
 		require.NoError(err)
