@@ -379,8 +379,6 @@ func TestInvIndexRanges(t *testing.T) {
 
 func TestInvIndexMerge(t *testing.T) {
 	_, db, ii, txs := filledInvIndex(t)
-	defer db.Close()
-	defer ii.Close()
 
 	mergeInverted(t, db, ii, txs)
 	checkRanges(t, db, ii, txs)
@@ -388,7 +386,7 @@ func TestInvIndexMerge(t *testing.T) {
 
 func TestInvIndexScanFiles(t *testing.T) {
 	path, db, ii, txs := filledInvIndex(t)
-	ii.Close()
+
 	// Recreate InvertedIndex to scan the files
 	var err error
 	ii, err = NewInvertedIndex(path, path, ii.aggregationStep, ii.filenameBase, ii.indexKeysTable, ii.indexTable, false, nil)

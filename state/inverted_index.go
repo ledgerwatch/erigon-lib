@@ -441,8 +441,8 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	var ic = InvertedIndexContext{ii: ii, localityIndex: ii.localityIndex}
 	ic.files = btree.NewG[ctxItem](32, ctxItemLess)
 	ii.files.Ascend(func(item *filesItem) bool {
-		if item.index == nil {
-			return false
+		if item.index == nil || item.deleted.Load() {
+			return true
 		}
 		if !item.frozen {
 			item.refcount.Inc()

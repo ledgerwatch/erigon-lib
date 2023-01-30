@@ -1084,7 +1084,7 @@ func (h *History) MakeContext() *HistoryContext {
 		trace:      false,
 	}
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
-		if item.index == nil {
+		if item.index == nil || item.deleted.Load() {
 			return true
 		}
 		//if item.startTxNum > h.endTxNumMinimax() { //after this number: not all filles are built yet (data still in DB)

@@ -492,8 +492,6 @@ func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
 
 func TestMergeFiles(t *testing.T) {
 	_, db, d, txs := filledDomain(t)
-	defer db.Close()
-	defer d.Close()
 
 	collateAndMerge(t, db, nil, d, txs)
 	checkHistory(t, db, d, txs)
@@ -501,8 +499,6 @@ func TestMergeFiles(t *testing.T) {
 
 func TestScanFiles(t *testing.T) {
 	path, db, d, txs := filledDomain(t)
-	defer db.Close()
-	defer d.Close()
 
 	collateAndMerge(t, db, nil, d, txs)
 	// Recreate domain and re-scan the files
@@ -609,8 +605,6 @@ func filledDomainFixedSize(t *testing.T, keysCount, txCount uint64) (string, kv.
 func TestDomain_Prune_AfterAllWrites(t *testing.T) {
 	keyCount, txCount := uint64(4), uint64(64)
 	_, db, dom, data := filledDomainFixedSize(t, keyCount, txCount)
-	defer db.Close()
-	defer dom.Close()
 
 	collateAndMerge(t, db, nil, dom, txCount)
 
