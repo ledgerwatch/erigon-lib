@@ -317,8 +317,6 @@ func TestHistoryHistory(t *testing.T) {
 
 func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 	tb.Helper()
-	hc := h.MakeContext()
-	defer hc.Close()
 
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -340,13 +338,16 @@ func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 			var r HistoryRanges
 			maxEndTxNum := h.endTxNumMinimax()
 			maxSpan := uint64(16 * 16)
+
 			for r = h.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = h.findMergeRange(maxEndTxNum, maxSpan) {
+				hc := h.MakeContext()
 				indexOuts, historyOuts, _ := h.staticFilesInRange(r)
 				indexIn, historyIn, err := h.mergeFiles(ctx, indexOuts, historyOuts, r, 1)
 				require.NoError(tb, err)
 				h.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
 				err = h.deleteFiles(indexOuts, historyOuts)
 				require.NoError(tb, err)
+				hc.Close()
 			}
 		}()
 	}

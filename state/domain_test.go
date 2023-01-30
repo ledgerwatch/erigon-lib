@@ -416,8 +416,6 @@ func TestIterationMultistep(t *testing.T) {
 
 func collateAndMerge(t *testing.T, db kv.RwDB, tx kv.RwTx, d *Domain, txs uint64) {
 	t.Helper()
-	dc := d.MakeContext()
-	defer dc.Close()
 
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -444,12 +442,14 @@ func collateAndMerge(t *testing.T, db kv.RwDB, tx kv.RwTx, d *Domain, txs uint64
 			maxEndTxNum := d.endTxNumMinimax()
 			maxSpan := uint64(16 * 16)
 			for r = d.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = d.findMergeRange(maxEndTxNum, maxSpan) {
+				dc := d.MakeContext()
 				valuesOuts, indexOuts, historyOuts, _ := d.staticFilesInRange(r)
 				valuesIn, indexIn, historyIn, err := d.mergeFiles(ctx, valuesOuts, indexOuts, historyOuts, r, 1)
 				require.NoError(t, err)
 				d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
 				err = d.deleteFiles(valuesOuts, indexOuts, historyOuts)
 				require.NoError(t, err)
+				dc.Close()
 			}
 		}()
 	}

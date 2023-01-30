@@ -336,12 +336,14 @@ func mergeInverted(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 			maxEndTxNum := ii.endTxNumMinimax()
 			maxSpan := ii.aggregationStep * StepsInBiggestFile
 			for found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan); found; found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan) {
+				ic := ii.MakeContext()
 				outs, _ := ii.staticFilesInRange(startTxNum, endTxNum)
 				in, err := ii.mergeFiles(ctx, outs, startTxNum, endTxNum, 1)
 				require.NoError(t, err)
 				ii.integrateMergedFiles(outs, in)
 				err = ii.deleteFiles(outs)
 				require.NoError(t, err)
+				ic.Close()
 			}
 		}()
 	}
