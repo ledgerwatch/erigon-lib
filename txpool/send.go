@@ -111,46 +111,69 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte) (txSentTo []int) {
 
 func (f *Send) AnnouncePooledTxs(types []byte, sizes []uint32, hashes types2.Hashes) (hashSentTo []int) {
 	defer f.notifyTests()
-	hashSentTo = make([]int, len(hashes)/32)
-	prev := 0
-	for len(hashes) > 0 {
-		var pending types2.Hashes
-		if len(hashes) > p2pTxPacketLimit {
-			pending = hashes[:p2pTxPacketLimit]
-			hashes = hashes[p2pTxPacketLimit:]
-		} else {
-			pending = hashes[:]
-			hashes = hashes[:0]
+	hashSentTo = make([]int, len(types))
+	if len(types) == 0 {
+		return
+	}
+	prevI := 0
+	prevJ := 0
+	for prevI < len(hashes) || prevJ < len(types) {
+		// Prepare two versions of the annoucement message, one for pre-eth/68 peers, another for post-eth/68 peers
+		i := prevI
+		for i < len(hashes) && rlp.HashesLen(hashes[prevI:i+32]) < p2pTxPacketLimit {
+			i += 32
 		}
-
-		hashesData := types2.EncodeHashes(pending, nil)
-		var hashes66 *sentry.OutboundMessageData
+		j := prevJ
+		for j < len(types) && rlp.AnnouncementsLen(types[prevJ:j+1], sizes[prevJ:j+1], hashes[32*prevJ:32*j+32]) < p2pTxPacketLimit {
+			j++
+		}
+		iSize := rlp.HashesLen(hashes[prevI:i])
+		jSize := rlp.AnnouncementsLen(types[prevJ:j], sizes[prevJ:j], hashes[32*prevJ:32*j])
+		iData := make([]byte, iSize)
+		jData := make([]byte, jSize)
+		if s := rlp.EncodeHashes(hashes[prevI:i], iData); s != iSize {
+			panic(fmt.Sprintf("Serialised hashes encoding len mismatch, expected %d, got %d", iSize, s))
+		}
+		if s := rlp.EncodeAnnouncements(types[prevJ:j], sizes[prevJ:j], hashes[32*prevJ:32*j], jData); s != jSize {
+			panic(fmt.Sprintf("Serialised annoucements encoding len mismatch, expected %d, got %d", jSize, s))
+		}
 		for _, sentryClient := range f.sentryClients {
 			if !sentryClient.Ready() {
 				continue
 			}
 			switch sentryClient.Protocol() {
 			case direct.ETH66, direct.ETH67:
-				if hashes66 == nil {
-					hashes66 = &sentry.OutboundMessageData{
-						Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
-						Data: hashesData,
-					}
+				req := &sentry.OutboundMessageData{
+					Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+					Data: iData,
 				}
-				peers, err := sentryClient.SendMessageToAll(f.ctx, hashes66, &grpc.EmptyCallOption{})
+				peers, err := sentryClient.SendMessageToAll(f.ctx, req, &grpc.EmptyCallOption{})
 				if err != nil {
 					log.Debug("[txpool.send] AnnouncePooledTxs", "err", err)
 				}
 				if peers != nil {
-					for j, l := prev, pending.Len(); j < prev+l; j++ {
-						hashSentTo[j] = len(peers.Peers)
+					for k := prevI; k < i; k += 32 {
+						hashSentTo[k/32] += len(peers.Peers)
 					}
 				}
 			case direct.ETH68:
-				// TODO new format of NewPooledTransactionHashes
+				req := &sentry.OutboundMessageData{
+					Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+					Data: jData,
+				}
+				peers, err := sentryClient.SendMessageToAll(f.ctx, req, &grpc.EmptyCallOption{})
+				if err != nil {
+					log.Debug("[txpool.send] AnnouncePooledTxs68", "err", err)
+				}
+				if peers != nil {
+					for k := prevJ; k < j; k++ {
+						hashSentTo[k] += len(peers.Peers)
+					}
+				}
 			}
 		}
-		prev += pending.Len()
+		prevI = i
+		prevJ = j
 	}
 	return
 }
@@ -161,32 +184,29 @@ func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types []byte
 	if len(types) == 0 {
 		return
 	}
-	onlyHashes := hashes
 
-	for len(onlyHashes) > 0 || len(types) > 0 {
+	prevI := 0
+	prevJ := 0
+	for prevI < len(hashes) || prevJ < len(types) {
 		// Prepare two versions of the annoucement message, one for pre-eth/68 peers, another for post-eth/68 peers
-		i := 0
-		for i < len(onlyHashes) && rlp.HashesLen(onlyHashes[:i+32]) < p2pTxPacketLimit {
+		i := prevI
+		for i < len(hashes) && rlp.HashesLen(hashes[prevI:i+32]) < p2pTxPacketLimit {
 			i += 32
 		}
-		j := 0
-		for j < len(types) && rlp.AnnouncementsLen(types[:j+1], sizes[:j+1], hashes[:32*j+32]) < p2pTxPacketLimit {
+		j := prevJ
+		for j < len(types) && rlp.AnnouncementsLen(types[prevJ:j+1], sizes[prevJ:j+1], hashes[32*prevJ:32*j+32]) < p2pTxPacketLimit {
 			j++
 		}
-		iSize := rlp.HashesLen(onlyHashes[:i])
-		jSize := rlp.AnnouncementsLen(types[:j], sizes[:j], hashes[:32*j])
+		iSize := rlp.HashesLen(hashes[prevI:i])
+		jSize := rlp.AnnouncementsLen(types[prevJ:j], sizes[prevJ:j], hashes[32*prevJ:32*j])
 		iData := make([]byte, iSize)
 		jData := make([]byte, jSize)
-		if s := rlp.EncodeHashes(onlyHashes[:i], iData); s != iSize {
+		if s := rlp.EncodeHashes(hashes[prevI:i], iData); s != iSize {
 			panic(fmt.Sprintf("Serialised hashes encoding len mismatch, expected %d, got %d", iSize, s))
 		}
-		if s := rlp.EncodeAnnouncements(types[:j], sizes[:j], hashes[:32*j], jData); s != jSize {
+		if s := rlp.EncodeAnnouncements(types[prevJ:j], sizes[prevJ:j], hashes[32*prevJ:32*j], jData); s != jSize {
 			panic(fmt.Sprintf("Serialised annoucements encoding len mismatch, expected %d, got %d", jSize, s))
 		}
-		onlyHashes = onlyHashes[i:]
-		types = types[j:]
-		sizes = sizes[j:]
-		hashes = hashes[32*j:]
 
 		for _, sentryClient := range f.sentryClients {
 			if !sentryClient.Ready() {
@@ -224,5 +244,7 @@ func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types []byte
 				}
 			}
 		}
+		prevI = i
+		prevJ = j
 	}
 }
