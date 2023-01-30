@@ -218,7 +218,7 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
-	fmt.Printf("DBG: History.Close %s\n", dbg.Stack())
+	//fmt.Printf("DBG: History.Close %s\n", dbg.Stack())
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			if err := item.decompressor.Close(); err != nil {
@@ -1138,7 +1138,7 @@ func (h *History) MakeContext() *HistoryContext {
 	return &hc
 }
 func (hc *HistoryContext) Close() {
-	fmt.Printf("DBG: HistoryContext.Close %s\n", dbg.Stack())
+	//fmt.Printf("DBG: HistoryContext.Close %s\n", dbg.Stack())
 	hc.indexFiles.Ascend(func(item ctxItem) bool {
 		if item.src.frozen || !item.src.deleted.Load() {
 			return true
