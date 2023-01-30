@@ -231,6 +231,11 @@ func EncodeHash(h, to []byte) int {
 	return 33
 }
 
+func HashesLen(hashes []byte) int {
+	hashesLen := len(hashes) / 32 * 33
+	return ListPrefixLen(hashesLen) + hashesLen
+}
+
 func EncodeHashes(hashes []byte, encodeBuf []byte) int {
 	pos := 0
 	hashesLen := len(hashes) / 32 * 33
@@ -241,7 +246,7 @@ func EncodeHashes(hashes []byte, encodeBuf []byte) int {
 	return pos
 }
 
-func AnnoucementsLen(types []byte, sizes []uint32, hashes []byte) int {
+func AnnouncementsLen(types []byte, sizes []uint32, hashes []byte) int {
 	typesLen := StringLen(len(types))
 	var sizesLen int
 	for _, size := range sizes {

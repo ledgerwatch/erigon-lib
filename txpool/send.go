@@ -18,10 +18,12 @@ package txpool
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/ledgerwatch/erigon-lib/direct"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
+	"github.com/ledgerwatch/erigon-lib/rlp"
 	types2 "github.com/ledgerwatch/erigon-lib/types"
 	"github.com/ledgerwatch/log/v3"
 	"google.golang.org/grpc"
@@ -159,18 +161,33 @@ func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types []byte
 	if len(types) == 0 {
 		return
 	}
+	onlyHashes := hashes
 
-	for len(txs) > 0 {
-		var pending types2.Hashes
-		if len(txs) > p2pTxPacketLimit {
-			pending = txs[:p2pTxPacketLimit]
-			txs = txs[p2pTxPacketLimit:]
-		} else {
-			pending = txs
-			txs = txs[:0]
+	for len(onlyHashes) > 0 || len(types) > 0 {
+		// Prepare two versions of the annoucement message, one for pre-eth/68 peers, another for post-eth/68 peers
+		i := 0
+		for i < len(onlyHashes) && rlp.HashesLen(onlyHashes[:i+32]) < p2pTxPacketLimit {
+			i += 32
 		}
+		j := 0
+		for j < len(types) && rlp.AnnouncementsLen(types[:j+1], sizes[:j+1], hashes[:32*j+32]) < p2pTxPacketLimit {
+			j++
+		}
+		iSize := rlp.HashesLen(onlyHashes[:i])
+		jSize := rlp.AnnouncementsLen(types[:j], sizes[:j], hashes[:32*j])
+		iData := make([]byte, iSize)
+		jData := make([]byte, jSize)
+		if s := rlp.EncodeHashes(onlyHashes[:i], iData); s != iSize {
+			panic(fmt.Sprintf("Serialised hashes encoding len mismatch, expected %d, got %d", iSize, s))
+		}
+		if s := rlp.EncodeAnnouncements(types[:j], sizes[:j], hashes[:32*j], jData); s != jSize {
+			panic(fmt.Sprintf("Serialised annoucements encoding len mismatch, expected %d, got %d", jSize, s))
+		}
+		onlyHashes = onlyHashes[i:]
+		types = types[j:]
+		sizes = sizes[j:]
+		hashes = hashes[32*j:]
 
-		data := types2.EncodeHashes(pending, nil)
 		for _, sentryClient := range f.sentryClients {
 			if !sentryClient.Ready() {
 				continue
@@ -179,18 +196,31 @@ func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types []byte
 			for _, peer := range peers {
 				switch sentryClient.Protocol() {
 				case direct.ETH66, direct.ETH67:
-					req66 := &sentry.SendMessageByIdRequest{
-						PeerId: peer,
-						Data: &sentry.OutboundMessageData{
-							Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
-							Data: data,
-						},
-					}
-					if _, err := sentryClient.SendMessageById(f.ctx, req66, &grpc.EmptyCallOption{}); err != nil {
-						log.Debug("[txpool.send] PropagatePooledTxsToPeersList", "err", err)
+					if i > 0 {
+						req := &sentry.SendMessageByIdRequest{
+							PeerId: peer,
+							Data: &sentry.OutboundMessageData{
+								Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+								Data: iData,
+							},
+						}
+						if _, err := sentryClient.SendMessageById(f.ctx, req, &grpc.EmptyCallOption{}); err != nil {
+							log.Debug("[txpool.send] PropagatePooledTxsToPeersList", "err", err)
+						}
 					}
 				case direct.ETH68:
-					//TODO generate NewPooledTransactionHashes in new format
+					if j > 0 {
+						req := &sentry.SendMessageByIdRequest{
+							PeerId: peer,
+							Data: &sentry.OutboundMessageData{
+								Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+								Data: jData,
+							},
+						}
+						if _, err := sentryClient.SendMessageById(f.ctx, req, &grpc.EmptyCallOption{}); err != nil {
+							log.Debug("[txpool.send] PropagatePooledTxsToPeersList68", "err", err)
+						}
+					}
 				}
 			}
 		}
