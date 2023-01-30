@@ -60,6 +60,9 @@ func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 }
 
 func TestHistoryCollationBuild(t *testing.T) {
+	defer log.Root().SetHandler(log.Root().GetHandler())
+	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StderrHandler))
+
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	require := require.New(t)
@@ -220,6 +223,7 @@ func TestHistoryAfterPrune(t *testing.T) {
 func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 	tb.Helper()
 	path, db, h := testDbAndHistory(tb)
+	fmt.Printf("-----\n")
 	ctx := context.Background()
 	tx, err := db.BeginRw(ctx)
 	require.NoError(tb, err)
@@ -257,6 +261,8 @@ func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 	require.NoError(tb, err)
 	err = tx.Commit()
 	require.NoError(tb, err)
+	fmt.Printf("-----2\n")
+
 	return path, db, h, txs
 }
 
@@ -473,9 +479,6 @@ func TestIterateChanged(t *testing.T) {
 }
 
 func TestIterateChanged2(t *testing.T) {
-	defer log.Root().SetHandler(log.Root().GetHandler())
-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StderrHandler))
-
 	_, db, h, txs := filledHistory(t)
 	ctx := context.Background()
 
@@ -483,111 +486,118 @@ func TestIterateChanged2(t *testing.T) {
 	require.NoError(t, err)
 	defer roTx.Rollback()
 	var keys, vals []string
-	ic := h.MakeContext()
-	defer ic.Close()
+	t.Run("before merge", func(t *testing.T) {
+		ic := h.MakeContext()
+		defer ic.Close()
 
-	ic.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
-		keys = append(keys, fmt.Sprintf("%x", k))
-		vals = append(vals, fmt.Sprintf("%x", v))
-		return nil
-	})
-	require.Equal(t, []string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000007",
-		"0100000000000008",
-		"0100000000000009",
-		"010000000000000a",
-		"010000000000000b",
-		"010000000000000c",
-		"010000000000000d",
-		"010000000000000e",
-		"010000000000000f",
-		"0100000000000010",
-		"0100000000000011",
-		"0100000000000012",
-		"0100000000000013"}, keys)
-	require.Equal(t, []string{
-		"ff00000000000001",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		""}, vals)
-	keys, vals = keys[:0], vals[:0]
-	err = ic.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
-		keys = append(keys, fmt.Sprintf("%x", k))
-		vals = append(vals, fmt.Sprintf("%x", v))
-		return nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, []string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000009",
-		"010000000000000c",
-		"010000000000001b",
-	}, keys)
+		err := ic.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
+			keys = append(keys, fmt.Sprintf("%x", k))
+			vals = append(vals, fmt.Sprintf("%x", v))
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"0100000000000001",
+			"0100000000000002",
+			"0100000000000003",
+			"0100000000000004",
+			"0100000000000005",
+			"0100000000000006",
+			"0100000000000007",
+			"0100000000000008",
+			"0100000000000009",
+			"010000000000000a",
+			"010000000000000b",
+			"010000000000000c",
+			"010000000000000d",
+			"010000000000000e",
+			"010000000000000f",
+			"0100000000000010",
+			"0100000000000011",
+			"0100000000000012",
+			"0100000000000013"}, keys)
+		require.Equal(t, []string{
+			"ff00000000000001",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			""}, vals)
+		keys, vals = keys[:0], vals[:0]
+		err = ic.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
+			keys = append(keys, fmt.Sprintf("%x", k))
+			vals = append(vals, fmt.Sprintf("%x", v))
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"0100000000000001",
+			"0100000000000002",
+			"0100000000000003",
+			"0100000000000004",
+			"0100000000000005",
+			"0100000000000006",
+			"0100000000000009",
+			"010000000000000c",
+			"010000000000001b",
+		}, keys)
 
-	require.Equal(t, []string{
-		"ff000000000003e2",
-		"ff000000000001f1",
-		"ff0000000000014b",
-		"ff000000000000f8",
-		"ff000000000000c6",
-		"ff000000000000a5",
-		"ff0000000000006e",
-		"ff00000000000052",
-		"ff00000000000024"}, vals)
-
-	collateAndMergeHistory(t, db, h, txs)
-	keys = keys[:0]
-	err = ic.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
-		keys = append(keys, fmt.Sprintf("%x", k))
-		return nil
+		require.Equal(t, []string{
+			"ff000000000003e2",
+			"ff000000000001f1",
+			"ff0000000000014b",
+			"ff000000000000f8",
+			"ff000000000000c6",
+			"ff000000000000a5",
+			"ff0000000000006e",
+			"ff00000000000052",
+			"ff00000000000024"}, vals)
 	})
-	require.NoError(t, err)
-	require.Equal(t, []string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000007",
-		"0100000000000008",
-		"0100000000000009",
-		"010000000000000a",
-		"010000000000000b",
-		"010000000000000c",
-		"010000000000000d",
-		"010000000000000e",
-		"010000000000000f",
-		"0100000000000010",
-		"0100000000000011",
-		"0100000000000012",
-		"0100000000000013"}, keys)
+	t.Run("after merge", func(t *testing.T) {
+		collateAndMergeHistory(t, db, h, txs)
+		ic := h.MakeContext()
+		defer ic.Close()
+
+		keys = keys[:0]
+		err = ic.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
+			keys = append(keys, fmt.Sprintf("%x", k))
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"0100000000000001",
+			"0100000000000002",
+			"0100000000000003",
+			"0100000000000004",
+			"0100000000000005",
+			"0100000000000006",
+			"0100000000000007",
+			"0100000000000008",
+			"0100000000000009",
+			"010000000000000a",
+			"010000000000000b",
+			"010000000000000c",
+			"010000000000000d",
+			"010000000000000e",
+			"010000000000000f",
+			"0100000000000010",
+			"0100000000000011",
+			"0100000000000012",
+			"0100000000000013"}, keys)
+	})
 }
 
 func TestScanStaticFilesH(t *testing.T) {
