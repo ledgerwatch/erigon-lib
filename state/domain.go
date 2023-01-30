@@ -495,8 +495,8 @@ func (d *Domain) MakeContext() *DomainContext {
 	dc.files = bt
 
 	d.files.Ascend(func(item *filesItem) bool {
-		if item.index == nil {
-			return false
+		if item.index == nil || item.canDelete.Load() {
+			return true
 		}
 
 		if !item.frozen {

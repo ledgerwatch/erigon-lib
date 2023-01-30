@@ -1106,7 +1106,7 @@ func (h *History) MakeContext() *HistoryContext {
 	})
 	hc.historyFiles = btree.NewG[ctxItem](32, ctxItemLess)
 	h.files.Ascend(func(item *filesItem) bool {
-		if item.index == nil {
+		if item.index == nil || item.canDelete.Load() {
 			return true
 		}
 		//if item.startTxNum > h.endTxNumMinimax() {
@@ -1114,7 +1114,8 @@ func (h *History) MakeContext() *HistoryContext {
 		//}
 
 		if !item.frozen {
-			item.refcount.Inc()
+			refcount := item.refcount.Inc()
+			fmt.Printf("refc++ %d,%s\n", refcount, item.decompressor.FileName())
 		}
 
 		it := ctxItem{
@@ -1174,6 +1175,7 @@ func (hc *HistoryContext) Close() {
 			return true
 		}
 		refCnt := item.src.refcount.Dec()
+		fmt.Printf("refc-- %d,%s\n", refCnt, item.src.decompressor.FileName())
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
 			if item.src.decompressor != nil {
