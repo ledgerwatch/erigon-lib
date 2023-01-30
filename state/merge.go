@@ -993,6 +993,7 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 		h.files.ReplaceOrInsert(historyIn)
 	}
 	for _, out := range historyOuts {
+		fmt.Printf("mark deleted: %s\n", out.decompressor.FilePath())
 		if out == nil {
 			panic("must not happen: " + h.filenameBase)
 		}

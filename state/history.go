@@ -1149,7 +1149,7 @@ func (hc *HistoryContext) Close() {
 		//fmt.Printf("refcnt hist ctx: %d, %s\n", refCnt, item.src.decompressor.FilePath())
 		if refCnt == 0 {
 			if item.src.decompressor != nil {
-				//fmt.Printf("hist ctx del: %s\n", item.src.decompressor.FilePath())
+				fmt.Printf("hist ctx del: %s\n", item.src.decompressor.FilePath())
 				if err := item.src.decompressor.Close(); err != nil {
 					panic(fmt.Errorf("HistoryContext.Close: item.src.decompressor.Close(): %w", err))
 				}
