@@ -221,6 +221,7 @@ func (h *History) closeFiles() {
 	//fmt.Printf("DBG: History.Close %s\n", dbg.Stack())
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
+			fmt.Printf("hist close: %s\n", item.decompressor.FilePath())
 			if err := item.decompressor.Close(); err != nil {
 				panic(err)
 			}
