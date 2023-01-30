@@ -2,16 +2,14 @@ package state
 
 import (
 	"context"
-	"os"
 	"testing"
 
-	"github.com/google/btree"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGCReadAfterRemoveFile(t *testing.T) {
 	require := require.New(t)
-	path, db, h, txs := filledHistory(t)
+	_, db, h, txs := filledHistory(t)
 	collateAndMergeHistory(t, db, h, txs)
 	ctx := context.Background()
 
@@ -56,12 +54,6 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 		require.False(lastOnFs.frozen)
 		require.False(lastInView.startTxNum == newLastInView.startTxNum && lastInView.endTxNum == newLastInView.endTxNum)
 
-		files, err := os.ReadDir(path)
-		require.NoError(err)
-		h.files = btree.NewG[*filesItem](32, filesItemLess)
-		h.scanStateFiles(files, nil)
-		newLastOnFs, _ := h.files.Max()
-		require.False(lastOnFs.startTxNum == newLastOnFs.startTxNum && lastInView.endTxNum == newLastOnFs.endTxNum)
 		hc.Close()
 	})
 

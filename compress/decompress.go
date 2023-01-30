@@ -339,6 +339,7 @@ func (d *Decompressor) ModTime() time.Time {
 }
 
 func (d *Decompressor) Close() error {
+
 	if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
 		log.Trace("unmap", "err", err, "file", d.FileName())
 	}
