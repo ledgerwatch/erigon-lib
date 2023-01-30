@@ -1114,8 +1114,7 @@ func (h *History) MakeContext() *HistoryContext {
 		//}
 
 		if !item.frozen {
-			refcount := item.refcount.Inc()
-			fmt.Printf("refc++ %d,%s\n", refcount, item.decompressor.FileName())
+			item.refcount.Inc()
 		}
 
 		it := ctxItem{
@@ -1157,11 +1156,9 @@ func (hc *HistoryContext) Close() {
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
-				fmt.Printf("close: %s\n", item.src.index.FilePath())
 				if err := item.src.index.Close(); err != nil {
 					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
-				fmt.Printf("remove: %s\n", item.src.index.FilePath())
 				if err := os.Remove(item.src.index.FilePath()); err != nil {
 					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
@@ -1175,7 +1172,6 @@ func (hc *HistoryContext) Close() {
 			return true
 		}
 		refCnt := item.src.refcount.Dec()
-		fmt.Printf("refc-- %d,%s\n", refCnt, item.src.decompressor.FileName())
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
 			if item.src.decompressor != nil {
