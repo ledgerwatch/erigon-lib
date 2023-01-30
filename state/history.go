@@ -1067,8 +1067,8 @@ func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) 
 }
 
 type HistoryContext struct {
-	h                        *History
-	indexFiles, historyFiles *btree.BTreeG[ctxItem]
+	h                           *History
+	invIndexFiles, historyFiles *btree.BTreeG[ctxItem]
 
 	lr    *recsplit.IndexReader
 	locBm *bitmapdb.FixedSizeBitmaps
@@ -1078,9 +1078,9 @@ type HistoryContext struct {
 
 func (h *History) MakeContext() *HistoryContext {
 	var hc = HistoryContext{
-		h:          h,
-		indexFiles: btree.NewG[ctxItem](32, ctxItemLess),
-		trace:      false,
+		h:             h,
+		invIndexFiles: btree.NewG[ctxItem](32, ctxItemLess),
+		trace:         false,
 	}
 	h.InvertedIndex.files.Ascend(func(item *filesItem) bool {
 		if item.index == nil || item.canDelete.Load() {
@@ -1094,7 +1094,7 @@ func (h *History) MakeContext() *HistoryContext {
 			item.refcount.Inc()
 		}
 
-		hc.indexFiles.ReplaceOrInsert(ctxItem{
+		hc.invIndexFiles.ReplaceOrInsert(ctxItem{
 			startTxNum: item.startTxNum,
 			endTxNum:   item.endTxNum,
 			getter:     item.decompressor.MakeGetter(),
@@ -1137,7 +1137,7 @@ func (h *History) MakeContext() *HistoryContext {
 	return &hc
 }
 func (hc *HistoryContext) Close() {
-	hc.indexFiles.Ascend(func(item ctxItem) bool {
+	hc.invIndexFiles.Ascend(func(item ctxItem) bool {
 		if item.src.frozen {
 			return true
 		}
@@ -1170,12 +1170,12 @@ func (hc *HistoryContext) Close() {
 		return true
 	})
 	hc.historyFiles.Ascend(func(item ctxItem) bool {
-		if item.src.frozen || !item.src.canDelete.Load() {
+		if item.src.frozen {
 			return true
 		}
-
-		//GC: last reader must close all removed files
-		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
+		refCnt := item.src.refcount.Dec()
+		//GC: last reader responsible to remove useles files: close it and delete
+		if refCnt == 0 && item.src.canDelete.Load() {
 			if item.src.decompressor != nil {
 				if err := item.src.decompressor.Close(); err != nil {
 					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
@@ -1243,13 +1243,13 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	// -- LocaliyIndex opimization --
 	// check up to 2 exact files
 	if foundExactShard1 {
-		exactShard1, ok := hc.indexFiles.Get(ctxItem{startTxNum: exactStep1 * hc.h.aggregationStep, endTxNum: (exactStep1 + StepsInBiggestFile) * hc.h.aggregationStep})
+		exactShard1, ok := hc.invIndexFiles.Get(ctxItem{startTxNum: exactStep1 * hc.h.aggregationStep, endTxNum: (exactStep1 + StepsInBiggestFile) * hc.h.aggregationStep})
 		if ok {
 			findInFile(exactShard1)
 		}
 	}
 	if !found && foundExactShard2 {
-		exactShard2, ok := hc.indexFiles.Get(ctxItem{startTxNum: exactStep2 * hc.h.aggregationStep, endTxNum: (exactStep2 + StepsInBiggestFile) * hc.h.aggregationStep})
+		exactShard2, ok := hc.invIndexFiles.Get(ctxItem{startTxNum: exactStep2 * hc.h.aggregationStep, endTxNum: (exactStep2 + StepsInBiggestFile) * hc.h.aggregationStep})
 		if ok {
 			findInFile(exactShard2)
 		}
@@ -1260,7 +1260,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 	// -- LocaliyIndex opimization End --
 
 	if !found {
-		hc.indexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: lastIndexedTxNum, endTxNum: lastIndexedTxNum}, findInFile)
+		hc.invIndexFiles.AscendGreaterOrEqual(ctxItem{startTxNum: lastIndexedTxNum, endTxNum: lastIndexedTxNum}, findInFile)
 	}
 
 	if found {
@@ -1415,7 +1415,7 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 		from:         from, to: to, limit: amount,
 	}
 
-	hc.indexFiles.Ascend(func(item ctxItem) bool {
+	hc.invIndexFiles.Ascend(func(item ctxItem) bool {
 		if item.endTxNum <= startTxNum {
 			return true
 		}
@@ -1673,7 +1673,7 @@ func (hc *HistoryContext) IterateChanged(fromTxNum, toTxNum int, asc order.By, l
 		valsTable:    hc.h.historyValsTable,
 	}
 
-	hc.indexFiles.Ascend(func(item ctxItem) bool {
+	hc.invIndexFiles.Ascend(func(item ctxItem) bool {
 		if item.endTxNum >= endTxNum {
 			hi.hasNextInDb = false
 		}

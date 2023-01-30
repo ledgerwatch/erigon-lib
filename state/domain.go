@@ -1128,7 +1128,7 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 		topState = i
 		return false
 	})
-	dc.hc.indexFiles.AscendGreaterOrEqual(search, func(item ctxItem) bool {
+	dc.hc.invIndexFiles.AscendGreaterOrEqual(search, func(item ctxItem) bool {
 		anyItem = true
 		offset := item.reader.Lookup(key)
 		g := item.getter
