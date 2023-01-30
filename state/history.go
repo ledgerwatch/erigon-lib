@@ -218,15 +218,24 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
+	fmt.Printf("DBG: History.Close %s\n", dbg.Stack())
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
-			item.decompressor.Close()
-			_ = os.Remove(item.decompressor.FilePath())
+			if err := item.decompressor.Close(); err != nil {
+				panic(err)
+			}
+			if err := os.Remove(item.decompressor.FilePath()); err != nil {
+				panic(err)
+			}
 			item.decompressor = nil
 		}
 		if item.index != nil {
-			item.index.Close()
-			_ = os.Remove(item.index.FilePath())
+			if err := item.index.Close(); err != nil {
+				panic(err)
+			}
+			if err := os.Remove(item.index.FilePath()); err != nil {
+				panic(err)
+			}
 			item.index = nil
 		}
 		return true
@@ -1135,6 +1144,7 @@ func (h *History) MakeContext() *HistoryContext {
 	return &hc
 }
 func (hc *HistoryContext) Close() {
+	fmt.Printf("DBG: HistoryContext.Close %s\n", dbg.Stack())
 	hc.indexFiles.Ascend(func(item ctxItem) bool {
 		if item.src.frozen || !item.src.deleted.Load() {
 			return true
@@ -1170,13 +1180,21 @@ func (hc *HistoryContext) Close() {
 		//GC: last reader must close all removed files
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
-				item.src.decompressor.Close()
-				_ = os.Remove(item.src.decompressor.FilePath())
+				if err := item.src.decompressor.Close(); err != nil {
+					panic(err)
+				}
+				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
+					panic(err)
+				}
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
-				item.src.index.Close()
-				_ = os.Remove(item.src.index.FilePath())
+				if err := item.src.index.Close(); err != nil {
+					panic(err)
+				}
+				if err := os.Remove(item.src.index.FilePath()); err != nil {
+					panic(err)
+				}
 				item.src.index = nil
 			}
 		}

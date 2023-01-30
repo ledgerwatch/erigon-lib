@@ -52,11 +52,11 @@ func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 			settingsTable: kv.TableCfgItem{},
 		}
 	}).MustOpen()
-	ii, err := NewHistory(path, path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */, nil)
+	h, err := NewHistory(path, path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */, nil)
 	require.NoError(tb, err)
 	tb.Cleanup(db.Close)
-	tb.Cleanup(ii.Close)
-	return path, db, ii
+	tb.Cleanup(h.Close)
+	return path, db, h
 }
 
 func TestHistoryCollationBuild(t *testing.T) {
