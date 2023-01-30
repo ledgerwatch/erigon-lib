@@ -266,13 +266,13 @@ func (ii *InvertedIndex) closeFiles() {
 	ii.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
 			if err := item.decompressor.Close(); err != nil {
-				panic(err)
+				log.Trace("close", "err", err, "file", item.index.FileName())
 			}
 			item.decompressor = nil
 		}
 		if item.index != nil {
 			if err := item.index.Close(); err != nil {
-				panic(err)
+				log.Trace("close", "err", err, "file", item.index.FileName())
 			}
 			item.index = nil
 		}
@@ -470,19 +470,19 @@ func (ic *InvertedIndexContext) Close() {
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
 				if err := item.src.decompressor.Close(); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
 				if err := item.src.index.Close(); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				if err := os.Remove(item.src.index.FilePath()); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				item.src.index = nil
 			}

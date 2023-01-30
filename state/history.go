@@ -218,18 +218,16 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
-	//fmt.Printf("DBG: History.Close %s\n", dbg.Stack())
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
-			fmt.Printf("hist close: %s\n", item.decompressor.FilePath())
 			if err := item.decompressor.Close(); err != nil {
-				panic(err)
+				log.Trace("close", "err", err, "file", item.decompressor.FileName())
 			}
 			item.decompressor = nil
 		}
 		if item.index != nil {
 			if err := item.index.Close(); err != nil {
-				panic(err)
+				log.Trace("close", "err", err, "file", item.index.FileName())
 			}
 			item.index = nil
 		}
@@ -1152,19 +1150,19 @@ func (hc *HistoryContext) Close() {
 			if item.src.decompressor != nil {
 				fmt.Printf("hist ctx del: %s\n", item.src.decompressor.FilePath())
 				if err := item.src.decompressor.Close(); err != nil {
-					panic(fmt.Errorf("HistoryContext.Close: item.src.decompressor.Close(): %w", err))
+					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
 				}
 				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
 				}
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
 				if err := item.src.index.Close(); err != nil {
-					panic(fmt.Errorf("HistoryContext.Close: item.src.index.Close(): %w", err))
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				if err := os.Remove(item.src.index.FilePath()); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				item.src.index = nil
 			}
@@ -1180,19 +1178,19 @@ func (hc *HistoryContext) Close() {
 		if refCnt := item.src.refcount.Dec(); refCnt == 0 {
 			if item.src.decompressor != nil {
 				if err := item.src.decompressor.Close(); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
 				}
 				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
 				}
 				item.src.decompressor = nil
 			}
 			if item.src.index != nil {
 				if err := item.src.index.Close(); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				if err := os.Remove(item.src.index.FilePath()); err != nil {
-					panic(err)
+					log.Trace("close", "err", err, "file", item.src.index.FileName())
 				}
 				item.src.index = nil
 			}
