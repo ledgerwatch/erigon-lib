@@ -1148,7 +1148,7 @@ func (hc *HistoryContext) Close() {
 			if item.src.decompressor != nil {
 				fmt.Printf("del: %s\n", item.src.decompressor.FilePath())
 				if err := item.src.decompressor.Close(); err != nil {
-					panic(err)
+					panic(fmt.Errorf("HistoryContext.Close: item.src.decompressor.Close(): %w", err))
 				}
 				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
 					panic(err)
@@ -1157,7 +1157,7 @@ func (hc *HistoryContext) Close() {
 			}
 			if item.src.index != nil {
 				if err := item.src.index.Close(); err != nil {
-					panic(err)
+					panic(fmt.Errorf("HistoryContext.Close: item.src.index.Close(): %w", err))
 				}
 				if err := os.Remove(item.src.index.FilePath()); err != nil {
 					panic(err)
