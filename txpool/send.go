@@ -158,7 +158,7 @@ func (f *Send) AnnouncePooledTxs(types []byte, sizes []uint32, hashes types2.Has
 				}
 			case direct.ETH68:
 				req := &sentry.OutboundMessageData{
-					Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+					Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_68,
 					Data: jData,
 				}
 				peers, err := sentryClient.SendMessageToAll(f.ctx, req, &grpc.EmptyCallOption{})
@@ -233,7 +233,7 @@ func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types []byte
 						req := &sentry.SendMessageByIdRequest{
 							PeerId: peer,
 							Data: &sentry.OutboundMessageData{
-								Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
+								Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_68,
 								Data: jData,
 							},
 						}
