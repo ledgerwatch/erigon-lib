@@ -338,9 +338,9 @@ func (d *Decompressor) ModTime() time.Time {
 }
 
 func (d *Decompressor) Close() error {
-	if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
-		return err
-	}
+	//if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
+	//	return err
+	//}
 	if err := d.f.Close(); err != nil {
 		return err
 	}

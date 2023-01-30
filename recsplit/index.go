@@ -164,9 +164,9 @@ func (idx *Index) Close() error {
 	if idx == nil {
 		return nil
 	}
-	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
-		return err
-	}
+	//if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
+	//	return err
+	//}
 	if err := idx.f.Close(); err != nil {
 		return err
 	}
