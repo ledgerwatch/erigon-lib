@@ -1530,7 +1530,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 						} else {
 							remoteTxTypes = append(remoteTxTypes, t)
 							remoteTxSizes = append(remoteTxSizes, size)
-							remoteTxHashes = append(localTxHashes, hash...)
+							remoteTxHashes = append(remoteTxHashes, hash...)
 							remoteTxRlps = append(remoteTxRlps, slotRlp)
 						}
 					}
