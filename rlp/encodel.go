@@ -194,3 +194,13 @@ func EncodeHashes(hashes []byte, encodeBuf []byte) int {
 	}
 	return pos
 }
+
+func EncodeAnnouncements(types, sizes, hashes []byte, encodeBuf []byte) int {
+	pos := 0
+	hashesLen := len(hashes) / 32 * 33
+	pos += EncodeListPrefix(hashesLen, encodeBuf)
+	for i := 0; i < len(hashes); i += 32 {
+		pos += EncodeHash(hashes[i:], encodeBuf[pos:])
+	}
+	return pos
+}

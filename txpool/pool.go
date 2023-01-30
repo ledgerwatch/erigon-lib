@@ -559,36 +559,48 @@ func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	rlpTx, _, _, err := p.getRlpLocked(tx, hash)
 	return common.Copy(rlpTx), err
 }
-func (p *TxPool) AppendLocalHashes(buf []byte) []byte {
+func (p *TxPool) AppendLocalAnnouncements(types, sizes, hashes []byte) ([]byte, []byte, []byte) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	var sizeBytes [4]byte
 	for hash, txn := range p.byHash {
 		if txn.subPool&IsLocal == 0 {
 			continue
 		}
-		buf = append(buf, hash...)
+		types = append(types, txn.Tx.Type)
+		binary.BigEndian.PutUint32(sizeBytes[:], txn.Tx.Size)
+		sizes = append(sizes, sizeBytes[:]...)
+		hashes = append(hashes, hash...)
 	}
-	return buf
+	return types, sizes, hashes
 }
-func (p *TxPool) AppendRemoteHashes(buf []byte) []byte {
+func (p *TxPool) AppendRemoteAnnouncements(types, sizes, hashes []byte) ([]byte, []byte, []byte) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	var sizeBytes [4]byte
 
 	for hash, txn := range p.byHash {
 		if txn.subPool&IsLocal != 0 {
 			continue
 		}
-		buf = append(buf, hash...)
+		types = append(types, txn.Tx.Type)
+		binary.BigEndian.PutUint32(sizeBytes[:], txn.Tx.Size)
+		sizes = append(sizes, sizeBytes[:]...)
+		hashes = append(hashes, hash...)
 	}
-	for hash := range p.unprocessedRemoteByHash {
-		buf = append(buf, hash...)
+	for hash, txIdx := range p.unprocessedRemoteByHash {
+		txSlot := p.unprocessedRemoteTxs.Txs[txIdx]
+		types = append(types, txSlot.Type)
+		binary.BigEndian.PutUint32(sizeBytes[:], txSlot.Size)
+		sizes = append(sizes, sizeBytes[:]...)
+		hashes = append(hashes, hash...)
 	}
-	return buf
+	return types, sizes, hashes
 }
-func (p *TxPool) AppendAllHashes(buf []byte) []byte {
-	buf = p.AppendLocalHashes(buf)
-	buf = p.AppendRemoteHashes(buf)
-	return buf
+func (p *TxPool) AppendAllAnnouncements(types, sizes, hashes []byte) ([]byte, []byte, []byte) {
+	types, sizes, hashes = p.AppendLocalAnnouncements(types, sizes, hashes)
+	types, sizes, hashes = p.AppendRemoteAnnouncements(types, sizes, hashes)
+	return types, sizes, hashes
 }
 func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 	p.lock.Lock()
@@ -719,6 +731,7 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 		if ok {
 			continue
 		}
+		p.unprocessedRemoteByHash[string(txn.IDHash[:])] = len(p.unprocessedRemoteTxs.Txs)
 		p.unprocessedRemoteTxs.Append(txn, newTxs.Senders.At(i), false)
 	}
 }
@@ -1542,8 +1555,10 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			}
 			t := time.Now()
 			var hashes types.Hashes
-			hashes = p.AppendAllHashes(hashes[:0])
-			go send.PropagatePooledTxsToPeersList(newPeers, hashes)
+			var types []byte
+			var sizes []byte
+			types, sizes, hashes = p.AppendAllAnnouncements(types, sizes, hashes[:0])
+			go send.PropagatePooledTxsToPeersList(newPeers, types, sizes, hashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
 		}
 	}

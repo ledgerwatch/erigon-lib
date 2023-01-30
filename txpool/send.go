@@ -153,10 +153,10 @@ func (f *Send) AnnouncePooledTxs(hashes types2.Hashes) (hashSentTo []int) {
 	return
 }
 
-func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, txs []byte) {
+func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types, sizes, hashes []byte) {
 	defer f.notifyTests()
 
-	if len(txs) == 0 {
+	if len(types) == 0 {
 		return
 	}
 

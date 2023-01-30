@@ -97,13 +97,14 @@ type TxSlot struct {
 	IDHash         [32]byte // Transaction hash for the purposes of using it as a transaction Id
 	Traced         bool     // Whether transaction needs to be traced throughout transaction pool code and generate debug printing
 	Creation       bool     // Set to true if "To" field of the transaction is not set
+	Type           byte     // Transaction type
+	Size           uint32   // Size of the payload
 }
 
 const (
-	LegacyTxType     int = 0
-	AccessListTxType int = 1
-	DynamicFeeTxType int = 2
-	StarknetTxType   int = 3
+	LegacyTxType     byte = 0
+	AccessListTxType byte = 1
+	DynamicFeeTxType byte = 2
 )
 
 var ErrParseTxn = fmt.Errorf("%w transaction", rlp.ErrParse)
@@ -150,10 +151,9 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 	p = dataPos
 
-	var txType int
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
 	if !legacy {
-		txType = int(payload[p])
+		slot.Type = payload[p]
 		if _, err = ctx.Keccak1.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err)
 		}
@@ -177,6 +177,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		slot.Rlp = payload[p-1 : dataPos+dataLen]
 		p = dataPos
 	} else {
+		slot.Type = LegacyTxType
 		slot.Rlp = payload[pos : dataPos+dataLen]
 	}
 
@@ -216,7 +217,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	}
 	// Next follows feeCap, but only for dynamic fee transactions, for legacy transaction, it is
 	// equal to tip
-	if txType < DynamicFeeTxType {
+	if slot.Type < DynamicFeeTxType {
 		slot.FeeCap = slot.Tip
 	} else {
 		// Although consensus rules specify that feeCap can be up to 256 bit long, we narrow it to 64 bit
@@ -263,15 +264,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	}
 
 	p = dataPos + dataLen
-
-	// Next goes starknet tx salt, but we are only interesting in its length
-	if txType == StarknetTxType {
-		dataPos, dataLen, err = rlp.String(payload, p)
-		if err != nil {
-			return 0, fmt.Errorf("%w: data len: %s", ErrParseTxn, err)
-		}
-		p = dataPos + dataLen
-	}
 
 	// Next follows access list for non-legacy transactions, we are only interesting in number of addresses and storage keys
 	if !legacy {
@@ -469,6 +461,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
 
+	slot.Size = uint32(p - pos)
 	return p, nil
 }
 
