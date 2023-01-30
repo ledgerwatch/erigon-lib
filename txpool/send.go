@@ -124,7 +124,6 @@ func (f *Send) AnnouncePooledTxs(types []byte, sizes []uint32, hashes types2.Has
 			i += 32
 		}
 		j := prevJ
-		fmt.Printf("Annoucement, types: %d, sizes %d, hashes %d, j %d, prevJ %d\n", len(types), len(sizes), len(hashes), j, prevJ)
 		for j < len(types) && rlp.AnnouncementsLen(types[prevJ:j+1], sizes[prevJ:j+1], hashes[32*prevJ:32*j+32]) < p2pTxPacketLimit {
 			j++
 		}
