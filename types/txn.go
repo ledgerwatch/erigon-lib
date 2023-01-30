@@ -508,6 +508,98 @@ func (h Hashes) DedupCopy() Hashes {
 	return c
 }
 
+type Announcements struct {
+	ts     []byte
+	sizes  []uint32
+	hashes []byte
+}
+
+func (a *Announcements) Append(t byte, size uint32, hash []byte) {
+	a.ts = append(a.ts, t)
+	a.sizes = append(a.sizes, size)
+	a.hashes = append(a.hashes, hash...)
+}
+
+func (a *Announcements) AppendOther(other Announcements) {
+	a.ts = append(a.ts, other.ts...)
+	a.sizes = append(a.sizes, other.sizes...)
+	a.hashes = append(a.hashes, other.hashes...)
+}
+
+func (a *Announcements) Reset() {
+	a.ts = a.ts[:0]
+	a.sizes = a.sizes[:0]
+	a.hashes = a.hashes[:0]
+}
+
+func (a Announcements) At(i int) (byte, uint32, []byte) {
+	return a.ts[i], a.sizes[i], a.hashes[i*length.Hash : (i+1)*length.Hash]
+}
+func (a Announcements) Len() int { return len(a.ts) }
+func (a Announcements) Less(i, j int) bool {
+	return bytes.Compare(a.hashes[i*length.Hash:(i+1)*length.Hash], a.hashes[j*length.Hash:(j+1)*length.Hash]) < 0
+}
+func (a Announcements) Swap(i, j int) {
+	a.ts[i], a.ts[j] = a.ts[j], a.ts[i]
+	a.sizes[i], a.sizes[j] = a.sizes[j], a.sizes[i]
+	ii := i * length.Hash
+	jj := j * length.Hash
+	for k := 0; k < length.Hash; k++ {
+		a.hashes[ii], a.hashes[jj] = a.hashes[jj], a.hashes[ii]
+		ii++
+		jj++
+	}
+}
+
+// DedupCopy sorts hashes, and creates deduplicated copy
+func (a Announcements) DedupCopy() Announcements {
+	if len(a.ts) == 0 {
+		return a
+	}
+	sort.Sort(a)
+	unique := 1
+	for i := length.Hash; i < len(a.hashes); i += length.Hash {
+		if !bytes.Equal(a.hashes[i:i+length.Hash], a.hashes[i-length.Hash:i]) {
+			unique++
+		}
+	}
+	c := Announcements{
+		ts:     make([]byte, unique),
+		sizes:  make([]uint32, unique),
+		hashes: make([]byte, unique*length.Hash),
+	}
+	copy(c.hashes[:], a.hashes[0:length.Hash])
+	c.ts[0] = a.ts[0]
+	c.sizes[0] = a.sizes[0]
+	dest := length.Hash
+	j := 1
+	origin := length.Hash
+	for i := 1; i < len(a.ts); i++ {
+		if !bytes.Equal(a.hashes[origin:origin+length.Hash], a.hashes[origin-length.Hash:origin]) {
+			copy(c.hashes[dest:dest+length.Hash], a.hashes[origin:origin+length.Hash])
+			c.ts[j] = a.ts[i]
+			c.sizes[j] = a.sizes[i]
+			dest += length.Hash
+			j++
+		}
+		origin += length.Hash
+	}
+	return c
+}
+
+func (a Announcements) Copy() Announcements {
+	if len(a.ts) == 0 {
+		return a
+	}
+	c := Announcements{
+		ts:     common.Copy(a.ts),
+		sizes:  make([]uint32, len(a.sizes)),
+		hashes: common.Copy(a.hashes),
+	}
+	copy(c.sizes, a.sizes)
+	return c
+}
+
 type Addresses []byte // flatten list of 20-byte addresses
 
 func (h Addresses) At(i int) []byte { return h[i*length.Addr : (i+1)*length.Addr] }

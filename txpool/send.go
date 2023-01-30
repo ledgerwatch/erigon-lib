@@ -107,7 +107,7 @@ func (f *Send) BroadcastPooledTxs(rlps [][]byte) (txSentTo []int) {
 	return
 }
 
-func (f *Send) AnnouncePooledTxs(hashes types2.Hashes) (hashSentTo []int) {
+func (f *Send) AnnouncePooledTxs(types []byte, sizes []uint32, hashes types2.Hashes) (hashSentTo []int) {
 	defer f.notifyTests()
 	hashSentTo = make([]int, len(hashes)/32)
 	prev := 0
@@ -153,7 +153,7 @@ func (f *Send) AnnouncePooledTxs(hashes types2.Hashes) (hashSentTo []int) {
 	return
 }
 
-func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types, sizes, hashes []byte) {
+func (f *Send) PropagatePooledTxsToPeersList(peers []types2.PeerID, types []byte, sizes []uint32, hashes []byte) {
 	defer f.notifyTests()
 
 	if len(types) == 0 {

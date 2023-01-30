@@ -316,11 +316,11 @@ type TxPool struct {
 	pending                 *PendingPool
 	baseFee                 *SubPool
 	queued                  *SubPool
-	isLocalLRU              *simplelru.LRU    // tx_hash => is_local : to restore isLocal flag of unwinded transactions
-	newPendingTxs           chan types.Hashes // notifications about new txs in Pending sub-pool
-	all                     *BySenderAndNonce // senderID => (sorted map of tx nonce => *metaTx)
-	deletedTxs              []*metaTx         // list of discarded txs since last db commit
-	promoted                types.Hashes      // pre-allocated temporary buffer to write promoted to pending pool txn hashes
+	isLocalLRU              *simplelru.LRU           // tx_hash => is_local : to restore isLocal flag of unwinded transactions
+	newPendingTxs           chan types.Announcements // notifications about new txs in Pending sub-pool
+	all                     *BySenderAndNonce        // senderID => (sorted map of tx nonce => *metaTx)
+	deletedTxs              []*metaTx                // list of discarded txs since last db commit
+	promoted                types.Announcements
 	cfg                     Config
 	chainID                 uint256.Int
 	lastSeenBlock           atomic.Uint64
@@ -331,7 +331,7 @@ type TxPool struct {
 	isPostShanghai          atomic.Bool
 }
 
-func New(newTxs chan types.Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int, shanghaiTime *big.Int) (*TxPool, error) {
+func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int, shanghaiTime *big.Int) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(10_000, nil)
 	if err != nil {
 		return nil, err
@@ -368,7 +368,6 @@ func New(newTxs chan types.Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cac
 		chainID:                 chainID,
 		unprocessedRemoteTxs:    &types.TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
-		promoted:                make(types.Hashes, 0, 32*1024),
 		shanghaiTime:            shanghaiTime,
 	}, nil
 }
@@ -449,8 +448,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
-	p.pending.resetAddedHashes()
-	p.baseFee.resetAddedHashes()
+	p.pending.resetAdded()
+	p.baseFee.resetAdded()
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
 		pendingBaseFee, stateChanges.BlockGasLimit,
 		p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
@@ -461,8 +460,9 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	p.queued.EnforceInvariants()
 	promote(p.pending, p.baseFee, p.queued, pendingBaseFee, p.discardLocked)
 	p.pending.EnforceBestInvariants()
-	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
-	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
+	p.promoted.Reset()
+	p.pending.appendAddedTo(&p.promoted)
+	p.baseFee.appendAddedTo(&p.promoted)
 
 	if p.started.CAS(false, true) {
 		log.Info("[txpool] Started")
@@ -470,7 +470,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.Copy():
 		default:
 		}
 	}
@@ -515,20 +515,21 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	p.pending.resetAddedHashes()
-	p.baseFee.resetAddedHashes()
+	p.pending.resetAdded()
+	p.baseFee.resetAdded()
 	if _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
 		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
-	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
-	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
+	p.promoted.Reset()
+	p.pending.appendAddedTo(&p.promoted)
+	p.baseFee.appendAddedTo(&p.promoted)
 
 	if p.promoted.Len() > 0 {
 		select {
 		case <-ctx.Done():
 			return nil
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.Copy():
 		default:
 		}
 	}
@@ -559,45 +560,40 @@ func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	rlpTx, _, _, err := p.getRlpLocked(tx, hash)
 	return common.Copy(rlpTx), err
 }
-func (p *TxPool) AppendLocalAnnouncements(types, sizes, hashes []byte) ([]byte, []byte, []byte) {
+func (p *TxPool) AppendLocalAnnouncements(types []byte, sizes []uint32, hashes []byte) ([]byte, []uint32, []byte) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	var sizeBytes [4]byte
 	for hash, txn := range p.byHash {
 		if txn.subPool&IsLocal == 0 {
 			continue
 		}
 		types = append(types, txn.Tx.Type)
-		binary.BigEndian.PutUint32(sizeBytes[:], txn.Tx.Size)
-		sizes = append(sizes, sizeBytes[:]...)
+		sizes = append(sizes, txn.Tx.Size)
 		hashes = append(hashes, hash...)
 	}
 	return types, sizes, hashes
 }
-func (p *TxPool) AppendRemoteAnnouncements(types, sizes, hashes []byte) ([]byte, []byte, []byte) {
+func (p *TxPool) AppendRemoteAnnouncements(types []byte, sizes []uint32, hashes []byte) ([]byte, []uint32, []byte) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	var sizeBytes [4]byte
 
 	for hash, txn := range p.byHash {
 		if txn.subPool&IsLocal != 0 {
 			continue
 		}
 		types = append(types, txn.Tx.Type)
-		binary.BigEndian.PutUint32(sizeBytes[:], txn.Tx.Size)
-		sizes = append(sizes, sizeBytes[:]...)
+		sizes = append(sizes, txn.Tx.Size)
 		hashes = append(hashes, hash...)
 	}
 	for hash, txIdx := range p.unprocessedRemoteByHash {
 		txSlot := p.unprocessedRemoteTxs.Txs[txIdx]
 		types = append(types, txSlot.Type)
-		binary.BigEndian.PutUint32(sizeBytes[:], txSlot.Size)
-		sizes = append(sizes, sizeBytes[:]...)
+		sizes = append(sizes, txSlot.Size)
 		hashes = append(hashes, hash...)
 	}
 	return types, sizes, hashes
 }
-func (p *TxPool) AppendAllAnnouncements(types, sizes, hashes []byte) ([]byte, []byte, []byte) {
+func (p *TxPool) AppendAllAnnouncements(types []byte, sizes []uint32, hashes []byte) ([]byte, []uint32, []byte) {
 	types, sizes, hashes = p.AppendLocalAnnouncements(types, sizes, hashes)
 	types, sizes, hashes = p.AppendRemoteAnnouncements(types, sizes, hashes)
 	return types, sizes, hashes
@@ -940,8 +936,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 		return nil, err
 	}
 
-	p.pending.resetAddedHashes()
-	p.baseFee.resetAddedHashes()
+	p.pending.resetAdded()
+	p.baseFee.resetAdded()
 	if addReasons, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
 		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err == nil {
 		for i, reason := range addReasons {
@@ -952,8 +948,9 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 	} else {
 		return nil, err
 	}
-	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
-	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
+	p.promoted.Reset()
+	p.pending.appendAddedTo(&p.promoted)
+	p.baseFee.appendAddedTo(&p.promoted)
 
 	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
 	for i, reason := range reasons {
@@ -962,12 +959,12 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 			if txn.Traced {
 				log.Info(fmt.Sprintf("TX TRACING: AddLocalTxs promotes idHash=%x, senderId=%d", txn.IDHash, txn.SenderID))
 			}
-			p.promoted = append(p.promoted, txn.IDHash[:]...)
+			p.promoted.Append(txn.Type, txn.Size, txn.IDHash[:])
 		}
 	}
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.Copy():
 		default:
 		}
 	}
@@ -1018,11 +1015,11 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 				switch found.currentSubPool {
 				case PendingSubPool:
 					if pending.adding {
-						pending.added = append(pending.added, found.Tx.IDHash[:]...)
+						pending.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				case BaseFeeSubPool:
 					if baseFee.adding {
-						baseFee.added = append(baseFee.added, found.Tx.IDHash[:]...)
+						baseFee.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				}
 			}
@@ -1144,11 +1141,11 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 				switch found.currentSubPool {
 				case PendingSubPool:
 					if p.pending.adding {
-						p.pending.added = append(p.pending.added, found.Tx.IDHash[:]...)
+						p.pending.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				case BaseFeeSubPool:
 					if p.baseFee.adding {
-						p.baseFee.added = append(p.baseFee.added, found.Tx.IDHash[:]...)
+						p.baseFee.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				}
 			}
@@ -1441,7 +1438,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 //
 // promote/demote transactions
 // reorgs
-func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan types.Hashes, send *Send, newSlotsStreams *NewSlotsStreams, notifyMiningAboutNewSlots func()) {
+func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan types.Announcements, send *Send, newSlotsStreams *NewSlotsStreams, notifyMiningAboutNewSlots func()) {
 	syncToNewPeersEvery := time.NewTicker(p.cfg.SyncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
 	processRemoteTxsEvery := time.NewTicker(p.cfg.ProcessRemoteTxsEvery)
@@ -1482,35 +1479,39 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				writeToDBBytesCounter.Set(written)
 				log.Debug("[txpool] Commit", "written_kb", written/1024, "in", time.Since(t))
 			}
-		case h := <-newTxs:
+		case announcements := <-newTxs:
 			go func() {
 				for i := 0; i < 16; i++ { // drain more events from channel, then merge and dedup them
 					select {
 					case a := <-newTxs:
-						h = append(h, a...)
+						announcements.AppendOther(a)
 						continue
 					default:
 					}
 					break
 				}
-				if h.Len() == 0 {
+				if announcements.Len() == 0 {
 					return
 				}
 				defer propagateNewTxsTimer.UpdateDuration(time.Now())
 
-				h = h.DedupCopy()
+				announcements = announcements.DedupCopy()
 
 				notifyMiningAboutNewSlots()
 
+				var localTxTypes []byte
+				var localTxSizes []uint32
 				var localTxHashes types.Hashes
 				var localTxRlps [][]byte
+				var remoteTxTypes []byte
+				var remoteTxSizes []uint32
 				var remoteTxHashes types.Hashes
 				var remoteTxRlps [][]byte
-				slotsRlp := make([][]byte, 0, h.Len())
+				slotsRlp := make([][]byte, 0, announcements.Len())
 
 				if err := db.View(ctx, func(tx kv.Tx) error {
-					for i := 0; i < h.Len(); i++ {
-						hash := h.At(i)
+					for i := 0; i < announcements.Len(); i++ {
+						t, size, hash := announcements.At(i)
 						slotRlp, err := p.GetRlp(tx, hash)
 						if err != nil {
 							return err
@@ -1522,9 +1523,13 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 						// Empty rlp can happen if a transaction we want to broadcase has just been mined, for example
 						slotsRlp = append(slotsRlp, slotRlp)
 						if p.IsLocal(hash) {
+							localTxTypes = append(localTxTypes, t)
+							localTxSizes = append(localTxSizes, size)
 							localTxHashes = append(localTxHashes, hash...)
 							localTxRlps = append(localTxRlps, slotRlp)
 						} else {
+							remoteTxTypes = append(remoteTxTypes, t)
+							remoteTxSizes = append(remoteTxSizes, size)
 							remoteTxHashes = append(localTxHashes, hash...)
 							remoteTxRlps = append(remoteTxRlps, slotRlp)
 						}
@@ -1540,13 +1545,13 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 
 				// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
 				txSentTo := send.BroadcastPooledTxs(localTxRlps)
-				hashSentTo := send.AnnouncePooledTxs(localTxHashes)
+				hashSentTo := send.AnnouncePooledTxs(localTxTypes, localTxSizes, localTxHashes)
 				for i := 0; i < localTxHashes.Len(); i++ {
 					hash := localTxHashes.At(i)
 					log.Info("local tx propagated", "tx_hash", hex.EncodeToString(hash), "announced to peers", hashSentTo[i], "broadcast to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
 				}
 				send.BroadcastPooledTxs(remoteTxRlps)
-				send.AnnouncePooledTxs(remoteTxHashes)
+				send.AnnouncePooledTxs(remoteTxTypes, remoteTxSizes, remoteTxHashes)
 			}()
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()
@@ -1556,7 +1561,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			t := time.Now()
 			var hashes types.Hashes
 			var types []byte
-			var sizes []byte
+			var sizes []uint32
 			types, sizes, hashes = p.AppendAllAnnouncements(types, sizes, hashes[:0])
 			go send.PropagatePooledTxsToPeersList(newPeers, types, sizes, hashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
@@ -2160,7 +2165,7 @@ func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 type PendingPool struct {
 	best   *bestSlice
 	worst  *WorstQueue
-	added  types.Hashes
+	added  types.Announcements
 	limit  int
 	t      SubPoolType
 	adding bool
@@ -2170,14 +2175,13 @@ func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
 	return &PendingPool{limit: limit, t: t, best: &bestSlice{ms: []*metaTx{}}, worst: &WorstQueue{ms: []*metaTx{}}}
 }
 
-func (p *PendingPool) resetAddedHashes() {
-	p.added = p.added[:0]
+func (p *PendingPool) resetAdded() {
+	p.added.Reset()
 	p.adding = true
 }
-func (p *PendingPool) appendAddedHashes(h types.Hashes) types.Hashes {
-	h = append(h, p.added...)
+func (p *PendingPool) appendAddedTo(a *types.Announcements) {
+	a.AppendOther(p.added)
 	p.adding = false
-	return h
 }
 
 // bestSlice - is similar to best queue, but with O(n log n) complexity and
@@ -2249,7 +2253,7 @@ func (p *PendingPool) Remove(i *metaTx) {
 
 func (p *PendingPool) Add(i *metaTx) {
 	if p.adding {
-		p.added = append(p.added, i.Tx.IDHash[:]...)
+		p.added.Append(i.Tx.Type, i.Tx.Size, i.Tx.IDHash[:])
 	}
 	if i.Tx.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IDHash, i.Tx.SenderID))
@@ -2270,7 +2274,7 @@ func (p *PendingPool) DebugPrint(prefix string) {
 type SubPool struct {
 	best   *BestQueue
 	worst  *WorstQueue
-	added  types.Hashes
+	added  types.Announcements
 	limit  int
 	t      SubPoolType
 	adding bool
@@ -2280,14 +2284,13 @@ func NewSubPool(t SubPoolType, limit int) *SubPool {
 	return &SubPool{limit: limit, t: t, best: &BestQueue{}, worst: &WorstQueue{}}
 }
 
-func (p *SubPool) resetAddedHashes() {
-	p.added = p.added[:0]
+func (p *SubPool) resetAdded() {
+	p.added.Reset()
 	p.adding = true
 }
-func (p *SubPool) appendAddedHashes(h types.Hashes) types.Hashes {
-	h = append(h, p.added...)
+func (p *SubPool) appendAddedTo(a *types.Announcements) {
+	a.AppendOther(p.added)
 	p.adding = false
-	return h
 }
 
 func (p *SubPool) EnforceInvariants() {
@@ -2319,7 +2322,7 @@ func (p *SubPool) PopWorst() *metaTx { //nolint
 func (p *SubPool) Len() int { return p.best.Len() }
 func (p *SubPool) Add(i *metaTx) {
 	if p.adding {
-		p.added = append(p.added, i.Tx.IDHash[:]...)
+		p.added.Append(i.Tx.Type, i.Tx.Size, i.Tx.IDHash[:])
 	}
 	if i.Tx.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IDHash, i.Tx.SenderID))
