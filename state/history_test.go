@@ -473,6 +473,9 @@ func TestIterateChanged(t *testing.T) {
 }
 
 func TestIterateChanged2(t *testing.T) {
+	defer log.Root().SetHandler(log.Root().GetHandler())
+	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StderrHandler))
+
 	_, db, h, txs := filledHistory(t)
 	ctx := context.Background()
 

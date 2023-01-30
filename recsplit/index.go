@@ -30,6 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/mmap"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
+	"github.com/ledgerwatch/log/v3"
 )
 
 // Index implements index lookup from the file created by the RecSplit
@@ -164,9 +165,9 @@ func (idx *Index) Close() error {
 	if idx == nil {
 		return nil
 	}
-	//if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
-	//	return err
-	//}
+	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
+		log.Trace("unmap", "err", err, "file", idx.FileName())
+	}
 	if err := idx.f.Close(); err != nil {
 		return err
 	}

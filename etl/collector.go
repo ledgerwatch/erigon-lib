@@ -279,7 +279,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		}
 	}
 
-	log.Trace(fmt.Sprintf("[%s] ETL Load done", logPrefix), "bucket", bucket, "records", i)
+	//log.Trace(fmt.Sprintf("[%s] ETL Load done", logPrefix), "bucket", bucket, "records", i)
 
 	return nil
 }

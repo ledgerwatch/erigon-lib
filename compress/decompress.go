@@ -27,6 +27,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
+	"github.com/ledgerwatch/log/v3"
 )
 
 type word []byte // plain text word associated with code from dictionary
@@ -339,7 +340,7 @@ func (d *Decompressor) ModTime() time.Time {
 
 func (d *Decompressor) Close() error {
 	if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
-		return err
+		log.Trace("unmap", "err", err, "file", d.FileName())
 	}
 	if err := d.f.Close(); err != nil {
 		return err
