@@ -224,16 +224,10 @@ func (h *History) closeFiles() {
 			if err := item.decompressor.Close(); err != nil {
 				panic(err)
 			}
-			if err := os.Remove(item.decompressor.FilePath()); err != nil {
-				panic(err)
-			}
 			item.decompressor = nil
 		}
 		if item.index != nil {
 			if err := item.index.Close(); err != nil {
-				panic(err)
-			}
-			if err := os.Remove(item.index.FilePath()); err != nil {
 				panic(err)
 			}
 			item.index = nil

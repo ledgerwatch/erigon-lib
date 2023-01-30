@@ -265,10 +265,16 @@ func (ii *InvertedIndex) openFiles() error {
 func (ii *InvertedIndex) closeFiles() {
 	ii.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
-			item.decompressor.Close()
+			if err := item.decompressor.Close(); err != nil {
+				panic(err)
+			}
+			item.decompressor = nil
 		}
 		if item.index != nil {
-			item.index.Close()
+			if err := item.index.Close(); err != nil {
+				panic(err)
+			}
+			item.inde = nil
 		}
 		return true
 	})
