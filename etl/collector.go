@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -110,6 +111,7 @@ func (c *Collector) flushBuffer(canStoreInRam bool) error {
 	}
 	var provider dataProvider
 	var err error
+	log.Warn("dbg: flush", "stack", dbg.Stack())
 	c.buf.Sort()
 	if canStoreInRam && len(c.dataProviders) == 0 {
 		provider = KeepInRAM(c.buf)
