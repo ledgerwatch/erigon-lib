@@ -128,11 +128,10 @@ func (c *Collector) flushBuffer(canStoreInRam bool) error {
 }
 
 func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args TransformArgs) error {
-	defer func() {
-		if c.autoClean {
-			c.Close()
-		}
-	}()
+	if c.autoClean {
+		defer c.Close()
+	}
+
 	if !c.allFlushed {
 		if e := c.flushBuffer(true); e != nil {
 			return e

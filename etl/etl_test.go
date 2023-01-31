@@ -403,7 +403,7 @@ func TestReuseCollectorAfterLoad(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, see)
 
-	err = c.Collect([]byte{1}, []byte{2})
+	err = c.Collect([]byte{3}, []byte{4})
 	require.NoError(t, err)
 	see = 0
 	err = c.Load(nil, "", func(k, v []byte, table CurrentTableReader, next LoadNextFunc) error {
