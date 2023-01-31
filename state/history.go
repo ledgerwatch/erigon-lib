@@ -444,10 +444,10 @@ func (h *History) FinishWrites() {
 func (h *History) Rotate() historyFlusher {
 	h.walLock.Lock()
 	defer h.walLock.Unlock()
-	w := h.wal
-	h.wal = h.newWriter(h.wal.tmpdir, h.wal.buffered, h.wal.discard)
-	h.wal.autoIncrement = w.autoIncrement
-	return historyFlusher{w, h.InvertedIndex.Rotate()}
+	if h.wal != nil {
+		h.wal.historyValsFlushing, h.wal.historyVals = h.wal.historyVals, h.wal.historyValsFlushing
+	}
+	return historyFlusher{h.wal, h.InvertedIndex.Rotate()}
 }
 
 type historyFlusher struct {
@@ -466,14 +466,15 @@ func (f historyFlusher) Flush(ctx context.Context, tx kv.RwTx) error {
 }
 
 type historyWAL struct {
-	h                *History
-	historyVals      *etl.Collector
-	tmpdir           string
-	autoIncrementBuf []byte
-	historyKey       []byte
-	autoIncrement    uint64
-	buffered         bool
-	discard          bool
+	h                   *History
+	historyVals         *etl.Collector
+	historyValsFlushing *etl.Collector
+	tmpdir              string
+	autoIncrementBuf    []byte
+	historyKey          []byte
+	autoIncrement       uint64
+	buffered            bool
+	discard             bool
 }
 
 func (h *historyWAL) close() {
@@ -520,7 +521,7 @@ func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
 		return err
 	}
-	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+	if err := h.historyValsFlushing.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
 	h.close()
