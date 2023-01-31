@@ -176,7 +176,7 @@ func ParseTransactions(payload []byte, pos int, ctx *TxParseContext, txSlots *Tx
 	for i := 0; pos < len(payload); i++ {
 		txSlots.Resize(uint(i + 1))
 		txSlots.Txs[i] = &TxSlot{}
-		pos, err = ctx.ParseTransaction(payload, pos, txSlots.Txs[i], txSlots.Senders.At(i), true /* hasEnvelope */, validateHash)
+		pos, err = ctx.ParseTransaction(payload, pos, txSlots.Txs[i], txSlots.Senders.At(i), true /* hasEnvelope */, true /* network version */, validateHash)
 		if err != nil {
 			if errors.Is(err, ErrRejected) {
 				txSlots.Resize(uint(i))
@@ -206,7 +206,7 @@ func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txS
 	for i := 0; p < len(payload); i++ {
 		txSlots.Resize(uint(i + 1))
 		txSlots.Txs[i] = &TxSlot{}
-		p, err = ctx.ParseTransaction(payload, p, txSlots.Txs[i], txSlots.Senders.At(i), true /* hasEnvelope */, validateHash)
+		p, err = ctx.ParseTransaction(payload, p, txSlots.Txs[i], txSlots.Senders.At(i), true /* hasEnvelope */, true /* networkVersion */, validateHash)
 		if err != nil {
 			if errors.Is(err, ErrRejected) {
 				txSlots.Resize(uint(i))

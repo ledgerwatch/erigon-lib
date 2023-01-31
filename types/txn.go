@@ -147,7 +147,7 @@ func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 
 // ParseTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot
 // it also performs syntactic validation of the transactions
-func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, validateHash func([]byte) error) (p int, err error) {
+func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope bool, networkVersion bool, validateHash func([]byte) error) (p int, err error) {
 	if len(payload) == 0 {
 		return 0, fmt.Errorf("%w: empty rlp", ErrParseTxn)
 	}
@@ -183,7 +183,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			// since it is SSZ format. We assume the scope ends at the last byte of the payload
 			// argument; this currently seems to always be the case, but does not seem to be
 			// mandated by this function's contract.
-			return len(payload), ctx.ParseBlobTransaction(payload[p:], slot, sender, validateHash)
+			return len(payload), ctx.ParseBlobTransaction(payload[p:], slot, sender, networkVersion, validateHash)
 		}
 		if _, err = ctx.Keccak1.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err)
@@ -475,7 +475,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	return p, nil
 }
 
-func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, sender []byte, validateHash func([]byte) error) error {
+func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, sender []byte, networkVersion bool, validateHash func([]byte) error) error {
 	slot.Rlp = payload // includes type byte
 	slot.Size = uint32(len(payload))
 	ctx.Keccak1.Write(payload)
@@ -485,12 +485,19 @@ func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, se
 			return err
 		}
 	}
-
 	payload = payload[1:]
 	// payload should now include the SSZ encoded tx and nothing more
 	tx := wrapper{}
-	if err := tx.Deserialize(payload); err != nil {
-		return fmt.Errorf("%w: deserializing blob tx ssz: %s", ErrParseTxn, err)
+	if networkVersion {
+		if err := tx.Deserialize(payload); err != nil {
+			return fmt.Errorf("%w: deserializing blob tx wrapper ssz: %s", ErrParseTxn, err)
+		}
+		slot.Blobs = tx.numBlobHashes
+		if err := tx.VerifyBlobs(payload); err != nil {
+			return fmt.Errorf("%w: blob verification failed: %s", ErrParseTxn, err)
+		}
+	} else if err := tx.DeserializeTx(payload, 0, len(payload)); err != nil {
+		return fmt.Errorf("%w: deserializing signed blob tx ssz: %s", ErrParseTxn, err)
 	}
 	slot.Nonce = tx.nonce
 	slot.Tip = tx.maxPriorityFeePerGas
@@ -502,12 +509,6 @@ func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, se
 	slot.DataNonZeroLen = tx.dataNonZeroLen
 	slot.AlAddrCount = tx.accessListAddressCount
 	slot.AlStorCount = tx.accessListKeyCount
-	slot.Blobs = tx.numBlobHashes
-
-	err := tx.VerifyBlobs(payload)
-	if err != nil {
-		return fmt.Errorf("%w: blob verification failed: %s", ErrParseTxn, err)
-	}
 
 	if !ctx.withSender {
 		return nil
@@ -515,6 +516,7 @@ func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, se
 
 	// Verify the tx signature
 	vByte := payload[tx.sigOffset]
+	var err error
 	ctx.R, err = readUint256(payload, tx.sigOffset+1)
 	if err != nil {
 		return fmt.Errorf("%w: failed to extract sig.R: %s", ErrParseTxn, err)

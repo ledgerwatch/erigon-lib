@@ -192,7 +192,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 		slots.Resize(uint(j + 1))
 		slots.Txs[j] = &types.TxSlot{}
 		slots.IsLocal[j] = true
-		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.Txs[j], slots.Senders.At(j), false /* hasEnvelope */, func(hash []byte) error {
+		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.Txs[j], slots.Senders.At(j), false /* hasEnvelope */, true /* networkVersion */, func(hash []byte) error {
 			if known, _ := s.txPool.IdHashKnown(tx, hash); known {
 				return types.ErrAlreadyKnown
 			}
