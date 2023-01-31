@@ -185,7 +185,11 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.Fi
 }
 
 func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxExists bool) {
-	ii.files.Descend(func(item *filesItem) bool {
+	a, _ := ii.files.Max()
+	if a == nil {
+		a = &filesItem{}
+	}
+	ii.files.Descend(a, func(item *filesItem) bool {
 		if item.endTxNum-item.startTxNum == StepsInBiggestFile*li.aggregationStep {
 			toStep = item.endTxNum / li.aggregationStep
 			return false

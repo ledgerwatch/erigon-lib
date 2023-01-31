@@ -725,9 +725,11 @@ func (a *AggregatorV3) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) 
 	}
 	histBlockNumProgress := tx2block(a.maxTxNum.Load())
 	str := make([]string, 0, a.accounts.InvertedIndex.files.Len())
-	a.accounts.InvertedIndex.files.Ascend(func(it *filesItem) bool {
-		bn := tx2block(it.endTxNum)
-		str = append(str, fmt.Sprintf("%d=%dK", it.endTxNum/a.aggregationStep, bn/1_000))
+	a.accounts.InvertedIndex.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			bn := tx2block(item.endTxNum)
+			str = append(str, fmt.Sprintf("%d=%dK", item.endTxNum/a.aggregationStep, bn/1_000))
+		}
 		return true
 	})
 

@@ -27,9 +27,9 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/google/btree"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
+	btree2 "github.com/tidwall/btree"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
@@ -752,7 +752,7 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 
 func TestScanStaticFilesD(t *testing.T) {
 	ii := &Domain{History: &History{InvertedIndex: &InvertedIndex{filenameBase: "test", aggregationStep: 1}},
-		files: btree.NewG[*filesItem](32, filesItemLess),
+		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
 	ffs := fstest.MapFS{
 		"test.0-1.kv": {},
@@ -766,8 +766,10 @@ func TestScanStaticFilesD(t *testing.T) {
 	require.NoError(t, err)
 	ii.scanStateFiles(files)
 	var found []string
-	ii.files.Ascend(func(i *filesItem) bool {
-		found = append(found, fmt.Sprintf("%d-%d", i.startTxNum, i.endTxNum))
+	ii.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			found = append(found, fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))
+		}
 		return true
 	})
 	require.Equal(t, 2, len(found))

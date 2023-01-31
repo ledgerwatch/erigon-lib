@@ -26,7 +26,6 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
@@ -34,6 +33,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
+	btree2 "github.com/tidwall/btree"
 )
 
 func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
@@ -601,7 +601,7 @@ func TestIterateChanged2(t *testing.T) {
 
 func TestScanStaticFilesH(t *testing.T) {
 	h := &History{InvertedIndex: &InvertedIndex{filenameBase: "test", aggregationStep: 1},
-		files: btree.NewG[*filesItem](32, filesItemLess),
+		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
 	ffs := fstest.MapFS{
 		"test.0-1.v": {},
@@ -615,15 +615,17 @@ func TestScanStaticFilesH(t *testing.T) {
 	require.NoError(t, err)
 	h.scanStateFiles(files, nil)
 	var found []string
-	h.files.Ascend(func(i *filesItem) bool {
-		found = append(found, fmt.Sprintf("%d-%d", i.startTxNum, i.endTxNum))
+	h.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			found = append(found, fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))
+		}
 		return true
 	})
 	require.Equal(t, 2, len(found))
 	require.Equal(t, "0-4", found[0])
 	require.Equal(t, "4-5", found[1])
 
-	h.files.Clear(false)
+	h.files.Clear()
 	h.scanStateFiles(files, []string{"kv"})
 	require.Equal(t, 0, h.files.Len())
 
