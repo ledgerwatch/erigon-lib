@@ -218,18 +218,8 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
-	//nillnes := 0
-	//h.files.Ascend(func(item *filesItem) bool {
-	//	if item.decompressor == nil {
-	//		nillnes++
-	//	}
-	//	return true
-	//})
-	//fmt.Printf("nillness: %d/%d\n", nillnes, h.files.Len())
-
 	h.files.Ascend(func(item *filesItem) bool {
 		if item.decompressor != nil {
-			//fmt.Printf("close history: %s\n", item.decompressor.FilePath())
 			if err := item.decompressor.Close(); err != nil {
 				log.Trace("close", "err", err, "file", item.decompressor.FileName())
 			}
@@ -1198,7 +1188,6 @@ func (hc *HistoryContext) Close() {
 				if err := item.src.decompressor.Close(); err != nil {
 					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
 				}
-				fmt.Printf("hist ctx del: %s\n", item.src.decompressor.FilePath())
 				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
 					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
 				}
@@ -1216,14 +1205,6 @@ func (hc *HistoryContext) Close() {
 		}
 		return true
 	})
-	//nillnes = 0
-	//hc.h.files.Ascend(func(item *filesItem) bool {
-	//	if item.decompressor == nil {
-	//		nillnes++
-	//	}
-	//	return true
-	//})
-	//fmt.Printf("nillness3: %d/%d\n", nillnes, hc.h.files.Len())
 }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {

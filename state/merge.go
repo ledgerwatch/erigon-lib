@@ -990,11 +990,9 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 	h.InvertedIndex.integrateMergedFiles(indexOuts, indexIn)
 	//TODO: handle collision
 	if historyIn != nil {
-		fmt.Printf("insert: %s\n", historyIn.decompressor.FileName())
 		h.files.ReplaceOrInsert(historyIn)
 	}
 	for _, out := range historyOuts {
-		fmt.Printf("mark deleted: %s\n", out.decompressor.FileName())
 		if out == nil {
 			panic("must not happen: " + h.filenameBase)
 		}

@@ -42,6 +42,8 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 			v, _ := lastInView.getter.Next(nil)
 			require.Equal(8, len(v))
 		}
+
+		require.NotNil(lastOnFs.decompressor)
 		hc.Close()
 		require.Nil(lastOnFs.decompressor)
 
@@ -69,8 +71,9 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 		require.False(lastOnFs.frozen) // prepared dataset must have some non-frozen files. or it's bad dataset.
 		err = h.deleteFiles(nil, []*filesItem{lastOnFs})
 		require.NoError(err)
-		hc.Close()
 
+		require.NotNil(lastOnFs.decompressor)
+		hc.Close()
 		require.Nil(lastOnFs.decompressor)
 	})
 
