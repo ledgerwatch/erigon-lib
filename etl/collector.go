@@ -141,7 +141,6 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 	if err := loadFilesIntoBucket(c.logPrefix, db, toBucket, c.bufType, c.dataProviders, loadFunc, args); err != nil {
 		return fmt.Errorf("loadIntoTable %s: %w", toBucket, err)
 	}
-	c.reset()
 	return nil
 }
 
