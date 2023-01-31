@@ -248,10 +248,7 @@ func EncodeHashes(hashes []byte, encodeBuf []byte) int {
 
 func AnnouncementsLen(types []byte, sizes []uint32, hashes []byte) int {
 	typesLen := StringLen(len(types))
-	var sizesLen int
-	for _, size := range sizes {
-		sizesLen += U32Len(size)
-	}
+	sizesLen := len(sizes) * 5
 	hashesLen := len(hashes) / 32 * 33
 	totalLen := typesLen + sizesLen + ListPrefixLen(sizesLen) + hashesLen + ListPrefixLen(hashesLen)
 	return ListPrefixLen(totalLen) + totalLen
@@ -260,17 +257,17 @@ func AnnouncementsLen(types []byte, sizes []uint32, hashes []byte) int {
 func EncodeAnnouncements(types []byte, sizes []uint32, hashes []byte, encodeBuf []byte) int {
 	pos := 0
 	typesLen := StringLen(len(types))
-	var sizesLen int
-	for _, size := range sizes {
-		sizesLen += U32Len(size)
-	}
+	sizesLen := len(sizes) * 5
 	hashesLen := len(hashes) / 32 * 33
 	totalLen := typesLen + sizesLen + ListPrefixLen(sizesLen) + hashesLen + ListPrefixLen(hashesLen)
 	pos += EncodeListPrefix(totalLen, encodeBuf)
 	pos += EncodeString(types, encodeBuf[pos:])
 	pos += EncodeListPrefix(sizesLen, encodeBuf[pos:])
 	for _, size := range sizes {
-		pos += EncodeU32(size, encodeBuf[pos:])
+		encodeBuf[pos] = 128 + 4
+		pos++
+		binary.BigEndian.PutUint32(encodeBuf[pos:], size)
+		pos += 4
 	}
 	pos += EncodeListPrefix(hashesLen, encodeBuf)
 	for i := 0; i < len(hashes); i += 32 {
