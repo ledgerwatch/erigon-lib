@@ -39,14 +39,14 @@ type LoadFunc func(k, v []byte, table CurrentTableReader, next LoadNextFunc) err
 // Collector performs the job of ETL Transform, but can also be used without "E" (Extract) part
 // as a Collect Transform Load
 type Collector struct {
-	extractNextFunc ExtractNextFunc
-	flushBuffer     func([]byte, bool) error
-	logPrefix       string
-	dataProviders   []dataProvider
-	logLvl          log.Lvl
-	bufType         int
-	allFlushed      bool
-	autoClean       bool
+	buf           Buffer
+	logPrefix     string
+	tmpdir        string
+	dataProviders []dataProvider
+	logLvl        log.Lvl
+	bufType       int
+	allFlushed    bool
+	autoClean     bool
 }
 
 // NewCollectorFromFiles creates collector from existing files (left over from previous unsuccessful loading)
@@ -85,41 +85,17 @@ func NewCriticalCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Coll
 }
 
 func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
-	c := &Collector{autoClean: true, bufType: getTypeByBuffer(sortableBuffer), logPrefix: logPrefix, logLvl: log.LvlInfo}
+	return &Collector{autoClean: true, bufType: getTypeByBuffer(sortableBuffer), buf: sortableBuffer, logPrefix: logPrefix, tmpdir: tmpdir, logLvl: log.LvlInfo}
+}
 
-	c.flushBuffer = func(currentKey []byte, canStoreInRam bool) error {
-		if sortableBuffer.Len() == 0 {
-			return nil
-		}
-		var provider dataProvider
-		var err error
-		sortableBuffer.Sort()
-		if canStoreInRam && len(c.dataProviders) == 0 {
-			provider = KeepInRAM(sortableBuffer)
-			c.allFlushed = true
-		} else {
-			doFsync := !c.autoClean /* is critical collector */
-			provider, err = FlushToDisk(logPrefix, sortableBuffer, tmpdir, doFsync, c.logLvl)
-		}
-		if err != nil {
+func (c *Collector) extractNextFunc(originalK, k []byte, v []byte) error {
+	c.buf.Put(k, v)
+	if c.buf.CheckFlushSize() {
+		if err := c.flushBuffer(false); err != nil {
 			return err
 		}
-		if provider != nil {
-			c.dataProviders = append(c.dataProviders, provider)
-		}
-		return nil
 	}
-
-	c.extractNextFunc = func(originalK, k []byte, v []byte) error {
-		sortableBuffer.Put(k, v)
-		if sortableBuffer.CheckFlushSize() {
-			if err := c.flushBuffer(originalK, false); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	return c
+	return nil
 }
 
 func (c *Collector) Collect(k, v []byte) error {
@@ -128,6 +104,29 @@ func (c *Collector) Collect(k, v []byte) error {
 
 func (c *Collector) LogLvl(v log.Lvl) { c.logLvl = v }
 
+func (c *Collector) flushBuffer(canStoreInRam bool) error {
+	if c.buf.Len() == 0 {
+		return nil
+	}
+	var provider dataProvider
+	var err error
+	c.buf.Sort()
+	if canStoreInRam && len(c.dataProviders) == 0 {
+		provider = KeepInRAM(c.buf)
+		c.allFlushed = true
+	} else {
+		doFsync := !c.autoClean /* is critical collector */
+		provider, err = FlushToDisk(c.logPrefix, c.buf, c.tmpdir, doFsync, c.logLvl)
+	}
+	if err != nil {
+		return err
+	}
+	if provider != nil {
+		c.dataProviders = append(c.dataProviders, provider)
+	}
+	return nil
+}
+
 func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args TransformArgs) error {
 	defer func() {
 		if c.autoClean {
@@ -135,24 +134,28 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 		}
 	}()
 	if !c.allFlushed {
-		if e := c.flushBuffer(nil, true); e != nil {
+		if e := c.flushBuffer(true); e != nil {
 			return e
 		}
 	}
 	if err := loadFilesIntoBucket(c.logPrefix, db, toBucket, c.bufType, c.dataProviders, loadFunc, args); err != nil {
 		return fmt.Errorf("loadIntoTable %s: %w", toBucket, err)
 	}
+	c.reset()
 	return nil
 }
 
-func (c *Collector) Close() {
-	totalSize := uint64(0)
+func (c *Collector) reset() {
 	for _, p := range c.dataProviders {
-		totalSize += p.Dispose()
+		p.Dispose()
 	}
-	if totalSize > 0 {
-		log.Log(c.logLvl, fmt.Sprintf("[%s] etl: temp files removed", c.logPrefix), "total size", common.ByteCount(totalSize))
-	}
+	c.dataProviders = nil
+	c.buf.Reset()
+	c.allFlushed = false
+}
+
+func (c *Collector) Close() {
+	c.reset()
 }
 
 // loadFilesIntoBucket uses merge-sort to order the elements stored within the slice of providers,
