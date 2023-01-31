@@ -1013,14 +1013,3 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 		out.canDelete.Store(true)
 	}
 }
-
-func (li *LocalityIndex) deleteFiles(out *filesItem) error {
-	if out == nil || out.index == nil {
-		return nil
-	}
-	out.canDelete.Store(true)
-	if li.file != nil && out.endTxNum == li.file.endTxNum { //paranoic protection against delettion of current file
-		return nil
-	}
-	return nil
-}
