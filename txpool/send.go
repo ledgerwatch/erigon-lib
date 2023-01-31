@@ -159,21 +159,23 @@ func (f *Send) AnnouncePooledTxs(types []byte, sizes []uint32, hashes types2.Has
 					}
 				}
 			case direct.ETH68:
-				if j > prevJ {
-					req := &sentry.OutboundMessageData{
-						Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_68,
-						Data: jData,
-					}
-					peers, err := sentryClient.SendMessageToAll(f.ctx, req, &grpc.EmptyCallOption{})
-					if err != nil {
-						log.Debug("[txpool.send] AnnouncePooledTxs68", "err", err)
-					}
-					if peers != nil {
-						for k := prevJ; k < j; k++ {
-							hashSentTo[k] += len(peers.Peers)
+				/*
+					if j > prevJ {
+						req := &sentry.OutboundMessageData{
+							Id:   sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_68,
+							Data: jData,
+						}
+						peers, err := sentryClient.SendMessageToAll(f.ctx, req, &grpc.EmptyCallOption{})
+						if err != nil {
+							log.Debug("[txpool.send] AnnouncePooledTxs68", "err", err)
+						}
+						if peers != nil {
+							for k := prevJ; k < j; k++ {
+								hashSentTo[k] += len(peers.Peers)
+							}
 						}
 					}
-				}
+				*/
 			}
 		}
 		prevI = i
