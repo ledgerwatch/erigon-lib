@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 )
 
@@ -42,7 +43,7 @@ func FlushToDisk(logPrefix string, b Buffer, tmpdir string, doFsync bool, lvl lo
 	if b.Len() == 0 {
 		return nil, nil
 	}
-	log.Warn("dbg: flush")
+	log.Warn("dbg: flush", "stack", dbg.Stack())
 
 	// if we are going to create files in the system temp dir, we don't need any
 	// subfolders.
