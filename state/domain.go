@@ -60,9 +60,12 @@ type filesItem struct {
 	// Frozen: file of size StepsInBiggestFile. Completely immutable.
 	// Cold: file of size < StepsInBiggestFile. Immutable, but can be closed/removed after merge to bigger file.
 	// Hot: Stored in DB. Providing Snapshot-Isolation by CopyOnWrite.
-	frozen    bool //immutable, don't need atomic
+	frozen   bool           // immutable, don't need atomic
+	refcount atomic2.Uint64 // only for `frozen=false`
+
+	// file can be deleted in 2 cases: 1. when `refcount == 0 && canDelete == true` 2. on app startup when `file.isSubsetOfFrozenFile()`
+	// other processes (which also reading files, may have same logic)
 	canDelete atomic2.Bool
-	refcount  atomic2.Uint64
 }
 
 func (i *filesItem) isSubsetOf(j *filesItem) bool {

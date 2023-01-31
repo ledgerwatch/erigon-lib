@@ -500,9 +500,6 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 		}
 	}()
 	a.integrateMergedFiles(outs, in)
-	if err = a.deleteFiles(outs); err != nil {
-		return true, err
-	}
 	closeAll = false
 	return true, nil
 }
@@ -1001,31 +998,6 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	a.logTopics.integrateMergedFiles(outs.logTopics, in.logTopics)
 	a.tracesFrom.integrateMergedFiles(outs.tracesFrom, in.tracesFrom)
 	a.tracesTo.integrateMergedFiles(outs.tracesTo, in.tracesTo)
-}
-
-func (a *AggregatorV3) deleteFiles(outs SelectedStaticFilesV3) error {
-	if err := a.accounts.deleteFiles(outs.accountsIdx, outs.accountsHist); err != nil {
-		return err
-	}
-	if err := a.storage.deleteFiles(outs.storageIdx, outs.storageHist); err != nil {
-		return err
-	}
-	if err := a.code.deleteFiles(outs.codeIdx, outs.codeHist); err != nil {
-		return err
-	}
-	if err := a.logAddrs.deleteFiles(outs.logAddrs); err != nil {
-		return err
-	}
-	if err := a.logTopics.deleteFiles(outs.logTopics); err != nil {
-		return err
-	}
-	if err := a.tracesFrom.deleteFiles(outs.tracesFrom); err != nil {
-		return err
-	}
-	if err := a.tracesTo.deleteFiles(outs.tracesTo); err != nil {
-		return err
-	}
-	return nil
 }
 
 // KeepInDB - usually equal to one a.aggregationStep, but when we exec blocks from snapshots

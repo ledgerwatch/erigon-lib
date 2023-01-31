@@ -355,19 +355,6 @@ func (ri *ReadIndices) integrateMergedFiles(outs RSelectedStaticFiles, in RMerge
 	ri.code.integrateMergedFiles(outs.code, in.code)
 }
 
-func (ri *ReadIndices) deleteFiles(outs RSelectedStaticFiles) error {
-	if err := ri.accounts.deleteFiles(outs.accounts); err != nil {
-		return err
-	}
-	if err := ri.storage.deleteFiles(outs.storage); err != nil {
-		return err
-	}
-	if err := ri.code.deleteFiles(outs.code); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (ri *ReadIndices) ReadAccountData(addr []byte) error {
 	return ri.accounts.Add(addr)
 }
@@ -438,9 +425,6 @@ func (ri *ReadIndices) FinishTx() error {
 			}
 		}()
 		ri.integrateMergedFiles(outs, in)
-		if err = ri.deleteFiles(outs); err != nil {
-			return err
-		}
 	}
 	closeAll = false
 	return nil

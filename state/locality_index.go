@@ -295,6 +295,9 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 }
 
 func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumTo uint64) {
+	if li.file != nil {
+		li.file.canDelete.Store(true)
+	}
 	li.file = &filesItem{
 		startTxNum: txNumFrom,
 		endTxNum:   txNumTo,
@@ -320,14 +323,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 	if err != nil {
 		return err
 	}
-	var oldFile *filesItem
-	if li.file != nil {
-		oldFile = li.file
-	}
 	li.integrateFiles(*f, fromStep*li.aggregationStep, toStep*li.aggregationStep)
-	if err = li.deleteFiles(oldFile); err != nil {
-		return err
-	}
 	return nil
 }
 

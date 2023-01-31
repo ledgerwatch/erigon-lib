@@ -448,8 +448,6 @@ func collateAndMerge(t *testing.T, db kv.RwDB, tx kv.RwTx, d *Domain, txs uint64
 				valuesIn, indexIn, historyIn, err := d.mergeFiles(ctx, valuesOuts, indexOuts, historyOuts, r, 1)
 				require.NoError(t, err)
 				d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
-				err = d.deleteFiles(valuesOuts, indexOuts, historyOuts)
-				require.NoError(t, err)
 				dc.Close()
 			}
 		}()
@@ -487,8 +485,6 @@ func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
 		require.NoError(t, err)
 
 		d.integrateMergedFiles(valuesOuts, indexOuts, historyOuts, valuesIn, indexIn, historyIn)
-		err = d.deleteFiles(valuesOuts, indexOuts, historyOuts)
-		require.NoError(t, err)
 		dc.Close()
 	}
 }

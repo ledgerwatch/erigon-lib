@@ -103,7 +103,6 @@ type Decompressor struct {
 	mmapHandle2     *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
 	dict            *patternTable
 	posDict         *posTable
-	compressedFile  string
 	mmapHandle1     []byte // mmap handle for unix (this is used to close mmap)
 	data            []byte // slice of correct size for the decompressor to work with
 	wordsStart      uint64 // Offset of whether the superstrings actually start
@@ -111,6 +110,8 @@ type Decompressor struct {
 	modTime         time.Time
 	wordsCount      uint64
 	emptyWordsCount uint64
+
+	compressedFile, compressedFileName string
 }
 
 // Tables with bitlen greater than threshold will be condensed.
@@ -146,6 +147,8 @@ func NewDecompressor(compressedFile string) (*Decompressor, error) {
 	d := &Decompressor{
 		compressedFile: compressedFile,
 	}
+	_, fName := filepath.Split(d.compressedFile)
+	d.compressedFileName = fName
 
 	var err error
 	defer func() {
@@ -349,10 +352,7 @@ func (d *Decompressor) Close() error {
 }
 
 func (d *Decompressor) FilePath() string { return d.compressedFile }
-func (d *Decompressor) FileName() string {
-	_, fName := filepath.Split(d.compressedFile)
-	return fName
-}
+func (d *Decompressor) FileName() string { return d.compressedFileName }
 
 // WithReadAhead - Expect read in sequential order. (Hence, pages in the given range can be aggressively read ahead, and may be freed soon after they are accessed.)
 func (d *Decompressor) WithReadAhead(f func() error) error {
@@ -499,7 +499,7 @@ func (d *Decompressor) MakeGetter() *Getter {
 		posDict:     d.posDict,
 		data:        d.data[d.wordsStart:],
 		patternDict: d.dict,
-		fName:       d.compressedFile,
+		fName:       d.compressedFileName,
 	}
 }
 

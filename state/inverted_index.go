@@ -452,7 +452,7 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	ic.files = btree.NewG[ctxItem](32, ctxItemLess)
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.index == nil || item.canDelete.Load() {
+			if item.index == nil {
 				continue
 			}
 			if !item.frozen {

@@ -350,8 +350,6 @@ func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 				indexIn, historyIn, err := h.mergeFiles(ctx, indexOuts, historyOuts, r, 1)
 				require.NoError(tb, err)
 				h.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
-				err = h.deleteFiles(indexOuts, historyOuts)
-				require.NoError(tb, err)
 				hc.Close()
 			}
 		}()
