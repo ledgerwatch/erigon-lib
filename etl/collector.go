@@ -162,22 +162,7 @@ func (c *Collector) Close() {
 // The subsequent iterations pop the heap again and load up the provider associated with it to get the next element after processing LoadFunc.
 // this continues until all providers have reached their EOF.
 func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType int, providers []dataProvider, loadFunc LoadFunc, args TransformArgs) error {
-
-	h := &Heap{}
-	heap.Init(h)
-	for i, provider := range providers {
-		if key, value, err := provider.Next(nil, nil); err == nil {
-			he := HeapElem{key, value, i}
-			heap.Push(h, he)
-		} else /* we must have at least one entry per file */ {
-			eee := fmt.Errorf("%s: error reading first readers: n=%d current=%d provider=%s err=%w",
-				logPrefix, len(providers), i, provider, err)
-			panic(eee)
-		}
-	}
 	var c kv.RwCursor
-
-	currentTable := &currentTableReader{db, bucket}
 	haveSortingGuaranties := isIdentityLoadFunc(loadFunc) // user-defined loadFunc may change ordering
 	var lastKey []byte
 	if bucket != "" { // passing empty bucket name is valid case for etl when DB modification is not expected
@@ -259,6 +244,21 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		}
 		return nil
 	}
+
+	h := &Heap{}
+	heap.Init(h)
+	for i, provider := range providers {
+		if key, value, err := provider.Next(nil, nil); err == nil {
+			he := HeapElem{key, value, i}
+			heap.Push(h, he)
+		} else /* we must have at least one entry per file */ {
+			eee := fmt.Errorf("%s: error reading first readers: n=%d current=%d provider=%s err=%w",
+				logPrefix, len(providers), i, provider, err)
+			panic(eee)
+		}
+	}
+
+	currentTable := &currentTableReader{db, bucket}
 	// Main loading loop
 	for h.Len() > 0 {
 		if err := common.Stopped(args.Quit); err != nil {
