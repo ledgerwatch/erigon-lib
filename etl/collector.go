@@ -110,6 +110,7 @@ func (c *Collector) flushBuffer(canStoreInRam bool) error {
 	}
 	var provider dataProvider
 	var err error
+	log.Warn("dbg: sort")
 	c.buf.Sort()
 	if canStoreInRam && len(c.dataProviders) == 0 {
 		provider = KeepInRAM(c.buf)
