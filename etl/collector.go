@@ -35,6 +35,7 @@ import (
 
 type LoadNextFunc func(originalK, k, v []byte) error
 type LoadFunc func(k, v []byte, table CurrentTableReader, next LoadNextFunc) error
+type simpleLoadFunc func(k, v []byte) error
 
 // Collector performs the job of ETL Transform, but can also be used without "E" (Extract) part
 // as a Collect Transform Load
@@ -135,48 +136,25 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 			return e
 		}
 	}
-	if err := loadFilesIntoBucket(c.logPrefix, db, toBucket, c.bufType, c.dataProviders, loadFunc, args); err != nil {
-		return fmt.Errorf("loadIntoTable %s: %w", toBucket, err)
-	}
-	return nil
-}
 
-func (c *Collector) reset() {
-	for _, p := range c.dataProviders {
-		p.Dispose()
-	}
-	c.dataProviders = nil
-	c.buf.Reset()
-	c.allFlushed = false
-}
+	bucket := toBucket
 
-func (c *Collector) Close() {
-	c.reset()
-}
-
-// loadFilesIntoBucket uses merge-sort to order the elements stored within the slice of providers,
-// regardless of ordering within the files the elements will be processed in order.
-// The first pass reads the first element from each of the providers and populates a heap with the key/value/provider index.
-// Later, the heap is popped to get the first element, the record is processed using the LoadFunc, and the provider is asked
-// for the next item, which is then added back to the heap.
-// The subsequent iterations pop the heap again and load up the provider associated with it to get the next element after processing LoadFunc.
-// this continues until all providers have reached their EOF.
-func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType int, providers []dataProvider, loadFunc LoadFunc, args TransformArgs) error {
-	var c kv.RwCursor
+	var cursor kv.RwCursor
 	haveSortingGuaranties := isIdentityLoadFunc(loadFunc) // user-defined loadFunc may change ordering
 	var lastKey []byte
 	if bucket != "" { // passing empty bucket name is valid case for etl when DB modification is not expected
 		var err error
-		c, err = db.RwCursor(bucket)
+		cursor, err = db.RwCursor(bucket)
 		if err != nil {
 			return err
 		}
 		var errLast error
-		lastKey, _, errLast = c.Last()
+		lastKey, _, errLast = cursor.Last()
 		if errLast != nil {
 			return errLast
 		}
 	}
+
 	var canUseAppend bool
 	isDupSort := kv.ChaindataTablesCfg[bucket].Flags&kv.DupSort != 0 && !kv.ChaindataTablesCfg[bucket].AutoDupSortKeysConversion
 
@@ -195,7 +173,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		// SortableOldestAppearedBuffer must guarantee that only 1 oldest value of key will appear
 		// but because size of buffer is limited - each flushed file does guarantee "oldest appeared"
 		// property, but files may overlap. files are sorted, just skip repeated keys here
-		if bufType == SortableOldestAppearedBuffer {
+		if c.bufType == SortableOldestAppearedBuffer {
 			if bytes.Equal(prevK, k) {
 				return nil
 			} else {
@@ -214,37 +192,69 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 				logArs = append(logArs, "current_prefix", makeCurrentKeyStr(k))
 			}
 
-			log.Info(fmt.Sprintf("[%s] ETL [2/2] Loading", logPrefix), logArs...)
+			log.Info(fmt.Sprintf("[%s] ETL [2/2] Loading", c.logPrefix), logArs...)
 		}
 
 		if canUseAppend && len(v) == 0 {
 			return nil // nothing to delete after end of bucket
 		}
 		if len(v) == 0 {
-			if err := c.Delete(k); err != nil {
+			if err := cursor.Delete(k); err != nil {
 				return err
 			}
 			return nil
 		}
 		if canUseAppend {
 			if isDupSort {
-				if err := c.(kv.RwCursorDupSort).AppendDup(k, v); err != nil {
-					return fmt.Errorf("%s: bucket: %s, appendDup: k=%x, %w", logPrefix, bucket, k, err)
+				if err := cursor.(kv.RwCursorDupSort).AppendDup(k, v); err != nil {
+					return fmt.Errorf("%s: bucket: %s, appendDup: k=%x, %w", c.logPrefix, bucket, k, err)
 				}
 			} else {
-				if err := c.Append(k, v); err != nil {
-					return fmt.Errorf("%s: bucket: %s, append: k=%x, v=%x, %w", logPrefix, bucket, k, v, err)
+				if err := cursor.Append(k, v); err != nil {
+					return fmt.Errorf("%s: bucket: %s, append: k=%x, v=%x, %w", c.logPrefix, bucket, k, v, err)
 				}
 			}
 
 			return nil
 		}
-		if err := c.Put(k, v); err != nil {
-			return fmt.Errorf("%s: put: k=%x, %w", logPrefix, k, err)
+		if err := cursor.Put(k, v); err != nil {
+			return fmt.Errorf("%s: put: k=%x, %w", c.logPrefix, k, err)
 		}
 		return nil
 	}
 
+	currentTable := &currentTableReader{db, bucket}
+	simpleLoad := func(k, v []byte) error {
+		return loadFunc(k, v, currentTable, loadNextFunc)
+	}
+	if err := mergeSortFiles(c.logPrefix, c.dataProviders, simpleLoad, args); err != nil {
+		return fmt.Errorf("loadIntoTable %s: %w", toBucket, err)
+	}
+	log.Trace(fmt.Sprintf("[%s] ETL Load done", c.logPrefix), "bucket", bucket, "records", i)
+	return nil
+}
+
+func (c *Collector) reset() {
+	for _, p := range c.dataProviders {
+		p.Dispose()
+	}
+	c.dataProviders = nil
+	c.buf.Reset()
+	c.allFlushed = false
+}
+
+func (c *Collector) Close() {
+	c.reset()
+}
+
+// mergeSortFiles uses merge-sort to order the elements stored within the slice of providers,
+// regardless of ordering within the files the elements will be processed in order.
+// The first pass reads the first element from each of the providers and populates a heap with the key/value/provider index.
+// Later, the heap is popped to get the first element, the record is processed using the LoadFunc, and the provider is asked
+// for the next item, which is then added back to the heap.
+// The subsequent iterations pop the heap again and load up the provider associated with it to get the next element after processing LoadFunc.
+// this continues until all providers have reached their EOF.
+func mergeSortFiles(logPrefix string, providers []dataProvider, loadFunc simpleLoadFunc, args TransformArgs) error {
 	h := &Heap{}
 	heap.Init(h)
 	for i, provider := range providers {
@@ -258,7 +268,6 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 		}
 	}
 
-	currentTable := &currentTableReader{db, bucket}
 	// Main loading loop
 	for h.Len() > 0 {
 		if err := common.Stopped(args.Quit); err != nil {
@@ -267,7 +276,7 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 
 		element := (heap.Pop(h)).(HeapElem)
 		provider := providers[element.TimeIdx]
-		err := loadFunc(element.Key, element.Value, currentTable, loadNextFunc)
+		err := loadFunc(element.Key, element.Value)
 		if err != nil {
 			return err
 		}
@@ -277,9 +286,6 @@ func loadFilesIntoBucket(logPrefix string, db kv.RwTx, bucket string, bufType in
 			return fmt.Errorf("%s: error while reading next element from disk: %w", logPrefix, err)
 		}
 	}
-
-	log.Trace(fmt.Sprintf("[%s] ETL Load done", logPrefix), "bucket", bucket, "records", i)
-
 	return nil
 }
 
