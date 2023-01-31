@@ -90,12 +90,10 @@ func NewCollector(logPrefix, tmpdir string, sortableBuffer Buffer) *Collector {
 
 func (c *Collector) extractNextFunc(originalK, k []byte, v []byte) error {
 	c.buf.Put(k, v)
-	if c.buf.CheckFlushSize() {
-		if err := c.flushBuffer(false); err != nil {
-			return err
-		}
+	if !c.buf.CheckFlushSize() {
+		return nil
 	}
-	return nil
+	return c.flushBuffer(false)
 }
 
 func (c *Collector) Collect(k, v []byte) error {
