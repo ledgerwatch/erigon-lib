@@ -526,7 +526,6 @@ func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if err := h.historyValsFlushing.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
-	h.close()
 	return nil
 }
 

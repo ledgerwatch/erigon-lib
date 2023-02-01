@@ -360,7 +360,6 @@ func (ii *invertedIndexWAL) Flush(ctx context.Context, tx kv.RwTx) error {
 	if err := ii.indexKeysFlushing.Load(tx, ii.ii.indexKeysTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
-	ii.close()
 	return nil
 }
 
