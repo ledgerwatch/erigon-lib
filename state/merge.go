@@ -77,12 +77,12 @@ func (h *History) endTxNumMinimax() uint64 {
 	}
 	return minimax
 }
-func (h *History) endIndexedTxNumMinimax() uint64 {
+func (h *History) endIndexedTxNumMinimax(needFrozen bool) uint64 {
 	var max uint64
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.index == nil {
-				return false
+			if item.index == nil || (needFrozen && !item.frozen) {
+				continue
 			}
 			max = cmp.Max(max, item.endTxNum)
 		}

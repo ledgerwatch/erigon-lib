@@ -1336,8 +1336,8 @@ type AggregatorStep struct {
 func (a *AggregatorV3) MakeSteps() ([]*AggregatorStep, error) {
 	to := a.maxTxNum.Load()
 	indexedMax := cmp.Min(
-		cmp.Min(a.accounts.endIndexedTxNumMinimax(), a.storage.endIndexedTxNumMinimax()),
-		a.code.endIndexedTxNumMinimax(),
+		cmp.Min(a.accounts.endIndexedTxNumMinimax(true), a.storage.endIndexedTxNumMinimax(true)),
+		a.code.endIndexedTxNumMinimax(true),
 	)
 	if to != indexedMax {
 		log.Warn("[snapshots] not all files are indexed", "files", to/a.aggregationStep, "indexed", indexedMax/a.aggregationStep)
