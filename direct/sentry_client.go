@@ -94,7 +94,7 @@ var ProtoIds = map[uint]map[sentry.MessageId]struct{}{
 		sentry.MessageId_NEW_BLOCK_HASHES_66:              struct{}{},
 		sentry.MessageId_NEW_BLOCK_66:                     struct{}{},
 		sentry.MessageId_TRANSACTIONS_66:                  struct{}{},
-		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66: struct{}{},
+		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_68: struct{}{},
 		sentry.MessageId_GET_POOLED_TRANSACTIONS_66:       struct{}{},
 		sentry.MessageId_POOLED_TRANSACTIONS_66:           struct{}{},
 	},
