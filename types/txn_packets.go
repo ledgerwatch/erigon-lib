@@ -52,18 +52,6 @@ func EncodeHashes(hashes []byte, encodeBuf []byte) []byte {
 	return encodeBuf
 }
 
-// EncodeHashes produces RLP encoding of given number of hashes, as RLP list
-// It appends encoding to the given given slice (encodeBuf), reusing the space
-// there is there is enough capacity.
-// The first returned value is the slice where encodinfg
-func EncodeTypes(types []byte, encodeBuf []byte) []byte {
-	typesLen := len(types)
-	dataLen := typesLen
-	encodeBuf = common.EnsureEnoughSize(encodeBuf, rlp.ListPrefixLen(typesLen)+dataLen)
-	rlp.EncodeHashes(types, encodeBuf)
-	return encodeBuf
-}
-
 // ParseHash extracts the next hash from the RLP encoding (payload) from a given position.
 // It appends the hash to the given slice, reusing the space if there is enough capacity
 // The first returned value is the slice where hash is appended to.
