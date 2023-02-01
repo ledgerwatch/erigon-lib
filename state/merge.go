@@ -54,13 +54,14 @@ func (ii *InvertedIndex) endTxNumMinimax() uint64 {
 	}
 	return minimax
 }
-func (ii *InvertedIndex) endIndexedTxNumMinimax() uint64 {
+func (ii *InvertedIndex) endIndexedTxNumMinimax(needFrozen bool) uint64 {
 	var max uint64
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.index != nil {
-				max = cmp.Max(max, item.endTxNum)
+			if item.index == nil || (needFrozen && !item.frozen) {
+				continue
 			}
+			max = cmp.Max(max, item.endTxNum)
 		}
 		return true
 	})
@@ -88,7 +89,7 @@ func (h *History) endIndexedTxNumMinimax(needFrozen bool) uint64 {
 		}
 		return true
 	})
-	return cmp.Min(max, h.InvertedIndex.endIndexedTxNumMinimax())
+	return cmp.Min(max, h.InvertedIndex.endIndexedTxNumMinimax(needFrozen))
 }
 
 type DomainRanges struct {

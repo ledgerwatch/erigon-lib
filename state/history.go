@@ -2131,10 +2131,7 @@ func (h *History) MakeSteps(toTxNum uint64) []*HistoryStep {
 	i := 0
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.index == nil {
-				return false
-			}
-			if item.startTxNum >= toTxNum {
+			if item.index == nil || !item.frozen || item.startTxNum >= toTxNum {
 				continue
 			}
 			steps[i].historyItem = item

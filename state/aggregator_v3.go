@@ -1334,18 +1334,13 @@ type AggregatorStep struct {
 }
 
 func (a *AggregatorV3) MakeSteps() ([]*AggregatorStep, error) {
-	to := a.maxTxNum.Load()
-	indexedMax := cmp.Min(
+	frozenAndIndexed := cmp.Min(
 		cmp.Min(a.accounts.endIndexedTxNumMinimax(true), a.storage.endIndexedTxNumMinimax(true)),
 		a.code.endIndexedTxNumMinimax(true),
 	)
-	if to != indexedMax {
-		log.Warn("[snapshots] not all files are indexed", "files", to/a.aggregationStep, "indexed", indexedMax/a.aggregationStep)
-		to = cmp.Min(to, indexedMax)
-	}
-	accountSteps := a.accounts.MakeSteps(to)
-	codeSteps := a.code.MakeSteps(to)
-	storageSteps := a.storage.MakeSteps(to)
+	accountSteps := a.accounts.MakeSteps(frozenAndIndexed)
+	codeSteps := a.code.MakeSteps(frozenAndIndexed)
+	storageSteps := a.storage.MakeSteps(frozenAndIndexed)
 	if len(accountSteps) != len(storageSteps) || len(storageSteps) != len(codeSteps) {
 		return nil, fmt.Errorf("different limit of steps (try merge snapshots): accountSteps=%d, storageSteps=%d, codeSteps=%d", len(accountSteps), len(storageSteps), len(codeSteps))
 	}
