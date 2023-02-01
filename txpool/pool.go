@@ -628,60 +628,58 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 	var toRemove []*metaTx
 	count := 0
 
-	success, err := func() (bool, error) {
-		for i := 0; count < int(n) && i < len(best.ms); i++ {
-			// if we wouldn't have enough gas for a standard transaction then quit out early
-			if availableGas < fixedgas.TxGas {
-				break
-			}
-
-			mt := best.ms[i]
-
-			if toSkip.Contains(mt.Tx.IDHash) {
-				continue
-			}
-
-			if mt.Tx.Gas >= p.blockGasLimit.Load() {
-				// Skip transactions with very large gas limit
-				continue
-			}
-			rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
-			if err != nil {
-				return false, err
-			}
-			if len(rlpTx) == 0 {
-				toRemove = append(toRemove, mt)
-				continue
-			}
-
-			// make sure we have enough gas in the caller to add this transaction.
-			// not an exact science using intrinsic gas but as close as we could hope for at
-			// this stage
-			intrinsicGas, _ := CalcIntrinsicGas(uint64(mt.Tx.DataLen), uint64(mt.Tx.DataNonZeroLen), nil, mt.Tx.Creation, true, true, isShanghai)
-			if intrinsicGas > availableGas {
-				// we might find another TX with a low enough intrinsic gas to include so carry on
-				continue
-			}
-
-			if intrinsicGas <= availableGas { // check for potential underflow
-				availableGas -= intrinsicGas
-			}
-
-			txs.Txs[count] = rlpTx
-			copy(txs.Senders.At(count), sender)
-			txs.IsLocal[count] = isLocal
-			toSkip.Add(mt.Tx.IDHash)
-			count++
+	for i := 0; count < int(n) && i < len(best.ms); i++ {
+		// if we wouldn't have enough gas for a standard transaction then quit out early
+		if availableGas < fixedgas.TxGas {
+			break
 		}
-		return true, nil
-	}()
+
+		mt := best.ms[i]
+
+		if toSkip.Contains(mt.Tx.IDHash) {
+			continue
+		}
+
+		if mt.Tx.Gas >= p.blockGasLimit.Load() {
+			// Skip transactions with very large gas limit
+			continue
+		}
+		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
+		if err != nil {
+			return false, count, err
+		}
+		if len(rlpTx) == 0 {
+			toRemove = append(toRemove, mt)
+			continue
+		}
+
+		// make sure we have enough gas in the caller to add this transaction.
+		// not an exact science using intrinsic gas but as close as we could hope for at
+		// this stage
+		intrinsicGas, _ := CalcIntrinsicGas(uint64(mt.Tx.DataLen), uint64(mt.Tx.DataNonZeroLen), nil, mt.Tx.Creation, true, true, isShanghai)
+		if intrinsicGas > availableGas {
+			// we might find another TX with a low enough intrinsic gas to include so carry on
+			continue
+		}
+
+		if intrinsicGas <= availableGas { // check for potential underflow
+			availableGas -= intrinsicGas
+		}
+
+		txs.Txs[count] = rlpTx
+		copy(txs.Senders.At(count), sender)
+		txs.IsLocal[count] = isLocal
+		toSkip.Add(mt.Tx.IDHash)
+		count++
+	}
+
 	txs.Resize(uint(count))
 	if len(toRemove) > 0 {
 		for _, mt := range toRemove {
 			p.pending.Remove(mt)
 		}
 	}
-	return success, count, err
+	return true, count, nil
 }
 
 func (p *TxPool) ResetYieldedStatus() {
