@@ -1346,6 +1346,7 @@ func (a *AggregatorV3) MakeSteps() ([]*AggregatorStep, error) {
 	}
 	steps := make([]*AggregatorStep, len(accountSteps))
 	for i, accountStep := range accountSteps {
+		log.Warn("dbg", "step", accountStep.historyItem.decompressor.FileName(), "startTx", accountStep.indexFile.startTxNum, "endTx", accountStep.indexFile.endTxNum)
 		steps[i] = &AggregatorStep{
 			a:        a,
 			accounts: accountStep,
