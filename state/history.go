@@ -446,6 +446,7 @@ func (h *History) Rotate() historyFlusher {
 	defer h.walLock.Unlock()
 	if h.wal != nil {
 		h.wal.historyValsFlushing, h.wal.historyVals = h.wal.historyVals, h.wal.historyValsFlushing
+		h.wal.autoIncrementFlush = h.wal.autoIncrement
 	}
 	return historyFlusher{h.wal, h.InvertedIndex.Rotate()}
 }
@@ -473,6 +474,7 @@ type historyWAL struct {
 	autoIncrementBuf    []byte
 	historyKey          []byte
 	autoIncrement       uint64
+	autoIncrementFlush  uint64
 	buffered            bool
 	discard             bool
 }
@@ -519,7 +521,7 @@ func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if h.discard {
 		return nil
 	}
-	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrement)
+	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrementFlush)
 	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
 		return err
 	}
