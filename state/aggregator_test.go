@@ -289,7 +289,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		require.NoError(t, err)
 		if len(stored) == 0 {
 			if uint64(i+1) >= txs-aggStep {
-				continue // finishtx always stores last agg step in db which we canDelete, so miss is expected
+				continue // finishtx always stores last agg step in db which we deleteelete, so miss is expected
 			}
 			miss++
 			fmt.Printf("%x [%d/%d]", key, miss, i+1) // txnum starts from 1
