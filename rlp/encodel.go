@@ -181,7 +181,8 @@ func EncodeU64(i uint64, to []byte) int {
 	return 1 + l
 }
 
-func StringLen(sLen int) int {
+func StringLen(s []byte) int {
+	sLen := len(s)
 	switch {
 	case sLen > 56:
 		beLen := (bits.Len(uint(sLen)) + 7) / 8
@@ -189,6 +190,9 @@ func StringLen(sLen int) int {
 	case sLen == 0:
 		return 1
 	case sLen == 1:
+		if s[0] < 128 {
+			return 1
+		}
 		return 1 + sLen
 	default: // 1<s<56
 		return 1 + sLen
@@ -209,12 +213,13 @@ func EncodeString(s []byte, to []byte) int {
 		to[0] = 128
 		return 1
 	case len(s) == 1:
-		_ = to[1]
-		if s[0] >= 128 {
-			to[0] = 129
+		if s[0] < 128 {
+			to[0] = s[0]
+			return 1
 		}
-		copy(to[1:], s)
-		return 1 + len(s)
+		to[0] = 129
+		to[1] = s[0]
+		return 2
 	default: // 1<s<56
 		_ = to[len(s)]
 		to[0] = byte(len(s)) + 128
@@ -247,7 +252,10 @@ func EncodeHashes(hashes []byte, encodeBuf []byte) int {
 }
 
 func AnnouncementsLen(types []byte, sizes []uint32, hashes []byte) int {
-	typesLen := StringLen(len(types))
+	if len(types) == 0 {
+		return 4
+	}
+	typesLen := StringLen(types)
 	var sizesLen int
 	for _, size := range sizes {
 		sizesLen += U32Len(size)
@@ -258,8 +266,15 @@ func AnnouncementsLen(types []byte, sizes []uint32, hashes []byte) int {
 }
 
 func EncodeAnnouncements(types []byte, sizes []uint32, hashes []byte, encodeBuf []byte) int {
+	if len(types) == 0 {
+		encodeBuf[0] = 0xc3
+		encodeBuf[1] = 0x80
+		encodeBuf[2] = 0xc0
+		encodeBuf[3] = 0xc0
+		return 4
+	}
 	pos := 0
-	typesLen := StringLen(len(types))
+	typesLen := StringLen(types)
 	var sizesLen int
 	for _, size := range sizes {
 		sizesLen += U32Len(size)
