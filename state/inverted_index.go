@@ -61,14 +61,14 @@ type InvertedIndex struct {
 	tmpdir          string // Directory where static files are created
 	filenameBase    string
 	aggregationStep uint64
-	txNum           uint64
 	workers         int
-	txNumBytes      [8]byte
+	localityIndex   *LocalityIndex
 
-	localityIndex *LocalityIndex
-
-	wal     *invertedIndexWAL
-	walLock sync.RWMutex
+	// fields for history write
+	txNum      uint64
+	txNumBytes [8]byte
+	wal        *invertedIndexWAL
+	walLock    sync.RWMutex
 }
 
 func NewInvertedIndex(
