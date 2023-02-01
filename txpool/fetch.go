@@ -219,7 +219,6 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 
 	switch req.Id {
 	case sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66:
-		fmt.Printf("Received announcement66: %x\n", req.Data)
 		hashCount, pos, err := types2.ParseHashesCount(req.Data, 0)
 		if err != nil {
 			return fmt.Errorf("parsing NewPooledTransactionHashes: %w", err)
