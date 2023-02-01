@@ -756,6 +756,15 @@ func (a *AggregatorV3) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) 
 }
 
 func (a *AggregatorV3) EndTxNumMinimax() uint64 { return a.maxTxNum.Load() }
+func (a *AggregatorV3) EndTxNumFrozenAndIndexed() uint64 {
+	return cmp.Min(
+		cmp.Min(
+			a.accounts.endIndexedTxNumMinimax(true),
+			a.storage.endIndexedTxNumMinimax(true),
+		),
+		a.code.endIndexedTxNumMinimax(true),
+	)
+}
 func (a *AggregatorV3) recalcMaxTxNum() {
 	min := a.accounts.endTxNumMinimax()
 	if txNum := a.storage.endTxNumMinimax(); txNum < min {
@@ -1334,10 +1343,7 @@ type AggregatorStep struct {
 }
 
 func (a *AggregatorV3) MakeSteps() ([]*AggregatorStep, error) {
-	frozenAndIndexed := cmp.Min(
-		cmp.Min(a.accounts.endIndexedTxNumMinimax(true), a.storage.endIndexedTxNumMinimax(true)),
-		a.code.endIndexedTxNumMinimax(true),
-	)
+	frozenAndIndexed := a.EndTxNumFrozenAndIndexed()
 	accountSteps := a.accounts.MakeSteps(frozenAndIndexed)
 	codeSteps := a.code.MakeSteps(frozenAndIndexed)
 	storageSteps := a.storage.MakeSteps(frozenAndIndexed)
