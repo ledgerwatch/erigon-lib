@@ -587,6 +587,37 @@ func (a Announcements) DedupCopy() Announcements {
 	return c
 }
 
+func (a Announcements) DedupHashes() Hashes {
+	if len(a.ts) == 0 {
+		return Hashes{}
+	}
+	sort.Sort(a)
+	unique := 1
+	for i := length.Hash; i < len(a.hashes); i += length.Hash {
+		if !bytes.Equal(a.hashes[i:i+length.Hash], a.hashes[i-length.Hash:i]) {
+			unique++
+		}
+	}
+	c := make(Hashes, unique*length.Hash)
+	copy(c[:], a.hashes[0:length.Hash])
+	dest := length.Hash
+	j := 1
+	origin := length.Hash
+	for i := 1; i < len(a.ts); i++ {
+		if !bytes.Equal(a.hashes[origin:origin+length.Hash], a.hashes[origin-length.Hash:origin]) {
+			copy(c[dest:dest+length.Hash], a.hashes[origin:origin+length.Hash])
+			dest += length.Hash
+			j++
+		}
+		origin += length.Hash
+	}
+	return c
+}
+
+func (a Announcements) Hashes() Hashes {
+	return Hashes(a.hashes)
+}
+
 func (a Announcements) Copy() Announcements {
 	if len(a.ts) == 0 {
 		return a
