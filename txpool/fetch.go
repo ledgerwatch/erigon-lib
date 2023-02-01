@@ -154,6 +154,7 @@ func (f *Fetch) receiveMessageLoop(sentryClient sentry.SentryClient) {
 func (f *Fetch) receiveMessage(ctx context.Context, sentryClient sentry.SentryClient) error {
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	fmt.Printf("receiveMessage\n")
 	stream, err := sentryClient.Messages(streamCtx, &sentry.MessagesRequest{Ids: []sentry.MessageId{
 		sentry.MessageId_NEW_POOLED_TRANSACTION_HASHES_66,
 		sentry.MessageId_GET_POOLED_TRANSACTIONS_66,
