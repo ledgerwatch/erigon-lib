@@ -17,7 +17,6 @@
 package rlp
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -264,16 +263,11 @@ func ParseAnnouncements(payload []byte, pos int) ([]byte, []uint32, []byte, int,
 	if pos+sizesLen > len(payload) {
 		return nil, nil, nil, pos, fmt.Errorf("%s: sizesLen %d is beyond the end of payload", ParseAnnouncementsErrorPrefix, sizesLen)
 	}
-	sizes := make([]uint32, sizesLen/5)
+	sizes := make([]uint32, typesLen)
 	for i := 0; i < len(sizes); i++ {
-		if payload[pos] != 128+4 {
-			return nil, nil, nil, pos, fmt.Errorf("%s: unexpected B32 prefix: %d", ParseAnnouncementsErrorPrefix, payload[pos])
+		if pos, sizes[i], err = U32(payload, pos); err != nil {
+			return nil, nil, nil, pos, err
 		}
-		pos++
-		if pos+4 > len(payload) {
-			return nil, nil, nil, pos, fmt.Errorf("%s: B32 is beyond the end of payload", ParseAnnouncementsErrorPrefix)
-		}
-		sizes[i] = binary.BigEndian.Uint32(payload[pos:])
 	}
 	pos, hashesLen, err := List(payload, pos)
 	if err != nil {
