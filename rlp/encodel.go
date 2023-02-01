@@ -287,7 +287,7 @@ func EncodeAnnouncements(types []byte, sizes []uint32, hashes []byte, encodeBuf 
 	for _, size := range sizes {
 		pos += EncodeU32(size, encodeBuf[pos:])
 	}
-	pos += EncodeListPrefix(hashesLen, encodeBuf)
+	pos += EncodeListPrefix(hashesLen, encodeBuf[pos:])
 	for i := 0; i < len(hashes); i += 32 {
 		pos += EncodeHash(hashes[i:], encodeBuf[pos:])
 	}
