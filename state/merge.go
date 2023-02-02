@@ -395,8 +395,9 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 				continue
 			}
 			if item.endTxNum > endTxNum {
-				return false
+				continue
 			}
+			log.Warn("staticFilesInRange: ", "f", item.decompressor.FileName())
 			files = append(files, item)
 		}
 		return true
@@ -649,6 +650,8 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 
 func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, startTxNum, endTxNum uint64, workers int) (*filesItem, error) {
 	for _, h := range files {
+		log.Warn("mergeFiles: en: ", "idx", h.index.FileName())
+		log.Warn("mergeFiles: en: ", "f", h.decompressor.FileName())
 		defer h.decompressor.EnableMadvNormal().DisableReadAhead()
 	}
 	log.Info(fmt.Sprintf("[snapshots] merge: %s.%d-%d.ef", ii.filenameBase, startTxNum/ii.aggregationStep, endTxNum/ii.aggregationStep))
