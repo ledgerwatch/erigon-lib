@@ -182,9 +182,10 @@ Loop:
 		for _, subSet := range subSets {
 			h.files.Delete(subSet)
 		}
-		if addNewFile {
-			h.files.Set(newFile)
-		}
+		_ = addNewFile
+		//if addNewFile {
+		h.files.Set(newFile)
+		//}
 	}
 	return uselessFiles
 }
