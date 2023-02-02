@@ -155,18 +155,12 @@ Loop:
 			for _, item := range items {
 				if item.isSubsetOf(newFile) {
 					subSets = append(subSets, item)
-					log.Warn("subSets", "file", name)
-					if newFile.frozen {
-						uselessFiles = append(uselessFiles, item)
-					}
 					continue
 				}
 
 				if newFile.isSubsetOf(item) {
-					if item.frozen {
-						addNewFile = false
-						uselessFiles = append(uselessFiles, newFile)
-					}
+					addNewFile = false
+					uselessFiles = append(uselessFiles, newFile)
 					continue
 				}
 			}
@@ -174,6 +168,7 @@ Loop:
 		})
 		for _, subSet := range subSets {
 			h.files.Delete(subSet)
+			uselessFiles = append(uselessFiles, subSet)
 		}
 		_ = addNewFile
 		if addNewFile {

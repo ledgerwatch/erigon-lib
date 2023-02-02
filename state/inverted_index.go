@@ -167,17 +167,12 @@ Loop:
 				}
 				if item.isSubsetOf(newFile) {
 					subSets = append(subSets, item)
-					if newFile.frozen {
-						uselessFiles = append(uselessFiles, item)
-					}
 					return false
 				}
 
 				if newFile.isSubsetOf(item) {
-					if item.frozen {
-						addNewFile = false
-						uselessFiles = append(uselessFiles, newFile)
-					}
+					addNewFile = false
+					uselessFiles = append(uselessFiles, newFile)
 					return false
 				}
 			}
@@ -185,6 +180,7 @@ Loop:
 		})
 		for _, subSet := range subSets {
 			ii.files.Delete(subSet)
+			uselessFiles = append(uselessFiles, subSet)
 		}
 		_ = addNewFile
 		if addNewFile {
