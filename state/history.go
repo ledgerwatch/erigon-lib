@@ -158,11 +158,13 @@ Loop:
 			for _, item := range items {
 				if item.isSubsetOf(newFile) {
 					subSets = append(subSets, item)
+					log.Warn("subSets", "file", name)
 					if newFile.frozen {
 						uselessFiles = append(uselessFiles, item)
 					}
 				} else if newFile.isSubsetOf(item) {
 					newFileIsUseless = true
+					log.Warn("can delete1", "file", name, "item.frozen", item.frozen)
 					if item.frozen {
 						uselessFiles = append(uselessFiles, newFile)
 					}
