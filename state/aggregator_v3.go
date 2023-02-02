@@ -488,6 +488,7 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 	if !r.any() {
 		return false, nil
 	}
+	log.Error("merge range", "r", r.accounts.String(a.aggregationStep))
 
 	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
 	defer ac.Close()

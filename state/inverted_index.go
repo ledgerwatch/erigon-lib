@@ -170,7 +170,7 @@ Loop:
 					if newFile.frozen {
 						uselessFiles = append(uselessFiles, item)
 					}
-					continue
+					return false
 				}
 
 				if newFile.isSubsetOf(item) {
@@ -178,7 +178,7 @@ Loop:
 						addNewFile = false
 						uselessFiles = append(uselessFiles, newFile)
 					}
-					continue
+					return false
 				}
 			}
 			return true
