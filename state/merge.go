@@ -414,7 +414,6 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 		}
 		return true
 	})
-	panic(1)
 	for _, f := range files {
 		if f == nil {
 			panic("must not happen")
