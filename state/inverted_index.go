@@ -452,12 +452,8 @@ func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
 
 func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	var ic = InvertedIndexContext{
-		ii:            ii,
-		localityIndex: ii.localityIndex,
-		files:         btree.NewG[ctxItem](32, ctxItemLess),
-	}
-	if ic.localityIndex != nil && ic.localityIndex.file != nil {
-		ic.localityIndex.file.refcount.Inc()
+		ii:    ii,
+		files: btree.NewG[ctxItem](32, ctxItemLess),
 	}
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
@@ -479,6 +475,14 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 		}
 		return true
 	})
+	if ic.ii.localityIndex != nil {
+		ic.loc.file = ic.ii.localityIndex.file
+		ic.loc.reader = ic.ii.localityIndex.NewIdxReader()
+		ic.loc.bm = ic.ii.localityIndex.bm
+		if ic.loc.file != nil {
+			ic.loc.file.refcount.Inc()
+		}
+	}
 	return &ic
 }
 
@@ -494,13 +498,12 @@ func (ic *InvertedIndexContext) Close() {
 		}
 		return true
 	})
-	if ic.localityIndex != nil {
-		f := ic.localityIndex.file
-		refCnt := f.refcount.Dec()
-		if refCnt == 0 && f.canDelete.Load() {
-			ic.localityIndex.closeFilesAndRemove()
+	if ic.loc.file != nil {
+		refCnt := ic.loc.file.refcount.Dec()
+		if refCnt == 0 && ic.loc.file.canDelete.Load() {
+			ic.ii.localityIndex.closeFilesAndRemove(ic.loc)
+			ic.loc.file, ic.loc.bm = nil, nil
 		}
-		ic.localityIndex = nil
 	}
 }
 
@@ -746,9 +749,9 @@ func (it *InvertedIterator) ToBitmap() (*roaring64.Bitmap, error) {
 }
 
 type InvertedIndexContext struct {
-	ii            *InvertedIndex
-	files         *btree.BTreeG[ctxItem]
-	localityIndex *LocalityIndex
+	ii    *InvertedIndex
+	files *btree.BTreeG[ctxItem]
+	loc   ctxLocalityItem
 }
 
 // IterateRange is to be used in public API, therefore it relies on read-only transaction

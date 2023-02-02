@@ -1151,11 +1151,11 @@ func (h *History) MakeContext() *HistoryContext {
 		return true
 	})
 	if hc.h.localityIndex != nil {
-		hc.loc.src = hc.h.localityIndex
-		hc.loc.reader = hc.loc.src.NewIdxReader()
-		hc.loc.bm = hc.loc.src.bm
-		if hc.loc.src.file != nil {
-			hc.loc.src.file.refcount.Inc()
+		hc.loc.file = hc.h.localityIndex.file
+		hc.loc.reader = hc.h.localityIndex.NewIdxReader()
+		hc.loc.bm = hc.h.localityIndex.bm
+		if hc.loc.file != nil {
+			hc.loc.file.refcount.Inc()
 		}
 	}
 
@@ -1185,18 +1185,17 @@ func (hc *HistoryContext) Close() {
 		}
 		return true
 	})
-	if hc.loc.src.file != nil {
-		f := hc.loc.src.file
-		refCnt := f.refcount.Dec()
-		if refCnt == 0 && f.canDelete.Load() {
-			hc.loc.src.closeFilesAndRemove()
+	if hc.loc.file != nil {
+		refCnt := hc.loc.file.refcount.Dec()
+		if refCnt == 0 && hc.loc.file.canDelete.Load() {
+			hc.h.localityIndex.closeFilesAndRemove(hc.loc)
+			hc.loc.file, hc.loc.bm = nil, nil
 		}
-		hc.loc.src = nil
 	}
 }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
-	exactStep1, exactStep2, lastIndexedTxNum, foundExactShard1, foundExactShard2 := hc.loc.src.lookupIdxFiles(hc.loc.reader, hc.loc.bm, key, txNum)
+	exactStep1, exactStep2, lastIndexedTxNum, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.loc.reader, hc.loc.bm, hc.loc.file, key, txNum)
 
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64

@@ -42,9 +42,8 @@ const LocalityIndexUint64Limit = 64 //bitmap spend 1 bit per file, stored as uin
 // step_number_list is list of .ef files where exists given key
 type LocalityIndex struct {
 	filenameBase    string
-	dir             string // Directory where static files are created
-	tmpdir          string // Directory where static files are created
-	aggregationStep uint64 // Directory where static files are created
+	dir, tmpdir     string // Directory where static files are created
+	aggregationStep uint64 // immutable
 
 	file *filesItem
 	bm   *bitmapdb.FixedSizeBitmaps
@@ -154,18 +153,19 @@ func (li *LocalityIndex) closeFiles() {
 	}
 }
 
-func (li *LocalityIndex) closeFilesAndRemove() {
-	if li == nil || li.file == nil {
+func (li *LocalityIndex) closeFilesAndRemove(i ctxLocalityItem) {
+	if li == nil {
 		return
 	}
-	li.file.closeFilesAndRemove()
-	bm := li.bm
-	if bm != nil {
-		if err := bm.Close(); err != nil {
-			log.Trace("close", "err", err, "file", bm.FileName())
+	if i.file != nil {
+		i.file.closeFilesAndRemove()
+	}
+	if i.bm != nil {
+		if err := i.bm.Close(); err != nil {
+			log.Trace("close", "err", err, "file", i.bm.FileName())
 		}
-		if err := os.Remove(bm.FilePath()); err != nil {
-			log.Trace("os.Remove", "err", err, "file", bm.FileName())
+		if err := os.Remove(i.bm.FilePath()); err != nil {
+			log.Trace("os.Remove", "err", err, "file", i.bm.FileName())
 		}
 	}
 }
@@ -181,11 +181,11 @@ func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 
 // LocalityIndex return exactly 2 file (step)
 // prevents searching key in many files
-func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, lastIndexedTxNum uint64, ok1, ok2 bool) {
-	if li == nil || r == nil || bm == nil {
+func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.FixedSizeBitmaps, file *filesItem, key []byte, fromTxNum uint64) (exactShard1, exactShard2 uint64, lastIndexedTxNum uint64, ok1, ok2 bool) {
+	if li == nil || r == nil || bm == nil || file == nil {
 		return 0, 0, 0, false, false
 	}
-	if fromTxNum >= li.file.endTxNum {
+	if fromTxNum >= file.endTxNum {
 		return 0, 0, fromTxNum, false, false
 	}
 
@@ -194,7 +194,7 @@ func (li *LocalityIndex) lookupIdxFiles(r *recsplit.IndexReader, bm *bitmapdb.Fi
 	if err != nil {
 		panic(err)
 	}
-	return fn1 * StepsInBiggestFile, fn2 * StepsInBiggestFile, li.file.endTxNum, ok1, ok2
+	return fn1 * StepsInBiggestFile, fn2 * StepsInBiggestFile, file.endTxNum, ok1, ok2
 }
 
 func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndex) (toStep uint64, idxExists bool) {
