@@ -85,10 +85,10 @@ func NewHistory(
 		settingsTable:           settingsTable,
 		compressVals:            compressVals,
 		compressWorkers:         1,
-		integrityFileExtensions: append(slices.Clone(integrityFileExtensions), "vi"),
+		integrityFileExtensions: integrityFileExtensions,
 	}
 	var err error
-	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true, h.integrityFileExtensions)
+	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true, append(slices.Clone(h.integrityFileExtensions), "v"))
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
@@ -96,7 +96,7 @@ func NewHistory(
 	if err != nil {
 		return nil, err
 	}
-	_ = h.scanStateFiles(files, integrityFileExtensions)
+	_ = h.scanStateFiles(files, h.integrityFileExtensions)
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
 	}
