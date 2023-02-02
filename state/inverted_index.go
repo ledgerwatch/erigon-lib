@@ -180,9 +180,11 @@ Loop:
 			ii.files.Delete(subSet)
 		}
 		_ = addNewFile
-		//if addNewFile {
-		ii.files.Set(newFile)
-		//}
+		if addNewFile {
+			ii.files.Set(newFile)
+		} else {
+			log.Error("ignore", "f", name)
+		}
 	}
 	return uselessFiles
 }
