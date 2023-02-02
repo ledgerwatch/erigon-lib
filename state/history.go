@@ -97,11 +97,11 @@ func NewHistory(
 	}
 	uselessFiles := h.scanStateFiles(files, integrityFileExtensions)
 	_ = uselessFiles
-	//for _, item := range uselessFiles {
-	//	fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
-	//	fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
-	//log.Warn("can delete", "file", fName)
-	//}
+	for _, item := range uselessFiles {
+		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+		//	fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+		log.Warn("can delete", "file", fName)
+	}
 
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
