@@ -397,6 +397,9 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 			if item.endTxNum > endTxNum {
 				continue
 			}
+			if item.decompressor == nil {
+				log.Warn("staticFilesInRange: ", "nil", item.startTxNum/ii.aggregationStep)
+			}
 			log.Warn("staticFilesInRange: ", "f", item.decompressor.FileName())
 			files = append(files, item)
 		}
