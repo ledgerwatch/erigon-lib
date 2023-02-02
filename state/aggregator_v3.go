@@ -209,7 +209,10 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 		g.Go(func() error { return a.tracesTo.BuildMissedIndices(ctx, sem) })
 	}
 
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return a.BuildOptionalMissedIndices(ctx, 4)
 }
 
 func (a *AggregatorV3) SetLogPrefix(v string) { a.logPrefix = v }
