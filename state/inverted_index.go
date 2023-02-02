@@ -90,13 +90,13 @@ func NewInvertedIndex(
 		indexKeysTable:          indexKeysTable,
 		indexTable:              indexTable,
 		compressWorkers:         1,
-		integrityFileExtensions: integrityFileExtensions,
+		integrityFileExtensions: append(slices.Clone(integrityFileExtensions), "efi"),
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
-	_ = ii.scanStateFiles(files, integrityFileExtensions)
+	_ = ii.scanStateFiles(files, ii.integrityFileExtensions)
 	if err := ii.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
@@ -167,13 +167,13 @@ Loop:
 				}
 				if item.isSubsetOf(newFile) {
 					subSets = append(subSets, item)
-					return false
+					continue
 				}
 
 				if newFile.isSubsetOf(item) {
 					addNewFile = false
 					uselessFiles = append(uselessFiles, newFile)
-					return false
+					continue
 				}
 			}
 			return true
@@ -185,8 +185,6 @@ Loop:
 		_ = addNewFile
 		if addNewFile {
 			ii.files.Set(newFile)
-		} else {
-			log.Error("ignore", "f", name)
 		}
 	}
 	return uselessFiles
