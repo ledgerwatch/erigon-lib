@@ -95,7 +95,12 @@ func NewHistory(
 	if err != nil {
 		return nil, err
 	}
-	_ = h.scanStateFiles(files, integrityFileExtensions)
+	uselessFiles := h.scanStateFiles(files, integrityFileExtensions)
+	for _, item := range uselessFiles {
+		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+		//fIdxName:=fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, newFile.startTxNum/h.aggregationStep, newFile.endTxNum/h.aggregationStep)
+		log.Warn("can delete", "file", fName)
+	}
 
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
@@ -103,7 +108,7 @@ func NewHistory(
 	return &h, nil
 }
 
-func (h *History) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []string) {
+func (h *History) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
 Loop:
@@ -146,35 +151,30 @@ Loop:
 		}
 
 		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
-		{
-			var subSets []*filesItem
-			var superSet *filesItem
-			h.files.Walk(func(items []*filesItem) bool {
-				for _, item := range items {
-					if item.isSubsetOf(newFile) {
-						subSets = append(subSets, item)
-					} else if newFile.isSubsetOf(item) {
-						superSet = item
+		var newFileIsUseless bool
+		var subSets []*filesItem
+		h.files.Walk(func(items []*filesItem) bool {
+			for _, item := range items {
+				if item.isSubsetOf(newFile) {
+					subSets = append(subSets, item)
+					if newFile.frozen {
+						uselessFiles = append(uselessFiles, item)
+					}
+				} else if newFile.isSubsetOf(item) {
+					newFileIsUseless = true
+					if item.frozen {
+						uselessFiles = append(uselessFiles, newFile)
 					}
 				}
-				return true
-			})
-			for _, subSet := range subSets {
-				h.files.Delete(subSet)
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
-					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, subSet.startTxNum/h.aggregationStep, subSet.endTxNum/h.aggregationStep),
-				)
 			}
-			if superSet != nil {
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.v", h.filenameBase, startStep, endStep),
-					fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, startStep, endStep),
-				)
-				continue
-			}
+			return true
+		})
+		for _, subSet := range subSets {
+			h.files.Delete(subSet)
 		}
-		h.files.Set(newFile)
+		if !newFileIsUseless {
+			h.files.Set(newFile)
+		}
 	}
 	return uselessFiles
 }
@@ -1195,7 +1195,7 @@ func (hc *HistoryContext) Close() {
 }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
-	exactStep1, exactStep2, lastIndexedTxNum, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.loc.reader, hc.loc.bm, key, txNum)
+	exactStep1, exactStep2, lastIndexedTxNum, foundExactShard1, foundExactShard2 := hc.loc.src.lookupIdxFiles(hc.loc.reader, hc.loc.bm, key, txNum)
 
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64

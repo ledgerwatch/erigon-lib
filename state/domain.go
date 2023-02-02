@@ -477,9 +477,6 @@ type ctxLocalityItem struct {
 	reader *recsplit.IndexReader
 	bm     *bitmapdb.FixedSizeBitmaps
 
-	startTxNum uint64
-	endTxNum   uint64
-
 	src *LocalityIndex
 }
 
