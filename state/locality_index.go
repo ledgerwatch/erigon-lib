@@ -422,7 +422,6 @@ func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityI
 			}
 		}
 		g := item.getter
-		log.Warn("iterateKeysLocality", "f", item.src.decompressor.FileName())
 		if g.HasNext() {
 			key, offset := g.NextUncompressed()
 
