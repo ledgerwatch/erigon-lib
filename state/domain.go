@@ -70,7 +70,7 @@ type filesItem struct {
 }
 
 func (i *filesItem) isSubsetOf(j *filesItem) bool {
-	return j.startTxNum <= i.startTxNum && i.endTxNum <= j.endTxNum
+	return (j.startTxNum <= i.startTxNum && i.endTxNum <= j.endTxNum) && (j.startTxNum != i.startTxNum || i.endTxNum != j.endTxNum)
 }
 
 func filesItemLess(i, j *filesItem) bool {
