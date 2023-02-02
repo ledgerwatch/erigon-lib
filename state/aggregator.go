@@ -190,14 +190,14 @@ func (a *Aggregator) SetTxNum(txNum uint64) {
 func (a *Aggregator) SetBlockNum(bn uint64) { a.blockNum = bn }
 
 func (a *Aggregator) SetWorkers(i int) {
-	a.accounts.workers = i
-	a.storage.workers = i
-	a.code.workers = i
-	a.commitment.workers = i
-	a.logAddrs.workers = i
-	a.logTopics.workers = i
-	a.tracesFrom.workers = i
-	a.tracesTo.workers = i
+	a.accounts.compressWorkers = i
+	a.storage.compressWorkers = i
+	a.code.compressWorkers = i
+	a.commitment.compressWorkers = i
+	a.logAddrs.compressWorkers = i
+	a.logTopics.compressWorkers = i
+	a.tracesFrom.compressWorkers = i
+	a.tracesTo.compressWorkers = i
 }
 
 func (a *Aggregator) SetCommitmentMode(mode CommitmentMode) {

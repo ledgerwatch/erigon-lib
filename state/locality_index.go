@@ -64,17 +64,14 @@ func NewLocalityIndex(
 	if err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
-	uselessFiles := li.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		_ = os.Remove(filepath.Join(li.dir, f))
-	}
+	_ = li.scanStateFiles(files)
 	if err = li.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
 	return li, nil
 }
 
-func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
+func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + li.filenameBase + ".([0-9]+)-([0-9]+).li$")
 	var err error
 	for _, f := range files {
@@ -117,9 +114,7 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []str
 		if li.file == nil {
 			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: false}
 		} else if li.file.endTxNum < endTxNum {
-			uselessFiles = append(uselessFiles,
-				fmt.Sprintf("%s.%d-%d.li", li.filenameBase, li.file.startTxNum/li.aggregationStep, li.file.endTxNum/li.aggregationStep),
-			)
+			uselessFiles = append(uselessFiles, li.file)
 			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: false}
 		}
 	}
@@ -434,4 +429,25 @@ func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityI
 	})
 	si.advance()
 	return si
+}
+
+func (li *LocalityIndex) CleanupDir() {
+	if li == nil || li.dir == "" {
+		return
+	}
+	files, err := os.ReadDir(li.dir)
+	if err != nil {
+		log.Warn("[clean] can't read dir", "err", err, "dir", li.dir)
+		return
+	}
+	uselessFiles := li.scanStateFiles(files)
+	for _, f := range uselessFiles {
+		fName := fmt.Sprintf("%s.%d-%d.l", li.filenameBase, f.startTxNum/li.aggregationStep, f.endTxNum/li.aggregationStep)
+		err = os.Remove(filepath.Join(li.dir, fName))
+		log.Debug("[clean] remove", "file", fName, "err", err)
+		fIdxName := fmt.Sprintf("%s.%d-%d.li", li.filenameBase, f.startTxNum/li.aggregationStep, f.endTxNum/li.aggregationStep)
+		err = os.Remove(filepath.Join(li.dir, fIdxName))
+		log.Debug("[clean] remove", "file", fName, "err", err)
+	}
+	return
 }

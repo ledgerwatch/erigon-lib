@@ -54,16 +54,16 @@ import (
 )
 
 type InvertedIndex struct {
-	tx              kv.RwTx
-	files           *btree2.BTreeG[*filesItem] // thread-safe, but maybe need 1 RWLock for all trees in AggregatorV3
-	indexKeysTable  string                     // txnNum_u64 -> key (k+auto_increment)
-	indexTable      string                     // k -> txnNum_u64 , Needs to be table with DupSort
-	dir             string                     // Directory where static files are created
-	tmpdir          string                     // Directory where static files are created
-	filenameBase    string
-	aggregationStep uint64
-	workers         int
-	localityIndex   *LocalityIndex
+	integrityFileExtensions []string
+	files                   *btree2.BTreeG[*filesItem] // thread-safe, but maybe need 1 RWLock for all trees in AggregatorV3
+	indexKeysTable          string                     // txnNum_u64 -> key (k+auto_increment)
+	indexTable              string                     // k -> txnNum_u64 , Needs to be table with DupSort
+	dir, tmpdir             string                     // Directory where static files are created
+	filenameBase            string
+	aggregationStep         uint64
+	compressWorkers         int
+	localityIndex           *LocalityIndex
+	tx                      kv.RwTx
 
 	// fields for history write
 	txNum      uint64
@@ -82,28 +82,21 @@ func NewInvertedIndex(
 	integrityFileExtensions []string,
 ) (*InvertedIndex, error) {
 	ii := InvertedIndex{
-		dir:             dir,
-		tmpdir:          tmpdir,
-		files:           btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
-		aggregationStep: aggregationStep,
-		filenameBase:    filenameBase,
-		indexKeysTable:  indexKeysTable,
-		indexTable:      indexTable,
-		workers:         1,
+		dir:                     dir,
+		tmpdir:                  tmpdir,
+		files:                   btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
+		aggregationStep:         aggregationStep,
+		filenameBase:            filenameBase,
+		indexKeysTable:          indexKeysTable,
+		indexTable:              indexTable,
+		compressWorkers:         1,
+		integrityFileExtensions: integrityFileExtensions,
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
-	uselessFiles := ii.scanStateFiles(files, integrityFileExtensions)
-	for _, item := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep)
-		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep)
-		_, _ = fName, fIdxName
-		//_=	os.Remove(filepath.Join(h.dir, fName))
-		//_=	os.Remove(filepath.Join(h.dir, fIdxName))
-	}
-
+	_ = ii.scanStateFiles(files, integrityFileExtensions)
 	if err := ii.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
@@ -1041,7 +1034,7 @@ func (ii *InvertedIndex) buildFiles(ctx context.Context, step uint64, bitmaps ma
 	txNumFrom := step * ii.aggregationStep
 	txNumTo := (step + 1) * ii.aggregationStep
 	datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, txNumFrom/ii.aggregationStep, txNumTo/ii.aggregationStep))
-	comp, err = compress.NewCompressor(ctx, "ef", datPath, ii.tmpdir, compress.MinPatternScore, ii.workers, log.LvlTrace)
+	comp, err = compress.NewCompressor(ctx, "ef", datPath, ii.tmpdir, compress.MinPatternScore, ii.compressWorkers, log.LvlTrace)
 	if err != nil {
 		return InvertedFiles{}, fmt.Errorf("create %s compressor: %w", ii.filenameBase, err)
 	}
@@ -1270,4 +1263,22 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 		return true
 	})
 	return filesCount, filesSize, idxSize
+}
+
+func (ii *InvertedIndex) CleanupDir() {
+	files, err := os.ReadDir(ii.dir)
+	if err != nil {
+		log.Warn("[clean] can't read dir", "err", err, "dir", ii.dir)
+		return
+	}
+	uselessFiles := ii.scanStateFiles(files, ii.integrityFileExtensions)
+	for _, f := range uselessFiles {
+		fName := fmt.Sprintf("%s.%d-%d.l", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
+		err = os.Remove(filepath.Join(ii.dir, fName))
+		log.Debug("[clean] remove", "file", fName, "err", err)
+		fIdxName := fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
+		err = os.Remove(filepath.Join(ii.dir, fIdxName))
+		log.Debug("[clean] remove", "file", fName, "err", err)
+	}
+	ii.localityIndex.CleanupDir()
 }

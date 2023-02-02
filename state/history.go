@@ -58,11 +58,12 @@ type History struct {
 	// Files:
 	//  .v - list of values
 	//  .vi - txNum+key -> offset in .v
-	files            *btree2.BTreeG[*filesItem] // thread-safe, but maybe need 1 RWLock for all trees in AggregatorV3
-	historyValsTable string                     // key1+key2+txnNum -> oldValue , stores values BEFORE change
-	settingsTable    string
-	workers          int
-	compressVals     bool
+	files                   *btree2.BTreeG[*filesItem] // thread-safe, but maybe need 1 RWLock for all trees in AggregatorV3
+	historyValsTable        string                     // key1+key2+txnNum -> oldValue , stores values BEFORE change
+	settingsTable           string
+	compressWorkers         int
+	compressVals            bool
+	integrityFileExtensions []string
 
 	wal     *historyWAL
 	walLock sync.RWMutex
@@ -80,11 +81,12 @@ func NewHistory(
 	integrityFileExtensions []string,
 ) (*History, error) {
 	h := History{
-		files:            btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
-		historyValsTable: historyValsTable,
-		settingsTable:    settingsTable,
-		compressVals:     compressVals,
-		workers:          1,
+		files:                   btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
+		historyValsTable:        historyValsTable,
+		settingsTable:           settingsTable,
+		compressVals:            compressVals,
+		compressWorkers:         1,
+		integrityFileExtensions: integrityFileExtensions,
 	}
 	var err error
 	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true, append(integrityFileExtensions, "v"))
@@ -653,7 +655,7 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.
 		}
 	}()
 	historyPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, step, step+1))
-	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, h.tmpdir, compress.MinPatternScore, h.workers, log.LvlTrace); err != nil {
+	if historyComp, err = compress.NewCompressor(context.Background(), "collate history", historyPath, h.tmpdir, compress.MinPatternScore, h.compressWorkers, log.LvlTrace); err != nil {
 		return HistoryCollation{}, fmt.Errorf("create %s history compressor: %w", h.filenameBase, err)
 	}
 	keysCursor, err := roTx.CursorDupSort(h.indexKeysTable)
@@ -798,7 +800,7 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 	}
 	// Build history ef
 	efHistoryPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.ef", h.filenameBase, step, step+1))
-	efHistoryComp, err = compress.NewCompressor(ctx, "ef history", efHistoryPath, h.tmpdir, compress.MinPatternScore, h.workers, log.LvlTrace)
+	efHistoryComp, err = compress.NewCompressor(ctx, "ef history", efHistoryPath, h.tmpdir, compress.MinPatternScore, h.compressWorkers, log.LvlTrace)
 	if err != nil {
 		return HistoryFiles{}, fmt.Errorf("create %s ef history compressor: %w", h.filenameBase, err)
 	}
@@ -2159,4 +2161,22 @@ func u64or0(in []byte) (v uint64) {
 		v = binary.BigEndian.Uint64(in)
 	}
 	return v
+}
+
+func (h *History) CleanupDir() {
+	files, err := os.ReadDir(h.dir)
+	if err != nil {
+		log.Warn("[clean] can't read dir", "err", err, "dir", h.dir)
+		return
+	}
+	uselessFiles := h.scanStateFiles(files, h.integrityFileExtensions)
+	for _, f := range uselessFiles {
+		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
+		err = os.Remove(filepath.Join(h.dir, fName))
+		log.Debug("[clean] remove", "file", fName, "err", err)
+		fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
+		err = os.Remove(filepath.Join(h.dir, fIdxName))
+		log.Debug("[clean] remove", "file", fName, "err", err)
+	}
+	h.InvertedIndex.CleanupDir()
 }
