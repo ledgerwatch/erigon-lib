@@ -426,6 +426,7 @@ type CursorItem struct {
 	endTxNum uint64
 	t        CursorType // Whether this item represents state file or DB record, or tree
 	reverse  bool
+	fileName string
 }
 
 type CursorHeap []*CursorItem
