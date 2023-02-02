@@ -449,5 +449,4 @@ func (li *LocalityIndex) CleanupDir() {
 		err = os.Remove(filepath.Join(li.dir, fIdxName))
 		log.Debug("[clean] remove", "file", fName, "err", err)
 	}
-	return
 }
