@@ -86,10 +86,10 @@ func NewHistory(
 		settingsTable:           settingsTable,
 		compressVals:            compressVals,
 		compressWorkers:         1,
-		integrityFileExtensions: integrityFileExtensions,
+		integrityFileExtensions: append(slices.Clone(integrityFileExtensions), "vi"),
 	}
 	var err error
-	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true, append(integrityFileExtensions, "v"))
+	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true, h.integrityFileExtensions)
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
@@ -163,17 +163,12 @@ Loop:
 			for _, item := range items {
 				if item.isSubsetOf(newFile) {
 					subSets = append(subSets, item)
-					if newFile.frozen {
-						uselessFiles = append(uselessFiles, item)
-					}
 					continue
 				}
 
 				if newFile.isSubsetOf(item) {
-					if item.frozen {
-						addNewFile = false
-						uselessFiles = append(uselessFiles, newFile)
-					}
+					addNewFile = false
+					uselessFiles = append(uselessFiles, newFile)
 					continue
 				}
 			}
@@ -181,11 +176,11 @@ Loop:
 		})
 		for _, subSet := range subSets {
 			h.files.Delete(subSet)
+			uselessFiles = append(uselessFiles, subSet)
 		}
-		_ = addNewFile
-		//if addNewFile {
-		h.files.Set(newFile)
-		//}
+		if addNewFile {
+			h.files.Set(newFile)
+		}
 	}
 	return uselessFiles
 }
