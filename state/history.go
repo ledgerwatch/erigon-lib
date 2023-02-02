@@ -179,8 +179,8 @@ Loop:
 		//if addNewFile {
 		h.files.Set(newFile)
 		//} else {
+		if !addNewFile {
 			log.Error("skippEed!!", "file", name)
-
 		}
 	}
 	return uselessFiles
