@@ -157,13 +157,6 @@ Loop:
 		var subSets []*filesItem
 		ii.files.Walk(func(items []*filesItem) bool {
 			for _, item := range items {
-				if ii.filenameBase == "accounts" {
-					log.Warn("open", "newFile", name,
-						"check", fmt.Sprintf("%d-%d", item.endTxNum/ii.aggregationStep, item.startTxNum/ii.aggregationStep),
-						"isSubset", newFile.isSubsetOf(item),
-						"oppsit", item.isSubsetOf(newFile),
-					)
-				}
 				if item.isSubsetOf(newFile) {
 					subSets = append(subSets, item)
 					continue
