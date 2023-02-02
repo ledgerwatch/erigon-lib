@@ -1085,8 +1085,7 @@ type HistoryContext struct {
 	h                           *History
 	invIndexFiles, historyFiles *btree.BTreeG[ctxItem]
 
-	lr    *recsplit.IndexReader
-	locBm *bitmapdb.FixedSizeBitmaps
+	loc ctxLocalityItem
 
 	trace bool
 }
@@ -1095,6 +1094,7 @@ func (h *History) MakeContext() *HistoryContext {
 	var hc = HistoryContext{
 		h:             h,
 		invIndexFiles: btree.NewG[ctxItem](32, ctxItemLess),
+		historyFiles:  btree.NewG[ctxItem](32, ctxItemLess),
 		trace:         false,
 	}
 	h.InvertedIndex.files.Walk(func(items []*filesItem) bool {
@@ -1121,7 +1121,6 @@ func (h *History) MakeContext() *HistoryContext {
 		}
 		return true
 	})
-	hc.historyFiles = btree.NewG[ctxItem](32, ctxItemLess)
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.index == nil || item.canDelete.Load() {
@@ -1147,8 +1146,12 @@ func (h *History) MakeContext() *HistoryContext {
 		return true
 	})
 	if hc.h.localityIndex != nil {
-		hc.lr = hc.h.localityIndex.NewIdxReader()
-		hc.locBm = hc.h.localityIndex.bm
+		hc.loc.src = hc.h.localityIndex
+		hc.loc.reader = hc.loc.src.NewIdxReader()
+		hc.loc.bm = hc.loc.src.bm
+		if hc.loc.src.file != nil {
+			hc.loc.src.file.refcount.Inc()
+		}
 	}
 
 	return &hc
@@ -1162,25 +1165,7 @@ func (hc *HistoryContext) Close() {
 		refCnt := item.src.refcount.Dec()
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
-			if item.src.decompressor != nil {
-				if err := item.src.decompressor.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
-				}
-				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
-					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
-				}
-				item.src.decompressor = nil
-			}
-			if item.src.index != nil {
-				if err := item.src.index.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				//fmt.Printf("hist ctx del: %s\n", item.src.index.FilePath())
-				if err := os.Remove(item.src.index.FilePath()); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				item.src.index = nil
-			}
+			item.src.closeFilesAndRemove()
 		}
 		return true
 	})
@@ -1189,34 +1174,24 @@ func (hc *HistoryContext) Close() {
 			return true
 		}
 		refCnt := item.src.refcount.Dec()
-		//fmt.Printf("cnt--: %d, %t, %s\n", refCnt, item.src.canDelete.Load(), item.src.decompressor.FilePath())
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
-			if item.src.decompressor != nil {
-				if err := item.src.decompressor.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
-				}
-				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
-					log.Trace("close", "err", err, "file", item.src.decompressor.FileName())
-				}
-				item.src.decompressor = nil
-			}
-			if item.src.index != nil {
-				if err := item.src.index.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				if err := os.Remove(item.src.index.FilePath()); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				item.src.index = nil
-			}
+			item.src.closeFilesAndRemove()
 		}
 		return true
 	})
+	if hc.loc.src.file != nil {
+		f := hc.loc.src.file
+		refCnt := f.refcount.Dec()
+		if refCnt == 0 && f.canDelete.Load() {
+			hc.loc.src.closeFilesAndRemove()
+		}
+		hc.loc.src = nil
+	}
 }
 
 func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, error) {
-	exactStep1, exactStep2, lastIndexedTxNum, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.lr, hc.locBm, key, txNum)
+	exactStep1, exactStep2, lastIndexedTxNum, foundExactShard1, foundExactShard2 := hc.h.localityIndex.lookupIdxFiles(hc.loc.reader, hc.loc.bm, key, txNum)
 
 	//fmt.Printf("GetNoState [%x] %d\n", key, txNum)
 	var foundTxNum uint64

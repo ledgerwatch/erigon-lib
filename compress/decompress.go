@@ -111,7 +111,7 @@ type Decompressor struct {
 	wordsCount      uint64
 	emptyWordsCount uint64
 
-	compressedFile, compressedFileName string
+	filePath, fileName string
 }
 
 // Tables with bitlen greater than threshold will be condensed.
@@ -143,21 +143,20 @@ func SetDecompressionTableCondensity(fromBitSize int) {
 	condensePatternTableBitThreshold = fromBitSize
 }
 
-func NewDecompressor(compressedFile string) (*Decompressor, error) {
+func NewDecompressor(compressedFilePath string) (*Decompressor, error) {
+	_, fName := filepath.Split(compressedFilePath)
 	d := &Decompressor{
-		compressedFile: compressedFile,
+		filePath: compressedFilePath,
+		fileName: fName,
 	}
-	_, fName := filepath.Split(d.compressedFile)
-	d.compressedFileName = fName
-
 	var err error
 	defer func() {
 		if rec := recover(); rec != nil {
-			err = fmt.Errorf("decompressing file: %s, %+v, trace: %s", compressedFile, rec, dbg.Stack())
+			err = fmt.Errorf("decompressing file: %s, %+v, trace: %s", compressedFilePath, rec, dbg.Stack())
 		}
 	}()
 
-	d.f, err = os.Open(compressedFile)
+	d.f, err = os.Open(compressedFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -351,8 +350,8 @@ func (d *Decompressor) Close() error {
 	return nil
 }
 
-func (d *Decompressor) FilePath() string { return d.compressedFile }
-func (d *Decompressor) FileName() string { return d.compressedFileName }
+func (d *Decompressor) FilePath() string { return d.filePath }
+func (d *Decompressor) FileName() string { return d.fileName }
 
 // WithReadAhead - Expect read in sequential order. (Hence, pages in the given range can be aggressively read ahead, and may be freed soon after they are accessed.)
 func (d *Decompressor) WithReadAhead(f func() error) error {
@@ -499,7 +498,7 @@ func (d *Decompressor) MakeGetter() *Getter {
 		posDict:     d.posDict,
 		data:        d.data[d.wordsStart:],
 		patternDict: d.dict,
-		fName:       d.compressedFileName,
+		fName:       d.fileName,
 	}
 }
 

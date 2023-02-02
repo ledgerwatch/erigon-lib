@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ledgerwatch/erigon-lib/common/assert"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -40,7 +41,6 @@ const LocalityIndexUint64Limit = 64 //bitmap spend 1 bit per file, stored as uin
 // Format: key -> bitmap(step_number_list)
 // step_number_list is list of .ef files where exists given key
 type LocalityIndex struct {
-	//file         *filesItem
 	filenameBase    string
 	dir             string // Directory where static files are created
 	tmpdir          string // Directory where static files are created
@@ -115,14 +115,13 @@ func (li *LocalityIndex) scanStateFiles(files []fs.DirEntry) (uselessFiles []str
 		}
 
 		startTxNum, endTxNum := startStep*li.aggregationStep, endStep*li.aggregationStep
-		frozen := endStep-startStep == StepsInBiggestFile
 		if li.file == nil {
-			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
+			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: false}
 		} else if li.file.endTxNum < endTxNum {
 			uselessFiles = append(uselessFiles,
 				fmt.Sprintf("%s.%d-%d.li", li.filenameBase, li.file.startTxNum/li.aggregationStep, li.file.endTxNum/li.aggregationStep),
 			)
-			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
+			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: false}
 		}
 	}
 	return uselessFiles
@@ -155,9 +154,23 @@ func (li *LocalityIndex) closeFiles() {
 	}
 }
 
-func (li *LocalityIndex) Close() {
-	li.closeFiles()
+func (li *LocalityIndex) closeFilesAndRemove() {
+	if li == nil || li.file == nil {
+		return
+	}
+	li.file.closeFilesAndRemove()
+	bm := li.bm
+	if bm != nil {
+		if err := bm.Close(); err != nil {
+			log.Trace("close", "err", err, "file", bm.FileName())
+		}
+		if err := os.Remove(bm.FilePath()); err != nil {
+			log.Trace("os.Remove", "err", err, "file", bm.FileName())
+		}
+	}
 }
+
+func (li *LocalityIndex) Close()                { li.closeFiles() }
 func (li *LocalityIndex) Files() (res []string) { return res }
 func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 	if li != nil && li.file != nil && li.file.index != nil {
@@ -302,7 +315,7 @@ func (li *LocalityIndex) integrateFiles(sf LocalityIndexFiles, txNumFrom, txNumT
 		startTxNum: txNumFrom,
 		endTxNum:   txNumTo,
 		index:      sf.index,
-		frozen:     (txNumTo-txNumFrom)/li.aggregationStep == StepsInBiggestFile,
+		frozen:     false,
 	}
 	li.bm = sf.bm
 }
@@ -403,11 +416,13 @@ func (si *LocalityIterator) Next() ([]byte, []uint64) {
 func (ic *InvertedIndexContext) iterateKeysLocality(uptoTxNum uint64) *LocalityIterator {
 	si := &LocalityIterator{hc: ic}
 	ic.files.Ascend(func(item ctxItem) bool {
-		if (item.endTxNum-item.startTxNum)/ic.ii.aggregationStep != StepsInBiggestFile {
-			return false
+		if !item.src.frozen || item.startTxNum > uptoTxNum {
+			return true
 		}
-		if item.startTxNum > uptoTxNum {
-			return false
+		if assert.Enable {
+			if (item.endTxNum-item.startTxNum)/ic.ii.aggregationStep != StepsInBiggestFile {
+				panic(fmt.Errorf("frozen file of small size: %s", item.src.decompressor.FileName()))
+			}
 		}
 		g := item.getter
 		if g.HasNext() {

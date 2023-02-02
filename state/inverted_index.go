@@ -451,8 +451,14 @@ func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
 }
 
 func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
-	var ic = InvertedIndexContext{ii: ii, localityIndex: ii.localityIndex}
-	ic.files = btree.NewG[ctxItem](32, ctxItemLess)
+	var ic = InvertedIndexContext{
+		ii:            ii,
+		localityIndex: ii.localityIndex,
+		files:         btree.NewG[ctxItem](32, ctxItemLess),
+	}
+	if ic.localityIndex != nil {
+		ic.localityIndex.file.refcount.Inc()
+	}
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.index == nil {
@@ -484,27 +490,18 @@ func (ic *InvertedIndexContext) Close() {
 		refCnt := item.src.refcount.Dec()
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
-			if item.src.decompressor != nil {
-				if err := item.src.decompressor.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				if err := os.Remove(item.src.decompressor.FilePath()); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				item.src.decompressor = nil
-			}
-			if item.src.index != nil {
-				if err := item.src.index.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				if err := os.Remove(item.src.index.FilePath()); err != nil {
-					log.Trace("close", "err", err, "file", item.src.index.FileName())
-				}
-				item.src.index = nil
-			}
+			item.src.closeFilesAndRemove()
 		}
 		return true
 	})
+	if ic.localityIndex != nil {
+		f := ic.localityIndex.file
+		refCnt := f.refcount.Dec()
+		if refCnt == 0 && f.canDelete.Load() {
+			ic.localityIndex.closeFilesAndRemove()
+		}
+		ic.localityIndex = nil
+	}
 }
 
 // InvertedIterator allows iteration over range of tx numbers
