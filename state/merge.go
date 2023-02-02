@@ -860,7 +860,12 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 					}
 				}
 				if g2 == nil {
-					panic(fmt.Sprintf("for file: %s, not found corresponding file to merge", g.FileName()))
+					log.Error(fmt.Sprintf("for file: %s, not found corresponding file to merge", g.FileName()))
+					for _, hi := range historyFiles { // full-scan, because it's ok to have different amount files. by unclean-shutdown.
+						log.Error("see", "file", hi.decompressor.FileName())
+					}
+
+					panic(1)
 				}
 				key, _ := g.NextUncompressed()
 				val, _ := g.NextUncompressed()
