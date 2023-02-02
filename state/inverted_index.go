@@ -1273,10 +1273,10 @@ func (ii *InvertedIndex) CleanupDir() {
 	}
 	uselessFiles := ii.scanStateFiles(files, ii.integrityFileExtensions)
 	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.l", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
+		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
 		err = os.Remove(filepath.Join(ii.dir, fName))
 		log.Debug("[clean] remove", "file", fName, "err", err)
-		fIdxName := fmt.Sprintf("%s.%d-%d.li", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
+		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
 		err = os.Remove(filepath.Join(ii.dir, fIdxName))
 		log.Debug("[clean] remove", "file", fName, "err", err)
 	}
