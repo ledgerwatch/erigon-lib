@@ -388,6 +388,7 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 	_ = ic
 	var files []*filesItem
 	var startJ int
+	//var steps uint64
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.startTxNum < startTxNum {
@@ -397,6 +398,14 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 			if item.endTxNum > endTxNum {
 				continue
 			}
+			//itemSteps := item.endTxNum/ii.aggregationStep - item.startTxNum/ii.aggregationStep
+			//if steps == 0 {
+			//	steps = itemSteps
+			//} else {
+			//	if steps != itemSteps {
+			//		continue
+			//	}
+			//}
 			if item.decompressor == nil {
 				log.Warn("staticFilesInRange: ", "nil", item.startTxNum/ii.aggregationStep)
 			}
@@ -405,6 +414,7 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 		}
 		return true
 	})
+	panic(1)
 	for _, f := range files {
 		if f == nil {
 			panic("must not happen")
