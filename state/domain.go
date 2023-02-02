@@ -477,7 +477,7 @@ type ctxLocalityItem struct {
 	reader *recsplit.IndexReader
 	bm     *bitmapdb.FixedSizeBitmaps
 
-	src *LocalityIndex
+	file *filesItem
 }
 
 func ctxItemLess(i, j ctxItem) bool {
