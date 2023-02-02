@@ -108,14 +108,25 @@ func (a *AggregatorV3) Close() {
 	a.closeFiles()
 }
 
+// CleanDir - remove all useless files. call it manually on startup of Main application (don't call it from utilities)
+func (a *AggregatorV3) CleanDir() {
+	a.accounts.CleanupDir()
+	a.storage.CleanupDir()
+	a.code.CleanupDir()
+	a.logAddrs.CleanupDir()
+	a.logTopics.CleanupDir()
+	a.tracesFrom.CleanupDir()
+	a.tracesTo.CleanupDir()
+}
+
 func (a *AggregatorV3) SetWorkers(i int) {
-	a.accounts.workers = i
-	a.storage.workers = i
-	a.code.workers = i
-	a.logAddrs.workers = i
-	a.logTopics.workers = i
-	a.tracesFrom.workers = i
-	a.tracesTo.workers = i
+	a.accounts.compressWorkers = i
+	a.storage.compressWorkers = i
+	a.code.compressWorkers = i
+	a.logAddrs.compressWorkers = i
+	a.logTopics.compressWorkers = i
+	a.tracesFrom.compressWorkers = i
+	a.tracesTo.compressWorkers = i
 }
 
 func (a *AggregatorV3) Files() (res []string) {
