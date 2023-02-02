@@ -186,15 +186,12 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 	g, ctx := errgroup.WithContext(ctx)
 	if a.accounts != nil {
 		g.Go(func() error { return a.accounts.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.accounts.BuildOptionalMissedIndices(ctx) })
 	}
 	if a.storage != nil {
 		g.Go(func() error { return a.storage.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.storage.BuildOptionalMissedIndices(ctx) })
 	}
 	if a.code != nil {
 		g.Go(func() error { return a.code.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.code.BuildOptionalMissedIndices(ctx) })
 	}
 	if a.logAddrs != nil {
 		g.Go(func() error { return a.logAddrs.BuildMissedIndices(ctx, sem) })
@@ -209,7 +206,10 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, sem *semaphore.We
 		g.Go(func() error { return a.tracesTo.BuildMissedIndices(ctx, sem) })
 	}
 
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return a.BuildOptionalMissedIndices(ctx, 4)
 }
 
 func (a *AggregatorV3) SetLogPrefix(v string) { a.logPrefix = v }
