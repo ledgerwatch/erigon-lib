@@ -804,6 +804,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		return nil, nil, err
 	}
 	if r.history {
+		indexFilesForHistory, _ := h.InvertedIndex.staticFilesInRange(r.historyStartTxNum, r.historyEndTxNum, nil)
 		log.Info(fmt.Sprintf("[snapshots] merge: %s.%d-%d.v", h.filenameBase, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		for _, f := range indexFiles {
 			defer f.decompressor.EnableMadvNormal().DisableReadAhead()
@@ -848,7 +849,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		}
 		var cp CursorHeap
 		heap.Init(&cp)
-		for _, item := range indexFiles {
+		for _, item := range indexFilesForHistory {
 			g := item.decompressor.MakeGetter()
 			g.Reset(0)
 			if g.HasNext() {
