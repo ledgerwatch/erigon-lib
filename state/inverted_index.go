@@ -89,7 +89,7 @@ func NewInvertedIndex(
 		indexKeysTable:          indexKeysTable,
 		indexTable:              indexTable,
 		compressWorkers:         1,
-		integrityFileExtensions: append(slices.Clone(integrityFileExtensions), "efi"),
+		integrityFileExtensions: integrityFileExtensions,
 	}
 	files, err := os.ReadDir(dir)
 	if err != nil {

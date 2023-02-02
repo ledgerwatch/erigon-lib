@@ -85,10 +85,10 @@ func NewHistory(
 		settingsTable:           settingsTable,
 		compressVals:            compressVals,
 		compressWorkers:         1,
-		integrityFileExtensions: append(slices.Clone(integrityFileExtensions), "vi"),
+		integrityFileExtensions: integrityFileExtensions,
 	}
 	var err error
-	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true, h.integrityFileExtensions)
+	h.InvertedIndex, err = NewInvertedIndex(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, true, append(slices.Clone(h.integrityFileExtensions), "v"))
 	if err != nil {
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
@@ -96,15 +96,7 @@ func NewHistory(
 	if err != nil {
 		return nil, err
 	}
-	uselessFiles := h.scanStateFiles(files, integrityFileExtensions)
-	for _, item := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
-		fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
-		_, _ = fName, fIdxName
-		//_=	os.Remove(filepath.Join(h.dir, fName))
-		//_=	os.Remove(filepath.Join(h.dir, fIdxName))
-	}
-
+	_ = h.scanStateFiles(files, h.integrityFileExtensions)
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
 	}
