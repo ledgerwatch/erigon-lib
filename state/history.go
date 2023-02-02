@@ -176,8 +176,10 @@ Loop:
 			h.files.Delete(subSet)
 		}
 		if !newFileIsUseless {
-			log.Error("skippEed!!", "file", name)
 			h.files.Set(newFile)
+		} else {
+			log.Error("skippEed!!", "file", name)
+
 		}
 	}
 	return uselessFiles
