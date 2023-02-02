@@ -96,12 +96,13 @@ func NewHistory(
 		return nil, err
 	}
 	uselessFiles := h.scanStateFiles(files, integrityFileExtensions)
-	_ = uselessFiles
-	//for _, item := range uselessFiles {
-	//	fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
-	//	fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
-	//log.Warn("can delete", "file", fName)
-	//}
+	for _, item := range uselessFiles {
+		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+		fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+		_, _ = fName, fIdxName
+		//_=	os.Remove(filepath.Join(h.dir, fName))
+		//_=	os.Remove(filepath.Join(h.dir, fIdxName))
+	}
 
 	if err = h.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewHistory.openFiles: %s, %w", filenameBase, err)
@@ -109,6 +110,8 @@ func NewHistory(
 	return &h, nil
 }
 
+// scanStateFiles
+// returns `uselessFiles` where file "is useless" means: it's subset of frozen file. such files can be safely deleted. subset of non-frozen file may be useful
 func (h *History) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
@@ -152,7 +155,7 @@ Loop:
 		}
 
 		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
-		var newFileIsUseless bool
+		addNewFile := true
 		var subSets []*filesItem
 		h.files.Walk(func(items []*filesItem) bool {
 			for _, item := range items {
@@ -161,11 +164,15 @@ Loop:
 					if newFile.frozen {
 						uselessFiles = append(uselessFiles, item)
 					}
-				} else if newFile.isSubsetOf(item) {
-					newFileIsUseless = true
+					continue
+				}
+
+				if newFile.isSubsetOf(item) {
 					if item.frozen {
+						addNewFile = false
 						uselessFiles = append(uselessFiles, newFile)
 					}
+					continue
 				}
 			}
 			return true
@@ -173,7 +180,7 @@ Loop:
 		for _, subSet := range subSets {
 			h.files.Delete(subSet)
 		}
-		if !newFileIsUseless {
+		if addNewFile {
 			h.files.Set(newFile)
 		}
 	}

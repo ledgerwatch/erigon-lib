@@ -95,7 +95,15 @@ func NewInvertedIndex(
 	if err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
-	_ = ii.scanStateFiles(files, integrityFileExtensions)
+	uselessFiles := ii.scanStateFiles(files, integrityFileExtensions)
+	for _, item := range uselessFiles {
+		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep)
+		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep)
+		_, _ = fName, fIdxName
+		//_=	os.Remove(filepath.Join(h.dir, fName))
+		//_=	os.Remove(filepath.Join(h.dir, fIdxName))
+	}
+
 	if err := ii.openFiles(); err != nil {
 		return nil, fmt.Errorf("NewInvertedIndex: %s, %w", filenameBase, err)
 	}
@@ -110,7 +118,7 @@ func NewInvertedIndex(
 	return &ii, nil
 }
 
-func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []string) {
+func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + ii.filenameBase + ".([0-9]+)-([0-9]+).ef$")
 	var err error
 Loop:
@@ -152,37 +160,35 @@ Loop:
 			}
 		}
 
-		var item = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
-		{
-			var subSets []*filesItem
-			var superSet *filesItem
-			ii.files.Walk(func(items []*filesItem) bool {
-				for _, it := range items {
-					if it.isSubsetOf(item) {
-						subSets = append(subSets, it)
-					} else if item.isSubsetOf(it) {
-						superSet = it
+		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
+		addNewFile := true
+		var subSets []*filesItem
+		ii.files.Walk(func(items []*filesItem) bool {
+			for _, item := range items {
+				if item.isSubsetOf(newFile) {
+					subSets = append(subSets, item)
+					if newFile.frozen {
+						uselessFiles = append(uselessFiles, item)
 					}
+					continue
 				}
-				return true
-			})
 
-			for _, subSet := range subSets {
-				ii.files.Delete(subSet)
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, subSet.startTxNum/ii.aggregationStep, subSet.endTxNum/ii.aggregationStep),
-					fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, subSet.startTxNum/ii.aggregationStep, subSet.endTxNum/ii.aggregationStep),
-				)
+				if newFile.isSubsetOf(item) {
+					if item.frozen {
+						addNewFile = false
+						uselessFiles = append(uselessFiles, newFile)
+					}
+					continue
+				}
 			}
-			if superSet != nil {
-				uselessFiles = append(uselessFiles,
-					fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, startStep, endStep),
-					fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, startStep, endStep),
-				)
-				continue
-			}
+			return true
+		})
+		for _, subSet := range subSets {
+			ii.files.Delete(subSet)
 		}
-		ii.files.Set(item)
+		if addNewFile {
+			ii.files.Set(newFile)
+		}
 	}
 	return uselessFiles
 }
