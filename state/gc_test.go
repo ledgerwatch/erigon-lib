@@ -42,6 +42,7 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 		}
 
 		require.NotNil(lastOnFs.decompressor)
+		require.NotNil(h.localityIndex.file)
 		hc.Close()
 		require.Nil(lastOnFs.decompressor)
 

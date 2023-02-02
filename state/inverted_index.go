@@ -456,7 +456,7 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 		localityIndex: ii.localityIndex,
 		files:         btree.NewG[ctxItem](32, ctxItemLess),
 	}
-	if ic.localityIndex != nil {
+	if ic.localityIndex != nil && ic.localityIndex.file != nil {
 		ic.localityIndex.file.refcount.Inc()
 	}
 	ii.files.Walk(func(items []*filesItem) bool {

@@ -275,6 +275,10 @@ func (h *History) missedIdxFiles() (l []*filesItem) {
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
+func (h *History) BuildOptionalMissedIndices(ctx context.Context) (err error) {
+	return h.localityIndex.BuildMissedIndices(ctx, h.InvertedIndex)
+}
+
 func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
 	if err := h.InvertedIndex.BuildMissedIndices(ctx, sem); err != nil {
 		return err

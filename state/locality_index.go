@@ -325,10 +325,7 @@ func (li *LocalityIndex) BuildMissedIndices(ctx context.Context, ii *InvertedInd
 		return nil
 	}
 	toStep, idxExists := li.missedIdxFiles(ii)
-	if idxExists {
-		return nil
-	}
-	if toStep == 0 {
+	if idxExists || toStep == 0 {
 		return nil
 	}
 	fromStep := uint64(0)

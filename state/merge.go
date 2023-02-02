@@ -235,7 +235,7 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.endTxNum > maxEndTxNum {
-				return false
+				continue
 			}
 			endStep := item.endTxNum / ii.aggregationStep
 			spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
@@ -324,7 +324,7 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.endTxNum > maxEndTxNum {
-				return false
+				continue
 			}
 			endStep := item.endTxNum / h.aggregationStep
 			spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep

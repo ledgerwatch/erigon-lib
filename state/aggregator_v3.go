@@ -153,50 +153,48 @@ func (a *AggregatorV3) closeFiles() {
 	}
 }
 
-func (a *AggregatorV3) BuildOptionalMissedIndices(ctx context.Context) {
+func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Context, workers int) {
 	if a.workingOptionalIndices.Load() {
 		return
 	}
 	a.workingOptionalIndices.Store(true)
+
 	go func() {
 		defer a.workingOptionalIndices.Store(false)
-
-		//It's time to build optional lazy indices
-
-		if err := a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex); err != nil {
-			log.Warn("merge", "err", err)
-		}
-		if err := a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex); err != nil {
-			log.Warn("merge", "err", err)
-		}
-		if err := a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex); err != nil {
+		if err := a.BuildOptionalMissedIndices(ctx, workers); err != nil {
 			log.Warn("merge", "err", err)
 		}
 	}()
 }
 
+func (a *AggregatorV3) BuildOptionalMissedIndices(ctx context.Context, workers int) error {
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(workers)
+	if a.accounts != nil {
+		g.Go(func() error { return a.accounts.BuildOptionalMissedIndices(ctx) })
+	}
+	if a.storage != nil {
+		g.Go(func() error { return a.storage.BuildOptionalMissedIndices(ctx) })
+	}
+	if a.code != nil {
+		g.Go(func() error { return a.code.BuildOptionalMissedIndices(ctx) })
+	}
+	return g.Wait()
+}
+
 func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) error {
-	if err := a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex); err != nil {
-		panic(err)
-	}
-	if err := a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex); err != nil {
-		return err
-	}
-	if err := a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex); err != nil {
-		return err
-	}
 	g, ctx := errgroup.WithContext(ctx)
 	if a.accounts != nil {
 		g.Go(func() error { return a.accounts.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.accounts.localityIndex.BuildMissedIndices(ctx, a.accounts.InvertedIndex) })
+		g.Go(func() error { return a.accounts.BuildOptionalMissedIndices(ctx) })
 	}
 	if a.storage != nil {
 		g.Go(func() error { return a.storage.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.storage.localityIndex.BuildMissedIndices(ctx, a.storage.InvertedIndex) })
+		g.Go(func() error { return a.storage.BuildOptionalMissedIndices(ctx) })
 	}
 	if a.code != nil {
 		g.Go(func() error { return a.code.BuildMissedIndices(ctx, sem) })
-		g.Go(func() error { return a.code.localityIndex.BuildMissedIndices(ctx, a.code.InvertedIndex) })
+		g.Go(func() error { return a.code.BuildOptionalMissedIndices(ctx) })
 	}
 	if a.logAddrs != nil {
 		g.Go(func() error { return a.logAddrs.BuildMissedIndices(ctx, sem) })
@@ -1059,7 +1057,7 @@ func (a *AggregatorV3) BuildFilesInBackground(db kv.RoDB) error {
 				log.Warn("merge", "err", err)
 			}
 
-			a.BuildOptionalMissedIndices(a.ctx)
+			a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
 		}()
 	}()
 
