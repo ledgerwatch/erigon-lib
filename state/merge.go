@@ -704,7 +704,6 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 		if g.HasNext() {
 			key, _ := g.Next(nil)
 			val, _ := g.Next(nil)
-			log.Warn("mergeEf", "c1", item.decompressor.FileName())
 
 			//fmt.Printf("heap push %s [%d] %x\n", item.decompressor.FileName(), item.endTxNum, key)
 			heap.Push(&cp, &CursorItem{
