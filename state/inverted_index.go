@@ -158,13 +158,17 @@ Loop:
 		ii.files.Walk(func(items []*filesItem) bool {
 			for _, item := range items {
 				if item.isSubsetOf(newFile) {
+					log.Warn("is subs", "f", fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))
 					subSets = append(subSets, item)
 					continue
 				}
 
 				if newFile.isSubsetOf(item) {
 					if item.frozen {
+						log.Warn("is subs of frozen", "f", fmt.Sprintf("%d-%d", newFile.startTxNum, newFile.endTxNum))
 						addNewFile = false
+					} else {
+						log.Warn("is subs", "f", fmt.Sprintf("%d-%d", newFile.startTxNum, newFile.endTxNum))
 					}
 					uselessFiles = append(uselessFiles, newFile)
 					continue
