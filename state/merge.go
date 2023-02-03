@@ -1160,7 +1160,7 @@ func (h *History) cleanAfterFreeze(f *filesItem) {
 
 // cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
 func (ii *InvertedIndex) cleanAfterFreeze(f *filesItem) {
-	if !f.frozen {
+	if f == nil || !f.frozen {
 		return
 	}
 	var outs []*filesItem
