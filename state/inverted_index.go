@@ -182,7 +182,7 @@ Loop:
 		}
 	}
 	for _, f := range uselessFiles {
-		log.Warn("useless", fmt.Sprintf("%s.%d-%d", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep))
+		log.Warn("useless", "f", fmt.Sprintf("%s.%d-%d", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep))
 	}
 	return uselessFiles
 }

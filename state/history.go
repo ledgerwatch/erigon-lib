@@ -177,7 +177,7 @@ Loop:
 	}
 
 	for _, f := range uselessFiles {
-		log.Warn("useless", fmt.Sprintf("%s.%d-%d", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep))
+		log.Warn("useless", "f", fmt.Sprintf("%s.%d-%d", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep))
 	}
 	return uselessFiles
 }
