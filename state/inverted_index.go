@@ -282,13 +282,13 @@ func (ii *InvertedIndex) closeFiles() {
 		}
 		return true
 	})
-	if ii.localityIndex != nil {
-		ii.localityIndex.closeFiles()
-	}
 }
 
 func (ii *InvertedIndex) Close() {
 	ii.closeFiles()
+	if ii.localityIndex != nil {
+		ii.localityIndex.Close()
+	}
 }
 
 func (ii *InvertedIndex) Files() (res []string) {

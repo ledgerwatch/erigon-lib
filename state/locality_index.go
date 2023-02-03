@@ -165,6 +165,7 @@ func (li *LocalityIndex) closeFilesAndRemove(i ctxLocalityItem) {
 	}
 }
 
+func (li *LocalityIndex) Close()                { li.closeFiles() }
 func (li *LocalityIndex) Files() (res []string) { return res }
 func (li *LocalityIndex) NewIdxReader() *recsplit.IndexReader {
 	if li != nil && li.file != nil && li.file.index != nil {
