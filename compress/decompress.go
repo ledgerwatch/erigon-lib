@@ -355,6 +355,9 @@ func (d *Decompressor) FileName() string { return d.fileName }
 
 // WithReadAhead - Expect read in sequential order. (Hence, pages in the given range can be aggressively read ahead, and may be freed soon after they are accessed.)
 func (d *Decompressor) WithReadAhead(f func() error) error {
+	if d == nil || d.mmapHandle1 == nil {
+		return nil
+	}
 	_ = mmap.MadviseSequential(d.mmapHandle1)
 	//_ = mmap.MadviseWillNeed(d.mmapHandle1)
 	defer mmap.MadviseRandom(d.mmapHandle1)
@@ -369,14 +372,23 @@ func (d *Decompressor) DisableReadAhead() {
 	_ = mmap.MadviseRandom(d.mmapHandle1)
 }
 func (d *Decompressor) EnableReadAhead() *Decompressor {
+	if d == nil || d.mmapHandle1 == nil {
+		return d
+	}
 	_ = mmap.MadviseSequential(d.mmapHandle1)
 	return d
 }
 func (d *Decompressor) EnableMadvNormal() *Decompressor {
+	if d == nil || d.mmapHandle1 == nil {
+		return d
+	}
 	_ = mmap.MadviseNormal(d.mmapHandle1)
 	return d
 }
 func (d *Decompressor) EnableWillNeed() *Decompressor {
+	if d == nil || d.mmapHandle1 == nil {
+		return d
+	}
 	_ = mmap.MadviseWillNeed(d.mmapHandle1)
 	return d
 }
