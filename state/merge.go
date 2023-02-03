@@ -1122,7 +1122,7 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 }
 
 func (d *Domain) cleanAfterFreeze(f *filesItem) {
-	if !f.frozen {
+	if f == nil || !f.frozen {
 		return
 	}
 
@@ -1151,7 +1151,7 @@ func (d *Domain) cleanAfterFreeze(f *filesItem) {
 
 // cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
 func (h *History) cleanAfterFreeze(f *filesItem) {
-	if !f.frozen {
+	if f == nil || !f.frozen {
 		return
 	}
 	var outs []*filesItem
