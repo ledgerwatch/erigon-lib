@@ -344,7 +344,7 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 	// history is behind idx: then merge only history
 	notEqual := r.indexStartTxNum != r.historyStartTxNum || r.indexEndTxNum != r.historyEndTxNum
 	if r.index && notEqual {
-		r.index, r.indexStartTxNum, r.indexEndTxNum = false, r.historyStartTxNum, r.historyEndTxNum
+		r.index, r.indexStartTxNum, r.indexEndTxNum = false, 0, 0
 	}
 	return r
 }
