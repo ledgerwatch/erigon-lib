@@ -1038,4 +1038,32 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 		h.files.Delete(out)
 		out.canDelete.Store(true)
 	}
+	if historyIn.frozen {
+		h.freezeRange(historyIn.endTxNum)
+	}
+}
+
+func (h *History) freezeRange(toTxNum uint64) {
+	h.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			if item.frozen || item.endTxNum > toTxNum {
+				continue
+			}
+			item.canDelete.Store(true)
+		}
+		return true
+	})
+	h.InvertedIndex.freezeRange(toTxNum)
+}
+
+func (ii *InvertedIndex) freezeRange(toTxNum uint64) {
+	ii.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			if item.frozen || item.endTxNum > toTxNum {
+				continue
+			}
+			item.canDelete.Store(true)
+		}
+		return true
+	})
 }
