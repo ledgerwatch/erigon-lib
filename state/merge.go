@@ -1005,6 +1005,20 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 	//TODO: handle collision
 	if historyIn != nil {
 		h.files.Set(historyIn)
+
+		// `kill -9` may leave some garbage
+		// but it still may be useful for merges, until we finish merge frozen file
+		if historyIn.frozen {
+			h.files.Walk(func(items []*filesItem) bool {
+				for _, item := range items {
+					if item.frozen || item.endTxNum > historyIn.endTxNum {
+						continue
+					}
+					historyOuts = append(historyOuts, item)
+				}
+				return true
+			})
+		}
 	}
 	for _, out := range historyOuts {
 		if out == nil {
@@ -1013,32 +1027,87 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 		h.files.Delete(out)
 		out.canDelete.Store(true)
 	}
-	if historyIn.frozen {
-		h.freezeRange(historyIn.endTxNum)
-	}
 }
 
-func (h *History) freezeRange(toTxNum uint64) {
+func (d *Domain) cleanAfterFreeze(f *filesItem) {
+	if !f.frozen {
+		return
+	}
+
+	var outs []*filesItem
+	// `kill -9` may leave some garbage
+	// but it may be useful for merges, until merge `frozen` file
+	d.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			if item.frozen || item.endTxNum > f.endTxNum {
+				continue
+			}
+			outs = append(outs, item)
+		}
+		return true
+	})
+
+	for _, out := range outs {
+		if out == nil {
+			panic("must not happen: " + d.filenameBase)
+		}
+		d.files.Delete(out)
+		out.canDelete.Store(true)
+	}
+	d.History.cleanAfterFreeze(f)
+}
+
+// cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
+func (h *History) cleanAfterFreeze(f *filesItem) {
+	if !f.frozen {
+		return
+	}
+	var outs []*filesItem
+	// `kill -9` may leave some garbage
+	// but it may be useful for merges, until merge `frozen` file
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.frozen || item.endTxNum > toTxNum {
+			if item.frozen || item.endTxNum > f.endTxNum {
 				continue
 			}
-			item.canDelete.Store(true)
+			outs = append(outs, item)
 		}
 		return true
 	})
-	h.InvertedIndex.freezeRange(toTxNum)
+
+	for _, out := range outs {
+		if out == nil {
+			panic("must not happen: " + h.filenameBase)
+		}
+		h.files.Delete(out)
+		out.canDelete.Store(true)
+	}
+	h.InvertedIndex.cleanAfterFreeze(f)
 }
 
-func (ii *InvertedIndex) freezeRange(toTxNum uint64) {
+// cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
+func (ii *InvertedIndex) cleanAfterFreeze(f *filesItem) {
+	if !f.frozen {
+		return
+	}
+	var outs []*filesItem
+	// `kill -9` may leave some garbage
+	// but it may be useful for merges, until merge `frozen` file
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.frozen || item.endTxNum > toTxNum {
+			if item.frozen || item.endTxNum > f.endTxNum {
 				continue
 			}
-			item.canDelete.Store(true)
+			outs = append(outs, item)
 		}
 		return true
 	})
+
+	for _, out := range outs {
+		if out == nil {
+			panic("must not happen: " + ii.filenameBase)
+		}
+		ii.files.Delete(out)
+		out.canDelete.Store(true)
+	}
 }
