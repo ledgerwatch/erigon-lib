@@ -833,16 +833,16 @@ func (a *AggregatorV3) findMergeRange(maxEndTxNum, maxSpan uint64) RangesV3 {
 }
 
 type SelectedStaticFilesV3 struct {
-	logTopics    []*filesItem
+	accountsIdx  []*filesItem
 	accountsHist []*filesItem
-	tracesTo     []*filesItem
 	storageIdx   []*filesItem
 	storageHist  []*filesItem
+	logTopics    []*filesItem
+	logAddrs     []*filesItem
+	tracesTo     []*filesItem
 	tracesFrom   []*filesItem
 	codeIdx      []*filesItem
 	codeHist     []*filesItem
-	accountsIdx  []*filesItem
-	logAddrs     []*filesItem
 	codeI        int
 	logAddrsI    int
 	logTopicsI   int
@@ -853,7 +853,10 @@ type SelectedStaticFilesV3 struct {
 }
 
 func (sf SelectedStaticFilesV3) Close() {
-	for _, group := range [][]*filesItem{sf.accountsIdx, sf.accountsHist, sf.storageIdx, sf.accountsHist, sf.codeIdx, sf.codeHist,
+	for _, group := range [][]*filesItem{
+		sf.accountsIdx, sf.accountsHist,
+		sf.storageIdx, sf.storageHist,
+		sf.codeIdx, sf.codeHist,
 		sf.logAddrs, sf.logTopics, sf.tracesFrom, sf.tracesTo} {
 		for _, item := range group {
 			if item != nil {

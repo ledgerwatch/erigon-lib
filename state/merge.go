@@ -342,7 +342,8 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 	})
 
 	// history is behind idx: then merge only history
-	if r.index && (r.historyEndTxNum < r.indexEndTxNum) {
+	notEqual := r.indexStartTxNum != r.historyStartTxNum || r.indexEndTxNum != r.historyEndTxNum
+	if r.index && notEqual {
 		r.index, r.indexStartTxNum, r.indexEndTxNum = false, 0, 0
 	}
 	return r
@@ -424,14 +425,9 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 }
 
 func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (indexFiles, historyFiles []*filesItem, startJ int) {
-	notEqual := r.indexStartTxNum != r.historyStartTxNum || r.indexEndTxNum != r.historyEndTxNum
 	_ = hc // maybe will move this method to `hc` object
 	if r.index {
-		if !notEqual {
-
-		} else {
-			indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum, nil)
-		}
+		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum, nil)
 	}
 
 	if r.history {
@@ -446,9 +442,6 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 					return false
 				}
 				historyFiles = append(historyFiles, item)
-				if !notEqual {
-					indexFiles = append(indexFiles, item)
-				}
 			}
 			return true
 		})
@@ -813,8 +806,6 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		return nil, nil, err
 	}
 	if r.history {
-		//TODO: move it outside of this func. And this func must accept more complex input type, where history has
-		//indexFilesForHistory, _ := h.InvertedIndex.staticFilesInRange(r.historyStartTxNum, r.historyEndTxNum, nil)
 		log.Info(fmt.Sprintf("[snapshots] merge: %s.%d-%d.v", h.filenameBase, r.historyStartTxNum/h.aggregationStep, r.historyEndTxNum/h.aggregationStep))
 		for _, f := range indexFiles {
 			defer f.decompressor.EnableMadvNormal().DisableReadAhead()
