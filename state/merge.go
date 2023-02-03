@@ -457,10 +457,10 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 		})
 
 		for _, f := range indexFiles {
-			log.Warn("see", "f", f.decompressor.FileName())
+			log.Warn("see1", "f", f.decompressor.FileName())
 		}
 		for _, f := range historyFiles {
-			log.Warn("see", "f", f.decompressor.FileName())
+			log.Warn("see2", "f", f.decompressor.FileName())
 		}
 
 		for _, f := range historyFiles {
