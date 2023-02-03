@@ -509,6 +509,7 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 		}
 	}()
 	a.integrateMergedFiles(outs, in)
+	a.cleanAfterFreeze(in)
 	closeAll = false
 	return true, nil
 }
@@ -1019,6 +1020,15 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	a.logTopics.integrateMergedFiles(outs.logTopics, in.logTopics)
 	a.tracesFrom.integrateMergedFiles(outs.tracesFrom, in.tracesFrom)
 	a.tracesTo.integrateMergedFiles(outs.tracesTo, in.tracesTo)
+}
+func (a *AggregatorV3) cleanAfterFreeze(in MergedFilesV3) {
+	a.accounts.cleanAfterFreeze(in.accountsHist)
+	a.storage.cleanAfterFreeze(in.storageHist)
+	a.code.cleanAfterFreeze(in.codeHist)
+	a.logAddrs.cleanAfterFreeze(in.logAddrs)
+	a.logTopics.cleanAfterFreeze(in.logTopics)
+	a.tracesFrom.cleanAfterFreeze(in.tracesFrom)
+	a.tracesTo.cleanAfterFreeze(in.tracesTo)
 }
 
 // KeepInDB - usually equal to one a.aggregationStep, but when we exec blocks from snapshots
