@@ -335,6 +335,8 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 					r.history = true
 					r.historyStartTxNum = start
 					r.historyEndTxNum = item.endTxNum
+					log.Warn("search", "r.historyStartTxNum", r.historyStartTxNum, "r.historyEndTxNum ", r.historyEndTxNum)
+					log.Warn("seeee", "item.start", item.startTxNum, "item.end ", item.endTxNum)
 				}
 			}
 		}
@@ -732,7 +734,6 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 			ci1 := cp[0]
 			if mergedOnce {
-				log.Warn("mergeEfs", "f", ci1.dg.FileName())
 				if lastVal, err = mergeEfs(ci1.val, lastVal, nil); err != nil {
 					return nil, fmt.Errorf("merge %s inverted index: %w", ii.filenameBase, err)
 				}
