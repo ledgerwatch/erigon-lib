@@ -241,7 +241,10 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 			spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
 			span := cmp.Min(spanStep*ii.aggregationStep, maxSpan)
 			start := item.endTxNum - span
-			if start < item.startTxNum {
+			alreadyMerged := start == item.startTxNum && item.endTxNum == endTxNum
+			if alreadyMerged {
+				minFound, startTxNum, endTxNum = false, 0, 0
+			} else if start < item.startTxNum {
 				if !minFound || start < startTxNum {
 					minFound = true
 					startTxNum = start
@@ -330,7 +333,12 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 			spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
 			span := cmp.Min(spanStep*h.aggregationStep, maxSpan)
 			start := item.endTxNum - span
-			if start < item.startTxNum {
+			alreadyMerged := start == item.startTxNum && item.endTxNum == r.historyEndTxNum
+			if alreadyMerged {
+				r.history = false
+				r.historyStartTxNum = 0
+				r.historyEndTxNum = 0
+			} else if start < item.startTxNum {
 				if !r.history || start < r.historyStartTxNum {
 					r.history = true
 					r.historyStartTxNum = start
@@ -343,11 +351,19 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 		return true
 	})
 
-	// history is behind idx: then merge only history
-	notEqual := r.indexStartTxNum != r.historyStartTxNum || r.indexEndTxNum != r.historyEndTxNum
-	log.Warn("findMergeRange", "notEqual", notEqual)
-	if r.index && notEqual {
-		r.index, r.indexStartTxNum, r.indexEndTxNum = false, 0, 0
+	if r.history && r.index {
+		// history is behind idx: then merge only history
+		historyIsAgead := r.historyEndTxNum > r.indexEndTxNum
+		if historyIsAgead {
+			r.history, r.historyStartTxNum, r.historyEndTxNum = false, 0, 0
+			return r
+		}
+
+		historyIsBehind := r.historyEndTxNum < r.indexEndTxNum
+		if historyIsBehind {
+			r.index, r.indexStartTxNum, r.indexEndTxNum = false, 0, 0
+			return r
+		}
 	}
 	return r
 }

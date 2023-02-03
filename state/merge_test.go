@@ -11,7 +11,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
 
-func TestFindMergeRangeMustHandleAbsenseOfSomeFiles(t *testing.T) {
+func TestFindMergeRangeCornerCases(t *testing.T) {
 	t.Run("not equal amount of files", func(t *testing.T) {
 		ii := &InvertedIndex{aggregationStep: 1, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
 		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
@@ -54,10 +54,94 @@ func TestFindMergeRangeMustHandleAbsenseOfSomeFiles(t *testing.T) {
 		h.files.Set(&filesItem{startTxNum: 3, endTxNum: 4})
 
 		r := h.findMergeRange(4, 32)
-		assert.True(t, r.history)
 		assert.False(t, r.index)
-		assert.Equal(t, uint64(2), r.historyEndTxNum)
+		assert.True(t, r.history)
+		assert.Equal(t, 2, int(r.historyEndTxNum))
 	})
+	t.Run("history merged, but index not and history garbage left", func(t *testing.T) {
+		ii := &InvertedIndex{aggregationStep: 1, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		ii.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+
+		// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
+		h := &History{InvertedIndex: ii, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		h.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		h.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		h.files.Set(&filesItem{startTxNum: 0, endTxNum: 2})
+
+		r := h.findMergeRange(4, 32)
+		assert.True(t, r.index)
+		assert.False(t, r.history)
+		assert.Equal(t, uint64(2), r.indexEndTxNum)
+	})
+	t.Run("history merge progress ahead of idx", func(t *testing.T) {
+		ii := &InvertedIndex{aggregationStep: 1, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		ii.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 2, endTxNum: 3})
+		ii.files.Set(&filesItem{startTxNum: 3, endTxNum: 4})
+
+		// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
+		h := &History{InvertedIndex: ii, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		h.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		h.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		h.files.Set(&filesItem{startTxNum: 0, endTxNum: 2})
+		h.files.Set(&filesItem{startTxNum: 2, endTxNum: 3})
+		h.files.Set(&filesItem{startTxNum: 3, endTxNum: 4})
+
+		r := h.findMergeRange(4, 32)
+		assert.True(t, r.index)
+		assert.False(t, r.history)
+		assert.Equal(t, 2, int(r.indexEndTxNum))
+	})
+	t.Run("idx merge progress ahead of history", func(t *testing.T) {
+		ii := &InvertedIndex{aggregationStep: 1, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		ii.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 2, endTxNum: 3})
+		ii.files.Set(&filesItem{startTxNum: 3, endTxNum: 4})
+
+		// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
+		h := &History{InvertedIndex: ii, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		h.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		h.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		h.files.Set(&filesItem{startTxNum: 2, endTxNum: 3})
+		h.files.Set(&filesItem{startTxNum: 3, endTxNum: 4})
+
+		r := h.findMergeRange(4, 32)
+		assert.False(t, r.index)
+		assert.True(t, r.history)
+		assert.Equal(t, 2, int(r.historyEndTxNum))
+	})
+	t.Run("idx merged, but garbage left", func(t *testing.T) {
+		ii := &InvertedIndex{aggregationStep: 1, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		ii.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 2})
+		needMerge, _, _ := ii.findMergeRange(4, 32)
+		assert.False(t, needMerge)
+
+		ii = &InvertedIndex{aggregationStep: 1, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		ii.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 2, endTxNum: 3})
+		needMerge, _, _ = ii.findMergeRange(4, 32)
+		assert.False(t, needMerge)
+
+		ii = &InvertedIndex{aggregationStep: 1, files: btree2.NewBTreeG[*filesItem](filesItemLess)}
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 1})
+		ii.files.Set(&filesItem{startTxNum: 1, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 0, endTxNum: 2})
+		ii.files.Set(&filesItem{startTxNum: 2, endTxNum: 3})
+		ii.files.Set(&filesItem{startTxNum: 3, endTxNum: 4})
+		needMerge, from, to := ii.findMergeRange(4, 32)
+		assert.True(t, needMerge)
+		require.Equal(t, 0, int(from))
+		require.Equal(t, 4, int(to))
+	})
+
 }
 
 func Test_mergeEliasFano(t *testing.T) {
