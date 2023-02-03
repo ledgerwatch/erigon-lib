@@ -703,7 +703,6 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 				val:      val,
 				endTxNum: item.endTxNum,
 				reverse:  true,
-				fileName: item.decompressor.FileName(),
 			})
 		}
 	}
