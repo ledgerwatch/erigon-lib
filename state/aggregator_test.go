@@ -18,6 +18,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
+	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 )
@@ -435,12 +436,10 @@ func Test_EncodeCommitmentState(t *testing.T) {
 func Test_BtreeIndex_Seek(t *testing.T) {
 	tmp := t.TempDir()
 	args := BtIndexWriterArgs{
-		Enums:       true,
 		IndexFile:   path.Join(tmp, "1M.bt"),
 		TmpDir:      tmp,
 		KeyCount:    1_000,
 		EtlBufLimit: 0,
-		Salt:        0,
 	}
 	iw, err := NewBtIndexWriter(args)
 	require.NoError(t, err)
@@ -467,7 +466,7 @@ func Test_BtreeIndex_Seek(t *testing.T) {
 	require.NoError(t, iw.Build())
 	iw.Close()
 
-	bt, err := OpenBtreeIndex(args.IndexFile, 4)
+	bt, err := OpenBtreeIndex(args.IndexFile, "", 4)
 	require.NoError(t, err)
 	require.EqualValues(t, bt.KeyCount(), args.KeyCount)
 
@@ -491,12 +490,10 @@ func Test_BtreeIndex_Seek(t *testing.T) {
 func Test_InitBtreeIndex(t *testing.T) {
 	tmp := t.TempDir()
 	args := BtIndexWriterArgs{
-		Enums:       true,
-		IndexFile:   path.Join(tmp, "100k.bt"),
-		TmpDir:      tmp,
-		KeyCount:    100,
-		EtlBufLimit: 0,
-		Salt:        0,
+		IndexFile: path.Join(tmp, "100k.bt"),
+		TmpDir:    tmp,
+		KeyCount:  100,
+		KeySize:   52,
 	}
 	iw, err := NewBtIndexWriter(args)
 	require.NoError(t, err)
@@ -505,20 +502,56 @@ func Test_InitBtreeIndex(t *testing.T) {
 	defer os.RemoveAll(tmp)
 
 	rnd := rand.New(rand.NewSource(0))
-	keys := make([]byte, 52)
+	keys := make([]byte, args.KeySize)
+	values := make([]byte, 300)
+
+	comp, err := compress.NewCompressor(context.Background(), "cmp", path.Join(tmp, "100k.v2"), tmp, compress.MinPatternScore, 1, log.LvlDebug)
+	require.NoError(t, err)
+
 	for i := 0; i < args.KeyCount; i++ {
-		n, err := rnd.Read(keys[:52])
-		require.EqualValues(t, n, 52)
+		// n, err := rnd.Read(keys[:52])
+		// require.EqualValues(t, n, 52)
+		// require.NoError(t, err)
+
+		n, err := rnd.Read(values[:rnd.Intn(300)])
 		require.NoError(t, err)
 
-		err = iw.AddKey(keys[:], uint64(i))
+		err = comp.AddWord(values[:n])
 		require.NoError(t, err)
 	}
+
+	err = comp.Compress()
+	require.NoError(t, err)
+	comp.Close()
+
+	decomp, err := compress.NewDecompressor(path.Join(tmp, "100k.v2"))
+	require.NoError(t, err)
+
+	getter := decomp.MakeGetter()
+	getter.Reset(0)
+
+	var pos uint64
+	for i := 0; i < args.KeyCount; i++ {
+		if !getter.HasNext() {
+			t.Fatalf("not enough values at %d", i)
+			break
+		}
+		pos = getter.Skip()
+		// getter.Next(values[:0])
+
+		n, err := rnd.Read(keys[:args.KeySize])
+		require.EqualValues(t, n, args.KeySize)
+		require.NoError(t, err)
+
+		err = iw.AddKey(keys[:], uint64(pos))
+		require.NoError(t, err)
+	}
+	decomp.Close()
 
 	require.NoError(t, iw.Build())
 	iw.Close()
 
-	bt, err := OpenBtreeIndex(args.IndexFile, 4)
+	bt, err := OpenBtreeIndex(args.IndexFile, path.Join(tmp, "100k.v2"), 4)
 	require.NoError(t, err)
 	require.EqualValues(t, bt.KeyCount(), args.KeyCount)
 	bt.Close()

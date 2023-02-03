@@ -285,7 +285,7 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}(&wg, d, collation)
 
 		if i != 3 { // do not warmup commitment domain
-			if err := d.warmup(txFrom, d.aggregationStep/10, d.tx); err != nil {
+			if err := d.warmup(ctx, txFrom, d.aggregationStep/10, d.tx); err != nil {
 				return fmt.Errorf("warmup %q domain failed: %w", d.filenameBase, err)
 			}
 		}
@@ -313,8 +313,11 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 			}
 			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
 
+			icx := d.MakeContext()
+			defer icx.Close()
+
 			mm := d.endTxNumMinimax()
-			if err := d.mergeRangesUpTo(ctx, mm, maxSpan, workers); err != nil {
+			if err := d.mergeRangesUpTo(ctx, mm, maxSpan, workers, icx); err != nil {
 				errCh <- err
 				return
 			}
@@ -415,12 +418,11 @@ func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, work
 		// "step", step,
 		// 	"range", fmt.Sprintf("%.2fM-%.2fM", float64(txFrom)/10e5, float64(txTo)/10e5),
 		"upto_tx", maxEndTxNum, "merge_took", time.Since(mergeStartedAt),
-		"step_took", time.Since(stepStartedAt),
+		// "step_took", time.Since(stepStartedAt),
 		"collate_min", clo, "collate_max", chi,
 		"prune_min", plo, "prune_max", phi,
 		"files_build_min", blo, "files_build_max", bhi)
 
-	return nil
 	return true, nil
 }
 

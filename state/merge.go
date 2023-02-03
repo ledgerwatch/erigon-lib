@@ -192,11 +192,11 @@ func (s *staticFilesInRange) Close() {
 }
 
 // nolint
-func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
+func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int, dctx *DomainContext) (err error) {
 	closeAll := true
 	for rng := d.findMergeRange(maxSpan, maxTxNum); rng.any(); rng = d.findMergeRange(maxTxNum, maxSpan) {
 		var sfr staticFilesInRange
-		sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, sfr.startJ = d.staticFilesInRange(rng)
+		sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, sfr.startJ = d.staticFilesInRange(rng, dctx)
 		defer func() {
 			if closeAll {
 				sfr.Close()
@@ -252,10 +252,10 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 }
 
 // nolint
-func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int) (err error) {
+func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int, ictx *InvertedIndexContext) (err error) {
 	closeAll := true
 	for updated, startTx, endTx := ii.findMergeRange(maxSpan, maxTxNum); updated; updated, startTx, endTx = ii.findMergeRange(maxTxNum, maxSpan) {
-		staticFiles, _ := ii.staticFilesInRange(startTx, endTx)
+		staticFiles, _ := ii.staticFilesInRange(startTx, endTx, ictx)
 		defer func() {
 			if closeAll {
 				for _, i := range staticFiles {

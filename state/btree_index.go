@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -19,9 +18,9 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
+	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/mmap"
-	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
 
 func logBase(n, base uint64) uint64 {
@@ -911,36 +910,23 @@ type BtIndexWriter struct {
 	batchSizeLimit  uint64
 	indexW          *bufio.Writer
 	indexF          *os.File
-	offsetEf        *eliasfano32.EliasFano // Elias Fano instance for encoding the offsets
-	bucketCollector *etl.Collector         // Collector that sorts by buckets
+	bucketCollector *etl.Collector // Collector that sorts by buckets
 	indexFileName   string
 	indexFile       string
 	tmpDir          string
-	salt            uint32 // Murmur3 hash used for converting keys to 64-bit values and assigning to buckets
-	keyBuf          []byte
-	numBuf          []byte
+	numBuf          [8]byte
 	keyCount        uint64
 	keySize         int
 	etlBufLimit     datasize.ByteSize
 	bytesPerRec     int
-
-	// fot batch processing
-	//keys []uint64
-	//vals []uint64
 }
 
 type BtIndexWriterArgs struct {
-	// Whether two level index needs to be built, where perfect hash map points to an enumeration, and enumeration points to offsets
-	// if Enum=false: can have unsorted and duplicated values
-	// if Enum=true:  must have sorted values (can have duplicates) - monotonically growing sequence
-	Enums bool // todo only support true mode
-
-	IndexFile string // File name where the index and the minimal perfect hash function will be written to
-	TmpDir    string
-	//StartSeed   []uint64 // For each level of recursive split, the hash seed (salt) used for that level - need to be generated randomly and be large enough to accomodate all the levels
+	IndexFile   string // File name where the index and the minimal perfect hash function will be written to
+	TmpDir      string
 	KeyCount    int
+	KeySize     int
 	EtlBufLimit datasize.ByteSize
-	Salt        uint32 // Hash seed (salt) for the hash function used for allocating the initial buckets - need to be generated randomly
 }
 
 const BtreeLogPrefix = "btree"
@@ -951,14 +937,6 @@ const BtreeLogPrefix = "btree"
 // are likely to use different hash function, to collision attacks are unlikely to slow down any meaningful number of nodes at the same time
 func NewBtIndexWriter(args BtIndexWriterArgs) (*BtIndexWriter, error) {
 	btw := &BtIndexWriter{}
-	btw.salt = args.Salt
-	if btw.salt == 0 {
-		seedBytes := make([]byte, 4)
-		if _, err := rand.Read(seedBytes); err != nil {
-			return nil, err
-		}
-		btw.salt = binary.BigEndian.Uint32(seedBytes)
-	}
 	btw.tmpDir = args.TmpDir
 	btw.indexFile = args.IndexFile
 	_, fname := filepath.Split(btw.indexFile)
@@ -968,6 +946,8 @@ func NewBtIndexWriter(args BtIndexWriterArgs) (*BtIndexWriter, error) {
 	if btw.etlBufLimit == 0 {
 		btw.etlBufLimit = etl.BufferOptimalSize
 	}
+
+	btw.keySize = args.KeySize
 	btw.bucketCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
 	btw.bucketCollector.LogLvl(log.LvlDebug)
 	//btw.offsetCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
@@ -1086,10 +1066,9 @@ func (btw *BtIndexWriter) Build() error {
 	if err = btw.indexW.WriteByte(byte(btw.bytesPerRec)); err != nil {
 		return fmt.Errorf("write bytes per record: %w", err)
 	}
-
-	binary.BigEndian.PutUint32(btw.numBuf[:], btw.salt)
-	if _, err := btw.indexW.Write(btw.numBuf[:4]); err != nil {
-		return fmt.Errorf("writing salt: %w", err)
+	binary.BigEndian.PutUint16(btw.numBuf[:2], uint16(btw.keySize))
+	if _, err = btw.indexW.Write(btw.numBuf[:2]); err != nil {
+		return fmt.Errorf("write number of keys: %w", err)
 	}
 
 	defer btw.bucketCollector.Close()
@@ -1129,9 +1108,9 @@ func (btw *BtIndexWriter) Close() {
 	//}
 }
 
-func (btw *BtIndexWriter) Add(key, value []byte) error {
+// func (btw *BtIndexWriter) Add(key, value []byte) error {
 
-}
+// }
 
 func (btw *BtIndexWriter) AddKey(key []byte, offset uint64) error {
 	if btw.built {
@@ -1174,9 +1153,12 @@ type BtIndex struct {
 	baseDataID  uint64
 	bytesPerRec int
 	dataoffset  uint64
+
+	decompressor *compress.Decompressor
+	getter       *compress.Getter
 }
 
-func OpenBtreeIndex(indexPath string, M uint64) (*BtIndex, error) {
+func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 	s, err := os.Stat(indexPath)
 	if err != nil {
 		return nil, err
@@ -1201,8 +1183,8 @@ func OpenBtreeIndex(indexPath string, M uint64) (*BtIndex, error) {
 	pos := 8
 	idx.keyCount = binary.BigEndian.Uint64(idx.data[:pos])
 	//idx.baseDataID = binary.BigEndian.Uint64(idx.data[pos:8])
-	idx.bytesPerRec = int(binary.BigEndian.Uint16(idx.data[pos:]))
-	pos += 2
+	idx.bytesPerRec = int(idx.data[pos])
+	pos += 1
 
 	idx.keySize = int(binary.BigEndian.Uint16(idx.data[pos:]))
 	pos += 2
@@ -1214,7 +1196,13 @@ func OpenBtreeIndex(indexPath string, M uint64) (*BtIndex, error) {
 
 	//p := (*[]byte)(unsafe.Pointer(&idx.data[pos]))
 	//l := int(idx.keyCount)*idx.bytesPerRec + (16 * int(idx.keyCount))
-	//idx.alloc.data = p[:l]
+
+	idx.decompressor, err = compress.NewDecompressor(dataPath)
+	if err != nil {
+		idx.Close()
+		return nil, err
+	}
+	idx.getter = idx.decompressor.MakeGetter()
 
 	idx.alloc = newBtAlloc(idx.keyCount, M)
 	idx.alloc.dataLookup = idx.dataLookup
@@ -1235,9 +1223,19 @@ func (b *BtIndex) dataLookup(di uint64) ([]byte, []byte, error) {
 	}
 	key := b.data[p : p+uint64(b.keySize)]
 	p += uint64(b.keySize)
-	vo := b.data[p : p+uint64(b.bytesPerRec)]
 
-	b.data[vo:]
+	offt := b.data[p : p+uint64(b.bytesPerRec)]
+	aux := make([]byte, 8)
+	copy(aux[8-len(offt):], offt)
+
+	vo := binary.BigEndian.Uint64(aux)
+
+	b.getter.Reset(vo)
+	var val []byte
+	if b.getter.HasNext() {
+		val, _ = b.getter.Next(nil)
+	}
+
 	return key, val, nil
 }
 
