@@ -492,12 +492,15 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
 	defer ac.Close()
 
-	outs := a.staticFilesInRange(r, ac)
+	outs, err := a.staticFilesInRange(r, ac)
 	defer func() {
 		if closeAll {
 			outs.Close()
 		}
 	}()
+	if err != nil {
+		return false, err
+	}
 
 	in, err := a.mergeFiles(ctx, outs, r, maxSpan, workers)
 	if err != nil {
@@ -872,18 +875,25 @@ func (sf SelectedStaticFilesV3) Close() {
 	}
 }
 
-func (a *AggregatorV3) staticFilesInRange(r RangesV3, ac *AggregatorV3Context) SelectedStaticFilesV3 {
+func (a *AggregatorV3) staticFilesInRange(r RangesV3, ac *AggregatorV3Context) (sf SelectedStaticFilesV3, err error) {
 	_ = ac // maybe will move this method to `ac` object
-
-	var sf SelectedStaticFilesV3
 	if r.accounts.any() {
-		sf.accountsIdx, sf.accountsHist, sf.accountsI = a.accounts.staticFilesInRange(r.accounts, ac.accounts)
+		sf.accountsIdx, sf.accountsHist, sf.accountsI, err = a.accounts.staticFilesInRange(r.accounts, ac.accounts)
+		if err != nil {
+			return sf, err
+		}
 	}
 	if r.storage.any() {
-		sf.storageIdx, sf.storageHist, sf.storageI = a.storage.staticFilesInRange(r.storage, ac.storage)
+		sf.storageIdx, sf.storageHist, sf.storageI, err = a.storage.staticFilesInRange(r.storage, ac.storage)
+		if err != nil {
+			return sf, err
+		}
 	}
 	if r.code.any() {
-		sf.codeIdx, sf.codeHist, sf.codeI = a.code.staticFilesInRange(r.code, ac.code)
+		sf.codeIdx, sf.codeHist, sf.codeI, err = a.code.staticFilesInRange(r.code, ac.code)
+		if err != nil {
+			return sf, err
+		}
 	}
 	if r.logAddrs {
 		sf.logAddrs, sf.logAddrsI = a.logAddrs.staticFilesInRange(r.logAddrsStartTxNum, r.logAddrsEndTxNum, ac.logAddrs)
@@ -897,7 +907,7 @@ func (a *AggregatorV3) staticFilesInRange(r RangesV3, ac *AggregatorV3Context) S
 	if r.tracesTo {
 		sf.tracesTo, sf.tracesToI = a.tracesTo.staticFilesInRange(r.tracesToStartTxNum, r.tracesToEndTxNum, ac.tracesTo)
 	}
-	return sf
+	return sf, err
 }
 
 type MergedFilesV3 struct {

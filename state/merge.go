@@ -229,6 +229,13 @@ func (s *staticFilesInRange) Close() {
 	}
 */
 
+// 0-1,1-2,2-3,3-4: allow merge 0-1
+// 0-2,2-3,3-4: allow merge 0-4
+// 0-2,2-4: allow merge 0-4
+//
+// 0-1,1-2,2-3: allow merge 0-2
+//
+// 0-2,2-3: nothing to merge
 func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint64, uint64) {
 	var minFound bool
 	var startTxNum, endTxNum uint64
@@ -241,9 +248,11 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 			spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
 			span := cmp.Min(spanStep*ii.aggregationStep, maxSpan)
 			start := item.endTxNum - span
-			alreadyMerged := start == item.startTxNum && item.endTxNum == endTxNum
-			if alreadyMerged {
-				minFound, startTxNum, endTxNum = false, 0, 0
+			foundSuperSet := startTxNum == item.startTxNum && item.endTxNum >= endTxNum
+			if foundSuperSet {
+				minFound = false
+				startTxNum = start
+				endTxNum = item.endTxNum
 			} else if start < item.startTxNum {
 				if !minFound || start < startTxNum {
 					minFound = true
@@ -333,18 +342,16 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 			spanStep := endStep & -endStep // Extract rightmost bit in the binary representation of endStep, this corresponds to size of maximally possible merge ending at endStep
 			span := cmp.Min(spanStep*h.aggregationStep, maxSpan)
 			start := item.endTxNum - span
-			alreadyMerged := start == item.startTxNum && item.endTxNum == r.historyEndTxNum
-			if alreadyMerged {
+			foundSuperSet := r.indexStartTxNum == item.startTxNum && item.endTxNum >= r.historyEndTxNum
+			if foundSuperSet {
 				r.history = false
-				r.historyStartTxNum = 0
-				r.historyEndTxNum = 0
+				r.historyStartTxNum = start
+				r.historyEndTxNum = item.endTxNum
 			} else if start < item.startTxNum {
 				if !r.history || start < r.historyStartTxNum {
 					r.history = true
 					r.historyStartTxNum = start
 					r.historyEndTxNum = item.endTxNum
-					log.Warn("search", "r.historyStartTxNum", r.historyStartTxNum, "r.historyEndTxNum ", r.historyEndTxNum)
-					log.Warn("seeee", "item.start", item.startTxNum, "item.end ", item.endTxNum)
 				}
 			}
 		}
@@ -372,7 +379,8 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 // files are in the descending order of endTxNum
 func (d *Domain) staticFilesInRange(r DomainRanges, dc *DomainContext) (valuesFiles, indexFiles, historyFiles []*filesItem, startJ int) {
 	if r.index || r.history {
-		indexFiles, historyFiles, startJ = d.History.staticFilesInRange(HistoryRanges{
+		var err error
+		indexFiles, historyFiles, startJ, err = d.History.staticFilesInRange(HistoryRanges{
 			historyStartTxNum: r.historyStartTxNum,
 			historyEndTxNum:   r.historyEndTxNum,
 			history:           r.history,
@@ -380,6 +388,9 @@ func (d *Domain) staticFilesInRange(r DomainRanges, dc *DomainContext) (valuesFi
 			indexEndTxNum:     r.indexEndTxNum,
 			index:             r.index,
 		}, dc.hc)
+		if err != nil {
+			panic(err)
+		}
 	}
 	if r.values {
 		d.files.Walk(func(items []*filesItem) bool {
@@ -408,6 +419,8 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 	_ = ic
 	var files []*filesItem
 	var startJ int
+
+	var prevStart uint64
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.startTxNum < startTxNum {
@@ -417,7 +430,19 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 			if item.endTxNum > endTxNum {
 				continue
 			}
+
+			// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
+			// see super-set file, just drop sub-set files from list
+			if item.startTxNum < prevStart {
+				for len(files) > 0 {
+					if files[len(files)-1].startTxNum < item.startTxNum {
+						break
+					}
+					files = files[:len(files)-1]
+				}
+			}
 			files = append(files, item)
+			prevStart = item.startTxNum
 		}
 		return true
 	})
@@ -430,18 +455,19 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 	return files, startJ
 }
 
-func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (indexFiles, historyFiles []*filesItem, startJ int) {
+func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (indexFiles, historyFiles []*filesItem, startJ int, err error) {
 	_ = hc // maybe will move this method to `hc` object
-	if r.index {
+	if !r.history && r.index {
 		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum, nil)
+		return indexFiles, historyFiles, startJ, nil
 	}
 
 	if r.history {
 		log.Warn("staticFilesInRange", "r.index", r.index)
-		if !r.index {
-			indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.historyStartTxNum, r.historyEndTxNum, nil)
-		}
 		startJ = 0
+
+		var prevStart uint64
+		var walkErr error
 		h.files.Walk(func(items []*filesItem) bool {
 			for _, item := range items {
 				if item.startTxNum < r.historyStartTxNum {
@@ -451,24 +477,33 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 				if item.endTxNum > r.historyEndTxNum {
 					return false
 				}
-				historyFiles = append(historyFiles, item)
-				if !r.index {
-					idxFile, ok := h.InvertedIndex.files.Get(item)
-					if ok {
-						indexFiles = append(indexFiles, idxFile)
-					} else {
-						log.Warn("not found idx file for merge", "f", item.decompressor.FileName())
+
+				// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
+				// see super-set file, just drop sub-set files from list
+				if item.startTxNum < prevStart {
+					for len(historyFiles) > 0 {
+						if historyFiles[len(historyFiles)-1].startTxNum < item.startTxNum {
+							break
+						}
+						historyFiles = historyFiles[:len(historyFiles)-1]
+						indexFiles = indexFiles[:len(indexFiles)-1]
 					}
+				}
+
+				prevStart = item.startTxNum
+				historyFiles = append(historyFiles, item)
+				idxFile, ok := h.InvertedIndex.files.Get(item)
+				if ok {
+					indexFiles = append(indexFiles, idxFile)
+				} else {
+					walkErr = fmt.Errorf("file not found for merge: %s.%d-%d.efi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+					return false
 				}
 			}
 			return true
 		})
-
-		for _, f := range indexFiles {
-			log.Warn("see1", "f", f.decompressor.FileName())
-		}
-		for _, f := range historyFiles {
-			log.Warn("see2", "f", f.decompressor.FileName())
+		if walkErr != nil {
+			return nil, nil, 0, walkErr
 		}
 
 		for _, f := range historyFiles {
