@@ -344,7 +344,7 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 	// history is behind idx: then merge only history
 	notEqual := r.indexStartTxNum != r.historyStartTxNum || r.indexEndTxNum != r.historyEndTxNum
 	if r.index && notEqual {
-		r.index, r.indexStartTxNum, r.indexEndTxNum = false, 0, 0
+		r.index, r.indexStartTxNum, r.indexEndTxNum = false, r.historyStartTxNum, r.historyEndTxNum
 	}
 	return r
 }
@@ -431,6 +431,9 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 	}
 
 	if r.history {
+		if !r.index {
+			indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.historyStartTxNum, r.historyEndTxNum, nil)
+		}
 		startJ = 0
 		h.files.Walk(func(items []*filesItem) bool {
 			for _, item := range items {
