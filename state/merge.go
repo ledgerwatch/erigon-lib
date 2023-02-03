@@ -343,6 +343,7 @@ func (h *History) findMergeRange(maxEndTxNum, maxSpan uint64) HistoryRanges {
 
 	// history is behind idx: then merge only history
 	notEqual := r.indexStartTxNum != r.historyStartTxNum || r.indexEndTxNum != r.historyEndTxNum
+	log.Warn("findMergeRange", "notEqual", notEqual)
 	if r.index && notEqual {
 		r.index, r.indexStartTxNum, r.indexEndTxNum = false, 0, 0
 	}
@@ -418,6 +419,7 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 	}
 
 	if r.history {
+		log.Warn("staticFilesInRange", "r.index", r.index)
 		if !r.index {
 			indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.historyStartTxNum, r.historyEndTxNum, nil)
 		}
@@ -435,6 +437,13 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 			}
 			return true
 		})
+
+		for _, f := range indexFiles {
+			log.Warn("see", "f", f.decompressor.FileName())
+		}
+		for _, f := range historyFiles {
+			log.Warn("see", "f", f.decompressor.FileName())
+		}
 
 		for _, f := range historyFiles {
 			if f == nil {
@@ -723,6 +732,7 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
 			ci1 := cp[0]
 			if mergedOnce {
+				log.Warn("mergeEfs", "f", ci1.dg.FileName())
 				if lastVal, err = mergeEfs(ci1.val, lastVal, nil); err != nil {
 					return nil, fmt.Errorf("merge %s inverted index: %w", ii.filenameBase, err)
 				}
