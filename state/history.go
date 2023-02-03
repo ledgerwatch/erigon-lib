@@ -176,14 +176,6 @@ Loop:
 		}
 	}
 
-	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		err = os.Remove(filepath.Join(h.dir, fName))
-		fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		err = os.Remove(filepath.Join(h.dir, fIdxName))
-		//log.Debug("[clean] remove", "file", fName, "err", err)
-		//log.Warn("useless", "f", fmt.Sprintf("%s.%d-%d", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep))
-	}
 	return uselessFiles
 }
 

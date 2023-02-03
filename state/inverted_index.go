@@ -176,17 +176,9 @@ Loop:
 		//	ii.files.Delete(subSet)
 		//	uselessFiles = append(uselessFiles, subSet)
 		//}
-		_ = addNewFile
 		if addNewFile {
 			ii.files.Set(newFile)
 		}
-	}
-	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err = os.Remove(filepath.Join(ii.dir, fName))
-		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err = os.Remove(filepath.Join(ii.dir, fIdxName))
-		//log.Warn("useless", "f", fmt.Sprintf("%s.%d-%d", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep))
 	}
 	return uselessFiles
 }
