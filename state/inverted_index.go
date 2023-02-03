@@ -167,10 +167,10 @@ Loop:
 					if item.frozen {
 						log.Warn("is subs of frozen", "f", fmt.Sprintf("%d-%d", newFile.startTxNum, newFile.endTxNum))
 						addNewFile = false
+						uselessFiles = append(uselessFiles, newFile)
 					} else {
 						log.Warn("is subs", "f", fmt.Sprintf("%d-%d", newFile.startTxNum, newFile.endTxNum))
 					}
-					uselessFiles = append(uselessFiles, newFile)
 					continue
 				}
 			}
