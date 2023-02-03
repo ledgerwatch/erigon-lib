@@ -33,11 +33,10 @@ func BenchmarkAggregator_Processing(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	//keys := queueKeys(ctx, 42, length.Addr)
 	longKeys := queueKeys(ctx, 64, length.Addr+length.Hash)
 	vals := queueKeys(ctx, 53, length.Hash)
 
-	aggStep := uint64(100_000)
+	aggStep := uint64(100_00)
 	_, db, agg := testDbAndAggregatorBench(b, length.Addr, aggStep)
 
 	tx, err := db.BeginRw(ctx)
@@ -46,28 +45,8 @@ func BenchmarkAggregator_Processing(b *testing.B) {
 		if tx != nil {
 			tx.Rollback()
 		}
-		if agg != nil {
-			agg.Close()
-		}
 	}()
 
-	commit := func(txN uint64) (err error) {
-		err = tx.Commit()
-		require.NoError(b, err)
-		if err != nil {
-			return err
-		}
-
-		tx = nil
-		tx, err = db.BeginRw(ctx)
-		require.NoError(b, err)
-		if err != nil {
-			return err
-		}
-		agg.SetTx(tx)
-		return nil
-	}
-	agg.SetCommitFn(commit)
 	agg.SetTx(tx)
 	defer agg.StartWrites().FinishWrites()
 	require.NoError(b, err)
@@ -76,19 +55,12 @@ func BenchmarkAggregator_Processing(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	//keyList := make([][]byte, 20000)
+
 	for i := 0; i < b.N; i++ {
-		//var key []byte
-		//if i >= len(keyList) {
-		//	pi := i % (len(keyList))
-		//	key = keyList[pi]
-		//} else {
-		//	key = <-longKeys
-		//	keyList[i] = key
-		//}
 		key := <-longKeys
 		val := <-vals
-		agg.SetTxNum(uint64(i))
+		txNum := uint64(i)
+		agg.SetTxNum(txNum)
 		err := agg.WriteAccountStorage(key[:length.Addr], key[length.Addr:], val)
 		require.NoError(b, err)
 		err = agg.FinishTx()

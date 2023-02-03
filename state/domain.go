@@ -81,8 +81,13 @@ func filesItemLess(i, j *filesItem) bool {
 }
 
 type DomainStats struct {
-	MergesCount    uint64
+	MergesCount          uint64
+	LastCollationTook    time.Duration
+	LastPruneTook        time.Duration
+	LastFileBuildingTook time.Duration
+
 	HistoryQueries uint64
+	TotalQueries   uint64
 	EfSearchTime   time.Duration
 	DataSize       uint64
 	IndexSize      uint64
@@ -91,6 +96,7 @@ type DomainStats struct {
 
 func (ds *DomainStats) Accumulate(other DomainStats) {
 	ds.HistoryQueries += other.HistoryQueries
+	ds.TotalQueries += other.TotalQueries
 	ds.EfSearchTime += other.EfSearchTime
 	ds.IndexSize += other.IndexSize
 	ds.DataSize += other.DataSize
@@ -288,6 +294,8 @@ func (d *Domain) Close() {
 
 func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, bool, error) {
 	//var invertedStep [8]byte
+	atomic.AddUint64(&dc.d.stats.TotalQueries, 1)
+
 	invertedStep := dc.numBuf
 	binary.BigEndian.PutUint64(invertedStep[:], ^(fromTxNum / dc.d.aggregationStep))
 	keyCursor, err := roTx.CursorDupSort(dc.d.keysTable)
@@ -573,6 +581,8 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 	if len(prefix) != dc.d.prefixLen {
 		return fmt.Errorf("wrong prefix length, this %s domain supports prefixLen %d, given [%x]", dc.d.filenameBase, dc.d.prefixLen, prefix)
 	}
+	atomic.AddUint64(&dc.d.stats.HistoryQueries, 1)
+
 	var cp CursorHeap
 	heap.Init(&cp)
 	var k, v []byte
@@ -689,6 +699,11 @@ func (c Collation) Close() {
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
 func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (Collation, error) {
+	started := time.Now()
+	defer func() {
+		d.stats.LastCollationTook = time.Since(started)
+	}()
+
 	hCollation, err := d.History.collate(step, txFrom, txTo, roTx, logEvery)
 	if err != nil {
 		return Collation{}, err
@@ -967,14 +982,17 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 
 // [txFrom; txTo)
 func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
-	// It is important to clean up tables in a specific order
-	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is canDelete from there, other tables will not be accessed
+	start := time.Now()
+	defer func() {
+		d.stats.LastPruneTook = time.Since(start)
+	}()
+
 	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
 	if err != nil {
 		return fmt.Errorf("%s keys cursor: %w", d.filenameBase, err)
 	}
 	defer keysCursor.Close()
-	var k, v []byte
+	var k, v, stepBytes []byte
 	keyMaxSteps := make(map[string]uint64)
 
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
@@ -985,17 +1003,21 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
 		default:
-		}
-
-		s := ^binary.BigEndian.Uint64(v)
-		if maxS, seen := keyMaxSteps[string(k)]; !seen || s > maxS {
-			keyMaxSteps[string(k)] = s
+			s := ^binary.BigEndian.Uint64(v)
+			if maxS, seen := keyMaxSteps[string(k)]; !seen || s > maxS {
+				keyMaxSteps[string(k)] = s
+			}
+			if len(stepBytes) == 0 && step == s {
+				stepBytes = common.Copy(v)
+			}
 		}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
 	}
 
+	// It is important to clean up tables in a specific order
+	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
 	for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
 		select {
 		case <-logEvery.C:
@@ -1004,19 +1026,13 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
 		default:
-		}
-
-		s := ^binary.BigEndian.Uint64(v)
-		if s == step {
-			if maxS := keyMaxSteps[string(k)]; maxS <= step {
-				continue
-			}
-			if err = keysCursor.DeleteCurrent(); err != nil {
-				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
-			}
-
-			if bytes.HasPrefix(k, keyCommitmentState) {
-				fmt.Printf("domain prune key %x [s%d] txn=%d\n", string(k), s, ^binary.BigEndian.Uint64(v))
+			if bytes.Equal(stepBytes, v) {
+				if maxS := keyMaxSteps[string(k)]; maxS <= step {
+					continue
+				}
+				if err = keysCursor.DeleteCurrent(); err != nil {
+					return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
+				}
 			}
 		}
 	}
@@ -1036,16 +1052,14 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
 		default:
-		}
-		s := ^binary.BigEndian.Uint64(k[len(k)-8:])
-		if s == step {
-			if maxS := keyMaxSteps[string(k[:len(k)-8])]; maxS <= step {
-				continue
+			if bytes.Equal(stepBytes, k[len(k)-8:]) {
+				if maxS := keyMaxSteps[string(k[len(k)-8:])]; maxS <= step {
+					continue
+				}
+				if err = valsCursor.DeleteCurrent(); err != nil {
+					return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
+				}
 			}
-			if err = valsCursor.DeleteCurrent(); err != nil {
-				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
-			}
-			//fmt.Printf("domain prune value for %x (invs %x) [s%d]\n", string(k),k[len(k)-8):], s)
 		}
 	}
 	if err != nil {
@@ -1133,6 +1147,8 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 // historyBeforeTxNum searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
+	atomic.AddUint64(&dc.d.stats.HistoryQueries, 1)
+
 	var search ctxItem
 	search.startTxNum = txNum
 	search.endTxNum = txNum

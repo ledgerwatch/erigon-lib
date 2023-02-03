@@ -54,7 +54,6 @@ type DomainCommitted struct {
 	commTree     *btree.BTreeG[*CommitmentItem]
 	keccak       hash.Hash
 	patriciaTrie *commitment.HexPatriciaHashed
-	keyReplaceFn ValueMerger // defines logic performed with stored values during files merge
 	branchMerger *commitment.BranchMerger
 }
 
@@ -68,8 +67,6 @@ func NewCommittedDomain(d *Domain, mode CommitmentMode) *DomainCommitted {
 		branchMerger: commitment.NewHexBranchMerger(8192),
 	}
 }
-
-func (d *DomainCommitted) SetKeyReplacer(vm ValueMerger) { d.keyReplaceFn = vm }
 
 func (d *DomainCommitted) SetCommitmentMode(m CommitmentMode) { d.mode = m }
 
