@@ -452,6 +452,14 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 					return false
 				}
 				historyFiles = append(historyFiles, item)
+				if !r.index {
+					idxFile, ok := h.InvertedIndex.files.Get(item)
+					if ok {
+						indexFiles = append(indexFiles, idxFile)
+					} else {
+						log.Warn("not found idx file for merge", "f", item.decompressor.FileName())
+					}
+				}
 			}
 			return true
 		})
