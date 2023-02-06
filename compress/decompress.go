@@ -347,7 +347,7 @@ func (d *Decompressor) Close() error {
 	}
 	if err := d.f.Close(); err != nil {
 		panic(err)
-		return err
+		//return err
 	}
 	return nil
 }

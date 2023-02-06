@@ -171,7 +171,7 @@ func (idx *Index) Close() error {
 	}
 	if err := idx.f.Close(); err != nil {
 		panic(err)
-		return err
+		//return err
 	}
 	return nil
 }
