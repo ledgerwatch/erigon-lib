@@ -157,6 +157,7 @@ type btAlloc struct {
 	nodes   [][]node
 	data    []uint64
 	naccess uint64
+	trace   bool
 
 	dataLookup func(di uint64) ([]byte, []byte, error)
 }
@@ -175,6 +176,7 @@ func newBtAlloc(k, M uint64) *btAlloc {
 		M:       M,
 		K:       k,
 		d:       d,
+		trace:   true,
 	}
 	a.vx[0] = 1
 	a.vx[d] = k
@@ -315,6 +317,7 @@ func (a *btAlloc) traverseDfs() {
 		a.nodes[l] = make([]node, 0)
 	}
 
+	// TODO if keys less than half leaf size store last key to just support bsearch on these amount.
 	c := a.cursors[len(a.cursors)-1]
 	pc := a.cursors[(len(a.cursors) - 2)]
 	root := new(node)
@@ -526,9 +529,8 @@ func (a *btAlloc) fetchByDi(i uint64) (uint64, bool) {
 
 func (a *btAlloc) bsKey(x []byte, l, r uint64) (*Cursor, error) {
 	var exit bool
-	var di uint64
-	for l < r {
-		m := (l + r) >> 1
+	for l <= r {
+		di := (l + r) >> 1
 
 		mk, value, err := a.dataLookup(di)
 		a.naccess++
@@ -538,14 +540,17 @@ func (a *btAlloc) bsKey(x []byte, l, r uint64) (*Cursor, error) {
 		case err != nil:
 			break
 		case cmp == 0:
-			return newCursor(context.TODO(), mk, value, m), nil
+			return newCursor(context.TODO(), mk, value, di), nil
 		case cmp == -1:
 			if exit {
 				break
 			}
-			l = m + 1
+			l = di + 1
 		default:
-			r = m
+			r = di
+		}
+		if l == r {
+			break
 		}
 	}
 	return nil, fmt.Errorf("not found")
@@ -608,10 +613,12 @@ func (a *btAlloc) bs(i, x, l, r uint64, direct bool) (uint64, uint64, bool) {
 	return l, r, false
 }
 
-func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (*node, uint64, []byte) {
+func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (*node, int64, int64, []byte) {
 	var exit bool
-	var di, lm uint64
-	n := new(node)
+	var lm, rm int64
+	lm = -1
+	rm = -1
+	var n *node
 
 	for l <= r {
 		m := (l + r) >> 1
@@ -619,143 +626,114 @@ func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (*node, uint64, []byte) {
 			m = l
 			exit = true
 		}
-		lm = m
 
-		di = a.nodes[i][m].d
 		n = &a.nodes[i][m]
+		// di = n.d
+		// _ = di
 
 		a.naccess++
 
-		mk, value, err := a.dataLookup(di)
-		cmp := bytes.Compare(mk, x)
+		// mk, value, err := a.dataLookup(di)
+		cmp := bytes.Compare(n.key, x)
 		switch {
-		case err != nil:
-			fmt.Printf("err at switch %v\n", err)
-			break
+		// case err != nil:
+		// 	fmt.Printf("err at switch %v\n", err)
+		// 	break
 		case cmp == 0:
-			return n, m, value
+			return n, int64(m), int64(m), n.val
 		case cmp < 0:
-			if m+1 == r {
-				return n, m, nil
-			}
-			l = m
+			// if m+1 == r {
+			// 	return n, m, rm, nil
+			// }
+			l = m + 1
+			lm = int64(m)
 		default:
-			if m == l {
-				return n, m, nil
-			}
+			// if m == l {
+			// 	return n, m, rm, nil
+			// }
 			r = m
+			rm = int64(r)
 		}
 		if exit {
 			break
 		}
 	}
-	return nil, lm, nil
+	return n, lm, rm, nil
 }
 
 func (a *btAlloc) seek(ik []byte) (*Cursor, error) {
-	var L, m uint64
+	var L, minD, maxD uint64
+	var lm, rm int64
 	R := uint64(len(a.nodes[0]) - 1)
+	maxD = a.K + 1
+
+	if a.trace {
+		fmt.Printf("seek key %x\n", ik)
+	}
 
 	ln := new(node)
 	var val []byte
 	for l, level := range a.nodes {
-		ln, m, val = a.bsNode(uint64(l), L, R, ik)
-		if ln == nil {
+		ln, lm, rm, val = a.bsNode(uint64(l), L, R, ik)
+		if ln == nil { // should return node which is nearest to key from the left so never nil
 			L = 0
-			fmt.Printf("found nil key %d lvl=%d naccess=%d\n", level[m].d, l, a.naccess)
-			break
+			if a.trace {
+				fmt.Printf("found nil key %x di=%d lvl=%d naccess_ram=%d\n", level[lm].key, level[lm].d, l, a.naccess)
+			}
+			panic(fmt.Errorf("nil node at %d", l))
+		}
+		if lm >= 0 {
+			minD = a.nodes[l][lm].d
+			L = level[lm].fc
+		}
+		if rm >= 0 {
+			maxD = a.nodes[l][rm].d
+			R = level[rm].fc
 		}
 
-		switch bytes.Compare(ln.key, ik) { // k.compare(ik) {
-		case 1:
-			if ln.fc > 0 {
-				L = ln.fc - 1
-			} else {
-				L = 0
-			}
+		switch bytes.Compare(ln.key, ik) {
+		case 1: // key > ik
+			maxD = ln.d
+		case -1: // key < ik
+			minD = ln.d
 		case 0:
-			fmt.Printf("found key %+v = %v naccess=%d\n", ik, val /*level[m].d,*/, a.naccess)
-			//return true
-			return newCursor(context.TODO(), ln.key, val, ln.d), nil
-			//break
-		default:
-			if m < uint64(len(level)) {
-				R = level[m+1].fc
-				//R = level[m].fc
-			} else {
-				R = uint64(len(a.nodes[l+1]) - 1)
+			if a.trace {
+				fmt.Printf("found key %x v=%x naccess_ram=%d\n", ik, val /*level[m].d,*/, a.naccess)
 			}
+			return newCursor(context.TODO(), ln.key, val, ln.d), nil
 		}
-		fmt.Printf("range={%+v} (%d, %d) L=%d naccess=%d\n", ln, L, R, l, a.naccess)
+		if a.trace {
+			fmt.Printf("range={%x d=%d p=%d} (%d, %d) L=%d naccess_ram=%d\n", ln.key, ln.d, ln.p, minD, maxD, l, a.naccess)
+		}
 	}
 
 	switch bytes.Compare(ik, ln.key) {
 	case -1:
-		L = 0
+		L = minD // =0
 	case 0:
-		fmt.Printf("last found key %d naccess=%d\n", ln.d, a.naccess)
+		if a.trace {
+			fmt.Printf("last found key %x v=%x di=%d naccess_ram=%d\n", ln.key, ln.val, ln.d, a.naccess)
+		}
 		return newCursor(context.TODO(), ln.key, val, ln.d), nil
 	case 1:
-		L = ln.d
+		L = ln.d + 1
 	}
 
 	a.naccess = 0 // reset count before actually go to storage
-	cursor, err := a.bsKey(ik, L, a.nodes[a.d-1][m+1].d)
+	cursor, err := a.bsKey(ik, L, maxD)
 	if err != nil {
-		//if trace {
-		fmt.Printf("key %+v not found\n", ik)
-		//}
-		//return true
+		if a.trace {
+			fmt.Printf("key %x not found\n", ik)
+		}
+		return nil, err
 	} else {
-		fmt.Printf("last found key %+v naccess=%d [%v]\n", cursor.key, a.naccess, err)
+		if a.trace {
+			fmt.Printf("finally found key %x v=%x naccess_disk=%d [err=%v]\n", cursor.key, cursor.value, a.naccess, err)
+		}
 		return cursor, nil
 	}
 
 	return nil, fmt.Errorf("key not found")
-}
-
-// deprecated
-func (a *btAlloc) lookup(ik uint64) bool {
-	trace, direct, found := true, false, false
-	mk, l, r := uint64(0), uint64(0), uint64(len(a.nodes[0])-1)
-
-	for i := 0; i < len(a.nodes); i++ {
-		mk, r, found = a.bs(uint64(i), ik, l, r, direct)
-		if found {
-			if trace {
-				fmt.Printf("found key %d naccess=%d\n", a.nodes[i][mk].d, a.naccess)
-			}
-			return true
-		}
-		if trace {
-			fmt.Printf("range={%d,%d} (%d, %d) L=%d naccess=%d\n", a.nodes[i][l].d, a.nodes[i][r].d, l, r, i, a.naccess)
-		}
-
-		l, r = a.nodes[i][mk].fc, a.nodes[i][r].fc
-		if trace && i < len(a.nodes)-1 {
-			fmt.Printf("next range={%d,%d} (%d, %d) L=%d naccess=%d\n", a.nodes[i+1][l].d, a.nodes[i+1][r].d, l, r, i+1, a.naccess)
-		}
-	}
-
-	mindi, maxdi := uint64(0), a.nodes[a.d-1][l+1].d
-	if l > 0 {
-		mindi = a.nodes[a.d-1][l-1].d
-	}
-	if trace {
-		fmt.Printf("smallest range {%d-%d} (%d-%d)\n", mindi, maxdi, l-1, l+1)
-	}
-
-	// search in smallest found interval
-	direct = true
-	mk, _, found = a.bs(a.d-1, ik, mindi, maxdi, direct)
-	if found {
-		if trace {
-			fmt.Printf("last found key %d naccess=%d\n", mk, a.naccess)
-		}
-		return true
-	}
-
-	return false
 }
 
 // deprecated
@@ -888,7 +866,7 @@ func (r *BtIndexReader) Seek(x []byte) (*Cursor, error) {
 	if r.index != nil {
 		cursor, err := r.index.alloc.seek(x)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("seek key %x: %w", x, err)
 		}
 		cursor.ix = r.index
 		return cursor, nil
@@ -916,7 +894,6 @@ type BtIndexWriter struct {
 	tmpDir          string
 	numBuf          [8]byte
 	keyCount        uint64
-	keySize         int
 	etlBufLimit     datasize.ByteSize
 	bytesPerRec     int
 }
@@ -925,7 +902,6 @@ type BtIndexWriterArgs struct {
 	IndexFile   string // File name where the index and the minimal perfect hash function will be written to
 	TmpDir      string
 	KeyCount    int
-	KeySize     int
 	EtlBufLimit datasize.ByteSize
 }
 
@@ -947,7 +923,6 @@ func NewBtIndexWriter(args BtIndexWriterArgs) (*BtIndexWriter, error) {
 		btw.etlBufLimit = etl.BufferOptimalSize
 	}
 
-	btw.keySize = args.KeySize
 	btw.bucketCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
 	btw.bucketCollector.LogLvl(log.LvlDebug)
 	//btw.offsetCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
@@ -966,9 +941,9 @@ func (btw *BtIndexWriter) loadFuncBucket(k, v []byte, _ etl.CurrentTableReader, 
 	//	}
 	//}
 
-	if _, err := btw.indexW.Write(k); err != nil {
-		return err
-	}
+	// if _, err := btw.indexW.Write(k); err != nil {
+	// 	return err
+	// }
 	if _, err := btw.indexW.Write(v[8-btw.bytesPerRec:]); err != nil {
 		return err
 	}
@@ -1066,10 +1041,6 @@ func (btw *BtIndexWriter) Build() error {
 	if err = btw.indexW.WriteByte(byte(btw.bytesPerRec)); err != nil {
 		return fmt.Errorf("write bytes per record: %w", err)
 	}
-	binary.BigEndian.PutUint16(btw.numBuf[:2], uint16(btw.keySize))
-	if _, err = btw.indexW.Write(btw.numBuf[:2]); err != nil {
-		return fmt.Errorf("write number of keys: %w", err)
-	}
 
 	defer btw.bucketCollector.Close()
 	log.Log(btw.lvl, "[index] calculating", "file", btw.indexFileName)
@@ -1116,9 +1087,6 @@ func (btw *BtIndexWriter) AddKey(key []byte, offset uint64) error {
 	if btw.built {
 		return fmt.Errorf("cannot add keys after perfect hash function had been built")
 	}
-	if len(key) != btw.keySize {
-		return fmt.Errorf("invalid key size %d while expected %d", len(key), btw.keySize)
-	}
 
 	binary.BigEndian.PutUint64(btw.numBuf[:], offset)
 	if offset > btw.maxOffset {
@@ -1149,13 +1117,53 @@ type BtIndex struct {
 	modTime     time.Time
 	filePath    string
 	keyCount    uint64
-	keySize     int
 	baseDataID  uint64
 	bytesPerRec int
 	dataoffset  uint64
 
+	auxBuf       []byte
 	decompressor *compress.Decompressor
 	getter       *compress.Getter
+}
+
+func BuildBtreeIndex(dataPath, indexPath string) error {
+	decomp, err := compress.NewDecompressor(dataPath)
+	if err != nil {
+		return err
+	}
+
+	args := BtIndexWriterArgs{
+		IndexFile: indexPath,
+		TmpDir:    filepath.Dir(indexPath),
+	}
+
+	iw, err := NewBtIndexWriter(args)
+	if err != nil {
+		return err
+	}
+
+	getter := decomp.MakeGetter()
+	getter.Reset(0)
+
+	key := make([]byte, 0, 64)
+
+	var pos uint64
+	for getter.HasNext() {
+		key, _ := getter.Next(key[:0])
+		err = iw.AddKey(key[:], uint64(pos))
+		if err != nil {
+			return err
+		}
+
+		pos = getter.Skip()
+	}
+	decomp.Close()
+
+	if err := iw.Build(); err != nil {
+		return err
+	}
+	iw.Close()
+	return nil
 }
 
 func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
@@ -1168,6 +1176,7 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 		filePath: indexPath,
 		size:     s.Size(),
 		modTime:  s.ModTime(),
+		auxBuf:   make([]byte, 64),
 	}
 
 	idx.file, err = os.Open(indexPath)
@@ -1179,6 +1188,7 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 		return nil, err
 	}
 	idx.data = idx.mmapUnix[:idx.size]
+
 	// Read number of keys and bytes per record
 	pos := 8
 	idx.keyCount = binary.BigEndian.Uint64(idx.data[:pos])
@@ -1186,13 +1196,10 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 	idx.bytesPerRec = int(idx.data[pos])
 	pos += 1
 
-	idx.keySize = int(binary.BigEndian.Uint16(idx.data[pos:]))
-	pos += 2
-
-	offset := int(idx.keyCount)*idx.bytesPerRec + (idx.keySize * int(idx.keyCount))
-	if offset < 0 {
-		return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexPath)
-	}
+	// offset := int(idx.keyCount) * idx.bytesPerRec //+ (idx.keySize * int(idx.keyCount))
+	// if offset < 0 {
+	// 	return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexPath)
+	// }
 
 	//p := (*[]byte)(unsafe.Pointer(&idx.data[pos]))
 	//l := int(idx.keyCount)*idx.bytesPerRec + (16 * int(idx.keyCount))
@@ -1217,25 +1224,27 @@ func (b *BtIndex) dataLookup(di uint64) ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("ki is greater than key count in index")
 	}
 
-	p := b.dataoffset + di*uint64(b.bytesPerRec) + uint64(b.keySize)*di
-	if uint64(len(b.data)) < p+uint64(b.keySize)+uint64(b.bytesPerRec) {
-		return nil, nil, fmt.Errorf("data lookup gone too far (%d after %d)", p+16+uint64(b.bytesPerRec)-uint64(len(b.data)), len(b.data))
+	p := b.dataoffset + di*uint64(b.bytesPerRec)
+	if uint64(len(b.data)) < p+uint64(b.bytesPerRec) {
+		return nil, nil, fmt.Errorf("data lookup gone too far (%d after %d)", p+uint64(b.bytesPerRec)-uint64(len(b.data)), len(b.data))
 	}
-	key := b.data[p : p+uint64(b.keySize)]
-	p += uint64(b.keySize)
 
 	offt := b.data[p : p+uint64(b.bytesPerRec)]
-	aux := make([]byte, 8)
+	var aux [8]byte
 	copy(aux[8-len(offt):], offt)
 
-	vo := binary.BigEndian.Uint64(aux)
-
-	b.getter.Reset(vo)
-	var val []byte
-	if b.getter.HasNext() {
-		val, _ = b.getter.Next(nil)
+	offset := binary.BigEndian.Uint64(aux[:])
+	b.getter.Reset(offset)
+	if !b.getter.HasNext() {
+		return nil, nil, fmt.Errorf("pair %d not found", di)
 	}
 
+	key, _ := b.getter.Next(nil)
+
+	if !b.getter.HasNext() {
+		return nil, nil, fmt.Errorf("pair %d not found", di)
+	}
+	val, _ := b.getter.Next(nil)
 	return key, val, nil
 }
 
