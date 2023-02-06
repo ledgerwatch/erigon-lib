@@ -661,6 +661,16 @@ func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (*node, int64, int64, []byte)
 	return n, lm, rm, nil
 }
 
+// find position of key with node.di <= d at level lvl
+func (a *btAlloc) seekLeast(lvl, d uint64) int {
+	for i, node := range a.nodes[lvl] {
+		if node.d >= d {
+			return i
+		}
+	}
+	return len(a.nodes[lvl])
+}
+
 func (a *btAlloc) seek(ik []byte) (*Cursor, error) {
 	var L, minD, maxD uint64
 	var lm, rm int64
@@ -685,10 +695,24 @@ func (a *btAlloc) seek(ik []byte) (*Cursor, error) {
 		if lm >= 0 {
 			minD = a.nodes[l][lm].d
 			L = level[lm].fc
+		} else {
+			if l+1 != len(a.nodes) {
+				L = uint64(a.seekLeast(uint64(l+1), minD))
+				if L == uint64(len(a.nodes[l+1])) {
+					L--
+				}
+			}
 		}
 		if rm >= 0 {
 			maxD = a.nodes[l][rm].d
 			R = level[rm].fc
+		} else {
+			if l+1 != len(a.nodes) {
+				R = uint64(a.seekLeast(uint64(l+1), maxD))
+				if R == uint64(len(a.nodes[l+1])) {
+					R--
+				}
+			}
 		}
 
 		switch bytes.Compare(ln.key, ik) {

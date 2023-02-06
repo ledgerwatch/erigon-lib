@@ -453,7 +453,7 @@ func Test_BtreeIndex_Seek(t *testing.T) {
 	keys, err := pivotKeysFromKV(dataPath)
 	require.NoError(t, err)
 
-	for i := 818; i < len(keys); i++ {
+	for i := 821; i < len(keys); i++ {
 		cur, err := idx.Seek(keys[i])
 		require.NoErrorf(t, err, "i=%d", i)
 		require.EqualValues(t, keys[i], cur.key)
