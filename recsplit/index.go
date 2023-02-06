@@ -166,9 +166,11 @@ func (idx *Index) Close() error {
 		return nil
 	}
 	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
-		log.Trace("unmap", "err", err, "file", idx.FileName())
+		//log.Trace("unmap", "err", err, "file", idx.FileName())
+		log.Error("unmap", "err", err, "file", idx.FileName())
 	}
 	if err := idx.f.Close(); err != nil {
+		panic(err)
 		return err
 	}
 	return nil
