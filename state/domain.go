@@ -660,13 +660,14 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 		}
 		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum, reverse: true})
 	}
-	for _, item := range dc.files {
-		if item.reader.Empty() {
+	for i, item := range dc.files {
+		reader := dc.statelessIdxReader(i)
+		if reader.Empty() {
 			continue
 		}
-		offset := item.reader.Lookup(prefix)
+		offset := reader.Lookup(prefix)
 		// Creating dedicated getter because the one in the item may be used to delete storage, for example
-		g := item.getter
+		g := dc.statelessGetter(i)
 		g.Reset(offset)
 		if g.HasNext() {
 			if keyMatch, _ := g.Match(prefix); !keyMatch {
