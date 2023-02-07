@@ -1198,9 +1198,6 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 // historyBeforeTxNum searches history for a value of specified key before txNum
 // second return value is true if the value is found in the history (even if it is nil)
 func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([]byte, bool, error) {
-	var search ctxItem
-	search.startTxNum = txNum
-	search.endTxNum = txNum
 	var foundTxNum uint64
 	var foundEndTxNum uint64
 	var foundStartTxNum uint64
@@ -1214,10 +1211,6 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 		topState = item
 		break
 	}
-	//dc.files.AscendGreaterOrEqual(search, func(i ctxItem) bool {
-	//	topState = i
-	//	return false
-	//})
 	for _, item := range dc.hc.invIndexFiles {
 		if item.endTxNum < txNum {
 			continue
@@ -1249,7 +1242,7 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 			// If there were no changes but there were history files, the value can be obtained from value files
 			var val []byte
 			for i := len(dc.files) - 1; i >= 0; i-- {
-				if ctxItemLess(dc.files[i], topState) {
+				if dc.files[i].startTxNum > topState.startTxNum {
 					continue
 				}
 				reader := dc.statelessIdxReader(i)
