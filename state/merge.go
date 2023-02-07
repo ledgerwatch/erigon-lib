@@ -1072,11 +1072,26 @@ func (d *Domain) integrateMergedFiles(valuesOuts, indexOuts, historyOuts []*file
 		d.files.Delete(out)
 		out.canDelete.Store(true)
 	}
+	d.reCalcRoFiles()
 }
 
 func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) {
 	if in != nil {
 		ii.files.Set(in)
+
+		// `kill -9` may leave some garbage
+		// but it still may be useful for merges, until we finish merge frozen file
+		if in.frozen {
+			ii.files.Walk(func(items []*filesItem) bool {
+				for _, item := range items {
+					if item.frozen || item.endTxNum > in.endTxNum {
+						continue
+					}
+					outs = append(outs, item)
+				}
+				return true
+			})
+		}
 	}
 	for _, out := range outs {
 		if out == nil {
@@ -1085,6 +1100,7 @@ func (ii *InvertedIndex) integrateMergedFiles(outs []*filesItem, in *filesItem) 
 		ii.files.Delete(out)
 		out.canDelete.Store(true)
 	}
+	ii.reCalcRoFiles()
 }
 
 func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, indexIn, historyIn *filesItem) {
@@ -1114,6 +1130,7 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 		h.files.Delete(out)
 		out.canDelete.Store(true)
 	}
+	h.reCalcRoFiles()
 }
 
 func (d *Domain) cleanAfterFreeze(f *filesItem) {
