@@ -55,72 +55,22 @@ type node struct {
 	val         []byte
 }
 
-type key struct {
-	bucket, fprint uint64
-}
-
-func bytesToKey(b []byte) key {
-	if len(b) > 16 {
-		panic(fmt.Errorf("invalid size of key bytes to convert (size %d)", len(b)))
-	}
-	return key{
-		bucket: binary.BigEndian.Uint64(b),
-		fprint: binary.BigEndian.Uint64(b[8:]),
-	}
-}
-
-func (k key) compare(k2 key) int {
-	if k.bucket < k2.bucket {
-		return -1
-	}
-	if k.bucket > k2.bucket {
-		return 1
-	}
-	if k.fprint < k2.fprint {
-		return -1
-	}
-	if k.fprint > k2.fprint {
-		return 1
-	}
-	return 0
-}
-
-func (k key) Bytes() []byte {
-	buf := make([]byte, 16)
-	binary.BigEndian.PutUint64(buf[:8], k.bucket)
-	binary.BigEndian.PutUint64(buf[8:], k.fprint)
-	return buf
-}
-
-// deprecated
-func binsearch(a []node, x uint64) uint64 {
-	l, r := uint64(0), uint64(len(a))
-	for l < r {
-		mid := (l + r) / 2
-		if a[mid].d < x {
-			l = mid + 1
-		} else {
-			r = mid
-		}
-	}
-	return l
-}
-
 type Cursor struct {
 	ctx context.Context
-	ix  *BtIndex
+	ix  *btAlloc
 
 	key   []byte
 	value []byte
 	d     uint64
 }
 
-func newCursor(ctx context.Context, k, v []byte, d uint64) *Cursor {
+func (a *btAlloc) newCursor(ctx context.Context, k, v []byte, d uint64) *Cursor {
 	return &Cursor{
 		ctx:   ctx,
-		key:   k,
-		value: v,
+		key:   common.Copy(k),
+		value: common.Copy(v),
 		d:     d,
+		ix:    a,
 	}
 }
 
@@ -133,7 +83,7 @@ func (c *Cursor) Value() []byte {
 }
 
 func (c *Cursor) Next() bool {
-	if c.d+1 >= c.ix.KeyCount() {
+	if c.d > c.ix.K-1 {
 		return false
 	}
 	k, v, err := c.ix.dataLookup(c.d + 1)
@@ -162,11 +112,8 @@ type btAlloc struct {
 	dataLookup func(di uint64) ([]byte, []byte, error)
 }
 
-func newBtAlloc(k, M uint64) *btAlloc {
+func newBtAlloc(k, M uint64, trace bool) *btAlloc {
 	d := logBase(k, M)
-	m := max64(2, M>>1)
-
-	fmt.Printf("k=%d d=%d, M=%d m=%d\n", k, d, M, m)
 	a := &btAlloc{
 		vx:      make([]uint64, d+1),
 		sons:    make([][]uint64, d+1),
@@ -176,10 +123,12 @@ func newBtAlloc(k, M uint64) *btAlloc {
 		M:       M,
 		K:       k,
 		d:       d,
-		trace:   true,
+		trace:   trace,
 	}
-	a.vx[0] = 1
-	a.vx[d] = k
+	if trace {
+		fmt.Printf("k=%d d=%d, M=%d\n", k, d, M)
+	}
+	a.vx[0], a.vx[d] = 1, k
 
 	nnc := func(vx uint64) uint64 {
 		return uint64(math.Ceil(float64(vx) / float64(M)))
@@ -191,7 +140,6 @@ func newBtAlloc(k, M uint64) *btAlloc {
 		//nnc := a.vx[i+1] / M
 		//nvc := a.vx[i+1] / m
 		//bvc := a.vx[i+1] / (m + (m >> 1))
-		//_, _ = nvc, nnc
 		a.vx[i] = min64(uint64(math.Pow(float64(M), float64(i))), nnc)
 	}
 
@@ -199,17 +147,6 @@ func newBtAlloc(k, M uint64) *btAlloc {
 	pnv := uint64(0)
 	for l := a.d - 1; l > 0; l-- {
 		s := nnc(a.vx[l+1])
-		//left := a.vx[l+1] % M
-		//if left > 0 {
-		//	if left < m {
-		//		s--
-		//		newPrev := M - (m - left)
-		//		dp := M - newPrev
-		//		a.sons[l] = append(a.sons[l], 1, newPrev, 1, left+dp)
-		//	} else {
-		//		a.sons[l] = append(a.sons[l], 1, left)
-		//	}
-		//}
 		a.sons[l] = append(a.sons[l], s, M)
 		for ik := 0; ik < len(a.sons[l]); ik += 2 {
 			ncount += a.sons[l][ik] * a.sons[l][ik+1]
@@ -221,10 +158,12 @@ func newBtAlloc(k, M uint64) *btAlloc {
 	a.sons[0] = []uint64{1, pnv}
 	ncount += a.sons[0][0] * a.sons[0][1] // last one
 	a.N = ncount
-	fmt.Printf("ncount=%d ∂%.5f\n", ncount, float64(a.N-uint64(k))/float64(a.N))
 
-	for i, v := range a.sons {
-		fmt.Printf("L%d=%v\n", i, v)
+	if trace {
+		fmt.Printf("ncount=%d ∂%.5f\n", ncount, float64(a.N-uint64(k))/float64(a.N))
+		for i, v := range a.sons {
+			fmt.Printf("L%d=%v\n", i, v)
+		}
 	}
 
 	return a
@@ -331,7 +270,9 @@ func (a *btAlloc) traverseDfs() {
 		//     -- no bros  -> shift cursor (tricky)
 		if di > a.K {
 			a.N = di - 1 // actually filled node count
-			fmt.Printf("ncount=%d ∂%.5f\n", a.N, float64(a.N-a.K)/float64(a.N))
+			if a.trace {
+				fmt.Printf("ncount=%d ∂%.5f\n", a.N, float64(a.N-a.K)/float64(a.N))
+			}
 			break
 		}
 
@@ -430,105 +371,7 @@ func (a *btAlloc) traverseDfs() {
 	}
 }
 
-// deprecated
-func (a *btAlloc) traverse() {
-	var sum uint64
-	for l := 0; l < len(a.sons)-1; l++ {
-		if len(a.sons[l]) < 2 {
-			panic("invalid btree allocation markup")
-		}
-		a.cursors[l] = markupCursor{uint64(l), 1, 0, 0}
-
-		for i := 0; i < len(a.sons[l]); i += 2 {
-			sum += a.sons[l][i] * a.sons[l][i+1]
-		}
-		a.nodes[l] = make([]node, 0)
-	}
-	fmt.Printf("nodes total %d\n", sum)
-
-	c := a.cursors[len(a.cursors)-1]
-
-	var di uint64
-	for stop := false; !stop; {
-		bros := a.sons[c.l][c.p]
-		parents := a.sons[c.l][c.p-1]
-
-		// fill leaves, mark parent if needed (until all grandparents not marked up until root)
-		// check if eldest parent has brothers
-		//     -- has bros -> fill their leaves from the bottom
-		//     -- no bros  -> shift cursor (tricky)
-
-		for i := uint64(0); i < bros; i++ {
-			c.di = di
-			fmt.Printf("L%d |%d| d %2d s %2d\n", c.l, c.p, c.di, c.si)
-			c.si++
-			di++
-		}
-
-		pid := c.si / bros
-		if pid >= parents {
-			if c.p+2 >= uint64(len(a.sons[c.l])) {
-				stop = true // end of row
-				fmt.Printf("F%d |%d| d %2d\n", c.l, c.p, c.di)
-			} else {
-				//fmt.Printf("N %d d%d s%d\n", c.l, c.di, c.si)
-				//a.nodes[c.l] = append(a.nodes[c.l], node{p: c.p, d: c.di, s: c.si})
-				c.p += 2
-				c.si = 0
-				c.di = 0
-			}
-		}
-		a.cursors[c.l] = c
-
-		for l := len(a.cursors) - 2; l >= 0; l-- {
-			pc := a.cursors[l]
-			uncles := a.sons[pc.l][pc.p]
-			grands := a.sons[pc.l][pc.p-1]
-
-			pi1 := pc.si / uncles
-			pc.si++
-			pi2 := pc.si / uncles
-			moved := pi2-pi1 != 0
-			pc.di = di
-			fmt.Printf("P%d |%d| d %2d s %2d pid %d\n", pc.l, pc.p, pc.di, pc.si-1, pid)
-			a.nodes[pc.l] = append(a.nodes[pc.l], node{p: pc.p, d: pc.di, s: pc.si})
-
-			di++
-
-			if pi2 >= grands { // skip one step of si due to different parental filling order
-				if pc.p+2 >= uint64(len(a.sons[pc.l])) {
-					// end of row
-					fmt.Printf("E%d |%d| d %2d\n", pc.l, pc.p, pc.di)
-					break
-				}
-				//fmt.Printf("N %d d%d s%d\n", pc.l, pc.di, pc.si)
-				//fmt.Printf("P%d |%d| d %2d s %2d pid %d\n", pc.l, pc.p, pc.di, pc.si, pid)
-				pc.p += 2
-				pc.si = 0
-				pc.di = 0
-			}
-			a.cursors[pc.l] = pc
-
-			if l >= 1 && a.cursors[l-1].di == 0 {
-				continue
-			}
-			if !moved {
-				break
-			}
-		}
-	}
-}
-
-// deprecated
-func (a *btAlloc) fetchByDi(i uint64) (uint64, bool) {
-	if int(i) >= len(a.data) {
-		return 0, true
-	}
-	return a.data[i], false
-}
-
 func (a *btAlloc) bsKey(x []byte, l, r uint64) (*Cursor, error) {
-	var exit bool
 	for l <= r {
 		di := (l + r) >> 1
 
@@ -538,13 +381,10 @@ func (a *btAlloc) bsKey(x []byte, l, r uint64) (*Cursor, error) {
 		cmp := bytes.Compare(mk, x)
 		switch {
 		case err != nil:
-			break
+			return nil, err
 		case cmp == 0:
-			return newCursor(context.TODO(), mk, value, di), nil
+			return a.newCursor(context.TODO(), mk, value, di), nil
 		case cmp == -1:
-			if exit {
-				break
-			}
 			l = di + 1
 		default:
 			r = di
@@ -553,166 +393,65 @@ func (a *btAlloc) bsKey(x []byte, l, r uint64) (*Cursor, error) {
 			break
 		}
 	}
-	return nil, fmt.Errorf("not found")
+	return nil, fmt.Errorf("key %x was not found", x)
 }
 
-// deprecated
-func (a *btAlloc) bs(i, x, l, r uint64, direct bool) (uint64, uint64, bool) {
-	var exit bool
-	var di uint64
-	for l <= r {
+func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (n node, lm int64, rm int64) {
+	n, lm, rm = node{}, -1, -1
+
+	for l < r {
 		m := (l + r) >> 1
-		if l == r {
-			m = l
-			exit = true
-		}
 
-		switch direct {
-		case true:
-			if m >= uint64(len(a.data)) {
-				di = a.data[a.K-1]
-				exit = true
-			} else {
-				di = a.data[m]
-			}
-		case false:
-			di = a.nodes[i][m].d
-		}
-
-		mkey, nf := a.fetchByDi(di)
-		a.naccess++
-		switch {
-		case nf:
-			break
-		case mkey == x:
-			return m, r, true
-		case mkey < x:
-			if exit {
-				break
-			}
-			if m+1 == r {
-				if m > 0 {
-					m--
-				}
-				return m, r, false
-			}
-			l = m + 1
-		default:
-			if exit {
-				break
-			}
-			if m-l == 1 && l > 0 {
-				return l - 1, r, false
-			}
-			r = m
-		}
-		if exit {
-			break
-		}
-	}
-	return l, r, false
-}
-
-func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (*node, int64, int64, []byte) {
-	var exit bool
-	var lm, rm int64
-	lm = -1
-	rm = -1
-	var n *node
-
-	for l <= r {
-		m := (l + r) >> 1
-		if l == r {
-			m = l
-			exit = true
-		}
-
-		n = &a.nodes[i][m]
-		// di = n.d
-		// _ = di
-
+		n = a.nodes[i][m]
 		a.naccess++
 
-		// mk, value, err := a.dataLookup(di)
 		cmp := bytes.Compare(n.key, x)
 		switch {
-		// case err != nil:
-		// 	fmt.Printf("err at switch %v\n", err)
-		// 	break
 		case cmp == 0:
-			return n, int64(m), int64(m), n.val
-		case cmp < 0:
-			// if m+1 == r {
-			// 	return n, m, rm, nil
-			// }
-			l = m + 1
-			lm = int64(m)
-		default:
-			// if m == l {
-			// 	return n, m, rm, nil
-			// }
+			return n, int64(m), int64(m)
+		case cmp > 0:
 			r = m
-			rm = int64(r)
-		}
-		if exit {
-			break
+			rm = int64(m)
+		case cmp < 0:
+			lm = int64(m)
+			l = m + 1
+		default:
+			panic(fmt.Errorf("compare error %d, %x ? %x", cmp, n.key, x))
 		}
 	}
-	return n, lm, rm, nil
+	return n, lm, rm
 }
 
 // find position of key with node.di <= d at level lvl
-func (a *btAlloc) seekLeast(lvl, d uint64) int {
+func (a *btAlloc) seekLeast(lvl, d uint64) uint64 {
 	for i, node := range a.nodes[lvl] {
 		if node.d >= d {
-			return i
+			return uint64(i)
 		}
 	}
-	return len(a.nodes[lvl])
+	return uint64(len(a.nodes[lvl]))
 }
 
-func (a *btAlloc) seek(ik []byte) (*Cursor, error) {
-	var L, minD, maxD uint64
-	var lm, rm int64
-	R := uint64(len(a.nodes[0]) - 1)
-	maxD = a.K + 1
-
+func (a *btAlloc) Seek(ik []byte) (*Cursor, error) {
 	if a.trace {
 		fmt.Printf("seek key %x\n", ik)
 	}
 
-	ln := new(node)
-	var val []byte
+	var (
+		lm, rm     int64
+		L, R       = uint64(0), uint64(len(a.nodes[0]) - 1)
+		minD, maxD = uint64(0), uint64(a.K)
+		ln         node
+	)
+
 	for l, level := range a.nodes {
-		ln, lm, rm, val = a.bsNode(uint64(l), L, R, ik)
-		if ln == nil { // should return node which is nearest to key from the left so never nil
+		ln, lm, rm = a.bsNode(uint64(l), L, R, ik)
+		if ln.key == nil || ln.val == nil { // should return node which is nearest to key from the left so never nil
 			L = 0
 			if a.trace {
-				fmt.Printf("found nil key %x di=%d lvl=%d naccess_ram=%d\n", level[lm].key, level[lm].d, l, a.naccess)
+				fmt.Printf("found nil key %x pos_range[%d-%d] naccess_ram=%d\n", l, lm, rm, a.naccess)
 			}
 			panic(fmt.Errorf("nil node at %d", l))
-		}
-		if lm >= 0 {
-			minD = a.nodes[l][lm].d
-			L = level[lm].fc
-		} else {
-			if l+1 != len(a.nodes) {
-				L = uint64(a.seekLeast(uint64(l+1), minD))
-				if L == uint64(len(a.nodes[l+1])) {
-					L--
-				}
-			}
-		}
-		if rm >= 0 {
-			maxD = a.nodes[l][rm].d
-			R = level[rm].fc
-		} else {
-			if l+1 != len(a.nodes) {
-				R = uint64(a.seekLeast(uint64(l+1), maxD))
-				if R == uint64(len(a.nodes[l+1])) {
-					R--
-				}
-			}
 		}
 
 		switch bytes.Compare(ln.key, ik) {
@@ -722,125 +461,62 @@ func (a *btAlloc) seek(ik []byte) (*Cursor, error) {
 			minD = ln.d
 		case 0:
 			if a.trace {
-				fmt.Printf("found key %x v=%x naccess_ram=%d\n", ik, val /*level[m].d,*/, a.naccess)
+				fmt.Printf("found key %x v=%x naccess_ram=%d\n", ik, ln.val /*level[m].d,*/, a.naccess)
 			}
-			return newCursor(context.TODO(), ln.key, val, ln.d), nil
+			return a.newCursor(context.TODO(), common.Copy(ln.key), common.Copy(ln.val), ln.d), nil
 		}
+
+		if rm-lm == 1 {
+			break
+		}
+		if lm >= 0 {
+			minD = a.nodes[l][lm].d
+			L = level[lm].fc
+		} else if l+1 != len(a.nodes) {
+			L = a.seekLeast(uint64(l+1), minD)
+			if L == uint64(len(a.nodes[l+1])) {
+				L--
+			}
+		}
+		if rm >= 0 {
+			maxD = a.nodes[l][rm].d
+			R = level[rm].fc
+		} else if l+1 != len(a.nodes) {
+			R = a.seekLeast(uint64(l+1), maxD)
+			if R == uint64(len(a.nodes[l+1])) {
+				R--
+			}
+		}
+
 		if a.trace {
 			fmt.Printf("range={%x d=%d p=%d} (%d, %d) L=%d naccess_ram=%d\n", ln.key, ln.d, ln.p, minD, maxD, l, a.naccess)
 		}
 	}
 
-	switch bytes.Compare(ik, ln.key) {
-	case -1:
-		L = minD // =0
-	case 0:
-		if a.trace {
-			fmt.Printf("last found key %x v=%x di=%d naccess_ram=%d\n", ln.key, ln.val, ln.d, a.naccess)
-		}
-		return newCursor(context.TODO(), ln.key, val, ln.d), nil
-	case 1:
-		L = ln.d + 1
-	}
-
-	a.naccess = 0 // reset count before actually go to storage
-	cursor, err := a.bsKey(ik, L, maxD)
+	a.naccess = 0 // reset count before actually go to disk
+	cursor, err := a.bsKey(ik, minD, maxD)
 	if err != nil {
 		if a.trace {
 			fmt.Printf("key %x not found\n", ik)
 		}
 		return nil, err
-	} else {
-		if a.trace {
-			fmt.Printf("finally found key %x v=%x naccess_disk=%d [err=%v]\n", cursor.key, cursor.value, a.naccess, err)
-		}
-		return cursor, nil
 	}
 
-	return nil, fmt.Errorf("key not found")
+	if a.trace {
+		fmt.Printf("finally found key %x v=%x naccess_disk=%d\n", cursor.key, cursor.value, a.naccess)
+	}
+	return cursor, nil
 }
 
-// deprecated
-func (a *btAlloc) search(ik uint64) bool {
-	l, r := uint64(0), uint64(len(a.nodes[0]))
-	lr, hr := uint64(0), a.N
-	var naccess int64
-	var trace bool
-	for i := 0; i < len(a.nodes); i++ {
-		for l < r {
-			m := (l + r) >> 1
-			mkey, nf := a.fetchByDi(a.nodes[i][m].d)
-			naccess++
-			if nf {
-				break
-			}
-			if mkey < ik {
-				lr = mkey
-				l = m + 1
-			} else if mkey == ik {
-				if trace {
-					fmt.Printf("found key %d @%d naccess=%d\n", mkey, m, naccess)
-				}
-				return true //mkey
-			} else {
-				r = m
-				hr = mkey
-			}
-		}
-		if trace {
-			fmt.Printf("range={%d,%d} L=%d naccess=%d\n", lr, hr, i, naccess)
-		}
-		if i == len(a.nodes) {
-			if trace {
-				fmt.Printf("%d|%d - %d|%d\n", l, a.nodes[i][l].d, r, a.nodes[i][r].d)
-			}
-			return true
-		}
-		if i+1 >= len(a.nodes) {
-			break
-		}
-		l = binsearch(a.nodes[i+1], lr)
-		r = binsearch(a.nodes[i+1], hr)
-	}
-
-	if trace {
-		fmt.Printf("smallest range %d-%d (%d-%d)\n", lr, hr, l, r)
-	}
-	if l == r && l > 0 {
-		l--
-	}
-
-	lr, hr = a.nodes[a.d-1][l].d, a.nodes[a.d-1][r].d
-	// search in smallest found interval
-	for lr < hr {
-		m := (lr + hr) >> 1
-		mkey, nf := a.fetchByDi(m)
-		naccess++
-		if nf {
-			break
-		}
-		if mkey < ik {
-			//lr = mkey
-			lr = m + 1
-		} else if mkey == ik {
-			if trace {
-				fmt.Printf("last found key %d @%d naccess=%d\n", mkey, m, naccess)
-			}
-			return true //mkey
-		} else {
-			hr = m
-			//hr = mkey
-		}
-	}
-
-	return false
-}
-
-func (a *btAlloc) printSearchMx() {
+func (a *btAlloc) fillSearchMx() {
 	for i, n := range a.nodes {
-		fmt.Printf("D%d |%d| ", i, len(n))
+		if a.trace {
+			fmt.Printf("D%d |%d| ", i, len(n))
+		}
 		for j, s := range n {
-			fmt.Printf("%d ", s.d)
+			if a.trace {
+				fmt.Printf("%d ", s.d)
+			}
 			if s.d >= a.K {
 				break
 			}
@@ -856,7 +532,7 @@ func (a *btAlloc) printSearchMx() {
 	}
 }
 
-// BtIndexReader encapsulates Hash128 to allow concurrent access to Index
+// deprecated
 type BtIndexReader struct {
 	index *BtIndex
 }
@@ -888,11 +564,10 @@ func (r *BtIndexReader) Lookup2(key1, key2 []byte) uint64 {
 
 func (r *BtIndexReader) Seek(x []byte) (*Cursor, error) {
 	if r.index != nil {
-		cursor, err := r.index.alloc.seek(x)
+		cursor, err := r.index.alloc.Seek(x)
 		if err != nil {
 			return nil, fmt.Errorf("seek key %x: %w", x, err)
 		}
-		cursor.ix = r.index
 		return cursor, nil
 	}
 	return nil, fmt.Errorf("seek has been failed")
@@ -1150,6 +825,7 @@ type BtIndex struct {
 	getter       *compress.Getter
 }
 
+// Opens .kv at dataPath and generates index over it to file 'indexPath'
 func BuildBtreeIndex(dataPath, indexPath string) error {
 	decomp, err := compress.NewDecompressor(dataPath)
 	if err != nil {
@@ -1172,16 +848,21 @@ func BuildBtreeIndex(dataPath, indexPath string) error {
 	key := make([]byte, 0, 64)
 
 	var pos uint64
+	emptys := 0
 	for getter.HasNext() {
-		key, _ := getter.Next(key[:0])
+		key, kp := getter.Next(key[:0])
 		err = iw.AddKey(key[:], uint64(pos))
 		if err != nil {
 			return err
 		}
 
 		pos = getter.Skip()
+		if pos-kp == 1 {
+			emptys++
+		}
 	}
 	decomp.Close()
+	fmt.Printf("emptys %d\n", emptys)
 
 	if err := iw.Build(); err != nil {
 		return err
@@ -1235,11 +916,11 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 	}
 	idx.getter = idx.decompressor.MakeGetter()
 
-	idx.alloc = newBtAlloc(idx.keyCount, M)
+	idx.alloc = newBtAlloc(idx.keyCount, M, false)
 	idx.alloc.dataLookup = idx.dataLookup
 	idx.dataoffset = uint64(pos)
 	idx.alloc.traverseDfs()
-	idx.alloc.printSearchMx()
+	idx.alloc.fillSearchMx()
 	return idx, nil
 }
 
@@ -1263,12 +944,13 @@ func (b *BtIndex) dataLookup(di uint64) ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("pair %d not found", di)
 	}
 
-	key, _ := b.getter.Next(nil)
+	key, kp := b.getter.Next(nil)
 
 	if !b.getter.HasNext() {
 		return nil, nil, fmt.Errorf("pair %d not found", di)
 	}
-	val, _ := b.getter.Next(nil)
+	val, vp := b.getter.Next(nil)
+	_, _ = kp, vp
 	return key, val, nil
 }
 
@@ -1297,11 +979,26 @@ func (b *BtIndex) Close() error {
 	if err := b.file.Close(); err != nil {
 		return err
 	}
+	if err := b.decompressor.Close(); err != nil {
+		return err
+	}
 	return nil
 }
 
+func (b *BtIndex) Seek(x []byte) (*Cursor, error) {
+	if b.alloc != nil {
+		cursor, err := b.alloc.Seek(x)
+		if err != nil {
+			return nil, fmt.Errorf("seek key %x: %w", x, err)
+		}
+		return cursor, nil
+	}
+	return nil, fmt.Errorf("seek has been failed")
+}
+
+// deprecated
 func (b *BtIndex) Lookup(key []byte) uint64 {
-	cursor, err := b.alloc.seek(key)
+	cursor, err := b.alloc.Seek(key)
 	if err != nil {
 		panic(err)
 	}

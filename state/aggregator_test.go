@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -437,7 +438,7 @@ func Test_BtreeIndex_Seek(t *testing.T) {
 	tmp := t.TempDir()
 
 	keyCount, M := 1000, 16
-	dataPath := generateCompressedKV(t, tmp, 52, keyCount)
+	dataPath := generateCompressedKV(t, tmp, 52, 180 /*val size*/, keyCount)
 	defer os.RemoveAll(tmp)
 
 	indexPath := path.Join(tmp, filepath.Base(dataPath)+".bti")
@@ -453,25 +454,13 @@ func Test_BtreeIndex_Seek(t *testing.T) {
 	keys, err := pivotKeysFromKV(dataPath)
 	require.NoError(t, err)
 
-	for i := 821; i < len(keys); i++ {
+	for i := 0; i < len(keys); i++ {
 		cur, err := idx.Seek(keys[i])
 		require.NoErrorf(t, err, "i=%d", i)
 		require.EqualValues(t, keys[i], cur.key)
 		require.NotEmptyf(t, cur.Value(), "i=%d", i)
 		// require.EqualValues(t, uint64(i), cur.Value())
 	}
-
-	// for i := 0; i < len(lookafter); i += 5 {
-	// 	cur, err := idx.Seek(lookafter[i])
-	// 	require.NoError(t, err)
-	// 	//require.EqualValues(t, lookafter[i], cur.key)
-	// 	require.EqualValues(t, uint64(i), cur.Value())
-	// 	for j := 0; j < 5; j++ {
-	// 		//require.EqualValues(t, lookafter[i+j], idx.Key())
-	// 		require.EqualValues(t, uint64(i+j), cur.Value())
-	// 		cur.Next()
-	// 	}
-	// }
 
 	bt.Close()
 }
@@ -499,7 +488,7 @@ func pivotKeysFromKV(dataPath string) ([][]byte, error) {
 	return listing, nil
 }
 
-func generateCompressedKV(t *testing.T, tmp string, keySize, keyCount int) string {
+func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount int) string {
 	args := BtIndexWriterArgs{
 		IndexFile: path.Join(tmp, "100k.bt"),
 		TmpDir:    tmp,
@@ -511,7 +500,7 @@ func generateCompressedKV(t *testing.T, tmp string, keySize, keyCount int) strin
 
 	defer iw.Close()
 	rnd := rand.New(rand.NewSource(0))
-	values := make([]byte, 300)
+	values := make([]byte, valueSize)
 
 	comp, err := compress.NewCompressor(context.Background(), "cmp", path.Join(tmp, "100k.v2"), tmp, compress.MinPatternScore, 1, log.LvlDebug)
 	require.NoError(t, err)
@@ -525,7 +514,7 @@ func generateCompressedKV(t *testing.T, tmp string, keySize, keyCount int) strin
 		err = comp.AddWord(key[:])
 		require.NoError(t, err)
 
-		n, err := rnd.Read(values[:rnd.Intn(300)+1])
+		n, err := rnd.Read(values[:rnd.Intn(valueSize)+1])
 		require.NoError(t, err)
 
 		err = comp.AddWord(values[:n])
@@ -643,7 +632,7 @@ func Test_BtreeIndex_Allocation(t *testing.T) {
 		t.Run(fmt.Sprintf("%d", m<<i), func(t *testing.T) {
 			for j := 0; j < 10; j++ {
 				count := rnd.Intn(1000000000)
-				bt := newBtAlloc(uint64(count), uint64(m)<<i)
+				bt := newBtAlloc(uint64(count), uint64(m)<<i, true)
 				require.GreaterOrEqual(t, bt.N, uint64(count))
 				if count < m*4 {
 					continue
@@ -655,27 +644,71 @@ func Test_BtreeIndex_Allocation(t *testing.T) {
 	}
 }
 
-func Benchmark_BtreeIndex_Allocation(b *testing.B) {
+func Test_btree_Seek(t *testing.T) {
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < b.N; i++ {
-		now := time.Now()
-		count := rnd.Intn(1000000000)
-		bt := newBtAlloc(uint64(count), uint64(1<<12))
-		bt.traverseDfs()
-		fmt.Printf("alloc %v\n", time.Since(now))
-	}
-}
+	// max := 100000000
+	// count := rnd.Intn(max)
+	// bt := newBtAlloc(uint64(count), uint64(1<<11))
+	// bt.traverseDfs()
+	// fmt.Printf("alloc %v\n", time.Since(now))
 
-func Benchmark_BtreeIndex_Search(b *testing.B) {
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	now := time.Now()
-	max := 100000000
-	count := rnd.Intn(max)
-	bt := newBtAlloc(uint64(count), uint64(1<<11))
-	bt.traverseDfs()
-	fmt.Printf("alloc %v\n", time.Since(now))
+	tmp := t.TempDir()
 
-	for i := 0; i < b.N; i++ {
-		bt.search(uint64(i % max))
+	// dataPath := generateCompressedKV(b, tmp, 52, 10, keyCount)
+	defer os.RemoveAll(tmp)
+	dir, _ := os.Getwd()
+	fmt.Printf("path %s\n", dir)
+	dataPath := "../../data/storage.256-288.kv"
+
+	indexPath := path.Join(tmp, filepath.Base(dataPath)+".bti")
+	err := BuildBtreeIndex(dataPath, indexPath)
+	require.NoError(t, err)
+
+	M := 1024
+	bt, err := OpenBtreeIndex(indexPath, dataPath, uint64(M))
+
+	require.NoError(t, err)
+
+	keys, err := pivotKeysFromKV(dataPath)
+	require.NoError(t, err)
+
+	tsum := time.Duration(0)
+
+	var i int
+	for i = 1; i < 10000000; i++ {
+		p := rnd.Intn(len(keys))
+		cl := time.Now()
+		cur, err := bt.Seek(keys[p])
+		took := time.Since(cl)
+		tsum += took
+
+		require.NoErrorf(t, err, "i=%d", i)
+		require.EqualValues(t, keys[p], cur.key)
+
+		prevKey := common.Copy(keys[p])
+		var j int
+		ntimer := time.Duration(0)
+		for j = 0; j < 10000; j++ {
+			ntime := time.Now()
+
+			if !cur.Next() {
+				break
+			}
+			ntimer += time.Since(ntime)
+
+			nk := cur.Key()
+			if bytes.Compare(prevKey, nk) > 0 {
+				t.Fatalf("prev %s cur %s, next key should be greater", prevKey, nk)
+			}
+			prevKey = nk
+		}
+		if i%1000 == 0 {
+			fmt.Printf("%d searches, last took %v total seek time %v avg=%v next_access_last[%d] %v\n", i, took, tsum, tsum/time.Duration(i), j, ntimer/time.Duration(j))
+		}
+
 	}
+	avg := tsum / (1000000 - 1)
+	fmt.Printf("avg seek time %v\n", avg)
+
+	bt.Close()
 }

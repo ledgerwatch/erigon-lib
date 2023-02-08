@@ -2,9 +2,13 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
+	"path"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
@@ -84,4 +88,55 @@ func queueKeys(ctx context.Context, seed, ofSize uint64) <-chan []byte {
 		close(keys)
 	}()
 	return keys
+}
+
+func Benchmark_BtreeIndex_Allocation(b *testing.B) {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < b.N; i++ {
+		now := time.Now()
+		count := rnd.Intn(1000000000)
+		bt := newBtAlloc(uint64(count), uint64(1<<12), true)
+		bt.traverseDfs()
+		fmt.Printf("alloc %v\n", time.Since(now))
+	}
+}
+func Benchmark_BtreeIndex_Search(b *testing.B) {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// max := 100000000
+	// count := rnd.Intn(max)
+	// bt := newBtAlloc(uint64(count), uint64(1<<11))
+	// bt.traverseDfs()
+	// fmt.Printf("alloc %v\n", time.Since(now))
+
+	tmp := b.TempDir()
+
+	// dataPath := generateCompressedKV(b, tmp, 52, 10, keyCount)
+	defer os.RemoveAll(tmp)
+	dir, _ := os.Getwd()
+	fmt.Printf("path %s\n", dir)
+	dataPath := "../../data/storage.256-288.kv"
+
+	indexPath := path.Join(tmp, filepath.Base(dataPath)+".bti")
+	err := BuildBtreeIndex(dataPath, indexPath)
+	require.NoError(b, err)
+
+	M := 1024
+	bt, err := OpenBtreeIndex(indexPath, dataPath, uint64(M))
+
+	require.NoError(b, err)
+
+	idx := NewBtIndexReader(bt)
+
+	keys, err := pivotKeysFromKV(dataPath)
+	require.NoError(b, err)
+
+	for i := 0; i < b.N; i++ {
+		p := rnd.Intn(len(keys))
+		cur, err := idx.Seek(keys[p])
+		require.NoErrorf(b, err, "i=%d", i)
+		require.EqualValues(b, keys[p], cur.key)
+		require.NotEmptyf(b, cur.Value(), "i=%d", i)
+	}
+
+	bt.Close()
 }
