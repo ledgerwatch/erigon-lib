@@ -780,11 +780,9 @@ func (it *InvertedIterator) ToBitmap() (*roaring64.Bitmap, error) {
 }
 
 type InvertedIndexContext struct {
-	ii         *InvertedIndex
-	files      []ctxItem // have no garbage (overlaps, etc...)
-	getters    []*compress.Getter
-	idxReaders []*recsplit.IndexReader
-	loc        ctxLocalityItem
+	ii    *InvertedIndex
+	files []ctxItem // have no garbage (overlaps, etc...)
+	loc   ctxLocalityItem
 }
 
 // IterateRange is to be used in public API, therefore it relies on read-only transaction

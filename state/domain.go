@@ -527,8 +527,7 @@ type ctxLocalityItem struct {
 	file *filesItem
 }
 
-// nonlint
-func ctxItemLess(i, j ctxItem) bool {
+func ctxItemLess(i, j ctxItem) bool { //nolint
 	if i.endTxNum == j.endTxNum {
 		return i.startTxNum > j.startTxNum
 	}
