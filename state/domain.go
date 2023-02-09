@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -801,6 +802,7 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 type StaticFiles struct {
 	valuesDecomp    *compress.Decompressor
 	valuesIdx       *recsplit.Index
+	valuesBt        *BtIndex
 	historyDecomp   *compress.Decompressor
 	historyIdx      *recsplit.Index
 	efHistoryDecomp *compress.Decompressor
@@ -864,16 +866,28 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 	}
 	valuesComp.Close()
 	valuesComp = nil
+
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
 	if valuesIdx, err = buildIndex(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
+
+	btPath := strings.TrimSuffix(valuesIdxPath, "kvi") + ".bt"
+	if err := BuildBtreeIndexWithDecompressor(btPath, valuesDecomp); err != nil {
+		return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
+	}
+	bt, err := OpenBtreeIndexWithDecompressor(btPath, 2048, valuesDecomp)
+	if err != nil {
+		return StaticFiles{}, fmt.Errorf("failed to ")
+	}
+
 	closeComp = false
 	return StaticFiles{
 		valuesDecomp:    valuesDecomp,
 		valuesIdx:       valuesIdx,
+		valuesBt:        bt,
 		historyDecomp:   hStaticFiles.historyDecomp,
 		historyIdx:      hStaticFiles.historyIdx,
 		efHistoryDecomp: hStaticFiles.efHistoryDecomp,
@@ -977,6 +991,7 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 		endTxNum:     txNumTo,
 		decompressor: sf.valuesDecomp,
 		index:        sf.valuesIdx,
+		bindex:       sf.valuesBt,
 	})
 }
 

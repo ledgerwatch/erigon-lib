@@ -479,6 +479,9 @@ func pivotKeysFromKV(dataPath string) ([][]byte, error) {
 	listing := make([][]byte, 0, 1000)
 
 	for getter.HasNext() {
+		if len(listing) > 100000 {
+			break
+		}
 		key, _ := getter.Next(key[:0])
 		listing = append(listing, common.Copy(key))
 		getter.Skip()

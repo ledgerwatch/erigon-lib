@@ -28,8 +28,9 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
+
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 
 	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common/length"
@@ -38,7 +39,7 @@ import (
 
 // StepsInBiggestFile - files of this size are completely frozen/immutable.
 // files of smaller size are also immutable, but can be removed after merge to bigger files.
-const StepsInBiggestFile = 32
+const StepsInBiggestFile = 16
 
 // Reconstruction of the aggregator in another package, `aggregator`
 
@@ -338,7 +339,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	// TODO questionable
 	ac := a.MakeContext()
 	defer ac.Close()
 

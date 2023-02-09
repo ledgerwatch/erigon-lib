@@ -25,12 +25,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
 )
 
 func (d *Domain) endTxNumMinimax() uint64 {
@@ -483,6 +484,9 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 				if indexIn.index != nil {
 					indexIn.index.Close()
 				}
+				if indexIn.bindex != nil {
+					indexIn.bindex.Close()
+				}
 			}
 			if historyIn != nil {
 				if historyIn.decompressor != nil {
@@ -627,6 +631,18 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 		if valuesIn.index, err = buildIndex(ctx, valuesIn.decompressor, idxPath, d.tmpdir, keyCount, false /* values */); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
+
+		btPath := strings.TrimSuffix(idxPath, "kvi") + "bt"
+		err = BuildBtreeIndexWithDecompressor(btPath, valuesIn.decompressor)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s btindex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+
+		bt, err := OpenBtreeIndexWithDecompressor(btPath, 2048, valuesIn.decompressor)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s btindex2 [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+		valuesIn.bindex = bt
 	}
 	closeItem = false
 	d.stats.MergesCount++

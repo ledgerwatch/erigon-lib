@@ -33,7 +33,6 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
-	"github.com/ledgerwatch/erigon-lib/recsplit"
 )
 
 func testDbAndDomain(t *testing.T, prefixLen int) (string, kv.RwDB, *Domain) {
@@ -64,6 +63,7 @@ func testDbAndDomain(t *testing.T, prefixLen int) (string, kv.RwDB, *Domain) {
 	return path, db, d
 }
 
+// btree index should work correctly if K < m
 func TestCollationBuild(t *testing.T) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -115,7 +115,7 @@ func TestCollationBuild(t *testing.T) {
 	require.Equal(t, []string{"key1", "value1.2", "key2", "value2.1"}, words)
 	// Check index
 	require.Equal(t, 2, int(sf.valuesIdx.KeyCount()))
-	r := recsplit.NewIndexReader(sf.valuesIdx)
+	r := sf.valuesIdx
 	for i := 0; i < len(words); i += 2 {
 		offset := r.Lookup([]byte(words[i]))
 		g.Reset(offset)

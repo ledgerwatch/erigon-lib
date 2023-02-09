@@ -825,6 +825,56 @@ type BtIndex struct {
 	getter       *compress.Getter
 }
 
+func CreateBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
+	err := BuildBtreeIndex(dataPath, indexPath)
+	if err != nil {
+		return nil, err
+	}
+	return OpenBtreeIndex(indexPath, dataPath, M)
+}
+
+func BuildBtreeIndexWithDecompressor(indexPath string, kv *compress.Decompressor) error {
+	args := BtIndexWriterArgs{
+		IndexFile: indexPath,
+		TmpDir:    filepath.Dir(indexPath),
+	}
+
+	iw, err := NewBtIndexWriter(args)
+	if err != nil {
+		return err
+	}
+
+	getter := kv.MakeGetter()
+	getter.Reset(0)
+
+	key := make([]byte, 0, 64)
+	ks := make(map[int]int)
+
+	var pos uint64
+	emptys := 0
+	for getter.HasNext() {
+		key, kp := getter.Next(key[:0])
+		err = iw.AddKey(key[:], uint64(pos))
+		if err != nil {
+			return err
+		}
+
+		pos = getter.Skip()
+		if pos-kp == 1 {
+			ks[len(key)]++
+			emptys++
+		}
+	}
+	kv.Close()
+	fmt.Printf("emptys %d %#+v\n", emptys, ks)
+
+	if err := iw.Build(); err != nil {
+		return err
+	}
+	iw.Close()
+	return nil
+}
+
 // Opens .kv at dataPath and generates index over it to file 'indexPath'
 func BuildBtreeIndex(dataPath, indexPath string) error {
 	decomp, err := compress.NewDecompressor(dataPath)
@@ -869,6 +919,54 @@ func BuildBtreeIndex(dataPath, indexPath string) error {
 	}
 	iw.Close()
 	return nil
+}
+
+func OpenBtreeIndexWithDecompressor(indexPath string, M uint64, kv *compress.Decompressor) (*BtIndex, error) {
+	s, err := os.Stat(indexPath)
+	if err != nil {
+		return nil, err
+	}
+
+	idx := &BtIndex{
+		filePath: indexPath,
+		size:     s.Size(),
+		modTime:  s.ModTime(),
+		auxBuf:   make([]byte, 64),
+	}
+
+	idx.file, err = os.Open(indexPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if idx.mmapUnix, idx.mmapWin, err = mmap.Mmap(idx.file, int(idx.size)); err != nil {
+		return nil, err
+	}
+	idx.data = idx.mmapUnix[:idx.size]
+
+	// Read number of keys and bytes per record
+	pos := 8
+	idx.keyCount = binary.BigEndian.Uint64(idx.data[:pos])
+	//idx.baseDataID = binary.BigEndian.Uint64(idx.data[pos:8])
+	idx.bytesPerRec = int(idx.data[pos])
+	pos += 1
+
+	// offset := int(idx.keyCount) * idx.bytesPerRec //+ (idx.keySize * int(idx.keyCount))
+	// if offset < 0 {
+	// 	return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexPath)
+	// }
+
+	//p := (*[]byte)(unsafe.Pointer(&idx.data[pos]))
+	//l := int(idx.keyCount)*idx.bytesPerRec + (16 * int(idx.keyCount))
+
+	idx.getter = kv.MakeGetter()
+
+	idx.alloc = newBtAlloc(idx.keyCount, M, false)
+	idx.alloc.dataLookup = idx.dataLookup
+	idx.dataoffset = uint64(pos)
+	idx.alloc.traverseDfs()
+	idx.alloc.fillSearchMx()
+	return idx, nil
 }
 
 func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
@@ -979,8 +1077,10 @@ func (b *BtIndex) Close() error {
 	if err := b.file.Close(); err != nil {
 		return err
 	}
-	if err := b.decompressor.Close(); err != nil {
-		return err
+	if b.decompressor != nil {
+		if err := b.decompressor.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
