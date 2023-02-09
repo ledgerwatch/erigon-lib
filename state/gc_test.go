@@ -31,26 +31,31 @@ func TestGCReadAfterRemoveFile(t *testing.T) {
 		h.integrateMergedFiles(nil, []*filesItem{lastOnFs}, nil, nil)
 		require.NotNil(lastOnFs.decompressor)
 
-		lastInView, _ := hc.historyFiles.Max()
+		lastInView := hc.files[len(hc.files)-1]
+		g := lastInView.src.decompressor.MakeGetter()
 		require.Equal(lastInView.startTxNum, lastOnFs.startTxNum)
 		require.Equal(lastInView.endTxNum, lastOnFs.endTxNum)
-		if lastInView.getter.HasNext() {
-			k, _ := lastInView.getter.Next(nil)
+		if g.HasNext() {
+			k, _ := g.Next(nil)
 			require.Equal(8, len(k))
-			v, _ := lastInView.getter.Next(nil)
+			v, _ := g.Next(nil)
 			require.Equal(8, len(v))
 		}
 
 		require.NotNil(lastOnFs.decompressor)
+		loc := hc.ic.loc // replace of locality index must not affect current HistoryContext, but expect to be closed after last reader
+		h.localityIndex.integrateFiles(LocalityIndexFiles{}, 0, 0)
+		require.NotNil(loc.file)
 		hc.Close()
 		require.Nil(lastOnFs.decompressor)
+		require.NotNil(loc.file)
 
 		nonDeletedOnFs, _ := h.files.Max()
 		require.False(nonDeletedOnFs.frozen)
 		require.NotNil(nonDeletedOnFs.decompressor) // non-canDelete files are not closed
 
 		hc = h.MakeContext()
-		newLastInView, _ := hc.historyFiles.Max()
+		newLastInView := hc.files[len(hc.files)-1]
 		require.False(lastOnFs.frozen)
 		require.False(lastInView.startTxNum == newLastInView.startTxNum && lastInView.endTxNum == newLastInView.endTxNum)
 
