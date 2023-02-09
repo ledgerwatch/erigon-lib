@@ -23,5 +23,5 @@ import (
 )
 
 func init() {
-	utp.Logger.Handlers = []lg.Handler{noopHandler{}}
+	utp.Logger.Handlers = []lg.Handler{adapterHandler{}}
 }

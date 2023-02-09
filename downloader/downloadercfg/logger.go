@@ -20,14 +20,12 @@ import (
 	"fmt"
 	"strings"
 
-	utp "github.com/anacrolix/go-libutp"
 	lg "github.com/anacrolix/log"
 	"github.com/ledgerwatch/log/v3"
 )
 
 func init() {
 	lg.Default.Handlers = []lg.Handler{adapterHandler{}}
-	utp.Logger.Handlers = []lg.Handler{adapterHandler{}}
 }
 
 func Int2LogLevel(level int) (lvl lg.Level, dbg bool, err error) {
