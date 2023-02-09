@@ -237,6 +237,8 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
+	fmt.Printf("nil? %t\n", h == nil)
+	fmt.Printf("nil? %t\n", h.files == nil)
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.decompressor != nil {
