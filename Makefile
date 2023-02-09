@@ -1,6 +1,6 @@
 GOBINREL = build/bin
 GOBIN = $(CURDIR)/$(GOBINREL)
-BUILD_TAGS = nosqlite,noboltdb,disable_libutp
+BUILD_TAGS = nosqlite,noboltdb
 GOBUILD = env GO111MODULE=on go build -trimpath -tags $(BUILD_TAGS)
 GOTEST = go test -trimpath -tags $(BUILD_TAGS)
 GOTEST_NOFUZZ = go test -trimpath --tags=$(BUILD_TAGS),nofuzz
