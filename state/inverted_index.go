@@ -100,6 +100,13 @@ func NewInvertedIndex(
 		integrityFileExtensions: integrityFileExtensions,
 		withLocalityIndex:       withLocalityIndex,
 	}
+	if ii.withLocalityIndex {
+		var err error
+		ii.localityIndex, err = NewLocalityIndex(ii.dir, ii.tmpdir, ii.aggregationStep, ii.filenameBase)
+		if err != nil {
+			return nil, fmt.Errorf("NewHistory: %s, %w", ii.filenameBase, err)
+		}
+	}
 	//if err := ii.reOpenFolder(); err != nil {
 	//	return nil, err
 	//}
@@ -115,13 +122,8 @@ func (ii *InvertedIndex) reOpenFolder() error {
 	if err = ii.openFiles(); err != nil {
 		return fmt.Errorf("NewHistory.openFiles: %s, %w", ii.filenameBase, err)
 	}
-	if ii.withLocalityIndex {
-		ii.localityIndex, err = NewLocalityIndex(ii.dir, ii.tmpdir, ii.aggregationStep, ii.filenameBase)
-		if err != nil {
-			return fmt.Errorf("NewHistory: %s, %w", ii.filenameBase, err)
-		}
-	}
-	return nil
+
+	return ii.localityIndex.reOpenFolder()
 }
 
 func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []*filesItem) {

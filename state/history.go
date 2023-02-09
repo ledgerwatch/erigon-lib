@@ -115,7 +115,7 @@ func (h *History) reOpenFolder() error {
 	if err = h.openFiles(); err != nil {
 		return fmt.Errorf("NewHistory.openFiles: %s, %w", h.filenameBase, err)
 	}
-	return nil
+	return h.InvertedIndex.reOpenFolder()
 }
 
 // scanStateFiles
