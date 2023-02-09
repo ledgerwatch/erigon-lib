@@ -100,9 +100,9 @@ func NewInvertedIndex(
 		integrityFileExtensions: integrityFileExtensions,
 		withLocalityIndex:       withLocalityIndex,
 	}
-	if err := ii.reOpenFolder(); err != nil {
-		return nil, err
-	}
+	//if err := ii.reOpenFolder(); err != nil {
+	//	return nil, err
+	//}
 	return &ii, nil
 }
 func (ii *InvertedIndex) reOpenFolder() error {

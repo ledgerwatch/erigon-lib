@@ -100,9 +100,9 @@ func NewHistory(
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
 
-	if err := h.reOpenFolder(); err != nil {
-		return nil, err
-	}
+	//if err := h.reOpenFolder(); err != nil {
+	//	return nil, err
+	//}
 	return &h, nil
 }
 func (h *History) reOpenFolder() error {
@@ -237,8 +237,6 @@ func (h *History) openFiles() error {
 }
 
 func (h *History) closeFiles() {
-	fmt.Printf("nil? %t\n", h == nil)
-	fmt.Printf("nil? %t\n", h.files == nil)
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.decompressor != nil {

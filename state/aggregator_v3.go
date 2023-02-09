@@ -76,33 +76,56 @@ type AggregatorV3 struct {
 func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*AggregatorV3, error) {
 	ctx, ctxCancel := context.WithCancel(ctx)
 	a := &AggregatorV3{ctx: ctx, ctxCancel: ctxCancel, dir: dir, tmpdir: tmpdir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db, keepInDB: 2 * aggregationStep}
+	var err error
+	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */, nil); err != nil {
+		return nil, fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */, nil); err != nil {
+		return nil, fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */, nil); err != nil {
+		return nil, fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, false, nil); err != nil {
+		return nil, fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, false, nil); err != nil {
+		return nil, fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, false, nil); err != nil {
+		return nil, fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, false, nil); err != nil {
+		return nil, fmt.Errorf("ReopenFolder: %w", err)
+	}
+	a.recalcMaxTxNum()
 	return a, nil
 }
 
-func (a *AggregatorV3) ReopenFiles() error {
+func (a *AggregatorV3) ReopenFolder() error {
 	a.openCloseLock.Lock()
 	defer a.openCloseLock.Unlock()
 	var err error
 	if err = a.accounts.reOpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFiles: %w", err)
+		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	if err = a.storage.reOpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFiles: %w", err)
+		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	if err = a.code.reOpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFiles: %w", err)
+		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	if err = a.logAddrs.reOpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFiles: %w", err)
+		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	if err = a.logTopics.reOpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFiles: %w", err)
+		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	if err = a.tracesFrom.reOpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFiles: %w", err)
+		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	if err = a.tracesTo.reOpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFiles: %w", err)
+		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	a.recalcMaxTxNum()
 	return nil
