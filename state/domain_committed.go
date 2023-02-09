@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"hash"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/btree"
 	"github.com/ledgerwatch/log/v3"
@@ -33,7 +34,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/compress"
-	"github.com/ledgerwatch/erigon-lib/recsplit"
 )
 
 // Defines how to evaluate commitments
@@ -213,26 +213,24 @@ func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, type
 	numBuf := [2]byte{}
 	var found bool
 	for _, item := range list {
-		g := item.decompressor.MakeGetter()
-		index := recsplit.NewIndexReader(item.index)
+		//g := item.decompressor.MakeGetter()
+		//index := recsplit.NewIndexReader(item.index)
 
-		offset := index.Lookup(fullKey)
-		g.Reset(offset)
-		if !g.HasNext() {
+		cur, err := item.bindex.Seek(fullKey)
+		if err != nil {
+			log.Warn("bt index seek failed", "err", err)
 			continue
 		}
-		if keyMatch, _ := g.Match(fullKey); keyMatch {
-			step := uint16(item.endTxNum / d.aggregationStep)
-			binary.BigEndian.PutUint16(numBuf[:], step)
+		step := uint16(item.endTxNum / d.aggregationStep)
+		binary.BigEndian.PutUint16(numBuf[:], step)
 
-			shortKey = encodeU64(offset, numBuf[:])
+		shortKey = encodeU64(cur.Ordinal(), numBuf[:])
 
-			if d.trace {
-				fmt.Printf("replacing %s [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", typeAS, fullKey, shortKey, step, offset, typeAS, item.startTxNum, item.endTxNum)
-			}
-			found = true
-			break
+		if d.trace {
+			fmt.Printf("replacing %s [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", typeAS, fullKey, shortKey, step, cur.Ordinal(), typeAS, item.startTxNum, item.endTxNum)
 		}
+		found = true
+		break
 	}
 	return found
 }
@@ -345,6 +343,9 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 				if indexIn.index != nil {
 					indexIn.index.Close()
 				}
+				if indexIn.bindex != nil {
+					indexIn.bindex.Close()
+				}
 			}
 			if historyIn != nil {
 				if historyIn.decompressor != nil {
@@ -353,6 +354,9 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 				if historyIn.index != nil {
 					historyIn.index.Close()
 				}
+				if historyIn.bindex != nil {
+					historyIn.bindex.Close()
+				}
 			}
 			if valuesIn != nil {
 				if valuesIn.decompressor != nil {
@@ -360,6 +364,9 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 				}
 				if valuesIn.index != nil {
 					valuesIn.index.Close()
+				}
+				if valuesIn.bindex != nil {
+					valuesIn.bindex.Close()
 				}
 			}
 		}
@@ -499,6 +506,18 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 		if valuesIn.index, err = buildIndex(ctx, valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
+
+		btPath := strings.TrimSuffix(idxPath, "kvi") + "bt"
+		err = BuildBtreeIndexWithDecompressor(btPath, valuesIn.decompressor)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s btindex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+
+		bt, err := OpenBtreeIndexWithDecompressor(btPath, 2048, valuesIn.decompressor)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s btindex2 [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+		valuesIn.bindex = bt
 	}
 	closeItem = false
 	d.stats.MergesCount++

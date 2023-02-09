@@ -187,6 +187,9 @@ func (s *staticFilesInRange) Close() {
 				if item.index != nil {
 					item.index.Close()
 				}
+				if item.bindex != nil {
+					item.bindex.Close()
+				}
 			}
 		}
 	}
@@ -575,6 +578,9 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 				}
 				if valuesIn.index != nil {
 					valuesIn.index.Close()
+				}
+				if valuesIn.bindex != nil {
+					valuesIn.bindex.Close()
 				}
 			}
 		}

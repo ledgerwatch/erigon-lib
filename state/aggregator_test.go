@@ -22,6 +22,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
+	"github.com/ledgerwatch/erigon-lib/recsplit"
 )
 
 func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, kv.RwDB, *Aggregator) {
@@ -654,7 +655,7 @@ func Test_btree_Seek(t *testing.T) {
 			prevKey = nk
 		}
 		if i%1000 == 0 {
-			fmt.Printf("%d searches, last took %v total seek time %v avg=%v next_access_last[%d] %v\n", i, took, tsum, tsum/time.Duration(i), j, ntimer/time.Duration(j))
+			fmt.Printf("%d searches, last took %v avg=%v next_access_last[of %d keys] %v\n", i, took, tsum/time.Duration(i), j, ntimer/time.Duration(j))
 		}
 
 	}
@@ -662,4 +663,61 @@ func Test_btree_Seek(t *testing.T) {
 	fmt.Printf("avg seek time %v\n", avg)
 
 	bt.Close()
+}
+
+func Test_Recsplit_Find(t *testing.T) {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	tmp := t.TempDir()
+
+	defer os.RemoveAll(tmp)
+	dir, _ := os.Getwd()
+	fmt.Printf("path %s\n", dir)
+	dataPath := "../../data/storage.256-288.kv"
+	indexPath := dataPath + "i"
+
+	idx, err := recsplit.OpenIndex(indexPath)
+	require.NoError(t, err)
+	idxr := recsplit.NewIndexReader(idx)
+
+	decomp, err := compress.NewDecompressor(dataPath)
+	require.NoError(t, err)
+	defer decomp.Close()
+
+	getter := decomp.MakeGetter()
+
+	keys, err := pivotKeysFromKV(dataPath)
+	require.NoError(t, err)
+
+	tsum := time.Duration(0)
+
+	var i int
+	for i = 1; i < 10000000; i++ {
+		p := rnd.Intn(len(keys))
+		cl := time.Now()
+		offset := idxr.Lookup(keys[p])
+		getter.Reset(offset)
+
+		require.True(t, getter.HasNext())
+
+		key, pa := getter.Next(nil)
+		require.NotEmpty(t, key)
+
+		value, pb := getter.Next(nil)
+		if pb-pa != 1 {
+			require.NotEmpty(t, value)
+		}
+
+		took := time.Since(cl)
+		tsum += took
+
+		require.NoErrorf(t, err, "i=%d", i)
+		require.EqualValues(t, keys[p], key)
+
+		if i%1000 == 0 {
+			fmt.Printf("%d searches, last took %v avg=%v\n", i, took, tsum/time.Duration(i))
+		}
+
+	}
+	avg := tsum / (1000000 - 1)
+	fmt.Printf("avg seek time %v\n", avg)
 }

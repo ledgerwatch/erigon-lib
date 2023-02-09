@@ -532,6 +532,9 @@ func (sf SelectedStaticFiles) Close() {
 				if item.index != nil {
 					item.index.Close()
 				}
+				if item.bindex != nil {
+					item.bindex.Close()
+				}
 			}
 		}
 	}
@@ -583,6 +586,9 @@ func (mf MergedFiles) Close() {
 			}
 			if item.decompressor != nil {
 				item.index.Close()
+			}
+			if item.bindex != nil {
+				item.bindex.Close()
 			}
 		}
 	}

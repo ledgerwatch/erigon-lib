@@ -100,6 +100,15 @@ func (i *filesItem) closeFilesAndRemove() {
 		}
 		i.index = nil
 	}
+	if i.bindex != nil {
+		if err := i.bindex.Close(); err != nil {
+			log.Trace("close", "err", err, "file", i.bindex.FileName())
+		}
+		if err := os.Remove(i.bindex.FilePath()); err != nil {
+			log.Trace("close", "err", err, "file", i.bindex.FileName())
+		}
+		i.bindex = nil
+	}
 }
 
 type DomainStats struct {
@@ -282,6 +291,14 @@ func (d *Domain) openFiles() error {
 					totalKeys += item.index.KeyCount()
 				}
 			}
+			if item.bindex == nil {
+				bidxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.bt", d.filenameBase, fromStep, toStep))
+				if item.bindex, err = OpenBtreeIndexWithDecompressor(bidxPath, 2048, item.decompressor); err != nil {
+					log.Debug("InvertedIndex.openFiles: %w, %s", err, bidxPath)
+					return false
+				}
+				//totalKeys += item.bindex.KeyCount()
+			}
 		}
 		return true
 	})
@@ -308,6 +325,12 @@ func (d *Domain) closeFiles() {
 					log.Trace("close", "err", err, "file", item.index.FileName())
 				}
 				item.index = nil
+			}
+			if item.bindex != nil {
+				if err := item.bindex.Close(); err != nil {
+					log.Trace("close", "err", err, "file", item.bindex.FileName())
+				}
+				item.bindex = nil
 			}
 		}
 		return true
@@ -552,6 +575,7 @@ type DomainContext struct {
 	d       *Domain
 	files   []ctxItem
 	getters []*compress.Getter
+	bts     []*BtIndex
 	readers []*recsplit.IndexReader
 	hc      *HistoryContext
 	keyBuf  [60]byte // 52b key and 8b for inverted step
@@ -569,6 +593,19 @@ func (dc *DomainContext) statelessGetter(i int) *compress.Getter {
 	}
 	return r
 }
+
+func (dc *DomainContext) statelessBtree(i int) *BtIndex {
+	if dc.bts == nil {
+		dc.bts = make([]*BtIndex, len(dc.files))
+	}
+	r := dc.bts[i]
+	if r == nil {
+		r = dc.files[i].src.bindex
+		dc.bts[i] = r
+	}
+	return r
+}
+
 func (dc *DomainContext) statelessIdxReader(i int) *recsplit.IndexReader {
 	if dc.readers == nil {
 		dc.readers = make([]*recsplit.IndexReader, len(dc.files))
@@ -600,7 +637,8 @@ func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
 			}
 			datsz += uint64(item.decompressor.Size())
 			idxsz += uint64(item.index.Size())
-			files += 2
+			idxsz += uint64(item.bindex.Size())
+			files += 3
 		}
 		return true
 	})
@@ -676,26 +714,21 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum, reverse: true})
 	}
 	for i, item := range dc.files {
-		reader := dc.statelessIdxReader(i)
-		if reader.Empty() {
+		bg := dc.statelessBtree(i)
+		if bg.Empty() {
 			continue
 		}
-		offset := reader.Lookup(prefix)
-		// Creating dedicated getter because the one in the item may be used to delete storage, for example
-		g := dc.statelessGetter(i)
-		g.Reset(offset)
-		if g.HasNext() {
-			if keyMatch, _ := g.Match(prefix); !keyMatch {
-				continue
-			}
-			g.Skip()
+
+		cursor, err := bg.Seek(prefix)
+		if err != nil {
+			panic(err)
 		}
-		if g.HasNext() {
-			key, _ := g.Next(nil)
-			if bytes.HasPrefix(key, prefix) {
-				val, _ := g.Next(nil)
-				heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum, reverse: true})
-			}
+
+		g := dc.statelessGetter(i)
+		key := cursor.Key()
+		if bytes.HasPrefix(key, prefix) {
+			val := cursor.Value()
+			heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum, reverse: true})
 		}
 	}
 	for cp.Len() > 0 {
@@ -1210,19 +1243,20 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 		if dc.files[i].endTxNum < fromTxNum {
 			break
 		}
-		reader := dc.statelessIdxReader(i)
+		reader := dc.statelessBtree(i)
 		if reader.Empty() {
 			continue
 		}
-		offset := reader.Lookup(filekey)
-		g := dc.statelessGetter(i)
-		g.Reset(offset)
-		if g.HasNext() {
-			if keyMatch, _ := g.Match(filekey); keyMatch {
-				val, _ = g.Next(nil)
-				found = true
-				break
-			}
+		cur, err := reader.Seek(filekey)
+		if err != nil {
+			log.Warn("failed to read from file", "key", filekey, "err", err)
+			continue
+		}
+
+		if bytes.Equal(cur.Key(), filekey) {
+			val = cur.Value()
+			found = true
+			break
 		}
 	}
 	return val, found
@@ -1280,22 +1314,19 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 				if dc.files[i].startTxNum > topState.startTxNum {
 					continue
 				}
-				reader := dc.statelessIdxReader(i)
+				reader := dc.statelessBtree(i)
 				if reader.Empty() {
 					continue
 				}
-				offset := reader.Lookup(key)
-				g := dc.statelessGetter(i)
-				g.Reset(offset)
-				if g.HasNext() {
-					if k, _ := g.NextUncompressed(); bytes.Equal(k, key) {
-						if dc.d.compressVals {
-							val, _ = g.Next(nil)
-						} else {
-							val, _ = g.NextUncompressed()
-						}
-						break
-					}
+				cur, err := reader.Seek(key)
+				if err != nil {
+					log.Warn("failed to read history before from file", "key", key, "err", err)
+					continue
+				}
+
+				if bytes.Equal(cur.Key(), key) {
+					val = cur.Value()
+					break
 				}
 			}
 			return val, true, nil

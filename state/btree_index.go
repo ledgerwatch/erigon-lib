@@ -78,6 +78,10 @@ func (c *Cursor) Key() []byte {
 	return c.key
 }
 
+func (c *Cursor) Ordinal() uint64 {
+	return c.d
+}
+
 func (c *Cursor) Value() []byte {
 	return c.value
 }
@@ -457,11 +461,10 @@ func (a *btAlloc) Seek(ik []byte) (*Cursor, error) {
 		}
 		ln, lm, rm = a.bsNode(uint64(l), L, R, ik)
 		if ln.key == nil || ln.val == nil { // should return node which is nearest to key from the left so never nil
-			L = 0
 			if a.trace {
 				fmt.Printf("found nil key %x pos_range[%d-%d] naccess_ram=%d\n", l, lm, rm, a.naccess)
 			}
-			panic(fmt.Errorf("nil node at %d", l))
+			panic(fmt.Errorf("bt index nil node at level %d", l))
 		}
 
 		switch bytes.Compare(ln.key, ik) {
@@ -1114,9 +1117,18 @@ func (b *BtIndex) Lookup(key []byte) uint64 {
 	return binary.BigEndian.Uint64(cursor.value)
 }
 
-func (b *BtIndex) OrdinalLookup(i uint64) uint64 {
-	//TODO implement me
-	panic("implement me")
+func (b *BtIndex) OrdinalLookup(i uint64) *Cursor {
+	if i > b.alloc.K {
+		return nil
+	}
+	k, v, err := b.dataLookup(i)
+	if err != nil {
+		return nil
+	}
+
+	return &Cursor{
+		key: k, value: v, d: i, ix: b.alloc,
+	}
 }
 
 func (b *BtIndex) ExtractOffsets() map[uint64]uint64 {
