@@ -440,7 +440,7 @@ func Test_EncodeCommitmentState(t *testing.T) {
 func Test_BtreeIndex_Seek(t *testing.T) {
 	tmp := t.TempDir()
 
-	keyCount, M := 1000, 16
+	keyCount, M := 120, 1024
 	dataPath := generateCompressedKV(t, tmp, 52, 180 /*val size*/, keyCount)
 	defer os.RemoveAll(tmp)
 
@@ -452,13 +452,11 @@ func Test_BtreeIndex_Seek(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, bt.KeyCount(), keyCount)
 
-	idx := NewBtIndexReader(bt)
-
 	keys, err := pivotKeysFromKV(dataPath)
 	require.NoError(t, err)
 
 	for i := 0; i < len(keys); i++ {
-		cur, err := idx.Seek(keys[i])
+		cur, err := bt.Seek(keys[i])
 		require.NoErrorf(t, err, "i=%d", i)
 		require.EqualValues(t, keys[i], cur.key)
 		require.NotEmptyf(t, cur.Value(), "i=%d", i)
@@ -561,73 +559,20 @@ func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount
 
 func Test_InitBtreeIndex(t *testing.T) {
 	tmp := t.TempDir()
-	args := BtIndexWriterArgs{
-		IndexFile: path.Join(tmp, "100k.bt"),
-		TmpDir:    tmp,
-		KeyCount:  12,
-	}
-	keySize := 52
-	M := uint64(4)
-	iw, err := NewBtIndexWriter(args)
-	require.NoError(t, err)
-
-	defer iw.Close()
 	defer os.RemoveAll(tmp)
 
-	rnd := rand.New(rand.NewSource(0))
-	keys := make([]byte, keySize)
-	values := make([]byte, 300)
+	keyCount, M := 100, uint64(4)
+	compPath := generateCompressedKV(t, tmp, 52, 300, keyCount)
+	decomp, err := compress.NewDecompressor(compPath)
+	require.NoError(t, err)
+	defer decomp.Close()
 
-	comp, err := compress.NewCompressor(context.Background(), "cmp", path.Join(tmp, "100k.v2"), tmp, compress.MinPatternScore, 1, log.LvlDebug)
+	err = BuildBtreeIndexWithDecompressor(tmp+".bt", decomp)
 	require.NoError(t, err)
 
-	for i := 0; i < args.KeyCount; i++ {
-		n, err := rnd.Read(keys[:52])
-		require.EqualValues(t, n, 52)
-		require.NoError(t, err)
-		err = comp.AddWord(keys[:n])
-		require.NoError(t, err)
-
-		n, err = rnd.Read(values[:rnd.Intn(300)])
-		require.NoError(t, err)
-
-		err = comp.AddWord(values[:n])
-		require.NoError(t, err)
-	}
-
-	err = comp.Compress()
+	bt, err := OpenBtreeIndexWithDecompressor(tmp+".bt", M, decomp)
 	require.NoError(t, err)
-	comp.Close()
-
-	decomp, err := compress.NewDecompressor(path.Join(tmp, "100k.v2"))
-	require.NoError(t, err)
-
-	getter := decomp.MakeGetter()
-	getter.Reset(0)
-
-	var pos uint64
-	for i := 0; i < args.KeyCount; i++ {
-		if !getter.HasNext() {
-			t.Fatalf("not enough values at %d", i)
-			break
-		}
-
-		keys, _ := getter.Next(keys[:0])
-		err = iw.AddKey(keys[:], uint64(pos))
-
-		pos = getter.Skip()
-		require.NoError(t, err)
-	}
-	decomp.Close()
-
-	require.NoError(t, iw.Build())
-	iw.Close()
-
-	// fixme  kv is shifted by 1
-	// fixme index building functions
-	bt, err := OpenBtreeIndex(args.IndexFile, path.Join(tmp, "100k.v2"), M)
-	require.NoError(t, err)
-	require.EqualValues(t, bt.KeyCount(), args.KeyCount)
+	require.EqualValues(t, bt.KeyCount(), keyCount)
 	bt.Close()
 }
 

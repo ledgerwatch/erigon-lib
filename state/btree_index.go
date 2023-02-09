@@ -256,6 +256,11 @@ func (a *btAlloc) traverseDfs() {
 		a.nodes[l] = make([]node, 0)
 	}
 
+	if len(a.cursors) == 1 {
+		a.nodes[0] = append(a.nodes[0], node{d: a.K})
+		return
+	}
+
 	// TODO if keys less than half leaf size store last key to just support bsearch on these amount.
 	c := a.cursors[len(a.cursors)-1]
 	pc := a.cursors[(len(a.cursors) - 2)]
@@ -445,6 +450,11 @@ func (a *btAlloc) Seek(ik []byte) (*Cursor, error) {
 	)
 
 	for l, level := range a.nodes {
+		if len(level) == 1 && l == 0 {
+			ln = a.nodes[0][0]
+			maxD = ln.d
+			break
+		}
 		ln, lm, rm = a.bsNode(uint64(l), L, R, ik)
 		if ln.key == nil || ln.val == nil { // should return node which is nearest to key from the left so never nil
 			L = 0
@@ -865,7 +875,6 @@ func BuildBtreeIndexWithDecompressor(indexPath string, kv *compress.Decompressor
 			emptys++
 		}
 	}
-	kv.Close()
 	fmt.Printf("emptys %d %#+v\n", emptys, ks)
 
 	if err := iw.Build(); err != nil {

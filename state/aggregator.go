@@ -684,10 +684,10 @@ func (a *Aggregator) cleanAfterFreeze(in MergedFiles) {
 	a.storage.cleanAfterFreeze(in.storageHist)
 	a.code.cleanAfterFreeze(in.codeHist)
 	a.commitment.cleanAfterFreeze(in.commitment)
-	a.logAddrs.cleanAfterFreeze(in.logAddrs)
-	a.logTopics.cleanAfterFreeze(in.logTopics)
-	a.tracesFrom.cleanAfterFreeze(in.tracesFrom)
-	a.tracesTo.cleanAfterFreeze(in.tracesTo)
+	//a.logAddrs.cleanAfterFreeze(in.logAddrs)
+	//a.logTopics.cleanAfterFreeze(in.logTopics)
+	//a.tracesFrom.cleanAfterFreeze(in.tracesFrom)
+	//a.tracesTo.cleanAfterFreeze(in.tracesTo)
 }
 func (ac *AggregatorContext) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
 	return ac.accounts.Get(addr, nil, roTx)

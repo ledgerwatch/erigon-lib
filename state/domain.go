@@ -942,7 +942,7 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
 
-	btPath := strings.TrimSuffix(valuesIdxPath, "kvi") + ".bt"
+	btPath := strings.TrimSuffix(valuesIdxPath, "kvi") + "bt"
 	if err := BuildBtreeIndexWithDecompressor(btPath, valuesDecomp); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
 	}
