@@ -430,8 +430,6 @@ func MainLoop(ctx context.Context, d *Downloader, silent bool) {
 					log.Info("[Snapshots] Stats", "banned", ips)
 				}
 			}
-
-			_ = d.db.Update(ctx, func(tx kv.RwTx) error { return nil })
 		}
 	}
 }
