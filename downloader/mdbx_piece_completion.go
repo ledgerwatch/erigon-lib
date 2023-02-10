@@ -86,7 +86,7 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	// Mainnet stats:
 	//  call amount 2 minutes complete=100K vs incomple=1K
 	//  1K fsyncs/2minutes it's quite expensive, but even on cloud (high latency) drive it allow download 100mb/s
-	//  and node doesn't do anything when downloading snapshots
+	//  and Erigon doesn't do anything when downloading snapshots
 	if b {
 		res := in.Inc()
 		if res%1000 == 0 {
