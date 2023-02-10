@@ -614,9 +614,6 @@ func (tx *MdbxTx) ListBuckets() ([]string, error) {
 }
 
 func (db *MdbxKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
 	// can't use db.evn.View method - because it calls commit for read transactions - it conflicts with write transactions.
 	tx, err := db.BeginRo(ctx)
 	if err != nil {
@@ -628,10 +625,6 @@ func (db *MdbxKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error) 
 }
 
 func (db *MdbxKV) UpdateNosync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-
 	tx, err := db.BeginRwNosync(ctx)
 	if err != nil {
 		return err
@@ -649,10 +642,6 @@ func (db *MdbxKV) UpdateNosync(ctx context.Context, f func(tx kv.RwTx) error) (e
 }
 
 func (db *MdbxKV) Update(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-
 	tx, err := db.BeginRw(ctx)
 	if err != nil {
 		return err
@@ -1016,27 +1005,6 @@ func (tx *MdbxTx) DBSize() (uint64, error) {
 		return 0, err
 	}
 	return info.Geo.Current, err
-}
-
-func (tx *MdbxTx) Reset() (err error) {
-	tx.Rollback()
-	//tx.printDebugInfo()
-	if tx.db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-	runtime.LockOSThread()
-	defer func() {
-		if err == nil {
-			tx.db.wg.Add(1)
-		}
-	}()
-
-	tx.tx, err = tx.db.env.BeginTxn(nil, 0)
-	if err != nil {
-		runtime.UnlockOSThread() // unlock only in case of error. normal flow is "defer .Rollback()"
-		return fmt.Errorf("%w, lable: %s, trace: %s", err, tx.db.opts.label.String(), stack2.Trace().String())
-	}
-	return nil
 }
 
 func (tx *MdbxTx) RwCursor(bucket string) (kv.RwCursor, error) {
