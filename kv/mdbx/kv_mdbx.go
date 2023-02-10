@@ -448,20 +448,13 @@ func (db *MdbxKV) Close() {
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
 	}
 
 	// don't try to acquire if the context is already done
-	done := ctx.Done()
 	select {
-	case <-done:
+	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 		// otherwise carry on
