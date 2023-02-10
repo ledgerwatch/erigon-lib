@@ -84,7 +84,7 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	// FYI: Fsync of torrent pieces happenng before storing db markers: https://github.com/anacrolix/torrent/blob/master/torrent.go#L2026
 	if b {
 		res := in.Inc()
-		if res%100 == 0 {
+		if res%1000 == 0 {
 			log.Warn("stat", "complete", c.Load(), "incomplete", in.Load())
 		}
 		tx, err = m.db.BeginRwNosync(m.ctx)
