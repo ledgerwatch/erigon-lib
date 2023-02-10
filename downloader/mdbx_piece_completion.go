@@ -24,6 +24,7 @@ import (
 	"github.com/anacrolix/torrent/storage"
 	"github.com/anacrolix/torrent/types/infohash"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 )
 
 const (
@@ -84,6 +85,8 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 			return err
 		}
 	} else {
+		log.Warn("incomplete")
+
 		tx, err = m.db.BeginRw(m.ctx)
 		if err != nil {
 			return err
