@@ -239,7 +239,7 @@ func (d *Downloader) verify() error {
 	}
 	wg.Wait()
 
-	// force fsync of db
+	// force fsync of db. to not loose results of validation on power-off
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
 
@@ -390,7 +390,7 @@ func MainLoop(ctx context.Context, d *Downloader, silent bool) {
 	statEvery := time.NewTicker(statInterval)
 	defer statEvery.Stop()
 
-	var completed bool
+	justCompleted := true
 	for {
 		select {
 		case <-ctx.Done():
@@ -411,11 +411,12 @@ func MainLoop(ctx context.Context, d *Downloader, silent bool) {
 			}
 
 			if stats.Completed {
-				if !completed { // just completed all downloading
-					completed = true
-					// force commit with fsync.
+				if justCompleted {
+					justCompleted = false
+					// force fsync of db. to not loose results of downloading on power-off
 					_ = d.db.Update(ctx, func(tx kv.RwTx) error { return nil })
 				}
+
 				log.Info("[Snapshots] Seeding",
 					"up", common2.ByteCount(stats.UploadRate)+"/s",
 					"peers", stats.PeersUnique,
