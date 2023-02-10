@@ -24,6 +24,7 @@ import (
 	"github.com/anacrolix/torrent/storage"
 	"github.com/anacrolix/torrent/types/infohash"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 )
 
 const (
@@ -73,9 +74,10 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 
 	var tx kv.RwTx
 	var err error
-	// On power-off recent "no-sync" txs may be lost. It will cause 2. cases:
-	//  - Good piece on disk and recent "complete" db marker lost. Self-Heal by re-download.
-	//  - Bad piece on dis and recent "incomplete" db marker lost. No Self-Heal. So, can't afford loosing recent "incomplete" markers.
+	// On power-off recent "no-sync" txs may be lost.
+	// It will cause 2 cases of in-consistency between files on disk and db metadata:
+	//  - Good piece on disk and recent "complete"   db marker lost. Self-Heal by re-download.
+	//  - Bad  piece on disk and recent "incomplete" db marker lost. No Self-Heal. Means: can't afford loosing recent "incomplete" markers.
 	// FYI: Fsync of torrent pieces happenng before storing db markers: https://github.com/anacrolix/torrent/blob/master/torrent.go#L2026
 	if b {
 		tx, err = m.db.BeginRwNosync(m.ctx)
@@ -83,6 +85,7 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 			return err
 		}
 	} else {
+		log.Warn("incomplete")
 		tx, err = m.db.BeginRw(m.ctx)
 		if err != nil {
 			return err
