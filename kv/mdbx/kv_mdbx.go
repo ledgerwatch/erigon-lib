@@ -448,8 +448,10 @@ func (db *MdbxKV) Close() {
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
-	if ctx.Err() != nil {
+	select {
+	case <-ctx.Done():
 		return nil, ctx.Err()
+	default:
 	}
 
 	if db.closed.Load() {
@@ -501,9 +503,12 @@ func (db *MdbxKV) BeginRwNosync(ctx context.Context) (kv.RwTx, error) {
 }
 
 func (db *MdbxKV) beginRw(ctx context.Context, flags uint) (txn kv.RwTx, err error) {
-	if ctx.Err() != nil {
+	select {
+	case <-ctx.Done():
 		return nil, ctx.Err()
+	default:
 	}
+
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
 	}
