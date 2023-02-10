@@ -23,7 +23,6 @@ import (
 	"math"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -626,16 +625,14 @@ func TestScanStaticFilesH(t *testing.T) {
 	h := &History{InvertedIndex: &InvertedIndex{filenameBase: "test", aggregationStep: 1},
 		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
-	ffs := fstest.MapFS{
-		"test.0-1.v": {},
-		"test.1-2.v": {},
-		"test.0-4.v": {},
-		"test.2-3.v": {},
-		"test.3-4.v": {},
-		"test.4-5.v": {},
+	files := []string{
+		"test.0-1.v",
+		"test.1-2.v",
+		"test.0-4.v",
+		"test.2-3.v",
+		"test.3-4.v",
+		"test.4-5.v",
 	}
-	files, err := ffs.ReadDir(".")
-	require.NoError(t, err)
 	h.scanStateFiles(files, nil)
 	var found []string
 	h.files.Walk(func(items []*filesItem) bool {

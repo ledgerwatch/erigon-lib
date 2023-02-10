@@ -23,7 +23,6 @@ import (
 	"math"
 	"os"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
@@ -501,16 +500,14 @@ func TestScanStaticFiles(t *testing.T) {
 	ii := &InvertedIndex{filenameBase: "test", aggregationStep: 1,
 		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
-	ffs := fstest.MapFS{
-		"test.0-1.ef": {},
-		"test.1-2.ef": {},
-		"test.0-4.ef": {},
-		"test.2-3.ef": {},
-		"test.3-4.ef": {},
-		"test.4-5.ef": {},
+	files := []string{
+		"test.0-1.ef",
+		"test.1-2.ef",
+		"test.0-4.ef",
+		"test.2-3.ef",
+		"test.3-4.ef",
+		"test.4-5.ef",
 	}
-	files, err := ffs.ReadDir(".")
-	require.NoError(t, err)
 	ii.scanStateFiles(files, nil)
 	var found []string
 	ii.files.Walk(func(items []*filesItem) bool {

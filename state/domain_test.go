@@ -24,7 +24,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/ledgerwatch/log/v3"
@@ -751,16 +750,14 @@ func TestScanStaticFilesD(t *testing.T) {
 	ii := &Domain{History: &History{InvertedIndex: &InvertedIndex{filenameBase: "test", aggregationStep: 1}},
 		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
-	ffs := fstest.MapFS{
-		"test.0-1.kv": {},
-		"test.1-2.kv": {},
-		"test.0-4.kv": {},
-		"test.2-3.kv": {},
-		"test.3-4.kv": {},
-		"test.4-5.kv": {},
+	files := []string{
+		"test.0-1.kv",
+		"test.1-2.kv",
+		"test.0-4.kv",
+		"test.2-3.kv",
+		"test.3-4.kv",
+		"test.4-5.kv",
 	}
-	files, err := ffs.ReadDir(".")
-	require.NoError(t, err)
 	ii.scanStateFiles(files)
 	var found []string
 	ii.files.Walk(func(items []*filesItem) bool {

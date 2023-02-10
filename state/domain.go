@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -157,7 +156,7 @@ func NewDomain(
 	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals, []string{"kv"}); err != nil {
 		return nil, err
 	}
-	files, err := os.ReadDir(dir)
+	files, err := d.fileNamesOnDisk()
 	if err != nil {
 		return nil, err
 	}
@@ -178,14 +177,10 @@ func (d *Domain) GetAndResetStats() DomainStats {
 	return r
 }
 
-func (d *Domain) scanStateFiles(files []fs.DirEntry) (uselessFiles []string) {
+func (d *Domain) scanStateFiles(fileNames []string) (uselessFiles []string) {
 	re := regexp.MustCompile("^" + d.filenameBase + ".([0-9]+)-([0-9]+).kv$")
 	var err error
-	for _, f := range files {
-		if !f.Type().IsRegular() {
-			continue
-		}
-		name := f.Name()
+	for _, name := range fileNames {
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 3 {
 			if len(subs) != 0 {

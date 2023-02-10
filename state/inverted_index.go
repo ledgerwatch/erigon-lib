@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -112,9 +111,24 @@ func NewInvertedIndex(
 	//}
 	return &ii, nil
 }
+
+func (ii *InvertedIndex) fileNamesOnDisk() ([]string, error) {
+	files, err := os.ReadDir(ii.dir)
+	if err != nil {
+		return nil, err
+	}
+	filteredFiles := make([]string, 0, len(files))
+	for _, f := range files {
+		if !f.Type().IsRegular() {
+			continue
+		}
+		filteredFiles = append(filteredFiles, f.Name())
+	}
+	return filteredFiles, nil
+}
 func (ii *InvertedIndex) reOpenFolder() error {
 	ii.closeFiles()
-	files, err := os.ReadDir(ii.dir)
+	files, err := ii.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
@@ -126,16 +140,11 @@ func (ii *InvertedIndex) reOpenFolder() error {
 	return ii.localityIndex.reOpenFolder()
 }
 
-func (ii *InvertedIndex) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []*filesItem) {
+func (ii *InvertedIndex) scanStateFiles(fileNames []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + ii.filenameBase + ".([0-9]+)-([0-9]+).ef$")
 	var err error
 Loop:
-	for _, f := range files {
-		if !f.Type().IsRegular() {
-			continue
-		}
-
-		name := f.Name()
+	for _, name := range fileNames {
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 3 {
 			if len(subs) != 0 {
@@ -1345,15 +1354,11 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 }
 
 func (ii *InvertedIndex) CleanupDir() {
-	files, err := os.ReadDir(ii.dir)
-	if err != nil {
-		log.Warn("[clean] can't read dir", "err", err, "dir", ii.dir)
-		return
-	}
+	files, _ := ii.fileNamesOnDisk()
 	uselessFiles := ii.scanStateFiles(files, ii.integrityFileExtensions)
 	for _, f := range uselessFiles {
 		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err = os.Remove(filepath.Join(ii.dir, fName))
+		err := os.Remove(filepath.Join(ii.dir, fName))
 		log.Debug("[clean] remove", "file", fName, "err", err)
 		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
 		err = os.Remove(filepath.Join(ii.dir, fIdxName))

@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -105,9 +104,10 @@ func NewHistory(
 	//}
 	return &h, nil
 }
+
 func (h *History) reOpenFolder() error {
 	h.closeFiles()
-	files, err := os.ReadDir(h.dir)
+	files, err := h.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
@@ -120,16 +120,11 @@ func (h *History) reOpenFolder() error {
 
 // scanStateFiles
 // returns `uselessFiles` where file "is useless" means: it's subset of frozen file. such files can be safely deleted. subset of non-frozen file may be useful
-func (h *History) scanStateFiles(files []fs.DirEntry, integrityFileExtensions []string) (uselessFiles []*filesItem) {
+func (h *History) scanStateFiles(files []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
 Loop:
-	for _, f := range files {
-		if !f.Type().IsRegular() {
-			continue
-		}
-
-		name := f.Name()
+	for _, name := range files {
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 3 {
 			if len(subs) != 0 {
@@ -2196,15 +2191,11 @@ func u64or0(in []byte) (v uint64) {
 }
 
 func (h *History) CleanupDir() {
-	files, err := os.ReadDir(h.dir)
-	if err != nil {
-		log.Warn("[clean] can't read dir", "err", err, "dir", h.dir)
-		return
-	}
+	files, _ := h.fileNamesOnDisk()
 	uselessFiles := h.scanStateFiles(files, h.integrityFileExtensions)
 	for _, f := range uselessFiles {
 		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		err = os.Remove(filepath.Join(h.dir, fName))
+		err := os.Remove(filepath.Join(h.dir, fName))
 		log.Debug("[clean] remove", "file", fName, "err", err)
 		fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
 		err = os.Remove(filepath.Join(h.dir, fIdxName))
