@@ -24,8 +24,6 @@ import (
 	"github.com/anacrolix/torrent/storage"
 	"github.com/anacrolix/torrent/types/infohash"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/log/v3"
-	atomic2 "go.uber.org/atomic"
 )
 
 const (
@@ -68,8 +66,6 @@ func (m mdbxPieceCompletion) Get(pk metainfo.PieceKey) (cn storage.Completion, e
 	return
 }
 
-var c, in = atomic2.NewInt64(0), atomic2.NewInt64(0)
-
 func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	if c, err := m.Get(pk); err == nil && c.Ok && c.Complete == b {
 		return nil
@@ -88,20 +84,11 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	//  1K fsyncs/2minutes it's quite expensive, but even on cloud (high latency) drive it allow download 100mb/s
 	//  and Erigon doesn't do anything when downloading snapshots
 	if b {
-		res := in.Inc()
-		if res%1000 == 0 {
-			log.Warn("stat", "complete", c.Load(), "incomplete", in.Load())
-		}
 		tx, err = m.db.BeginRwNosync(m.ctx)
 		if err != nil {
 			return err
 		}
 	} else {
-		res := c.Inc()
-		if res%100 == 0 {
-			log.Warn("stat", "complete", c.Load(), "incomplete", in.Load())
-		}
-
 		tx, err = m.db.BeginRw(m.ctx)
 		if err != nil {
 			return err
