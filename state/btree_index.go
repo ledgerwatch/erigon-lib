@@ -109,7 +109,6 @@ type btAlloc struct {
 	sons    [][]uint64 // i - level; 0 <= i < d; j_k - amount, j_k+1 - child count
 	cursors []markupCursor
 	nodes   [][]node
-	data    []uint64
 	naccess uint64
 	trace   bool
 
@@ -117,13 +116,16 @@ type btAlloc struct {
 }
 
 func newBtAlloc(k, M uint64, trace bool) *btAlloc {
+	if k == 0 {
+		return nil
+	}
+
 	d := logBase(k, M)
 	a := &btAlloc{
 		vx:      make([]uint64, d+1),
 		sons:    make([][]uint64, d+1),
 		cursors: make([]markupCursor, d),
 		nodes:   make([][]node, d),
-		data:    make([]uint64, k),
 		M:       M,
 		K:       k,
 		d:       d,
@@ -133,6 +135,12 @@ func newBtAlloc(k, M uint64, trace bool) *btAlloc {
 		fmt.Printf("k=%d d=%d, M=%d\n", k, d, M)
 	}
 	a.vx[0], a.vx[d] = 1, k
+
+	if k < M/2 {
+		a.N = k
+		a.nodes = make([][]node, 1)
+		return a
+	}
 
 	nnc := func(vx uint64) uint64 {
 		return uint64(math.Ceil(float64(vx) / float64(M)))
@@ -253,14 +261,17 @@ func (a *btAlloc) traverseTrick() {
 
 func (a *btAlloc) traverseDfs() {
 	for l := 0; l < len(a.sons)-1; l++ {
-		if len(a.sons[l]) < 2 {
-			panic("invalid btree allocation markup")
-		}
+		//if len(a.sons[l]) < 2 {
+		//	panic("invalid btree allocation markup")
+		//}
 		a.cursors[l] = markupCursor{uint64(l), 1, 0, 0}
 		a.nodes[l] = make([]node, 0)
 	}
 
-	if len(a.cursors) == 1 {
+	if len(a.cursors) <= 1 {
+		if a.nodes[0] == nil {
+			a.nodes[0] = make([]node, 0)
+		}
 		a.nodes[0] = append(a.nodes[0], node{d: a.K})
 		return
 	}
@@ -460,7 +471,7 @@ func (a *btAlloc) Seek(ik []byte) (*Cursor, error) {
 			break
 		}
 		ln, lm, rm = a.bsNode(uint64(l), L, R, ik)
-		if ln.key == nil || ln.val == nil { // should return node which is nearest to key from the left so never nil
+		if ln.key == nil { // should return node which is nearest to key from the left so never nil
 			if a.trace {
 				fmt.Printf("found nil key %x pos_range[%d-%d] naccess_ram=%d\n", l, lm, rm, a.naccess)
 			}
@@ -959,10 +970,13 @@ func OpenBtreeIndexWithDecompressor(indexPath string, M uint64, kv *compress.Dec
 	// Read number of keys and bytes per record
 	pos := 8
 	idx.keyCount = binary.BigEndian.Uint64(idx.data[:pos])
-	//idx.baseDataID = binary.BigEndian.Uint64(idx.data[pos:8])
+	if idx.keyCount == 0 {
+		return idx, nil
+	}
 	idx.bytesPerRec = int(idx.data[pos])
 	pos += 1
 
+	// idx.baseDataID = binary.BigEndian.Uint64(idx.data[pos:8])
 	// offset := int(idx.keyCount) * idx.bytesPerRec //+ (idx.keySize * int(idx.keyCount))
 	// if offset < 0 {
 	// 	return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexPath)

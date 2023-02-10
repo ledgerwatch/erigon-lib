@@ -721,7 +721,7 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 
 		cursor, err := bg.Seek(prefix)
 		if err != nil {
-			panic(err)
+			continue
 		}
 
 		g := dc.statelessGetter(i)
@@ -1249,7 +1249,7 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 		}
 		cur, err := reader.Seek(filekey)
 		if err != nil {
-			log.Warn("failed to read from file", "key", filekey, "err", err)
+			log.Warn("failed to read from file", "file", reader.FileName(), "err", err)
 			continue
 		}
 

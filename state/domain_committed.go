@@ -218,7 +218,6 @@ func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, type
 
 		cur, err := item.bindex.Seek(fullKey)
 		if err != nil {
-			log.Warn("bt index seek failed", "err", err)
 			continue
 		}
 		step := uint16(item.endTxNum / d.aggregationStep)
@@ -232,33 +231,24 @@ func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, type
 		found = true
 		break
 	}
+	//if !found {
+	//	log.Warn("bt index key replacement seek failed", "key", fmt.Sprintf("%x", fullKey))
+	//}
 	return found
 }
 
 func (d *DomainCommitted) lookupShortenedKey(shortKey, fullKey []byte, typAS string, list []*filesItem) bool {
 	fileStep, offset := shortenedKey(shortKey)
 	expected := uint64(fileStep) * d.aggregationStep
-	var size uint64
-	switch typAS {
-	case "account":
-		size = length.Addr
-	case "storage":
-		size = length.Addr + length.Hash
-	default:
-		return false
-	}
 
 	var found bool
 	for _, item := range list {
 		if item.startTxNum > expected || item.endTxNum < expected {
 			continue
 		}
-		g := item.decompressor.MakeGetter()
-		if uint64(g.Size()) <= offset+size {
-			continue
-		}
-		g.Reset(offset)
-		fullKey, _ = g.Next(fullKey[:0])
+
+		cur := item.bindex.OrdinalLookup(offset)
+		fullKey = cur.Key()
 		if d.trace {
 			fmt.Printf("offsetToKey %s [%x]=>{%x} step=%d offset=%d, file=%s.%d-%d.kv\n", typAS, fullKey, shortKey, fileStep, offset, typAS, item.startTxNum, item.endTxNum)
 		}

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ledgerwatch/log/v3"
 
@@ -217,7 +218,7 @@ func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, 
 			}
 		}()
 
-		//defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
+		defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
 		d.integrateMergedFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, mf.values, mf.index, mf.history)
 
 		// if err := d.deleteFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles); err != nil {
@@ -1066,7 +1067,7 @@ func (d *Domain) integrateMergedFiles(valuesOuts, indexOuts, historyOuts []*file
 
 		// `kill -9` may leave some garbage
 		// but it still may be useful for merges, until we finish merge frozen file
-		if historyIn.frozen {
+		if historyIn != nil && historyIn.frozen {
 			d.files.Walk(func(items []*filesItem) bool {
 				for _, item := range items {
 					if item.frozen || item.endTxNum > valuesIn.endTxNum {
