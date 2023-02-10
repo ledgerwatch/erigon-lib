@@ -83,14 +83,17 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	//  - Bad  piece on disk and recent "incomplete" db marker lost. No Self-Heal. Means: can't afford loosing recent "incomplete" markers.
 	// FYI: Fsync of torrent pieces happenng before storing db markers: https://github.com/anacrolix/torrent/blob/master/torrent.go#L2026
 	if b {
-		in.Inc()
+		res := in.Inc()
+		if res%100 == 0 {
+			log.Warn("stat", "complete", c.Load(), "incomplete", in.Load())
+		}
 		tx, err = m.db.BeginRwNosync(m.ctx)
 		if err != nil {
 			return err
 		}
 	} else {
 		res := c.Inc()
-		if res%10 == 0 {
+		if res%100 == 0 {
 			log.Warn("stat", "complete", c.Load(), "incomplete", in.Load())
 		}
 
