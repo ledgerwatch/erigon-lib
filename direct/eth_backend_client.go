@@ -35,7 +35,7 @@ func NewEthBackendClientDirect(server remote.ETHBACKENDServer) *EthBackendClient
 }
 
 func (s *EthBackendClientDirect) EngineGetBlobsBundleV1(ctx context.Context, in *remote.EngineGetBlobsBundleRequest, opts ...grpc.CallOption) (*types.BlobsBundleV1, error) {
-	panic("not implemented yet")
+	return s.server.EngineGetBlobsBundleV1(ctx, in)
 }
 
 func (s *EthBackendClientDirect) Etherbase(ctx context.Context, in *remote.EtherbaseRequest, opts ...grpc.CallOption) (*remote.EtherbaseReply, error) {
