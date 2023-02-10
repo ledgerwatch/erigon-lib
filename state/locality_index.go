@@ -75,15 +75,6 @@ func (li *LocalityIndex) closeWhatNotInList(fNames []string) {
 	}
 }
 
-func (li *LocalityIndex) reOpenList(fNames []string) error {
-	li.closeWhatNotInList(fNames)
-	_ = li.scanStateFiles(fNames)
-	if err := li.openFiles(); err != nil {
-		return fmt.Errorf("LocalityIndex.openList: %s, %w", li.filenameBase, err)
-	}
-	return nil
-}
-
 func (li *LocalityIndex) scanStateFiles(fNames []string) (uselessFiles []*filesItem) {
 	if li == nil {
 		return nil
