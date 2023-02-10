@@ -70,10 +70,6 @@ func (s *EthBackendClientDirect) EngineGetPayloadBodiesByRangeV1(ctx context.Con
 	return s.server.EngineGetPayloadBodiesByRangeV1(ctx, in)
 }
 
-func (s *EthBackendClientDirect) EngineGetBlobsBundleV1(ctx context.Context, in *remote.EngineGetBlobsBundleRequest, opts ...grpc.CallOption) (*types.BlobsBundleV1, error) {
-	return s.server.EngineGetBlobsBundleV1(ctx, in)
-}
-
 func (s *EthBackendClientDirect) Version(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*types.VersionReply, error) {
 	return s.server.Version(ctx, in)
 }

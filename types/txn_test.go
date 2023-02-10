@@ -43,9 +43,10 @@ func TestParseBlobTransaction(t *testing.T) {
 	require.Equal(len(payload), parseEnd)
 
 	// Same test only with an rlp tx envelope.
-	stringLen := rlp.StringLen(len(ssz) + 1)
+	str := append([]byte{byte(BlobTxType)}, ssz...)
+	stringLen := rlp.StringLen(str)
 	payload = make([]byte, stringLen)
-	rlp.EncodeString(append([]byte{byte(BlobTxType)}, ssz...), payload)
+	rlp.EncodeString(str, payload)
 	parseEnd, err = ctx.ParseTransaction(payload, 0, tx, txSender[:], true /* hasEnvelope */, true /* networkVersion */, nil)
 
 	if tx.Nonce != 10 {
