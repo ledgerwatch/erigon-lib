@@ -76,6 +76,7 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	// On power-off recent "no-sync" txs may be lost. It will cause 2. cases:
 	//  - Good piece on disk and recent "complete" db marker lost. Self-Heal by re-download.
 	//  - Bad piece on dis and recent "incomplete" db marker lost. No Self-Heal. So, can't afford loosing recent "incomplete" markers.
+	// FYI: Fsync of torrent pieces happenng before storing db markers: https://github.com/anacrolix/torrent/blob/master/torrent.go#L2026
 	if b {
 		tx, err = m.db.BeginRwNosync(m.ctx)
 		if err != nil {
