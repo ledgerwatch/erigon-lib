@@ -448,6 +448,10 @@ func (db *MdbxKV) Close() {
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
 	}
@@ -492,11 +496,14 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 func (db *MdbxKV) BeginRw(ctx context.Context) (kv.RwTx, error) {
 	return db.beginRw(ctx, 0)
 }
-func (db *MdbxKV) BeginRwAsync(ctx context.Context) (kv.RwTx, error) {
+func (db *MdbxKV) BeginRwNosync(ctx context.Context) (kv.RwTx, error) {
 	return db.beginRw(ctx, mdbx.TxNoSync)
 }
 
 func (db *MdbxKV) beginRw(ctx context.Context, flags uint) (txn kv.RwTx, err error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
 	}
@@ -622,12 +629,12 @@ func (db *MdbxKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error) 
 	return f(tx)
 }
 
-func (db *MdbxKV) UpdateAsync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
+func (db *MdbxKV) UpdateNosync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
 	if db.closed.Load() {
 		return fmt.Errorf("db closed")
 	}
 
-	tx, err := db.BeginRwAsync(ctx)
+	tx, err := db.BeginRwNosync(ctx)
 	if err != nil {
 		return err
 	}
