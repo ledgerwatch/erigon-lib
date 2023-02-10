@@ -85,6 +85,10 @@ func (li *LocalityIndex) reOpenList(fNames []string) error {
 }
 
 func (li *LocalityIndex) scanStateFiles(fNames []string) (uselessFiles []*filesItem) {
+	if li == nil {
+		return nil
+	}
+
 	re := regexp.MustCompile("^" + li.filenameBase + ".([0-9]+)-([0-9]+).li$")
 	var err error
 	for _, name := range fNames {

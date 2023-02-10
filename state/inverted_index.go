@@ -210,6 +210,8 @@ Loop:
 			ii.files.Set(newFile)
 		}
 	}
+
+	ii.localityIndex.scanStateFiles(fileNames)
 	return uselessFiles
 }
 
