@@ -25,6 +25,7 @@ import (
 	"github.com/anacrolix/torrent/types/infohash"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
+	atomic2 "go.uber.org/atomic"
 )
 
 const (
@@ -67,6 +68,8 @@ func (m mdbxPieceCompletion) Get(pk metainfo.PieceKey) (cn storage.Completion, e
 	return
 }
 
+var c, in = atomic2.NewInt64(0), atomic2.NewInt64(0)
+
 func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	if c, err := m.Get(pk); err == nil && c.Ok && c.Complete == b {
 		return nil
@@ -80,12 +83,16 @@ func (m mdbxPieceCompletion) Set(pk metainfo.PieceKey, b bool) error {
 	//  - Bad  piece on disk and recent "incomplete" db marker lost. No Self-Heal. Means: can't afford loosing recent "incomplete" markers.
 	// FYI: Fsync of torrent pieces happenng before storing db markers: https://github.com/anacrolix/torrent/blob/master/torrent.go#L2026
 	if b {
+		in.Inc()
 		tx, err = m.db.BeginRwNosync(m.ctx)
 		if err != nil {
 			return err
 		}
 	} else {
-		log.Warn("incomplete")
+		res := c.Inc()
+		if res%10 == 0 {
+			log.Warn("stat", "complete", c.Load(), "incomplete", in.Load())
+		}
 
 		tx, err = m.db.BeginRw(m.ctx)
 		if err != nil {
