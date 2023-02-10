@@ -262,7 +262,7 @@ func (d *Domain) openFiles() error {
 				idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, fromStep, toStep))
 				if dir.FileExist(idxPath) {
 					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
+						log.Debug("InvertedIndex.reOpenFiles: %w, %s", err, idxPath)
 						return false
 					}
 					totalKeys += item.index.KeyCount()

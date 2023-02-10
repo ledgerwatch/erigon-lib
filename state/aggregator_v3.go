@@ -130,6 +130,35 @@ func (a *AggregatorV3) ReopenFolder() error {
 	a.recalcMaxTxNum()
 	return nil
 }
+func (a *AggregatorV3) ReopenList(fNames []string) error {
+	a.openCloseLock.Lock()
+	defer a.openCloseLock.Unlock()
+
+	var err error
+	if err = a.accounts.reOpenList(fNames); err != nil {
+		return fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if err = a.storage.reOpenList(fNames); err != nil {
+		return fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if err = a.code.reOpenList(fNames); err != nil {
+		return fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if err = a.logAddrs.reOpenList(fNames); err != nil {
+		return fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if err = a.logTopics.reOpenList(fNames); err != nil {
+		return fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if err = a.tracesFrom.reOpenList(fNames); err != nil {
+		return fmt.Errorf("ReopenFolder: %w", err)
+	}
+	if err = a.tracesTo.reOpenList(fNames); err != nil {
+		return fmt.Errorf("ReopenFolder: %w", err)
+	}
+	a.recalcMaxTxNum()
+	return nil
+}
 
 func (a *AggregatorV3) Close() {
 	a.ctxCancel()

@@ -126,18 +126,24 @@ func (ii *InvertedIndex) fileNamesOnDisk() ([]string, error) {
 	}
 	return filteredFiles, nil
 }
+
+func (ii *InvertedIndex) reOpenList(fNames []string) error {
+	ii.closeWhatNotInList(fNames)
+	_ = ii.scanStateFiles(fNames, ii.integrityFileExtensions)
+	if err := ii.reOpenFiles(); err != nil {
+		return fmt.Errorf("NewHistory.reOpenFiles: %s, %w", ii.filenameBase, err)
+	}
+	ii.reCalcRoFiles()
+	return nil
+}
+
 func (ii *InvertedIndex) reOpenFolder() error {
-	ii.closeFiles()
+	ii.closeWhatNotInList([]string{})
 	files, err := ii.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
-	_ = ii.scanStateFiles(files, ii.integrityFileExtensions)
-	if err = ii.openFiles(); err != nil {
-		return fmt.Errorf("NewHistory.openFiles: %s, %w", ii.filenameBase, err)
-	}
-
-	return ii.localityIndex.reOpenFolder()
+	return ii.reOpenList(files)
 }
 
 func (ii *InvertedIndex) scanStateFiles(fileNames []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
@@ -287,33 +293,34 @@ func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.
 	if err := g.Wait(); err != nil {
 		return err
 	}
-	return ii.openFiles()
+	return ii.reOpenFiles()
 }
 
-func (ii *InvertedIndex) openFiles() error {
+func (ii *InvertedIndex) reOpenFiles() error {
 	var err error
 	var totalKeys uint64
 	var invalidFileItems []*filesItem
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.decompressor != nil {
-				item.decompressor.Close()
-			}
 			fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
-			datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, fromStep, toStep))
-			if !dir.FileExist(datPath) {
-				invalidFileItems = append(invalidFileItems, item)
-			}
-			if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-				log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
-				continue
+			if item.decompressor == nil {
+				datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, fromStep, toStep))
+				if !dir.FileExist(datPath) {
+					invalidFileItems = append(invalidFileItems, item)
+					continue
+				}
+
+				if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+					log.Debug("InvertedIndex.reOpenFiles: %w, %s", err, datPath)
+					continue
+				}
 			}
 
 			if item.index == nil {
 				idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
 				if dir.FileExist(idxPath) {
 					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
+						log.Debug("InvertedIndex.reOpenFiles: %w, %s", err, idxPath)
 						return false
 					}
 					totalKeys += item.index.KeyCount()
@@ -328,36 +335,48 @@ func (ii *InvertedIndex) openFiles() error {
 	if err != nil {
 		return err
 	}
+
+	if err := ii.localityIndex.reOpenFiles(); err != nil {
+		return err
+	}
 	return nil
 }
 
-func (ii *InvertedIndex) closeFiles() {
+func (ii *InvertedIndex) closeWhatNotInList(fNames []string) {
+	var toDelete []*filesItem
 	ii.files.Walk(func(items []*filesItem) bool {
+	Loop1:
 		for _, item := range items {
-			if item.decompressor != nil {
-				if err := item.decompressor.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.index.FileName())
+			for _, protectName := range fNames {
+				if item.decompressor != nil && item.decompressor.FileName() == protectName {
+					continue Loop1
 				}
-				item.decompressor = nil
 			}
-			if item.index != nil {
-				if err := item.index.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.index.FileName())
-				}
-				item.index = nil
-			}
+			toDelete = append(toDelete, item)
 		}
 		return true
 	})
-	if ii.localityIndex != nil {
-		ii.localityIndex.Close()
+	for _, item := range toDelete {
+		if item.decompressor != nil {
+			if err := item.decompressor.Close(); err != nil {
+				log.Trace("close", "err", err, "file", item.index.FileName())
+			}
+			item.decompressor = nil
+		}
+		if item.index != nil {
+			if err := item.index.Close(); err != nil {
+				log.Trace("close", "err", err, "file", item.index.FileName())
+			}
+			item.index = nil
+		}
+		ii.files.Delete(item)
 	}
-	ii.files.Clear()
-	ii.reCalcRoFiles()
+	ii.localityIndex.closeWhatNotInList(fNames)
 }
 
 func (ii *InvertedIndex) Close() {
-	ii.closeFiles()
+	ii.closeWhatNotInList([]string{})
+	ii.reCalcRoFiles()
 }
 
 func (ii *InvertedIndex) Files() (res []string) {
