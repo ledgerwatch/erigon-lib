@@ -441,7 +441,7 @@ func Test_EncodeCommitmentState(t *testing.T) {
 func Test_BtreeIndex_Seek(t *testing.T) {
 	tmp := t.TempDir()
 
-	keyCount, M := 120, 1024
+	keyCount, M := 120000, 1024
 	dataPath := generateCompressedKV(t, tmp, 52, 180 /*val size*/, keyCount)
 	defer os.RemoveAll(tmp)
 
@@ -462,6 +462,18 @@ func Test_BtreeIndex_Seek(t *testing.T) {
 		require.EqualValues(t, keys[i], cur.key)
 		require.NotEmptyf(t, cur.Value(), "i=%d", i)
 		// require.EqualValues(t, uint64(i), cur.Value())
+	}
+	for i := 1; i < len(keys); i++ {
+		alt := common.Copy(keys[i])
+		for j := len(alt) - 1; j >= 0; j-- {
+			if alt[j] > 0 {
+				alt[j] -= 1
+				break
+			}
+		}
+		cur, err := bt.Seek(keys[i])
+		require.NoError(t, err)
+		require.EqualValues(t, keys[i], cur.Key())
 	}
 
 	bt.Close()
@@ -495,7 +507,7 @@ func pivotKeysFromKV(dataPath string) ([][]byte, error) {
 
 func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount int) string {
 	args := BtIndexWriterArgs{
-		IndexFile: path.Join(tmp, "100k.bt"),
+		IndexFile: path.Join(tmp, fmt.Sprintf("%dk.bt", keyCount/1000)),
 		TmpDir:    tmp,
 		KeyCount:  12,
 	}
@@ -507,19 +519,20 @@ func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount
 	rnd := rand.New(rand.NewSource(0))
 	values := make([]byte, valueSize)
 
-	comp, err := compress.NewCompressor(context.Background(), "cmp", path.Join(tmp, "100k.v2"), tmp, compress.MinPatternScore, 1, log.LvlDebug)
+	dataPath := path.Join(tmp, fmt.Sprintf("%dk.kv", keyCount/1000))
+	comp, err := compress.NewCompressor(context.Background(), "cmp", dataPath, tmp, compress.MinPatternScore, 1, log.LvlDebug)
 	require.NoError(t, err)
 
 	for i := 0; i < keyCount; i++ {
-		// n, err := rnd.Read(keys[:52])
-		// require.EqualValues(t, n, 52)
 		key := make([]byte, keySize)
+		n, err := rnd.Read(key[:])
+		require.EqualValues(t, keySize, n)
 		binary.BigEndian.PutUint64(key[keySize-8:], uint64(i))
 		require.NoError(t, err)
 		err = comp.AddWord(key[:])
 		require.NoError(t, err)
 
-		n, err := rnd.Read(values[:rnd.Intn(valueSize)+1])
+		n, err = rnd.Read(values[:rnd.Intn(valueSize)+1])
 		require.NoError(t, err)
 
 		err = comp.AddWord(values[:n])
@@ -530,7 +543,7 @@ func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount
 	require.NoError(t, err)
 	comp.Close()
 
-	decomp, err := compress.NewDecompressor(path.Join(tmp, "100k.v2"))
+	decomp, err := compress.NewDecompressor(dataPath)
 	require.NoError(t, err)
 
 	getter := decomp.MakeGetter()

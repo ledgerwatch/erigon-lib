@@ -427,38 +427,38 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 					heap.Pop(&cp)
 				}
 			}
-			var skip bool
-			if d.prefixLen > 0 {
-				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
-			} else {
-				// For the rest of types, empty value means deletion
-				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0
-			}
+			//var skip bool
+			//if d.prefixLen > 0 {
+			//	skip = r.valuesStartTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
+			//} else {
+			// For the rest of types, empty value means deletion
+			skip := r.valuesStartTxNum == 0 && len(lastVal) == 0
+			//}
 			if !skip {
-				if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
-					if err = comp.AddUncompressedWord(keyBuf); err != nil {
-						return nil, nil, nil, err
-					}
-					keyCount++ // Only counting keys, not values
-
-					if d.trace {
-						fmt.Printf("merge: multi-way key %x, total keys %d\n", keyBuf, keyCount)
-					}
-
-					valBuf, err = d.commitmentValTransform(&oldFiles, &mergedFiles, valBuf)
-					if err != nil {
-						return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
-					}
-					if d.compressVals {
-						if err = comp.AddWord(valBuf); err != nil {
-							return nil, nil, nil, err
-						}
-					} else {
-						if err = comp.AddUncompressedWord(valBuf); err != nil {
-							return nil, nil, nil, err
-						}
-					}
-				}
+				//if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
+				//	if err = comp.AddUncompressedWord(keyBuf); err != nil {
+				//		return nil, nil, nil, err
+				//	}
+				//	keyCount++ // Only counting keys, not values
+				//
+				//	if d.trace {
+				//		fmt.Printf("merge: multi-way key %x, total keys %d\n", keyBuf, keyCount)
+				//	}
+				//
+				//	valBuf, err = d.commitmentValTransform(&oldFiles, &mergedFiles, valBuf)
+				//	if err != nil {
+				//		return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
+				//	}
+				//	if d.compressVals {
+				//		if err = comp.AddWord(valBuf); err != nil {
+				//			return nil, nil, nil, err
+				//		}
+				//	} else {
+				//		if err = comp.AddUncompressedWord(valBuf); err != nil {
+				//			return nil, nil, nil, err
+				//		}
+				//	}
+				//}
 				keyBuf = append(keyBuf[:0], lastKey...)
 				valBuf = append(valBuf[:0], lastVal...)
 			}

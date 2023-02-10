@@ -413,7 +413,11 @@ func (a *btAlloc) bsKey(x []byte, l, r uint64) (*Cursor, error) {
 			break
 		}
 	}
-	return nil, fmt.Errorf("key %x was not found", x)
+	k, v, err := a.dataLookup(l)
+	if err != nil {
+		return nil, fmt.Errorf("key >= %x was not found at pos %d", x, l)
+	}
+	return a.newCursor(context.TODO(), k, v, l), nil
 }
 
 func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (n node, lm int64, rm int64) {
@@ -921,21 +925,16 @@ func BuildBtreeIndex(dataPath, indexPath string) error {
 	key := make([]byte, 0, 64)
 
 	var pos uint64
-	emptys := 0
 	for getter.HasNext() {
-		key, kp := getter.Next(key[:0])
+		key, _ := getter.Next(key[:0])
 		err = iw.AddKey(key[:], uint64(pos))
 		if err != nil {
 			return err
 		}
 
 		pos = getter.Skip()
-		if pos-kp == 1 {
-			emptys++
-		}
 	}
 	decomp.Close()
-	fmt.Printf("emptys %d\n", emptys)
 
 	if err := iw.Build(); err != nil {
 		return err
@@ -1049,7 +1048,7 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 }
 
 func (b *BtIndex) dataLookup(di uint64) ([]byte, []byte, error) {
-	if b.keyCount <= di {
+	if b.keyCount < di {
 		return nil, nil, fmt.Errorf("ki is greater than key count in index")
 	}
 

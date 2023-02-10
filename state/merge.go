@@ -654,29 +654,29 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 					heap.Pop(&cp)
 				}
 			}
-			var skip bool
-			if d.prefixLen > 0 {
-				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
-			} else {
-				// For the rest of types, empty value means deletion
-				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0
-			}
+			//var skip bool
+			//if d.prefixLen > 0 {
+			//	skip = r.valuesStartTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
+			//} else {
+			// For the rest of types, empty value means deletion
+			skip := r.valuesStartTxNum == 0 && len(lastVal) == 0
+			//}
 			if !skip {
-				if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
-					if err = comp.AddUncompressedWord(keyBuf); err != nil {
-						return nil, nil, nil, err
-					}
-					keyCount++ // Only counting keys, not values
-					if d.compressVals {
-						if err = comp.AddWord(valBuf); err != nil {
-							return nil, nil, nil, err
-						}
-					} else {
-						if err = comp.AddUncompressedWord(valBuf); err != nil {
-							return nil, nil, nil, err
-						}
-					}
-				}
+				//if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
+				//	if err = comp.AddUncompressedWord(keyBuf); err != nil {
+				//		return nil, nil, nil, err
+				//	}
+				//	keyCount++ // Only counting keys, not values
+				//	if d.compressVals {
+				//		if err = comp.AddWord(valBuf); err != nil {
+				//			return nil, nil, nil, err
+				//		}
+				//	} else {
+				//		if err = comp.AddUncompressedWord(valBuf); err != nil {
+				//			return nil, nil, nil, err
+				//		}
+				//	}
+				//}
 				keyBuf = append(keyBuf[:0], lastKey...)
 				valBuf = append(valBuf[:0], lastVal...)
 			}
