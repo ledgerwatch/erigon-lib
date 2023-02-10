@@ -78,8 +78,8 @@ func (li *LocalityIndex) closeWhatNotInList(fNames []string) {
 func (li *LocalityIndex) reOpenList(fNames []string) error {
 	li.closeWhatNotInList(fNames)
 	_ = li.scanStateFiles(fNames)
-	if err := li.reOpenFiles(); err != nil {
-		return fmt.Errorf("LocalityIndex.reOpenList: %s, %w", li.filenameBase, err)
+	if err := li.openFiles(); err != nil {
+		return fmt.Errorf("LocalityIndex.openList: %s, %w", li.filenameBase, err)
 	}
 	return nil
 }
@@ -129,7 +129,7 @@ func (li *LocalityIndex) scanStateFiles(fNames []string) (uselessFiles []*filesI
 	return uselessFiles
 }
 
-func (li *LocalityIndex) reOpenFiles() (err error) {
+func (li *LocalityIndex) openFiles() (err error) {
 	if li == nil || li.file == nil {
 		return nil
 	}
@@ -149,7 +149,7 @@ func (li *LocalityIndex) reOpenFiles() (err error) {
 		if dir.FileExist(idxPath) {
 			li.file.index, err = recsplit.OpenIndex(idxPath)
 			if err != nil {
-				return fmt.Errorf("LocalityIndex.reOpenFiles: %w, %s", err, idxPath)
+				return fmt.Errorf("LocalityIndex.openFiles: %w, %s", err, idxPath)
 			}
 		}
 	}

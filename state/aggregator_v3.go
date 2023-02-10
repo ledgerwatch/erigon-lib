@@ -78,25 +78,25 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	a := &AggregatorV3{ctx: ctx, ctxCancel: ctxCancel, dir: dir, tmpdir: tmpdir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db, keepInDB: 2 * aggregationStep}
 	var err error
 	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, kv.AccountSettings, false /* compressVals */, nil); err != nil {
-		return nil, fmt.Errorf("ReopenFolder: %w", err)
+		return nil, err
 	}
 	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, kv.StorageSettings, false /* compressVals */, nil); err != nil {
-		return nil, fmt.Errorf("ReopenFolder: %w", err)
+		return nil, err
 	}
 	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, kv.CodeSettings, true /* compressVals */, nil); err != nil {
-		return nil, fmt.Errorf("ReopenFolder: %w", err)
+		return nil, err
 	}
 	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, false, nil); err != nil {
-		return nil, fmt.Errorf("ReopenFolder: %w", err)
+		return nil, err
 	}
 	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, false, nil); err != nil {
-		return nil, fmt.Errorf("ReopenFolder: %w", err)
+		return nil, err
 	}
 	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, false, nil); err != nil {
-		return nil, fmt.Errorf("ReopenFolder: %w", err)
+		return nil, err
 	}
 	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, false, nil); err != nil {
-		return nil, fmt.Errorf("ReopenFolder: %w", err)
+		return nil, err
 	}
 	a.recalcMaxTxNum()
 	return a, nil
@@ -106,25 +106,25 @@ func (a *AggregatorV3) ReopenFolder() error {
 	a.openCloseLock.Lock()
 	defer a.openCloseLock.Unlock()
 	var err error
-	if err = a.accounts.reOpenFolder(); err != nil {
+	if err = a.accounts.openFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.storage.reOpenFolder(); err != nil {
+	if err = a.storage.openFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.code.reOpenFolder(); err != nil {
+	if err = a.code.openFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.logAddrs.reOpenFolder(); err != nil {
+	if err = a.logAddrs.openFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.logTopics.reOpenFolder(); err != nil {
+	if err = a.logTopics.openFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.tracesFrom.reOpenFolder(); err != nil {
+	if err = a.tracesFrom.openFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.tracesTo.reOpenFolder(); err != nil {
+	if err = a.tracesTo.openFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	a.recalcMaxTxNum()
@@ -135,26 +135,26 @@ func (a *AggregatorV3) ReopenList(fNames []string) error {
 	defer a.openCloseLock.Unlock()
 
 	var err error
-	if err = a.accounts.reOpenList(fNames); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+	if err = a.accounts.openList(fNames); err != nil {
+		return err
 	}
-	if err = a.storage.reOpenList(fNames); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+	if err = a.storage.openList(fNames); err != nil {
+		return err
 	}
-	if err = a.code.reOpenList(fNames); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+	if err = a.code.openList(fNames); err != nil {
+		return err
 	}
-	if err = a.logAddrs.reOpenList(fNames); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+	if err = a.logAddrs.openList(fNames); err != nil {
+		return err
 	}
-	if err = a.logTopics.reOpenList(fNames); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+	if err = a.logTopics.openList(fNames); err != nil {
+		return err
 	}
-	if err = a.tracesFrom.reOpenList(fNames); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+	if err = a.tracesFrom.openList(fNames); err != nil {
+		return err
 	}
-	if err = a.tracesTo.reOpenList(fNames); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+	if err = a.tracesTo.openList(fNames); err != nil {
+		return err
 	}
 	a.recalcMaxTxNum()
 	return nil
@@ -669,9 +669,9 @@ func (a *AggregatorV3) Warmup(ctx context.Context, txFrom, limit uint64) {
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *AggregatorV3) DiscardHistory() *AggregatorV3 {
-	a.accounts.DiscardHistory(a.tmpdir)
-	a.storage.DiscardHistory(a.tmpdir)
-	a.code.DiscardHistory(a.tmpdir)
+	a.accounts.DiscardHistory()
+	a.storage.DiscardHistory()
+	a.code.DiscardHistory()
 	a.logAddrs.DiscardHistory(a.tmpdir)
 	a.logTopics.DiscardHistory(a.tmpdir)
 	a.tracesFrom.DiscardHistory(a.tmpdir)
@@ -681,13 +681,13 @@ func (a *AggregatorV3) DiscardHistory() *AggregatorV3 {
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *AggregatorV3) StartWrites() *AggregatorV3 {
-	a.accounts.StartWrites(a.tmpdir)
-	a.storage.StartWrites(a.tmpdir)
-	a.code.StartWrites(a.tmpdir)
-	a.logAddrs.StartWrites(a.tmpdir)
-	a.logTopics.StartWrites(a.tmpdir)
-	a.tracesFrom.StartWrites(a.tmpdir)
-	a.tracesTo.StartWrites(a.tmpdir)
+	a.accounts.StartWrites()
+	a.storage.StartWrites()
+	a.code.StartWrites()
+	a.logAddrs.StartWrites()
+	a.logTopics.StartWrites()
+	a.tracesFrom.StartWrites()
+	a.tracesTo.StartWrites()
 	return a
 }
 func (a *AggregatorV3) FinishWrites() {

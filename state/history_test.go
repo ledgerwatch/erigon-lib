@@ -71,7 +71,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 	require.NoError(err)
 	defer tx.Rollback()
 	h.SetTx(tx)
-	h.StartWrites("")
+	h.StartWrites()
 	defer h.FinishWrites()
 
 	h.SetTxNum(2)
@@ -175,7 +175,7 @@ func TestHistoryAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	defer tx.Rollback()
 	h.SetTx(tx)
-	h.StartWrites("")
+	h.StartWrites()
 	defer h.FinishWrites()
 
 	h.SetTxNum(2)
@@ -233,7 +233,7 @@ func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 	require.NoError(tb, err)
 	defer tx.Rollback()
 	h.SetTx(tx)
-	h.StartWrites("")
+	h.StartWrites()
 	defer h.FinishWrites()
 
 	txs := uint64(1000)
@@ -396,7 +396,7 @@ func TestHistoryScanFiles(t *testing.T) {
 	collateAndMergeHistory(t, db, h, txs)
 	// Recreate domain and re-scan the files
 	txNum := h.txNum
-	require.NoError(t, h.reOpenFolder())
+	require.NoError(t, h.openFolder())
 	//h.Close()
 	//h, err = NewHistory(path, path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals, nil)
 	require.NoError(t, err)
@@ -622,7 +622,10 @@ func TestIterateChanged2(t *testing.T) {
 }
 
 func TestScanStaticFilesH(t *testing.T) {
-	h := &History{InvertedIndex: &InvertedIndex{filenameBase: "test", aggregationStep: 1},
+	h := &History{
+		InvertedIndex: &InvertedIndex{
+			files: btree2.NewBTreeG[*filesItem](filesItemLess), filenameBase: "test", aggregationStep: 1,
+		},
 		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
 	files := []string{

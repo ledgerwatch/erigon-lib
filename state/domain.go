@@ -156,17 +156,68 @@ func NewDomain(
 	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals, []string{"kv"}); err != nil {
 		return nil, err
 	}
+
+	return d, nil
+}
+func (d *Domain) StartWrites() {
+	d.defaultDc = d.MakeContext()
+	d.History.StartWrites()
+}
+func (d *Domain) FinishWrites() {
+	d.defaultDc.Close()
+	d.History.FinishWrites()
+}
+
+func (d *Domain) closeWhatNotInList(fNames []string) {
+	var toDelete []*filesItem
+	d.files.Walk(func(items []*filesItem) bool {
+	Loop1:
+		for _, item := range items {
+			for _, protectName := range fNames {
+				if item.decompressor != nil && item.decompressor.FileName() == protectName {
+					continue Loop1
+				}
+			}
+			toDelete = append(toDelete, item)
+		}
+		return true
+	})
+	for _, item := range toDelete {
+		if item.decompressor != nil {
+			if err := item.decompressor.Close(); err != nil {
+				log.Trace("close", "err", err, "file", item.index.FileName())
+			}
+			item.decompressor = nil
+		}
+		if item.index != nil {
+			if err := item.index.Close(); err != nil {
+				log.Trace("close", "err", err, "file", item.index.FileName())
+			}
+			item.index = nil
+		}
+		d.files.Delete(item)
+	}
+	d.History.closeWhatNotInList(fNames)
+}
+
+func (d *Domain) openList(fNames []string) error {
+	d.closeWhatNotInList(fNames)
+	_ = d.scanStateFiles(fNames)
+	if err := d.openFiles(); err != nil {
+		return fmt.Errorf("History.openList: %s, %w", d.filenameBase, err)
+	}
+	return nil
+}
+
+func (d *Domain) openFolder() error {
+	//if err := d.History.openFolder(); err != nil {
+	//	return err
+	//}
 	files, err := d.fileNamesOnDisk()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	_ = d.scanStateFiles(files)
-
-	if err = d.openFiles(); err != nil {
-		return nil, err
-	}
-	d.defaultDc = d.MakeContext()
-	return d, nil
+	return d.openList(files)
 }
 
 func (d *Domain) GetAndResetStats() DomainStats {
@@ -204,6 +255,10 @@ func (d *Domain) scanStateFiles(fileNames []string) (uselessFiles []string) {
 
 		startTxNum, endTxNum := startStep*d.aggregationStep, endStep*d.aggregationStep
 		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: endStep-startStep == StepsInBiggestFile}
+		if _, has := d.files.Get(newFile); has {
+			continue
+		}
+
 		{
 			var subSets []*filesItem
 			var superSet *filesItem
@@ -234,12 +289,15 @@ func (d *Domain) scanStateFiles(fileNames []string) (uselessFiles []string) {
 		}
 		d.files.Set(newFile)
 	}
-	d.reCalcRoFiles()
+	d.History.scanStateFiles(fileNames, []string{"kv"})
 	return uselessFiles
 }
 
 func (d *Domain) openFiles() error {
-	var err error
+	err := d.History.openFiles()
+	if err != nil {
+		return err
+	}
 	var totalKeys uint64
 
 	invalidFileItems := make([]*filesItem, 0)
@@ -262,7 +320,7 @@ func (d *Domain) openFiles() error {
 				idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, fromStep, toStep))
 				if dir.FileExist(idxPath) {
 					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug("InvertedIndex.reOpenFiles: %w, %s", err, idxPath)
+						log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
 						return false
 					}
 					totalKeys += item.index.KeyCount()
@@ -277,6 +335,8 @@ func (d *Domain) openFiles() error {
 	for _, item := range invalidFileItems {
 		d.files.Delete(item)
 	}
+
+	d.reCalcRoFiles()
 	return nil
 }
 

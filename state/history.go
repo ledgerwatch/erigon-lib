@@ -99,38 +99,40 @@ func NewHistory(
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
 
-	//if err := h.reOpenFolder(); err != nil {
+	//if err := h.openFolder(); err != nil {
 	//	return nil, err
 	//}
 	return &h, nil
 }
 
-func (h *History) reOpenList(fNames []string) error {
+func (h *History) openList(fNames []string) error {
 	h.closeWhatNotInList(fNames)
 	_ = h.scanStateFiles(fNames, h.integrityFileExtensions)
-	if err := h.reOpenFiles(); err != nil {
-		return fmt.Errorf("History.reOpenList: %s, %w", h.filenameBase, err)
+	if err := h.openFiles(); err != nil {
+		return fmt.Errorf("History.openList: %s, %w", h.filenameBase, err)
 	}
-	h.reCalcRoFiles()
 	return nil
 }
 
-func (h *History) reOpenFolder() error {
-	h.closeWhatNotInList([]string{})
+func (h *History) openFolder() error {
+	if err := h.InvertedIndex.openFolder(); err != nil {
+		return err
+	}
+	//h.closeWhatNotInList([]string{})
 	files, err := h.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
-	return h.reOpenList(files)
+	return h.openList(files)
 }
 
 // scanStateFiles
 // returns `uselessFiles` where file "is useless" means: it's subset of frozen file. such files can be safely deleted. subset of non-frozen file may be useful
-func (h *History) scanStateFiles(files []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
+func (h *History) scanStateFiles(fNames []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
 Loop:
-	for _, name := range files {
+	for _, name := range fNames {
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 3 {
 			if len(subs) != 0 {
@@ -164,6 +166,10 @@ Loop:
 		}
 
 		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
+		if _, has := h.files.Get(newFile); has {
+			continue
+		}
+
 		addNewFile := true
 		var subSets []*filesItem
 		h.files.Walk(func(items []*filesItem) bool {
@@ -190,12 +196,12 @@ Loop:
 			h.files.Set(newFile)
 		}
 	}
-	h.reCalcRoFiles()
+	h.InvertedIndex.scanStateFiles(fNames, append(slices.Clone(h.integrityFileExtensions), "v"))
 	return uselessFiles
 }
 
-func (h *History) reOpenFiles() error {
-	if err := h.InvertedIndex.reOpenFiles(); err != nil {
+func (h *History) openFiles() error {
+	if err := h.InvertedIndex.openFiles(); err != nil {
 		return err
 	}
 
@@ -212,7 +218,7 @@ func (h *History) reOpenFiles() error {
 					continue
 				}
 				if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-					log.Debug("Hisrory.reOpenFiles: %w, %s", err, datPath)
+					log.Debug("Hisrory.openFiles: %w, %s", err, datPath)
 					return false
 				}
 			}
@@ -221,7 +227,7 @@ func (h *History) reOpenFiles() error {
 				idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
 				if dir.FileExist(idxPath) {
 					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug(fmt.Errorf("Hisrory.reOpenFiles: %w, %s", err, idxPath).Error())
+						log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, idxPath).Error())
 						return false
 					}
 					totalKeys += item.index.KeyCount()
@@ -237,6 +243,7 @@ func (h *History) reOpenFiles() error {
 		h.files.Delete(item)
 	}
 
+	h.reCalcRoFiles()
 	return nil
 }
 
@@ -344,7 +351,7 @@ func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighte
 		return err
 	}
 
-	return h.reOpenFiles()
+	return h.openFiles()
 }
 
 func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []byte) error) (count int, err error) {
@@ -474,17 +481,17 @@ func (h *History) AddPrevValue(key1, key2, original []byte) (err error) {
 	return err
 }
 
-func (h *History) DiscardHistory(tmpdir string) {
-	h.InvertedIndex.StartWrites(tmpdir)
+func (h *History) DiscardHistory() {
+	h.InvertedIndex.StartWrites()
 	h.walLock.Lock()
 	defer h.walLock.Unlock()
-	h.wal = h.newWriter(tmpdir, false, true)
+	h.wal = h.newWriter(h.tmpdir, false, true)
 }
-func (h *History) StartWrites(tmpdir string) {
-	h.InvertedIndex.StartWrites(tmpdir)
+func (h *History) StartWrites() {
+	h.InvertedIndex.StartWrites()
 	h.walLock.Lock()
 	defer h.walLock.Unlock()
-	h.wal = h.newWriter(tmpdir, true, false)
+	h.wal = h.newWriter(h.tmpdir, true, false)
 }
 func (h *History) FinishWrites() {
 	h.InvertedIndex.FinishWrites()

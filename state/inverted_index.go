@@ -106,9 +106,6 @@ func NewInvertedIndex(
 			return nil, fmt.Errorf("NewHistory: %s, %w", ii.filenameBase, err)
 		}
 	}
-	//if err := ii.reOpenFolder(); err != nil {
-	//	return nil, err
-	//}
 	return &ii, nil
 }
 
@@ -127,23 +124,22 @@ func (ii *InvertedIndex) fileNamesOnDisk() ([]string, error) {
 	return filteredFiles, nil
 }
 
-func (ii *InvertedIndex) reOpenList(fNames []string) error {
+func (ii *InvertedIndex) openList(fNames []string) error {
 	ii.closeWhatNotInList(fNames)
 	_ = ii.scanStateFiles(fNames, ii.integrityFileExtensions)
-	if err := ii.reOpenFiles(); err != nil {
-		return fmt.Errorf("NewHistory.reOpenFiles: %s, %w", ii.filenameBase, err)
+	if err := ii.openFiles(); err != nil {
+		return fmt.Errorf("NewHistory.openFiles: %s, %w", ii.filenameBase, err)
 	}
-	ii.reCalcRoFiles()
 	return nil
 }
 
-func (ii *InvertedIndex) reOpenFolder() error {
-	ii.closeWhatNotInList([]string{})
+func (ii *InvertedIndex) openFolder() error {
+	//ii.closeWhatNotInList([]string{})
 	files, err := ii.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
-	return ii.reOpenList(files)
+	return ii.openList(files)
 }
 
 func (ii *InvertedIndex) scanStateFiles(fileNames []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
@@ -184,6 +180,10 @@ Loop:
 		}
 
 		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
+		if _, has := ii.files.Get(newFile); has {
+			continue
+		}
+
 		addNewFile := true
 		var subSets []*filesItem
 		ii.files.Walk(func(items []*filesItem) bool {
@@ -210,7 +210,6 @@ Loop:
 			ii.files.Set(newFile)
 		}
 	}
-	ii.reCalcRoFiles()
 	return uselessFiles
 }
 
@@ -293,10 +292,10 @@ func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, sem *semaphore.
 	if err := g.Wait(); err != nil {
 		return err
 	}
-	return ii.reOpenFiles()
+	return ii.openFiles()
 }
 
-func (ii *InvertedIndex) reOpenFiles() error {
+func (ii *InvertedIndex) openFiles() error {
 	var err error
 	var totalKeys uint64
 	var invalidFileItems []*filesItem
@@ -311,7 +310,7 @@ func (ii *InvertedIndex) reOpenFiles() error {
 				}
 
 				if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-					log.Debug("InvertedIndex.reOpenFiles: %w, %s", err, datPath)
+					log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
 					continue
 				}
 			}
@@ -320,7 +319,7 @@ func (ii *InvertedIndex) reOpenFiles() error {
 				idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
 				if dir.FileExist(idxPath) {
 					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug("InvertedIndex.reOpenFiles: %w, %s", err, idxPath)
+						log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
 						return false
 					}
 					totalKeys += item.index.KeyCount()
@@ -336,9 +335,11 @@ func (ii *InvertedIndex) reOpenFiles() error {
 		return err
 	}
 
-	if err := ii.localityIndex.reOpenFiles(); err != nil {
+	if err := ii.localityIndex.openFiles(); err != nil {
 		return err
 	}
+
+	ii.reCalcRoFiles()
 	return nil
 }
 
@@ -416,10 +417,10 @@ func (ii *InvertedIndex) DiscardHistory(tmpdir string) {
 	defer ii.walLock.Unlock()
 	ii.wal = ii.newWriter(tmpdir, false, true)
 }
-func (ii *InvertedIndex) StartWrites(tmpdir string) {
+func (ii *InvertedIndex) StartWrites() {
 	ii.walLock.Lock()
 	defer ii.walLock.Unlock()
-	ii.wal = ii.newWriter(tmpdir, WALCollectorRam > 0, false)
+	ii.wal = ii.newWriter(ii.tmpdir, WALCollectorRam > 0, false)
 }
 func (ii *InvertedIndex) FinishWrites() {
 	ii.walLock.Lock()
