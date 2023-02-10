@@ -452,7 +452,7 @@ func (s *KvServer) Snapshots(ctx context.Context, _ *remote.SnapshotsRequest) (*
 		return &remote.SnapshotsReply{Files: []string{}}, nil
 	}
 
-	return &remote.SnapshotsReply{Files: s.blockSnapshots.Files()}, nil
+	return &remote.SnapshotsReply{Files: s.blockSnapshots.Files(), HistoryFiles: s.historySnapshots.Files()}, nil
 }
 
 type StateChangePubSub struct {
