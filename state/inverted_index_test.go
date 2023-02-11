@@ -509,14 +509,7 @@ func TestScanStaticFiles(t *testing.T) {
 		"test.4-5.ef",
 	}
 	ii.scanStateFiles(files)
-	var found []string
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			found = append(found, fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))
-		}
-		return true
-	})
-	require.Equal(t, 6, len(found))
+	require.Equal(t, 6, ii.files.Len())
 
 	//integrity extension case
 	ii.files.Clear()
