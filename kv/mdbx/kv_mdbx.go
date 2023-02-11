@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -128,8 +127,6 @@ func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
 		if err := os.MkdirAll(tmpDir, 0755); err != nil {
 			panic(err)
 		}
-	} else {
-		fmt.Printf("InMem empty: %s\n", debug.Stack())
 	}
 	path, err := os.MkdirTemp(tmpDir, "erigon-memdb-")
 	if err != nil {
