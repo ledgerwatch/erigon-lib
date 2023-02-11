@@ -396,7 +396,7 @@ func TestHistoryScanFiles(t *testing.T) {
 	collateAndMergeHistory(t, db, h, txs)
 	// Recreate domain and re-scan the files
 	txNum := h.txNum
-	require.NoError(t, h.openFolder())
+	require.NoError(t, h.OpenFolder())
 	//h.Close()
 	//h, err = NewHistory(path, path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals, nil)
 	require.NoError(t, err)
@@ -636,7 +636,7 @@ func TestScanStaticFilesH(t *testing.T) {
 		"test.3-4.v",
 		"test.4-5.v",
 	}
-	h.scanStateFiles(files, nil)
+	h.scanStateFiles(files)
 	var found []string
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
@@ -647,7 +647,7 @@ func TestScanStaticFilesH(t *testing.T) {
 	require.Equal(t, 6, len(found))
 
 	h.files.Clear()
-	h.scanStateFiles(files, []string{"kv"})
+	h.scanStateFiles(files)
 	require.Equal(t, 0, h.files.Len())
 
 }

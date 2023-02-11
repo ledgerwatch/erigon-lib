@@ -124,25 +124,27 @@ func (ii *InvertedIndex) fileNamesOnDisk() ([]string, error) {
 	return filteredFiles, nil
 }
 
-func (ii *InvertedIndex) openList(fNames []string) error {
+func (ii *InvertedIndex) OpenList(fNames []string) error {
+	if err := ii.localityIndex.OpenList(fNames); err != nil {
+		return err
+	}
 	ii.closeWhatNotInList(fNames)
-	_ = ii.scanStateFiles(fNames, ii.integrityFileExtensions)
+	_ = ii.scanStateFiles(fNames)
 	if err := ii.openFiles(); err != nil {
 		return fmt.Errorf("NewHistory.openFiles: %s, %w", ii.filenameBase, err)
 	}
 	return nil
 }
 
-func (ii *InvertedIndex) openFolder() error {
-	//ii.closeWhatNotInList([]string{})
+func (ii *InvertedIndex) OpenFolder() error {
 	files, err := ii.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
-	return ii.openList(files)
+	return ii.OpenList(files)
 }
 
-func (ii *InvertedIndex) scanStateFiles(fileNames []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
+func (ii *InvertedIndex) scanStateFiles(fileNames []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + ii.filenameBase + ".([0-9]+)-([0-9]+).ef$")
 	var err error
 Loop:
@@ -171,7 +173,7 @@ Loop:
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
 		frozen := endStep-startStep == StepsInBiggestFile
 
-		for _, ext := range integrityFileExtensions {
+		for _, ext := range ii.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", ii.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(ii.dir, requiredFile)) {
 				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
@@ -211,7 +213,6 @@ Loop:
 		}
 	}
 
-	ii.localityIndex.scanStateFiles(fileNames)
 	return uselessFiles
 }
 
@@ -303,29 +304,31 @@ func (ii *InvertedIndex) openFiles() error {
 	var invalidFileItems []*filesItem
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
+			if item.decompressor != nil {
+				continue
+			}
 			fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
-			if item.decompressor == nil {
-				datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, fromStep, toStep))
-				if !dir.FileExist(datPath) {
-					invalidFileItems = append(invalidFileItems, item)
-					continue
-				}
-
-				if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-					log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
-					continue
-				}
+			datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, fromStep, toStep))
+			if !dir.FileExist(datPath) {
+				invalidFileItems = append(invalidFileItems, item)
+				continue
 			}
 
-			if item.index == nil {
-				idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
-				if dir.FileExist(idxPath) {
-					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
-						return false
-					}
-					totalKeys += item.index.KeyCount()
+			if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+				log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
+				continue
+			}
+
+			if item.index != nil {
+				continue
+			}
+			idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
+			if dir.FileExist(idxPath) {
+				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
+					log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
+					return false
 				}
+				totalKeys += item.index.KeyCount()
 			}
 		}
 		return true
@@ -334,10 +337,6 @@ func (ii *InvertedIndex) openFiles() error {
 		ii.files.Delete(item)
 	}
 	if err != nil {
-		return err
-	}
-
-	if err := ii.localityIndex.openFiles(); err != nil {
 		return err
 	}
 
@@ -374,10 +373,10 @@ func (ii *InvertedIndex) closeWhatNotInList(fNames []string) {
 		}
 		ii.files.Delete(item)
 	}
-	ii.localityIndex.closeWhatNotInList(fNames)
 }
 
 func (ii *InvertedIndex) Close() {
+	ii.localityIndex.Close()
 	ii.closeWhatNotInList([]string{})
 	ii.reCalcRoFiles()
 }
@@ -550,14 +549,7 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 		}
 	}
 
-	if ic.ii.localityIndex != nil {
-		ic.loc.file = ic.ii.localityIndex.file
-		ic.loc.reader = ic.ii.localityIndex.NewIdxReader()
-		ic.loc.bm = ic.ii.localityIndex.bm
-		if ic.loc.file != nil {
-			ic.loc.file.refcount.Inc()
-		}
-	}
+	ii.localityIndex.MakeContext(&ic.loc)
 	return &ic
 }
 func (ic *InvertedIndexContext) Close() {
@@ -571,13 +563,8 @@ func (ic *InvertedIndexContext) Close() {
 			item.src.closeFilesAndRemove()
 		}
 	}
-	if ic.loc.file != nil {
-		refCnt := ic.loc.file.refcount.Dec()
-		if refCnt == 0 && ic.loc.file.canDelete.Load() {
-			ic.ii.localityIndex.closeFilesAndRemove(ic.loc)
-			ic.loc.file, ic.loc.bm = nil, nil
-		}
-	}
+
+	ic.ii.localityIndex.CloseContext(&ic.loc)
 }
 
 // InvertedIterator allows iteration over range of tx numbers
@@ -1377,7 +1364,7 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 
 func (ii *InvertedIndex) CleanupDir() {
 	files, _ := ii.fileNamesOnDisk()
-	uselessFiles := ii.scanStateFiles(files, ii.integrityFileExtensions)
+	uselessFiles := ii.scanStateFiles(files)
 	for _, f := range uselessFiles {
 		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
 		err := os.Remove(filepath.Join(ii.dir, fName))

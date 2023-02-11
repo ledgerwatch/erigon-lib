@@ -75,6 +75,15 @@ func (li *LocalityIndex) closeWhatNotInList(fNames []string) {
 	}
 }
 
+func (li *LocalityIndex) OpenList(fNames []string) error {
+	li.closeWhatNotInList(fNames)
+	_ = li.scanStateFiles(fNames)
+	if err := li.openFiles(); err != nil {
+		return fmt.Errorf("NewHistory.openFiles: %s, %w", li.filenameBase, err)
+	}
+	return nil
+}
+
 func (li *LocalityIndex) scanStateFiles(fNames []string) (uselessFiles []*filesItem) {
 	if li == nil {
 		return nil
@@ -166,12 +175,36 @@ func (li *LocalityIndex) closeFiles() {
 	}
 }
 
-func (li *LocalityIndex) closeFilesAndRemove(i ctxLocalityItem) {
+func (li *LocalityIndex) MakeContext(out *ctxLocalityItem) {
+	if li == nil || li.file == nil {
+		return
+	}
+	out.file = li.file
+	out.reader = li.NewIdxReader()
+	out.bm = li.bm
+	if out.file != nil {
+		out.file.refcount.Inc()
+	}
+}
+func (li *LocalityIndex) CloseContext(out *ctxLocalityItem) {
+	if li == nil || li.file == nil {
+		return
+	}
+	if out.file != nil {
+		refCnt := out.file.refcount.Dec()
+		if refCnt == 0 && out.file.canDelete.Load() {
+			li.closeFilesAndRemove(out)
+		}
+	}
+}
+
+func (li *LocalityIndex) closeFilesAndRemove(i *ctxLocalityItem) {
 	if li == nil {
 		return
 	}
 	if i.file != nil {
 		i.file.closeFilesAndRemove()
+		i.file = nil
 	}
 	if i.bm != nil {
 		if err := i.bm.Close(); err != nil {
@@ -180,6 +213,7 @@ func (li *LocalityIndex) closeFilesAndRemove(i ctxLocalityItem) {
 		if err := os.Remove(i.bm.FilePath()); err != nil {
 			log.Trace("os.Remove", "err", err, "file", i.bm.FileName())
 		}
+		i.bm = nil
 	}
 }
 
@@ -232,9 +266,10 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 	defer logEvery.Stop()
 
 	fromStep := uint64(0)
-
+	ic := ii.MakeContext()
+	defer ic.Close()
 	count := 0
-	it := ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
+	it := ic.iterateKeysLocality(toStep * li.aggregationStep)
 	for it.HasNext() {
 		_, _ = it.Next()
 		count++
@@ -273,7 +308,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ii *InvertedIndex, toSt
 		}
 		defer dense.Close()
 
-		it = ii.MakeContext().iterateKeysLocality(toStep * li.aggregationStep)
+		it = ic.iterateKeysLocality(toStep * li.aggregationStep)
 		for it.HasNext() {
 			k, inFiles := it.Next()
 			if err := dense.AddArray(i, inFiles); err != nil {
@@ -358,9 +393,11 @@ type LocalityIndexFiles struct {
 func (sf LocalityIndexFiles) Close() {
 	if sf.index != nil {
 		sf.index.Close()
+		sf.index = nil
 	}
 	if sf.bm != nil {
 		sf.bm.Close()
+		sf.bm = nil
 	}
 }
 

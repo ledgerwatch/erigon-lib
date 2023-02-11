@@ -168,56 +168,32 @@ func (d *Domain) FinishWrites() {
 	d.History.FinishWrites()
 }
 
-func (d *Domain) closeWhatNotInList(fNames []string) {
-	var toDelete []*filesItem
-	d.files.Walk(func(items []*filesItem) bool {
-	Loop1:
-		for _, item := range items {
-			for _, protectName := range fNames {
-				if item.decompressor != nil && item.decompressor.FileName() == protectName {
-					continue Loop1
-				}
-			}
-			toDelete = append(toDelete, item)
-		}
-		return true
-	})
-	for _, item := range toDelete {
-		if item.decompressor != nil {
-			if err := item.decompressor.Close(); err != nil {
-				log.Trace("close", "err", err, "file", item.index.FileName())
-			}
-			item.decompressor = nil
-		}
-		if item.index != nil {
-			if err := item.index.Close(); err != nil {
-				log.Trace("close", "err", err, "file", item.index.FileName())
-			}
-			item.index = nil
-		}
-		d.files.Delete(item)
+// OpenList - main method to open list of files.
+// It's ok if some files was open earlier.
+// If some file already open: noop.
+// If some file already open but not in provided list: close and remove from `files` field.
+func (d *Domain) OpenList(fNames []string) error {
+	if err := d.History.OpenList(fNames); err != nil {
+		return err
 	}
-	d.History.closeWhatNotInList(fNames)
+	return d.openList(fNames)
 }
 
 func (d *Domain) openList(fNames []string) error {
 	d.closeWhatNotInList(fNames)
 	_ = d.scanStateFiles(fNames)
 	if err := d.openFiles(); err != nil {
-		return fmt.Errorf("History.openList: %s, %w", d.filenameBase, err)
+		return fmt.Errorf("History.OpenList: %s, %w", d.filenameBase, err)
 	}
 	return nil
 }
 
-func (d *Domain) openFolder() error {
-	//if err := d.History.openFolder(); err != nil {
-	//	return err
-	//}
+func (d *Domain) OpenFolder() error {
 	files, err := d.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
-	return d.openList(files)
+	return d.OpenList(files)
 }
 
 func (d *Domain) GetAndResetStats() DomainStats {
@@ -289,22 +265,17 @@ func (d *Domain) scanStateFiles(fileNames []string) (uselessFiles []string) {
 		}
 		d.files.Set(newFile)
 	}
-	d.History.scanStateFiles(fileNames, []string{"kv"})
 	return uselessFiles
 }
 
-func (d *Domain) openFiles() error {
-	err := d.History.openFiles()
-	if err != nil {
-		return err
-	}
+func (d *Domain) openFiles() (err error) {
 	var totalKeys uint64
 
 	invalidFileItems := make([]*filesItem, 0)
 	d.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.decompressor != nil {
-				item.decompressor.Close()
+				continue
 			}
 			fromStep, toStep := item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep
 			datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, fromStep, toStep))
@@ -316,15 +287,16 @@ func (d *Domain) openFiles() error {
 				return false
 			}
 
-			if item.index == nil {
-				idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, fromStep, toStep))
-				if dir.FileExist(idxPath) {
-					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
-						return false
-					}
-					totalKeys += item.index.KeyCount()
+			if item.index != nil {
+				continue
+			}
+			idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, fromStep, toStep))
+			if dir.FileExist(idxPath) {
+				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
+					log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
+					return false
 				}
+				totalKeys += item.index.KeyCount()
 			}
 		}
 		return true
@@ -340,26 +312,35 @@ func (d *Domain) openFiles() error {
 	return nil
 }
 
-func (d *Domain) closeFiles() {
+func (d *Domain) closeWhatNotInList(fNames []string) {
+	var toDelete []*filesItem
 	d.files.Walk(func(items []*filesItem) bool {
+	Loop1:
 		for _, item := range items {
-			if item.decompressor != nil {
-				if err := item.decompressor.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.index.FileName())
+			for _, protectName := range fNames {
+				if item.decompressor != nil && item.decompressor.FileName() == protectName {
+					continue Loop1
 				}
-				item.decompressor = nil
 			}
-			if item.index != nil {
-				if err := item.index.Close(); err != nil {
-					log.Trace("close", "err", err, "file", item.index.FileName())
-				}
-				item.index = nil
-			}
+			toDelete = append(toDelete, item)
 		}
 		return true
 	})
-	d.files.Clear()
-	d.reCalcRoFiles()
+	for _, item := range toDelete {
+		if item.decompressor != nil {
+			if err := item.decompressor.Close(); err != nil {
+				log.Trace("close", "err", err, "file", item.index.FileName())
+			}
+			item.decompressor = nil
+		}
+		if item.index != nil {
+			if err := item.index.Close(); err != nil {
+				log.Trace("close", "err", err, "file", item.index.FileName())
+			}
+			item.index = nil
+		}
+		d.files.Delete(item)
+	}
 }
 
 func (d *Domain) reCalcRoFiles() {
@@ -404,9 +385,9 @@ func (d *Domain) reCalcRoFiles() {
 }
 
 func (d *Domain) Close() {
-	// Closing state files only after background aggregation goroutine is finished
 	d.History.Close()
-	d.closeFiles()
+	d.closeWhatNotInList([]string{})
+	d.reCalcRoFiles()
 }
 
 func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, bool, error) {

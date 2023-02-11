@@ -502,13 +502,13 @@ func TestScanFiles(t *testing.T) {
 	// Recreate domain and re-scan the files
 	txNum := d.txNum
 	d.closeWhatNotInList([]string{})
-	d.openFolder()
+	d.OpenFolder()
 	//d.Close()
 	//
 	//var err error
 	//d, err = NewDomain(path, path, d.aggregationStep, d.filenameBase, d.keysTable, d.valsTable, d.indexKeysTable, d.historyValsTable, d.settingsTable, d.indexTable, d.prefixLen, d.compressVals)
 	//require.NoError(t, err)
-	//require.NoError(t, d.openFolder())
+	//require.NoError(t, d.OpenFolder())
 	//defer d.Close()
 	d.SetTxNum(txNum)
 	// Check the history

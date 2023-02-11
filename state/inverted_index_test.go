@@ -508,7 +508,7 @@ func TestScanStaticFiles(t *testing.T) {
 		"test.3-4.ef",
 		"test.4-5.ef",
 	}
-	ii.scanStateFiles(files, nil)
+	ii.scanStateFiles(files)
 	var found []string
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
@@ -525,7 +525,7 @@ func TestScanStaticFiles(t *testing.T) {
 		}
 		return true
 	})
-	ii.scanStateFiles(files, []string{"v"})
+	ii.scanStateFiles(files)
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			fmt.Printf("%s\n", fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))

@@ -116,28 +116,28 @@ func NewAggregator(
 
 func (a *Aggregator) ReopenFolder() error {
 	var err error
-	if err = a.accounts.openFolder(); err != nil {
+	if err = a.accounts.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.storage.openFolder(); err != nil {
+	if err = a.storage.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.code.openFolder(); err != nil {
+	if err = a.code.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.commitment.openFolder(); err != nil {
+	if err = a.commitment.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.logAddrs.openFolder(); err != nil {
+	if err = a.logAddrs.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.logTopics.openFolder(); err != nil {
+	if err = a.logTopics.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.tracesFrom.openFolder(); err != nil {
+	if err = a.tracesFrom.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
-	if err = a.tracesTo.openFolder(); err != nil {
+	if err = a.tracesTo.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
 	}
 	return nil
@@ -145,28 +145,28 @@ func (a *Aggregator) ReopenFolder() error {
 
 func (a *Aggregator) ReopenList(fNames []string) error {
 	var err error
-	if err = a.accounts.openList(fNames); err != nil {
+	if err = a.accounts.OpenList(fNames); err != nil {
 		return err
 	}
-	if err = a.storage.openList(fNames); err != nil {
+	if err = a.storage.OpenList(fNames); err != nil {
 		return err
 	}
-	if err = a.code.openList(fNames); err != nil {
+	if err = a.code.OpenList(fNames); err != nil {
 		return err
 	}
-	if err = a.commitment.openList(fNames); err != nil {
+	if err = a.commitment.OpenList(fNames); err != nil {
 		return err
 	}
-	if err = a.logAddrs.openList(fNames); err != nil {
+	if err = a.logAddrs.OpenList(fNames); err != nil {
 		return err
 	}
-	if err = a.logTopics.openList(fNames); err != nil {
+	if err = a.logTopics.OpenList(fNames); err != nil {
 		return err
 	}
-	if err = a.tracesFrom.openList(fNames); err != nil {
+	if err = a.tracesFrom.OpenList(fNames); err != nil {
 		return err
 	}
-	if err = a.tracesTo.openList(fNames); err != nil {
+	if err = a.tracesTo.OpenList(fNames); err != nil {
 		return err
 	}
 	return nil

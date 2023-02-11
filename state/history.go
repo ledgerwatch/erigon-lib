@@ -99,36 +99,40 @@ func NewHistory(
 		return nil, fmt.Errorf("NewHistory: %s, %w", filenameBase, err)
 	}
 
-	//if err := h.openFolder(); err != nil {
-	//	return nil, err
-	//}
 	return &h, nil
 }
 
+// OpenList - main method to open list of files.
+// It's ok if some files was open earlier.
+// If some file already open: noop.
+// If some file already open but not in provided list: close and remove from `files` field.
+func (h *History) OpenList(fNames []string) error {
+	if err := h.InvertedIndex.OpenList(fNames); err != nil {
+		return err
+	}
+	return h.openList(fNames)
+
+}
 func (h *History) openList(fNames []string) error {
 	h.closeWhatNotInList(fNames)
-	_ = h.scanStateFiles(fNames, h.integrityFileExtensions)
+	_ = h.scanStateFiles(fNames)
 	if err := h.openFiles(); err != nil {
-		return fmt.Errorf("History.openList: %s, %w", h.filenameBase, err)
+		return fmt.Errorf("History.OpenList: %s, %w", h.filenameBase, err)
 	}
 	return nil
 }
 
-func (h *History) openFolder() error {
-	if err := h.InvertedIndex.openFolder(); err != nil {
-		return err
-	}
-	//h.closeWhatNotInList([]string{})
+func (h *History) OpenFolder() error {
 	files, err := h.fileNamesOnDisk()
 	if err != nil {
 		return err
 	}
-	return h.openList(files)
+	return h.OpenList(files)
 }
 
 // scanStateFiles
 // returns `uselessFiles` where file "is useless" means: it's subset of frozen file. such files can be safely deleted. subset of non-frozen file may be useful
-func (h *History) scanStateFiles(fNames []string, integrityFileExtensions []string) (uselessFiles []*filesItem) {
+func (h *History) scanStateFiles(fNames []string) (uselessFiles []*filesItem) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
 Loop:
@@ -157,7 +161,7 @@ Loop:
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
 		frozen := endStep-startStep == StepsInBiggestFile
 
-		for _, ext := range integrityFileExtensions {
+		for _, ext := range h.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", h.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(h.dir, requiredFile)) {
 				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
@@ -196,42 +200,39 @@ Loop:
 			h.files.Set(newFile)
 		}
 	}
-	h.InvertedIndex.scanStateFiles(fNames, append(slices.Clone(h.integrityFileExtensions), "v"))
 	return uselessFiles
 }
 
 func (h *History) openFiles() error {
-	if err := h.InvertedIndex.openFiles(); err != nil {
-		return err
-	}
-
 	var totalKeys uint64
 	var err error
 	invalidFileItems := make([]*filesItem, 0)
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
+			if item.decompressor != nil {
+				continue
+			}
 			fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
-			if item.decompressor == nil {
-				datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, fromStep, toStep))
-				if !dir.FileExist(datPath) {
-					invalidFileItems = append(invalidFileItems, item)
-					continue
-				}
-				if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-					log.Debug("Hisrory.openFiles: %w, %s", err, datPath)
-					return false
-				}
+			datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, fromStep, toStep))
+			if !dir.FileExist(datPath) {
+				invalidFileItems = append(invalidFileItems, item)
+				continue
+			}
+			if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+				log.Debug("Hisrory.openFiles: %w, %s", err, datPath)
+				return false
 			}
 
-			if item.index == nil {
-				idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
-				if dir.FileExist(idxPath) {
-					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-						log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, idxPath).Error())
-						return false
-					}
-					totalKeys += item.index.KeyCount()
+			if item.index != nil {
+				continue
+			}
+			idxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep))
+			if dir.FileExist(idxPath) {
+				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
+					log.Debug(fmt.Errorf("Hisrory.openFiles: %w, %s", err, idxPath).Error())
+					return false
 				}
+				totalKeys += item.index.KeyCount()
 			}
 		}
 		return true
@@ -276,7 +277,6 @@ func (h *History) closeWhatNotInList(fNames []string) {
 		}
 		h.files.Delete(item)
 	}
-	h.InvertedIndex.closeWhatNotInList(fNames)
 }
 
 func (h *History) Close() {
@@ -2218,7 +2218,7 @@ func u64or0(in []byte) (v uint64) {
 
 func (h *History) CleanupDir() {
 	files, _ := h.fileNamesOnDisk()
-	uselessFiles := h.scanStateFiles(files, h.integrityFileExtensions)
+	uselessFiles := h.scanStateFiles(files)
 	for _, f := range uselessFiles {
 		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
 		err := os.Remove(filepath.Join(h.dir, fName))
