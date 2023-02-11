@@ -393,11 +393,9 @@ type LocalityIndexFiles struct {
 func (sf LocalityIndexFiles) Close() {
 	if sf.index != nil {
 		sf.index.Close()
-		sf.index = nil
 	}
 	if sf.bm != nil {
 		sf.bm.Close()
-		sf.bm = nil
 	}
 }
 
