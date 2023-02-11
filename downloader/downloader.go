@@ -420,7 +420,7 @@ func MainLoop(ctx context.Context, d *Downloader, silent bool) {
 				log.Info("[Snapshots] Seeding",
 					"up", common2.ByteCount(stats.UploadRate)+"/s",
 					"peers", stats.PeersUnique,
-					"connections", stats.ConnectionsTotal,
+					"conns", stats.ConnectionsTotal,
 					"files", stats.FilesTotal)
 				continue
 			}
@@ -430,7 +430,7 @@ func MainLoop(ctx context.Context, d *Downloader, silent bool) {
 				"download", common2.ByteCount(stats.DownloadRate)+"/s",
 				"upload", common2.ByteCount(stats.UploadRate)+"/s",
 				"peers", stats.PeersUnique,
-				"connections", stats.ConnectionsTotal,
+				"conns", stats.ConnectionsTotal,
 				"files", stats.FilesTotal)
 
 			if stats.PeersUnique == 0 {
