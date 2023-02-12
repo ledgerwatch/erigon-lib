@@ -117,28 +117,28 @@ func NewAggregator(
 func (a *Aggregator) ReopenFolder() error {
 	var err error
 	if err = a.accounts.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.storage.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.code.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.commitment.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.logAddrs.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.logTopics.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.tracesFrom.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.tracesTo.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	return nil
 }

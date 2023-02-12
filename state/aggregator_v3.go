@@ -28,18 +28,16 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	common2 "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
+	"github.com/ledgerwatch/erigon-lib/etl"
+	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
-
-	common2 "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/common/cmp"
-	"github.com/ledgerwatch/erigon-lib/etl"
-	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 )
 
 type AggregatorV3 struct {
@@ -108,35 +106,35 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 }
 func (a *AggregatorV3) OnFreeze(f OnFreezeFunc) { a.onFreeze = f }
 
-func (a *AggregatorV3) ReopenFolder() error {
+func (a *AggregatorV3) OpenFolder() error {
 	a.filesMutationLock.Lock()
 	defer a.filesMutationLock.Unlock()
 	var err error
 	if err = a.accounts.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.storage.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.code.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.logAddrs.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.logTopics.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.tracesFrom.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	if err = a.tracesTo.OpenFolder(); err != nil {
-		return fmt.Errorf("ReopenFolder: %w", err)
+		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	a.recalcMaxTxNum()
 	return nil
 }
-func (a *AggregatorV3) ReopenList(fNames []string) error {
+func (a *AggregatorV3) OpenList(fNames []string) error {
 	a.filesMutationLock.Lock()
 	defer a.filesMutationLock.Unlock()
 
@@ -249,34 +247,27 @@ func (a *AggregatorV3) BuildOptionalMissedIndices(ctx context.Context, workers i
 	return g.Wait()
 }
 
-func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) error {
-	g, ctx := errgroup.WithContext(ctx)
-	if a.accounts != nil {
-		g.Go(func() error { return a.accounts.BuildMissedIndices(ctx, sem) })
-	}
-	if a.storage != nil {
-		g.Go(func() error { return a.storage.BuildMissedIndices(ctx, sem) })
-	}
-	if a.code != nil {
-		g.Go(func() error { return a.code.BuildMissedIndices(ctx, sem) })
-	}
-	if a.logAddrs != nil {
-		g.Go(func() error { return a.logAddrs.BuildMissedIndices(ctx, sem) })
-	}
-	if a.logTopics != nil {
-		g.Go(func() error { return a.logTopics.BuildMissedIndices(ctx, sem) })
-	}
-	if a.tracesFrom != nil {
-		g.Go(func() error { return a.tracesFrom.BuildMissedIndices(ctx, sem) })
-	}
-	if a.tracesTo != nil {
-		g.Go(func() error { return a.tracesTo.BuildMissedIndices(ctx, sem) })
+func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, workers int) error {
+	{
+		g, ctx := errgroup.WithContext(ctx)
+		g.SetLimit(workers)
+		a.accounts.BuildMissedIndices(ctx, g)
+		a.storage.BuildMissedIndices(ctx, g)
+		a.code.BuildMissedIndices(ctx, g)
+		a.logAddrs.BuildMissedIndices(ctx, g)
+		a.logTopics.BuildMissedIndices(ctx, g)
+		a.tracesFrom.BuildMissedIndices(ctx, g)
+		a.tracesTo.BuildMissedIndices(ctx, g)
+
+		if err := g.Wait(); err != nil {
+			return err
+		}
+		if err := a.OpenFolder(); err != nil {
+			return err
+		}
 	}
 
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return a.BuildOptionalMissedIndices(ctx, 4)
+	return a.BuildOptionalMissedIndices(ctx, workers)
 }
 
 func (a *AggregatorV3) SetLogPrefix(v string) { a.logPrefix = v }

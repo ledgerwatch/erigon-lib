@@ -31,14 +31,6 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/ledgerwatch/erigon-lib/kv/order"
-	"github.com/ledgerwatch/log/v3"
-	btree2 "github.com/tidwall/btree"
-	atomic2 "go.uber.org/atomic"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
-
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
@@ -46,8 +38,14 @@ import (
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
+	"github.com/ledgerwatch/log/v3"
+	btree2 "github.com/tidwall/btree"
+	atomic2 "go.uber.org/atomic"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
 )
 
 type History struct {
@@ -316,42 +314,32 @@ func (h *History) BuildOptionalMissedIndices(ctx context.Context) (err error) {
 	return h.localityIndex.BuildMissedIndices(ctx, h.InvertedIndex)
 }
 
-func (h *History) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
-	if err := h.InvertedIndex.BuildMissedIndices(ctx, sem); err != nil {
+func (h *History) buildVi(ctx context.Context, item *filesItem) (err error) {
+	search := &filesItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum}
+	iiItem, ok := h.InvertedIndex.files.Get(search)
+	if !ok {
+		return nil
+	}
+
+	fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
+	fName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep)
+	idxPath := filepath.Join(h.dir, fName)
+	log.Info("[snapshots] build idx", "file", fName)
+	count, err := iterateForVi(item, iiItem, h.compressVals, func(v []byte) error { return nil })
+	if err != nil {
 		return err
 	}
+	return buildVi(ctx, item, iiItem, idxPath, h.tmpdir, count, false /* values */, h.compressVals)
+}
+
+func (h *History) BuildMissedIndices(ctx context.Context, g *errgroup.Group) {
+	h.InvertedIndex.BuildMissedIndices(ctx, g)
 	missedFiles := h.missedIdxFiles()
-	g, ctx := errgroup.WithContext(ctx)
 	for _, item := range missedFiles {
 		item := item
-		g.Go(func() error {
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return err
-			}
-			defer sem.Release(1)
-
-			search := &filesItem{startTxNum: item.startTxNum, endTxNum: item.endTxNum}
-			iiItem, ok := h.InvertedIndex.files.Get(search)
-			if !ok {
-				return nil
-			}
-
-			fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
-			fName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, fromStep, toStep)
-			idxPath := filepath.Join(h.dir, fName)
-			log.Info("[snapshots] build idx", "file", fName)
-			count, err := iterateForVi(item, iiItem, h.compressVals, func(v []byte) error { return nil })
-			if err != nil {
-				return err
-			}
-			return buildVi(item, iiItem, idxPath, h.tmpdir, count, false /* values */, h.compressVals)
-		})
+		g.Go(func() error { return h.buildVi(ctx, item) })
 	}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	return h.openFiles()
+	return
 }
 
 func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []byte) error) (count int, err error) {
@@ -410,7 +398,7 @@ func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []
 	return count, nil
 }
 
-func buildVi(historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, count int, values, compressVals bool) error {
+func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, count int, values, compressVals bool) error {
 	_, fName := filepath.Split(historyIdxPath)
 	log.Debug("[snapshots] build idx", "file", fName)
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -442,6 +430,12 @@ func buildVi(historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, coun
 		g2.Reset(0)
 		valOffset = 0
 		for g.HasNext() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
 			keyBuf, _ = g.NextUncompressed()
 			valBuf, _ = g.NextUncompressed()
 			ef, _ := eliasfano32.ReadEliasFano(valBuf)
@@ -904,7 +898,7 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 		return HistoryFiles{}, fmt.Errorf("open %s ef history decompressor: %w", h.filenameBase, err)
 	}
 	efHistoryIdxPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.efi", h.filenameBase, step, step+1))
-	if efHistoryIdx, err = buildIndex(ctx, efHistoryDecomp, efHistoryIdxPath, h.tmpdir, len(keys), false /* values */); err != nil {
+	if efHistoryIdx, err = buildIndexThenOpen(ctx, efHistoryDecomp, efHistoryIdxPath, h.tmpdir, len(keys), false /* values */); err != nil {
 		return HistoryFiles{}, fmt.Errorf("build %s ef history idx: %w", h.filenameBase, err)
 	}
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{

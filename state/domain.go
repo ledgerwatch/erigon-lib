@@ -31,18 +31,17 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
-	"github.com/ledgerwatch/log/v3"
-	btree2 "github.com/tidwall/btree"
-	atomic2 "go.uber.org/atomic"
-	"golang.org/x/sync/semaphore"
-
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
+	"github.com/ledgerwatch/log/v3"
+	btree2 "github.com/tidwall/btree"
+	atomic2 "go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -954,7 +953,7 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
-	if valuesIdx, err = buildIndex(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false); err != nil {
+	if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 	}
 	closeComp = false
@@ -982,18 +981,23 @@ func (d *Domain) missedIdxFiles() (l []*filesItem) {
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
-func (d *Domain) BuildMissedIndices(ctx context.Context, sem *semaphore.Weighted) (err error) {
-	if err := d.History.BuildMissedIndices(ctx, sem); err != nil {
-		return err
-	}
+func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group) (err error) {
+	d.History.BuildMissedIndices(ctx, g)
 	for _, item := range d.missedIdxFiles() {
 		//TODO: build .kvi
 		_ = item
 	}
-	return d.openFiles()
+	return nil
 }
 
-func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) (*recsplit.Index, error) {
+func buildIndexThenOpen(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) (*recsplit.Index, error) {
+	if err := buildIndex(ctx, d, idxPath, tmpdir, count, values); err != nil {
+		return nil, err
+	}
+	return recsplit.OpenIndex(idxPath)
+}
+
+func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) error {
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -1004,7 +1008,7 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 		TmpDir:     tmpdir,
 		IndexFile:  idxPath,
 	}); err != nil {
-		return nil, fmt.Errorf("create recsplit: %w", err)
+		return fmt.Errorf("create recsplit: %w", err)
 	}
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
@@ -1016,18 +1020,18 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 	for {
 		if err := ctx.Err(); err != nil {
 			log.Warn("recsplit index building cancelled", "err", err)
-			return nil, err
+			return err
 		}
 		g.Reset(0)
 		for g.HasNext() {
 			word, valPos = g.Next(word[:0])
 			if values {
 				if err = rs.AddKey(word, valPos); err != nil {
-					return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
+					return fmt.Errorf("add idx key [%x]: %w", word, err)
 				}
 			} else {
 				if err = rs.AddKey(word, keyPos); err != nil {
-					return nil, fmt.Errorf("add idx key [%x]: %w", word, err)
+					return fmt.Errorf("add idx key [%x]: %w", word, err)
 				}
 			}
 			// Skip value
@@ -1038,17 +1042,13 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
 			} else {
-				return nil, fmt.Errorf("build idx: %w", err)
+				return fmt.Errorf("build idx: %w", err)
 			}
 		} else {
 			break
 		}
 	}
-	var idx *recsplit.Index
-	if idx, err = recsplit.OpenIndex(idxPath); err != nil {
-		return nil, fmt.Errorf("open idx: %w", err)
-	}
-	return idx, nil
+	return nil
 }
 
 func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
