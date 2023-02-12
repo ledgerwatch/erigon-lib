@@ -70,7 +70,8 @@ type AggregatorV3 struct {
 	ctx                    context.Context
 	ctxCancel              context.CancelFunc
 
-	wg sync.WaitGroup
+	needSaveFilesListInDB atomic.Bool
+	wg                    sync.WaitGroup
 }
 
 func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*AggregatorV3, error) {
@@ -326,7 +327,7 @@ func (c AggV3Collation) Close() {
 	}
 }
 
-func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo uint64, db kv.RoDB) (AggV3StaticFiles, error) {
+func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64) (AggV3StaticFiles, error) {
 	logEvery := time.NewTicker(60 * time.Second)
 	defer logEvery.Stop()
 	defer func(t time.Time) {
@@ -346,7 +347,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//go func() {
 	//	defer wg.Done()
 	var err error
-	if err = db.View(ctx, func(tx kv.Tx) error {
+	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
@@ -363,7 +364,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//go func() {
 	//	defer wg.Done()
 	//	var err error
-	if err = db.View(ctx, func(tx kv.Tx) error {
+	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
@@ -379,7 +380,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//go func() {
 	//	defer wg.Done()
 	//	var err error
-	if err = db.View(ctx, func(tx kv.Tx) error {
+	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.code, err = a.code.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
@@ -395,7 +396,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//go func() {
 	//	defer wg.Done()
 	//	var err error
-	if err = db.View(ctx, func(tx kv.Tx) error {
+	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.logAddrs, err = a.logAddrs.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
@@ -411,7 +412,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//go func() {
 	//	defer wg.Done()
 	//	var err error
-	if err = db.View(ctx, func(tx kv.Tx) error {
+	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.logTopics, err = a.logTopics.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
@@ -427,7 +428,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//go func() {
 	//	defer wg.Done()
 	//	var err error
-	if err = db.View(ctx, func(tx kv.Tx) error {
+	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.tracesFrom, err = a.tracesFrom.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
@@ -443,7 +444,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64, txFrom, txTo
 	//go func() {
 	//	defer wg.Done()
 	//	var err error
-	if err = db.View(ctx, func(tx kv.Tx) error {
+	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.tracesTo, err = a.tracesTo.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
@@ -503,7 +504,7 @@ func (a *AggregatorV3) BuildFiles(ctx context.Context, db kv.RoDB) (err error) {
 	// - during files build, may happen commit of new data. on each loop step getting latest id in db
 	step := a.EndTxNumMinimax() / a.aggregationStep
 	for ; step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep; step++ {
-		if err := a.buildFilesInBackground(ctx, step, db); err != nil {
+		if err := a.buildFilesInBackground(ctx, step); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Warn("buildFilesInBackground", "err", err)
 			}
@@ -513,10 +514,10 @@ func (a *AggregatorV3) BuildFiles(ctx context.Context, db kv.RoDB) (err error) {
 	return nil
 }
 
-func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64, db kv.RoDB) (err error) {
+func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64) (err error) {
 	closeAll := true
 	log.Info("[snapshots] history build", "step", fmt.Sprintf("%d-%d", step, step+1))
-	sf, err := a.buildFiles(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep, db)
+	sf, err := a.buildFiles(ctx, step, step*a.aggregationStep, (step+1)*a.aggregationStep)
 	if err != nil {
 		return err
 	}
@@ -579,6 +580,7 @@ func (a *AggregatorV3) MergeLoop(ctx context.Context, workers int) error {
 }
 
 func (a *AggregatorV3) integrateFiles(sf AggV3StaticFiles, txNumFrom, txNumTo uint64) {
+	defer a.needSaveFilesListInDB.Store(true)
 	a.accounts.integrateFiles(sf.accounts, txNumFrom, txNumTo)
 	a.storage.integrateFiles(sf.storage, txNumFrom, txNumTo)
 	a.code.integrateFiles(sf.code, txNumFrom, txNumTo)
@@ -587,6 +589,10 @@ func (a *AggregatorV3) integrateFiles(sf AggV3StaticFiles, txNumFrom, txNumTo ui
 	a.tracesFrom.integrateFiles(sf.tracesFrom, txNumFrom, txNumTo)
 	a.tracesTo.integrateFiles(sf.tracesTo, txNumFrom, txNumTo)
 	a.recalcMaxTxNum()
+}
+
+func (a *AggregatorV3) NeedSaveFilesListInDB() bool {
+	return a.needSaveFilesListInDB.CompareAndSwap(true, false)
 }
 
 func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad etl.LoadFunc) error {
@@ -812,7 +818,7 @@ func (a *AggregatorV3) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) 
 
 	var m runtime.MemStats
 	dbg.ReadMemStats(&m)
-	log.Info("[Snapshots] History Stat",
+	log.Info("[snapshots] History Stat",
 		"blocks", fmt.Sprintf("%dk", (histBlockNumProgress+1)/1000),
 		"txs", fmt.Sprintf("%dm", a.maxTxNum.Load()/1_000_000),
 		"txNum2blockNum", strings.Join(str, ","),
@@ -1051,6 +1057,7 @@ func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFiles
 }
 
 func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in MergedFilesV3) {
+	defer a.needSaveFilesListInDB.Store(true)
 	a.accounts.integrateMergedFiles(outs.accountsIdx, outs.accountsHist, in.accountsIdx, in.accountsHist)
 	a.storage.integrateMergedFiles(outs.storageIdx, outs.storageHist, in.storageIdx, in.storageHist)
 	a.code.integrateMergedFiles(outs.codeIdx, outs.codeHist, in.codeIdx, in.codeHist)
@@ -1073,14 +1080,14 @@ func (a *AggregatorV3) cleanAfterFreeze(in MergedFilesV3) {
 // we can set it to 0, because no re-org on this blocks are possible
 func (a *AggregatorV3) KeepInDB(v uint64) { a.keepInDB = v }
 
-func (a *AggregatorV3) BuildFilesInBackground(db kv.RoDB) error {
+func (a *AggregatorV3) BuildFilesInBackground() {
 	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
-		return nil
+		return
 	}
 
 	step := a.maxTxNum.Load() / a.aggregationStep
 	if a.working.Load() {
-		return nil
+		return
 	}
 
 	toTxNum := (step + 1) * a.aggregationStep
@@ -1093,7 +1100,7 @@ func (a *AggregatorV3) BuildFilesInBackground(db kv.RoDB) error {
 		defer a.working.Store(false)
 
 		// check if db has enough data (maybe we didn't commit them yet)
-		lastInDB := lastIdInDB(db, a.accounts.indexKeysTable)
+		lastInDB := lastIdInDB(a.db, a.accounts.indexKeysTable)
 		hasData = lastInDB >= toTxNum
 		if !hasData {
 			return
@@ -1103,8 +1110,8 @@ func (a *AggregatorV3) BuildFilesInBackground(db kv.RoDB) error {
 		// - to reduce amount of small merges
 		// - to remove old data from db as early as possible
 		// - during files build, may happen commit of new data. on each loop step getting latest id in db
-		for step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep {
-			if err := a.buildFilesInBackground(a.ctx, step, db); err != nil {
+		for step < lastIdInDB(a.db, a.accounts.indexKeysTable)/a.aggregationStep {
+			if err := a.buildFilesInBackground(a.ctx, step); err != nil {
 				if errors.Is(err, context.Canceled) {
 					return
 				}
@@ -1129,11 +1136,6 @@ func (a *AggregatorV3) BuildFilesInBackground(db kv.RoDB) error {
 			a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
 		}()
 	}()
-
-	//if err := a.prune(0, a.maxTxNum.Load(), a.aggregationStep); err != nil {
-	//	return err
-	//}
-	return nil
 }
 
 func (a *AggregatorV3) AddAccountPrev(addr []byte, prev []byte) error {
