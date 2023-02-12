@@ -76,6 +76,9 @@ func (li *LocalityIndex) closeWhatNotInList(fNames []string) {
 }
 
 func (li *LocalityIndex) OpenList(fNames []string) error {
+	if li == nil {
+		return nil
+	}
 	li.closeWhatNotInList(fNames)
 	_ = li.scanStateFiles(fNames)
 	if err := li.openFiles(); err != nil {
@@ -148,7 +151,7 @@ func (li *LocalityIndex) openFiles() (err error) {
 			}
 		}
 	}
-	if li.file.decompressor == nil {
+	if li.file.index == nil {
 		idxPath := filepath.Join(li.dir, fmt.Sprintf("%s.%d-%d.li", li.filenameBase, fromStep, toStep))
 		if dir.FileExist(idxPath) {
 			li.file.index, err = recsplit.OpenIndex(idxPath)
