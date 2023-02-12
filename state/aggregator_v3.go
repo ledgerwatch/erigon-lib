@@ -61,7 +61,7 @@ type AggregatorV3 struct {
 	keepInDB         uint64
 	maxTxNum         atomic.Uint64
 
-	openCloseLock sync.Mutex
+	filesMutationLock sync.Mutex
 
 	working                atomic.Bool
 	workingMerge           atomic.Bool
@@ -72,7 +72,11 @@ type AggregatorV3 struct {
 
 	needSaveFilesListInDB atomic.Bool
 	wg                    sync.WaitGroup
+
+	onFreeze OnFreezeFunc
 }
+
+type OnFreezeFunc func(frozenFileNames []string)
 
 func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*AggregatorV3, error) {
 	ctx, ctxCancel := context.WithCancel(ctx)
@@ -102,10 +106,11 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	a.recalcMaxTxNum()
 	return a, nil
 }
+func (a *AggregatorV3) OnFreeze(f OnFreezeFunc) { a.onFreeze = f }
 
 func (a *AggregatorV3) ReopenFolder() error {
-	a.openCloseLock.Lock()
-	defer a.openCloseLock.Unlock()
+	a.filesMutationLock.Lock()
+	defer a.filesMutationLock.Unlock()
 	var err error
 	if err = a.accounts.OpenFolder(); err != nil {
 		return fmt.Errorf("ReopenFolder: %w", err)
@@ -132,8 +137,8 @@ func (a *AggregatorV3) ReopenFolder() error {
 	return nil
 }
 func (a *AggregatorV3) ReopenList(fNames []string) error {
-	a.openCloseLock.Lock()
-	defer a.openCloseLock.Unlock()
+	a.filesMutationLock.Lock()
+	defer a.filesMutationLock.Unlock()
 
 	var err error
 	if err = a.accounts.OpenList(fNames); err != nil {
@@ -165,8 +170,8 @@ func (a *AggregatorV3) Close() {
 	a.ctxCancel()
 	a.wg.Wait()
 
-	a.openCloseLock.Lock()
-	defer a.openCloseLock.Unlock()
+	a.filesMutationLock.Lock()
+	defer a.filesMutationLock.Unlock()
 
 	a.accounts.Close()
 	a.storage.Close()
@@ -201,8 +206,8 @@ func (a *AggregatorV3) SetWorkers(i int) {
 }
 
 func (a *AggregatorV3) Files() (res []string) {
-	a.openCloseLock.Lock()
-	defer a.openCloseLock.Unlock()
+	a.filesMutationLock.Lock()
+	defer a.filesMutationLock.Unlock()
 
 	res = append(res, a.accounts.Files()...)
 	res = append(res, a.storage.Files()...)
@@ -527,6 +532,7 @@ func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64) 
 		}
 	}()
 	a.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
+	//a.notifyAboutNewSnapshots()
 
 	closeAll = false
 	return nil
@@ -563,7 +569,7 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 		}
 	}()
 	a.integrateMergedFiles(outs, in)
-	a.cleanAfterFreeze(in)
+	a.onFreeze(in.FrozenList())
 	closeAll = false
 	return true, nil
 }
@@ -580,7 +586,10 @@ func (a *AggregatorV3) MergeLoop(ctx context.Context, workers int) error {
 }
 
 func (a *AggregatorV3) integrateFiles(sf AggV3StaticFiles, txNumFrom, txNumTo uint64) {
+	a.filesMutationLock.Lock()
+	defer a.filesMutationLock.Unlock()
 	defer a.needSaveFilesListInDB.Store(true)
+	defer a.recalcMaxTxNum()
 	a.accounts.integrateFiles(sf.accounts, txNumFrom, txNumTo)
 	a.storage.integrateFiles(sf.storage, txNumFrom, txNumTo)
 	a.code.integrateFiles(sf.code, txNumFrom, txNumTo)
@@ -588,7 +597,6 @@ func (a *AggregatorV3) integrateFiles(sf AggV3StaticFiles, txNumFrom, txNumTo ui
 	a.logTopics.integrateFiles(sf.logTopics, txNumFrom, txNumTo)
 	a.tracesFrom.integrateFiles(sf.tracesFrom, txNumFrom, txNumTo)
 	a.tracesTo.integrateFiles(sf.tracesTo, txNumFrom, txNumTo)
-	a.recalcMaxTxNum()
 }
 
 func (a *AggregatorV3) NeedSaveFilesListInDB() bool {
@@ -975,6 +983,42 @@ type MergedFilesV3 struct {
 	tracesTo                  *filesItem
 }
 
+func (mf MergedFilesV3) FrozenList() (frozen []string) {
+	if mf.accountsHist != nil && mf.accountsHist.frozen {
+		frozen = append(frozen, mf.accountsHist.decompressor.FileName())
+	}
+	if mf.accountsIdx != nil && mf.accountsIdx.frozen {
+		frozen = append(frozen, mf.accountsIdx.decompressor.FileName())
+	}
+
+	if mf.storageHist != nil && mf.storageHist.frozen {
+		frozen = append(frozen, mf.storageHist.decompressor.FileName())
+	}
+	if mf.storageIdx != nil && mf.storageIdx.frozen {
+		frozen = append(frozen, mf.storageIdx.decompressor.FileName())
+	}
+
+	if mf.codeHist != nil && mf.codeHist.frozen {
+		frozen = append(frozen, mf.codeHist.decompressor.FileName())
+	}
+	if mf.codeIdx != nil && mf.codeIdx.frozen {
+		frozen = append(frozen, mf.codeIdx.decompressor.FileName())
+	}
+
+	if mf.logAddrs != nil && mf.logAddrs.frozen {
+		frozen = append(frozen, mf.logAddrs.decompressor.FileName())
+	}
+	if mf.logTopics != nil && mf.logTopics.frozen {
+		frozen = append(frozen, mf.logTopics.decompressor.FileName())
+	}
+	if mf.tracesFrom != nil && mf.tracesFrom.frozen {
+		frozen = append(frozen, mf.tracesFrom.decompressor.FileName())
+	}
+	if mf.tracesTo != nil && mf.tracesTo.frozen {
+		frozen = append(frozen, mf.tracesTo.decompressor.FileName())
+	}
+	return frozen
+}
 func (mf MergedFilesV3) Close() {
 	for _, item := range []*filesItem{mf.accountsIdx, mf.accountsHist, mf.storageIdx, mf.storageHist, mf.codeIdx, mf.codeHist,
 		mf.logAddrs, mf.logTopics, mf.tracesFrom, mf.tracesTo} {
@@ -1056,8 +1100,11 @@ func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFiles
 	return mf, err
 }
 
-func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in MergedFilesV3) {
+func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in MergedFilesV3) (frozen []string) {
+	a.filesMutationLock.Lock()
+	defer a.filesMutationLock.Unlock()
 	defer a.needSaveFilesListInDB.Store(true)
+	defer a.recalcMaxTxNum()
 	a.accounts.integrateMergedFiles(outs.accountsIdx, outs.accountsHist, in.accountsIdx, in.accountsHist)
 	a.storage.integrateMergedFiles(outs.storageIdx, outs.storageHist, in.storageIdx, in.storageHist)
 	a.code.integrateMergedFiles(outs.codeIdx, outs.codeHist, in.codeIdx, in.codeHist)
@@ -1065,15 +1112,17 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	a.logTopics.integrateMergedFiles(outs.logTopics, in.logTopics)
 	a.tracesFrom.integrateMergedFiles(outs.tracesFrom, in.tracesFrom)
 	a.tracesTo.integrateMergedFiles(outs.tracesTo, in.tracesTo)
+	a.cleanFrozenParts(in)
+	return frozen
 }
-func (a *AggregatorV3) cleanAfterFreeze(in MergedFilesV3) {
-	a.accounts.cleanAfterFreeze(in.accountsHist)
-	a.storage.cleanAfterFreeze(in.storageHist)
-	a.code.cleanAfterFreeze(in.codeHist)
-	a.logAddrs.cleanAfterFreeze(in.logAddrs)
-	a.logTopics.cleanAfterFreeze(in.logTopics)
-	a.tracesFrom.cleanAfterFreeze(in.tracesFrom)
-	a.tracesTo.cleanAfterFreeze(in.tracesTo)
+func (a *AggregatorV3) cleanFrozenParts(in MergedFilesV3) {
+	a.accounts.cleanFrozenParts(in.accountsHist)
+	a.storage.cleanFrozenParts(in.storageHist)
+	a.code.cleanFrozenParts(in.codeHist)
+	a.logAddrs.cleanFrozenParts(in.logAddrs)
+	a.logTopics.cleanFrozenParts(in.logTopics)
+	a.tracesFrom.cleanFrozenParts(in.tracesFrom)
+	a.tracesTo.cleanFrozenParts(in.tracesTo)
 }
 
 // KeepInDB - usually equal to one a.aggregationStep, but when we exec blocks from snapshots

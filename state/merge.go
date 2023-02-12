@@ -1162,11 +1162,11 @@ func (d *Domain) cleanAfterFreeze(f *filesItem) {
 		d.files.Delete(out)
 		out.canDelete.Store(true)
 	}
-	d.History.cleanAfterFreeze(f)
+	d.History.cleanFrozenParts(f)
 }
 
-// cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
-func (h *History) cleanAfterFreeze(f *filesItem) {
+// cleanFrozenParts - mark all small files before `f` as `canDelete=true`
+func (h *History) cleanFrozenParts(f *filesItem) {
 	if f == nil || !f.frozen {
 		return
 	}
@@ -1190,11 +1190,11 @@ func (h *History) cleanAfterFreeze(f *filesItem) {
 		h.files.Delete(out)
 		out.canDelete.Store(true)
 	}
-	h.InvertedIndex.cleanAfterFreeze(f)
+	h.InvertedIndex.cleanFrozenParts(f)
 }
 
-// cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
-func (ii *InvertedIndex) cleanAfterFreeze(f *filesItem) {
+// cleanFrozenParts - mark all small files before `f` as `canDelete=true`
+func (ii *InvertedIndex) cleanFrozenParts(f *filesItem) {
 	if f == nil || !f.frozen {
 		return
 	}
