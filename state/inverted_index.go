@@ -283,7 +283,6 @@ func (ii *InvertedIndex) BuildMissedIndices(ctx context.Context, g *errgroup.Gro
 		item := item
 		g.Go(func() error { return ii.buildEfi(ctx, item) })
 	}
-	return
 }
 
 func (ii *InvertedIndex) openFiles() error {

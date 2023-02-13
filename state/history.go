@@ -339,7 +339,6 @@ func (h *History) BuildMissedIndices(ctx context.Context, g *errgroup.Group) {
 		item := item
 		g.Go(func() error { return h.buildVi(ctx, item) })
 	}
-	return
 }
 
 func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []byte) error) (count int, err error) {
