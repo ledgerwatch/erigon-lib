@@ -217,14 +217,12 @@ func (a *AggregatorV3) Files() (res []string) {
 	return res
 }
 func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Context, workers int) {
-	if a.workingOptionalIndices.Load() {
+	if ok := a.workingOptionalIndices.CompareAndSwap(false, true); !ok {
 		return
 	}
-	a.workingOptionalIndices.Store(true)
-
 	a.wg.Add(1)
 	go func() {
-		a.wg.Done()
+		defer a.wg.Done()
 		defer a.workingOptionalIndices.Store(false)
 		if err := a.BuildOptionalMissedIndices(ctx, workers); err != nil {
 			log.Warn("merge", "err", err)
@@ -635,10 +633,9 @@ func (a *AggregatorV3) Warmup(ctx context.Context, txFrom, limit uint64) {
 	if limit < 10_000 {
 		return
 	}
-	if a.warmupWorking.Load() {
+	if ok := a.warmupWorking.CompareAndSwap(false, true); !ok {
 		return
 	}
-	a.warmupWorking.Store(true)
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
@@ -1126,14 +1123,12 @@ func (a *AggregatorV3) BuildFilesInBackground() {
 	}
 
 	step := a.maxTxNum.Load() / a.aggregationStep
-	if a.working.Load() {
+	if ok := a.working.CompareAndSwap(false, true); !ok {
 		return
 	}
 
 	toTxNum := (step + 1) * a.aggregationStep
 	hasData := false
-
-	a.working.Store(true)
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
@@ -1161,10 +1156,9 @@ func (a *AggregatorV3) BuildFilesInBackground() {
 			step++
 		}
 
-		if a.workingMerge.Load() {
+		if ok := a.workingMerge.CompareAndSwap(false, true); !ok {
 			return
 		}
-		a.workingMerge.Store(true)
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
