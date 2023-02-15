@@ -292,7 +292,7 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	for i, d := range []*Domain{a.accounts, a.storage, a.code, a.commitment.Domain} {
 		wg.Add(1)
 
-		collation, err := d.collate(ctx, step, txFrom, txTo, d.tx, logEvery)
+		collation, err := d.collateStream(ctx, step, txFrom, txTo, d.tx, logEvery)
 		if err != nil {
 			collation.Close()
 			return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)

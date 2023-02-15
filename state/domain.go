@@ -36,6 +36,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	btree2 "github.com/tidwall/btree"
 	atomic2 "go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
@@ -795,6 +796,134 @@ func (c Collation) Close() {
 	if c.historyComp != nil {
 		c.historyComp.Close()
 	}
+}
+
+type kvpair struct {
+	k, v []byte
+}
+
+func (d *Domain) collator(valuesComp *compress.Compressor, pairs chan kvpair) (count int, err error) {
+	for kv := range pairs {
+		if err = valuesComp.AddUncompressedWord(kv.k); err != nil {
+			return count, fmt.Errorf("add %s values key [%x]: %w", d.filenameBase, kv.k, err)
+		}
+		count++ // Only counting keys, not values
+		if err = valuesComp.AddUncompressedWord(kv.v); err != nil {
+			return count, fmt.Errorf("add %s values val [%x]=>[%x]: %w", d.filenameBase, kv.k, kv.v, err)
+		}
+	}
+	return count, nil
+}
+
+// collate gathers domain changes over the specified step, using read-only transaction,
+// and returns compressors, elias fano, and bitmaps
+// [txFrom; txTo)
+func (d *Domain) collateStream(ctx context.Context, step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (Collation, error) {
+	started := time.Now()
+	defer func() {
+		d.stats.LastCollationTook = time.Since(started)
+	}()
+
+	hCollation, err := d.History.collate(step, txFrom, txTo, roTx, logEvery)
+	if err != nil {
+		return Collation{}, err
+	}
+
+	var valuesComp *compress.Compressor
+	closeComp := true
+	defer func() {
+		if closeComp {
+			if valuesComp != nil {
+				valuesComp.Close()
+			}
+		}
+	}()
+
+	valuesPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, step, step+1))
+	if valuesComp, err = compress.NewCompressor(context.Background(), "collate values", valuesPath, d.tmpdir, compress.MinPatternScore, 1, log.LvlTrace); err != nil {
+		return Collation{}, fmt.Errorf("create %s values compressor: %w", d.filenameBase, err)
+	}
+
+	keysCursor, err := roTx.CursorDupSort(d.keysTable)
+	if err != nil {
+		return Collation{}, fmt.Errorf("create %s keys cursor: %w", d.filenameBase, err)
+	}
+	defer keysCursor.Close()
+
+	var (
+		k, v     []byte
+		pos      uint64
+		valCount uint
+		pairs    = make(chan kvpair, 4)
+	)
+
+	totalKeys, err := keysCursor.Count()
+	if err != nil {
+		return Collation{}, fmt.Errorf("failed to obtain keys count for domain %q", d.filenameBase)
+	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		count, err := d.collator(valuesComp, pairs)
+		if err != nil {
+			return err
+		}
+		valCount = uint(count)
+		return nil
+	})
+
+	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.NextNoDup() {
+		pos++
+
+		select {
+		case <-logEvery.C:
+			log.Info("[snapshots] collate domain", "name", d.filenameBase,
+				"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)),
+				"progress", fmt.Sprintf("%.2f%%", float64(pos)/float64(totalKeys)*100))
+		case <-ctx.Done():
+			log.Warn("[snapshots] collate domain cancelled", "name", d.filenameBase, "err", ctx.Err())
+			close(pairs)
+
+			return Collation{}, err
+		default:
+		}
+
+		if v, err = keysCursor.LastDup(); err != nil {
+			return Collation{}, fmt.Errorf("find last %s key for aggregation step k=[%x]: %w", d.filenameBase, k, err)
+		}
+		s := ^binary.BigEndian.Uint64(v)
+		if s == step {
+			keySuffix := make([]byte, len(k)+8)
+			copy(keySuffix, k)
+			copy(keySuffix[len(k):], v)
+
+			v, err := roTx.GetOne(d.valsTable, keySuffix)
+			if err != nil {
+				return Collation{}, fmt.Errorf("find last %s value for aggregation step k=[%x]: %w", d.filenameBase, k, err)
+			}
+
+			pairs <- kvpair{k: k, v: v}
+		}
+	}
+	close(pairs)
+	if err != nil {
+		return Collation{}, fmt.Errorf("iterate over %s keys cursor: %w", d.filenameBase, err)
+	}
+
+	if err := eg.Wait(); err != nil {
+		return Collation{}, fmt.Errorf("collate over %s keys cursor: %w", d.filenameBase, err)
+	}
+
+	closeComp = false
+	return Collation{
+		valuesPath:   valuesPath,
+		valuesComp:   valuesComp,
+		valuesCount:  int(valCount),
+		historyPath:  hCollation.historyPath,
+		historyComp:  hCollation.historyComp,
+		historyCount: hCollation.historyCount,
+		indexBitmaps: hCollation.indexBitmaps,
+	}, nil
 }
 
 // collate gathers domain changes over the specified step, using read-only transaction,

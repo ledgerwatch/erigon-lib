@@ -276,7 +276,6 @@ func (a *btAlloc) traverseDfs() {
 		return
 	}
 
-	// TODO if keys less than half leaf size store last key to just support bsearch on these amount.
 	c := a.cursors[len(a.cursors)-1]
 	pc := a.cursors[(len(a.cursors) - 2)]
 	root := new(node)
@@ -651,7 +650,7 @@ func NewBtIndexWriter(args BtIndexWriterArgs) (*BtIndexWriter, error) {
 	}
 
 	btw.bucketCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
-	btw.bucketCollector.LogLvl(log.LvlDebug)
+	btw.bucketCollector.LogLvl(log.LvlError)
 	//btw.offsetCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
 	//btw.offsetCollector.LogLvl(log.LvlDebug)
 
