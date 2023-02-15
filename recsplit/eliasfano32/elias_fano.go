@@ -26,6 +26,7 @@ import (
 	"unsafe"
 
 	"github.com/ledgerwatch/erigon-lib/common/bitutil"
+	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 )
@@ -247,7 +248,21 @@ func (ef *EliasFano) Count() uint64 {
 }
 
 func (ef *EliasFano) Iterator() *EliasFanoIter {
-	return &EliasFanoIter{ef: ef, upperMask: 1, upperStep: uint64(1) << ef.l}
+	it := &EliasFanoIter{ef: ef, upperMask: 1, upperStep: uint64(1) << ef.l}
+	return it
+}
+func (ef *EliasFano) ReverseIterator() *iter.ArrStream[uint64] {
+	//TODO: this is very un-optimal, need implement proper reverse-iterator
+	it := ef.Iterator()
+	var values []uint64
+	for it.HasNext() {
+		v, err := it.Next()
+		if err != nil {
+			panic(err)
+		}
+		values = append(values, v)
+	}
+	return iter.ReverseArray[uint64](values)
 }
 
 type EliasFanoIter struct {
@@ -277,7 +292,7 @@ func (efi *EliasFanoIter) Seek(v uint64) uint64 {
 	return 0
 }
 
-func (efi *EliasFanoIter) Next() uint64 {
+func (efi *EliasFanoIter) Next() (uint64, error) {
 	idx64 := efi.lowerIdx >> 6
 	shift := efi.lowerIdx & 63
 	lower := efi.ef.lowerBits[idx64] >> shift
@@ -300,7 +315,7 @@ func (efi *EliasFanoIter) Next() uint64 {
 	efi.lowerIdx += efi.ef.l
 	efi.idx++
 	val := (lower & efi.ef.lowerBitsMask) | efi.upper
-	return val
+	return val, nil
 }
 
 // Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read

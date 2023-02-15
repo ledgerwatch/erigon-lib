@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/assert"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/patricia"
 	"github.com/ledgerwatch/erigon-lib/sais"
@@ -257,7 +258,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		code2pattern = append(code2pattern, p)
 	})
 	dictBuilder.Close()
-	log.Log(lvl, fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
+	if lvl < log.LvlTrace {
+		log.Log(lvl, fmt.Sprintf("[%s] dictionary file parsed", logPrefix), "entries", len(code2pattern))
+	}
 	ch := make(chan *CompressionWord, 10_000)
 	inputSize, outputSize := atomic2.NewUint64(0), atomic2.NewUint64(0)
 
@@ -400,7 +403,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 
 		select {
 		case <-logEvery.C:
-			log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)), "ch", len(ch), "workers", workers)
+			if lvl < log.LvlTrace {
+				log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(outCount)/float64(totalWords)), "ch", len(ch), "workers", workers)
+			}
 		default:
 		}
 		return nil
@@ -440,8 +445,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		return err
 	}
 	wg.Wait()
-	log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "took", time.Since(t))
-
+	if lvl < log.LvlTrace {
+		log.Log(lvl, fmt.Sprintf("[%s] Replacement preprocessing", logPrefix), "took", time.Since(t))
+	}
 	if _, err = intermediateFile.Seek(0, 0); err != nil {
 		return fmt.Errorf("return to the start of intermediate file: %w", err)
 	}
@@ -526,8 +532,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		logCtx = append(logCtx, fmt.Sprintf("%d", i), fmt.Sprintf("%d", n))
 	}
-	log.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), logCtx...)
-
+	if lvl < log.LvlTrace {
+		log.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), logCtx...)
+	}
 	var cf *os.File
 	if cf, err = os.Create(segmentFilePath); err != nil {
 		return err
@@ -642,7 +649,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		}
 		//fmt.Printf("[comp] depth=%d, code=[%b], codeLen=%d pos=%d\n", p.depth, p.code, p.codeBits, p.pos)
 	}
-	log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "positionList.len", positionList.Len(), "posSize", common.ByteCount(posSize))
+	if lvl < log.LvlTrace {
+		log.Log(lvl, fmt.Sprintf("[%s] Positional dictionary", logPrefix), "positionList.len", positionList.Len(), "posSize", common.ByteCount(posSize))
+	}
 	// Re-encode all the words with the use of optimised (via Huffman coding) dictionaries
 	wc := 0
 	var hc HuffmanCoder
@@ -718,7 +727,9 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 		wc++
 		select {
 		case <-logEvery.C:
-			log.Log(lvl, fmt.Sprintf("[%s] Compressed", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(wc)/float64(totalWords)))
+			if lvl < log.LvlTrace {
+				log.Log(lvl, fmt.Sprintf("[%s] Compressed", logPrefix), "processed", fmt.Sprintf("%.2f%%", 100*float64(wc)/float64(totalWords)))
+			}
 		default:
 		}
 	}
@@ -817,7 +828,7 @@ func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector,
 		//log.Info("Kasai algorithm finished")
 		// Checking LCP array
 
-		if ASSERT {
+		if assert.Enable {
 			for i := 0; i < n-1; i++ {
 				var prefixLen int
 				p1 := int(filtered[i])

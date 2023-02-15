@@ -32,6 +32,10 @@ import (
 
 const MaxUint32 = 1<<32 - 1
 
+type ToBitamp interface {
+	ToBitmap() (*roaring64.Bitmap, error)
+}
+
 var roaringPool = sync.Pool{
 	New: func() any {
 		return roaring.New()
@@ -44,6 +48,9 @@ func NewBitmap() *roaring.Bitmap {
 	return a
 }
 func ReturnToPool(a *roaring.Bitmap) {
+	if a == nil {
+		return
+	}
 	roaringPool.Put(a)
 }
 
@@ -59,6 +66,9 @@ func NewBitmap64() *roaring64.Bitmap {
 	return a
 }
 func ReturnToPool64(a *roaring64.Bitmap) {
+	if a == nil {
+		return
+	}
 	roaring64Pool.Put(a)
 }
 
@@ -406,3 +416,14 @@ func Bytesmask(fixedbits int) (fixedbytes int, mask byte) {
 	}
 	return fixedbytes, mask
 }
+
+type ToBitmap interface {
+	ToBitmap() (*roaring64.Bitmap, error)
+}
+
+func ToIter(it roaring64.IntIterable64) *ToIterInterface { return &ToIterInterface{it: it} }
+
+type ToIterInterface struct{ it roaring64.IntIterable64 }
+
+func (i *ToIterInterface) HasNext() bool         { return i.it.HasNext() }
+func (i *ToIterInterface) Next() (uint64, error) { return i.it.Next(), nil }

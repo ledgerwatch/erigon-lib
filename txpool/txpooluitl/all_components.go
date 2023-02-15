@@ -23,6 +23,9 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/log/v3"
+	mdbx2 "github.com/torquem-ch/mdbx-go/mdbx"
+
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/direct"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -30,8 +33,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/txpool"
 	"github.com/ledgerwatch/erigon-lib/types"
-	"github.com/ledgerwatch/log/v3"
-	mdbx2 "github.com/torquem-ch/mdbx-go/mdbx"
 )
 
 func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB, force bool) (cc *chain.Config, blockNum uint64, err error) {
@@ -98,7 +99,7 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 	return cc, blockNum, nil
 }
 
-func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, newTxs chan types.Hashes, chainDB kv.RoDB, sentryClients []direct.SentryClient, stateChangesClient txpool.StateChangesClient) (kv.RwDB, *txpool.TxPool, *txpool.Fetch, *txpool.Send, *txpool.GrpcServer, error) {
+func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, newTxs chan types.Announcements, chainDB kv.RoDB, sentryClients []direct.SentryClient, stateChangesClient txpool.StateChangesClient) (kv.RwDB, *txpool.TxPool, *txpool.Fetch, *txpool.Send, *txpool.GrpcServer, error) {
 	txPoolDB, err := mdbx.NewMDBX(log.New()).Label(kv.TxPoolDB).Path(cfg.DBDir).
 		WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).
 		Flags(func(f uint) uint { return f ^ mdbx2.Durable | mdbx2.SafeNoSync }).
@@ -115,7 +116,13 @@ func AllComponents(ctx context.Context, cfg txpool.Config, cache kvcache.Cache, 
 	}
 
 	chainID, _ := uint256.FromBig(chainConfig.ChainID)
-	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID)
+
+	shanghaiTime := chainConfig.ShanghaiTime
+	if cfg.OverrideShanghaiTime != nil {
+		shanghaiTime = cfg.OverrideShanghaiTime
+	}
+
+	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID, shanghaiTime)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}

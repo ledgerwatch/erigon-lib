@@ -28,12 +28,17 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
+
+// StepsInBiggestFile - files of this size are completely frozen/immutable.
+// files of smaller size are also immutable, but can be removed after merge to bigger files.
+const StepsInBiggestFile = 32
 
 // Reconstruction of the aggregator in another package, `aggregator`
 
@@ -90,16 +95,16 @@ func NewAggregator(
 	}
 	a.commitment = NewCommittedDomain(commitd, CommitmentModeDirect)
 
-	if a.logAddrs, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, nil); err != nil {
+	if a.logAddrs, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, false, nil); err != nil {
 		return nil, err
 	}
-	if a.logTopics, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, nil); err != nil {
+	if a.logTopics, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, false, nil); err != nil {
 		return nil, err
 	}
-	if a.tracesFrom, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, nil); err != nil {
+	if a.tracesFrom, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, false, nil); err != nil {
 		return nil, err
 	}
-	if a.tracesTo, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, nil); err != nil {
+	if a.tracesTo, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, false, nil); err != nil {
 		return nil, err
 	}
 	closeAgg = false
@@ -107,6 +112,64 @@ func NewAggregator(
 	a.defaultCtx = a.MakeContext()
 	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
 	return a, nil
+}
+
+func (a *Aggregator) ReopenFolder() error {
+	var err error
+	if err = a.accounts.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	if err = a.storage.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	if err = a.code.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	if err = a.commitment.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	if err = a.logAddrs.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	if err = a.logTopics.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	if err = a.tracesFrom.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	if err = a.tracesTo.OpenFolder(); err != nil {
+		return fmt.Errorf("OpenFolder: %w", err)
+	}
+	return nil
+}
+
+func (a *Aggregator) ReopenList(fNames []string) error {
+	var err error
+	if err = a.accounts.OpenList(fNames); err != nil {
+		return err
+	}
+	if err = a.storage.OpenList(fNames); err != nil {
+		return err
+	}
+	if err = a.code.OpenList(fNames); err != nil {
+		return err
+	}
+	if err = a.commitment.OpenList(fNames); err != nil {
+		return err
+	}
+	if err = a.logAddrs.OpenList(fNames); err != nil {
+		return err
+	}
+	if err = a.logTopics.OpenList(fNames); err != nil {
+		return err
+	}
+	if err = a.tracesFrom.OpenList(fNames); err != nil {
+		return err
+	}
+	if err = a.tracesTo.OpenList(fNames); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (a *Aggregator) GetAndResetStats() DomainStats {
@@ -185,14 +248,14 @@ func (a *Aggregator) SetTxNum(txNum uint64) {
 func (a *Aggregator) SetBlockNum(bn uint64) { a.blockNum = bn }
 
 func (a *Aggregator) SetWorkers(i int) {
-	a.accounts.workers = i
-	a.storage.workers = i
-	a.code.workers = i
-	a.commitment.workers = i
-	a.logAddrs.workers = i
-	a.logTopics.workers = i
-	a.tracesFrom.workers = i
-	a.tracesTo.workers = i
+	a.accounts.compressWorkers = i
+	a.storage.compressWorkers = i
+	a.code.compressWorkers = i
+	a.commitment.compressWorkers = i
+	a.logAddrs.compressWorkers = i
+	a.logTopics.compressWorkers = i
+	a.tracesFrom.compressWorkers = i
+	a.tracesTo.compressWorkers = i
 }
 
 func (a *Aggregator) SetCommitmentMode(mode CommitmentMode) {
@@ -247,9 +310,9 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		logEvery = time.NewTicker(time.Second * 30)
 		wg       sync.WaitGroup
 		errCh    = make(chan error, 8)
-		maxSpan  = 32 * a.aggregationStep
-		txFrom   = step * a.aggregationStep
-		txTo     = (step + 1) * a.aggregationStep
+		//maxSpan  = StepsInBiggestFile * a.aggregationStep
+		txFrom = step * a.aggregationStep
+		txTo   = (step + 1) * a.aggregationStep
 		//workers  = 1
 	)
 	defer logEvery.Stop()
@@ -324,34 +387,53 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	maxEndTxNum := a.EndTxNumMinimax()
-	closeAll := true
-	for r := a.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = a.findMergeRange(maxEndTxNum, maxSpan) {
-		outs := a.staticFilesInRange(r)
-		defer func() {
-			if closeAll {
-				outs.Close()
-			}
-		}()
+	ac := a.MakeContext()
+	defer ac.Close()
 
-		in, err := a.mergeFiles(ctx, outs, r, 1)
+	maxEndTxNum := a.EndTxNumMinimax()
+	for {
+		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
 		if err != nil {
 			return err
 		}
-		a.integrateMergedFiles(outs, in)
-		defer func() {
-			if closeAll {
-				in.Close()
-			}
-		}()
-
-		if err = a.deleteFiles(outs); err != nil {
-			return err
+		if !somethingMerged {
+			break
 		}
 	}
-
-	closeAll = false
 	return nil
+}
+
+func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, workers int) (somethingDone bool, err error) {
+	closeAll := true
+	maxSpan := a.aggregationStep * StepsInBiggestFile
+	r := a.findMergeRange(maxEndTxNum, maxSpan)
+	if !r.any() {
+		return false, nil
+	}
+
+	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
+	defer ac.Close()
+
+	outs := a.staticFilesInRange(r, ac)
+	defer func() {
+		if closeAll {
+			outs.Close()
+		}
+	}()
+
+	in, err := a.mergeFiles(ctx, outs, r, workers)
+	if err != nil {
+		return true, err
+	}
+	defer func() {
+		if closeAll {
+			in.Close()
+		}
+	}()
+	a.integrateMergedFiles(outs, in)
+	a.cleanAfterFreeze(in)
+	closeAll = false
+	return true, nil
 }
 
 type Ranges struct {
@@ -439,31 +521,31 @@ func (sf SelectedStaticFiles) Close() {
 	}
 }
 
-func (a *Aggregator) staticFilesInRange(r Ranges) SelectedStaticFiles {
+func (a *Aggregator) staticFilesInRange(r Ranges, ac *AggregatorContext) SelectedStaticFiles {
 	var sf SelectedStaticFiles
 	if r.accounts.any() {
-		sf.accounts, sf.accountsIdx, sf.accountsHist, sf.accountsI = a.accounts.staticFilesInRange(r.accounts)
+		sf.accounts, sf.accountsIdx, sf.accountsHist, sf.accountsI = a.accounts.staticFilesInRange(r.accounts, ac.accounts)
 	}
 	if r.storage.any() {
-		sf.storage, sf.storageIdx, sf.storageHist, sf.storageI = a.storage.staticFilesInRange(r.storage)
+		sf.storage, sf.storageIdx, sf.storageHist, sf.storageI = a.storage.staticFilesInRange(r.storage, ac.storage)
 	}
 	if r.code.any() {
-		sf.code, sf.codeIdx, sf.codeHist, sf.codeI = a.code.staticFilesInRange(r.code)
+		sf.code, sf.codeIdx, sf.codeHist, sf.codeI = a.code.staticFilesInRange(r.code, ac.code)
 	}
 	if r.commitment.any() {
-		sf.commitment, sf.commitmentIdx, sf.commitmentHist, sf.commitmentI = a.commitment.staticFilesInRange(r.commitment)
+		sf.commitment, sf.commitmentIdx, sf.commitmentHist, sf.commitmentI = a.commitment.staticFilesInRange(r.commitment, ac.commitment)
 	}
 	if r.logAddrs {
-		sf.logAddrs, sf.logAddrsI = a.logAddrs.staticFilesInRange(r.logAddrsStartTxNum, r.logAddrsEndTxNum)
+		sf.logAddrs, sf.logAddrsI = a.logAddrs.staticFilesInRange(r.logAddrsStartTxNum, r.logAddrsEndTxNum, ac.logAddrs)
 	}
 	if r.logTopics {
-		sf.logTopics, sf.logTopicsI = a.logTopics.staticFilesInRange(r.logTopicsStartTxNum, r.logTopicsEndTxNum)
+		sf.logTopics, sf.logTopicsI = a.logTopics.staticFilesInRange(r.logTopicsStartTxNum, r.logTopicsEndTxNum, ac.logTopics)
 	}
 	if r.tracesFrom {
-		sf.tracesFrom, sf.tracesFromI = a.tracesFrom.staticFilesInRange(r.tracesFromStartTxNum, r.tracesFromEndTxNum)
+		sf.tracesFrom, sf.tracesFromI = a.tracesFrom.staticFilesInRange(r.tracesFromStartTxNum, r.tracesFromEndTxNum, ac.tracesFrom)
 	}
 	if r.tracesTo {
-		sf.tracesTo, sf.tracesToI = a.tracesTo.staticFilesInRange(r.tracesToStartTxNum, r.tracesToEndTxNum)
+		sf.tracesTo, sf.tracesToI = a.tracesTo.staticFilesInRange(r.tracesToStartTxNum, r.tracesToEndTxNum, ac.tracesTo)
 	}
 	return sf
 }
@@ -626,33 +708,15 @@ func (a *Aggregator) integrateMergedFiles(outs SelectedStaticFiles, in MergedFil
 	a.tracesFrom.integrateMergedFiles(outs.tracesFrom, in.tracesFrom)
 	a.tracesTo.integrateMergedFiles(outs.tracesTo, in.tracesTo)
 }
-
-func (a *Aggregator) deleteFiles(outs SelectedStaticFiles) error {
-	if err := a.accounts.deleteFiles(outs.accounts, outs.accountsIdx, outs.accountsHist); err != nil {
-		return err
-	}
-	if err := a.storage.deleteFiles(outs.storage, outs.storageIdx, outs.storageHist); err != nil {
-		return err
-	}
-	if err := a.code.deleteFiles(outs.code, outs.codeIdx, outs.codeHist); err != nil {
-		return err
-	}
-	if err := a.commitment.deleteFiles(outs.commitment, outs.commitmentIdx, outs.commitmentHist); err != nil {
-		return err
-	}
-	if err := a.logAddrs.deleteFiles(outs.logAddrs); err != nil {
-		return err
-	}
-	if err := a.logTopics.deleteFiles(outs.logTopics); err != nil {
-		return err
-	}
-	if err := a.tracesFrom.deleteFiles(outs.tracesFrom); err != nil {
-		return err
-	}
-	if err := a.tracesTo.deleteFiles(outs.tracesTo); err != nil {
-		return err
-	}
-	return nil
+func (a *Aggregator) cleanAfterFreeze(in MergedFiles) {
+	a.accounts.cleanAfterFreeze(in.accountsHist)
+	a.storage.cleanAfterFreeze(in.storageHist)
+	a.code.cleanAfterFreeze(in.codeHist)
+	a.commitment.cleanAfterFreeze(in.commitment)
+	a.logAddrs.cleanFrozenParts(in.logAddrs)
+	a.logTopics.cleanFrozenParts(in.logTopics)
+	a.tracesFrom.cleanFrozenParts(in.tracesFrom)
+	a.tracesTo.cleanFrozenParts(in.tracesTo)
 }
 func (ac *AggregatorContext) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
 	return ac.accounts.Get(addr, nil, roTx)
@@ -931,32 +995,32 @@ func (a *Aggregator) AddLogTopic(topic []byte) error {
 	return a.logTopics.Add(topic)
 }
 
-func (ac *AggregatorContext) LogAddrIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
-	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) LogAddrIterator(addr []byte, startTxNum, endTxNum int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, order.Asc, -1, roTx)
 }
 
-func (ac *AggregatorContext) LogTopicIterator(topic []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
-	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) LogTopicIterator(topic []byte, startTxNum, endTxNum int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, order.Asc, -1, roTx)
 }
 
-func (ac *AggregatorContext) TraceFromIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
-	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) TraceFromIterator(addr []byte, startTxNum, endTxNum int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, order.Asc, -1, roTx)
 }
 
-func (ac *AggregatorContext) TraceToIterator(addr []byte, startTxNum, endTxNum uint64, roTx kv.Tx) *InvertedIterator {
-	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, roTx)
+func (ac *AggregatorContext) TraceToIterator(addr []byte, startTxNum, endTxNum int, roTx kv.Tx) (*InvertedIterator, error) {
+	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, order.Asc, -1, roTx)
 }
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *Aggregator) StartWrites() *Aggregator {
-	a.accounts.StartWrites(a.tmpdir)
-	a.storage.StartWrites(a.tmpdir)
-	a.code.StartWrites(a.tmpdir)
-	a.commitment.StartWrites(a.tmpdir)
-	a.logAddrs.StartWrites(a.tmpdir)
-	a.logTopics.StartWrites(a.tmpdir)
-	a.tracesFrom.StartWrites(a.tmpdir)
-	a.tracesTo.StartWrites(a.tmpdir)
+	a.accounts.StartWrites()
+	a.storage.StartWrites()
+	a.code.StartWrites()
+	a.commitment.StartWrites()
+	a.logAddrs.StartWrites()
+	a.logTopics.StartWrites()
+	a.tracesFrom.StartWrites()
+	a.tracesTo.StartWrites()
 	return a
 }
 func (a *Aggregator) FinishWrites() {
@@ -1034,7 +1098,16 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
-func (ac *AggregatorContext) Close() {}
+func (ac *AggregatorContext) Close() {
+	ac.accounts.Close()
+	ac.storage.Close()
+	ac.code.Close()
+	ac.commitment.Close()
+	ac.logAddrs.Close()
+	ac.logTopics.Close()
+	ac.tracesFrom.Close()
+	ac.tracesTo.Close()
+}
 
 func DecodeAccountBytes(enc []byte) (nonce uint64, balance *uint256.Int, hash []byte) {
 	balance = new(uint256.Int)

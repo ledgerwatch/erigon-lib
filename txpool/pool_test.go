@@ -21,6 +21,8 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"math"
+	"math/big"
 	"math/rand"
 	"testing"
 
@@ -30,9 +32,11 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
+	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
+	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/ledgerwatch/erigon-lib/types"
@@ -89,12 +93,12 @@ func BenchmarkName2(b *testing.B) {
 
 func TestNonceFromAddress(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
-	ch := make(chan types.Hashes, 100)
+	ch := make(chan types.Announcements, 100)
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 
 	cfg := DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -209,12 +213,12 @@ func TestNonceFromAddress(t *testing.T) {
 
 func TestReplaceWithHigherFee(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
-	ch := make(chan types.Hashes, 100)
+	ch := make(chan types.Announcements, 100)
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 
 	cfg := DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -326,12 +330,12 @@ func TestReplaceWithHigherFee(t *testing.T) {
 
 func TestReverseNonces(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
-	ch := make(chan types.Hashes, 100)
+	ch := make(chan types.Announcements, 100)
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 
 	cfg := DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -381,9 +385,10 @@ func TestReverseNonces(t *testing.T) {
 	}
 	fmt.Printf("AFTER TX 1\n")
 	select {
-	case hashes := <-ch:
-		for i := 0; i < hashes.Len(); i++ {
-			fmt.Printf("propagated hash %x\n", hashes.At(i))
+	case annoucements := <-ch:
+		for i := 0; i < annoucements.Len(); i++ {
+			_, _, hash := annoucements.At(i)
+			fmt.Printf("propagated hash %x\n", hash)
 		}
 	default:
 
@@ -408,9 +413,10 @@ func TestReverseNonces(t *testing.T) {
 	}
 	fmt.Printf("AFTER TX 2\n")
 	select {
-	case hashes := <-ch:
-		for i := 0; i < hashes.Len(); i++ {
-			fmt.Printf("propagated hash %x\n", hashes.At(i))
+	case annoucements := <-ch:
+		for i := 0; i < annoucements.Len(); i++ {
+			_, _, hash := annoucements.At(i)
+			fmt.Printf("propagated hash %x\n", hash)
 		}
 	default:
 
@@ -435,9 +441,10 @@ func TestReverseNonces(t *testing.T) {
 	}
 	fmt.Printf("AFTER TX 3\n")
 	select {
-	case hashes := <-ch:
-		for i := 0; i < hashes.Len(); i++ {
-			fmt.Printf("propagated hash %x\n", hashes.At(i))
+	case annoucements := <-ch:
+		for i := 0; i < annoucements.Len(); i++ {
+			_, _, hash := annoucements.At(i)
+			fmt.Printf("propagated hash %x\n", hash)
 		}
 	default:
 
@@ -450,12 +457,12 @@ func TestReverseNonces(t *testing.T) {
 // even though logs show they are broadcast
 func TestTxPoke(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
-	ch := make(chan types.Hashes, 100)
+	ch := make(chan types.Announcements, 100)
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 
 	cfg := DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil)
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -505,10 +512,10 @@ func TestTxPoke(t *testing.T) {
 			assert.Equal(Success, reason, reason.String())
 		}
 	}
-	var promoted types.Hashes
+	var promoted types.Announcements
 	select {
 	case promoted = <-ch:
-		if !bytes.Equal(idHash, promoted.DedupCopy()) {
+		if !bytes.Equal(idHash, promoted.DedupHashes()) {
 			t.Errorf("expected promoted %x, got %x", idHash, promoted)
 		}
 	default:
@@ -537,7 +544,7 @@ func TestTxPoke(t *testing.T) {
 	// Even though transaction not replaced, it gets poked
 	select {
 	case promoted = <-ch:
-		if !bytes.Equal(idHash, promoted) {
+		if !bytes.Equal(idHash, promoted.Hashes()) {
 			t.Errorf("expected promoted %x, got %x", idHash, promoted)
 		}
 	default:
@@ -566,7 +573,7 @@ func TestTxPoke(t *testing.T) {
 	// Even though transaction not replaced, it gets poked
 	select {
 	case promoted = <-ch:
-		if !bytes.Equal(idHash, promoted) {
+		if !bytes.Equal(idHash, promoted.Hashes()) {
 			t.Errorf("expected promoted %x, got %x", idHash, promoted)
 		}
 	default:
@@ -616,5 +623,143 @@ func TestTxPoke(t *testing.T) {
 	case <-ch:
 		t.Errorf("remote transactions should not cause re-broadcast")
 	default:
+	}
+}
+
+func TestShanghaiIntrinsicGas(t *testing.T) {
+	cases := map[string]struct {
+		expected       uint64
+		dataLen        uint64
+		dataNonZeroLen uint64
+		creation       bool
+		isShanghai     bool
+	}{
+		"simple no data": {
+			expected:       21000,
+			dataLen:        0,
+			dataNonZeroLen: 0,
+			creation:       false,
+			isShanghai:     false,
+		},
+		"simple with data": {
+			expected:       21512,
+			dataLen:        32,
+			dataNonZeroLen: 32,
+			creation:       false,
+			isShanghai:     false,
+		},
+		"creation with data no shanghai": {
+			expected:       53512,
+			dataLen:        32,
+			dataNonZeroLen: 32,
+			creation:       true,
+			isShanghai:     false,
+		},
+		"creation with single word and shanghai": {
+			expected:       53514, // additional gas for single word
+			dataLen:        32,
+			dataNonZeroLen: 32,
+			creation:       true,
+			isShanghai:     true,
+		},
+		"creation between word 1 and 2 and shanghai": {
+			expected:       53532, // additional gas for going into 2nd word although not filling it
+			dataLen:        33,
+			dataNonZeroLen: 33,
+			creation:       true,
+			isShanghai:     true,
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			gas, reason := CalcIntrinsicGas(c.dataLen, c.dataNonZeroLen, nil, c.creation, true, true, c.isShanghai)
+			if reason != Success {
+				t.Errorf("expected success but got reason %v", reason)
+			}
+			if gas != c.expected {
+				t.Errorf("expected %v but got %v", c.expected, gas)
+			}
+		})
+	}
+}
+
+func TestShanghaiValidateTx(t *testing.T) {
+	asrt := assert.New(t)
+	tests := map[string]struct {
+		expected   DiscardReason
+		dataLen    int
+		isShanghai bool
+	}{
+		"no shanghai": {
+			expected:   Success,
+			dataLen:    32,
+			isShanghai: false,
+		},
+		"shanghai within bounds": {
+			expected:   Success,
+			dataLen:    32,
+			isShanghai: true,
+		},
+		"shanghai exactly on bound": {
+			expected:   Success,
+			dataLen:    fixedgas.MaxInitCodeSize,
+			isShanghai: true,
+		},
+		"shanghai one over bound": {
+			expected:   InitCodeTooLarge,
+			dataLen:    fixedgas.MaxInitCodeSize + 1,
+			isShanghai: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ch := make(chan types.Announcements, 100)
+			_, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+			cfg := DefaultConfig
+
+			var shanghaiTime *big.Int
+			if test.isShanghai {
+				shanghaiTime = big.NewInt(0)
+			}
+
+			cache := &kvcache.DummyCache{}
+			pool, err := New(ch, coreDB, cfg, cache, *u256.N1, shanghaiTime)
+			asrt.NoError(err)
+			ctx := context.Background()
+			tx, err := coreDB.BeginRw(ctx)
+			defer tx.Rollback()
+			asrt.NoError(err)
+
+			sndr := sender{nonce: 0, balance: *uint256.NewInt(math.MaxUint64)}
+			sndrBytes := make([]byte, types.EncodeSenderLengthForStorage(sndr.nonce, sndr.balance))
+			types.EncodeSender(sndr.nonce, sndr.balance, sndrBytes)
+			err = tx.Put(kv.PlainState, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, sndrBytes)
+			asrt.NoError(err)
+
+			txn := &types.TxSlot{
+				DataLen:  test.dataLen,
+				FeeCap:   *uint256.NewInt(21000),
+				Gas:      500000,
+				SenderID: 0,
+				Creation: true,
+			}
+
+			txns := types.TxSlots{
+				Txs:     append([]*types.TxSlot{}, txn),
+				Senders: types.Addresses{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			}
+			err = pool.senders.registerNewSenders(&txns)
+			asrt.NoError(err)
+			view, err := cache.View(ctx, tx)
+			asrt.NoError(err)
+
+			reason := pool.validateTx(txn, false, view)
+
+			if reason != test.expected {
+				t.Errorf("expected %v, got %v", test.expected, reason)
+			}
+		})
 	}
 }

@@ -28,14 +28,13 @@ import (
 	"path/filepath"
 
 	"github.com/c2h5oh/datasize"
+	"github.com/ledgerwatch/erigon-lib/common/assert"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/spaolacci/murmur3"
 )
-
-var ASSERT = false
 
 var ErrCollision = fmt.Errorf("duplicate key")
 
@@ -563,7 +562,9 @@ func (rs *RecSplit) Build() error {
 
 	rs.currentBucketIdx = math.MaxUint64 // To make sure 0 bucket is detected
 	defer rs.bucketCollector.Close()
-	log.Log(rs.lvl, "[index] calculating", "file", rs.indexFileName)
+	if rs.lvl < log.LvlTrace {
+		log.Log(rs.lvl, "[index] calculating", "file", rs.indexFileName)
+	}
 	if err := rs.bucketCollector.Load(nil, "", rs.loadFuncBucket, etl.TransformArgs{}); err != nil {
 		return err
 	}
@@ -573,7 +574,7 @@ func (rs *RecSplit) Build() error {
 		}
 	}
 
-	if ASSERT {
+	if assert.Enable {
 		rs.indexW.Flush()
 		rs.indexF.Seek(0, 0)
 		b, _ := io.ReadAll(rs.indexF)
@@ -581,8 +582,9 @@ func (rs *RecSplit) Build() error {
 			panic(fmt.Errorf("expected: %d, got: %d; rs.keysAdded=%d, rs.bytesPerRec=%d, %s", 9+int(rs.keysAdded)*rs.bytesPerRec, len(b), rs.keysAdded, rs.bytesPerRec, rs.indexFile))
 		}
 	}
-
-	log.Log(rs.lvl, "[index] write", "file", rs.indexFileName)
+	if rs.lvl < log.LvlTrace {
+		log.Log(rs.lvl, "[index] write", "file", rs.indexFileName)
+	}
 	if rs.enums {
 		rs.offsetEf = eliasfano32.NewEliasFano(rs.keysAdded, rs.maxOffset)
 		defer rs.offsetCollector.Close()
@@ -595,6 +597,7 @@ func (rs *RecSplit) Build() error {
 	// Construct Elias Fano index
 	rs.ef.Build(rs.bucketSizeAcc, rs.bucketPosAcc)
 	rs.built = true
+
 	// Write out bucket count, bucketSize, leafSize
 	binary.BigEndian.PutUint64(rs.numBuf[:], rs.bucketCount)
 	if _, err := rs.indexW.Write(rs.numBuf[:8]); err != nil {
@@ -623,6 +626,7 @@ func (rs *RecSplit) Build() error {
 			return fmt.Errorf("writing start seed: %w", err)
 		}
 	}
+
 	if rs.enums {
 		if err := rs.indexW.WriteByte(1); err != nil {
 			return fmt.Errorf("writing enums = true: %w", err)

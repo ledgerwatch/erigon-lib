@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -84,10 +85,14 @@ func TestIterator(t *testing.T) {
 	ef.Build()
 	efi := ef.Iterator()
 	i := 0
+	var values []uint64
 	for efi.HasNext() {
-		assert.Equal(t, offsets[i], efi.Next(), "iter")
+		v, _ := efi.Next()
+		values = append(values, v)
+		assert.Equal(t, offsets[i], v, "iter")
 		i++
 	}
+	iter.ExpectEqualU64(t, iter.ReverseArray(values), ef.ReverseIterator())
 }
 
 func TestJump(t *testing.T) {

@@ -37,7 +37,7 @@ func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, k
 func TestAggregator_Merge(t *testing.T) {
 	_, db, agg := testDbAndAggregator(t, 0, 100)
 
-	tx, err := db.BeginRw(context.Background())
+	tx, err := db.BeginRwNosync(context.Background())
 	require.NoError(t, err)
 	defer func() {
 		if tx != nil {
@@ -79,6 +79,7 @@ func TestAggregator_Merge(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := agg.MakeContext()
+	defer dc.Close()
 	v, err := dc.ReadCommitment([]byte("roothash"), roTx)
 	require.NoError(t, err)
 
@@ -153,6 +154,8 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 	// Start another aggregator on same datadir
 	anotherAgg, err := NewAggregator(path, path, aggStep)
 	require.NoError(t, err)
+	require.NoError(t, anotherAgg.ReopenFolder())
+
 	defer anotherAgg.Close()
 
 	rwTx, err := db.BeginRw(context.Background())
@@ -179,6 +182,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := anotherAgg.MakeContext()
+	defer dc.Close()
 	v, err := dc.ReadCommitment([]byte("key"), roTx)
 	require.NoError(t, err)
 
@@ -186,7 +190,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 }
 
 func TestAggregator_RestartOnFiles(t *testing.T) {
-	aggStep := uint64(1000)
+	aggStep := uint64(100)
 
 	path, db, agg := testDbAndAggregator(t, 0, aggStep)
 	defer db.Close()
@@ -220,7 +224,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	agg.SetCommitFn(commit)
 
 	txs := aggStep * 5
-	t.Logf("step=%d tx_count=%d", aggStep, txs)
+	t.Logf("step=%d tx_count=%d\n", aggStep, txs)
 
 	rnd := rand.New(rand.NewSource(0))
 	keys := make([][]byte, txs)
@@ -271,6 +275,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 
 	newAgg, err := NewAggregator(path, path, aggStep)
 	require.NoError(t, err)
+	require.NoError(t, newAgg.ReopenFolder())
 	defer newAgg.Close()
 
 	newAgg.SetTx(newTx)
@@ -280,13 +285,14 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	t.Logf("seek to latest_tx=%d", latestTx)
 
 	ctx := newAgg.MakeContext()
+	defer ctx.Close()
 	miss := uint64(0)
 	for i, key := range keys {
 		stored, err := ctx.ReadAccountData(key[:length.Addr], newTx)
 		require.NoError(t, err)
 		if len(stored) == 0 {
 			if uint64(i+1) >= txs-aggStep {
-				continue // finishtx always stores last agg step in db which we deleted, so miss is expected
+				continue // finishtx always stores last agg step in db which we deleteelete, so miss is expected
 			}
 			miss++
 			fmt.Printf("%x [%d/%d]", key, miss, i+1) // txnum starts from 1
@@ -389,6 +395,7 @@ func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := agg.storage.MakeContext()
+	defer ctx.Close()
 	for _, key := range keys {
 		storedV, err := ctx.Get(key[:length.Addr], key[length.Addr:], tx)
 		require.NoError(t, err)

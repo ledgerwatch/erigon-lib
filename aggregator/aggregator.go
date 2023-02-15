@@ -40,14 +40,15 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/google/btree"
-	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/spaolacci/murmur3"
 	"golang.org/x/crypto/sha3"
 	"golang.org/x/exp/slices"
 
-	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/etl"
+
+	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -583,6 +584,8 @@ func buildIndex(d *compress.Decompressor, idxPath, tmpDir string, count int) (*r
 		return nil, err
 	}
 	defer rs.Close()
+	rs.LogLvl(log.LvlDebug)
+
 	word := make([]byte, 0, 256)
 	var pos uint64
 	g := d.MakeGetter()
@@ -1620,6 +1623,8 @@ func (a *Aggregator) reduceHistoryFiles(fType FileType, item *byEndBlockItem) er
 	}); err != nil {
 		return fmt.Errorf("reduceHistoryFiles NewRecSplit: %w", err)
 	}
+	rs.LogLvl(log.LvlDebug)
+
 	g1 := d.MakeGetter()
 	for {
 		g.Reset(0)
@@ -1682,10 +1687,12 @@ func mergeBitmaps(preval, val, buf commitment.BranchData) (commitment.BranchData
 	efIt := ef.Iterator()
 	newEf := eliasfano32.NewEliasFano(preef.Count()+ef.Count(), ef.Max())
 	for preIt.HasNext() {
-		newEf.AddOffset(preIt.Next())
+		v, _ := preIt.Next()
+		newEf.AddOffset(v)
 	}
 	for efIt.HasNext() {
-		newEf.AddOffset(efIt.Next())
+		v, _ := efIt.Next()
+		newEf.AddOffset(v)
 	}
 	newEf.Build()
 	return newEf.AppendBytes(buf), nil

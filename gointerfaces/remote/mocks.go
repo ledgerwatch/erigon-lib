@@ -28,10 +28,10 @@ var _ KVClient = &KVClientMock{}
 //			HistoryGetFunc: func(ctx context.Context, in *HistoryGetReq, opts ...grpc.CallOption) (*HistoryGetReply, error) {
 //				panic("mock out the HistoryGet method")
 //			},
-//			IndexRangeFunc: func(ctx context.Context, in *IndexRangeReq, opts ...grpc.CallOption) (KV_IndexRangeClient, error) {
+//			IndexRangeFunc: func(ctx context.Context, in *IndexRangeReq, opts ...grpc.CallOption) (*IndexRangeReply, error) {
 //				panic("mock out the IndexRange method")
 //			},
-//			RangeFunc: func(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (KV_RangeClient, error) {
+//			RangeFunc: func(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (*Pairs, error) {
 //				panic("mock out the Range method")
 //			},
 //			SnapshotsFunc: func(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error) {
@@ -60,10 +60,10 @@ type KVClientMock struct {
 	HistoryGetFunc func(ctx context.Context, in *HistoryGetReq, opts ...grpc.CallOption) (*HistoryGetReply, error)
 
 	// IndexRangeFunc mocks the IndexRange method.
-	IndexRangeFunc func(ctx context.Context, in *IndexRangeReq, opts ...grpc.CallOption) (KV_IndexRangeClient, error)
+	IndexRangeFunc func(ctx context.Context, in *IndexRangeReq, opts ...grpc.CallOption) (*IndexRangeReply, error)
 
 	// RangeFunc mocks the Range method.
-	RangeFunc func(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (KV_RangeClient, error)
+	RangeFunc func(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (*Pairs, error)
 
 	// SnapshotsFunc mocks the Snapshots method.
 	SnapshotsFunc func(ctx context.Context, in *SnapshotsRequest, opts ...grpc.CallOption) (*SnapshotsReply, error)
@@ -249,7 +249,7 @@ func (mock *KVClientMock) HistoryGetCalls() []struct {
 }
 
 // IndexRange calls IndexRangeFunc.
-func (mock *KVClientMock) IndexRange(ctx context.Context, in *IndexRangeReq, opts ...grpc.CallOption) (KV_IndexRangeClient, error) {
+func (mock *KVClientMock) IndexRange(ctx context.Context, in *IndexRangeReq, opts ...grpc.CallOption) (*IndexRangeReply, error) {
 	callInfo := struct {
 		Ctx  context.Context
 		In   *IndexRangeReq
@@ -264,10 +264,10 @@ func (mock *KVClientMock) IndexRange(ctx context.Context, in *IndexRangeReq, opt
 	mock.lockIndexRange.Unlock()
 	if mock.IndexRangeFunc == nil {
 		var (
-			kV_IndexRangeClientOut KV_IndexRangeClient
-			errOut                 error
+			indexRangeReplyOut *IndexRangeReply
+			errOut             error
 		)
-		return kV_IndexRangeClientOut, errOut
+		return indexRangeReplyOut, errOut
 	}
 	return mock.IndexRangeFunc(ctx, in, opts...)
 }
@@ -293,7 +293,7 @@ func (mock *KVClientMock) IndexRangeCalls() []struct {
 }
 
 // Range calls RangeFunc.
-func (mock *KVClientMock) Range(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (KV_RangeClient, error) {
+func (mock *KVClientMock) Range(ctx context.Context, in *RangeReq, opts ...grpc.CallOption) (*Pairs, error) {
 	callInfo := struct {
 		Ctx  context.Context
 		In   *RangeReq
@@ -308,10 +308,10 @@ func (mock *KVClientMock) Range(ctx context.Context, in *RangeReq, opts ...grpc.
 	mock.lockRange.Unlock()
 	if mock.RangeFunc == nil {
 		var (
-			kV_RangeClientOut KV_RangeClient
-			errOut            error
+			pairsOut *Pairs
+			errOut   error
 		)
-		return kV_RangeClientOut, errOut
+		return pairsOut, errOut
 	}
 	return mock.RangeFunc(ctx, in, opts...)
 }

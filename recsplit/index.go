@@ -30,6 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/mmap"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
+	"github.com/ledgerwatch/log/v3"
 )
 
 // Index implements index lookup from the file created by the RecSplit
@@ -37,7 +38,8 @@ type Index struct {
 	offsetEf           *eliasfano32.EliasFano
 	f                  *os.File
 	mmapHandle2        *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
-	indexFile          string
+	filePath, fileName string
+
 	grData             []uint64
 	data               []byte // slice of correct size for the index to work with
 	startSeed          []uint64
@@ -67,12 +69,14 @@ func MustOpen(indexFile string) *Index {
 	return idx
 }
 
-func OpenIndex(indexFile string) (*Index, error) {
+func OpenIndex(indexFilePath string) (*Index, error) {
+	_, fName := filepath.Split(indexFilePath)
 	idx := &Index{
-		indexFile: indexFile,
+		filePath: indexFilePath,
+		fileName: fName,
 	}
 	var err error
-	idx.f, err = os.Open(indexFile)
+	idx.f, err = os.Open(indexFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +98,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 	offset := 16 + 1 + int(idx.keyCount)*idx.bytesPerRec
 
 	if offset < 0 {
-		return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexFile)
+		return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexFilePath)
 	}
 
 	// Bucket count, bucketSize, leafSize
@@ -141,6 +145,7 @@ func OpenIndex(indexFile string) (*Index, error) {
 			computeGolombRice(i, idx.golombRice, idx.leafSize, idx.primaryAggrBound, idx.secondaryAggrBound)
 		}
 	}
+
 	l := binary.BigEndian.Uint64(idx.data[offset:])
 	offset += 8
 	p := (*[maxDataSize / 8]uint64)(unsafe.Pointer(&idx.data[offset]))
@@ -153,18 +158,15 @@ func OpenIndex(indexFile string) (*Index, error) {
 func (idx *Index) Size() int64        { return idx.size }
 func (idx *Index) ModTime() time.Time { return idx.modTime }
 func (idx *Index) BaseDataID() uint64 { return idx.baseDataID }
-func (idx *Index) FilePath() string   { return idx.indexFile }
-func (idx *Index) FileName() string {
-	_, fName := filepath.Split(idx.indexFile)
-	return fName
-}
+func (idx *Index) FilePath() string   { return idx.filePath }
+func (idx *Index) FileName() string   { return idx.fileName }
 
 func (idx *Index) Close() error {
 	if idx == nil {
 		return nil
 	}
 	if err := mmap.Munmap(idx.mmapHandle1, idx.mmapHandle2); err != nil {
-		return err
+		log.Trace("unmap", "err", err, "file", idx.FileName())
 	}
 	if err := idx.f.Close(); err != nil {
 		return err
@@ -198,7 +200,7 @@ func (idx *Index) KeyCount() uint64 {
 // Lookup is not thread-safe because it used id.hasher
 func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	if idx.keyCount == 0 {
-		_, fName := filepath.Split(idx.indexFile)
+		_, fName := filepath.Split(idx.filePath)
 		panic("no Lookup should be done when keyCount==0, please use Empty function to guard " + fName)
 	}
 	if idx.keyCount == 1 {
@@ -258,6 +260,7 @@ func (idx *Index) Lookup(bucketHash, fingerprint uint64) uint64 {
 	b := gr.ReadNext(idx.golombParam(m))
 	rec := int(cumKeys) + int(remap16(remix(fingerprint+idx.startSeed[level]+b), m))
 	pos := 1 + 8 + idx.bytesPerRec*(rec+1)
+
 	return binary.BigEndian.Uint64(idx.data[pos:]) & idx.recMask
 }
 

@@ -32,6 +32,7 @@ import (
 	stack2 "github.com/go-stack/stack"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/pbnjay/memory"
 	"github.com/torquem-ch/mdbx-go/mdbx"
@@ -68,11 +69,15 @@ type MdbxOpts struct {
 
 func NewMDBX(log log.Logger) MdbxOpts {
 	opts := MdbxOpts{
-		bucketsCfg:     WithChaindataTables,
-		flags:          mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
-		log:            log,
-		pageSize:       kv.DefaultPageSize(),
-		dirtySpace:     2 * (memory.TotalMemory() / 42),
+		bucketsCfg: WithChaindataTables,
+		flags:      mdbx.NoReadahead | mdbx.Coalesce | mdbx.Durable,
+		log:        log,
+		pageSize:   kv.DefaultPageSize(),
+
+		// default is (TOTAL_RAM+AVAILABLE_RAM)/42/pageSize
+		// but for reproducibility of benchmarks - please don't rely on Available RAM
+		dirtySpace: 2 * (memory.TotalMemory() / 42),
+
 		growthStep:     2 * datasize.GB,
 		mergeThreshold: 3 * 8192,
 	}
@@ -131,6 +136,7 @@ func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.NoMemInit
 	opts.mapSize = 512 * datasize.MB
+	opts.label = kv.InMem
 	return opts
 }
 
@@ -229,10 +235,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			}
 		}
 
-		const MAX_AUGMENT_LIMIT = 0x7fffFFFF
-		if err = env.SetOption(mdbx.OptRpAugmentLimit, MAX_AUGMENT_LIMIT); err != nil {
-			return nil, err
-		}
 		if err = os.MkdirAll(opts.path, 0744); err != nil {
 			return nil, fmt.Errorf("could not create dir: %s, %w", opts.path, err)
 		}
@@ -252,6 +254,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			return nil, fmt.Errorf("%w, label: %s, trace: %s", err, opts.label.String(), stack2.Trace().String())
 		}
 	}
+
 	opts.pageSize = uint64(in.PageSize)
 
 	//nolint
@@ -282,8 +285,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 			return nil, err
 		}
 
-		// default is (TOTAL_RAM+AVAILABLE_RAM)/42/pageSize
-		// but for reproducibility of benchmarks - please don't rely on Available RAM
 		if err = env.SetOption(mdbx.OptTxnDpLimit, opts.dirtySpace/opts.pageSize); err != nil {
 			return nil, err
 		}
@@ -431,10 +432,9 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 // Close closes db
 // All transactions must be closed before closing the database.
 func (db *MdbxKV) Close() {
-	if db.closed.Load() {
+	if ok := db.closed.CompareAndSwap(false, true); !ok {
 		return
 	}
-	db.closed.Store(true)
 	db.wg.Wait()
 	db.env.Close()
 	db.env = nil
@@ -452,9 +452,8 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	}
 
 	// don't try to acquire if the context is already done
-	done := ctx.Done()
 	select {
-	case <-done:
+	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 		// otherwise carry on
@@ -491,11 +490,17 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 func (db *MdbxKV) BeginRw(ctx context.Context) (kv.RwTx, error) {
 	return db.beginRw(ctx, 0)
 }
-func (db *MdbxKV) BeginRwAsync(ctx context.Context) (kv.RwTx, error) {
+func (db *MdbxKV) BeginRwNosync(ctx context.Context) (kv.RwTx, error) {
 	return db.beginRw(ctx, mdbx.TxNoSync)
 }
 
 func (db *MdbxKV) beginRw(ctx context.Context, flags uint) (txn kv.RwTx, err error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
 	}
@@ -554,126 +559,6 @@ func (db *MdbxKV) AllBuckets() kv.TableCfg {
 	return db.buckets
 }
 
-func (tx *MdbxTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
-		if err != nil {
-			return err
-		}
-		if err := walker(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (tx *MdbxTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error {
-	c, err := tx.Cursor(bucket)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(prefix); k != nil; k, v, err = c.Next() {
-		if err != nil {
-			return err
-		}
-		if !bytes.HasPrefix(k, prefix) {
-			break
-		}
-		if err := walker(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (tx *MdbxTx) Prefix(table string, prefix []byte) (kv.Pairs, error) {
-	nextPrefix, ok := kv.NextSubtree(prefix)
-	if !ok {
-		return tx.Range(table, prefix, nil)
-	}
-	return tx.Range(table, prefix, nextPrefix)
-}
-
-func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (kv.Pairs, error) {
-	if toPrefix != nil && bytes.Compare(fromPrefix, toPrefix) >= 0 {
-		return nil, fmt.Errorf("tx.Range: %x must be lexicographicaly before %x", fromPrefix, toPrefix)
-	}
-	s, err := tx.newStreamCursor(table)
-	if err != nil {
-		return nil, err
-	}
-	s.toPrefix = toPrefix
-	s.nextK, s.nextV, s.nextErr = s.c.Seek(fromPrefix)
-	return s, nil
-}
-func (tx *MdbxTx) newStreamCursor(table string) (*cursor2stream, error) {
-	c, err := tx.Cursor(table)
-	if err != nil {
-		return nil, err
-	}
-	s := &cursor2stream{c: c, ctx: tx.ctx}
-	tx.streams = append(tx.streams, s)
-	return s, nil
-}
-
-type cursor2stream struct {
-	c            kv.Cursor
-	nextK, nextV []byte
-	nextErr      error
-	toPrefix     []byte
-	ctx          context.Context
-}
-
-func (s *cursor2stream) Close() { s.c.Close() }
-func (s *cursor2stream) HasNext() bool {
-	if s.toPrefix == nil {
-		return s.nextK != nil
-	}
-	if s.nextK == nil {
-		return false
-	}
-	return bytes.Compare(s.nextK, s.toPrefix) < 0
-}
-func (s *cursor2stream) Next() ([]byte, []byte, error) {
-	k, v, err := s.nextK, s.nextV, s.nextErr
-	select {
-	case <-s.ctx.Done():
-		return nil, nil, s.ctx.Err()
-	default:
-	}
-	s.nextK, s.nextV, s.nextErr = s.c.Next()
-	return k, v, err
-}
-
-func (tx *MdbxTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, walker func(k, v []byte) error) error {
-	if amount == 0 {
-		return nil
-	}
-	c, err := tx.Cursor(bucket)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	for k, v, err := c.Seek(fromPrefix); k != nil && amount > 0; k, v, err = c.Next() {
-		if err != nil {
-			return err
-		}
-		if err := walker(k, v); err != nil {
-			return err
-		}
-		amount--
-	}
-	return nil
-}
-
 func (tx *MdbxTx) ViewID() uint64 { return tx.tx.ID() }
 
 func (tx *MdbxTx) CollectMetrics() {
@@ -702,7 +587,6 @@ func (tx *MdbxTx) CollectMetrics() {
 	kv.DbPgopsSpill.Set(info.PageOps.Spill)
 	kv.DbPgopsUnspill.Set(info.PageOps.Unspill)
 	kv.DbPgopsWops.Set(info.PageOps.Wops)
-	kv.DbPgopsGcrtime.Update(info.PageOps.Gcrtime.Seconds())
 
 	txInfo, err := tx.tx.Info(true)
 	if err != nil {
@@ -729,10 +613,7 @@ func (tx *MdbxTx) ListBuckets() ([]string, error) {
 }
 
 func (db *MdbxKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-	// can't use db.evn.View method - because it calls commit for read transactions - it conflicts with write transactions.
+	// can't use db.env.View method - because it calls commit for read transactions - it conflicts with write transactions.
 	tx, err := db.BeginRo(ctx)
 	if err != nil {
 		return err
@@ -742,12 +623,8 @@ func (db *MdbxKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error) 
 	return f(tx)
 }
 
-func (db *MdbxKV) UpdateAsync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-
-	tx, err := db.BeginRwAsync(ctx)
+func (db *MdbxKV) UpdateNosync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
+	tx, err := db.BeginRwNosync(ctx)
 	if err != nil {
 		return err
 	}
@@ -764,10 +641,6 @@ func (db *MdbxKV) UpdateAsync(ctx context.Context, f func(tx kv.RwTx) error) (er
 }
 
 func (db *MdbxKV) Update(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-
 	tx, err := db.BeginRw(ctx)
 	if err != nil {
 		return err
@@ -909,25 +782,20 @@ func (tx *MdbxTx) Commit() error {
 
 	if tx.db.opts.label == kv.ChainDB {
 		kv.DbCommitPreparation.Update(latency.Preparation.Seconds())
-		kv.DbCommitGc.Update(latency.GC.Seconds())
 		kv.DbCommitAudit.Update(latency.Audit.Seconds())
 		kv.DbCommitWrite.Update(latency.Write.Seconds())
 		kv.DbCommitSync.Update(latency.Sync.Seconds())
 		kv.DbCommitEnding.Update(latency.Ending.Seconds())
 		kv.DbCommitTotal.Update(latency.Whole.Seconds())
-	}
 
-	//if latency.Whole > slowTx {
-	//	log.Info("Commit",
-	//		"preparation", latency.Preparation,
-	//		"gc", latency.GC,
-	//		"audit", latency.Audit,
-	//		"write", latency.Write,
-	//		"fsync", latency.Sync,
-	//		"ending", latency.Ending,
-	//		"whole", latency.Whole,
-	//	)
-	//}
+		//kv.DbGcWorkPnlMergeTime.Update(latency.GCDetails.WorkPnlMergeTime.Seconds())
+		//kv.DbGcWorkPnlMergeVolume.Set(uint64(latency.GCDetails.WorkPnlMergeVolume))
+		//kv.DbGcWorkPnlMergeCalls.Set(uint64(latency.GCDetails.WorkPnlMergeCalls))
+		//
+		//kv.DbGcSelfPnlMergeTime.Update(latency.GCDetails.SelfPnlMergeTime.Seconds())
+		//kv.DbGcSelfPnlMergeVolume.Set(uint64(latency.GCDetails.SelfPnlMergeVolume))
+		//kv.DbGcSelfPnlMergeCalls.Set(uint64(latency.GCDetails.SelfPnlMergeCalls))
+	}
 
 	return nil
 }
@@ -1136,27 +1004,6 @@ func (tx *MdbxTx) DBSize() (uint64, error) {
 		return 0, err
 	}
 	return info.Geo.Current, err
-}
-
-func (tx *MdbxTx) Reset() (err error) {
-	tx.Rollback()
-	//tx.printDebugInfo()
-	if tx.db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-	runtime.LockOSThread()
-	defer func() {
-		if err == nil {
-			tx.db.wg.Add(1)
-		}
-	}()
-
-	tx.tx, err = tx.db.env.BeginTxn(nil, 0)
-	if err != nil {
-		runtime.UnlockOSThread() // unlock only in case of error. normal flow is "defer .Rollback()"
-		return fmt.Errorf("%w, lable: %s, trace: %s", err, tx.db.opts.label.String(), stack2.Trace().String())
-	}
-	return nil
 }
 
 func (tx *MdbxTx) RwCursor(bucket string) (kv.RwCursor, error) {
@@ -1765,4 +1612,183 @@ func bucketSlice(b kv.TableCfg) []string {
 		return strings.Compare(buckets[i], buckets[j]) < 0
 	})
 	return buckets
+}
+
+func (tx *MdbxTx) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
+	c, err := tx.Cursor(bucket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
+		if err != nil {
+			return err
+		}
+		if err := walker(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (tx *MdbxTx) ForPrefix(bucket string, prefix []byte, walker func(k, v []byte) error) error {
+	c, err := tx.Cursor(bucket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	for k, v, err := c.Seek(prefix); k != nil; k, v, err = c.Next() {
+		if err != nil {
+			return err
+		}
+		if !bytes.HasPrefix(k, prefix) {
+			break
+		}
+		if err := walker(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (tx *MdbxTx) Prefix(table string, prefix []byte) (iter.KV, error) {
+	nextPrefix, ok := kv.NextSubtree(prefix)
+	if !ok {
+		return tx.Range(table, prefix, nil)
+	}
+	return tx.Range(table, prefix, nextPrefix)
+}
+
+//	func (tx *MdbxTx) Stream(table string, fromPrefix, toPrefix []byte) (iter.KV, error) {
+//		return tx.StreamAscend(table, fromPrefix, toPrefix, -1)
+//	}
+//
+//	func (tx *MdbxTx) StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
+//		return tx.rangeOrderLimit(table, fromPrefix, toPrefix, true, limit)
+//	}
+//
+//	func (tx *MdbxTx) StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
+//		return tx.rangeOrderLimit(table, fromPrefix, toPrefix, false, limit)
+//	}
+func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (iter.KV, error) {
+	return tx.RangeAscend(table, fromPrefix, toPrefix, -1)
+}
+func (tx *MdbxTx) RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
+	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, true, limit)
+}
+func (tx *MdbxTx) RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
+	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, false, limit)
+}
+
+type cursor2iter struct {
+	c                                  kv.Cursor
+	fromPrefix, toPrefix, nextK, nextV []byte
+	err                                error
+	orderAscend                        bool
+	limit                              int64
+	ctx                                context.Context
+}
+
+func (tx *MdbxTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (*cursor2iter, error) {
+	s := &cursor2iter{ctx: tx.ctx, fromPrefix: fromPrefix, toPrefix: toPrefix, orderAscend: orderAscend, limit: int64(limit)}
+	tx.streams = append(tx.streams, s)
+	return s.init(table, tx)
+}
+func (s *cursor2iter) init(table string, tx kv.Tx) (*cursor2iter, error) {
+	if s.orderAscend && s.fromPrefix != nil && s.toPrefix != nil && bytes.Compare(s.fromPrefix, s.toPrefix) >= 0 {
+		return nil, fmt.Errorf("tx.Dual: %x must be lexicographicaly before %x", s.fromPrefix, s.toPrefix)
+	}
+	if !s.orderAscend && s.fromPrefix != nil && s.toPrefix != nil && bytes.Compare(s.fromPrefix, s.toPrefix) <= 0 {
+		return nil, fmt.Errorf("tx.Dual: %x must be lexicographicaly before %x", s.toPrefix, s.fromPrefix)
+	}
+	c, err := tx.Cursor(table)
+	if err != nil {
+		return nil, err
+	}
+	s.c = c
+
+	if s.fromPrefix == nil { // no initial position
+		if s.orderAscend {
+			s.nextK, s.nextV, s.err = s.c.First()
+		} else {
+			s.nextK, s.nextV, s.err = s.c.Last()
+		}
+		return s, s.err
+	}
+
+	if s.orderAscend {
+		s.nextK, s.nextV, s.err = s.c.Seek(s.fromPrefix)
+		return s, s.err
+	} else {
+		// seek exactly to given key or previous one
+		s.nextK, s.nextV, s.err = s.c.SeekExact(s.fromPrefix)
+		if s.nextK == nil { // no such key
+			s.nextK, s.nextV, s.err = s.c.Prev()
+		}
+		return s, s.err
+	}
+}
+
+func (s *cursor2iter) Close() {
+	if s.c != nil {
+		s.c.Close()
+	}
+}
+func (s *cursor2iter) HasNext() bool {
+	if s.err != nil { // always true, then .Next() call will return this error
+		return true
+	}
+	if s.limit == 0 { // limit reached
+		return false
+	}
+	if s.nextK == nil { // EndOfTable
+		return false
+	}
+	if s.toPrefix == nil { // s.nextK == nil check is above
+		return true
+	}
+
+	//Asc:  [from, to) AND from > to
+	//Desc: [from, to) AND from < to
+	cmp := bytes.Compare(s.nextK, s.toPrefix)
+	return (s.orderAscend && cmp < 0) || (!s.orderAscend && cmp > 0)
+}
+func (s *cursor2iter) Next() (k, v []byte, err error) {
+	select {
+	case <-s.ctx.Done():
+		return nil, nil, s.ctx.Err()
+	default:
+	}
+	s.limit--
+	k, v, err = s.nextK, s.nextV, s.err
+	if s.orderAscend {
+		s.nextK, s.nextV, s.err = s.c.Next()
+	} else {
+		s.nextK, s.nextV, s.err = s.c.Prev()
+	}
+	return k, v, err
+}
+
+func (tx *MdbxTx) ForAmount(bucket string, fromPrefix []byte, amount uint32, walker func(k, v []byte) error) error {
+	if amount == 0 {
+		return nil
+	}
+	c, err := tx.Cursor(bucket)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	for k, v, err := c.Seek(fromPrefix); k != nil && amount > 0; k, v, err = c.Next() {
+		if err != nil {
+			return err
+		}
+		if err := walker(k, v); err != nil {
+			return err
+		}
+		amount--
+	}
+	return nil
 }

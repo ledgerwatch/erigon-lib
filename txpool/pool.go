@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"runtime"
 	"sort"
 	"sync"
@@ -41,9 +42,11 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/assert"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
+	emath "github.com/ledgerwatch/erigon-lib/common/math"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/grpcutil"
@@ -68,8 +71,6 @@ var (
 	basefeeSubCounter       = metrics.GetOrCreateCounter(`txpool_basefee`)
 )
 
-const ASSERT = false
-
 type Config struct {
 	DBDir                 string
 	TracedSenders         []string // List of senders for which tx pool should print out debugging info
@@ -83,6 +84,7 @@ type Config struct {
 	MinFeeCap             uint64
 	AccountSlots          uint64 // Number of executable transaction slots guaranteed per account
 	PriceBump             uint64 // Price bump percentage to replace an already existing transaction
+	OverrideShanghaiTime  *big.Int
 }
 
 var DefaultConfig = Config{
@@ -95,9 +97,10 @@ var DefaultConfig = Config{
 	BaseFeeSubPoolLimit: 10_000,
 	QueuedSubPoolLimit:  10_000,
 
-	MinFeeCap:    1,
-	AccountSlots: 16, //TODO: to choose right value (16 to be compatible with Geth)
-	PriceBump:    10, // Price bump percentage to replace an already existing transaction
+	MinFeeCap:            1,
+	AccountSlots:         16, //TODO: to choose right value (16 to be compatible with Geth)
+	PriceBump:            10, // Price bump percentage to replace an already existing transaction
+	OverrideShanghaiTime: nil,
 }
 
 // Pool is interface for the transaction pool
@@ -166,6 +169,7 @@ const (
 	InsufficientFunds   DiscardReason = 19
 	NotReplaced         DiscardReason = 20 // There was an existing transaction with the same sender and nonce, not enough price bump to replace
 	DuplicateHash       DiscardReason = 21 // There was an existing transaction with the same hash
+	InitCodeTooLarge    DiscardReason = 22 // EIP-3860 - transaction init code is too large
 )
 
 func (r DiscardReason) String() string {
@@ -214,6 +218,8 @@ func (r DiscardReason) String() string {
 		return "could not replace existing tx"
 	case DuplicateHash:
 		return "existing tx with same hash"
+	case InitCodeTooLarge:
+		return "initcode too large"
 	default:
 		panic(fmt.Sprintf("discard reason: %d", r))
 	}
@@ -309,20 +315,22 @@ type TxPool struct {
 	pending                 *PendingPool
 	baseFee                 *SubPool
 	queued                  *SubPool
-	isLocalLRU              *simplelru.LRU    // tx_hash => is_local : to restore isLocal flag of unwinded transactions
-	newPendingTxs           chan types.Hashes // notifications about new txs in Pending sub-pool
-	all                     *BySenderAndNonce // senderID => (sorted map of tx nonce => *metaTx)
-	deletedTxs              []*metaTx         // list of discarded txs since last db commit
-	promoted                types.Hashes      // pre-allocated temporary buffer to write promoted to pending pool txn hashes
+	isLocalLRU              *simplelru.LRU           // tx_hash => is_local : to restore isLocal flag of unwinded transactions
+	newPendingTxs           chan types.Announcements // notifications about new txs in Pending sub-pool
+	all                     *BySenderAndNonce        // senderID => (sorted map of tx nonce => *metaTx)
+	deletedTxs              []*metaTx                // list of discarded txs since last db commit
+	promoted                types.Announcements
 	cfg                     Config
 	chainID                 uint256.Int
 	lastSeenBlock           atomic.Uint64
 	started                 atomic.Bool
 	pendingBaseFee          atomic.Uint64
 	blockGasLimit           atomic.Uint64
+	shanghaiTime            *big.Int
+	isPostShanghai          atomic.Bool
 }
 
-func New(newTxs chan types.Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int) (*TxPool, error) {
+func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg Config, cache kvcache.Cache, chainID uint256.Int, shanghaiTime *big.Int) (*TxPool, error) {
 	localsHistory, err := simplelru.NewLRU(10_000, nil)
 	if err != nil {
 		return nil, err
@@ -359,7 +367,7 @@ func New(newTxs chan types.Hashes, coreDB kv.RoDB, cfg Config, cache kvcache.Cac
 		chainID:                 chainID,
 		unprocessedRemoteTxs:    &types.TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
-		promoted:                make(types.Hashes, 0, 32*1024),
+		shanghaiTime:            shanghaiTime,
 	}, nil
 }
 
@@ -389,7 +397,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err != nil {
 		return err
 	}
-	if ASSERT {
+	if assert.Enable {
 		if _, err := kvcache.AssertCheckValues(ctx, coreTx, cache); err != nil {
 			log.Error("AssertCheckValues", "err", err, "stack", stack.Trace().String())
 		}
@@ -420,7 +428,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
-	if ASSERT {
+	if assert.Enable {
 		for _, txn := range unwindTxs.Txs {
 			if txn.SenderID == 0 {
 				panic(fmt.Errorf("onNewBlock.unwindTxs: senderID can't be zero"))
@@ -439,8 +447,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	//log.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
-	p.pending.resetAddedHashes()
-	p.baseFee.resetAddedHashes()
+	p.pending.resetAdded()
+	p.baseFee.resetAdded()
 	if err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
 		pendingBaseFee, stateChanges.BlockGasLimit,
 		p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
@@ -451,8 +459,9 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	p.queued.EnforceInvariants()
 	promote(p.pending, p.baseFee, p.queued, pendingBaseFee, p.discardLocked)
 	p.pending.EnforceBestInvariants()
-	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
-	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
+	p.promoted.Reset()
+	p.pending.appendAddedTo(&p.promoted)
+	p.baseFee.appendAddedTo(&p.promoted)
 
 	if p.started.CAS(false, true) {
 		log.Info("[txpool] Started")
@@ -460,7 +469,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.Copy():
 		default:
 		}
 	}
@@ -505,20 +514,21 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
-	p.pending.resetAddedHashes()
-	p.baseFee.resetAddedHashes()
+	p.pending.resetAdded()
+	p.baseFee.resetAdded()
 	if _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
 		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err != nil {
 		return err
 	}
-	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
-	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
+	p.promoted.Reset()
+	p.pending.appendAddedTo(&p.promoted)
+	p.baseFee.appendAddedTo(&p.promoted)
 
 	if p.promoted.Len() > 0 {
 		select {
 		case <-ctx.Done():
 			return nil
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.Copy():
 		default:
 		}
 	}
@@ -549,18 +559,20 @@ func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	rlpTx, _, _, err := p.getRlpLocked(tx, hash)
 	return common.Copy(rlpTx), err
 }
-func (p *TxPool) AppendLocalHashes(buf []byte) []byte {
+func (p *TxPool) AppendLocalAnnouncements(types []byte, sizes []uint32, hashes []byte) ([]byte, []uint32, []byte) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for hash, txn := range p.byHash {
 		if txn.subPool&IsLocal == 0 {
 			continue
 		}
-		buf = append(buf, hash...)
+		types = append(types, txn.Tx.Type)
+		sizes = append(sizes, txn.Tx.Size)
+		hashes = append(hashes, hash...)
 	}
-	return buf
+	return types, sizes, hashes
 }
-func (p *TxPool) AppendRemoteHashes(buf []byte) []byte {
+func (p *TxPool) AppendRemoteAnnouncements(types []byte, sizes []uint32, hashes []byte) ([]byte, []uint32, []byte) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -568,17 +580,22 @@ func (p *TxPool) AppendRemoteHashes(buf []byte) []byte {
 		if txn.subPool&IsLocal != 0 {
 			continue
 		}
-		buf = append(buf, hash...)
+		types = append(types, txn.Tx.Type)
+		sizes = append(sizes, txn.Tx.Size)
+		hashes = append(hashes, hash...)
 	}
-	for hash := range p.unprocessedRemoteByHash {
-		buf = append(buf, hash...)
+	for hash, txIdx := range p.unprocessedRemoteByHash {
+		txSlot := p.unprocessedRemoteTxs.Txs[txIdx]
+		types = append(types, txSlot.Type)
+		sizes = append(sizes, txSlot.Size)
+		hashes = append(hashes, hash...)
 	}
-	return buf
+	return types, sizes, hashes
 }
-func (p *TxPool) AppendAllHashes(buf []byte) []byte {
-	buf = p.AppendLocalHashes(buf)
-	buf = p.AppendRemoteHashes(buf)
-	return buf
+func (p *TxPool) AppendAllAnnouncements(types []byte, sizes []uint32, hashes []byte) ([]byte, []uint32, []byte) {
+	types, sizes, hashes = p.AppendLocalAnnouncements(types, sizes, hashes)
+	types, sizes, hashes = p.AppendRemoteAnnouncements(types, sizes, hashes)
+	return types, sizes, hashes
 }
 func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 	p.lock.Lock()
@@ -603,75 +620,73 @@ func (p *TxPool) AddNewGoodPeer(peerID types.PeerID) { p.recentlyConnectedPeers.
 func (p *TxPool) Started() bool                      { return p.started.Load() }
 
 func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64, toSkip mapset.Set[[32]byte]) (bool, int, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	// First wait for the corresponding block to arrive
 	if p.lastSeenBlock.Load() < onTopOf {
 		return false, 0, nil // Too early
 	}
 
-	txs.Resize(uint(cmp.Min(int(n), len(p.pending.best.ms))))
+	isShanghai := p.isShanghai()
+	best := p.pending.best
+
+	txs.Resize(uint(cmp.Min(int(n), len(best.ms))))
 	var toRemove []*metaTx
 	count := 0
 
-	success, err := func() (bool, error) {
-		p.lock.Lock()
-		defer p.lock.Unlock()
-
-		best := p.pending.best
-		for i := 0; count < int(n) && i < len(best.ms); i++ {
-			// if we wouldn't have enough gas for a standard transaction then quit out early
-			if availableGas < fixedgas.TxGas {
-				break
-			}
-
-			mt := best.ms[i]
-
-			if toSkip.Contains(mt.Tx.IDHash) {
-				continue
-			}
-
-			if mt.Tx.Gas >= p.blockGasLimit.Load() {
-				// Skip transactions with very large gas limit
-				continue
-			}
-			rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
-			if err != nil {
-				return false, err
-			}
-			if len(rlpTx) == 0 {
-				toRemove = append(toRemove, mt)
-				continue
-			}
-
-			// make sure we have enough gas in the caller to add this transaction.
-			// not an exact science using intrinsic gas but as close as we could hope for at
-			// this stage
-			intrinsicGas, _ := CalcIntrinsicGas(uint64(mt.Tx.DataLen), uint64(mt.Tx.DataNonZeroLen), nil, mt.Tx.Creation, true, true)
-			if intrinsicGas > availableGas {
-				// we might find another TX with a low enough intrinsic gas to include so carry on
-				continue
-			}
-
-			if intrinsicGas <= availableGas { // check for potential underflow
-				availableGas -= intrinsicGas
-			}
-
-			txs.Txs[count] = rlpTx
-			copy(txs.Senders.At(count), sender)
-			txs.IsLocal[count] = isLocal
-			toSkip.Add(mt.Tx.IDHash)
-			count++
+	for i := 0; count < int(n) && i < len(best.ms); i++ {
+		// if we wouldn't have enough gas for a standard transaction then quit out early
+		if availableGas < fixedgas.TxGas {
+			break
 		}
-		return true, nil
-	}()
+
+		mt := best.ms[i]
+
+		if toSkip.Contains(mt.Tx.IDHash) {
+			continue
+		}
+
+		if mt.Tx.Gas >= p.blockGasLimit.Load() {
+			// Skip transactions with very large gas limit
+			continue
+		}
+		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
+		if err != nil {
+			return false, count, err
+		}
+		if len(rlpTx) == 0 {
+			toRemove = append(toRemove, mt)
+			continue
+		}
+
+		// make sure we have enough gas in the caller to add this transaction.
+		// not an exact science using intrinsic gas but as close as we could hope for at
+		// this stage
+		intrinsicGas, _ := CalcIntrinsicGas(uint64(mt.Tx.DataLen), uint64(mt.Tx.DataNonZeroLen), nil, mt.Tx.Creation, true, true, isShanghai)
+		if intrinsicGas > availableGas {
+			// we might find another TX with a low enough intrinsic gas to include so carry on
+			continue
+		}
+
+		if intrinsicGas <= availableGas { // check for potential underflow
+			availableGas -= intrinsicGas
+		}
+
+		txs.Txs[count] = rlpTx
+		copy(txs.Senders.At(count), sender)
+		txs.IsLocal[count] = isLocal
+		toSkip.Add(mt.Tx.IDHash)
+		count++
+	}
+
 	txs.Resize(uint(count))
 	if len(toRemove) > 0 {
-		p.lock.Lock()
-		defer p.lock.Unlock()
 		for _, mt := range toRemove {
 			p.pending.Remove(mt)
 		}
 	}
-	return success, count, err
+	return true, count, nil
 }
 
 func (p *TxPool) ResetYieldedStatus() {
@@ -707,11 +722,19 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 		if ok {
 			continue
 		}
+		p.unprocessedRemoteByHash[string(txn.IDHash[:])] = len(p.unprocessedRemoteTxs.Txs)
 		p.unprocessedRemoteTxs.Append(txn, newTxs.Senders.At(i), false)
 	}
 }
 
 func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.CacheView) DiscardReason {
+	isShanghai := p.isShanghai()
+	if isShanghai {
+		if txn.DataLen > fixedgas.MaxInitCodeSize {
+			return InitCodeTooLarge
+		}
+	}
+
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !isLocal && uint256.NewInt(p.cfg.MinFeeCap).Cmp(&txn.FeeCap) == 1 {
 		if txn.Traced {
@@ -719,7 +742,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 		}
 		return UnderPriced
 	}
-	gas, reason := CalcIntrinsicGas(uint64(txn.DataLen), uint64(txn.DataNonZeroLen), nil, txn.Creation, true, true)
+	gas, reason := CalcIntrinsicGas(uint64(txn.DataLen), uint64(txn.DataNonZeroLen), nil, txn.Creation, true, true, isShanghai)
 	if txn.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: validateTx intrinsic gas idHash=%x gas=%d", txn.IDHash, gas))
 	}
@@ -763,6 +786,31 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 	return Success
 }
 
+func (p *TxPool) isShanghai() bool {
+	// once this flag has been set for the first time we no longer need to check the timestamp
+	set := p.isPostShanghai.Load()
+	if set {
+		return true
+	}
+	if p.shanghaiTime == nil {
+		return false
+	}
+	shanghaiTime := p.shanghaiTime.Uint64()
+
+	// a zero here means shanghai is always active
+	if shanghaiTime == 0 {
+		p.isPostShanghai.Swap(true)
+		return true
+	}
+
+	now := big.NewInt(time.Now().Unix())
+	is := now.Uint64() >= shanghaiTime
+	if is {
+		p.isPostShanghai.Swap(true)
+	}
+	return is
+}
+
 func (p *TxPool) ValidateSerializedTxn(serializedTxn []byte) error {
 	const (
 		// txSlotSize is used to calculate how many data slots a single transaction
@@ -778,7 +826,7 @@ func (p *TxPool) ValidateSerializedTxn(serializedTxn []byte) error {
 		txMaxSize = 4 * txSlotSize // 128KB
 	)
 	if len(serializedTxn) > txMaxSize {
-		return fmt.Errorf(RLPTooLong.String())
+		return types.ErrRlpTooBig
 	}
 	return nil
 }
@@ -883,8 +931,8 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 		return nil, err
 	}
 
-	p.pending.resetAddedHashes()
-	p.baseFee.resetAddedHashes()
+	p.pending.resetAdded()
+	p.baseFee.resetAdded()
 	if addReasons, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
 		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked); err == nil {
 		for i, reason := range addReasons {
@@ -895,8 +943,9 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 	} else {
 		return nil, err
 	}
-	p.promoted = p.pending.appendAddedHashes(p.promoted[:0])
-	p.promoted = p.baseFee.appendAddedHashes(p.promoted)
+	p.promoted.Reset()
+	p.pending.appendAddedTo(&p.promoted)
+	p.baseFee.appendAddedTo(&p.promoted)
 
 	reasons = fillDiscardReasons(reasons, newTxs, p.discardReasonsLRU)
 	for i, reason := range reasons {
@@ -905,12 +954,12 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 			if txn.Traced {
 				log.Info(fmt.Sprintf("TX TRACING: AddLocalTxs promotes idHash=%x, senderId=%d", txn.IDHash, txn.SenderID))
 			}
-			p.promoted = append(p.promoted, txn.IDHash[:]...)
+			p.promoted.Append(txn.Type, txn.Size, txn.IDHash[:])
 		}
 	}
 	if p.promoted.Len() > 0 {
 		select {
-		case p.newPendingTxs <- common.Copy(p.promoted):
+		case p.newPendingTxs <- p.promoted.Copy():
 		default:
 		}
 	}
@@ -934,7 +983,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) ([]DiscardReason, error) {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
-	if ASSERT {
+	if assert.Enable {
 		for _, txn := range newTxs.Txs {
 			if txn.SenderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
@@ -961,11 +1010,11 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 				switch found.currentSubPool {
 				case PendingSubPool:
 					if pending.adding {
-						pending.added = append(pending.added, found.Tx.IDHash[:]...)
+						pending.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				case BaseFeeSubPool:
 					if baseFee.adding {
-						baseFee.added = append(baseFee.added, found.Tx.IDHash[:]...)
+						baseFee.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				}
 			}
@@ -1002,7 +1051,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 	pending *PendingPool, baseFee, queued *SubPool,
 	byNonce *BySenderAndNonce, byHash map[string]*metaTx, add func(*metaTx) DiscardReason, discard func(*metaTx, DiscardReason)) error {
 	protocolBaseFee := calcProtocolBaseFee(pendingBaseFee)
-	if ASSERT {
+	if assert.Enable {
 		for _, txn := range newTxs.Txs {
 			if txn.SenderID == 0 {
 				panic(fmt.Errorf("senderID can't be zero"))
@@ -1087,11 +1136,11 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 				switch found.currentSubPool {
 				case PendingSubPool:
 					if p.pending.adding {
-						p.pending.added = append(p.pending.added, found.Tx.IDHash[:]...)
+						p.pending.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				case BaseFeeSubPool:
 					if p.baseFee.adding {
-						p.baseFee.added = append(p.baseFee.added, found.Tx.IDHash[:]...)
+						p.baseFee.added.Append(found.Tx.Type, found.Tx.Size, found.Tx.IDHash[:])
 					}
 				}
 			}
@@ -1118,7 +1167,7 @@ func (p *TxPool) addLocked(mt *metaTx) DiscardReason {
 	p.byHash[string(mt.Tx.IDHash[:])] = mt
 
 	if replaced := p.all.replaceOrInsert(mt); replaced != nil {
-		if ASSERT {
+		if assert.Enable {
 			panic("must never happen")
 		}
 	}
@@ -1384,7 +1433,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 //
 // promote/demote transactions
 // reorgs
-func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan types.Hashes, send *Send, newSlotsStreams *NewSlotsStreams, notifyMiningAboutNewSlots func()) {
+func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs chan types.Announcements, send *Send, newSlotsStreams *NewSlotsStreams, notifyMiningAboutNewSlots func()) {
 	syncToNewPeersEvery := time.NewTicker(p.cfg.SyncToNewPeersEvery)
 	defer syncToNewPeersEvery.Stop()
 	processRemoteTxsEvery := time.NewTicker(p.cfg.ProcessRemoteTxsEvery)
@@ -1425,35 +1474,39 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 				writeToDBBytesCounter.Set(written)
 				log.Debug("[txpool] Commit", "written_kb", written/1024, "in", time.Since(t))
 			}
-		case h := <-newTxs:
+		case announcements := <-newTxs:
 			go func() {
 				for i := 0; i < 16; i++ { // drain more events from channel, then merge and dedup them
 					select {
 					case a := <-newTxs:
-						h = append(h, a...)
+						announcements.AppendOther(a)
 						continue
 					default:
 					}
 					break
 				}
-				if h.Len() == 0 {
+				if announcements.Len() == 0 {
 					return
 				}
 				defer propagateNewTxsTimer.UpdateDuration(time.Now())
 
-				h = h.DedupCopy()
+				announcements = announcements.DedupCopy()
 
 				notifyMiningAboutNewSlots()
 
+				var localTxTypes []byte
+				var localTxSizes []uint32
 				var localTxHashes types.Hashes
 				var localTxRlps [][]byte
+				var remoteTxTypes []byte
+				var remoteTxSizes []uint32
 				var remoteTxHashes types.Hashes
 				var remoteTxRlps [][]byte
-				slotsRlp := make([][]byte, 0, h.Len())
+				slotsRlp := make([][]byte, 0, announcements.Len())
 
 				if err := db.View(ctx, func(tx kv.Tx) error {
-					for i := 0; i < h.Len(); i++ {
-						hash := h.At(i)
+					for i := 0; i < announcements.Len(); i++ {
+						t, size, hash := announcements.At(i)
 						slotRlp, err := p.GetRlp(tx, hash)
 						if err != nil {
 							return err
@@ -1465,10 +1518,14 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 						// Empty rlp can happen if a transaction we want to broadcase has just been mined, for example
 						slotsRlp = append(slotsRlp, slotRlp)
 						if p.IsLocal(hash) {
+							localTxTypes = append(localTxTypes, t)
+							localTxSizes = append(localTxSizes, size)
 							localTxHashes = append(localTxHashes, hash...)
 							localTxRlps = append(localTxRlps, slotRlp)
 						} else {
-							remoteTxHashes = append(localTxHashes, hash...)
+							remoteTxTypes = append(remoteTxTypes, t)
+							remoteTxSizes = append(remoteTxSizes, size)
+							remoteTxHashes = append(remoteTxHashes, hash...)
 							remoteTxRlps = append(remoteTxRlps, slotRlp)
 						}
 					}
@@ -1483,13 +1540,13 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 
 				// first broadcast all local txs to all peers, then non-local to random sqrt(peersAmount) peers
 				txSentTo := send.BroadcastPooledTxs(localTxRlps)
-				hashSentTo := send.AnnouncePooledTxs(localTxHashes)
+				hashSentTo := send.AnnouncePooledTxs(localTxTypes, localTxSizes, localTxHashes)
 				for i := 0; i < localTxHashes.Len(); i++ {
 					hash := localTxHashes.At(i)
 					log.Info("local tx propagated", "tx_hash", hex.EncodeToString(hash), "announced to peers", hashSentTo[i], "broadcast to peers", txSentTo[i], "baseFee", p.pendingBaseFee.Load())
 				}
 				send.BroadcastPooledTxs(remoteTxRlps)
-				send.AnnouncePooledTxs(remoteTxHashes)
+				send.AnnouncePooledTxs(remoteTxTypes, remoteTxSizes, remoteTxHashes)
 			}()
 		case <-syncToNewPeersEvery.C: // new peer
 			newPeers := p.recentlyConnectedPeers.GetAndClean()
@@ -1498,8 +1555,10 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 			}
 			t := time.Now()
 			var hashes types.Hashes
-			hashes = p.AppendAllHashes(hashes[:0])
-			go send.PropagatePooledTxsToPeersList(newPeers, hashes)
+			var types []byte
+			var sizes []uint32
+			types, sizes, hashes = p.AppendAllAnnouncements(types, sizes, hashes[:0])
+			go send.PropagatePooledTxsToPeersList(newPeers, types, sizes, hashes)
 			propagateToNewPeerTimer.UpdateDuration(t)
 		}
 	}
@@ -1805,7 +1864,7 @@ func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte,
 }
 
 // CalcIntrinsicGas computes the 'intrinsic gas' for a message with the given data.
-func CalcIntrinsicGas(dataLen, dataNonZeroLen uint64, accessList types.AccessList, isContractCreation, isHomestead, isEIP2028 bool) (uint64, DiscardReason) {
+func CalcIntrinsicGas(dataLen, dataNonZeroLen uint64, accessList types.AccessList, isContractCreation, isHomestead, isEIP2028, isShanghai bool) (uint64, DiscardReason) {
 	// Set the starting gas for the raw transaction
 	var gas uint64
 	if isContractCreation && isHomestead {
@@ -1822,22 +1881,67 @@ func CalcIntrinsicGas(dataLen, dataNonZeroLen uint64, accessList types.AccessLis
 		if isEIP2028 {
 			nonZeroGas = fixedgas.TxDataNonZeroGasEIP2028
 		}
-		if (math.MaxUint64-gas)/nonZeroGas < nz {
+
+		product, overflow := emath.SafeMul(nz, nonZeroGas)
+		if overflow {
 			return 0, GasUintOverflow
 		}
-		gas += nz * nonZeroGas
+		gas, overflow = emath.SafeAdd(gas, product)
+		if overflow {
+			return 0, GasUintOverflow
+		}
 
 		z := dataLen - nz
-		if (math.MaxUint64-gas)/fixedgas.TxDataZeroGas < z {
+
+		product, overflow = emath.SafeMul(z, fixedgas.TxDataZeroGas)
+		if overflow {
 			return 0, GasUintOverflow
 		}
-		gas += z * fixedgas.TxDataZeroGas
+		gas, overflow = emath.SafeAdd(gas, product)
+		if overflow {
+			return 0, GasUintOverflow
+		}
+
+		if isContractCreation && isShanghai {
+			numWords := toWordSize(dataLen)
+			product, overflow = emath.SafeMul(numWords, fixedgas.InitCodeWordGas)
+			if overflow {
+				return 0, GasUintOverflow
+			}
+			gas, overflow = emath.SafeAdd(gas, product)
+			if overflow {
+				return 0, GasUintOverflow
+			}
+		}
 	}
 	if accessList != nil {
-		gas += uint64(len(accessList)) * fixedgas.TxAccessListAddressGas
-		gas += uint64(accessList.StorageKeys()) * fixedgas.TxAccessListStorageKeyGas
+		product, overflow := emath.SafeMul(uint64(len(accessList)), fixedgas.TxAccessListAddressGas)
+		if overflow {
+			return 0, GasUintOverflow
+		}
+		gas, overflow = emath.SafeAdd(gas, product)
+		if overflow {
+			return 0, GasUintOverflow
+		}
+
+		product, overflow = emath.SafeMul(uint64(accessList.StorageKeys()), fixedgas.TxAccessListStorageKeyGas)
+		if overflow {
+			return 0, GasUintOverflow
+		}
+		gas, overflow = emath.SafeAdd(gas, product)
+		if overflow {
+			return 0, GasUintOverflow
+		}
 	}
 	return gas, Success
+}
+
+// toWordSize returns the ceiled word size required for memory expansion.
+func toWordSize(size uint64) uint64 {
+	if size > math.MaxUint64-31 {
+		return math.MaxUint64/32 + 1
+	}
+	return (size + 31) / 32
 }
 
 var PoolChainConfigKey = []byte("chain_config")
@@ -2056,7 +2160,7 @@ func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 type PendingPool struct {
 	best   *bestSlice
 	worst  *WorstQueue
-	added  types.Hashes
+	added  types.Announcements
 	limit  int
 	t      SubPoolType
 	adding bool
@@ -2066,14 +2170,13 @@ func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
 	return &PendingPool{limit: limit, t: t, best: &bestSlice{ms: []*metaTx{}}, worst: &WorstQueue{ms: []*metaTx{}}}
 }
 
-func (p *PendingPool) resetAddedHashes() {
-	p.added = p.added[:0]
+func (p *PendingPool) resetAdded() {
+	p.added.Reset()
 	p.adding = true
 }
-func (p *PendingPool) appendAddedHashes(h types.Hashes) types.Hashes {
-	h = append(h, p.added...)
+func (p *PendingPool) appendAddedTo(a *types.Announcements) {
+	a.AppendOther(p.added)
 	p.adding = false
-	return h
 }
 
 // bestSlice - is similar to best queue, but with O(n log n) complexity and
@@ -2145,7 +2248,7 @@ func (p *PendingPool) Remove(i *metaTx) {
 
 func (p *PendingPool) Add(i *metaTx) {
 	if p.adding {
-		p.added = append(p.added, i.Tx.IDHash[:]...)
+		p.added.Append(i.Tx.Type, i.Tx.Size, i.Tx.IDHash[:])
 	}
 	if i.Tx.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IDHash, i.Tx.SenderID))
@@ -2166,7 +2269,7 @@ func (p *PendingPool) DebugPrint(prefix string) {
 type SubPool struct {
 	best   *BestQueue
 	worst  *WorstQueue
-	added  types.Hashes
+	added  types.Announcements
 	limit  int
 	t      SubPoolType
 	adding bool
@@ -2176,14 +2279,13 @@ func NewSubPool(t SubPoolType, limit int) *SubPool {
 	return &SubPool{limit: limit, t: t, best: &BestQueue{}, worst: &WorstQueue{}}
 }
 
-func (p *SubPool) resetAddedHashes() {
-	p.added = p.added[:0]
+func (p *SubPool) resetAdded() {
+	p.added.Reset()
 	p.adding = true
 }
-func (p *SubPool) appendAddedHashes(h types.Hashes) types.Hashes {
-	h = append(h, p.added...)
+func (p *SubPool) appendAddedTo(a *types.Announcements) {
+	a.AppendOther(p.added)
 	p.adding = false
-	return h
 }
 
 func (p *SubPool) EnforceInvariants() {
@@ -2215,7 +2317,7 @@ func (p *SubPool) PopWorst() *metaTx { //nolint
 func (p *SubPool) Len() int { return p.best.Len() }
 func (p *SubPool) Add(i *metaTx) {
 	if p.adding {
-		p.added = append(p.added, i.Tx.IDHash[:]...)
+		p.added.Append(i.Tx.Type, i.Tx.Size, i.Tx.IDHash[:])
 	}
 	if i.Tx.Traced {
 		log.Info(fmt.Sprintf("TX TRACING: moved to subpool %s, IdHash=%x, sender=%d", p.t, i.Tx.IDHash, i.Tx.SenderID))

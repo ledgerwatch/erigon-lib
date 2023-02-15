@@ -9,6 +9,10 @@ import (
 	"testing"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/log/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
@@ -17,9 +21,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/ledgerwatch/erigon-lib/rlp"
 	"github.com/ledgerwatch/erigon-lib/types"
-	"github.com/ledgerwatch/log/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // https://go.dev/doc/fuzz/
@@ -221,14 +222,14 @@ func fakeRlpTx(slot *types.TxSlot, data []byte) []byte {
 	dataLen := rlp.U64Len(1) + //chainID
 		rlp.U64Len(slot.Nonce) + rlp.U256Len(&slot.Tip) + rlp.U256Len(&slot.FeeCap) +
 		rlp.U64Len(0) + // gas
-		rlp.StringLen(0) + // dest addr
+		rlp.StringLen([]byte{}) + // dest addr
 		rlp.U256Len(&slot.Value) +
-		rlp.StringLen(len(data)) + // data
+		rlp.StringLen(data) + // data
 		rlp.ListPrefixLen(0) + //access list
 		+3 // v,r,s
 
 	buf := make([]byte, 1+rlp.ListPrefixLen(dataLen)+dataLen)
-	buf[0] = byte(types.DynamicFeeTxType)
+	buf[0] = types.DynamicFeeTxType
 	p := 1
 	p += rlp.EncodeListPrefix(dataLen, buf[p:])
 	p += rlp.EncodeU64(1, buf[p:]) //chainID
@@ -305,12 +306,12 @@ func FuzzOnNewBlocks(f *testing.F) {
 		assert.NoError(txs.Valid())
 
 		var prevHashes types.Hashes
-		ch := make(chan types.Hashes, 100)
+		ch := make(chan types.Announcements, 100)
 		db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 
 		cfg := DefaultConfig
 		sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-		pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1)
+		pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil)
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs
 		for addr, id := range senderIDs {
@@ -432,10 +433,10 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		checkNotify := func(unwindTxs, minedTxs types.TxSlots, msg string) {
 			select {
-			case newHashes := <-ch:
-				assert.Greater(len(newHashes), 0)
-				for i := 0; i < newHashes.Len(); i++ {
-					newHash := newHashes.At(i)
+			case newAnnouncements := <-ch:
+				assert.Greater(newAnnouncements.Len(), 0)
+				for i := 0; i < newAnnouncements.Len(); i++ {
+					_, _, newHash := newAnnouncements.At(i)
 					for j := range unwindTxs.Txs {
 						if bytes.Equal(unwindTxs.Txs[j].IDHash[:], newHash) {
 							mt := pool.all.get(unwindTxs.Txs[j].SenderID, unwindTxs.Txs[j].Nonce)
@@ -542,7 +543,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		check(p2pReceived, types.TxSlots{}, "after_flush")
 		checkNotify(p2pReceived, types.TxSlots{}, "after_flush")
 
-		p2, err := New(ch, coreDB, DefaultConfig, sendersCache, *u256.N1)
+		p2, err := New(ch, coreDB, DefaultConfig, sendersCache, *u256.N1, nil)
 		assert.NoError(err)
 		p2.senders = pool.senders // senders are not persisted
 		err = coreDB.View(ctx, func(coreTx kv.Tx) error { return p2.fromDB(ctx, tx, coreTx) })

@@ -21,25 +21,27 @@ import (
 	"errors"
 
 	"github.com/VictoriaMetrics/metrics"
+	"github.com/ledgerwatch/erigon-lib/kv/iter"
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 )
 
 //Variables Naming:
-//  ts - TimeStamp
+//  ts - TimeStamp (usually it's TxnNumber)
 //  tx - Database Transaction
 //  txn - Ethereum Transaction (and TxNum - is also number of Etherum Transaction)
 //  RoTx - Read-Only Database Transaction
 //  RwTx - Read-Write Database Transaction
 //  k - key
 //  v - value
-//  Cursor - low-level mdbx-tide api to walk over Table
-//  Stream - high-level simplified api for iteration over Table, InvertedIndex, History, Domain, ...
+//  Cursor - low-level mdbx-tide api to navigate over Table
+//  Iter - high-level iterator-like api over Table, InvertedIndex, History, Domain. Has less features than Cursor.
 
 //Methods Naming:
 //  Get: exact match of criterias
-//  Range: [from, to). Range(from, nil) means [from, EndOfTable). Range(nil, to) means [StartOfTable, to).
+//  Range: [from, to). Stream(from, nil) means [from, EndOfTable). Stream(nil, to) means [StartOfTable, to).
 //  Each: Range(from, nil)
 //  Prefix: `Range(Table, prefix, kv.NextSubtree(prefix))`
-//  Amount: [from, INF) AND maximum N records
+//  Limit: [from, INF) AND maximum N records
 
 //Entity Naming:
 //  State: simple table in db
@@ -59,23 +61,53 @@ var (
 	TxUnspill = metrics.NewCounter(`tx_unspill`) //nolint
 	TxDirty   = metrics.NewCounter(`tx_dirty`)   //nolint
 
-	DbCommitPreparation = metrics.GetOrCreateSummary(`db_commit_seconds{phase="preparation"}`) //nolint
-	DbCommitGc          = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc"}`)          //nolint
-	DbCommitAudit       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="audit"}`)       //nolint
-	DbCommitWrite       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="write"}`)       //nolint
-	DbCommitSync        = metrics.GetOrCreateSummary(`db_commit_seconds{phase="sync"}`)        //nolint
-	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)      //nolint
-	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)       //nolint
+	DbCommitPreparation = metrics.GetOrCreateSummary(`db_commit_seconds{phase="preparation"}`)   //nolint
+	DbGCWallClock       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_wall_clock"}`) //nolint
+	DbGCCpuTime         = metrics.GetOrCreateSummary(`db_commit_seconds{phase="gc_cpu_time"}`)   //nolint
+	DbCommitAudit       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="audit"}`)         //nolint
+	DbCommitWrite       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="write"}`)         //nolint
+	DbCommitSync        = metrics.GetOrCreateSummary(`db_commit_seconds{phase="sync"}`)          //nolint
+	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)        //nolint
+	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)         //nolint
 
-	DbPgopsNewly   = metrics.NewCounter(`db_pgops_newly`)           //nolint
-	DbPgopsCow     = metrics.NewCounter(`db_pgops_cow`)             //nolint
-	DbPgopsClone   = metrics.NewCounter(`db_pgops_clone`)           //nolint
-	DbPgopsSplit   = metrics.NewCounter(`db_pgops_split`)           //nolint
-	DbPgopsMerge   = metrics.NewCounter(`db_pgops_merge`)           //nolint
-	DbPgopsSpill   = metrics.NewCounter(`db_pgops_spill`)           //nolint
-	DbPgopsUnspill = metrics.NewCounter(`db_pgops_unspill`)         //nolint
-	DbPgopsWops    = metrics.NewCounter(`db_pgops_wops`)            //nolint
-	DbPgopsGcrtime = metrics.GetOrCreateSummary(`db_pgops_gcrtime`) //nolint
+	DbPgopsNewly    = metrics.NewCounter(`db_pgops{phase="newly"}`)    //nolint
+	DbPgopsCow      = metrics.NewCounter(`db_pgops{phase="cow"}`)      //nolint
+	DbPgopsClone    = metrics.NewCounter(`db_pgops{phase="clone"}`)    //nolint
+	DbPgopsSplit    = metrics.NewCounter(`db_pgops{phase="split"}`)    //nolint
+	DbPgopsMerge    = metrics.NewCounter(`db_pgops{phase="merge"}`)    //nolint
+	DbPgopsSpill    = metrics.NewCounter(`db_pgops{phase="spill"}`)    //nolint
+	DbPgopsUnspill  = metrics.NewCounter(`db_pgops{phase="unspill"}`)  //nolint
+	DbPgopsWops     = metrics.NewCounter(`db_pgops{phase="wops"}`)     //nolint
+	DbPgopsPrefault = metrics.NewCounter(`db_pgops{phase="prefault"}`) //nolint
+	DbPgopsMinicore = metrics.NewCounter(`db_pgops{phase="minicore"}`) //nolint
+	DbPgopsMsync    = metrics.NewCounter(`db_pgops{phase="msync"}`)    //nolint
+	DbPgopsFsync    = metrics.NewCounter(`db_pgops{phase="fsync"}`)    //nolint
+	DbMiLastPgNo    = metrics.NewCounter(`db_mi_last_pgno`)            //nolint
+
+	DbGcWorkRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_rtime"}`) //nolint
+	DbGcWorkRsteps   = metrics.NewCounter(`db_gc{phase="work_rsteps"}`)                //nolint
+	DbGcWorkRxpages  = metrics.NewCounter(`db_gc{phase="work_rxpages"}`)               //nolint
+	DbGcSelfRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_rtime"}`) //nolint
+	DbGcSelfXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_xtime"}`) //nolint
+	DbGcWorkXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_xtime"}`) //nolint
+	DbGcSelfRsteps   = metrics.NewCounter(`db_gc{phase="self_rsteps"}`)                //nolint
+	DbGcWloops       = metrics.NewCounter(`db_gc{phase="wloop"}`)                      //nolint
+	DbGcCoalescences = metrics.NewCounter(`db_gc{phase="coalescences"}`)               //nolint
+	DbGcWipes        = metrics.NewCounter(`db_gc{phase="wipes"}`)                      //nolint
+	DbGcFlushes      = metrics.NewCounter(`db_gc{phase="flushes"}`)                    //nolint
+	DbGcKicks        = metrics.NewCounter(`db_gc{phase="kicks"}`)                      //nolint
+	DbGcWorkMajflt   = metrics.NewCounter(`db_gc{phase="work_majflt"}`)                //nolint
+	DbGcSelfMajflt   = metrics.NewCounter(`db_gc{phase="self_majflt"}`)                //nolint
+	DbGcWorkCounter  = metrics.NewCounter(`db_gc{phase="work_counter"}`)               //nolint
+	DbGcSelfCounter  = metrics.NewCounter(`db_gc{phase="self_counter"}`)               //nolint
+	DbGcSelfXpages   = metrics.NewCounter(`db_gc{phase="self_xpages"}`)                //nolint
+
+	//DbGcWorkPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_pnl_seconds{phase="work_merge_time"}`) //nolint
+	//DbGcWorkPnlMergeVolume = metrics.NewCounter(`db_gc_pnl{phase="work_merge_volume"}`)               //nolint
+	//DbGcWorkPnlMergeCalls  = metrics.NewCounter(`db_gc{phase="work_merge_calls"}`)                    //nolint
+	//DbGcSelfPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_pnl_seconds{phase="slef_merge_time"}`) //nolint
+	//DbGcSelfPnlMergeVolume = metrics.NewCounter(`db_gc_pnl{phase="self_merge_volume"}`)               //nolint
+	//DbGcSelfPnlMergeCalls  = metrics.NewCounter(`db_gc_pnl{phase="slef_merge_calls"}`)                //nolint
 
 	GcLeafMetric     = metrics.NewCounter(`db_gc_leaf`)     //nolint
 	GcOverflowMetric = metrics.NewCounter(`db_gc_overflow`) //nolint
@@ -92,6 +124,7 @@ const (
 	SentryDB     Label = 2
 	ConsensusDB  Label = 3
 	DownloaderDB Label = 4
+	InMem        Label = 5
 )
 
 func (l Label) String() string {
@@ -106,6 +139,8 @@ func (l Label) String() string {
 		return "consensus"
 	case DownloaderDB:
 		return "downloader"
+	case InMem:
+		return "inMem"
 	default:
 		return "unknown"
 	}
@@ -203,10 +238,10 @@ type RwDB interface {
 	RoDB
 
 	Update(ctx context.Context, f func(tx RwTx) error) error
-	UpdateAsync(ctx context.Context, f func(tx RwTx) error) error
+	UpdateNosync(ctx context.Context, f func(tx RwTx) error) error
 
 	BeginRw(ctx context.Context) (RwTx, error)
-	BeginRwAsync(ctx context.Context) (RwTx, error)
+	BeginRwNosync(ctx context.Context) (RwTx, error)
 }
 
 type StatelessReadTx interface {
@@ -278,18 +313,35 @@ type Tx interface {
 	Cursor(table string) (Cursor, error)
 	CursorDupSort(table string) (CursorDupSort, error) // CursorDupSort - can be used if bucket has mdbx.DupSort flag
 
-	ForEach(table string, fromPrefix []byte, walker func(k, v []byte) error) error
-	ForPrefix(table string, prefix []byte, walker func(k, v []byte) error) error
-	ForAmount(table string, prefix []byte, amount uint32, walker func(k, v []byte) error) error
+	DBSize() (uint64, error)
+
+	// --- High-Level methods: 1request -> stream of server-side pushes ---
 
 	// Range [from, to)
 	// Range(from, nil) means [from, EndOfTable)
-	// Range(nil, to) means [StartOfTable, to)
-	// PrefixScan can be implemented as `Range(Table, prefix, kv.NextSubtree(prefix))`
-	Range(table string, fromPrefix, toPrefix []byte) (Pairs, error)
-	Prefix(table string, prefix []byte) (Pairs, error)
+	// Range(nil, to)   means [StartOfTable, to)
+	Range(table string, fromPrefix, toPrefix []byte) (iter.KV, error)
+	// Stream is like Range, but for requesting huge data (Example: full table scan). Client can't stop it.
+	//Stream(table string, fromPrefix, toPrefix []byte) (iter.KV, error)
+	// RangeAscend - like Range [from, to) but also allow pass Limit parameters
+	// Limit -1 means Unlimited
+	RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error)
+	//StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error)
+	// RangeDescend - is like Range [from, to), but expecing `from`<`to`
+	// example: RangeDescend("Table", "B", "A", -1)
+	RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error)
+	//StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error)
+	// Prefix - is exactly Range(Table, prefix, kv.NextSubtree(prefix))
+	Prefix(table string, prefix []byte) (iter.KV, error)
 
-	DBSize() (uint64, error)
+	// --- High-Level methods: 1request -> 1page of values in response -> send next page request ---
+	// Paginate(table string, fromPrefix, toPrefix []byte) (PairsStream, error)
+
+	// --- High-Level deprecated methods ---
+
+	ForEach(table string, fromPrefix []byte, walker func(k, v []byte) error) error
+	ForPrefix(table string, prefix []byte, walker func(k, v []byte) error) error
+	ForAmount(table string, prefix []byte, amount uint32, walker func(k, v []byte) error) error
 }
 
 // RwTx
@@ -309,7 +361,6 @@ type RwTx interface {
 	// CollectMetrics - does collect all DB-related and Tx-related metrics
 	// this method exists only in RwTx to avoid concurrency
 	CollectMetrics()
-	Reset() error
 }
 
 // BucketMigrator used for buckets migration, don't use it in usual app code
@@ -373,7 +424,9 @@ type CursorDupSort interface {
 	FirstDup() ([]byte, error)                       // FirstDup - position at first data item of current key
 	NextDup() ([]byte, []byte, error)                // NextDup - position at next data item of current key
 	NextNoDup() ([]byte, []byte, error)              // NextNoDup - position at first data item of next key
-	LastDup() ([]byte, error)                        // LastDup - position at last data item of current key
+	PrevDup() ([]byte, []byte, error)
+	PrevNoDup() ([]byte, []byte, error)
+	LastDup() ([]byte, error) // LastDup - position at last data item of current key
 
 	CountDuplicates() (uint64, error) // CountDuplicates - number of duplicates for the current key
 }
@@ -403,29 +456,22 @@ type TemporalRoDb interface {
 }
 type TemporalTx interface {
 	Tx
-	DomainGet(name Domain, k []byte, ts uint64) (v []byte, ok bool, err error)
+	DomainGet(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
-	IndexRange(name InvertedIdx, k []byte, fromTs, toTs uint64) (timestamps UnaryStream[uint64], err error)
+
+	// IndexRange - return iterator over range of inverted index for given key `k`
+	// Asc semantic:  [from, to) AND from > to
+	// Desc semantic: [from, to) AND from < to
+	// Limit -1 means Unlimited
+	// from -1, to -1 means unbounded (StartOfTable, EndOfTable)
+	// Example: IndexRange("IndexName", 10, 5, order.Desc, -1)
+	// Example: IndexRange("IndexName", -1, -1, order.Asc, 10)
+	IndexRange(name InvertedIdx, k []byte, fromTs, toTs int, asc order.By, limit int) (timestamps iter.U64, err error)
+	HistoryRange(name History, fromTs, toTs int, asc order.By, limit int) (it iter.KV, err error)
+	DomainRange(name Domain, k1, k2 []byte, asOfTs uint64, asc order.By, limit int) (it iter.KV, err error)
 }
 
 type TemporalRwDB interface {
 	RwDB
 	TemporalRoDb
 }
-
-// Stream - Iterator-like interface designed for grpc server-side streaming: 1 client request -> much responses from server
-//   - K, V are valid only until next .Next() call (TODO: extend it to whole Tx lifetime?)
-//   - No `Close` method: all streams produced by TemporalTx will be closed inside `tx.Rollback()` (by casting to `kv.Closer`)
-//   - automatically checks cancelation of `ctx` passed to `db.Begin(ctx)`, can skip this
-//     check in loops on stream. Stream has very limited API - user has no way to
-//     terminate it - but user can specify more strict conditions when creating stream (then server knows better when to stop)
-type Stream[K, V any] interface {
-	Next() (K, V, error)
-	HasNext() bool
-}
-type UnaryStream[V any] interface {
-	Next() (V, error)
-	NextBatch() ([]V, error)
-	HasNext() bool
-}
-type Pairs Stream[[]byte, []byte]

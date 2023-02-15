@@ -27,6 +27,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/mmap"
+	"github.com/ledgerwatch/log/v3"
 )
 
 type word []byte // plain text word associated with code from dictionary
@@ -102,7 +103,6 @@ type Decompressor struct {
 	mmapHandle2     *[mmap.MaxMapSize]byte // mmap handle for windows (this is used to close mmap)
 	dict            *patternTable
 	posDict         *posTable
-	compressedFile  string
 	mmapHandle1     []byte // mmap handle for unix (this is used to close mmap)
 	data            []byte // slice of correct size for the decompressor to work with
 	wordsStart      uint64 // Offset of whether the superstrings actually start
@@ -110,6 +110,8 @@ type Decompressor struct {
 	modTime         time.Time
 	wordsCount      uint64
 	emptyWordsCount uint64
+
+	filePath, fileName string
 }
 
 // Tables with bitlen greater than threshold will be condensed.
@@ -141,19 +143,20 @@ func SetDecompressionTableCondensity(fromBitSize int) {
 	condensePatternTableBitThreshold = fromBitSize
 }
 
-func NewDecompressor(compressedFile string) (*Decompressor, error) {
+func NewDecompressor(compressedFilePath string) (*Decompressor, error) {
+	_, fName := filepath.Split(compressedFilePath)
 	d := &Decompressor{
-		compressedFile: compressedFile,
+		filePath: compressedFilePath,
+		fileName: fName,
 	}
-
 	var err error
 	defer func() {
 		if rec := recover(); rec != nil {
-			err = fmt.Errorf("decompressing file: %s, %+v, trace: %s", compressedFile, rec, dbg.Stack())
+			err = fmt.Errorf("decompressing file: %s, %+v, trace: %s", compressedFilePath, rec, dbg.Stack())
 		}
 	}()
 
-	d.f, err = os.Open(compressedFile)
+	d.f, err = os.Open(compressedFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +342,7 @@ func (d *Decompressor) ModTime() time.Time {
 
 func (d *Decompressor) Close() error {
 	if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
-		return err
+		log.Trace("unmap", "err", err, "file", d.FileName())
 	}
 	if err := d.f.Close(); err != nil {
 		return err
@@ -347,14 +350,14 @@ func (d *Decompressor) Close() error {
 	return nil
 }
 
-func (d *Decompressor) FilePath() string { return d.compressedFile }
-func (d *Decompressor) FileName() string {
-	_, fName := filepath.Split(d.compressedFile)
-	return fName
-}
+func (d *Decompressor) FilePath() string { return d.filePath }
+func (d *Decompressor) FileName() string { return d.fileName }
 
 // WithReadAhead - Expect read in sequential order. (Hence, pages in the given range can be aggressively read ahead, and may be freed soon after they are accessed.)
 func (d *Decompressor) WithReadAhead(f func() error) error {
+	if d == nil || d.mmapHandle1 == nil {
+		return nil
+	}
 	_ = mmap.MadviseSequential(d.mmapHandle1)
 	//_ = mmap.MadviseWillNeed(d.mmapHandle1)
 	defer mmap.MadviseRandom(d.mmapHandle1)
@@ -369,14 +372,23 @@ func (d *Decompressor) DisableReadAhead() {
 	_ = mmap.MadviseRandom(d.mmapHandle1)
 }
 func (d *Decompressor) EnableReadAhead() *Decompressor {
+	if d == nil || d.mmapHandle1 == nil {
+		return d
+	}
 	_ = mmap.MadviseSequential(d.mmapHandle1)
 	return d
 }
 func (d *Decompressor) EnableMadvNormal() *Decompressor {
+	if d == nil || d.mmapHandle1 == nil {
+		return d
+	}
 	_ = mmap.MadviseNormal(d.mmapHandle1)
 	return d
 }
 func (d *Decompressor) EnableWillNeed() *Decompressor {
+	if d == nil || d.mmapHandle1 == nil {
+		return d
+	}
 	_ = mmap.MadviseWillNeed(d.mmapHandle1)
 	return d
 }
@@ -498,7 +510,7 @@ func (d *Decompressor) MakeGetter() *Getter {
 		posDict:     d.posDict,
 		data:        d.data[d.wordsStart:],
 		patternDict: d.dict,
-		fName:       d.compressedFile,
+		fName:       d.fileName,
 	}
 }
 

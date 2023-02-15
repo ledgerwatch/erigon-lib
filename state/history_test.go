@@ -23,16 +23,16 @@ import (
 	"math"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"time"
 
-	"github.com/google/btree"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
+	btree2 "github.com/tidwall/btree"
 )
 
 func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
@@ -51,14 +51,17 @@ func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 			settingsTable: kv.TableCfgItem{},
 		}
 	}).MustOpen()
-	ii, err := NewHistory(path, path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */, nil)
+	h, err := NewHistory(path, path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */, nil)
 	require.NoError(tb, err)
 	tb.Cleanup(db.Close)
-	tb.Cleanup(ii.Close)
-	return path, db, ii
+	tb.Cleanup(h.Close)
+	return path, db, h
 }
 
 func TestHistoryCollationBuild(t *testing.T) {
+	defer log.Root().SetHandler(log.Root().GetHandler())
+	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StderrHandler))
+
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	require := require.New(t)
@@ -68,7 +71,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 	require.NoError(err)
 	defer tx.Rollback()
 	h.SetTx(tx)
-	h.StartWrites("")
+	h.StartWrites()
 	defer h.FinishWrites()
 
 	h.SetTxNum(2)
@@ -85,10 +88,15 @@ func TestHistoryCollationBuild(t *testing.T) {
 	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.1"))
 	require.NoError(err)
 
+	flusher := h.Rotate()
+
 	h.SetTxNum(7)
 	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.2"))
 	require.NoError(err)
 	err = h.AddPrevValue([]byte("key3"), nil, nil)
+	require.NoError(err)
+
+	err = flusher.Flush(ctx, tx)
 	require.NoError(err)
 
 	err = h.Rotate().Flush(ctx, tx)
@@ -127,7 +135,8 @@ func TestHistoryCollationBuild(t *testing.T) {
 		var ints []uint64
 		it := ef.Iterator()
 		for it.HasNext() {
-			ints = append(ints, it.Next())
+			v, _ := it.Next()
+			ints = append(ints, v)
 		}
 		intArrs = append(intArrs, ints)
 	}
@@ -166,7 +175,7 @@ func TestHistoryAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	defer tx.Rollback()
 	h.SetTx(tx)
-	h.StartWrites("")
+	h.StartWrites()
 	defer h.FinishWrites()
 
 	h.SetTxNum(2)
@@ -197,7 +206,6 @@ func TestHistoryAfterPrune(t *testing.T) {
 
 	sf, err := h.buildFiles(ctx, 0, c)
 	require.NoError(t, err)
-	defer sf.Close()
 
 	h.integrateFiles(sf, 0, 16)
 
@@ -225,13 +233,14 @@ func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 	require.NoError(tb, err)
 	defer tx.Rollback()
 	h.SetTx(tx)
-	h.StartWrites("")
+	h.StartWrites()
 	defer h.FinishWrites()
 
 	txs := uint64(1000)
 	// keys are encodings of numbers 1..31
 	// each key changes value on every txNum which is multiple of the key
 	var prevVal [32][]byte
+	var flusher flusher
 	for txNum := uint64(1); txNum <= txs; txNum++ {
 		h.SetTxNum(txNum)
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
@@ -248,15 +257,25 @@ func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 				prevVal[keyNum] = v[:]
 			}
 		}
-		if txNum%10 == 0 {
-			err = h.Rotate().Flush(ctx, tx)
+		if flusher != nil {
+			err = flusher.Flush(ctx, tx)
 			require.NoError(tb, err)
+			flusher = nil
 		}
+		if txNum%10 == 0 {
+			flusher = h.Rotate()
+		}
+	}
+	if flusher != nil {
+		err = flusher.Flush(ctx, tx)
+		require.NoError(tb, err)
+		flusher = nil
 	}
 	err = h.Rotate().Flush(ctx, tx)
 	require.NoError(tb, err)
 	err = tx.Commit()
 	require.NoError(tb, err)
+
 	return path, db, h, txs
 }
 
@@ -264,6 +283,8 @@ func checkHistoryHistory(t *testing.T, db kv.RwDB, h *History, txs uint64) {
 	t.Helper()
 	// Check the history
 	hc := h.MakeContext()
+	defer hc.Close()
+
 	for txNum := uint64(0); txNum <= txs; txNum++ {
 		for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 			valNum := txNum / keyNum
@@ -315,38 +336,50 @@ func TestHistoryHistory(t *testing.T) {
 
 func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 	tb.Helper()
+	require := require.New(tb)
+
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
 	ctx := context.Background()
-	tx, err := db.BeginRw(ctx)
-	require.NoError(tb, err)
+	tx, err := db.BeginRwNosync(ctx)
+	require.NoError(err)
 	h.SetTx(tx)
 	defer tx.Rollback()
+
 	// Leave the last 2 aggregation steps un-collated
 	for step := uint64(0); step < txs/h.aggregationStep-1; step++ {
+		c, err := h.collate(step, step*h.aggregationStep, (step+1)*h.aggregationStep, tx, logEvery)
+		require.NoError(err)
+		sf, err := h.buildFiles(ctx, step, c)
+		require.NoError(err)
+		h.integrateFiles(sf, step*h.aggregationStep, (step+1)*h.aggregationStep)
+		err = h.prune(ctx, step*h.aggregationStep, (step+1)*h.aggregationStep, math.MaxUint64, logEvery)
+		require.NoError(err)
+	}
+
+	var r HistoryRanges
+	maxEndTxNum := h.endTxNumMinimax()
+
+	maxSpan := h.aggregationStep * StepsInBiggestFile
+
+	for r = h.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = h.findMergeRange(maxEndTxNum, maxSpan) {
 		func() {
-			c, err := h.collate(step, step*h.aggregationStep, (step+1)*h.aggregationStep, tx, logEvery)
-			require.NoError(tb, err)
-			sf, err := h.buildFiles(ctx, step, c)
-			require.NoError(tb, err)
-			h.integrateFiles(sf, step*h.aggregationStep, (step+1)*h.aggregationStep)
-			err = h.prune(ctx, step*h.aggregationStep, (step+1)*h.aggregationStep, math.MaxUint64, logEvery)
-			require.NoError(tb, err)
-			var r HistoryRanges
-			maxEndTxNum := h.endTxNumMinimax()
-			maxSpan := uint64(16 * 16)
-			for r = h.findMergeRange(maxEndTxNum, maxSpan); r.any(); r = h.findMergeRange(maxEndTxNum, maxSpan) {
-				indexOuts, historyOuts, _ := h.staticFilesInRange(r)
-				indexIn, historyIn, err := h.mergeFiles(ctx, indexOuts, historyOuts, r, 1)
-				require.NoError(tb, err)
-				h.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
-				err = h.deleteFiles(indexOuts, historyOuts)
-				require.NoError(tb, err)
-			}
+			hc := h.MakeContext()
+			defer hc.Close()
+
+			indexOuts, historyOuts, _, err := h.staticFilesInRange(r, hc)
+			require.NoError(err)
+			indexIn, historyIn, err := h.mergeFiles(ctx, indexOuts, historyOuts, r, 1)
+			require.NoError(err)
+			h.integrateMergedFiles(indexOuts, historyOuts, indexIn, historyIn)
 		}()
 	}
+
+	err = h.BuildOptionalMissedIndices(ctx)
+	require.NoError(err)
+
 	err = tx.Commit()
-	require.NoError(tb, err)
+	require.NoError(err)
 }
 
 func TestHistoryMergeFiles(t *testing.T) {
@@ -357,16 +390,16 @@ func TestHistoryMergeFiles(t *testing.T) {
 }
 
 func TestHistoryScanFiles(t *testing.T) {
-	path, db, h, txs := filledHistory(t)
+	_, db, h, txs := filledHistory(t)
 	var err error
 
 	collateAndMergeHistory(t, db, h, txs)
 	// Recreate domain and re-scan the files
 	txNum := h.txNum
-	h.Close()
-	h, err = NewHistory(path, path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals, nil)
+	require.NoError(t, h.OpenFolder())
+	//h.Close()
+	//h, err = NewHistory(path, path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals, nil)
 	require.NoError(t, err)
-	defer h.Close()
 	h.SetTxNum(txNum)
 	// Check the history
 	checkHistoryHistory(t, db, h, txs)
@@ -377,16 +410,18 @@ func TestIterateChanged(t *testing.T) {
 	collateAndMergeHistory(t, db, h, txs)
 	ctx := context.Background()
 
-	roTx, err := db.BeginRo(ctx)
+	tx, err := db.BeginRo(ctx)
 	require.NoError(t, err)
-	defer roTx.Rollback()
+	defer tx.Rollback()
 	var keys, vals []string
 	ic := h.MakeContext()
-	ic.SetTx(roTx)
-	it := ic.IterateChanged(2, 20, roTx)
+	defer ic.Close()
+
+	it := ic.IterateChanged(2, 20, order.Asc, -1, tx)
 	defer it.Close()
 	for it.HasNext() {
-		k, v := it.Next(nil, nil)
+		k, v, err := it.Next()
+		require.NoError(t, err)
 		keys = append(keys, fmt.Sprintf("%x", k))
 		vals = append(vals, fmt.Sprintf("%x", v))
 	}
@@ -431,10 +466,11 @@ func TestIterateChanged(t *testing.T) {
 		"",
 		"",
 		""}, vals)
-	it = ic.IterateChanged(995, 1000, roTx)
+	it = ic.IterateChanged(995, 1000, order.Asc, -1, tx)
 	keys, vals = keys[:0], vals[:0]
 	for it.HasNext() {
-		k, v := it.Next(nil, nil)
+		k, v, err := it.Next()
+		require.NoError(t, err)
 		keys = append(keys, fmt.Sprintf("%x", k))
 		vals = append(vals, fmt.Sprintf("%x", v))
 	}
@@ -471,138 +507,138 @@ func TestIterateChanged2(t *testing.T) {
 	require.NoError(t, err)
 	defer roTx.Rollback()
 	var keys, vals []string
-	ic := h.MakeContext()
-	ic.SetTx(roTx)
-	ic.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
-		keys = append(keys, fmt.Sprintf("%x", k))
-		vals = append(vals, fmt.Sprintf("%x", v))
-		return nil
-	})
-	require.Equal(t, []string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000007",
-		"0100000000000008",
-		"0100000000000009",
-		"010000000000000a",
-		"010000000000000b",
-		"010000000000000c",
-		"010000000000000d",
-		"010000000000000e",
-		"010000000000000f",
-		"0100000000000010",
-		"0100000000000011",
-		"0100000000000012",
-		"0100000000000013"}, keys)
-	require.Equal(t, []string{
-		"ff00000000000001",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		""}, vals)
-	keys, vals = keys[:0], vals[:0]
-	err = ic.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
-		keys = append(keys, fmt.Sprintf("%x", k))
-		vals = append(vals, fmt.Sprintf("%x", v))
-		return nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, []string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000009",
-		"010000000000000c",
-		"010000000000001b",
-	}, keys)
+	t.Run("before merge", func(t *testing.T) {
+		ic := h.MakeContext()
+		defer ic.Close()
 
-	require.Equal(t, []string{
-		"ff000000000003e2",
-		"ff000000000001f1",
-		"ff0000000000014b",
-		"ff000000000000f8",
-		"ff000000000000c6",
-		"ff000000000000a5",
-		"ff0000000000006e",
-		"ff00000000000052",
-		"ff00000000000024"}, vals)
+		err := ic.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
+			keys = append(keys, fmt.Sprintf("%x", k))
+			vals = append(vals, fmt.Sprintf("%x", v))
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"0100000000000001",
+			"0100000000000002",
+			"0100000000000003",
+			"0100000000000004",
+			"0100000000000005",
+			"0100000000000006",
+			"0100000000000007",
+			"0100000000000008",
+			"0100000000000009",
+			"010000000000000a",
+			"010000000000000b",
+			"010000000000000c",
+			"010000000000000d",
+			"010000000000000e",
+			"010000000000000f",
+			"0100000000000010",
+			"0100000000000011",
+			"0100000000000012",
+			"0100000000000013"}, keys)
+		require.Equal(t, []string{
+			"ff00000000000001",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			""}, vals)
+		keys, vals = keys[:0], vals[:0]
+		err = ic.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
+			keys = append(keys, fmt.Sprintf("%x", k))
+			vals = append(vals, fmt.Sprintf("%x", v))
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"0100000000000001",
+			"0100000000000002",
+			"0100000000000003",
+			"0100000000000004",
+			"0100000000000005",
+			"0100000000000006",
+			"0100000000000009",
+			"010000000000000c",
+			"010000000000001b",
+		}, keys)
 
-	collateAndMergeHistory(t, db, h, txs)
-	keys = keys[:0]
-	err = ic.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
-		keys = append(keys, fmt.Sprintf("%x", k))
-		return nil
+		require.Equal(t, []string{
+			"ff000000000003e2",
+			"ff000000000001f1",
+			"ff0000000000014b",
+			"ff000000000000f8",
+			"ff000000000000c6",
+			"ff000000000000a5",
+			"ff0000000000006e",
+			"ff00000000000052",
+			"ff00000000000024"}, vals)
 	})
-	require.NoError(t, err)
-	require.Equal(t, []string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000007",
-		"0100000000000008",
-		"0100000000000009",
-		"010000000000000a",
-		"010000000000000b",
-		"010000000000000c",
-		"010000000000000d",
-		"010000000000000e",
-		"010000000000000f",
-		"0100000000000010",
-		"0100000000000011",
-		"0100000000000012",
-		"0100000000000013"}, keys)
+	t.Run("after merge", func(t *testing.T) {
+		collateAndMergeHistory(t, db, h, txs)
+		ic := h.MakeContext()
+		defer ic.Close()
+
+		keys = keys[:0]
+		err = ic.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
+			keys = append(keys, fmt.Sprintf("%x", k))
+			return nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"0100000000000001",
+			"0100000000000002",
+			"0100000000000003",
+			"0100000000000004",
+			"0100000000000005",
+			"0100000000000006",
+			"0100000000000007",
+			"0100000000000008",
+			"0100000000000009",
+			"010000000000000a",
+			"010000000000000b",
+			"010000000000000c",
+			"010000000000000d",
+			"010000000000000e",
+			"010000000000000f",
+			"0100000000000010",
+			"0100000000000011",
+			"0100000000000012",
+			"0100000000000013"}, keys)
+	})
 }
 
 func TestScanStaticFilesH(t *testing.T) {
 	h := &History{InvertedIndex: &InvertedIndex{filenameBase: "test", aggregationStep: 1},
-		files: btree.NewG[*filesItem](32, filesItemLess),
+		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
-	ffs := fstest.MapFS{
-		"test.0-1.v": {},
-		"test.1-2.v": {},
-		"test.0-4.v": {},
-		"test.2-3.v": {},
-		"test.3-4.v": {},
-		"test.4-5.v": {},
+	files := []string{
+		"test.0-1.v",
+		"test.1-2.v",
+		"test.0-4.v",
+		"test.2-3.v",
+		"test.3-4.v",
+		"test.4-5.v",
 	}
-	files, err := ffs.ReadDir(".")
-	require.NoError(t, err)
-	h.scanStateFiles(files, nil)
-	var found []string
-	h.files.Ascend(func(i *filesItem) bool {
-		found = append(found, fmt.Sprintf("%d-%d", i.startTxNum, i.endTxNum))
-		return true
-	})
-	require.Equal(t, 2, len(found))
-	require.Equal(t, "0-4", found[0])
-	require.Equal(t, "4-5", found[1])
+	h.scanStateFiles(files)
+	require.Equal(t, 6, h.files.Len())
 
-	h.files.Clear(false)
-	h.scanStateFiles(files, []string{"kv"})
+	h.files.Clear()
+	h.integrityFileExtensions = []string{"kv"}
+	h.scanStateFiles(files)
 	require.Equal(t, 0, h.files.Len())
 
 }

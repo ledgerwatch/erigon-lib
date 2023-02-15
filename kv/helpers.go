@@ -134,10 +134,12 @@ func GetBool(tx Getter, bucket string, k []byte) (enabled bool, err error) {
 }
 
 func ReadAhead(ctx context.Context, db RoDB, progress *atomic.Bool, table string, from []byte, amount uint32) {
-	if db == nil || progress.Load() {
+	if db == nil {
 		return
 	}
-	progress.Store(true)
+	if ok := progress.CompareAndSwap(false, true); !ok {
+		return
+	}
 	go func() {
 		defer progress.Store(false)
 		_ = db.View(ctx, func(tx Tx) error {
@@ -189,25 +191,6 @@ func LastKey(tx Tx, table string) ([]byte, error) {
 		return nil, err
 	}
 	return k, nil
-}
-
-type ArrStream[V any] struct {
-	arr []V
-	i   int
-}
-
-func StreamArray[V any](arr []V) UnaryStream[V] { return &ArrStream[V]{arr: arr} }
-func (it *ArrStream[V]) HasNext() bool          { return it.i < len(it.arr) }
-func (it *ArrStream[V]) Close()                 {}
-func (it *ArrStream[V]) Next() (V, error) {
-	v := it.arr[it.i]
-	it.i++
-	return v, nil
-}
-func (it *ArrStream[V]) NextBatch() ([]V, error) {
-	v := it.arr[it.i:]
-	it.i = len(it.arr)
-	return v, nil
 }
 
 // NextSubtree does []byte++. Returns false if overflow.
