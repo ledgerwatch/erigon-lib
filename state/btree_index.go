@@ -555,7 +555,9 @@ func (a *btAlloc) fillSearchMx() {
 			a.nodes[i][j].key = common.Copy(kb)
 			a.nodes[i][j].val = common.Copy(v)
 		}
-		fmt.Printf("\n")
+		if a.trace {
+			fmt.Printf("\n")
+		}
 	}
 }
 
@@ -638,21 +640,19 @@ const BtreeLogPrefix = "btree"
 // salt parameters is used to randomise the hash function construction, to ensure that different Erigon instances (nodes)
 // are likely to use different hash function, to collision attacks are unlikely to slow down any meaningful number of nodes at the same time
 func NewBtIndexWriter(args BtIndexWriterArgs) (*BtIndexWriter, error) {
-	btw := &BtIndexWriter{}
+	btw := &BtIndexWriter{lvl: log.LvlDebug}
 	btw.tmpDir = args.TmpDir
 	btw.indexFile = args.IndexFile
+
 	_, fname := filepath.Split(btw.indexFile)
 	btw.indexFileName = fname
-	//btw.baseDataID = args.BaseDataID
 	btw.etlBufLimit = args.EtlBufLimit
 	if btw.etlBufLimit == 0 {
 		btw.etlBufLimit = etl.BufferOptimalSize
 	}
 
 	btw.bucketCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
-	btw.bucketCollector.LogLvl(log.LvlError)
-	//btw.offsetCollector = etl.NewCollector(BtreeLogPrefix+" "+fname, btw.tmpDir, etl.NewSortableBuffer(btw.etlBufLimit))
-	//btw.offsetCollector.LogLvl(log.LvlDebug)
+	btw.bucketCollector.LogLvl(log.LvlDebug)
 
 	btw.maxOffset = 0
 	return btw, nil
@@ -679,58 +679,6 @@ func (btw *BtIndexWriter) loadFuncBucket(k, v []byte, _ etl.CurrentTableReader, 
 	return nil
 }
 
-//
-//func (rs *BtIndexWriter) drainBatch() error {
-//	// Extend rs.bucketSizeAcc to accomodate current bucket index + 1
-//	//for len(rs.bucketSizeAcc) <= int(rs.currentBucketIdx)+1 {
-//	//	rs.bucketSizeAcc = append(rs.bucketSizeAcc, rs.bucketSizeAcc[len(rs.bucketSizeAcc)-1])
-//	//}
-//	//rs.bucketSizeAcc[int(rs.currentBucketIdx)+1] += uint64(len(rs.currentBucket))
-//	//// Sets of size 0 and 1 are not further processed, just write them to index
-//	//if len(rs.currentBucket) > 1 {
-//	//	for i, key := range rs.currentBucket[1:] {
-//	//		if key == rs.currentBucket[i] {
-//	//			rs.collision = true
-//	//			return fmt.Errorf("%w: %x", ErrCollision, key)
-//	//		}
-//	//	}
-//	//	bitPos := rs.gr.bitCount
-//	//	if rs.buffer == nil {
-//	//		rs.buffer = make([]uint64, len(rs.currentBucket))
-//	//		rs.offsetBuffer = make([]uint64, len(rs.currentBucketOffs))
-//	//	} else {
-//	//		for len(rs.buffer) < len(rs.currentBucket) {
-//	//			rs.buffer = append(rs.buffer, 0)
-//	//			rs.offsetBuffer = append(rs.offsetBuffer, 0)
-//	//		}
-//	//	}
-//	//	unary, err := rs.recsplit(0 /* level */, rs.currentBucket, rs.currentBucketOffs, nil /* unary */)
-//	//	if err != nil {
-//	//		return err
-//	//	}
-//	//	rs.gr.appendUnaryAll(unary)
-//	//	if rs.trace {
-//	//		fmt.Printf("recsplitBucket(%d, %d, bitsize = %d)\n", rs.currentBucketIdx, len(rs.currentBucket), rs.gr.bitCount-bitPos)
-//	//	}
-//	//} else {
-//	var j int
-//	for _, offset := range rs.vals {
-//		binary.BigEndian.PutUint64(rs.numBuf[:], offset)
-//		rs.indexW.Write(rs.keys[j])
-//		if _, err := rs.indexW.Write(rs.numBuf[8-rs.bytesPerRec:]); err != nil {
-//			return err
-//		}
-//	}
-//	//}
-//	//// Extend rs.bucketPosAcc to accomodate current bucket index + 1
-//	//for len(rs.bucketPosAcc) <= int(rs.currentBucketIdx)+1 {
-//	//	rs.bucketPosAcc = append(rs.bucketPosAcc, rs.bucketPosAcc[len(rs.bucketPosAcc)-1])
-//	//}
-//	//rs.bucketPosAcc[int(rs.currentBucketIdx)+1] = uint64(rs.gr.Bits())
-//	rs.keys = rs.keys[:0]
-//	rs.vals = rs.vals[:0]
-//	return nil
-//}
 
 // Build has to be called after all the keys have been added, and it initiates the process
 // of building the perfect hash function and writing index into a file
@@ -751,11 +699,6 @@ func (btw *BtIndexWriter) Build() error {
 	defer btw.indexF.Close()
 	btw.indexW = bufio.NewWriterSize(btw.indexF, etl.BufIOSize)
 	defer btw.indexW.Flush()
-	// Write minimal app-specific dataID in this index file
-	//binary.BigEndian.PutUint64(btw.numBuf[:], btw.baseDataID)
-	//if _, err = btw.indexW.Write(btw.numBuf[:]); err != nil {
-	//	return fmt.Errorf("write baseDataID: %w", err)
-	//}
 
 	// Write number of keys
 	binary.BigEndian.PutUint64(btw.numBuf[:], btw.keyCount)
@@ -773,15 +716,6 @@ func (btw *BtIndexWriter) Build() error {
 	if err := btw.bucketCollector.Load(nil, "", btw.loadFuncBucket, etl.TransformArgs{}); err != nil {
 		return err
 	}
-
-	//if ASSERT {
-	//	btw.indexW.Flush()
-	//	btw.indexF.Seek(0, 0)
-	//	b, _ := io.ReadAll(btw.indexF)
-	//	if len(b) != 9+int(btw.keysAdded)*btw.bytesPerRec {
-	//		panic(fmt.Errorf("expected: %d, got: %d; btw.keysAdded=%d, btw.bytesPerRec=%d, %s", 9+int(btw.keysAdded)*btw.bytesPerRec, len(b), btw.keysAdded, btw.bytesPerRec, btw.indexFile))
-	//	}
-	//}
 
 	log.Log(btw.lvl, "[index] write", "file", btw.indexFileName)
 	btw.built = true
@@ -804,10 +738,6 @@ func (btw *BtIndexWriter) Close() {
 	//	btw.offsetCollector.Close()
 	//}
 }
-
-// func (btw *BtIndexWriter) Add(key, value []byte) error {
-
-// }
 
 func (btw *BtIndexWriter) AddKey(key []byte, offset uint64) error {
 	if btw.built {
@@ -892,7 +822,7 @@ func BuildBtreeIndexWithDecompressor(indexPath string, kv *compress.Decompressor
 			emptys++
 		}
 	}
-	fmt.Printf("emptys %d %#+v\n", emptys, ks)
+	//fmt.Printf("emptys %d %#+v\n", emptys, ks)
 
 	if err := iw.Build(); err != nil {
 		return err
@@ -974,12 +904,6 @@ func OpenBtreeIndexWithDecompressor(indexPath string, M uint64, kv *compress.Dec
 	idx.bytesPerRec = int(idx.data[pos])
 	pos += 1
 
-	// idx.baseDataID = binary.BigEndian.Uint64(idx.data[pos:8])
-	// offset := int(idx.keyCount) * idx.bytesPerRec //+ (idx.keySize * int(idx.keyCount))
-	// if offset < 0 {
-	// 	return nil, fmt.Errorf("offset is: %d which is below zero, the file: %s is broken", offset, indexPath)
-	// }
-
 	//p := (*[]byte)(unsafe.Pointer(&idx.data[pos]))
 	//l := int(idx.keyCount)*idx.bytesPerRec + (16 * int(idx.keyCount))
 
@@ -1019,7 +943,6 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 	// Read number of keys and bytes per record
 	pos := 8
 	idx.keyCount = binary.BigEndian.Uint64(idx.data[:pos])
-	//idx.baseDataID = binary.BigEndian.Uint64(idx.data[pos:8])
 	idx.bytesPerRec = int(idx.data[pos])
 	pos += 1
 
@@ -1079,9 +1002,6 @@ func (b *BtIndex) dataLookup(di uint64) ([]byte, []byte, error) {
 func (b *BtIndex) Size() int64 { return b.size }
 
 func (b *BtIndex) ModTime() time.Time { return b.modTime }
-
-// Deprecated
-func (b *BtIndex) BaseDataID() uint64 { return b.baseDataID }
 
 func (b *BtIndex) FilePath() string { return b.filePath }
 
