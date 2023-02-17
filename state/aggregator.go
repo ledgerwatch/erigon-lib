@@ -39,7 +39,7 @@ import (
 
 // StepsInBiggestFile - files of this size are completely frozen/immutable.
 // files of smaller size are also immutable, but can be removed after merge to bigger files.
-const StepsInBiggestFile = 16
+const StepsInBiggestFile = 4
 
 // Reconstruction of the aggregator in another package, `aggregator`
 
