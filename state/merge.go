@@ -106,6 +106,26 @@ type DomainRanges struct {
 	index             bool
 }
 
+func (r DomainRanges) String() string {
+	var b strings.Builder
+	if r.values {
+		b.WriteString(fmt.Sprintf("Values: [%d, %d)", r.valuesStartTxNum, r.valuesEndTxNum))
+	}
+	if r.history {
+		if b.Len() > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(fmt.Sprintf("History: [%d, %d)", r.historyStartTxNum, r.historyEndTxNum))
+	}
+	if r.index {
+		if b.Len() > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(fmt.Sprintf("Index: [%d, %d)", r.indexStartTxNum, r.indexEndTxNum))
+	}
+	return b.String()
+}
+
 func (r DomainRanges) any() bool {
 	return r.values || r.history || r.index
 }

@@ -440,10 +440,15 @@ func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, work
 		return false, nil
 	}
 
-	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
-	defer ac.Close()
+	//ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
+	//defer ac.Close()
 
-	outs := a.staticFilesInRange(r, ac)
+	defer func() {
+		a.defaultCtx.Close()
+		a.defaultCtx = a.MakeContext()
+	}()
+
+	outs := a.staticFilesInRange(r, a.defaultCtx)
 	defer func() {
 		if closeAll {
 			outs.Close()
@@ -499,6 +504,10 @@ type Ranges struct {
 	//logTopics            bool
 	//tracesFrom           bool
 	//tracesTo             bool
+}
+
+func (r Ranges) String() string {
+	return fmt.Sprintf("accounts=%s, storage=%s, code=%s, commitment=%s", r.accounts.String(), r.storage.String(), r.code.String(), r.commitment.String())
 }
 
 func (r Ranges) any() bool {
@@ -1038,7 +1047,6 @@ func (a *Aggregator) FinishWrites() {
 
 // Flush - must be called before Collate, if you did some writes
 func (a *Aggregator) Flush(ctx context.Context) error {
-	// TODO: Add support of commitment!
 	flushers := []flusher{
 		a.accounts.Rotate(),
 		a.storage.Rotate(),
