@@ -23,9 +23,30 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 )
+
+func TestEliasFanoSeek(t *testing.T) {
+	count := uint64(1_000_000)
+	maxOffset := count * 123
+	ef := NewEliasFano(count, maxOffset)
+	for offset := uint64(0); offset < count; offset++ {
+		ef.AddOffset(offset * 123)
+	}
+	ef.Build()
+	//v := ef.Get(count - 1)
+	//fmt.Printf("v: %d\n", v)
+	//fmt.Printf("v: %d\n", len(ef.jump))
+
+	//v1, ok1 := ef.Search((count - 1) * 16)
+	v2, ok2 := ef.Search2((count - 1) * 16)
+	//require.Equal(t, ok1, ok2)
+	//require.Equal(t, v1, v2)
+	_, _ = v2, ok2
+	require.Fail(t, "")
+}
 
 func TestEliasFano(t *testing.T) {
 	offsets := []uint64{1, 4, 6, 8, 10, 14, 16, 19, 22, 34, 37, 39, 41, 43, 48, 51, 54, 58, 62}
