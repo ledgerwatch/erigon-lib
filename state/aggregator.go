@@ -400,9 +400,10 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}
 	}
 
+	stepTook := time.Since(stepStartedAt)
 	log.Info("[stat] finished aggregation, ready for mergeUpTo",
 		"range", fmt.Sprintf("%.2fM-%.2fM", float64(txFrom)/10e5, float64(txTo)/10e5),
-		"step_took", time.Since(stepStartedAt),
+		"step_took", stepTook,
 		"collate_min", clo, "collate_max", chi,
 		"prune_min", plo, "prune_max", phi,
 		"files_build_min", blo, "files_build_max", bhi)
@@ -422,6 +423,8 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	}
 	log.Info("[stat] aggregation merged",
 		"upto_tx", maxEndTxNum,
+		"aggregation_took", time.Since(stepStartedAt),
+		"step_took", stepTook,
 		"merge_took", time.Since(mergeStartedAt),
 		"merges_count", upmerges)
 	return nil
