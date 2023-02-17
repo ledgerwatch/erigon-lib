@@ -285,6 +285,8 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		txFrom   = step * a.aggregationStep
 		txTo     = (step + 1) * a.aggregationStep
 		workers  = 1
+
+		stepStartedAt = time.Now()
 	)
 
 	defer logEvery.Stop()
@@ -368,10 +370,46 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	ac := a.MakeContext()
-	defer ac.Close()
+	//ac := a.MakeContext()
+	//defer ac.Close()
 
+	var clo, chi, plo, phi, blo, bhi time.Duration
+	clo, plo, blo = time.Hour*99, time.Hour*99, time.Hour*99
+	for _, s := range []DomainStats{a.accounts.stats, a.code.stats, a.storage.stats} {
+		c := s.LastCollationTook
+		p := s.LastPruneTook
+		b := s.LastFileBuildingTook
+
+		if c < clo {
+			clo = c
+		}
+		if c > chi {
+			chi = c
+		}
+		if p < plo {
+			plo = p
+		}
+		if p > phi {
+			phi = p
+		}
+		if b < blo {
+			blo = b
+		}
+		if b > bhi {
+			bhi = b
+		}
+	}
+
+	log.Info("[stat] finished aggregation, ready for mergeUpTo",
+		"range", fmt.Sprintf("%.2fM-%.2fM", float64(txFrom)/10e5, float64(txTo)/10e5),
+		"step_took", time.Since(stepStartedAt),
+		"collate_min", clo, "collate_max", chi,
+		"prune_min", plo, "prune_max", phi,
+		"files_build_min", blo, "files_build_max", bhi)
+
+	mergeStartedAt := time.Now()
 	maxEndTxNum := a.EndTxNumMinimax()
+	var upmerges int
 	for {
 		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
 		if err != nil {
@@ -380,7 +418,12 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		if !somethingMerged {
 			break
 		}
+		upmerges++
 	}
+	log.Info("[stat] aggregation merged",
+		"upto_tx", maxEndTxNum,
+		"merge_took", time.Since(mergeStartedAt),
+		"merges_count", upmerges)
 	return nil
 }
 
@@ -417,25 +460,10 @@ func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, work
 	a.cleanAfterFreeze(in)
 	closeAll = false
 
-	var clo, chi, plo, phi, blo, bhi time.Duration
-	clo, plo, blo = time.Hour*99, time.Hour*99, time.Hour*99
+	var blo, bhi time.Duration
+	blo = time.Hour * 99
 	for _, s := range []DomainStats{a.accounts.stats, a.code.stats, a.storage.stats} {
-		c := s.LastCollationTook
-		p := s.LastPruneTook
 		b := s.LastFileBuildingTook
-
-		if c < clo {
-			clo = c
-		}
-		if c > chi {
-			chi = c
-		}
-		if p < plo {
-			plo = p
-		}
-		if p > phi {
-			phi = p
-		}
 		if b < blo {
 			blo = b
 		}
@@ -444,14 +472,9 @@ func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, work
 		}
 	}
 
-	log.Info("[stat] finished merge details",
-		// "step", step,
-		// 	"range", fmt.Sprintf("%.2fM-%.2fM", float64(txFrom)/10e5, float64(txTo)/10e5),
-		"upto_tx", maxEndTxNum, "merge_took", time.Since(mergeStartedAt),
-		// "step_took", time.Since(stepStartedAt),
-		"collate_min", clo, "collate_max", chi,
-		"prune_min", plo, "prune_max", phi,
-		"files_build_min", blo, "files_build_max", bhi)
+	log.Info("[stat] finished merge step",
+		"upto_tx", maxEndTxNum, "merge_step_took", time.Since(mergeStartedAt),
+		"merge_min", blo, "merge_max", bhi)
 
 	return true, nil
 }
