@@ -98,6 +98,7 @@ func (ef *EliasFano) deriveFields() int {
 		ef.l = 63 ^ uint64(bits.LeadingZeros64(ef.u/(ef.count+1))) // pos of first non-zero bit
 	}
 	ef.lowerBitsMask = (uint64(1) << ef.l) - 1
+	fmt.Printf("%b\n", ef.lowerBitsMask)
 	wordsLowerBits := int(((ef.count+1)*ef.l+63)/64 + 1)
 	wordsUpperBits := int((ef.count + 1 + (ef.u >> ef.l) + 63) / 64)
 	jumpWords := ef.jumpSizeWords()
@@ -123,7 +124,6 @@ func (ef *EliasFano) Build() {
 				if (c & superQMask) == 0 {
 					// When c is multiple of 2^14 (4096)
 					lastSuperQ = i*64 + b
-					fmt.Printf("build: %d, %d, %d, %d\n", (c/superQ)*superQSize, i, b, lastSuperQ)
 					ef.jump[(c/superQ)*superQSize] = lastSuperQ
 				}
 				if (c & qMask) == 0 {
@@ -188,12 +188,6 @@ func (ef *EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord
 	mask := uint64(0xffffffff) << shift
 	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
 	currWord = jump / 64
-	fmt.Printf("get i=%d, jumpSuperQ=%d, ef.jump[jumpSuperQ]=%d, jump=%d \n", i, jumpSuperQ, ef.jump[jumpSuperQ], jump)
-
-	//pr := message.NewPrinter(language.English)
-	//pr.Printf("jump: %d->%d->%d\n", i, jumpSuperQ, jump)
-	//pr.Printf("upper: %d+%d->%d\n", currWord*64-i, sel, (currWord*64+uint64(sel)-i)<<ef.l)
-	fmt.Printf("upperBits: %d, currWord=%d\n", len(ef.upperBits), currWord)
 	window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
 	d := int(i & qMask)
 
@@ -204,11 +198,7 @@ func (ef *EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord
 	}
 
 	sel = bitutil.Select64(window, d)
-	fmt.Printf("get2(%d): %d, %d \n", i, (currWord*64+uint64(sel)-i)<<ef.l, (ef.jump[jumpSuperQ]-i)<<ef.l)
-	if jumpSuperQ > 0 {
-		fmt.Printf("get2(%d): %d, %d \n", i, currWord*64<<ef.l, (ef.jump[jumpSuperQ-superQSize])<<ef.l)
-	}
-	val = ((currWord*64+uint64(sel)-i)<<ef.l | (lower & ef.lowerBitsMask))
+	val = (currWord*64+uint64(sel)-i)<<ef.l | (lower & ef.lowerBitsMask)
 
 	return
 }
@@ -231,7 +221,7 @@ func (ef *EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 	}
 
 	lower >>= ef.l
-	valNext = ((currWord*64+uint64(bits.TrailingZeros64(window))-i-1)<<ef.l | (lower & ef.lowerBitsMask))
+	valNext = (currWord*64+uint64(bits.TrailingZeros64(window))-i-1)<<ef.l | (lower & ef.lowerBitsMask)
 	return
 }
 
@@ -241,7 +231,6 @@ func (ef *EliasFano) Search(offset uint64) (uint64, bool) {
 	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
 		val, _, _, _, _ := ef.get(uint64(i))
 		n++
-		fmt.Printf("search1[%d]: %d->%d\n", n, i, val)
 		return val >= offset
 	}))
 	if i <= ef.count {
@@ -250,60 +239,44 @@ func (ef *EliasFano) Search(offset uint64) (uint64, bool) {
 	return 0, false
 }
 
-func (ef *EliasFano) Search2(offset uint64) (uint64, bool) {
-	jumpTblSize := (ef.count / superQ) * superQSize
-	fmt.Printf("aa: %d\n", jumpTblSize)
-	//lower := ef.count * ef.l
-	//idx64 := lower / 64
-	//shift := lower % 64
-	//lower = ef.lowerBits[idx64] >> shift
-	//if shift > 0 {
-	//	lower |= ef.lowerBits[idx64+1] << (64 - shift)
-	//}
+func (ef *EliasFano) upper(i uint64) uint64 {
+	lower := i * ef.l
+	idx64 := lower / 64
+	shift := lower % 64
 
-	fmt.Printf("jump table: %d, %d, %d, %d\n", ef.l, ef.jump[0], ef.jump[33], ef.jump[66])
-	fmt.Printf("jump table: %d, %d, %d, %d\n", ef.l, ef.jump[0]<<ef.l, ef.jump[33]<<ef.l, ef.jump[66]<<ef.l)
-	fmt.Printf("jump table: %d, %d, %d, %d\n", ef.l, ef.jump[0]*64, ef.jump[33]*64, ef.jump[66]*64)
+	jumpSuperQ := (i / superQ) * superQSize
+	jumpInsideSuperQ := (i % superQ) / q
+	idx64 = jumpSuperQ + 1 + (jumpInsideSuperQ >> 1)
+	shift = 32 * (jumpInsideSuperQ % 2)
+	mask := uint64(0xffffffff) << shift
+	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
+	currWord := jump / 64
+	window := ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
+	d := int(i & qMask)
 
-	ii := uint64(14 * 1024)
-	val, _, _, _, _ := ef.get(ii)
-	jumpSuperQ := (ii / superQ) * superQSize
-	fmt.Printf("estimate val[%d]: %d, %d, %d\n", ii, val, ef.estimateMinValueByJumpTableIdx(jumpSuperQ), ef.estimateMaxValueByJumpTableIdx(jumpSuperQ))
-	ii = uint64(16 * 1024)
-	val, _, _, _, _ = ef.get(ii)
-	jumpSuperQ = (ii / superQ) * superQSize
-	fmt.Printf("estimate val[%d]: %d, %d, %d\n", ii, val, ef.estimateMinValueByJumpTableIdx(jumpSuperQ), ef.estimateMaxValueByJumpTableIdx(jumpSuperQ))
-	ii = 31 * 1024
-	val, _, _, _, _ = ef.get(ii)
-	jumpSuperQ = (ii / superQ) * superQSize
-	fmt.Printf("estimate val[%d]: %d, %d, %d\n", ii, val, ef.estimateMinValueByJumpTableIdx(jumpSuperQ), ef.estimateMaxValueByJumpTableIdx(jumpSuperQ))
-	ii = 32 * 1024
-	val, _, _, _, _ = ef.get(ii)
-	jumpSuperQ = (ii / superQ) * superQSize
-	fmt.Printf("estimate val[%d]: %d, %d, %d\n", ii, val, ef.estimateMinValueByJumpTableIdx(jumpSuperQ), ef.estimateMaxValueByJumpTableIdx(jumpSuperQ))
-	fmt.Printf("superQ=%d\n", superQ)
-	fmt.Printf("superQSize=%d\n", superQSize)
-	//ef.get(32 * 1024)
-	//ef.get(64 * 1024)
-	return 0, false
+	for bitCount := bits.OnesCount64(window); bitCount <= d; bitCount = bits.OnesCount64(window) {
+		currWord++
+		window = ef.upperBits[currWord]
+		d -= bitCount
+	}
 
-	idxInJumpTbl := uint64(sort.Search(int(jumpTblSize), func(i int) bool {
-		fmt.Printf("in[%d]: %d >= %d\n", i, (ef.jump[i]-offset)<<ef.l, offset)
-		return ef.jump[i]<<ef.l >= offset
-	}))
+	sel := bitutil.Select64(window, d)
+	return currWord*64 + uint64(sel) - i
+}
 
-	estimatedI := idxInJumpTbl * superQ / superQSize
-	fmt.Printf("info: %d, %d-%d\n", idxInJumpTbl, estimatedI, ef.count)
-	n := 0
-	i := estimatedI + uint64(sort.Search(int(ef.count+1-estimatedI), func(i int) bool {
-		val, _, _, _, _ := ef.get(uint64(i) + estimatedI)
+func (ef *EliasFano) Search3(v uint64) (uint64, bool) {
+	hi := v >> ef.l
+	n, m := 0, 0
+	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
 		n++
-		fmt.Printf("search2[%d]: %d->%d\n", n, uint64(i)+estimatedI, val)
-		return val >= offset
+		return ef.upper(uint64(i)) >= hi
 	}))
-	fmt.Printf("cnt: %d\n", i)
-	if i <= ef.count {
-		return ef.Get(i), true
+	for j := i; j < ef.count; j++ {
+		m++
+		val, _, _, _, _ := ef.get(j)
+		if val >= v {
+			return val, true
+		}
 	}
 	return 0, false
 }
@@ -466,7 +439,7 @@ func Min(r []byte) uint64 {
 	}
 	sel := bitutil.Select64(window, 0)
 	lowerBitsMask := (uint64(1) << l) - 1
-	val := ((currWord*64+uint64(sel))<<l | (lower & lowerBitsMask))
+	val := (currWord*64+uint64(sel))<<l | (lower & lowerBitsMask)
 	return val
 }
 
