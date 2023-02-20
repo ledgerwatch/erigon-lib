@@ -396,14 +396,14 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	if sigHashLen < 56 {
 		ctx.buf[0] = byte(sigHashLen) + 192
 		if _, err := ctx.Keccak2.Write(ctx.buf[:1]); err != nil {
-			return 0, fmt.Errorf("%w: computing signHash (hashing len Prefix): %s", ErrParseTxn, err)
+			return 0, fmt.Errorf("%w: computing signHash (hashing len Prefix): %s", ErrParseTxn, err) //nolint
 		}
 	} else {
 		beLen := (bits.Len(sigHashLen) + 7) / 8
 		binary.BigEndian.PutUint64(ctx.buf[1:], uint64(sigHashLen))
 		ctx.buf[8-beLen] = byte(beLen) + 247
 		if _, err := ctx.Keccak2.Write(ctx.buf[8-beLen : 9]); err != nil {
-			return 0, fmt.Errorf("%w: computing signHash (hashing len Prefix): %s", ErrParseTxn, err)
+			return 0, fmt.Errorf("%w: computing signHash (hashing len Prefix): %s", ErrParseTxn, err) //nolint
 		}
 	}
 	if _, err = ctx.Keccak2.Write(payload[sigHashPos:sigHashEnd]); err != nil {
@@ -414,7 +414,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			if chainIDBits <= 7 {
 				ctx.buf[0] = byte(ctx.ChainID.Uint64())
 				if _, err := ctx.Keccak2.Write(ctx.buf[:1]); err != nil {
-					return 0, fmt.Errorf("%w: computing signHash (hashing legacy chainId): %s", ErrParseTxn, err)
+					return 0, fmt.Errorf("%w: computing signHash (hashing legacy chainId): %s", ErrParseTxn, err) //nolint
 				}
 			} else {
 				binary.BigEndian.PutUint64(ctx.buf[1:9], ctx.ChainID[3])
@@ -423,7 +423,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 				binary.BigEndian.PutUint64(ctx.buf[25:33], ctx.ChainID[0])
 				ctx.buf[32-chainIDLen] = 128 + byte(chainIDLen)
 				if _, err = ctx.Keccak2.Write(ctx.buf[32-chainIDLen : 33]); err != nil {
-					return 0, fmt.Errorf("%w: computing signHash (hashing legacy chainId): %s", ErrParseTxn, err)
+					return 0, fmt.Errorf("%w: computing signHash (hashing legacy chainId): %s", ErrParseTxn, err) //nolint
 				}
 			}
 			// Encode two zeros
