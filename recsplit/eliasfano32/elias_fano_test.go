@@ -38,52 +38,30 @@ func TestEliasFanoSeek(t *testing.T) {
 	}
 	ef.Build()
 
-	v2, ok2 := ef.Search3(ef.Max())
+	v2, ok2 := ef.Search(ef.Max())
 	require.True(t, ok2, v2)
 	require.Equal(t, ef.Max(), v2)
 
-	v2, ok2 = ef.Search3(ef.Min())
+	v2, ok2 = ef.Search(ef.Min())
 	require.True(t, ok2, v2)
 	require.Equal(t, ef.Min(), v2)
 
-	v2, ok2 = ef.Search3(0)
+	v2, ok2 = ef.Search(0)
 	require.True(t, ok2, v2)
 	require.Equal(t, ef.Min(), v2)
 
-	v2, ok2 = ef.Search3(math.MaxUint32)
+	v2, ok2 = ef.Search(math.MaxUint32)
 	require.False(t, ok2, v2)
 
-	v2, ok2 = ef.Search3((count+1)*123 + 1)
+	v2, ok2 = ef.Search((count+1)*123 + 1)
 	require.False(t, ok2, v2)
 
 	for i := uint64(0); i < count; i++ {
 		v := i * 123
-		v2, ok2 = ef.Search3(v)
+		v2, ok2 = ef.Search(v)
 		require.True(t, ok2, v)
 		require.GreaterOrEqual(t, int(v2), int(v))
 	}
-
-	require.Fail(t, "")
-}
-
-func BenchmarkName(b *testing.B) {
-	count := uint64(1_000_000)
-	maxOffset := count * 123
-	ef := NewEliasFano(count, maxOffset)
-	for offset := uint64(0); offset < count; offset++ {
-		ef.AddOffset(offset * 123)
-	}
-	ef.Build()
-	b.Run("1", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			ef.Search((count - 1) * 16)
-		}
-	})
-	b.Run("2", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			ef.Search3((count - 1) * 16)
-		}
-	})
 }
 
 func TestEliasFano(t *testing.T) {

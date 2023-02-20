@@ -202,18 +202,6 @@ func (ef *EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 	return
 }
 
-// Search returns the value in the sequence, equal or greater than given value
-func (ef *EliasFano) Search(offset uint64) (uint64, bool) {
-	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
-		val, _, _, _, _ := ef.get(uint64(i))
-		return val >= offset
-	}))
-	if i <= ef.count {
-		return ef.Get(i), true
-	}
-	return 0, false
-}
-
 func (ef *EliasFano) upper(i uint64) uint64 {
 	lower := i * ef.l
 	idx64 := lower / 64
@@ -239,7 +227,8 @@ func (ef *EliasFano) upper(i uint64) uint64 {
 	return currWord*64 + uint64(sel) - i
 }
 
-func (ef *EliasFano) Search3(v uint64) (uint64, bool) {
+// Search returns the value in the sequence, equal or greater than given value
+func (ef *EliasFano) Search(v uint64) (uint64, bool) {
 	if v == 0 {
 		return ef.Min(), ef.count > 0
 	}
