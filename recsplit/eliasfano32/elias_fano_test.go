@@ -19,6 +19,7 @@ package eliasfano32
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
@@ -30,21 +31,38 @@ import (
 
 func TestEliasFanoSeek(t *testing.T) {
 	count := uint64(1_000_000)
-	maxOffset := count * 123
+	maxOffset := (count - 1) * 123
 	ef := NewEliasFano(count, maxOffset)
 	for offset := uint64(0); offset < count; offset++ {
 		ef.AddOffset(offset * 123)
 	}
 	ef.Build()
-	//v := ef.Get(count - 1)
-	//fmt.Printf("v: %d\n", v)
-	//fmt.Printf("v: %d\n", len(ef.jump))
 
-	v1, ok1 := ef.Search((count - 1) * 16)
-	v2, ok2 := ef.Search3((count - 1) * 16)
-	require.Equal(t, ok1, ok2)
-	require.Equal(t, v1, v2)
-	_, _ = v2, ok2
+	v2, ok2 := ef.Search3(ef.Max())
+	require.True(t, ok2, v2)
+	require.Equal(t, ef.Max(), v2)
+
+	v2, ok2 = ef.Search3(ef.Min())
+	require.True(t, ok2, v2)
+	require.Equal(t, ef.Min(), v2)
+
+	v2, ok2 = ef.Search3(0)
+	require.True(t, ok2, v2)
+	require.Equal(t, ef.Min(), v2)
+
+	v2, ok2 = ef.Search3(math.MaxUint32)
+	require.False(t, ok2, v2)
+
+	v2, ok2 = ef.Search3((count+1)*123 + 1)
+	require.False(t, ok2, v2)
+
+	for i := uint64(0); i < count; i++ {
+		v := i * 123
+		v2, ok2 = ef.Search3(v)
+		require.True(t, ok2, v)
+		require.GreaterOrEqual(t, int(v2), int(v))
+	}
+
 	require.Fail(t, "")
 }
 

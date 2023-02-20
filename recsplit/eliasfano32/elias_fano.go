@@ -98,7 +98,6 @@ func (ef *EliasFano) deriveFields() int {
 		ef.l = 63 ^ uint64(bits.LeadingZeros64(ef.u/(ef.count+1))) // pos of first non-zero bit
 	}
 	ef.lowerBitsMask = (uint64(1) << ef.l) - 1
-	fmt.Printf("%b\n", ef.lowerBitsMask)
 	wordsLowerBits := int(((ef.count+1)*ef.l+63)/64 + 1)
 	wordsUpperBits := int((ef.count + 1 + (ef.u >> ef.l) + 63) / 64)
 	jumpWords := ef.jumpSizeWords()
@@ -149,29 +148,6 @@ func (ef *EliasFano) Build() {
 	}
 }
 
-func (ef *EliasFano) estimateMinValueByJumpTableIdx(i uint64) uint64 {
-	if i == 0 {
-		return ef.Min()
-	}
-	return (ef.jump[i] - superQ) << ef.l
-}
-func (ef *EliasFano) estimateMaxValueByJumpTableIdx(i uint64) uint64 {
-	return ef.jump[i] << ef.l
-}
-func (ef *EliasFano) estimateByJumpTable(i uint64) uint64 {
-	lower := i * ef.l
-	idx64 := lower / 64
-
-	jumpSuperQ := (i / superQ) * superQSize
-	jumpInsideSuperQ := (i % superQ) / q
-	idx64 = jumpSuperQ + 1 + (jumpInsideSuperQ >> 1)
-	shift := 32 * (jumpInsideSuperQ % 2)
-	mask := uint64(0xffffffff) << shift
-	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
-	//fmt.Printf("alex: %d, %d, %d, %d\n", jump, i, (jump-i)<<ef.l, (ef.jump[jumpSuperQ+1]-i)<<ef.l)
-	return jump << ef.l
-}
-
 func (ef *EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord uint64, lower uint64) {
 	lower = i * ef.l
 	idx64 := lower / 64
@@ -187,6 +163,7 @@ func (ef *EliasFano) get(i uint64) (val uint64, window uint64, sel int, currWord
 	shift = 32 * (jumpInsideSuperQ % 2)
 	mask := uint64(0xffffffff) << shift
 	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
+
 	currWord = jump / 64
 	window = ef.upperBits[currWord] & (uint64(0xffffffffffffffff) << (jump % 64))
 	d := int(i & qMask)
@@ -227,10 +204,8 @@ func (ef *EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 
 // Search returns the value in the sequence, equal or greater than given value
 func (ef *EliasFano) Search(offset uint64) (uint64, bool) {
-	n := 0
 	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
 		val, _, _, _, _ := ef.get(uint64(i))
-		n++
 		return val >= offset
 	}))
 	if i <= ef.count {
@@ -265,14 +240,21 @@ func (ef *EliasFano) upper(i uint64) uint64 {
 }
 
 func (ef *EliasFano) Search3(v uint64) (uint64, bool) {
+	if v == 0 {
+		return ef.Min(), ef.count > 0
+	}
+	if v == ef.Max() {
+		return ef.Max(), ef.count > 0
+	}
+	if v > ef.Max() {
+		return 0, false
+	}
+
 	hi := v >> ef.l
-	n, m := 0, 0
-	i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
-		n++
+	i := sort.Search(int(ef.count+1), func(i int) bool {
 		return ef.upper(uint64(i)) >= hi
-	}))
-	for j := i; j < ef.count; j++ {
-		m++
+	})
+	for j := uint64(i); j <= ef.count; j++ {
 		val, _, _, _, _ := ef.get(j)
 		if val >= v {
 			return val, true
@@ -323,19 +305,6 @@ type EliasFanoIter struct {
 
 func (efi *EliasFanoIter) HasNext() bool {
 	return efi.idx <= efi.ef.count
-}
-
-func (efi *EliasFanoIter) Seek(v uint64) uint64 {
-	//i := uint64(sort.Search(int(ef.count+1), func(i int) bool {
-	//	val, _, _, _, _ := ef.get(uint64(i))
-	//	pr := message.NewPrinter(language.English)
-	//	pr.Printf("search: %d\n", val)
-	//	return val >= offset
-	//}))
-	//if i <= ef.count {
-	//	return ef.Get(i), true
-	//}
-	return 0
 }
 
 func (efi *EliasFanoIter) Next() (uint64, error) {
