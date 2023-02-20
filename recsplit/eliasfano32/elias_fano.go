@@ -203,14 +203,10 @@ func (ef *EliasFano) Get2(i uint64) (val uint64, valNext uint64) {
 }
 
 func (ef *EliasFano) upper(i uint64) uint64 {
-	lower := i * ef.l
-	idx64 := lower / 64
-	shift := lower % 64
-
 	jumpSuperQ := (i / superQ) * superQSize
 	jumpInsideSuperQ := (i % superQ) / q
-	idx64 = jumpSuperQ + 1 + (jumpInsideSuperQ >> 1)
-	shift = 32 * (jumpInsideSuperQ % 2)
+	idx64 := jumpSuperQ + 1 + (jumpInsideSuperQ >> 1)
+	shift := 32 * (jumpInsideSuperQ % 2)
 	mask := uint64(0xffffffff) << shift
 	jump := ef.jump[jumpSuperQ] + (ef.jump[idx64]&mask)>>shift
 	currWord := jump / 64
