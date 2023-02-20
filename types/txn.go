@@ -407,7 +407,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		}
 	}
 	if _, err = ctx.Keccak2.Write(payload[sigHashPos:sigHashEnd]); err != nil {
-		return 0, fmt.Errorf("%w: computing signHash: %s", ErrParseTxn, err)
+		return 0, fmt.Errorf("%w: computing signHash: %s", ErrParseTxn, err) //nolint
 	}
 	if legacy {
 		if chainIDLen > 0 {
@@ -430,7 +430,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			ctx.buf[0] = 128
 			ctx.buf[1] = 128
 			if _, err := ctx.Keccak2.Write(ctx.buf[:2]); err != nil {
-				return 0, fmt.Errorf("%w: computing signHash (hashing zeros after legacy chainId): %s", ErrParseTxn, err)
+				return 0, fmt.Errorf("%w: computing signHash (hashing zeros after legacy chainId): %s", ErrParseTxn, err) //nolint
 			}
 		}
 	}
@@ -448,12 +448,12 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	ctx.Sig[64] = vByte
 	// recover sender
 	if _, err = secp256k1.RecoverPubkeyWithContext(secp256k1.DefaultContext, ctx.Sighash[:], ctx.Sig[:], ctx.buf[:0]); err != nil {
-		return 0, fmt.Errorf("%w: recovering sender from signature: %s", ErrParseTxn, err)
+		return 0, fmt.Errorf("%w: recovering sender from signature: %s", ErrParseTxn, err) //nolint
 	}
 	//apply keccak to the public key
 	ctx.Keccak2.Reset()
 	if _, err = ctx.Keccak2.Write(ctx.buf[1:65]); err != nil {
-		return 0, fmt.Errorf("%w: computing sender from public key: %s", ErrParseTxn, err)
+		return 0, fmt.Errorf("%w: computing sender from public key: %s", ErrParseTxn, err) //nolint
 	}
 	// squeeze the hash of the public key
 	//ctx.keccak2.Sum(ctx.buf[:0])
