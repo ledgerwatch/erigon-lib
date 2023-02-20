@@ -32,7 +32,7 @@ require (
 	github.com/tidwall/btree v1.6.0
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.6.0
-	golang.org/x/exp v0.0.0-20230206171751-46f607a40771
+	golang.org/x/exp v0.0.0-20230213192124-5e25df0256eb
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.5.0
 	golang.org/x/time v0.3.0
