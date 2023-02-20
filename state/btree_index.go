@@ -261,9 +261,6 @@ func (a *btAlloc) traverseTrick() {
 
 func (a *btAlloc) traverseDfs() {
 	for l := 0; l < len(a.sons)-1; l++ {
-		//if len(a.sons[l]) < 2 {
-		//	panic("invalid btree allocation markup")
-		//}
 		a.cursors[l] = markupCursor{uint64(l), 1, 0, 0}
 		a.nodes[l] = make([]node, 0)
 	}
@@ -1061,29 +1058,4 @@ func (b *BtIndex) OrdinalLookup(i uint64) *Cursor {
 	return &Cursor{
 		key: k, value: v, d: i, ix: b.alloc,
 	}
-}
-
-func (b *BtIndex) ExtractOffsets() map[uint64]uint64 {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (b *BtIndex) DisableReadAhead() {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (b *BtIndex) EnableReadAhead() *interface{} {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (b *BtIndex) EnableMadvNormal() *interface{} {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (b *BtIndex) EnableWillNeed() *interface{} {
-	//TODO implement me
-	panic("implement me")
 }
