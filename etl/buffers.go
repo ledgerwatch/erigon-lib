@@ -31,6 +31,8 @@ import (
 const (
 	//SliceBuffer - just simple slice w
 	SortableSliceBuffer = iota
+	//DupSortBuffer - guarantee keys and values sort
+	DupSortBuffer = iota
 	//SortableAppendBuffer - map[k] [v1 v2 v3]
 	SortableAppendBuffer
 	// SortableOldestAppearedBuffer - buffer that keeps only the oldest entries.
@@ -60,6 +62,7 @@ type sortableBufferEntry struct {
 
 var (
 	_ Buffer = &sortableBuffer{}
+	_ Buffer = &dupSortBuffer{}
 	_ Buffer = &appendSortableBuffer{}
 	_ Buffer = &oldestEntrySortableBuffer{}
 )
@@ -145,6 +148,108 @@ func (b *sortableBuffer) CheckFlushSize() bool {
 }
 
 func (b *sortableBuffer) Write(w io.Writer) error {
+	var numBuf [binary.MaxVarintLen64]byte
+	for i, offset := range b.offsets {
+		l := b.lens[i]
+		n := binary.PutUvarint(numBuf[:], uint64(l))
+		if _, err := w.Write(numBuf[:n]); err != nil {
+			return err
+		}
+		if _, err := w.Write(b.data[offset : offset+l]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func NewDupSortBuffer(bufferOptimalSize datasize.ByteSize) *dupSortBuffer {
+	return &dupSortBuffer{
+		optimalSize: int(bufferOptimalSize.Bytes()),
+	}
+}
+
+type dupSortBuffer struct {
+	offsets     []int
+	lens        []int
+	data        []byte
+	optimalSize int
+}
+
+// Put adds key and value to the buffer. These slices will not be accessed later,
+// so no copying is necessary
+func (b *dupSortBuffer) Put(k, v []byte) {
+	b.offsets = append(b.offsets, len(b.data))
+	b.lens = append(b.lens, len(k))
+	if len(k) > 0 {
+		b.data = append(b.data, k...)
+	}
+	b.offsets = append(b.offsets, len(b.data))
+	b.lens = append(b.lens, len(v))
+	if len(v) > 0 {
+		b.data = append(b.data, v...)
+	}
+}
+
+func (b *dupSortBuffer) Size() int {
+	return len(b.data) + 8*len(b.offsets) + 8*len(b.lens)
+}
+
+func (b *dupSortBuffer) Len() int {
+	return len(b.offsets) / 2
+}
+
+func (b *dupSortBuffer) Less(i, j int) bool {
+	i2, j2 := i*2, j*2
+	ki := b.data[b.offsets[i2] : b.offsets[i2]+b.lens[i2]]
+	kj := b.data[b.offsets[j2] : b.offsets[j2]+b.lens[j2]]
+	//return bytes.Compare(ki, kj) < 0
+	cmp := bytes.Compare(ki, kj)
+	if cmp != 0 {
+		return cmp < 0
+	}
+	vi := b.data[b.offsets[i2+1] : b.offsets[i2+1]+b.lens[i2+1]]
+	vj := b.data[b.offsets[j2+1] : b.offsets[j2+1]+b.lens[j2+1]]
+	return bytes.Compare(vi, vj) < 0
+}
+
+func (b *dupSortBuffer) Swap(i, j int) {
+	i2, j2 := i*2, j*2
+	b.offsets[i2], b.offsets[j2] = b.offsets[j2], b.offsets[i2]
+	b.offsets[i2+1], b.offsets[j2+1] = b.offsets[j2+1], b.offsets[i2+1]
+	b.lens[i2], b.lens[j2] = b.lens[j2], b.lens[i2]
+	b.lens[i2+1], b.lens[j2+1] = b.lens[j2+1], b.lens[i2+1]
+}
+
+func (b *dupSortBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
+	i2 := i * 2
+	keyOffset, valOffset := b.offsets[i2], b.offsets[i2+1]
+	keyLen, valLen := b.lens[i2], b.lens[i2+1]
+	if keyLen > 0 {
+		keyBuf = append(keyBuf, b.data[keyOffset:keyOffset+keyLen]...)
+	}
+	if valLen > 0 {
+		valBuf = append(valBuf, b.data[valOffset:valOffset+valLen]...)
+	}
+	return keyBuf, valBuf
+}
+
+func (b *dupSortBuffer) Reset() {
+	b.offsets = b.offsets[:0]
+	b.lens = b.lens[:0]
+	b.data = b.data[:0]
+}
+func (b *dupSortBuffer) Sort() {
+	if sort.IsSorted(b) {
+		return
+	}
+	sort.Stable(b)
+}
+
+func (b *dupSortBuffer) CheckFlushSize() bool {
+	return b.Size() >= b.optimalSize
+}
+
+func (b *dupSortBuffer) Write(w io.Writer) error {
 	var numBuf [binary.MaxVarintLen64]byte
 	for i, offset := range b.offsets {
 		l := b.lens[i]
@@ -336,6 +441,8 @@ func getBufferByType(tp int, size datasize.ByteSize) Buffer {
 		return NewAppendBuffer(size)
 	case SortableOldestAppearedBuffer:
 		return NewOldestEntryBuffer(size)
+	case DupSortBuffer:
+		return NewDupSortBuffer(size)
 	default:
 		panic("unknown buffer type " + strconv.Itoa(tp))
 	}
@@ -349,6 +456,8 @@ func getTypeByBuffer(b Buffer) int {
 		return SortableAppendBuffer
 	case *oldestEntrySortableBuffer:
 		return SortableOldestAppearedBuffer
+	case *dupSortBuffer:
+		return DupSortBuffer
 	default:
 		panic(fmt.Sprintf("unknown buffer type: %T ", b))
 	}

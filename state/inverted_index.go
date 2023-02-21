@@ -442,10 +442,10 @@ func (ii *invertedIndexWAL) Flush(ctx context.Context, tx kv.RwTx) error {
 		return nil
 	}
 	if ii.buffered {
-		if err := ii.indexFlushing.Load(tx, ii.ii.indexTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+		if err := ii.indexFlushing.Load(tx, ii.ii.indexTable, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return err
 		}
-		if err := ii.indexKeysFlushing.Load(tx, ii.ii.indexKeysTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+		if err := ii.indexKeysFlushing.Load(tx, ii.ii.indexKeysTable, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return err
 		}
 	}
@@ -486,10 +486,10 @@ func (ii *InvertedIndex) newWriter(tmpdir string, buffered, discard bool) *inver
 	}
 	if buffered {
 		// etl collector doesn't fsync: means if have enough ram, all files produced by all collectors will be in ram
-		w.index = etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
-		w.indexFlushing = etl.NewCollector(ii.indexTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
-		w.indexKeys = etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
-		w.indexKeysFlushing = etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
+		w.index = etl.NewCollector(ii.indexTable, tmpdir, etl.NewDupSortBuffer(WALCollectorRam))
+		w.indexFlushing = etl.NewCollector(ii.indexTable, tmpdir, etl.NewDupSortBuffer(WALCollectorRam))
+		w.indexKeys = etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewDupSortBuffer(WALCollectorRam))
+		w.indexKeysFlushing = etl.NewCollector(ii.indexKeysTable, tmpdir, etl.NewDupSortBuffer(WALCollectorRam))
 		w.index.LogLvl(log.LvlTrace)
 		w.indexFlushing.LogLvl(log.LvlTrace)
 		w.indexKeys.LogLvl(log.LvlTrace)
@@ -499,6 +499,9 @@ func (ii *InvertedIndex) newWriter(tmpdir string, buffered, discard bool) *inver
 }
 
 func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
+	//if ii.ii.filenameBase == "accounts" && bytes.HasPrefix(key, []byte{0x00}) {
+	//	fmt.Printf("add: %s, %d, %x, %x\n", ii.ii.filenameBase, ii.ii.txNum, key, indexKey)
+	//}
 	if ii.discard {
 		return nil
 	}

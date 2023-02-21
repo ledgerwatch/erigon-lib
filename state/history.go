@@ -545,8 +545,8 @@ func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
 		historyKey:       make([]byte, 0, 128),
 	}
 	if buffered {
-		w.historyVals = etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
-		w.historyValsFlushing = etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
+		w.historyVals = etl.NewCollector(h.historyValsTable, tmpdir, etl.NewDupSortBuffer(WALCollectorRam))
+		w.historyValsFlushing = etl.NewCollector(h.historyValsTable, tmpdir, etl.NewDupSortBuffer(WALCollectorRam))
 		w.historyVals.LogLvl(log.LvlTrace)
 		w.historyValsFlushing.LogLvl(log.LvlTrace)
 	}
@@ -573,7 +573,7 @@ func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 		return err
 	}
 	if h.buffered {
-		if err := h.historyValsFlushing.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+		if err := h.historyValsFlushing.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return err
 		}
 	}
@@ -625,6 +625,10 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		//	return err
 		//}
 
+		//if h.h.filenameBase == "accounts" && bytes.HasPrefix(key1, []byte{0x00}) {
+		//	fmt.Printf("add hist val: %x, %x\n", historyKey[lk:], original)
+		//}
+
 		if h.buffered {
 			if err := h.historyVals.Collect(historyKey[lk:], original); err != nil {
 				return err
@@ -638,6 +642,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		binary.BigEndian.PutUint64(historyKey[lk:], 0)
 	}
 
+	fmt.Printf("h.ii.add: %s, %x, %x\n", h.h.filenameBase, historyKey, historyKey[:lk])
 	if err := h.h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
 		return err
 	}
