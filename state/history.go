@@ -565,7 +565,7 @@ func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
 }
 
 func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
-	if h.discard {
+	if h.discard && !h.buffered {
 		return nil
 	}
 	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrementFlush)
