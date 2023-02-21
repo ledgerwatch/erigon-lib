@@ -460,7 +460,7 @@ func (db *MdbxKV) Close() {
 	}
 }
 
-func (db *MdbxKV) PathDbMap() map[string]kv.RoDB {
+func PathDbMap() map[string]kv.RoDB {
 	pathDbMapLock.Lock()
 	defer pathDbMapLock.Unlock()
 	result := map[string]kv.RoDB{}
