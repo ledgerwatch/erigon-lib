@@ -186,6 +186,8 @@ func (opts MdbxOpts) WithTableCfg(f TableCfgFunc) MdbxOpts {
 	return opts
 }
 
+var PathDbMap = map[string]kv.RwDB{}
+
 func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if dbg.WriteMap() {
 		opts = opts.WriteMap() //nolint
@@ -368,6 +370,10 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 
 	}
+	if !opts.inMem {
+		db.path = opts.path
+		PathDbMap[opts.path] = db
+	}
 	return db, nil
 }
 
@@ -388,6 +394,7 @@ type MdbxKV struct {
 	opts         MdbxOpts
 	txSize       uint64
 	closed       atomic.Bool
+	path         string
 }
 
 func (db *MdbxKV) PageSize() uint64 { return db.opts.pageSize }
@@ -443,6 +450,8 @@ func (db *MdbxKV) Close() {
 		if err := os.RemoveAll(db.opts.path); err != nil {
 			db.log.Warn("failed to remove in-mem db file", "err", err)
 		}
+	} else {
+		delete(PathDbMap, db.path)
 	}
 }
 
