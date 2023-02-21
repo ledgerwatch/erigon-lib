@@ -239,10 +239,7 @@ func (b *dupSortBuffer) Reset() {
 	b.data = b.data[:0]
 }
 func (b *dupSortBuffer) Sort() {
-	if sort.IsSorted(b) {
-		return
-	}
-	sort.Stable(b)
+	sort.Sort(b)
 }
 
 func (b *dupSortBuffer) CheckFlushSize() bool {
