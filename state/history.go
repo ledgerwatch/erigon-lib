@@ -642,7 +642,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		binary.BigEndian.PutUint64(historyKey[lk:], 0)
 	}
 
-	fmt.Printf("h.ii.add: %s, %x, %x\n", h.h.filenameBase, historyKey, historyKey[:lk])
+	//fmt.Printf("h.ii.add: %s, %x, %x\n", h.h.filenameBase, historyKey, historyKey[:lk])
 	if err := h.h.InvertedIndex.add(historyKey, historyKey[:lk]); err != nil {
 		return err
 	}
