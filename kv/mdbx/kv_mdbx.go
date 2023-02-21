@@ -186,7 +186,8 @@ func (opts MdbxOpts) WithTableCfg(f TableCfgFunc) MdbxOpts {
 	return opts
 }
 
-var PathDbMap = map[string]kv.RwDB{}
+var pathDbMap = map[string]kv.RwDB{}
+var pathDbMapLock sync.Mutex
 
 func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if dbg.WriteMap() {
@@ -372,7 +373,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 	if !opts.inMem {
 		db.path = opts.path
-		PathDbMap[opts.path] = db
+		pathDbMapLock.Lock()
+		defer pathDbMapLock.Unlock()
+		pathDbMap[opts.path] = db
 	}
 	return db, nil
 }
@@ -451,8 +454,20 @@ func (db *MdbxKV) Close() {
 			db.log.Warn("failed to remove in-mem db file", "err", err)
 		}
 	} else {
-		delete(PathDbMap, db.path)
+		pathDbMapLock.Lock()
+		defer pathDbMapLock.Unlock()
+		delete(pathDbMap, db.path)
 	}
+}
+
+func (db *MdbxKV) PathDbMap() map[string]kv.RoDB {
+	pathDbMapLock.Lock()
+	defer pathDbMapLock.Unlock()
+	result := map[string]kv.RoDB{}
+	for path, db := range pathDbMap {
+		result[path] = db
+	}
+	return result
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
