@@ -499,13 +499,14 @@ func (ii *InvertedIndex) newWriter(tmpdir string, buffered, discard bool) *inver
 }
 
 func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
-	//if ii.ii.filenameBase == "accounts" && bytes.HasPrefix(key, []byte{0x00}) {
-	//	fmt.Printf("add: %s, %d, %x, %x\n", ii.ii.filenameBase, ii.ii.txNum, key, indexKey)
-	//}
 	if ii.discard {
 		return nil
 	}
 
+	//if ii.ii.filenameBase == "accounts" && bytes.HasPrefix(key, make([]byte, 20)) {
+	//	fmt.Printf("idxKeys: %x, %x\n", ii.ii.txNumBytes[:], key)
+	//	fmt.Printf("idx: %x, %x, %s\n", indexKey, ii.ii.txNumBytes[:], dbg.Stack())
+	//}
 	if ii.buffered {
 		if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
 			return err

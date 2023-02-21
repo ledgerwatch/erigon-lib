@@ -205,6 +205,7 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 			}
 			return nil
 		}
+
 		if canUseAppend {
 			if isDupSort {
 				if err := cursor.(kv.RwCursorDupSort).AppendDup(k, v); err != nil {

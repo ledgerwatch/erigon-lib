@@ -625,7 +625,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		//	return err
 		//}
 
-		//if h.h.filenameBase == "accounts" && bytes.HasPrefix(key1, []byte{0x00}) {
+		//if h.h.filenameBase == "accounts" && bytes.HasPrefix(key1, make([]byte, 20)) {
 		//	fmt.Printf("add hist val: %x, %x\n", historyKey[lk:], original)
 		//}
 
