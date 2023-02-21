@@ -400,15 +400,10 @@ func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.add(key, key)
 }
 
-func (ii *InvertedIndex) DiscardHistory(tmpdir string) {
+func (ii *InvertedIndex) StartWrites(bufferewd, discard bool) {
 	ii.walLock.Lock()
 	defer ii.walLock.Unlock()
-	ii.wal = ii.newWriter(tmpdir, false, true)
-}
-func (ii *InvertedIndex) StartWrites() {
-	ii.walLock.Lock()
-	defer ii.walLock.Unlock()
-	ii.wal = ii.newWriter(ii.tmpdir, WALCollectorRam > 0, false)
+	ii.wal = ii.newWriter(ii.tmpdir, bufferewd, discard)
 }
 func (ii *InvertedIndex) FinishWrites() {
 	ii.walLock.Lock()
