@@ -572,6 +572,7 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		bufPos += int(pos) - 1 // Positions where to insert patterns are encoded relative to one another
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
+			g.touch(postLoopPos)
 			copy(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
 			postLoopPos += dif
 		}
@@ -579,6 +580,7 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	}
 	if int(wordLen) > lastUncovered {
 		dif := wordLen - uint64(lastUncovered)
+		g.touch(postLoopPos)
 		copy(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
 		postLoopPos += dif
 	}
@@ -587,6 +589,7 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 	return buf, postLoopPos
 }
 
+func (g *Getter) touch(pos uint64) { _ = g.data[pos] }
 func (g *Getter) NextUncompressed() ([]byte, uint64) {
 	defer func() {
 		if rec := recover(); rec != nil {
