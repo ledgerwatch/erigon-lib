@@ -565,15 +565,17 @@ func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
 }
 
 func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
-	if h.discard && !h.buffered {
+	if h.discard {
 		return nil
 	}
 	binary.BigEndian.PutUint64(h.autoIncrementBuf, h.autoIncrementFlush)
 	if err := tx.Put(h.h.settingsTable, historyValCountKey, h.autoIncrementBuf); err != nil {
 		return err
 	}
-	if err := h.historyValsFlushing.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
-		return err
+	if h.buffered {
+		if err := h.historyValsFlushing.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
