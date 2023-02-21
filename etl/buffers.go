@@ -31,13 +31,13 @@ import (
 const (
 	//SliceBuffer - just simple slice w
 	SortableSliceBuffer = iota
-	//DupSortBuffer - guarantee keys and values sort
-	DupSortBuffer = iota
 	//SortableAppendBuffer - map[k] [v1 v2 v3]
 	SortableAppendBuffer
 	// SortableOldestAppearedBuffer - buffer that keeps only the oldest entries.
 	// if first v1 was added under key K, then v2; only v1 will stay
 	SortableOldestAppearedBuffer
+	//DupSortBuffer - guarantee keys and values sort
+	DupSortBuffer
 
 	//BufIOSize - 128 pages | default is 1 page | increasing over `64 * 4096` doesn't show speedup on SSD/NVMe, but show speedup in cloud drives
 	BufIOSize = 128 * 4096
