@@ -61,11 +61,7 @@ type Aggregator struct {
 	defaultCtx      *AggregatorContext
 }
 
-func NewAggregator(
-	dir, tmpdir string,
-	aggregationStep uint64,
-) (*Aggregator, error) {
-
+func NewAggregator(dir, tmpdir string, aggregationStep uint64, commitmentMode CommitmentMode, commitTrieVariant commitment.TrieVariant) (*Aggregator, error) {
 	a := &Aggregator{aggregationStep: aggregationStep, tmpdir: tmpdir, stepDoneNotice: make(chan [length.Hash]byte, 1)}
 
 	closeAgg := true
@@ -92,7 +88,7 @@ func NewAggregator(
 	if err != nil {
 		return nil, err
 	}
-	a.commitment = NewCommittedDomain(commitd, CommitmentModeDirect)
+	a.commitment = NewCommittedDomain(commitd, commitmentMode, commitTrieVariant)
 
 	if a.logAddrs, err = NewInvertedIndex(dir, tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, false, nil); err != nil {
 		return nil, err

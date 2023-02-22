@@ -17,6 +17,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/compress"
@@ -34,7 +35,7 @@ func testDbAndAggregator(t *testing.T, aggStep uint64) (string, kv.RwDB, *Aggreg
 		return kv.ChaindataTablesCfg
 	}).MustOpen()
 	t.Cleanup(db.Close)
-	agg, err := NewAggregator(path, path, aggStep)
+	agg, err := NewAggregator(path, path, aggStep, CommitmentModeDirect, commitment.VariantHexPatriciaTrie)
 	require.NoError(t, err)
 	t.Cleanup(agg.Close)
 	return path, db, agg
@@ -179,7 +180,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 	tx = nil
 
 	// Start another aggregator on same datadir
-	anotherAgg, err := NewAggregator(path, path, aggStep)
+	anotherAgg, err := NewAggregator(path, path, aggStep, CommitmentModeDirect, commitment.VariantHexPatriciaTrie)
 	require.NoError(t, err)
 	require.NoError(t, anotherAgg.ReopenFolder())
 
@@ -283,7 +284,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	require.NoError(t, err)
 	defer newTx.Rollback()
 
-	newAgg, err := NewAggregator(path, path, aggStep)
+	newAgg, err := NewAggregator(path, path, aggStep, CommitmentModeDirect, commitment.VariantHexPatriciaTrie)
 	require.NoError(t, err)
 	require.NoError(t, newAgg.ReopenFolder())
 	defer newAgg.Close()

@@ -13,6 +13,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ledgerwatch/erigon-lib/commitment"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
@@ -27,7 +28,7 @@ func testDbAndAggregatorBench(b *testing.B, aggStep uint64) (string, kv.RwDB, *A
 		return kv.ChaindataTablesCfg
 	}).MustOpen()
 	b.Cleanup(db.Close)
-	agg, err := NewAggregator(path, path, aggStep)
+	agg, err := NewAggregator(path, path, aggStep, CommitmentModeDirect, commitment.VariantHexPatriciaTrie)
 	require.NoError(b, err)
 	b.Cleanup(agg.Close)
 	return path, db, agg

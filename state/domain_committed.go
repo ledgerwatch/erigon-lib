@@ -53,14 +53,14 @@ type DomainCommitted struct {
 	trace        bool
 	commTree     *btree.BTreeG[*CommitmentItem]
 	keccak       hash.Hash
-	patriciaTrie *commitment.HexPatriciaHashed
+	patriciaTrie commitment.Trie
 	branchMerger *commitment.BranchMerger
 }
 
-func NewCommittedDomain(d *Domain, mode CommitmentMode) *DomainCommitted {
+func NewCommittedDomain(d *Domain, mode CommitmentMode, trieVariant commitment.TrieVariant) *DomainCommitted {
 	return &DomainCommitted{
 		Domain:       d,
-		patriciaTrie: commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
+		patriciaTrie: commitment.InitializeTrie(trieVariant),
 		commTree:     btree.NewG[*CommitmentItem](32, commitmentItemLess),
 		keccak:       sha3.NewLegacyKeccak256(),
 		mode:         mode,
@@ -189,9 +189,17 @@ func (d *DomainCommitted) hashAndNibblizeKey(key []byte) []byte {
 }
 
 func (d *DomainCommitted) storeCommitmentState(blockNum, txNum uint64) error {
-	state, err := d.patriciaTrie.EncodeCurrentState(nil)
-	if err != nil {
-		return err
+	var state []byte
+	var err error
+
+	switch trie := (d.patriciaTrie).(type) {
+	case *commitment.HexPatriciaHashed:
+		state, err = trie.EncodeCurrentState(nil)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported state storing for patricia trie type: %T", d.patriciaTrie)
 	}
 	cs := &commitmentState{txNum: txNum, trieState: state, blockNum: blockNum}
 	encoded, err := cs.Encode()
@@ -523,12 +531,18 @@ var keyCommitmentState = []byte("state")
 // SeekCommitment searches for last encoded state from DomainCommitted
 // and if state found, sets it up to current domain
 func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error) {
+	if d.patriciaTrie.Variant() != commitment.VariantHexPatriciaTrie {
+		return 0, fmt.Errorf("state storing is only supported hex patricia trie")
+	}
+	// todo add support of bin state dumping
+
 	var (
 		latestState []byte
 		stepbuf     [2]byte
-		step        uint16 = uint16(sinceTx/aggStep) - 1
+		step               = uint16(sinceTx/aggStep) - 1
 		latestTxNum uint64 = sinceTx - 1
 	)
+
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()
 
@@ -547,7 +561,7 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error
 			break
 		}
 		latestTxNum, latestState = v, s
-		lookupTxN := latestTxNum + aggStep // - 1
+		lookupTxN := latestTxNum + aggStep
 		step = uint16(latestTxNum/aggStep) + 1
 		d.SetTxNum(lookupTxN)
 	}
@@ -557,9 +571,14 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error
 		return 0, nil
 	}
 
-	if err := d.patriciaTrie.SetState(latest.trieState); err != nil {
-		return 0, err
+	if hext, ok := d.patriciaTrie.(*commitment.HexPatriciaHashed); ok {
+		if err := hext.SetState(latest.trieState); err != nil {
+			return 0, err
+		}
+	} else {
+		return 0, fmt.Errorf("state storing is only supported hex patricia trie")
 	}
+
 	return latest.txNum, nil
 }
 
