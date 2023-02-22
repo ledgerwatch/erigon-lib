@@ -145,7 +145,6 @@ type Domain struct {
 	keysTable   string // key -> invertedStep , invertedStep = ^(txNum / aggregationStep), Needs to be table with DupSort
 	valsTable   string // key + invertedStep -> values
 	stats       DomainStats
-	prefixLen   int // Number of bytes in the keys that can be used for prefix iteration
 	mergesCount uint64
 }
 
@@ -159,15 +158,13 @@ func NewDomain(
 	historyValsTable string,
 	settingsTable string,
 	indexTable string,
-	prefixLen int,
 	compressVals bool,
 ) (*Domain, error) {
 	d := &Domain{
 		keysTable: keysTable,
 		valsTable: valsTable,
-		//prefixLen: prefixLen,
-		files:   btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
-		roFiles: *atomic2.NewPointer(&[]ctxItem{}),
+		files:     btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
+		roFiles:   *atomic2.NewPointer(&[]ctxItem{}),
 	}
 
 	var err error
@@ -706,14 +703,10 @@ func (dc *DomainContext) Close() {
 }
 
 // IteratePrefix iterates over key-value pairs of the domain that start with given prefix
-// The length of the prefix has to match the `prefixLen` parameter used to create the domain
 // Such iteration is not intended to be used in public API, therefore it uses read-write transaction
 // inside the domain. Another version of this for public API use needs to be created, that uses
 // roTx instead and supports ending the iterations before it reaches the end.
 func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
-	//if len(prefix) != dc.d.prefixLen {
-	//	return fmt.Errorf("wrong prefix length, this %s domain supports prefixLen %d, given [%x]", dc.d.filenameBase, dc.d.prefixLen, prefix)
-	//}
 	atomic.AddUint64(&dc.d.stats.HistoryQueries, 1)
 
 	var cp CursorHeap
@@ -985,7 +978,6 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 	defer keysCursor.Close()
 
 	var (
-		//prefix      []byte // Track prefix to insert it before entries
 		k, v        []byte
 		pos         uint64
 		valuesCount uint
@@ -1020,16 +1012,6 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 			if err != nil {
 				return Collation{}, fmt.Errorf("find last %s value for aggregation step k=[%x]: %w", d.filenameBase, k, err)
 			}
-			//if d.prefixLen > 0 && (prefix == nil || !bytes.HasPrefix(k, prefix)) {
-			//	prefix = append(prefix[:0], k[:d.prefixLen]...)
-			//	if err = valuesComp.AddUncompressedWord(prefix); err != nil {
-			//		return Collation{}, fmt.Errorf("add %s values prefix [%x]: %w", d.filenameBase, prefix, err)
-			//	}
-			//	if err = valuesComp.AddUncompressedWord(nil); err != nil {
-			//		return Collation{}, fmt.Errorf("add %s values prefix val [%x]: %w", d.filenameBase, prefix, err)
-			//	}
-			//	valuesCount++
-			//}
 			if err = valuesComp.AddUncompressedWord(k); err != nil {
 				return Collation{}, fmt.Errorf("add %s values key [%x]: %w", d.filenameBase, k, err)
 			}

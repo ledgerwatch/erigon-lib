@@ -18,7 +18,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 )
 
-func testDbAndAggregatorBench(b *testing.B, prefixLen int, aggStep uint64) (string, kv.RwDB, *Aggregator) {
+func testDbAndAggregatorBench(b *testing.B, aggStep uint64) (string, kv.RwDB, *Aggregator) {
 	b.Helper()
 	path := b.TempDir()
 	b.Cleanup(func() { os.RemoveAll(path) })
@@ -41,7 +41,7 @@ func BenchmarkAggregator_Processing(b *testing.B) {
 	vals := queueKeys(ctx, 53, length.Hash)
 
 	aggStep := uint64(100_00)
-	_, db, agg := testDbAndAggregatorBench(b, length.Addr, aggStep)
+	_, db, agg := testDbAndAggregatorBench(b, aggStep)
 
 	tx, err := db.BeginRw(ctx)
 	require.NoError(b, err)

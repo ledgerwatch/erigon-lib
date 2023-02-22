@@ -25,7 +25,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/recsplit"
 )
 
-func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, kv.RwDB, *Aggregator) {
+func testDbAndAggregator(t *testing.T, aggStep uint64) (string, kv.RwDB, *Aggregator) {
 	t.Helper()
 	path := t.TempDir()
 	t.Cleanup(func() { os.RemoveAll(path) })
@@ -41,7 +41,7 @@ func testDbAndAggregator(t *testing.T, prefixLen int, aggStep uint64) (string, k
 }
 
 func TestAggregator_Merge(t *testing.T) {
-	_, db, agg := testDbAndAggregator(t, 0, 100)
+	_, db, agg := testDbAndAggregator(t, 100)
 
 	tx, err := db.BeginRwNosync(context.Background())
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestAggregator_Merge(t *testing.T) {
 // - new aggregator SeekCommitment must return txNum equal to amount of total txns
 func TestAggregator_RestartOnDatadir(t *testing.T) {
 	aggStep := uint64(50)
-	path, db, agg := testDbAndAggregator(t, 0, aggStep)
+	path, db, agg := testDbAndAggregator(t, aggStep)
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
@@ -219,7 +219,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 func TestAggregator_RestartOnFiles(t *testing.T) {
 	aggStep := uint64(100)
 
-	path, db, agg := testDbAndAggregator(t, 0, aggStep)
+	path, db, agg := testDbAndAggregator(t, aggStep)
 	defer db.Close()
 	_ = path
 
@@ -324,7 +324,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
 	aggStep := uint64(10000)
 
-	path, db, agg := testDbAndAggregator(t, 0, aggStep)
+	path, db, agg := testDbAndAggregator(t, aggStep)
 	defer db.Close()
 	_ = path
 
