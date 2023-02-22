@@ -34,13 +34,6 @@ func min64(a, b uint64) uint64 {
 	return b
 }
 
-func max64(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 type markupCursor struct {
 	l, p, di, si uint64
 	//l - level
@@ -172,7 +165,7 @@ func newBtAlloc(k, M uint64, trace bool) *btAlloc {
 	a.N = ncount
 
 	if trace {
-		fmt.Printf("ncount=%d ∂%.5f\n", ncount, float64(a.N-uint64(k))/float64(a.N))
+		fmt.Printf("ncount=%d ∂%.5f\n", ncount, float64(a.N-k)/float64(a.N))
 		for i, v := range a.sons {
 			fmt.Printf("L%d=%v\n", i, v)
 		}
@@ -181,6 +174,8 @@ func newBtAlloc(k, M uint64, trace bool) *btAlloc {
 	return a
 }
 
+// nolint
+// another implementation of traverseDfs supposed to be a bit cleaner but buggy yet
 func (a *btAlloc) traverseTrick() {
 	for l := 0; l < len(a.sons)-1; l++ {
 		if len(a.sons[l]) < 2 {
@@ -330,6 +325,7 @@ func (a *btAlloc) traverseDfs() {
 		a.cursors[c.l] = c
 		a.cursors[pc.l] = pc
 
+		//nolint
 		for l := pc.l; l >= 0; l-- {
 			pc := a.cursors[l]
 			uncles := a.sons[pc.l][pc.p]
@@ -460,7 +456,7 @@ func (a *btAlloc) Seek(ik []byte) (*Cursor, error) {
 	var (
 		lm, rm     int64
 		L, R       = uint64(0), uint64(len(a.nodes[0]) - 1)
-		minD, maxD = uint64(0), uint64(a.K)
+		minD, maxD = uint64(0), a.K
 		ln         node
 	)
 
@@ -608,9 +604,7 @@ type BtIndexWriter struct {
 	lvl             log.Lvl
 	maxOffset       uint64
 	prevOffset      uint64
-	delta           uint64
 	minDelta        uint64
-	batchSizeLimit  uint64
 	indexW          *bufio.Writer
 	indexF          *os.File
 	bucketCollector *etl.Collector // Collector that sorts by buckets
@@ -675,7 +669,6 @@ func (btw *BtIndexWriter) loadFuncBucket(k, v []byte, _ etl.CurrentTableReader, 
 	//btw.vals = append(btw.vals, binary.BigEndian.Uint64(v))
 	return nil
 }
-
 
 // Build has to be called after all the keys have been added, and it initiates the process
 // of building the perfect hash function and writing index into a file
@@ -761,19 +754,17 @@ func (btw *BtIndexWriter) AddKey(key []byte, offset uint64) error {
 }
 
 type BtIndex struct {
-	alloc       *btAlloc
-	mmapWin     *[mmap.MaxMapSize]byte
-	mmapUnix    []byte
-	data        []byte
-	file        *os.File
-	size        int64
-	modTime     time.Time
-	filePath    string
-	keyCount    uint64
-	baseDataID  uint64
-	bytesPerRec int
-	dataoffset  uint64
-
+	alloc        *btAlloc
+	mmapWin      *[mmap.MaxMapSize]byte
+	mmapUnix     []byte
+	data         []byte
+	file         *os.File
+	size         int64
+	modTime      time.Time
+	filePath     string
+	keyCount     uint64
+	bytesPerRec  int
+	dataoffset   uint64
 	auxBuf       []byte
 	decompressor *compress.Decompressor
 	getter       *compress.Getter
@@ -808,7 +799,7 @@ func BuildBtreeIndexWithDecompressor(indexPath string, kv *compress.Decompressor
 	emptys := 0
 	for getter.HasNext() {
 		key, kp := getter.Next(key[:0])
-		err = iw.AddKey(key[:], uint64(pos))
+		err = iw.AddKey(key[:], pos)
 		if err != nil {
 			return err
 		}
@@ -853,7 +844,7 @@ func BuildBtreeIndex(dataPath, indexPath string) error {
 	var pos uint64
 	for getter.HasNext() {
 		key, _ := getter.Next(key[:0])
-		err = iw.AddKey(key[:], uint64(pos))
+		err = iw.AddKey(key[:], pos)
 		if err != nil {
 			return err
 		}

@@ -505,7 +505,9 @@ func pivotKeysFromKV(dataPath string) ([][]byte, error) {
 	return listing, nil
 }
 
-func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount int) string {
+func generateCompressedKV(tb testing.TB, tmp string, keySize, valueSize, keyCount int) string {
+	tb.Helper()
+
 	args := BtIndexWriterArgs{
 		IndexFile: path.Join(tmp, fmt.Sprintf("%dk.bt", keyCount/1000)),
 		TmpDir:    tmp,
@@ -513,7 +515,7 @@ func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount
 	}
 
 	iw, err := NewBtIndexWriter(args)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	defer iw.Close()
 	rnd := rand.New(rand.NewSource(0))
@@ -521,30 +523,30 @@ func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount
 
 	dataPath := path.Join(tmp, fmt.Sprintf("%dk.kv", keyCount/1000))
 	comp, err := compress.NewCompressor(context.Background(), "cmp", dataPath, tmp, compress.MinPatternScore, 1, log.LvlDebug)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	for i := 0; i < keyCount; i++ {
 		key := make([]byte, keySize)
 		n, err := rnd.Read(key[:])
-		require.EqualValues(t, keySize, n)
+		require.EqualValues(tb, keySize, n)
 		binary.BigEndian.PutUint64(key[keySize-8:], uint64(i))
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		err = comp.AddWord(key[:])
-		require.NoError(t, err)
+		require.NoError(tb, err)
 
 		n, err = rnd.Read(values[:rnd.Intn(valueSize)+1])
-		require.NoError(t, err)
+		require.NoError(tb, err)
 
 		err = comp.AddWord(values[:n])
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 
 	err = comp.Compress()
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	comp.Close()
 
 	decomp, err := compress.NewDecompressor(dataPath)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
 	getter := decomp.MakeGetter()
 	getter.Reset(0)
@@ -553,19 +555,19 @@ func generateCompressedKV(t testing.TB, tmp string, keySize, valueSize, keyCount
 	key := make([]byte, keySize)
 	for i := 0; i < keyCount; i++ {
 		if !getter.HasNext() {
-			t.Fatalf("not enough values at %d", i)
+			tb.Fatalf("not enough values at %d", i)
 			break
 		}
 
 		keys, _ := getter.Next(key[:0])
-		err = iw.AddKey(keys[:], uint64(pos))
+		err = iw.AddKey(keys[:], pos)
 
 		pos = getter.Skip()
-		require.NoError(t, err)
+		require.NoError(tb, err)
 	}
 	decomp.Close()
 
-	require.NoError(t, iw.Build())
+	require.NoError(tb, iw.Build())
 	iw.Close()
 
 	return decomp.FilePath()

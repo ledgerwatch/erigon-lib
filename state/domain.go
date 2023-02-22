@@ -168,8 +168,8 @@ func NewDomain(
 		keysTable: keysTable,
 		valsTable: valsTable,
 		//prefixLen: prefixLen,
-		files:     btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
-		roFiles:   *atomic2.NewPointer(&[]ctxItem{}),
+		files:   btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
+		roFiles: *atomic2.NewPointer(&[]ctxItem{}),
 	}
 
 	var err error
@@ -576,8 +576,7 @@ type DomainContext struct {
 	d       *Domain
 	files   []ctxItem
 	getters []*compress.Getter
-	bts     []*BtIndex
-	readers []*recsplit.IndexReader
+	readers []*BtIndex
 	hc      *HistoryContext
 	keyBuf  [60]byte // 52b key and 8b for inverted step
 	numBuf  [8]byte
@@ -596,28 +595,17 @@ func (dc *DomainContext) statelessGetter(i int) *compress.Getter {
 }
 
 func (dc *DomainContext) statelessBtree(i int) *BtIndex {
-	if dc.bts == nil {
-		dc.bts = make([]*BtIndex, len(dc.files))
-	}
-	r := dc.bts[i]
-	if r == nil {
-		r = dc.files[i].src.bindex
-		dc.bts[i] = r
-	}
-	return r
-}
-
-func (dc *DomainContext) statelessIdxReader(i int) *recsplit.IndexReader {
 	if dc.readers == nil {
-		dc.readers = make([]*recsplit.IndexReader, len(dc.files))
+		dc.readers = make([]*BtIndex, len(dc.files))
 	}
 	r := dc.readers[i]
 	if r == nil {
-		r = recsplit.NewIndexReader(dc.files[i].src.index)
+		r = dc.files[i].src.bindex
 		dc.readers[i] = r
 	}
 	return r
 }
+
 func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
 	d.History.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {

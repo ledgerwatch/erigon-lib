@@ -237,6 +237,7 @@ func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, type
 	return found
 }
 
+// nolint
 func (d *DomainCommitted) lookupShortenedKey(shortKey, fullKey []byte, typAS string, list []*filesItem) bool {
 	fileStep, offset := shortenedKey(shortKey)
 	expected := uint64(fileStep) * d.aggregationStep
@@ -248,6 +249,7 @@ func (d *DomainCommitted) lookupShortenedKey(shortKey, fullKey []byte, typAS str
 		}
 
 		cur := item.bindex.OrdinalLookup(offset)
+		//nolint
 		fullKey = cur.Key()
 		if d.trace {
 			fmt.Printf("offsetToKey %s [%x]=>{%x} step=%d offset=%d, file=%s.%d-%d.kv\n", typAS, fullKey, shortKey, fileStep, offset, typAS, item.startTxNum, item.endTxNum)
