@@ -39,9 +39,7 @@ import (
 
 // StepsInBiggestFile - files of this size are completely frozen/immutable.
 // files of smaller size are also immutable, but can be removed after merge to bigger files.
-const StepsInBiggestFile = 4
-
-// Reconstruction of the aggregator in another package, `aggregator`
+const StepsInBiggestFile = 32
 
 type Aggregator struct {
 	aggregationStep uint64
@@ -219,9 +217,6 @@ func (a *Aggregator) SetTxNum(txNum uint64) {
 	a.tracesTo.SetTxNum(txNum)
 }
 
-// todo useless
-func (a *Aggregator) SetBlockNum(bn uint64) { a.blockNum = bn }
-
 func (a *Aggregator) SetWorkers(i int) {
 	a.accounts.compressWorkers = i
 	a.storage.compressWorkers = i
@@ -326,6 +321,7 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}
 	}
 
+	// indices are built concurrently
 	for _, d := range []*InvertedIndex{a.logTopics, a.logAddrs, a.tracesFrom, a.tracesTo} {
 		wg.Add(1)
 
@@ -370,8 +366,10 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	//ac := a.MakeContext()
-	//defer ac.Close()
+	defer func() { // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
+		a.defaultCtx.Close()
+		a.defaultCtx = a.MakeContext()
+	}()
 
 	var clo, chi, plo, phi, blo, bhi time.Duration
 	clo, plo, blo = time.Hour*99, time.Hour*99, time.Hour*99
@@ -440,14 +438,6 @@ func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, work
 		return false, nil
 	}
 
-	//ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
-	//defer ac.Close()
-
-	defer func() {
-		a.defaultCtx.Close()
-		a.defaultCtx = a.MakeContext()
-	}()
-
 	outs := a.staticFilesInRange(r, a.defaultCtx)
 	defer func() {
 		if closeAll {
@@ -492,18 +482,6 @@ type Ranges struct {
 	storage    DomainRanges
 	code       DomainRanges
 	commitment DomainRanges
-	//logTopicsEndTxNum    uint64
-	//logAddrsEndTxNum     uint64
-	//logTopicsStartTxNum  uint64
-	//logAddrsStartTxNum   uint64
-	//tracesFromStartTxNum uint64
-	//tracesFromEndTxNum   uint64
-	//tracesToStartTxNum   uint64
-	//tracesToEndTxNum     uint64
-	//logAddrs             bool
-	//logTopics            bool
-	//tracesFrom           bool
-	//tracesTo             bool
 }
 
 func (r Ranges) String() string {
@@ -537,18 +515,10 @@ type SelectedStaticFiles struct {
 	commitment     []*filesItem
 	commitmentIdx  []*filesItem
 	commitmentHist []*filesItem
-	//tracesTo       []*filesItem
-	//tracesFrom     []*filesItem
-	//logTopics      []*filesItem
-	//logAddrs       []*filesItem
-	codeI       int
-	storageI    int
-	accountsI   int
-	commitmentI int
-	//logAddrsI   int
-	//tracesFromI int
-	//logTopicsI  int
-	//tracesToI   int
+	codeI          int
+	storageI       int
+	accountsI      int
+	commitmentI    int
 }
 
 func (sf SelectedStaticFiles) Close() {
@@ -557,7 +527,6 @@ func (sf SelectedStaticFiles) Close() {
 		sf.storage, sf.storageIdx, sf.storageHist,
 		sf.code, sf.codeIdx, sf.codeHist,
 		sf.commitment, sf.commitmentIdx, sf.commitmentHist,
-		//sf.logAddrs, sf.logTopics, sf.tracesFrom, sf.tracesTo,
 	} {
 		for _, item := range group {
 			if item != nil {
@@ -601,10 +570,6 @@ type MergedFiles struct {
 	codeIdx, codeHist             *filesItem
 	commitment                    *filesItem
 	commitmentIdx, commitmentHist *filesItem
-	//logAddrs                      *filesItem
-	//logTopics                     *filesItem
-	//tracesFrom                    *filesItem
-	//tracesTo                      *filesItem
 }
 
 func (mf MergedFiles) Close() {
@@ -720,16 +685,14 @@ func (a *Aggregator) integrateMergedFiles(outs SelectedStaticFiles, in MergedFil
 	a.code.integrateMergedFiles(outs.code, outs.codeIdx, outs.codeHist, in.code, in.codeIdx, in.codeHist)
 	a.commitment.integrateMergedFiles(outs.commitment, outs.commitmentIdx, outs.commitmentHist, in.commitment, in.commitmentIdx, in.commitmentHist)
 }
+
 func (a *Aggregator) cleanAfterFreeze(in MergedFiles) {
 	a.accounts.cleanAfterFreeze(in.accountsHist)
 	a.storage.cleanAfterFreeze(in.storageHist)
 	a.code.cleanAfterFreeze(in.codeHist)
 	a.commitment.cleanAfterFreeze(in.commitment)
-	//a.logAddrs.cleanAfterFreeze(in.logAddrs)
-	//a.logTopics.cleanAfterFreeze(in.logTopics)
-	//a.tracesFrom.cleanAfterFreeze(in.tracesFrom)
-	//a.tracesTo.cleanAfterFreeze(in.tracesTo)
 }
+
 func (ac *AggregatorContext) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, error) {
 	return ac.accounts.Get(addr, nil, roTx)
 }

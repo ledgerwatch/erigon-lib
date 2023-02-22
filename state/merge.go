@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ledgerwatch/log/v3"
 
@@ -164,93 +163,6 @@ func (d *Domain) findMergeRange(maxEndTxNum, maxSpan uint64) DomainRanges {
 	return r
 }
 
-// nolint
-type mergedDomainFiles struct {
-	values  *filesItem
-	index   *filesItem
-	history *filesItem
-}
-
-// nolint
-func (m *mergedDomainFiles) Close() {
-	for _, item := range []*filesItem{
-		m.values, m.index, m.history,
-	} {
-		if item != nil {
-			if item.decompressor != nil {
-				item.decompressor.Close()
-			}
-			if item.decompressor != nil {
-				item.index.Close()
-			}
-		}
-	}
-}
-
-// nolint
-type staticFilesInRange struct {
-	valuesFiles  []*filesItem
-	indexFiles   []*filesItem
-	historyFiles []*filesItem
-	startJ       int
-}
-
-// nolint
-func (s *staticFilesInRange) Close() {
-	for _, group := range [][]*filesItem{
-		s.valuesFiles, s.indexFiles, s.historyFiles,
-	} {
-		for _, item := range group {
-			if item != nil {
-				if item.decompressor != nil {
-					item.decompressor.Close()
-				}
-				if item.index != nil {
-					item.index.Close()
-				}
-				if item.bindex != nil {
-					item.bindex.Close()
-				}
-			}
-		}
-	}
-}
-
-// nolint
-func (d *Domain) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int, dctx *DomainContext) (err error) {
-	closeAll := true
-	for rng := d.findMergeRange(maxSpan, maxTxNum); rng.any(); rng = d.findMergeRange(maxTxNum, maxSpan) {
-		var sfr staticFilesInRange
-		sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, sfr.startJ = d.staticFilesInRange(rng, dctx)
-		defer func() {
-			if closeAll {
-				sfr.Close()
-			}
-		}()
-
-		var mf mergedDomainFiles
-		if mf.values, mf.index, mf.history, err = d.mergeFiles(ctx, sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, rng, workers); err != nil {
-			return err
-		}
-		defer func() {
-			if closeAll {
-				mf.Close()
-			}
-		}()
-
-		defer func(t time.Time) { log.Info("[snapshots] merge", "took", time.Since(t)) }(time.Now())
-		d.integrateMergedFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles, mf.values, mf.index, mf.history)
-
-		// if err := d.deleteFiles(sfr.valuesFiles, sfr.indexFiles, sfr.historyFiles); err != nil {
-		// 	return err
-		// }
-
-		log.Info(fmt.Sprintf("domain files mergedRange[%d, %d) name=%s span=%d \n", rng.valuesStartTxNum, rng.valuesEndTxNum, d.filenameBase, maxSpan))
-	}
-	closeAll = false
-	return nil
-}
-
 // 0-1,1-2,2-3,3-4: allow merge 0-1
 // 0-2,2-3,3-4: allow merge 0-4
 // 0-2,2-4: allow merge 0-4
@@ -288,7 +200,6 @@ func (ii *InvertedIndex) findMergeRange(maxEndTxNum, maxSpan uint64) (bool, uint
 	return minFound, startTxNum, endTxNum
 }
 
-// nolint
 func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan uint64, workers int, ictx *InvertedIndexContext) (err error) {
 	closeAll := true
 	for updated, startTx, endTx := ii.findMergeRange(maxSpan, maxTxNum); updated; updated, startTx, endTx = ii.findMergeRange(maxTxNum, maxSpan) {
@@ -314,9 +225,7 @@ func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan 
 		}()
 
 		ii.integrateMergedFiles(staticFiles, mergedIndex)
-		// if err := ii.deleteFiles(staticFiles); err != nil {
-		// 	return err
-		// }
+		ii.cleanAfterFreeze(mergedIndex)
 	}
 	closeAll = false
 	return nil
