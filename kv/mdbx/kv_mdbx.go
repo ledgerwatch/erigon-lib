@@ -37,6 +37,7 @@ import (
 	"github.com/pbnjay/memory"
 	"github.com/torquem-ch/mdbx-go/mdbx"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -184,6 +185,27 @@ func (opts MdbxOpts) WriteMergeThreshold(v uint64) MdbxOpts {
 func (opts MdbxOpts) WithTableCfg(f TableCfgFunc) MdbxOpts {
 	opts.bucketsCfg = f
 	return opts
+}
+
+var pathDbMap = map[string]kv.RoDB{}
+var pathDbMapLock sync.Mutex
+
+func addToPathDbMap(path string, db kv.RoDB) {
+	pathDbMapLock.Lock()
+	defer pathDbMapLock.Unlock()
+	pathDbMap[path] = db
+}
+
+func removeFromPathDbMap(path string) {
+	pathDbMapLock.Lock()
+	defer pathDbMapLock.Unlock()
+	delete(pathDbMap, path)
+}
+
+func PathDbMap() map[string]kv.RoDB {
+	pathDbMapLock.Lock()
+	defer pathDbMapLock.Unlock()
+	return maps.Clone(pathDbMap)
 }
 
 func (opts MdbxOpts) Open() (kv.RwDB, error) {
@@ -368,6 +390,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 
 	}
+	db.path = opts.path
+	addToPathDbMap(opts.path, db)
 	return db, nil
 }
 
@@ -388,6 +412,7 @@ type MdbxKV struct {
 	opts         MdbxOpts
 	txSize       uint64
 	closed       atomic.Bool
+	path         string
 }
 
 func (db *MdbxKV) PageSize() uint64 { return db.opts.pageSize }
@@ -432,10 +457,9 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 // Close closes db
 // All transactions must be closed before closing the database.
 func (db *MdbxKV) Close() {
-	if db.closed.Load() {
+	if ok := db.closed.CompareAndSwap(false, true); !ok {
 		return
 	}
-	db.closed.Store(true)
 	db.wg.Wait()
 	db.env.Close()
 	db.env = nil
@@ -445,6 +469,7 @@ func (db *MdbxKV) Close() {
 			db.log.Warn("failed to remove in-mem db file", "err", err)
 		}
 	}
+	removeFromPathDbMap(db.path)
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
@@ -453,9 +478,8 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	}
 
 	// don't try to acquire if the context is already done
-	done := ctx.Done()
 	select {
-	case <-done:
+	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 		// otherwise carry on
@@ -492,11 +516,17 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 func (db *MdbxKV) BeginRw(ctx context.Context) (kv.RwTx, error) {
 	return db.beginRw(ctx, 0)
 }
-func (db *MdbxKV) BeginRwAsync(ctx context.Context) (kv.RwTx, error) {
+func (db *MdbxKV) BeginRwNosync(ctx context.Context) (kv.RwTx, error) {
 	return db.beginRw(ctx, mdbx.TxNoSync)
 }
 
 func (db *MdbxKV) beginRw(ctx context.Context, flags uint) (txn kv.RwTx, err error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if db.closed.Load() {
 		return nil, fmt.Errorf("db closed")
 	}
@@ -609,10 +639,7 @@ func (tx *MdbxTx) ListBuckets() ([]string, error) {
 }
 
 func (db *MdbxKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-	// can't use db.evn.View method - because it calls commit for read transactions - it conflicts with write transactions.
+	// can't use db.env.View method - because it calls commit for read transactions - it conflicts with write transactions.
 	tx, err := db.BeginRo(ctx)
 	if err != nil {
 		return err
@@ -622,12 +649,8 @@ func (db *MdbxKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error) 
 	return f(tx)
 }
 
-func (db *MdbxKV) UpdateAsync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-
-	tx, err := db.BeginRwAsync(ctx)
+func (db *MdbxKV) UpdateNosync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
+	tx, err := db.BeginRwNosync(ctx)
 	if err != nil {
 		return err
 	}
@@ -644,10 +667,6 @@ func (db *MdbxKV) UpdateAsync(ctx context.Context, f func(tx kv.RwTx) error) (er
 }
 
 func (db *MdbxKV) Update(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
-	if db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-
 	tx, err := db.BeginRw(ctx)
 	if err != nil {
 		return err
@@ -1011,27 +1030,6 @@ func (tx *MdbxTx) DBSize() (uint64, error) {
 		return 0, err
 	}
 	return info.Geo.Current, err
-}
-
-func (tx *MdbxTx) Reset() (err error) {
-	tx.Rollback()
-	//tx.printDebugInfo()
-	if tx.db.closed.Load() {
-		return fmt.Errorf("db closed")
-	}
-	runtime.LockOSThread()
-	defer func() {
-		if err == nil {
-			tx.db.wg.Add(1)
-		}
-	}()
-
-	tx.tx, err = tx.db.env.BeginTxn(nil, 0)
-	if err != nil {
-		runtime.UnlockOSThread() // unlock only in case of error. normal flow is "defer .Rollback()"
-		return fmt.Errorf("%w, lable: %s, trace: %s", err, tx.db.opts.label.String(), stack2.Trace().String())
-	}
-	return nil
 }
 
 func (tx *MdbxTx) RwCursor(bucket string) (kv.RwCursor, error) {

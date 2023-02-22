@@ -53,9 +53,12 @@ jobs:
         if: matrix.os == 'ubuntu-20.04'
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.50
+          version: v1.51
           args: --config=.golangci.yml --out-${NO_FUTURE}format colored-line-number
 
       - name: Test win
         if: matrix.os == 'windows-2022'
         run: make test-no-fuzz
+      - name: Test
+        if: matrix.os != 'windows-2022'
+        run: make test

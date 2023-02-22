@@ -181,7 +181,7 @@ func (db *RemoteKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 func (db *RemoteKV) BeginRw(ctx context.Context) (kv.RwTx, error) {
 	return nil, fmt.Errorf("remote db provider doesn't support .BeginRw method")
 }
-func (db *RemoteKV) BeginRwAsync(ctx context.Context) (kv.RwTx, error) {
+func (db *RemoteKV) BeginRwNosync(ctx context.Context) (kv.RwTx, error) {
 	return nil, fmt.Errorf("remote db provider doesn't support .BeginRw method")
 }
 
@@ -198,7 +198,7 @@ func (db *RemoteKV) View(ctx context.Context, f func(tx kv.Tx) error) (err error
 func (db *RemoteKV) Update(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
 	return fmt.Errorf("remote db provider doesn't support .Update method")
 }
-func (db *RemoteKV) UpdateAsync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
+func (db *RemoteKV) UpdateNosync(ctx context.Context, f func(tx kv.RwTx) error) (err error) {
 	return fmt.Errorf("remote db provider doesn't support .Update method")
 }
 
@@ -344,6 +344,10 @@ func (tx *remoteTx) Cursor(bucket string) (kv.Cursor, error) {
 	}
 	c.id = msg.CursorID
 	return c, nil
+}
+
+func (tx *remoteTx) ListBuckets() ([]string, error) {
+	return nil, fmt.Errorf("function ListBuckets is not implemented for remoteTx")
 }
 
 func (c *remoteCursor) Put(k []byte, v []byte) error            { panic("not supported") }
