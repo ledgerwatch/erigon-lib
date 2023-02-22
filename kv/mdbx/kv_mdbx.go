@@ -37,6 +37,7 @@ import (
 	"github.com/pbnjay/memory"
 	"github.com/torquem-ch/mdbx-go/mdbx"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -186,8 +187,26 @@ func (opts MdbxOpts) WithTableCfg(f TableCfgFunc) MdbxOpts {
 	return opts
 }
 
-var pathDbMap = map[string]kv.RwDB{}
+var pathDbMap = map[string]kv.RoDB{}
 var pathDbMapLock sync.Mutex
+
+func addToPathDbMap(path string, db kv.RoDB) {
+	pathDbMapLock.Lock()
+	defer pathDbMapLock.Unlock()
+	pathDbMap[path] = db
+}
+
+func removeFromPathDbMap(path string) {
+	pathDbMapLock.Lock()
+	defer pathDbMapLock.Unlock()
+	delete(pathDbMap, path)
+}
+
+func PathDbMap() map[string]kv.RoDB {
+	pathDbMapLock.Lock()
+	defer pathDbMapLock.Unlock()
+	return maps.Clone(pathDbMap)
+}
 
 func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	if dbg.WriteMap() {
@@ -371,12 +390,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 
 	}
-	if !opts.inMem {
-		db.path = opts.path
-		pathDbMapLock.Lock()
-		defer pathDbMapLock.Unlock()
-		pathDbMap[opts.path] = db
-	}
+	db.path = opts.path
+	addToPathDbMap(opts.path, db)
 	return db, nil
 }
 
@@ -453,21 +468,8 @@ func (db *MdbxKV) Close() {
 		if err := os.RemoveAll(db.opts.path); err != nil {
 			db.log.Warn("failed to remove in-mem db file", "err", err)
 		}
-	} else {
-		pathDbMapLock.Lock()
-		defer pathDbMapLock.Unlock()
-		delete(pathDbMap, db.path)
 	}
-}
-
-func PathDbMap() map[string]kv.RoDB {
-	pathDbMapLock.Lock()
-	defer pathDbMapLock.Unlock()
-	result := map[string]kv.RoDB{}
-	for path, db := range pathDbMap {
-		result[path] = db
-	}
-	return result
+	removeFromPathDbMap(db.path)
 }
 
 func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
