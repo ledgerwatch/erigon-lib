@@ -261,8 +261,7 @@ func (ef *EliasFano) Count() uint64 {
 }
 
 func (ef *EliasFano) Iterator() *EliasFanoIter {
-	it := &EliasFanoIter{ef: ef, upperMask: 1, upperStep: uint64(1) << ef.l, lowerBits: ef.lowerBits, upperBits: ef.upperBits}
-	return it
+	return &EliasFanoIter{upperMask: 1, upperStep: uint64(1) << ef.l, lowerBits: ef.lowerBits, upperBits: ef.upperBits, count: ef.count, l: ef.l, lowerBitsMask: ef.lowerBitsMask}
 }
 func (ef *EliasFano) ReverseIterator() *iter.ArrStream[uint64] {
 	//TODO: this is very un-optimal, need implement proper reverse-iterator
@@ -279,9 +278,12 @@ func (ef *EliasFano) ReverseIterator() *iter.ArrStream[uint64] {
 }
 
 type EliasFanoIter struct {
-	ef        *EliasFano
-	lowerBits []uint64
-	upperBits []uint64
+	lowerBits     []uint64
+	upperBits     []uint64
+	lowerBitsMask uint64
+	count         uint64
+	l             uint64
+
 	idx       uint64
 	lowerIdx  uint64
 	upperIdx  uint64
@@ -291,7 +293,7 @@ type EliasFanoIter struct {
 }
 
 func (efi *EliasFanoIter) HasNext() bool {
-	return efi.idx <= efi.ef.count
+	return efi.idx <= efi.count
 }
 
 func (efi *EliasFanoIter) Next() (uint64, error) {
@@ -313,9 +315,9 @@ func (efi *EliasFanoIter) Next() (uint64, error) {
 		}
 	}
 	efi.upperMask <<= 1
-	efi.lowerIdx += efi.ef.l
+	efi.lowerIdx += efi.l
 	efi.idx++
-	return efi.upper | (lower & efi.ef.lowerBitsMask), nil
+	return efi.upper | (lower & efi.lowerBitsMask), nil
 }
 
 // Write outputs the state of golomb rice encoding into a writer, which can be recovered later by Read
