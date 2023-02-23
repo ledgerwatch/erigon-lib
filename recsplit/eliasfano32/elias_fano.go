@@ -360,6 +360,14 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 	return ef, 16 + 8*len(ef.data)
 }
 
+func (ef *EliasFano) Reset(r []byte) {
+	ef.count = binary.BigEndian.Uint64(r[:8])
+	ef.u = binary.BigEndian.Uint64(r[8:16])
+	ef.data = unsafe.Slice((*uint64)(unsafe.Pointer(&r[16])), (len(r)-16)/uint64Size)
+	ef.maxOffset = ef.u - 1
+	ef.deriveFields()
+}
+
 func Max(r []byte) uint64   { return binary.BigEndian.Uint64(r[8:16]) - 1 }
 func Count(r []byte) uint64 { return binary.BigEndian.Uint64(r[:8]) + 1 }
 
