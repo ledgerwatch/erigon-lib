@@ -602,9 +602,7 @@ func (it *InvertedIterator) advanceInFiles() {
 			k, _ := g.NextUncompressed()
 			if bytes.Equal(k, it.key) {
 				eliasVal, _ := g.NextUncompressed()
-				//ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 				it.ef.Reset(eliasVal)
-
 				if it.orderAscend {
 					it.efIt = it.ef.Iterator()
 				} else {
