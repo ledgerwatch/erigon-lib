@@ -229,29 +229,8 @@ func (b *appendSortableBuffer) Swap(i, j int) {
 }
 
 func (b *appendSortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
-	k, v := b.sortedBuf[i].key, b.sortedBuf[i].value
-	if k == nil {
-		keyBuf = nil
-	} else if len(k) == 0 {
-		if keyBuf != nil {
-			keyBuf = keyBuf[:0]
-		} else {
-			keyBuf = []byte{}
-		}
-	} else {
-		keyBuf = append(keyBuf, k...)
-	}
-	if v == nil {
-		valBuf = nil
-	} else if len(v) == 0 {
-		if valBuf != nil {
-			valBuf = valBuf[:0]
-		} else {
-			valBuf = []byte{}
-		}
-	} else {
-		valBuf = append(valBuf, v...)
-	}
+	keyBuf = append(keyBuf, b.sortedBuf[i].key...)
+	valBuf = append(valBuf, b.sortedBuf[i].value...)
 	return keyBuf, valBuf
 }
 func (b *appendSortableBuffer) Reset() {
@@ -344,29 +323,8 @@ func (b *oldestEntrySortableBuffer) Swap(i, j int) {
 }
 
 func (b *oldestEntrySortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
-	k, v := b.sortedBuf[i].key, b.sortedBuf[i].value
-	if k == nil {
-		keyBuf = nil
-	} else if len(k) == 0 {
-		if keyBuf != nil {
-			keyBuf = keyBuf[:0]
-		} else {
-			keyBuf = []byte{}
-		}
-	} else {
-		keyBuf = append(keyBuf, k...)
-	}
-	if v == nil {
-		valBuf = nil
-	} else if len(v) == 0 {
-		if valBuf != nil {
-			valBuf = valBuf[:0]
-		} else {
-			valBuf = []byte{}
-		}
-	} else {
-		valBuf = append(valBuf, v...)
-	}
+	keyBuf = append(keyBuf, b.sortedBuf[i].key...)
+	valBuf = append(valBuf, b.sortedBuf[i].value...)
 	return keyBuf, valBuf
 }
 func (b *oldestEntrySortableBuffer) Reset() {
