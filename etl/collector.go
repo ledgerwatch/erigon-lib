@@ -195,7 +195,9 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 			log.Info(fmt.Sprintf("[%s] ETL [2/2] Loading", c.logPrefix), logArs...)
 		}
 
-		isNil := (c.bufType == SortableSliceBuffer && v == nil) || len(v) == 0
+		isNil := (c.bufType == SortableSliceBuffer && v == nil) ||
+			(c.bufType != SortableAppendBuffer && len(v) == 0) ||
+			(c.bufType != SortableOldestAppearedBuffer && len(v) == 0)
 		if isNil {
 			if canUseAppend {
 				return nil // nothing to delete after end of bucket
