@@ -81,14 +81,19 @@ type sortableBuffer struct {
 // so no copying is necessary
 func (b *sortableBuffer) Put(k, v []byte) {
 	b.offsets = append(b.offsets, len(b.data))
-	b.lens = append(b.lens, len(k))
-	if len(k) > 0 {
+	if k != nil {
+		b.lens = append(b.lens, len(k))
 		b.data = append(b.data, k...)
+	} else {
+		b.lens = append(b.lens, -1)
 	}
+
 	b.offsets = append(b.offsets, len(b.data))
-	b.lens = append(b.lens, len(v))
-	if len(v) > 0 {
+	if v != nil {
+		b.lens = append(b.lens, len(v))
 		b.data = append(b.data, v...)
+	} else {
+		b.lens = append(b.lens, -1)
 	}
 }
 
@@ -119,11 +124,15 @@ func (b *sortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
 	i2 := i * 2
 	keyOffset, valOffset := b.offsets[i2], b.offsets[i2+1]
 	keyLen, valLen := b.lens[i2], b.lens[i2+1]
-	if keyLen > 0 {
+	if keyLen >= 0 {
 		keyBuf = append(keyBuf, b.data[keyOffset:keyOffset+keyLen]...)
+	} else {
+		keyBuf = nil
 	}
-	if valLen > 0 {
+	if valLen >= 0 {
 		valBuf = append(valBuf, b.data[valOffset:valOffset+valLen]...)
+	} else {
+		valBuf = nil
 	}
 	return keyBuf, valBuf
 }
@@ -148,9 +157,12 @@ func (b *sortableBuffer) Write(w io.Writer) error {
 	var numBuf [binary.MaxVarintLen64]byte
 	for i, offset := range b.offsets {
 		l := b.lens[i]
-		n := binary.PutUvarint(numBuf[:], uint64(l))
+		n := binary.PutVarint(numBuf[:], int64(l))
 		if _, err := w.Write(numBuf[:n]); err != nil {
 			return err
+		}
+		if l <= 0 {
+			continue
 		}
 		if _, err := w.Write(b.data[offset : offset+l]); err != nil {
 			return err
@@ -207,8 +219,16 @@ func (b *appendSortableBuffer) Swap(i, j int) {
 }
 
 func (b *appendSortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
-	keyBuf = append(keyBuf, b.sortedBuf[i].key...)
-	valBuf = append(valBuf, b.sortedBuf[i].value...)
+	if b.sortedBuf[i].key == nil {
+		keyBuf = nil
+	} else {
+		keyBuf = append(keyBuf, b.sortedBuf[i].key...)
+	}
+	if b.sortedBuf[i].value == nil {
+		valBuf = nil
+	} else {
+		valBuf = append(valBuf, b.sortedBuf[i].value...)
+	}
 	return keyBuf, valBuf
 }
 func (b *appendSortableBuffer) Reset() {
@@ -221,14 +241,22 @@ func (b *appendSortableBuffer) Write(w io.Writer) error {
 	var numBuf [binary.MaxVarintLen64]byte
 	entries := b.sortedBuf
 	for _, entry := range entries {
-		n := binary.PutUvarint(numBuf[:], uint64(len(entry.key)))
+		lk := int64(len(entry.key))
+		if entry.key == nil {
+			lk = -1
+		}
+		n := binary.PutVarint(numBuf[:], lk)
 		if _, err := w.Write(numBuf[:n]); err != nil {
 			return err
 		}
 		if _, err := w.Write(entry.key); err != nil {
 			return err
 		}
-		n = binary.PutUvarint(numBuf[:], uint64(len(entry.value)))
+		lv := int64(len(entry.key))
+		if entry.value == nil {
+			lv = -1
+		}
+		n = binary.PutVarint(numBuf[:], lv)
 		if _, err := w.Write(numBuf[:n]); err != nil {
 			return err
 		}
@@ -293,8 +321,16 @@ func (b *oldestEntrySortableBuffer) Swap(i, j int) {
 }
 
 func (b *oldestEntrySortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
-	keyBuf = append(keyBuf, b.sortedBuf[i].key...)
-	valBuf = append(valBuf, b.sortedBuf[i].value...)
+	if b.sortedBuf[i].key == nil {
+		keyBuf = nil
+	} else {
+		keyBuf = append(keyBuf, b.sortedBuf[i].key...)
+	}
+	if b.sortedBuf[i].value == nil {
+		valBuf = nil
+	} else {
+		valBuf = append(valBuf, b.sortedBuf[i].value...)
+	}
 	return keyBuf, valBuf
 }
 func (b *oldestEntrySortableBuffer) Reset() {
@@ -307,14 +343,22 @@ func (b *oldestEntrySortableBuffer) Write(w io.Writer) error {
 	var numBuf [binary.MaxVarintLen64]byte
 	entries := b.sortedBuf
 	for _, entry := range entries {
-		n := binary.PutUvarint(numBuf[:], uint64(len(entry.key)))
+		lk := int64(len(entry.key))
+		if entry.key == nil {
+			lk = -1
+		}
+		n := binary.PutVarint(numBuf[:], lk)
 		if _, err := w.Write(numBuf[:n]); err != nil {
 			return err
 		}
 		if _, err := w.Write(entry.key); err != nil {
 			return err
 		}
-		n = binary.PutUvarint(numBuf[:], uint64(len(entry.value)))
+		lv := int64(len(entry.value))
+		if entry.value == nil {
+			lv = -1
+		}
+		n = binary.PutVarint(numBuf[:], lv)
 		if _, err := w.Write(numBuf[:n]); err != nil {
 			return err
 		}

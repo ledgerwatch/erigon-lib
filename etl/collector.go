@@ -195,10 +195,10 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 			log.Info(fmt.Sprintf("[%s] ETL [2/2] Loading", c.logPrefix), logArs...)
 		}
 
-		if canUseAppend && len(v) == 0 {
+		if canUseAppend && v == nil {
 			return nil // nothing to delete after end of bucket
 		}
-		if len(v) == 0 {
+		if v == nil {
 			if err := cursor.Delete(k); err != nil {
 				return err
 			}
