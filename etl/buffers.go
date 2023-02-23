@@ -135,7 +135,7 @@ func (b *sortableBuffer) Get(i int, keyBuf, valBuf []byte) ([]byte, []byte) {
 	}
 	if valLen > 0 {
 		valBuf = append(valBuf, b.data[valOffset:valOffset+valLen]...)
-	} else if keyLen == 0 {
+	} else if valLen == 0 {
 		if valBuf != nil {
 			valBuf = valBuf[:0]
 		} else {
