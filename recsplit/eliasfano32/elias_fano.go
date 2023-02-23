@@ -360,6 +360,7 @@ func ReadEliasFano(r []byte) (*EliasFano, int) {
 	return ef, 16 + 8*len(ef.data)
 }
 
+// Reset - like ReadEliasFano, but for existing object
 func (ef *EliasFano) Reset(r []byte) {
 	ef.count = binary.BigEndian.Uint64(r[:8])
 	ef.u = binary.BigEndian.Uint64(r[8:16])
