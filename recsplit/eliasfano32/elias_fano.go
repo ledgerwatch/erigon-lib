@@ -295,7 +295,8 @@ func (efi *EliasFanoIter) HasNext() bool {
 }
 
 func (efi *EliasFanoIter) Next() (uint64, error) {
-	idx64, shift := efi.lowerIdx>>6, efi.lowerIdx&63
+	idx64, shift := efi.lowerIdx/64, efi.lowerIdx%64
+	//idx64, shift := efi.lowerIdx>>6, efi.lowerIdx&63
 	lower := efi.lowerBits[idx64] >> shift
 	if shift > 0 {
 		lower |= efi.lowerBits[idx64+1] << (64 - shift)
