@@ -182,7 +182,7 @@ func (li *LocalityIndex) closeFiles() {
 	}
 }
 func (li *LocalityIndex) reCalcRoFiles() {
-	if li == nil {
+	if li == nil || li.file == nil {
 		return
 	}
 	li.roFiles.Store(&ctxItem{
