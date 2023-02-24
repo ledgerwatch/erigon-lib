@@ -317,6 +317,11 @@ func (a *btAlloc) traverseDfs() {
 				pc.si++
 				di++
 			}
+			if di > a.K {
+				a.N = di - 1 // actually filled node count
+				stop = true
+				break
+			}
 		}
 
 		a.nodes[c.l] = append(a.nodes[c.l], node{p: c.p, d: c.di, s: c.si})

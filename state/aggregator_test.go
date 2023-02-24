@@ -610,7 +610,7 @@ func Test_BtreeIndex_Allocation(t *testing.T) {
 				bt.traverseDfs()
 				require.GreaterOrEqual(t, bt.N, uint64(count))
 
-				require.LessOrEqual(t, float64(bt.N-uint64(count))/float64(bt.N), 0.07)
+				require.LessOrEqual(t, float64(bt.N-uint64(count))/float64(bt.N), 0.05)
 			}
 		})
 	}
