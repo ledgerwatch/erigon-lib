@@ -603,7 +603,11 @@ func (it *InvertedIterator) advanceInFiles() {
 				eliasVal, _ := g.NextUncompressed()
 				it.ef.Reset(eliasVal)
 				if it.orderAscend {
-					it.efIt = it.ef.Iterator()
+					efiter := it.ef.Iterator()
+					if it.startTxNum > 0 {
+						efiter.Seek(uint64(it.startTxNum))
+					}
+					it.efIt = it
 				} else {
 					it.efIt = it.ef.ReverseIterator()
 				}
