@@ -317,25 +317,8 @@ func (efi *EliasFanoIter) Seek(n uint64) {
 		efi.idx = efi.count + 1
 		return
 	}
-	//if i > 0 {
-	//	i--
-	//}
 	for j := uint64(0); j < i; j++ {
-		if efi.upperMask == 0 {
-			efi.upperIdx++
-			efi.upperMask = 1
-		}
-		for efi.upperBits[efi.upperIdx]&efi.upperMask == 0 {
-			efi.upper += efi.upperStep
-			efi.upperMask <<= 1
-			if efi.upperMask == 0 {
-				efi.upperIdx++
-				efi.upperMask = 1
-			}
-		}
-		efi.upperMask <<= 1
-		efi.lowerIdx += efi.l
-		efi.idx++
+		efi.increment()
 	}
 }
 
@@ -363,21 +346,7 @@ func (efi *EliasFanoIter) Next() (uint64, error) {
 	if shift > 0 {
 		lower |= efi.lowerBits[idx64+1] << (64 - shift)
 	}
-	if efi.upperMask == 0 {
-		efi.upperIdx++
-		efi.upperMask = 1
-	}
-	for efi.upperBits[efi.upperIdx]&efi.upperMask == 0 {
-		efi.upper += efi.upperStep
-		efi.upperMask <<= 1
-		if efi.upperMask == 0 {
-			efi.upperIdx++
-			efi.upperMask = 1
-		}
-	}
-	efi.upperMask <<= 1
-	efi.lowerIdx += efi.l
-	efi.idx++
+	efi.increment()
 	return efi.upper | (lower & efi.lowerBitsMask), nil
 }
 
