@@ -237,11 +237,11 @@ func TestIteratorAndSeekAreBasedOnSameFields(t *testing.T) {
 	ef.Build()
 
 	for i := range vals {
-		checkSeek(i, ef, vals, t)
+		checkSeek(t, i, ef, vals)
 	}
 }
 
-func checkSeek(j int, ef *EliasFano, vals []uint64, t *testing.T) {
+func checkSeek(t *testing.T, j int, ef *EliasFano, vals []uint64) {
 	t.Helper()
 	efi := ef.Iterator()
 	// drain iterator to given item
