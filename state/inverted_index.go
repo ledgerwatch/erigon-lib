@@ -607,7 +607,7 @@ func (it *InvertedIterator) advanceInFiles() {
 					if it.startTxNum > 0 {
 						efiter.Seek(uint64(it.startTxNum))
 					}
-					it.efIt = it
+					it.efIt = efiter
 				} else {
 					it.efIt = it.ef.ReverseIterator()
 				}
