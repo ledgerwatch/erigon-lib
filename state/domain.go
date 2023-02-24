@@ -557,11 +557,11 @@ type ctxItem struct {
 	src *filesItem
 }
 
-type ctxLocalityItem struct {
+type ctxLocalityIdx struct {
 	reader *recsplit.IndexReader
 	bm     *bitmapdb.FixedSizeBitmaps
 
-	file *filesItem
+	file ctxItem
 }
 
 func ctxItemLess(i, j ctxItem) bool { //nolint

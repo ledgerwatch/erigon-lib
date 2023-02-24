@@ -536,7 +536,7 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 		}
 	}
 
-	ii.localityIndex.MakeContext(&ic.loc)
+	ic.loc = ii.localityIndex.MakeContext()
 	return &ic
 }
 func (ic *InvertedIndexContext) Close() {
@@ -551,7 +551,7 @@ func (ic *InvertedIndexContext) Close() {
 		}
 	}
 
-	ic.ii.localityIndex.CloseContext(&ic.loc)
+	ic.loc.Close()
 }
 
 // InvertedIterator allows iteration over range of tx numbers
@@ -801,7 +801,7 @@ type InvertedIndexContext struct {
 	files   []ctxItem // have no garbage (overlaps, etc...)
 	getters []*compress.Getter
 	readers []*recsplit.IndexReader
-	loc     ctxLocalityItem
+	loc     *ctxLocalityIdx
 }
 
 func (ic *InvertedIndexContext) statelessGetter(i int) *compress.Getter {
