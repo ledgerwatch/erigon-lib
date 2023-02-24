@@ -242,6 +242,7 @@ func TestIteratorAndSeekAreBasedOnSameFields(t *testing.T) {
 }
 
 func checkSeek(j int, ef *EliasFano, vals []uint64, t *testing.T) {
+	t.Helper()
 	efi := ef.Iterator()
 	// drain iterator to given item
 	for i := 0; i < j; i++ {
