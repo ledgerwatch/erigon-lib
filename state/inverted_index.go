@@ -529,14 +529,13 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	var ic = InvertedIndexContext{
 		ii:    ii,
 		files: *ii.roFiles.Load(),
+		loc:   ii.localityIndex.MakeContext(),
 	}
 	for _, item := range ic.files {
 		if !item.src.frozen {
 			item.src.refcount.Inc()
 		}
 	}
-
-	ic.loc = ii.localityIndex.MakeContext()
 	return &ic
 }
 func (ic *InvertedIndexContext) Close() {
