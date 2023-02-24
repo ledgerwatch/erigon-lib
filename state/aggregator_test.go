@@ -607,14 +607,13 @@ func Test_BtreeIndex_Allocation(t *testing.T) {
 					}
 				}
 				bt := newBtAlloc(uint64(count), uint64(m)<<i, true)
+				bt.traverseDfs()
 				require.GreaterOrEqual(t, bt.N, uint64(count))
 				if count < m*4 {
 					continue
 				}
 
-				// actually this metric isn't so meaningful since useless nodes are not filled
-				// during traversal and just cutted out.
-				require.LessOrEqual(t, float64(bt.N-uint64(count))/float64(bt.N), 0.15)
+				require.LessOrEqual(t, float64(bt.N-uint64(count))/float64(bt.N), 0.05)
 			}
 		})
 	}

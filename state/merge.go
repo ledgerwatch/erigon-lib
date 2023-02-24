@@ -584,8 +584,25 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 				}
 			}
 
-			skip := r.valuesStartTxNum == 0 && len(lastVal) == 0
-			if !skip {
+			// empty value means deletion
+			deleted := r.valuesStartTxNum == 0 && len(lastVal) == 0
+			if !deleted {
+				if keyBuf != nil {
+					if err = comp.AddUncompressedWord(keyBuf); err != nil {
+						return nil, nil, nil, err
+					}
+					keyCount++ // Only counting keys, not values
+					switch d.compressVals {
+					case true:
+						if err = comp.AddWord(valBuf); err != nil {
+							return nil, nil, nil, err
+						}
+					default:
+						if err = comp.AddUncompressedWord(valBuf); err != nil {
+							return nil, nil, nil, err
+						}
+					}
+				}
 				keyBuf = append(keyBuf[:0], lastKey...)
 				valBuf = append(valBuf[:0], lastVal...)
 			}
