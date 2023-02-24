@@ -135,8 +135,11 @@ func newBtAlloc(k, M uint64, trace bool) *btAlloc {
 		return a
 	}
 
-	nnc := func(vx uint64) uint64 {
-		return uint64(math.Ceil(float64(vx) / float64(M)))
+	//nnc := func(vx uint64) uint64 {
+	//	return uint64(math.Ceil(float64(vx) / float64(M)))
+	//}
+	nvc := func(vx uint64) uint64 {
+		return uint64(math.Ceil(float64(vx) / float64(M>>1)))
 	}
 
 	for i := a.d - 1; i > 0; i-- {
@@ -151,8 +154,15 @@ func newBtAlloc(k, M uint64, trace bool) *btAlloc {
 	ncount := uint64(0)
 	pnv := uint64(0)
 	for l := a.d - 1; l > 0; l-- {
-		s := nnc(a.vx[l+1])
-		a.sons[l] = append(a.sons[l], s, M)
+		//s := nnc(a.vx[l+1])
+		sh := nvc(a.vx[l+1])
+
+		if sh&1 == 1 {
+			a.sons[l] = append(a.sons[l], sh>>1, M, 1, M>>1)
+		} else {
+			a.sons[l] = append(a.sons[l], sh>>1, M)
+		}
+
 		for ik := 0; ik < len(a.sons[l]); ik += 2 {
 			ncount += a.sons[l][ik] * a.sons[l][ik+1]
 			if l == 1 {
@@ -165,7 +175,6 @@ func newBtAlloc(k, M uint64, trace bool) *btAlloc {
 	a.N = ncount
 
 	if trace {
-		fmt.Printf("ncount=%d ∂%.5f\n", ncount, float64(a.N-k)/float64(a.N))
 		for i, v := range a.sons {
 			fmt.Printf("L%d=%v\n", i, v)
 		}
@@ -265,6 +274,10 @@ func (a *btAlloc) traverseDfs() {
 			a.nodes[0] = make([]node, 0)
 		}
 		a.nodes[0] = append(a.nodes[0], node{d: a.K})
+		a.N = a.K
+		if a.trace {
+			fmt.Printf("ncount=%d ∂%.5f\n", a.N, float64(a.N-a.K)/float64(a.N))
+		}
 		return
 	}
 
@@ -380,6 +393,10 @@ func (a *btAlloc) traverseDfs() {
 				break
 			}
 		}
+	}
+
+	if a.trace {
+		fmt.Printf("ncount=%d ∂%.5f\n", a.N, float64(a.N-a.K)/float64(a.N))
 	}
 }
 

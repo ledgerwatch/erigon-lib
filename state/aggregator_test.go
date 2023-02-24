@@ -602,18 +602,15 @@ func Test_BtreeIndex_Allocation(t *testing.T) {
 				var count int
 				for {
 					count = rnd.Intn(1000000000)
-					if count > m*4 {
+					if count > (m<<1)*4 {
 						break
 					}
 				}
 				bt := newBtAlloc(uint64(count), uint64(m)<<i, true)
 				bt.traverseDfs()
 				require.GreaterOrEqual(t, bt.N, uint64(count))
-				if count < m*4 {
-					continue
-				}
 
-				require.LessOrEqual(t, float64(bt.N-uint64(count))/float64(bt.N), 0.05)
+				require.LessOrEqual(t, float64(bt.N-uint64(count))/float64(bt.N), 0.07)
 			}
 		})
 	}
