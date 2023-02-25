@@ -530,14 +530,13 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	var ic = InvertedIndexContext{
 		ii:    ii,
 		files: *ii.roFiles.Load(),
+		loc:   ii.localityIndex.MakeContext(),
 	}
 	for _, item := range ic.files {
 		if !item.src.frozen {
 			item.src.refcount.Inc()
 		}
 	}
-
-	ii.localityIndex.MakeContext(&ic.loc)
 	return &ic
 }
 func (ic *InvertedIndexContext) Close() {
@@ -552,7 +551,7 @@ func (ic *InvertedIndexContext) Close() {
 		}
 	}
 
-	ic.ii.localityIndex.CloseContext(&ic.loc)
+	ic.loc.Close()
 }
 
 // InvertedIterator allows iteration over range of tx numbers
@@ -577,6 +576,8 @@ type InvertedIterator struct {
 
 	res []uint64
 	bm  *roaring64.Bitmap
+
+	ef *eliasfano32.EliasFano
 }
 
 func (it *InvertedIterator) Close() {
@@ -601,12 +602,15 @@ func (it *InvertedIterator) advanceInFiles() {
 			k, _ := g.NextUncompressed()
 			if bytes.Equal(k, it.key) {
 				eliasVal, _ := g.NextUncompressed()
-				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-
+				it.ef.Reset(eliasVal)
 				if it.orderAscend {
-					it.efIt = ef.Iterator()
+					efiter := it.ef.Iterator()
+					if it.startTxNum > 0 {
+						efiter.Seek(uint64(it.startTxNum))
+					}
+					it.efIt = efiter
 				} else {
-					it.efIt = ef.ReverseIterator()
+					it.efIt = it.ef.ReverseIterator()
 				}
 			}
 		}
@@ -801,7 +805,7 @@ type InvertedIndexContext struct {
 	files   []ctxItem // have no garbage (overlaps, etc...)
 	getters []*compress.Getter
 	readers []*recsplit.IndexReader
-	loc     ctxLocalityItem
+	loc     *ctxLocalityIdx
 }
 
 func (ic *InvertedIndexContext) statelessGetter(i int) *compress.Getter {
@@ -856,6 +860,7 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 		hasNextInDb: true,
 		orderAscend: asc,
 		limit:       limit,
+		ef:          eliasfano32.NewEliasFano(1, 1),
 	}
 	if asc {
 		for i := len(ic.files) - 1; i >= 0; i-- {
