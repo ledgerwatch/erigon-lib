@@ -1203,7 +1203,7 @@ func (hc *HistoryContext) statelessIdxReader(i int) *recsplit.IndexReader {
 	}
 	r := hc.readers[i]
 	if r == nil {
-		r = recsplit.NewIndexReader(hc.files[i].src.index)
+		r = hc.files[i].src.index.GetReaderFromPool()
 		hc.readers[i] = r
 	}
 	return r
@@ -1221,6 +1221,10 @@ func (hc *HistoryContext) Close() {
 			item.src.closeFilesAndRemove()
 		}
 	}
+	for _, r := range hc.readers {
+		r.Close()
+	}
+
 }
 
 func (hc *HistoryContext) getFile(from, to uint64) (it ctxItem, ok bool) {
