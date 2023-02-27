@@ -116,9 +116,9 @@ func (c *Collector) flushBuffer(canStoreInRam bool) error {
 	} else {
 		doFsync := !c.autoClean /* is critical collector */
 		provider, err = FlushToDisk(c.logPrefix, c.buf, c.tmpdir, doFsync, c.logLvl)
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	if provider != nil {
 		c.dataProviders = append(c.dataProviders, provider)
