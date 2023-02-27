@@ -134,12 +134,12 @@ func TestAggregator_Merge(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, agg.FinishTx())
 	}
-	agg.FinishWrites()
 	err = agg.Flush(context.Background())
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx = nil
+	agg.FinishWrites()
 
 	// Check the history
 	roTx, err := db.BeginRo(context.Background())
