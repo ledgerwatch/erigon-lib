@@ -354,7 +354,7 @@ func (d *Domain) closeWhatNotInList(fNames []string) {
 	for _, item := range toDelete {
 		if item.decompressor != nil {
 			if err := item.decompressor.Close(); err != nil {
-				log.Trace("close", "err", err, "file", item.index.FileName())
+				log.Trace("close", "err", err, "file", item.decompressor.FileName())
 			}
 			item.decompressor = nil
 		}
@@ -1052,6 +1052,9 @@ func (sf StaticFiles) Close() {
 	}
 	if sf.valuesIdx != nil {
 		sf.valuesIdx.Close()
+	}
+	if sf.valuesBt != nil {
+		sf.valuesBt.Close()
 	}
 	if sf.historyDecomp != nil {
 		sf.historyDecomp.Close()

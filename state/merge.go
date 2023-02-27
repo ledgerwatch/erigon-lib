@@ -501,6 +501,9 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 				if historyIn.index != nil {
 					historyIn.index.Close()
 				}
+				if historyIn.bindex != nil {
+					historyIn.bindex.Close()
+				}
 			}
 			if valuesIn != nil {
 				if valuesIn.decompressor != nil {

@@ -45,6 +45,19 @@ const (
 	CommitmentModeUpdate   CommitmentMode = 2
 )
 
+func (m CommitmentMode) String() string {
+	switch m {
+	case CommitmentModeDisabled:
+		return "disabled"
+	case CommitmentModeDirect:
+		return "direct"
+	case CommitmentModeUpdate:
+		return "update"
+	default:
+		return "unknown"
+	}
+}
+
 type ValueMerger func(prev, current []byte) (merged []byte, err error)
 
 type DomainCommitted struct {
@@ -545,6 +558,7 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error
 
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()
+	defer ctx.Close()
 
 	for {
 		binary.BigEndian.PutUint16(stepbuf[:], step)

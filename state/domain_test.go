@@ -38,7 +38,6 @@ import (
 func testDbAndDomain(t *testing.T) (string, kv.RwDB, *Domain) {
 	t.Helper()
 	path := t.TempDir()
-	t.Cleanup(func() { os.RemoveAll(path) })
 	logger := log.New()
 	keysTable := "Keys"
 	valsTable := "Vals"
@@ -69,6 +68,7 @@ func TestCollationBuild(t *testing.T) {
 	defer logEvery.Stop()
 	_, db, d := testDbAndDomain(t)
 	ctx := context.Background()
+	defer d.Close()
 
 	tx, err := db.BeginRw(ctx)
 	require.NoError(t, err)
@@ -93,6 +93,7 @@ func TestCollationBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := d.collate(ctx, 0, 0, 7, tx, logEvery)
+
 	require.NoError(t, err)
 	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
 	require.Equal(t, 2, c.valuesCount)
@@ -105,6 +106,8 @@ func TestCollationBuild(t *testing.T) {
 	sf, err := d.buildFiles(ctx, 0, c)
 	require.NoError(t, err)
 	defer sf.Close()
+	c.Close()
+
 	g := sf.valuesDecomp.MakeGetter()
 	g.Reset(0)
 	var words []string
@@ -115,7 +118,9 @@ func TestCollationBuild(t *testing.T) {
 	require.Equal(t, []string{"key1", "value1.2", "key2", "value2.1"}, words)
 	// Check index
 	require.Equal(t, 2, int(sf.valuesIdx.KeyCount()))
+
 	r := recsplit.NewIndexReader(sf.valuesIdx)
+	defer r.Close()
 	for i := 0; i < len(words); i += 2 {
 		offset := r.Lookup([]byte(words[i]))
 		g.Reset(offset)

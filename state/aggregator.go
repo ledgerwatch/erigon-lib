@@ -104,8 +104,7 @@ func NewAggregator(dir, tmpdir string, aggregationStep uint64, commitmentMode Co
 	}
 	closeAgg = false
 
-	a.defaultCtx = a.MakeContext()
-	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
+	//a.defaultCtx = a.MakeContext()
 	return a, nil
 }
 
@@ -188,6 +187,9 @@ func (a *Aggregator) GetAndResetStats() DomainStats {
 }
 
 func (a *Aggregator) Close() {
+	if a.defaultCtx != nil {
+		a.defaultCtx.Close()
+	}
 	if a.stepDoneNotice != nil {
 		close(a.stepDoneNotice)
 	}
@@ -391,11 +393,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	defer func() { // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
-		a.defaultCtx.Close()
-		a.defaultCtx = a.MakeContext()
-	}()
-
 	var clo, chi, plo, phi, blo, bhi time.Duration
 	clo, plo, blo = time.Hour*99, time.Hour*99, time.Hour*99
 	for _, s := range []DomainStats{a.accounts.stats, a.code.stats, a.storage.stats} {
@@ -433,8 +430,11 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 	mergeStartedAt := time.Now()
 	maxEndTxNum := a.EndTxNumMinimax()
+
 	var upmerges int
 	for {
+		a.defaultCtx.Close()
+		a.defaultCtx = a.MakeContext()
 		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
 		if err != nil {
 			return err
@@ -444,6 +444,7 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}
 		upmerges++
 	}
+
 	log.Info("[stat] aggregation merged",
 		"upto_tx", maxEndTxNum,
 		"aggregation_took", time.Since(stepStartedAt),
@@ -896,6 +897,8 @@ func (a *Aggregator) FinishTx() (err error) {
 	if !a.ReadyToFinishTx() {
 		return nil
 	}
+
+	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
 	rootHash, err := a.ComputeCommitment(true, false)
 	if err != nil {
 		return err
@@ -916,7 +919,6 @@ func (a *Aggregator) FinishTx() (err error) {
 	}
 
 	a.notifyAggregated(rootHash)
-
 	return nil
 }
 
@@ -1020,8 +1022,25 @@ func (a *Aggregator) StartWrites() *Aggregator {
 	a.logTopics.StartWrites()
 	a.tracesFrom.StartWrites()
 	a.tracesTo.StartWrites()
+
+	if a.defaultCtx != nil {
+		a.defaultCtx.Close()
+	}
+	a.defaultCtx = &AggregatorContext{
+		a:          a,
+		accounts:   a.accounts.defaultDc,
+		storage:    a.storage.defaultDc,
+		code:       a.code.defaultDc,
+		commitment: a.commitment.defaultDc,
+		logAddrs:   a.logAddrs.MakeContext(),
+		logTopics:  a.logTopics.MakeContext(),
+		tracesFrom: a.tracesFrom.MakeContext(),
+		tracesTo:   a.tracesTo.MakeContext(),
+	}
+	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
 	return a
 }
+
 func (a *Aggregator) FinishWrites() {
 	a.accounts.FinishWrites()
 	a.storage.FinishWrites()
@@ -1102,6 +1121,7 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
 }
+
 func (ac *AggregatorContext) Close() {
 	ac.accounts.Close()
 	ac.storage.Close()
