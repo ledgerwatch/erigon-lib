@@ -1172,7 +1172,7 @@ func (a *AggregatorV3) BuildFilesInBackground() {
 	}()
 }
 
-func (a *AggregatorV3) WalRLock() {
+func (a *AggregatorV3) BatchHistoryWriteStart() *AggregatorV3 {
 	a.accounts.WalRLock()
 	a.storage.WalRLock()
 	a.code.WalRLock()
@@ -1180,8 +1180,9 @@ func (a *AggregatorV3) WalRLock() {
 	a.logTopics.WalRLock()
 	a.tracesFrom.WalRLock()
 	a.tracesTo.WalRLock()
+	return a
 }
-func (a *AggregatorV3) WalRUnlock() {
+func (a *AggregatorV3) BatchHistoryWriteEnd() {
 	a.accounts.WalRUnlock()
 	a.storage.WalRUnlock()
 	a.code.WalRUnlock()

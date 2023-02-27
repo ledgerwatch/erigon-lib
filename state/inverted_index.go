@@ -392,7 +392,7 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 func (ii *InvertedIndex) WalRLock()   { ii.walLock.RLock() }
 func (ii *InvertedIndex) WalRUnlock() { ii.walLock.RUnlock() }
 
-// Add - !NotThreadSafe. Must use WalRLock/WalRUnlock
+// Add - !NotThreadSafe. Must use WalRLock/BatchHistoryWriteEnd
 func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.wal.add(key, key)
 }
