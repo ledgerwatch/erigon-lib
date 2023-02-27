@@ -29,7 +29,6 @@ import (
 func testDbAndAggregator(t *testing.T, aggStep uint64) (string, kv.RwDB, *Aggregator) {
 	t.Helper()
 	path := t.TempDir()
-	t.Cleanup(func() { os.RemoveAll(path) })
 	logger := log.New()
 	db := mdbx.NewMDBX(logger).InMem(filepath.Join(path, "db4")).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.ChaindataTablesCfg
@@ -224,8 +223,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	aggStep := uint64(100)
 
 	path, db, agg := testDbAndAggregator(t, aggStep)
-	defer db.Close()
-	_ = path
+	defer os.RemoveAll(path)
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
@@ -272,6 +270,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	require.NoError(t, err)
 	tx = nil
 	db.Close()
+	agg.Close()
 	db = nil
 	agg = nil
 
@@ -306,7 +305,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		require.NoError(t, err)
 		if len(stored) == 0 {
 			if uint64(i+1) >= txs-aggStep {
-				continue // finishtx always stores last agg step in db which we deleteelete, so miss is expected
+				continue // finishtx always stores last agg step in db which we deleted, so missing  values which were not aggregated is expected
 			}
 			miss++
 			fmt.Printf("%x [%d/%d]", key, miss, i+1) // txnum starts from 1

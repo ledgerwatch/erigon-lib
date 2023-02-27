@@ -191,6 +191,9 @@ func (a *Aggregator) Close() {
 	if a.stepDoneNotice != nil {
 		close(a.stepDoneNotice)
 	}
+	if a.defaultCtx != nil {
+		a.defaultCtx.Close()
+	}
 	if a.accounts != nil {
 		a.accounts.Close()
 	}
