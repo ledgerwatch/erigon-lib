@@ -39,6 +39,47 @@ func testDbAndAggregator(t *testing.T, aggStep uint64) (string, kv.RwDB, *Aggreg
 	return path, db, agg
 }
 
+func TestAggregator_WinAccess(t *testing.T) {
+	_, db, agg := testDbAndAggregator(t, 100)
+	defer agg.Close()
+
+	tx, err := db.BeginRwNosync(context.Background())
+	require.NoError(t, err)
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	agg.SetTx(tx)
+
+	defer agg.StartWrites().FinishWrites()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for txNum := uint64(1); txNum <= 1000; txNum++ {
+		agg.SetTxNum(txNum)
+
+		addr := make([]byte, length.Addr)
+		n, err := rnd.Read(addr)
+		require.NoError(t, err)
+		require.EqualValues(t, length.Addr, n)
+
+		buf := EncodeAccountBytes(1, uint256.NewInt(uint64(rand.Intn(10e9))), nil, 0)
+		err = agg.UpdateAccountData(addr, buf)
+		require.NoError(t, err)
+
+		var v [8]byte
+		binary.BigEndian.PutUint64(v[:], txNum)
+		require.NoError(t, err)
+		require.NoError(t, agg.FinishTx())
+	}
+	err = agg.Flush(context.Background())
+	require.NoError(t, err)
+	err = tx.Commit()
+	require.NoError(t, err)
+	tx = nil
+
+}
+
 func TestAggregator_Merge(t *testing.T) {
 	_, db, agg := testDbAndAggregator(t, 100)
 	defer agg.Close()
