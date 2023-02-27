@@ -108,13 +108,13 @@ func (c *Collector) flushBuffer(canStoreInRam bool) error {
 		return nil
 	}
 	var provider dataProvider
-	var err error
 	c.buf.Sort()
 	if canStoreInRam && len(c.dataProviders) == 0 {
 		provider = KeepInRAM(c.buf)
 		c.allFlushed = true
 	} else {
 		doFsync := !c.autoClean /* is critical collector */
+		var err error
 		provider, err = FlushToDisk(c.logPrefix, c.buf, c.tmpdir, doFsync, c.logLvl)
 		if err != nil {
 			return err
