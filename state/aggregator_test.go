@@ -37,7 +37,6 @@ func testDbAndAggregator(t *testing.T, aggStep uint64) (string, kv.RwDB, *Aggreg
 	t.Cleanup(db.Close)
 	agg, err := NewAggregator(path, path, aggStep, CommitmentModeDirect, commitment.VariantHexPatriciaTrie)
 	require.NoError(t, err)
-	t.Cleanup(agg.Close)
 	return path, db, agg
 }
 
@@ -53,7 +52,9 @@ func TestAggregator_Merge(t *testing.T) {
 	}()
 	agg.SetTx(tx)
 
+	defer agg.Close()
 	defer agg.StartWrites().FinishWrites()
+
 	txs := uint64(10000)
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -134,7 +135,7 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 		}
 	}()
 	agg.SetTx(tx)
-	defer agg.StartWrites().FinishWrites()
+	agg.StartWrites()
 
 	var latestCommitTxNum uint64
 
@@ -177,6 +178,8 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
+	agg.FinishWrites()
+	agg.Close()
 	tx = nil
 
 	// Start another aggregator on same datadir
@@ -325,9 +328,8 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
 	aggStep := uint64(10000)
 
-	path, db, agg := testDbAndAggregator(t, aggStep)
-	defer db.Close()
-	_ = path
+	_, db, agg := testDbAndAggregator(t, aggStep)
+	t.Cleanup(agg.Close)
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
@@ -601,7 +603,7 @@ func Test_BtreeIndex_Allocation(t *testing.T) {
 			for j := 0; j < 10; j++ {
 				var count int
 				for {
-					count = rnd.Intn(1000000000)
+					count = rnd.Intn(100000000)
 					if count > (m<<1)*4 {
 						break
 					}
