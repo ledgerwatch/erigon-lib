@@ -105,7 +105,6 @@ func TestAggregator_Merge(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := agg.MakeContext()
-	defer dc.Close()
 	v, err := dc.ReadCommitment([]byte("roothash"), roTx)
 	require.NoError(t, err)
 
@@ -113,6 +112,7 @@ func TestAggregator_Merge(t *testing.T) {
 
 	v, err = dc.ReadCommitment([]byte("otherroothash"), roTx)
 	require.NoError(t, err)
+	dc.Close()
 
 	require.EqualValues(t, otherMaxWrite, binary.BigEndian.Uint64(v[:]))
 }
