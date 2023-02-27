@@ -41,6 +41,7 @@ func testDbAndAggregator(t *testing.T, aggStep uint64) (string, kv.RwDB, *Aggreg
 
 func TestAggregator_Merge(t *testing.T) {
 	_, db, agg := testDbAndAggregator(t, 100)
+	defer agg.Close()
 
 	tx, err := db.BeginRwNosync(context.Background())
 	require.NoError(t, err)
@@ -51,7 +52,6 @@ func TestAggregator_Merge(t *testing.T) {
 	}()
 	agg.SetTx(tx)
 
-	defer agg.Close()
 	defer agg.StartWrites().FinishWrites()
 
 	txs := uint64(10000)
@@ -105,6 +105,8 @@ func TestAggregator_Merge(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := agg.MakeContext()
+	defer dc.Close()
+
 	v, err := dc.ReadCommitment([]byte("roothash"), roTx)
 	require.NoError(t, err)
 
@@ -223,7 +225,6 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	aggStep := uint64(100)
 
 	path, db, agg := testDbAndAggregator(t, aggStep)
-	defer os.RemoveAll(path)
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
@@ -301,12 +302,12 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	defer ctx.Close()
 	miss := uint64(0)
 	for i, key := range keys {
+		if uint64(i+1) >= txs-aggStep {
+			continue // finishtx always stores last agg step in db which we deleted, so missing  values which were not aggregated is expected
+		}
 		stored, err := ctx.ReadAccountData(key[:length.Addr], newTx)
 		require.NoError(t, err)
 		if len(stored) == 0 {
-			if uint64(i+1) >= txs-aggStep {
-				continue // finishtx always stores last agg step in db which we deleted, so missing  values which were not aggregated is expected
-			}
 			miss++
 			fmt.Printf("%x [%d/%d]", key, miss, i+1) // txnum starts from 1
 			continue
