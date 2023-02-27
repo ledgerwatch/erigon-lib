@@ -159,6 +159,7 @@ func TestAggregator_Merge(t *testing.T) {
 	dc.Close()
 
 	require.EqualValues(t, otherMaxWrite, binary.BigEndian.Uint64(v[:]))
+	time.Sleep(time.Second * 2) // lol let aggregator remove its files first
 }
 
 // here we create a bunch of updates for further aggregation.
