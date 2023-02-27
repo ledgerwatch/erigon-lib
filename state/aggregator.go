@@ -429,12 +429,12 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		"prune_min", plo, "prune_max", phi,
 		"files_build_min", blo, "files_build_max", bhi)
 
-	mergeStartedAt := time.Now()
-	maxEndTxNum := a.EndTxNumMinimax()
 	defer func() { // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
 		a.defaultCtx.Close()
 		a.defaultCtx = a.MakeContext()
 	}()
+	mergeStartedAt := time.Now()
+	maxEndTxNum := a.EndTxNumMinimax()
 
 	var upmerges int
 	for {
