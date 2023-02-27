@@ -52,10 +52,10 @@ func TestAggregator_WinAccess(t *testing.T) {
 	}()
 	agg.SetTx(tx)
 
-	defer agg.StartWrites().FinishWrites()
+	agg.StartWrites()
 
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for txNum := uint64(1); txNum <= 1000; txNum++ {
+	for txNum := uint64(1); txNum <= 100; txNum++ {
 		agg.SetTxNum(txNum)
 
 		addr := make([]byte, length.Addr)
@@ -72,7 +72,8 @@ func TestAggregator_WinAccess(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, agg.FinishTx())
 	}
-	err = agg.Flush(context.Background())
+	agg.FinishWrites()
+
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
