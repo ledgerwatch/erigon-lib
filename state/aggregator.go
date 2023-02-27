@@ -394,11 +394,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	defer func() { // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
-		a.defaultCtx.Close()
-		a.defaultCtx = a.MakeContext()
-	}()
-
 	var clo, chi, plo, phi, blo, bhi time.Duration
 	clo, plo, blo = time.Hour*99, time.Hour*99, time.Hour*99
 	for _, s := range []DomainStats{a.accounts.stats, a.code.stats, a.storage.stats} {
@@ -436,6 +431,11 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 	mergeStartedAt := time.Now()
 	maxEndTxNum := a.EndTxNumMinimax()
+	defer func() { // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
+		a.defaultCtx.Close()
+		a.defaultCtx = a.MakeContext()
+	}()
+
 	var upmerges int
 	for {
 		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)

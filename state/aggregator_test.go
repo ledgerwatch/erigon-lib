@@ -78,7 +78,6 @@ func TestAggregator_WinAccess(t *testing.T) {
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx = nil
-
 }
 
 func TestAggregator_Merge(t *testing.T) {
@@ -94,7 +93,7 @@ func TestAggregator_Merge(t *testing.T) {
 	}()
 	agg.SetTx(tx)
 
-	defer agg.StartWrites().FinishWrites()
+	agg.StartWrites()
 
 	txs := uint64(10000)
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -135,6 +134,7 @@ func TestAggregator_Merge(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, agg.FinishTx())
 	}
+	agg.FinishWrites()
 	err = agg.Flush(context.Background())
 	require.NoError(t, err)
 	err = tx.Commit()
