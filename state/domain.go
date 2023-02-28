@@ -695,6 +695,7 @@ func (dc *DomainContext) Close() {
 		}
 		refCnt := item.src.refcount.Dec()
 		//GC: last reader responsible to remove useles files: close it and delete
+		fmt.Printf("refCnt: %d [%d-%d]\n", item.src.decompressor.FileName(), refCnt, item.startTxNum, item.endTxNum)
 		if refCnt == 0 && item.src.canDelete.Load() {
 			item.src.closeFilesAndRemove()
 		}
