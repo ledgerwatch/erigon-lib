@@ -917,8 +917,8 @@ func (a *Aggregator) FinishTx() (err error) {
 
 	a.notifyAggregated(rootHash)
 
-	a.FinishWrites()
-	a.StartWrites()
+	//a.FinishWrites()
+	//a.StartWrites()
 
 	return nil
 }
