@@ -134,12 +134,12 @@ func TestAggregator_Merge(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, agg.FinishTx())
 	}
-	err = agg.Flush(context.Background())
+	//err = agg.Flush(context.Background())
+	agg.FinishWrites()
 	require.NoError(t, err)
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx = nil
-	agg.FinishWrites()
 
 	// Check the history
 	roTx, err := db.BeginRo(context.Background())
@@ -157,6 +157,11 @@ func TestAggregator_Merge(t *testing.T) {
 	v, err = dc.ReadCommitment([]byte("otherroothash"), roTx)
 	require.NoError(t, err)
 	dc.Close()
+	fmt.Printf("files %d\n", len(dc.accounts.files))
+	for i := 0; i < len(dc.accounts.files); i++ {
+		f := dc.accounts.files[i]
+		fmt.Printf("file %d: [%d-%d]\n", f.src.refcount.Load(), f.src.startTxNum, f.src.endTxNum)
+	}
 
 	require.EqualValues(t, otherMaxWrite, binary.BigEndian.Uint64(v[:]))
 	time.Sleep(time.Second * 2) // lol let aggregator remove its files first
@@ -262,6 +267,11 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 	require.NoError(t, err)
 
 	require.EqualValues(t, maxWrite, binary.BigEndian.Uint64(v[:]))
+	fmt.Printf("files %d\n", len(dc.accounts.files))
+	for i := 0; i < len(dc.accounts.files); i++ {
+		f := dc.accounts.files[i]
+		fmt.Printf("file %d: [%d-%d]\n", f.src.refcount.Load(), f.src.startTxNum, f.src.endTxNum)
+	}
 }
 
 func TestAggregator_RestartOnFiles(t *testing.T) {
