@@ -545,6 +545,7 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error
 
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()
+	defer ctx.Close()
 
 	for {
 		binary.BigEndian.PutUint16(stepbuf[:], step)

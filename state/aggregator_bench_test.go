@@ -55,8 +55,6 @@ func BenchmarkAggregator_Processing(b *testing.B) {
 	agg.SetTx(tx)
 	defer agg.StartWrites().FinishWrites()
 	require.NoError(b, err)
-	agg.StartWrites()
-	defer agg.FinishWrites()
 
 	b.ReportAllocs()
 	b.ResetTimer()

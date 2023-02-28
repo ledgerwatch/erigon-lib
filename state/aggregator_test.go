@@ -81,7 +81,6 @@ func TestAggregator_WinAccess(t *testing.T) {
 }
 
 func TestAggregator_Merge(t *testing.T) {
-	t.Skip()
 	_, db, agg := testDbAndAggregator(t, 100)
 	defer agg.Close()
 
@@ -135,7 +134,6 @@ func TestAggregator_Merge(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, agg.FinishTx())
 	}
-	//err = agg.Flush(context.Background())
 	agg.FinishWrites()
 	require.NoError(t, err)
 	err = tx.Commit()
@@ -148,7 +146,6 @@ func TestAggregator_Merge(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := agg.MakeContext()
-	defer dc.Close()
 
 	v, err := dc.ReadCommitment([]byte("roothash"), roTx)
 	require.NoError(t, err)
@@ -370,8 +367,6 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 }
 
 func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
-	t.Skip()
-
 	aggStep := uint64(10000)
 
 	_, db, agg := testDbAndAggregator(t, aggStep)
@@ -456,10 +451,9 @@ func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
 	tx, err = db.BeginRw(context.Background())
 	require.NoError(t, err)
 
-	ctx := agg.storage.MakeContext()
-	defer ctx.Close()
+	ctx := agg.defaultCtx
 	for _, key := range keys {
-		storedV, err := ctx.Get(key[:length.Addr], key[length.Addr:], tx)
+		storedV, err := ctx.ReadAccountStorage(key[:length.Addr], key[length.Addr:], tx)
 		require.NoError(t, err)
 		require.EqualValues(t, key[0], storedV[0])
 		require.EqualValues(t, key[length.Addr], storedV[1])

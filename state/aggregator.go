@@ -105,7 +105,6 @@ func NewAggregator(dir, tmpdir string, aggregationStep uint64, commitmentMode Co
 	closeAgg = false
 
 	a.defaultCtx = a.MakeContext()
-	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
 	return a, nil
 }
 
@@ -188,11 +187,11 @@ func (a *Aggregator) GetAndResetStats() DomainStats {
 }
 
 func (a *Aggregator) Close() {
-	if a.stepDoneNotice != nil {
-		close(a.stepDoneNotice)
-	}
 	if a.defaultCtx != nil {
 		a.defaultCtx.Close()
+	}
+	if a.stepDoneNotice != nil {
+		close(a.stepDoneNotice)
 	}
 	if a.accounts != nil {
 		a.accounts.Close()
@@ -429,10 +428,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		"prune_min", plo, "prune_max", phi,
 		"files_build_min", blo, "files_build_max", bhi)
 
-	defer func() { // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
-		a.defaultCtx.Close()
-		a.defaultCtx = a.MakeContext()
-	}()
 	mergeStartedAt := time.Now()
 	maxEndTxNum := a.EndTxNumMinimax()
 
@@ -899,6 +894,8 @@ func (a *Aggregator) FinishTx() (err error) {
 	if !a.ReadyToFinishTx() {
 		return nil
 	}
+
+	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
 	rootHash, err := a.ComputeCommitment(true, false)
 	if err != nil {
 		return err
@@ -919,6 +916,9 @@ func (a *Aggregator) FinishTx() (err error) {
 	}
 
 	a.notifyAggregated(rootHash)
+
+	a.FinishWrites()
+	a.StartWrites()
 
 	return nil
 }
