@@ -26,7 +26,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -679,14 +678,14 @@ var ctxc int64
 
 func (d *Domain) MakeContext() *DomainContext {
 	dc := &DomainContext{
-		ix:    atomic.LoadInt64(&ctxc),
+		//ix:    atomic.LoadInt64(&ctxc),
 		d:     d,
 		hc:    d.History.MakeContext(),
 		files: *d.roFiles.Load(),
 	}
-	atomic.AddInt64(&ctxc, 1)
-	_, fl, l, _ := runtime.Caller(1)
-	fmt.Printf("MakeContext: %d %s %s\n", dc.ix, d.filenameBase, fmt.Sprintf("%s:%d", fl, l))
+	//atomic.AddInt64(&ctxc, 1)
+	//_, fl, l, _ := runtime.Caller(1)
+	//fmt.Printf("MakeContext: %d %s %s\n", dc.ix, d.filenameBase, fmt.Sprintf("%s:%d", fl, l))
 	for _, item := range dc.files {
 		if !item.src.frozen {
 			item.src.refcount.Inc()
@@ -708,12 +707,12 @@ func (dc *DomainContext) Close() {
 		if item.src.decompressor != nil {
 			fn = item.src.decompressor.FileName()
 		}
-		fmt.Printf("%d %s refCnt: %d [%d-%d]\n", dc.ix, fn, refCnt, item.startTxNum, item.endTxNum)
+		fmt.Printf("%s refCnt: %d [%d-%d]\n", fn, refCnt, item.startTxNum, item.endTxNum)
 		if refCnt == 0 && item.src.canDelete.Load() {
 			item.src.closeFilesAndRemove()
 		}
 	}
-	fmt.Printf("Close: %d %s\n", dc.ix, dc.d.filenameBase)
+	//fmt.Printf("Close: %d %s\n", dc.ix, dc.d.filenameBase)
 	dc.hc.Close()
 }
 

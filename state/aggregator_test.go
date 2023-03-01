@@ -256,9 +256,9 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 	defer roTx.Rollback()
 
 	dc := anotherAgg.MakeContext()
-	defer dc.Close()
 	v, err := dc.ReadCommitment([]byte("key"), roTx)
 	require.NoError(t, err)
+	dc.Close()
 
 	require.EqualValues(t, maxWrite, binary.BigEndian.Uint64(v[:]))
 }

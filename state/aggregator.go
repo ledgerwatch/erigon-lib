@@ -444,8 +444,10 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		upmerges++
 	}
 
-	a.defaultCtx.Close()
-	a.defaultCtx = a.MakeContext()
+	if upmerges > 0 {
+		a.defaultCtx.Close()
+		a.defaultCtx = a.MakeContext()
+	}
 
 	log.Info("[stat] aggregation merged",
 		"upto_tx", maxEndTxNum,
@@ -1054,10 +1056,10 @@ func (a *Aggregator) FinishWrites() {
 	a.logTopics.FinishWrites()
 	a.tracesFrom.FinishWrites()
 	a.tracesTo.FinishWrites()
-	if a.defaultCtx != nil {
-		a.defaultCtx.Close()
-		a.defaultCtx = nil
-	}
+	//if a.defaultCtx != nil {
+	//	a.defaultCtx.Close()
+	//	a.defaultCtx = nil
+	//}
 }
 
 // Flush - must be called before Collate, if you did some writes
@@ -1137,7 +1139,8 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 	return ac
 }
 func (ac *AggregatorContext) Close() {
-	fmt.Printf("AggregatorContext %d close\n", ac.ix)
+	_, fl, l, _ := runtime.Caller(1)
+	fmt.Printf("AggregatorContext %d close by %s\n", ac.ix, fmt.Sprintf("%s:%d", fl, l))
 	ac.accounts.Close()
 	ac.storage.Close()
 	ac.code.Close()
