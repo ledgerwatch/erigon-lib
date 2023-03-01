@@ -686,18 +686,6 @@ func (a *AggregatorV3) DiscardHistory() *AggregatorV3 {
 func (a *AggregatorV3) StartWrites() *AggregatorV3 {
 	a.walLock.Lock()
 	defer a.walLock.Unlock()
-	a.accounts.StartWrites()
-	a.storage.StartWrites()
-	a.code.StartWrites()
-	a.logAddrs.StartWrites()
-	a.logTopics.StartWrites()
-	a.tracesFrom.StartWrites()
-	a.tracesTo.StartWrites()
-	return a
-}
-func (a *AggregatorV3) StartUnbufferedWrites() *AggregatorV3 {
-	a.walLock.Lock()
-	defer a.walLock.Unlock()
 	a.accounts.StartWrites(true, false)
 	a.storage.StartWrites(true, false)
 	a.code.StartWrites(true, false)
@@ -708,6 +696,8 @@ func (a *AggregatorV3) StartUnbufferedWrites() *AggregatorV3 {
 	return a
 }
 func (a *AggregatorV3) StartUnbufferedWrites() *AggregatorV3 {
+	a.walLock.Lock()
+	defer a.walLock.Unlock()
 	a.accounts.StartWrites(false, false)
 	a.storage.StartWrites(false, false)
 	a.code.StartWrites(false, false)
