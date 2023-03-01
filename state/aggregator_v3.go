@@ -672,6 +672,8 @@ func (a *AggregatorV3) Warmup(ctx context.Context, txFrom, limit uint64) {
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *AggregatorV3) DiscardHistory() *AggregatorV3 {
+	a.walLock.Lock()
+	defer a.walLock.Unlock()
 	a.accounts.StartWrites(false, true)
 	a.storage.StartWrites(false, true)
 	a.code.StartWrites(false, true)
