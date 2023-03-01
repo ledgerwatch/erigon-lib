@@ -398,8 +398,8 @@ func (ii *InvertedIndex) add(key, indexKey []byte) error {
 func (ii *InvertedIndex) DiscardHistory(buffered, discard bool) {
 	ii.wal = ii.newWriter(ii.tmpdir, buffered, discard)
 }
-func (ii *InvertedIndex) StartWrites() {
-	ii.wal = ii.newWriter(ii.tmpdir, WALCollectorRam > 0, false)
+func (ii *InvertedIndex) StartWrites(buffered, discard bool) {
+	ii.wal = ii.newWriter(ii.tmpdir, buffered, discard)
 }
 func (ii *InvertedIndex) FinishWrites() {
 	ii.wal.close()
