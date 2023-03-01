@@ -354,7 +354,7 @@ func (d *Domain) closeWhatNotInList(fNames []string) {
 	for _, item := range toDelete {
 		if item.decompressor != nil {
 			if err := item.decompressor.Close(); err != nil {
-				log.Trace("close", "err", err, "file", item.index.FileName())
+				log.Trace("close", "err", err, "file", item.decompressor.FileName())
 			}
 			item.decompressor = nil
 		}
@@ -1237,6 +1237,8 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 		index:        sf.valuesIdx,
 		bindex:       sf.valuesBt,
 	})
+	d.defaultDc.Close()
+	d.defaultDc = d.MakeContext()
 	d.reCalcRoFiles()
 }
 

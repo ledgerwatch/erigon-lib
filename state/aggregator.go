@@ -434,6 +434,9 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 	var upmerges int
 	for {
+
+		a.defaultCtx.Close()
+		a.defaultCtx = a.MakeContext()
 		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
 		if err != nil {
 			return err
@@ -443,11 +446,8 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}
 		upmerges++
 	}
-
-	if upmerges > 0 {
-		a.defaultCtx.Close()
-		a.defaultCtx = a.MakeContext()
-	}
+	a.defaultCtx.Close()
+	a.defaultCtx = a.MakeContext()
 
 	log.Info("[stat] aggregation merged",
 		"upto_tx", maxEndTxNum,
@@ -1045,6 +1045,7 @@ func (a *Aggregator) StartWrites() *Aggregator {
 		tracesFrom: a.tracesFrom.MakeContext(),
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
+	a.commitment.patriciaTrie.ResetFns(a.defaultCtx.branchFn, a.defaultCtx.accountFn, a.defaultCtx.storageFn)
 	return a
 }
 func (a *Aggregator) FinishWrites() {
