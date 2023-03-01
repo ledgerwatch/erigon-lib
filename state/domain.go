@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -607,6 +608,7 @@ func ctxItemLess(i, j ctxItem) bool { //nolint
 
 // DomainContext allows accesing the same domain from multiple go-routines
 type DomainContext struct {
+	ix      int64
 	d       *Domain
 	files   []ctxItem
 	getters []*compress.Getter
@@ -673,12 +675,18 @@ func (d *Domain) collectFilesStats() (datsz, idxsz, files uint64) {
 	return
 }
 
+var ctxc int64
+
 func (d *Domain) MakeContext() *DomainContext {
 	dc := &DomainContext{
+		ix:    atomic.LoadInt64(&ctxc),
 		d:     d,
 		hc:    d.History.MakeContext(),
 		files: *d.roFiles.Load(),
 	}
+	atomic.AddInt64(&ctxc, 1)
+	_, fl, l, _ := runtime.Caller(1)
+	fmt.Printf("MakeContext: %d %s %s\n", dc.ix, d.filenameBase, fmt.Sprintf("%s:%d", fl, l))
 	for _, item := range dc.files {
 		if !item.src.frozen {
 			item.src.refcount.Inc()
@@ -691,14 +699,21 @@ func (d *Domain) MakeContext() *DomainContext {
 func (dc *DomainContext) Close() {
 	for _, item := range dc.files {
 		if item.src.frozen {
+			fmt.Printf("%d %s frozen\n", dc.ix, item.src.decompressor.FileName())
 			continue
 		}
 		refCnt := item.src.refcount.Dec()
 		//GC: last reader responsible to remove useles files: close it and delete
+		var fn string
+		if item.src.decompressor != nil {
+			fn = item.src.decompressor.FileName()
+		}
+		fmt.Printf("%d %s refCnt: %d [%d-%d]\n", dc.ix, fn, refCnt, item.startTxNum, item.endTxNum)
 		if refCnt == 0 && item.src.canDelete.Load() {
 			item.src.closeFilesAndRemove()
 		}
 	}
+	fmt.Printf("Close: %d %s\n", dc.ix, dc.d.filenameBase)
 	dc.hc.Close()
 }
 

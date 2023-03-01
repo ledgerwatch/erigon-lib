@@ -23,6 +23,7 @@ import (
 	"math"
 	"math/bits"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -104,7 +105,7 @@ func NewAggregator(dir, tmpdir string, aggregationStep uint64, commitmentMode Co
 	}
 	closeAgg = false
 
-	a.defaultCtx = a.MakeContext()
+	//a.defaultCtx = a.MakeContext()
 	return a, nil
 }
 
@@ -442,6 +443,10 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}
 		upmerges++
 	}
+
+	a.defaultCtx.Close()
+	a.defaultCtx = a.MakeContext()
+
 	log.Info("[stat] aggregation merged",
 		"upto_tx", maxEndTxNum,
 		"aggregation_took", time.Since(stepStartedAt),
@@ -1023,6 +1028,21 @@ func (a *Aggregator) StartWrites() *Aggregator {
 	a.logTopics.StartWrites()
 	a.tracesFrom.StartWrites()
 	a.tracesTo.StartWrites()
+
+	if a.defaultCtx != nil {
+		a.defaultCtx.Close()
+	}
+	a.defaultCtx = &AggregatorContext{
+		a:          a,
+		accounts:   a.accounts.defaultDc,
+		storage:    a.storage.defaultDc,
+		code:       a.code.defaultDc,
+		commitment: a.commitment.defaultDc,
+		logAddrs:   a.logAddrs.MakeContext(),
+		logTopics:  a.logTopics.MakeContext(),
+		tracesFrom: a.tracesFrom.MakeContext(),
+		tracesTo:   a.tracesTo.MakeContext(),
+	}
 	return a
 }
 func (a *Aggregator) FinishWrites() {
@@ -1034,6 +1054,10 @@ func (a *Aggregator) FinishWrites() {
 	a.logTopics.FinishWrites()
 	a.tracesFrom.FinishWrites()
 	a.tracesTo.FinishWrites()
+	if a.defaultCtx != nil {
+		a.defaultCtx.Close()
+		a.defaultCtx = nil
+	}
 }
 
 // Flush - must be called before Collate, if you did some writes
@@ -1080,6 +1104,7 @@ func (a *Aggregator) Stats() FilesStats {
 }
 
 type AggregatorContext struct {
+	ix         int64
 	a          *Aggregator
 	accounts   *DomainContext
 	storage    *DomainContext
@@ -1092,9 +1117,12 @@ type AggregatorContext struct {
 	keyBuf     []byte
 }
 
+var aix int64
+
 func (a *Aggregator) MakeContext() *AggregatorContext {
-	return &AggregatorContext{
+	ac := &AggregatorContext{
 		a:          a,
+		ix:         atomic.AddInt64(&aix, 1),
 		accounts:   a.accounts.MakeContext(),
 		storage:    a.storage.MakeContext(),
 		code:       a.code.MakeContext(),
@@ -1104,8 +1132,12 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 		tracesFrom: a.tracesFrom.MakeContext(),
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
+	_, fl, l, _ := runtime.Caller(1)
+	fmt.Printf("AggregatorContext %d created by %s\n", ac.ix, fmt.Sprintf("%s:%d", fl, l))
+	return ac
 }
 func (ac *AggregatorContext) Close() {
+	fmt.Printf("AggregatorContext %d close\n", ac.ix)
 	ac.accounts.Close()
 	ac.storage.Close()
 	ac.code.Close()
