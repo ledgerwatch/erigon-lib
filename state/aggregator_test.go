@@ -29,6 +29,7 @@ import (
 func testDbAndAggregator(t *testing.T, aggStep uint64) (string, kv.RwDB, *Aggregator) {
 	t.Helper()
 	path := t.TempDir()
+	//t.Cleanup(func() { os.RemoveAll(path) })
 	logger := log.New()
 	db := mdbx.NewMDBX(logger).InMem(filepath.Join(path, "db4")).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.ChaindataTablesCfg
@@ -276,7 +277,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		}
 	}()
 	agg.SetTx(tx)
-	defer agg.StartWrites().FinishWrites()
+	agg.StartWrites()
 
 	txs := aggStep * 5
 	t.Logf("step=%d tx_count=%d\n", aggStep, txs)
@@ -308,6 +309,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		err = agg.FinishTx()
 		require.NoError(t, err)
 	}
+	agg.FinishWrites()
 
 	err = tx.Commit()
 	require.NoError(t, err)
@@ -332,16 +334,15 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	newAgg, err := NewAggregator(path, path, aggStep, CommitmentModeDirect, commitment.VariantHexPatriciaTrie)
 	require.NoError(t, err)
 	require.NoError(t, newAgg.ReopenFolder())
-	defer newAgg.Close()
 
 	newAgg.SetTx(newTx)
+	newAgg.StartWrites()
 
 	latestTx, err := newAgg.SeekCommitment()
 	require.NoError(t, err)
 	t.Logf("seek to latest_tx=%d", latestTx)
 
-	ctx := newAgg.MakeContext()
-	defer ctx.Close()
+	ctx := newAgg.defaultCtx
 	miss := uint64(0)
 	for i, key := range keys {
 		if uint64(i+1) >= txs-aggStep {
@@ -363,8 +364,23 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		require.EqualValues(t, key[0], storedV[0])
 		require.EqualValues(t, key[length.Addr], storedV[1])
 	}
+	newAgg.FinishWrites()
+	ctx.Close()
+	newAgg.Close()
+
 	require.NoError(t, err)
 
+	list, err := os.ReadDir(filepath.Join(path, "e4"))
+	require.NoError(t, err)
+
+	for i := 0; i < len(list); i++ {
+		if list[i].IsDir() {
+			continue
+		}
+		fmt.Printf("remove %s\n", list[i].Name())
+		err = os.Remove(filepath.Join(path, "e4", list[i].Name()))
+		require.NoError(t, err)
+	}
 }
 
 func TestAggregator_ReplaceCommittedKeys(t *testing.T) {

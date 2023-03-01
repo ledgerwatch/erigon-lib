@@ -38,7 +38,6 @@ import (
 func testDbAndDomain(t *testing.T) (string, kv.RwDB, *Domain) {
 	t.Helper()
 	path := t.TempDir()
-	t.Cleanup(func() { os.RemoveAll(path) })
 	logger := log.New()
 	keysTable := "Keys"
 	valsTable := "Vals"
@@ -69,6 +68,7 @@ func TestCollationBuild(t *testing.T) {
 	defer logEvery.Stop()
 	_, db, d := testDbAndDomain(t)
 	ctx := context.Background()
+	defer d.Close()
 
 	tx, err := db.BeginRw(ctx)
 	require.NoError(t, err)
