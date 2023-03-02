@@ -77,6 +77,13 @@ func (li *LocalityIndex) closeWhatNotInList(fNames []string) {
 		li.closeFiles()
 		break
 	}
+	for _, protectName := range fNames {
+		if li.bm.FileName() == protectName {
+			continue
+		}
+		li.closeFiles()
+		break
+	}
 }
 
 func (li *LocalityIndex) OpenList(fNames []string) error {
