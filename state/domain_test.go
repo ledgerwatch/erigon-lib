@@ -93,7 +93,7 @@ func TestCollationBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := d.collate(ctx, 0, 0, 7, tx, logEvery)
-	defer c.Close() //nolint:errcheck
+	defer c.Close() //nolint
 
 	require.NoError(t, err)
 	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))

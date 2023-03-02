@@ -154,6 +154,7 @@ func TestAggregator_Merge(t *testing.T) {
 	require.EqualValues(t, maxWrite, binary.BigEndian.Uint64(v[:]))
 
 	v, err = dc.ReadCommitment([]byte("otherroothash"), roTx)
+	require.NoError(t, err)
 	dc.Close()
 
 	require.EqualValues(t, otherMaxWrite, binary.BigEndian.Uint64(v[:]))
