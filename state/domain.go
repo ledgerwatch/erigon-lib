@@ -1237,8 +1237,8 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 		index:        sf.valuesIdx,
 		bindex:       sf.valuesBt,
 	})
-	d.defaultDc.Close()
-	d.defaultDc = d.MakeContext()
+	//d.defaultDc.Close()
+	//d.defaultDc = d.MakeContext()
 	d.reCalcRoFiles()
 }
 

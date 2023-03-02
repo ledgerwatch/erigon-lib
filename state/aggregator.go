@@ -446,8 +446,8 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}
 		upmerges++
 	}
-	a.defaultCtx.Close()
-	a.defaultCtx = a.MakeContext()
+	//a.defaultCtx.Close()
+	//a.defaultCtx = a.MakeContext()
 
 	log.Info("[stat] aggregation merged",
 		"upto_tx", maxEndTxNum,
