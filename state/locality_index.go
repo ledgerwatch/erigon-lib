@@ -27,11 +27,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/common/assert"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
-	"github.com/ledgerwatch/log/v3"
 )
 
 const LocalityIndexUint64Limit = 64 //bitmap spend 1 bit per file, stored as uint64
@@ -62,17 +63,16 @@ func NewLocalityIndex(
 	return li, nil
 }
 func (li *LocalityIndex) closeWhatNotInList(fNames []string) {
-	if li == nil || li.file == nil || li.file.decompressor == nil {
+	if li == nil || li.bm == nil {
 		return
 	}
 
 	for _, protectName := range fNames {
-		if li.file.decompressor.FileName() == protectName {
-			continue
+		if li.bm.FileName() == protectName {
+			return
 		}
-		li.closeFiles()
-		break
 	}
+	li.closeFiles()
 }
 
 func (li *LocalityIndex) OpenList(fNames []string) error {
