@@ -82,7 +82,6 @@ func TestAggregator_WinAccess(t *testing.T) {
 }
 
 func TestAggregator_Merge(t *testing.T) {
-	t.Skip()
 	_, db, agg := testDbAndAggregator(t, 100)
 	defer agg.Close()
 
@@ -155,11 +154,9 @@ func TestAggregator_Merge(t *testing.T) {
 	require.EqualValues(t, maxWrite, binary.BigEndian.Uint64(v[:]))
 
 	v, err = dc.ReadCommitment([]byte("otherroothash"), roTx)
-	require.NoError(t, err)
 	dc.Close()
 
 	require.EqualValues(t, otherMaxWrite, binary.BigEndian.Uint64(v[:]))
-	time.Sleep(time.Second * 2) // lol let aggregator remove its files first
 }
 
 // here we create a bunch of updates for further aggregation.

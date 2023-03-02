@@ -93,6 +93,8 @@ func TestCollationBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	c, err := d.collate(ctx, 0, 0, 7, tx, logEvery)
+	defer c.Close() //nolint:errcheck
+
 	require.NoError(t, err)
 	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
 	require.Equal(t, 2, c.valuesCount)
@@ -105,6 +107,7 @@ func TestCollationBuild(t *testing.T) {
 	sf, err := d.buildFiles(ctx, 0, c)
 	require.NoError(t, err)
 	defer sf.Close()
+
 	g := sf.valuesDecomp.MakeGetter()
 	g.Reset(0)
 	var words []string
@@ -115,7 +118,10 @@ func TestCollationBuild(t *testing.T) {
 	require.Equal(t, []string{"key1", "value1.2", "key2", "value2.1"}, words)
 	// Check index
 	require.Equal(t, 2, int(sf.valuesIdx.KeyCount()))
+
+	c.Close()
 	r := recsplit.NewIndexReader(sf.valuesIdx)
+	defer r.Close()
 	for i := 0; i < len(words); i += 2 {
 		offset := r.Lookup([]byte(words[i]))
 		g.Reset(offset)

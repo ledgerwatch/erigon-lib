@@ -23,7 +23,6 @@ import (
 	"math"
 	"math/bits"
 	"os"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -434,7 +433,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 
 	var upmerges int
 	for {
-
 		a.defaultCtx.Close()
 		a.defaultCtx = a.MakeContext()
 		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
@@ -446,8 +444,6 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		}
 		upmerges++
 	}
-	//a.defaultCtx.Close()
-	//a.defaultCtx = a.MakeContext()
 
 	log.Info("[stat] aggregation merged",
 		"upto_tx", maxEndTxNum,
@@ -1107,7 +1103,6 @@ func (a *Aggregator) Stats() FilesStats {
 }
 
 type AggregatorContext struct {
-	ix         int64
 	a          *Aggregator
 	accounts   *DomainContext
 	storage    *DomainContext
@@ -1120,12 +1115,9 @@ type AggregatorContext struct {
 	keyBuf     []byte
 }
 
-var aix int64
-
 func (a *Aggregator) MakeContext() *AggregatorContext {
 	ac := &AggregatorContext{
 		a:          a,
-		ix:         atomic.AddInt64(&aix, 1),
 		accounts:   a.accounts.MakeContext(),
 		storage:    a.storage.MakeContext(),
 		code:       a.code.MakeContext(),
@@ -1135,13 +1127,10 @@ func (a *Aggregator) MakeContext() *AggregatorContext {
 		tracesFrom: a.tracesFrom.MakeContext(),
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
-	_, fl, l, _ := runtime.Caller(1)
-	fmt.Printf("AggregatorContext %d created by %s\n", ac.ix, fmt.Sprintf("%s:%d", fl, l))
 	return ac
 }
+
 func (ac *AggregatorContext) Close() {
-	_, fl, l, _ := runtime.Caller(1)
-	fmt.Printf("AggregatorContext %d close by %s\n", ac.ix, fmt.Sprintf("%s:%d", fl, l))
 	ac.accounts.Close()
 	ac.storage.Close()
 	ac.code.Close()

@@ -694,16 +694,10 @@ func (dc *DomainContext) Close() {
 		}
 		refCnt := item.src.refcount.Dec()
 		//GC: last reader responsible to remove useles files: close it and delete
-		var fn string
-		if item.src.decompressor != nil {
-			fn = item.src.decompressor.FileName()
-		}
-		fmt.Printf("%s refCnt: %d [%d-%d]\n", fn, refCnt, item.startTxNum, item.endTxNum)
 		if refCnt == 0 && item.src.canDelete.Load() {
 			item.src.closeFilesAndRemove()
 		}
 	}
-	//fmt.Printf("Close: %d %s\n", dc.ix, dc.d.filenameBase)
 	dc.hc.Close()
 }
 
