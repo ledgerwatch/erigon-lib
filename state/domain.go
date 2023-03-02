@@ -1052,6 +1052,9 @@ func (sf StaticFiles) Close() {
 	if sf.valuesIdx != nil {
 		sf.valuesIdx.Close()
 	}
+	if sf.valuesBt != nil {
+		sf.valuesBt.Close()
+	}
 	if sf.historyDecomp != nil {
 		sf.historyDecomp.Close()
 	}

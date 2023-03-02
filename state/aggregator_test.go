@@ -216,10 +216,9 @@ func TestAggregator_RestartOnDatadir(t *testing.T) {
 
 		require.NoError(t, agg.FinishTx())
 	}
-	//err = agg.Flush(context.Background())
 	agg.FinishWrites()
 	agg.Close()
-	//require.NoError(t, err)
+
 	err = tx.Commit()
 	require.NoError(t, err)
 	tx = nil
@@ -367,18 +366,6 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 	newAgg.Close()
 
 	require.NoError(t, err)
-
-	list, err := os.ReadDir(filepath.Join(path, "e4"))
-	require.NoError(t, err)
-
-	for i := 0; i < len(list); i++ {
-		if list[i].IsDir() {
-			continue
-		}
-		fmt.Printf("remove %s\n", list[i].Name())
-		err = os.Remove(filepath.Join(path, "e4", list[i].Name()))
-		require.NoError(t, err)
-	}
 }
 
 func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
