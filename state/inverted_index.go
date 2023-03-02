@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
@@ -72,7 +71,6 @@ type InvertedIndex struct {
 	txNum      uint64
 	txNumBytes [8]byte
 	wal        *invertedIndexWAL
-	walLock    sync.RWMutex
 }
 
 func NewInvertedIndex(
@@ -389,37 +387,26 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 	binary.BigEndian.PutUint64(ii.txNumBytes[:], ii.txNum)
 }
 
-func (ii *InvertedIndex) add(key, indexKey []byte) (err error) {
-	ii.walLock.RLock()
-	err = ii.wal.add(key, indexKey)
-	ii.walLock.RUnlock()
-	return err
-}
-
+// Add - !NotThreadSafe. Must use WalRLock/BatchHistoryWriteEnd
 func (ii *InvertedIndex) Add(key []byte) error {
-	return ii.add(key, key)
+	return ii.wal.add(key, key)
+}
+func (ii *InvertedIndex) add(key, indexKey []byte) error {
+	return ii.wal.add(key, indexKey)
 }
 
 func (ii *InvertedIndex) DiscardHistory(tmpdir string) {
-	ii.walLock.Lock()
-	defer ii.walLock.Unlock()
 	ii.wal = ii.newWriter(tmpdir, false, true)
 }
 func (ii *InvertedIndex) StartWrites() {
-	ii.walLock.Lock()
-	defer ii.walLock.Unlock()
 	ii.wal = ii.newWriter(ii.tmpdir, WALCollectorRam > 0, false)
 }
 func (ii *InvertedIndex) FinishWrites() {
-	ii.walLock.Lock()
-	defer ii.walLock.Unlock()
 	ii.wal.close()
 	ii.wal = nil
 }
 
 func (ii *InvertedIndex) Rotate() *invertedIndexWAL {
-	ii.walLock.Lock()
-	defer ii.walLock.Unlock()
 	if ii.wal != nil {
 		ii.wal.index, ii.wal.indexFlushing = ii.wal.indexFlushing, ii.wal.index
 		ii.wal.indexKeys, ii.wal.indexKeysFlushing = ii.wal.indexKeysFlushing, ii.wal.indexKeys
@@ -529,14 +516,13 @@ func (ii *InvertedIndex) MakeContext() *InvertedIndexContext {
 	var ic = InvertedIndexContext{
 		ii:    ii,
 		files: *ii.roFiles.Load(),
+		loc:   ii.localityIndex.MakeContext(),
 	}
 	for _, item := range ic.files {
 		if !item.src.frozen {
 			item.src.refcount.Inc()
 		}
 	}
-
-	ii.localityIndex.MakeContext(&ic.loc)
 	return &ic
 }
 func (ic *InvertedIndexContext) Close() {
@@ -551,7 +537,11 @@ func (ic *InvertedIndexContext) Close() {
 		}
 	}
 
-	ic.ii.localityIndex.CloseContext(&ic.loc)
+	for _, r := range ic.readers {
+		r.Close()
+	}
+
+	ic.loc.Close()
 }
 
 // InvertedIterator allows iteration over range of tx numbers
@@ -576,6 +566,8 @@ type InvertedIterator struct {
 
 	res []uint64
 	bm  *roaring64.Bitmap
+
+	ef *eliasfano32.EliasFano
 }
 
 func (it *InvertedIterator) Close() {
@@ -583,6 +575,9 @@ func (it *InvertedIterator) Close() {
 		it.cursor.Close()
 	}
 	bitmapdb.ReturnToPool64(it.bm)
+	for _, item := range it.stack {
+		item.reader.Close()
+	}
 }
 
 func (it *InvertedIterator) advanceInFiles() {
@@ -600,12 +595,15 @@ func (it *InvertedIterator) advanceInFiles() {
 			k, _ := g.NextUncompressed()
 			if bytes.Equal(k, it.key) {
 				eliasVal, _ := g.NextUncompressed()
-				ef, _ := eliasfano32.ReadEliasFano(eliasVal)
-
+				it.ef.Reset(eliasVal)
 				if it.orderAscend {
-					it.efIt = ef.Iterator()
+					efiter := it.ef.Iterator()
+					if it.startTxNum > 0 {
+						efiter.Seek(uint64(it.startTxNum))
+					}
+					it.efIt = efiter
 				} else {
-					it.efIt = ef.ReverseIterator()
+					it.efIt = it.ef.ReverseIterator()
 				}
 			}
 		}
@@ -800,7 +798,7 @@ type InvertedIndexContext struct {
 	files   []ctxItem // have no garbage (overlaps, etc...)
 	getters []*compress.Getter
 	readers []*recsplit.IndexReader
-	loc     ctxLocalityItem
+	loc     *ctxLocalityIdx
 }
 
 func (ic *InvertedIndexContext) statelessGetter(i int) *compress.Getter {
@@ -820,7 +818,7 @@ func (ic *InvertedIndexContext) statelessIdxReader(i int) *recsplit.IndexReader 
 	}
 	r := ic.readers[i]
 	if r == nil {
-		r = recsplit.NewIndexReader(ic.files[i].src.index)
+		r = ic.files[i].src.index.GetReaderFromPool()
 		ic.readers[i] = r
 	}
 	return r
@@ -855,6 +853,7 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 		hasNextInDb: true,
 		orderAscend: asc,
 		limit:       limit,
+		ef:          eliasfano32.NewEliasFano(1, 1),
 	}
 	if asc {
 		for i := len(ic.files) - 1; i >= 0; i-- {
@@ -867,7 +866,7 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 			}
 			it.stack = append(it.stack, ic.files[i])
 			it.stack[len(it.stack)-1].getter = it.stack[len(it.stack)-1].src.decompressor.MakeGetter()
-			it.stack[len(it.stack)-1].reader = recsplit.NewIndexReader(it.stack[len(it.stack)-1].src.index)
+			it.stack[len(it.stack)-1].reader = it.stack[len(it.stack)-1].src.index.GetReaderFromPool()
 			it.hasNextInFiles = true
 		}
 		it.hasNextInDb = len(it.stack) == 0 || endTxNum < 0 || it.stack[0].endTxNum < uint64(endTxNum)
@@ -883,7 +882,7 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 
 			it.stack = append(it.stack, ic.files[i])
 			it.stack[len(it.stack)-1].getter = it.stack[len(it.stack)-1].src.decompressor.MakeGetter()
-			it.stack[len(it.stack)-1].reader = recsplit.NewIndexReader(it.stack[len(it.stack)-1].src.index)
+			it.stack[len(it.stack)-1].reader = it.stack[len(it.stack)-1].src.index.GetReaderFromPool()
 			it.hasNextInFiles = true
 		}
 		it.hasNextInDb = len(it.stack) == 0 || startTxNum < 0 || it.stack[len(it.stack)-1].endTxNum < uint64(startTxNum)
