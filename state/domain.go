@@ -1120,7 +1120,7 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 
 	btPath := strings.TrimSuffix(valuesIdxPath, "kvi") + "bt"
 	bt, err := CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp)
-	if err := BuildBtreeIndexWithDecompressor(btPath, valuesDecomp); err != nil {
+	if err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
 	}
 
@@ -1154,13 +1154,13 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group) (err
 	d.History.BuildMissedIndices(ctx, g)
 	for _, item := range d.missedIdxFiles() {
 		//TODO: build .kvi
+		fitem := item
 		g.Go(func() error {
-			idxPath := filepath.Join(item.decompressor.FilePath(), item.decompressor.FileName())
+			idxPath := filepath.Join(fitem.decompressor.FilePath(), fitem.decompressor.FileName())
 			idxPath = strings.TrimSuffix(idxPath, "kv") + "bt"
 
-			item.bindex, err = CreateBtreeIndexWithDecompressor(idxPath, DefaultBtreeM, item.decompressor)
-			if err != nil {
-				return fmt.Errorf("failed to build btree index for %s:  %w", item.decompressor.FileName(), err)
+			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor); err != nil {
+				return fmt.Errorf("failed to build btree index for %s:  %w", fitem.decompressor.FileName(), err)
 			}
 			return nil
 		})
