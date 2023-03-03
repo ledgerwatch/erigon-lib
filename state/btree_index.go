@@ -800,6 +800,16 @@ func CreateBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 	return OpenBtreeIndex(indexPath, dataPath, M)
 }
 
+var DefaultBtreeM = uint64(2048)
+
+func CreateBtreeIndexWithDecompressor(indexPath string, M uint64, decompressor *compress.Decompressor) (*BtIndex, error) {
+	err := BuildBtreeIndexWithDecompressor(indexPath, decompressor)
+	if err != nil {
+		return nil, err
+	}
+	return OpenBtreeIndexWithDecompressor(indexPath, M, decompressor)
+}
+
 func BuildBtreeIndexWithDecompressor(indexPath string, kv *compress.Decompressor) error {
 	args := BtIndexWriterArgs{
 		IndexFile: indexPath,

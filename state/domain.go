@@ -206,6 +206,11 @@ func (d *Domain) openList(fNames []string) error {
 }
 
 func (d *Domain) OpenFolder() error {
+	eg, ctx := errgroup.WithContext(context.Background())
+	if err := d.BuildMissedIndices(ctx, eg); err != nil {
+		return err
+	}
+
 	files, err := d.fileNamesOnDisk()
 	if err != nil {
 		return err
@@ -1114,12 +1119,9 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 	}
 
 	btPath := strings.TrimSuffix(valuesIdxPath, "kvi") + "bt"
+	bt, err := CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp)
 	if err := BuildBtreeIndexWithDecompressor(btPath, valuesDecomp); err != nil {
 		return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
-	}
-	bt, err := OpenBtreeIndexWithDecompressor(btPath, 2048, valuesDecomp)
-	if err != nil {
-		return StaticFiles{}, fmt.Errorf("failed to ")
 	}
 
 	closeComp = false
@@ -1138,7 +1140,7 @@ func (d *Domain) missedIdxFiles() (l []*filesItem) {
 	d.files.Walk(func(items []*filesItem) bool { // don't run slow logic while iterating on btree
 		for _, item := range items {
 			fromStep, toStep := item.startTxNum/d.aggregationStep, item.endTxNum/d.aggregationStep
-			if !dir.FileExist(filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, fromStep, toStep))) {
+			if !dir.FileExist(filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.bt", d.filenameBase, fromStep, toStep))) {
 				l = append(l, item)
 			}
 		}
@@ -1152,7 +1154,16 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group) (err
 	d.History.BuildMissedIndices(ctx, g)
 	for _, item := range d.missedIdxFiles() {
 		//TODO: build .kvi
-		_ = item
+		g.Go(func() error {
+			idxPath := filepath.Join(item.decompressor.FilePath(), item.decompressor.FileName())
+			idxPath = strings.TrimSuffix(idxPath, "kv") + "bt"
+
+			item.bindex, err = CreateBtreeIndexWithDecompressor(idxPath, DefaultBtreeM, item.decompressor)
+			if err != nil {
+				return fmt.Errorf("failed to build btree index for %s:  %w", item.decompressor.FileName(), err)
+			}
+			return nil
+		})
 	}
 	return nil
 }
@@ -1274,59 +1285,33 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 
 	// It is important to clean up tables in a specific order
 	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
-	//for k, v := range keyMaxSteps {
-	//
-	//}
-	//for k, v, err = keysCursor.First(); err == nil && k != nil; k, v, err = keysCursor.Next() {
-	//	select {
-	//	case <-logEvery.C:
-	//		log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "prune keys", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
-	//	case <-ctx.Done():
-	//		log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
-	//		return err
-	//	default:
-	//		if bytes.Equal(stepBytes, v) {
-	//			if maxS := keyMaxSteps[string(k)]; maxS <= step {
-	//				continue
-	//			}
-	//			if err = keysCursor.DeleteCurrent(); err != nil {
-	//				return fmt.Errorf("clean up %s for [%x]=>[%x]: %w", d.filenameBase, k, v, err)
-	//			}
-	//		}
-	//	}
-	//}
-	//if err != nil {
-	//	return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
-	//}
 	var valsCursor kv.RwCursor
 	if valsCursor, err = d.tx.RwCursor(d.valsTable); err != nil {
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
-	//for k, _, err = valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
+	var i uint64
 	for k, s := range keyMaxSteps {
+		i++
 		if s <= step {
 			continue
 		}
 
 		select {
 		case <-logEvery.C:
-			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "prune values", "range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
+			log.Info("[snapshots] prune domain", "name", d.filenameBase, "stage", "prune values",
+				"progress", fmt.Sprintf("%.2f%%", (float64(i)/float64(len(keyMaxSteps)))*100),
+				"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		case <-ctx.Done():
 			log.Warn("[snapshots] prune domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return err
 		default:
-			//if bytes.Equal(stepBytes, k[len(k)-8:]) {
-			//if maxS := keyMaxSteps[string(k[len(k)-8:])]; maxS <= step {
-			//	continue
-			//}
 			if err = keysCursor.DeleteExact([]byte(k), stepBytes); err != nil {
 				return fmt.Errorf("clean up key %s for [%x]: %w", d.filenameBase, k, err)
 			}
 			if err = valsCursor.Delete([]byte(k)); err != nil {
 				return fmt.Errorf("clean up %s for [%x]: %w", d.filenameBase, k, err)
 			}
-			//}
 		}
 	}
 	if err != nil {
