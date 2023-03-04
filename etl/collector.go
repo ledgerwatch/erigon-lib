@@ -196,7 +196,7 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 		}
 
 		isNil := (c.bufType == SortableSliceBuffer && v == nil) ||
-			(c.bufType == SortableAppendBuffer && len(v) == 0) ||
+			(c.bufType == SortableAppendBuffer && len(v) == 0) || //backward compatibility
 			(c.bufType == SortableOldestAppearedBuffer && len(v) == 0)
 		if isNil {
 			if canUseAppend {
