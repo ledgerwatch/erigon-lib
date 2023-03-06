@@ -993,15 +993,17 @@ func (h *History) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) er
 		if err != nil {
 			return err
 		}
-		if err = ctx.Err(); err != nil {
-			return err
-		}
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
 		_, _, _ = valsC.Seek(v[len(v)-8:])
 		_, _ = idxC.SeekBothRange(v[:len(v)-8], k)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)

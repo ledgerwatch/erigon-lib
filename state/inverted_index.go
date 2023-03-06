@@ -1169,7 +1169,7 @@ func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uin
 	ii.reCalcRoFiles()
 }
 
-func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
+func (ii *InvertedIndex) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) error {
 	keysCursor, err := tx.CursorDupSort(ii.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s keys cursor: %w", ii.filenameBase, err)
@@ -1201,6 +1201,12 @@ func (ii *InvertedIndex) warmup(txFrom, limit uint64, tx kv.Tx) error {
 			break
 		}
 		_, _ = idxC.SeekBothRange(v, k)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
