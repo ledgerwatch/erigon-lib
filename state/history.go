@@ -1154,8 +1154,6 @@ func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) 
 			if err != nil {
 				return err
 			}
-			panic(1)
-			fmt.Printf("a: %x, %x\n", kk, vv)
 			if err := f(txNum, kk[:len(kk)-8], vv); err != nil {
 				return err
 			}
@@ -1439,7 +1437,6 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 }
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
-	panic(2)
 	c, err := tx.Cursor(hc.h.historyValsTable)
 	if err != nil {
 		return nil, false, err
