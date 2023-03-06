@@ -1154,7 +1154,9 @@ func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) 
 			if err != nil {
 				return err
 			}
-			if err := f(txNum, k, vv); err != nil {
+			panic(1)
+			fmt.Printf("a: %x, %x\n", kk, vv)
+			if err := f(txNum, kk[:len(kk)-8], vv); err != nil {
 				return err
 			}
 			if kk != nil {
@@ -1437,6 +1439,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 }
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
+	panic(2)
 	c, err := tx.Cursor(hc.h.historyValsTable)
 	if err != nil {
 		return nil, false, err
@@ -2032,17 +2035,13 @@ func (hi *HistoryIterator2) advanceInDb() {
 		}
 	}
 	if k != nil {
-		hi.nextKey = v[:len(v)-8]
+		hi.nextKey = v
 		hi.hasNext = true
 
-		valNum := v[len(v)-8:]
-
-		if binary.BigEndian.Uint64(valNum) == 0 {
-			// This is special valNum == 0, which is empty value
-			hi.nextVal = []byte{}
-			return
-		}
-		val, err := hi.roTx.GetOne(hi.valsTable, valNum)
+		search := make([]byte, len(v)+8)
+		copy(search, v)
+		search = append(search[:len(v)], k...)
+		val, err := hi.roTx.GetOne(hi.valsTable, search)
 		if err != nil {
 			hi.nextErr, hi.hasNext = err, true
 			return
