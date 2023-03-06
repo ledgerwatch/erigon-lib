@@ -366,7 +366,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 }
 
 func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
-	aggStep := uint64(10000)
+	aggStep := uint64(500)
 
 	_, db, agg := testDbAndAggregator(t, aggStep)
 	t.Cleanup(agg.Close)
@@ -395,7 +395,7 @@ func TestAggregator_ReplaceCommittedKeys(t *testing.T) {
 	}
 
 	roots := agg.AggregatedRoots()
-	txs := aggStep / 2 * 50
+	txs := (aggStep) * StepsInBiggestFile
 	t.Logf("step=%d tx_count=%d", aggStep, txs)
 
 	rnd := rand.New(rand.NewSource(0))
