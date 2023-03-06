@@ -1946,6 +1946,7 @@ func (hi *HistoryChangesIter) Next() ([]byte, []byte, error) {
 }
 
 func (hc *HistoryContext) IterateRecentlyChanged(startTxNum, endTxNum uint64, roTx kv.Tx, f func([]byte, []byte) error) error {
+	//TODO: low-level iterator must produce what we need without wrapping to etl.Collector
 	col := etl.NewCollector("", hc.h.tmpdir, etl.NewOldestEntryBuffer(etl.BufferOptimalSize))
 	defer col.Close()
 	col.LogLvl(log.LvlTrace)
@@ -1995,6 +1996,8 @@ type HistoryIterator2 struct {
 	advDbCnt      int
 	startTxKey    [8]byte
 	hasNext       bool
+
+	searchBuf []byte
 }
 
 func (hi *HistoryIterator2) Stat() int { return hi.advDbCnt }
@@ -2038,10 +2041,8 @@ func (hi *HistoryIterator2) advanceInDb() {
 		hi.nextKey = v
 		hi.hasNext = true
 
-		search := make([]byte, len(v)+8)
-		copy(search, v)
-		search = append(search[:len(v)], k...)
-		val, err := hi.roTx.GetOne(hi.valsTable, search)
+		hi.searchBuf = append(append(hi.searchBuf[:0], v...), k...)
+		val, err := hi.roTx.GetOne(hi.valsTable, hi.searchBuf)
 		if err != nil {
 			hi.nextErr, hi.hasNext = err, true
 			return
