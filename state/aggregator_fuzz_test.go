@@ -1,4 +1,5 @@
 //go:build !nofuzz
+
 package state
 
 import (
@@ -10,7 +11,7 @@ import (
 func Fuzz_BtreeIndex_Allocation(f *testing.F) {
 	f.Add(uint64(1_000_000), uint64(1024))
 	f.Fuzz(func(t *testing.T, keyCount, M uint64) {
-		if keyCount <  M*4 || M < 4{
+		if keyCount < M*4 || M < 4 {
 			t.Skip()
 		}
 		bt := newBtAlloc(keyCount, M, false)

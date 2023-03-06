@@ -633,4 +633,3 @@ func Test_InitBtreeIndex(t *testing.T) {
 	require.EqualValues(t, bt.KeyCount(), keyCount)
 	bt.Close()
 }
-
