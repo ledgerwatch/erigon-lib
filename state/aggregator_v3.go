@@ -756,7 +756,7 @@ func (a *AggregatorV3) PruneWithTiemout(ctx context.Context, timeout time.Durati
 }
 
 func (a *AggregatorV3) Prune(ctx context.Context, limit uint64) error {
-	//if limit/a.aggregationStep > StepsInBiggestFile {
+	//if limit/a.aggregationStep >= StepsInBiggestFile {
 	//	ctx, cancel := context.WithCancel(ctx)
 	//	defer cancel()
 	//
