@@ -27,7 +27,7 @@ import (
 type MemoryMutation struct {
 	memTx            kv.RwTx
 	memDb            kv.RwDB
-	deletedEntries   map[string]map[string]struct{}
+	deletedEntries   map[string]map[string]string
 	clearedTables    map[string]struct{}
 	db               kv.Tx
 	statelessCursors map[string]kv.RwCursor
@@ -55,8 +55,8 @@ func NewMemoryBatch(tx kv.Tx, tmpDir string) *MemoryMutation {
 		db:             tx,
 		memDb:          tmpDB,
 		memTx:          memTx,
-		deletedEntries: make(map[string]map[string]struct{}),
-		clearedTables:  make(map[string]struct{}),
+		deletedEntries: map[string]map[string]string{},
+		clearedTables:  map[string]struct{}{},
 	}
 }
 
@@ -255,9 +255,9 @@ func (m *MemoryMutation) ForPrefix(bucket string, prefix []byte, walker func(k, 
 
 func (m *MemoryMutation) Delete(table string, k []byte) error {
 	if _, ok := m.deletedEntries[table]; !ok {
-		m.deletedEntries[table] = make(map[string]struct{})
+		m.deletedEntries[table] = map[string]string{}
 	}
-	m.deletedEntries[table][string(k)] = struct{}{}
+	m.deletedEntries[table][string(k)] = ""
 	return m.memTx.Delete(table, k)
 }
 
@@ -375,8 +375,8 @@ func isTablePurelyDupsort(bucket string) bool {
 }
 
 // Cursor creates a new cursor (the real fun begins here)
-func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursorDupSort, error) {
-	c := &memoryMutationCursor{}
+func (m *MemoryMutation) makeCursor(bucket string, dupsort bool) (kv.RwCursorDupSort, error) {
+	c := &memoryMutationCursor{dupsort: dupsort}
 	// We can filter duplicates in dup sorted table
 	c.table = bucket
 
@@ -395,22 +395,22 @@ func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursorDupSort, error) {
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) RwCursorDupSort(bucket string) (kv.RwCursorDupSort, error) {
-	return m.makeCursor(bucket)
+	return m.makeCursor(bucket, true /* dupsort */)
 }
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) RwCursor(bucket string) (kv.RwCursor, error) {
-	return m.makeCursor(bucket)
+	return m.makeCursor(bucket, false /* dupsort */)
 }
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) CursorDupSort(bucket string) (kv.CursorDupSort, error) {
-	return m.makeCursor(bucket)
+	return m.makeCursor(bucket, true /* dupsort */)
 }
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) Cursor(bucket string) (kv.Cursor, error) {
-	return m.makeCursor(bucket)
+	return m.makeCursor(bucket, false /* dupsort */)
 }
 
 func (m *MemoryMutation) ViewID() uint64 {

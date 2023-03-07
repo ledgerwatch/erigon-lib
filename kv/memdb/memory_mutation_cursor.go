@@ -47,6 +47,7 @@ type memoryMutationCursor struct {
 	currentDbEntry  cursorEntry
 	currentMemEntry cursorEntry
 	isPrevFromDb    bool
+	dupsort         bool
 }
 
 func (m *memoryMutationCursor) isTableCleared() bool {
