@@ -1098,6 +1098,13 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 				return err
 			}
 		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-logEvery.C:
+			log.Info("[snapshots] prune history", "name", h.filenameBase, "prefix", fmt.Sprintf("%x", key[:4]))
+		default:
+		}
 		return nil
 	}, etl.TransformArgs{}); err != nil {
 		return err
