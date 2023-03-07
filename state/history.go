@@ -467,6 +467,9 @@ func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath
 }
 
 func (h *History) AddPrevValue(key1, key2, original []byte) (err error) {
+	if original == nil {
+		original = []byte{}
+	}
 	return h.wal.addPrevValue(key1, key2, original)
 }
 
