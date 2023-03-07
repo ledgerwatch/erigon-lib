@@ -3,7 +3,7 @@ module github.com/ledgerwatch/erigon-lib
 go 1.18
 
 require (
-	github.com/ledgerwatch/interfaces v0.0.0-20230210062155-539b8171d9f0
+	github.com/ledgerwatch/interfaces v0.0.0-20230306115306-76f49663a127
 	github.com/ledgerwatch/log/v3 v3.7.0
 	github.com/ledgerwatch/secp256k1 v1.0.0
 	github.com/ledgerwatch/trackerslist v1.1.0
@@ -31,13 +31,13 @@ require (
 	github.com/stretchr/testify v1.8.2
 	github.com/tidwall/btree v1.6.0
 	go.uber.org/atomic v1.10.0
-	golang.org/x/crypto v0.6.0
-	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2
+	golang.org/x/crypto v0.7.0
+	golang.org/x/exp v0.0.0-20230306221820-f0f767cdffd6
 	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.5.0
+	golang.org/x/sys v0.6.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.53.0
-	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.2.0
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.3.0
 	google.golang.org/protobuf v1.28.1
 )
 
@@ -95,16 +95,15 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/valyala/fastrand v1.1.0 // indirect
 	github.com/valyala/histogram v1.2.0 // indirect
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.opentelemetry.io/otel v1.8.0 // indirect
 	go.opentelemetry.io/otel/trace v1.8.0 // indirect
-	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
-	golang.org/x/tools v0.3.0 // indirect
+	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
 	google.golang.org/genproto v0.0.0-20230202175211-008b39050e57 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
