@@ -1075,14 +1075,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		if err = historyKeysCursor.DeleteCurrentDuplicates(); err != nil {
 			return err
 		}
-
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-logEvery.C:
-			log.Info("[snapshots] prune history", "name", h.filenameBase, "to_step", fmt.Sprintf("%.2f", float64(txTo)/float64(h.aggregationStep)), "prefix", fmt.Sprintf("%x", key[:8]))
-		default:
-		}
 	}
 
 	if err := collector.Load(h.tx, "", func(key, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
