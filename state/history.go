@@ -1086,6 +1086,36 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 	}
 
 	if err := collector.Load(h.tx, "", func(key, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+		{
+			k, firstV, err := idxC.SeekExact(key)
+			if err != nil {
+				return err
+			}
+			if k == nil {
+				return nil
+			}
+			lastV, err := idxC.LastDup()
+			if err != nil {
+				return err
+			}
+			firstTxNum := binary.BigEndian.Uint64(firstV)
+			lastTxNum := binary.BigEndian.Uint64(lastV)
+			if firstTxNum >= txFrom && lastTxNum < txTo {
+				if err = idxC.DeleteCurrentDuplicates(); err != nil {
+					return err
+				}
+
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-logEvery.C:
+					log.Info("[snapshots] prune history", "name", h.filenameBase, "prefix", fmt.Sprintf("%x", key[:4]))
+				default:
+				}
+				return nil
+			}
+		}
+
 		for v, err := idxC.SeekBothRange(key, txKey[:]); v != nil; _, v, err = idxC.NextDup() {
 			if err != nil {
 				return err
