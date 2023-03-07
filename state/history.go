@@ -1069,13 +1069,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 			if err := collector.Collect(v[:len(v)-8], nil); err != nil {
 				return err
 			}
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-logEvery.C:
-				log.Info("[snapshots] prune history", "name", h.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(h.aggregationStep), float64(txTo)/float64(h.aggregationStep)))
-			default:
-			}
 		}
 
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
