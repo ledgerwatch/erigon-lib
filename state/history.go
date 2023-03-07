@@ -467,6 +467,9 @@ func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath
 }
 
 func (h *History) AddPrevValue(key1, key2, original []byte) (err error) {
+	if original == nil {
+		original = []byte{}
+	}
 	return h.wal.addPrevValue(key1, key2, original)
 }
 
@@ -1039,6 +1042,10 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		return err
 	}
 	defer valsC.Close()
+
+	collector := etl.NewCollector("snapshots", h.tmpdir, etl.NewOldestEntryBuffer(etl.BufferOptimalSize))
+	defer collector.Close()
+
 	idxC, err := h.tx.RwCursorDupSort(h.indexTable)
 	if err != nil {
 		return err
@@ -1053,24 +1060,22 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 			break
 		}
 		for ; err == nil && k != nil; k, v, err = historyKeysCursor.NextDup() {
+			if err != nil {
+				return err
+			}
 			if err = valsC.Delete(v[len(v)-8:]); err != nil {
 				return err
 			}
-
-			if err = idxC.DeleteExact(v[:len(v)-8], k); err != nil {
+			if err := collector.Collect(v[:len(v)-8], nil); err != nil {
 				return err
 			}
-			//for vv, err := idxC.SeekBothRange(v[:len(v)-8], k); vv != nil; _, vv, err = idxC.NextDup() {
-			//	if err != nil {
-			//		return err
-			//	}
-			//	if binary.BigEndian.Uint64(vv) >= txTo {
-			//		break
-			//	}
-			//	if err = idxC.DeleteCurrent(); err != nil {
-			//		return err
-			//	}
-			//}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-logEvery.C:
+				log.Info("[snapshots] prune history", "name", h.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(h.aggregationStep), float64(txTo)/float64(h.aggregationStep)))
+			default:
+			}
 		}
 
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
@@ -1085,6 +1090,24 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 			log.Info("[snapshots] prune history", "name", h.filenameBase, "range", fmt.Sprintf("%.2f-%.2f", float64(txNum)/float64(h.aggregationStep), float64(txTo)/float64(h.aggregationStep)))
 		default:
 		}
+	}
+
+	if err := collector.Load(h.tx, "", func(key, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+		for v, err := idxC.SeekBothRange(key, txKey[:]); v != nil; _, v, err = idxC.NextDup() {
+			if err != nil {
+				return err
+			}
+			txNum := binary.BigEndian.Uint64(v)
+			if txNum >= txTo {
+				break
+			}
+			if err = idxC.DeleteCurrent(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, etl.TransformArgs{}); err != nil {
+		return err
 	}
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
