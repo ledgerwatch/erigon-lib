@@ -1298,7 +1298,7 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 				case <-ctx.Done():
 					return nil
 				case <-logEvery.C:
-					log.Info("[snapshots] prune history", "name", ii.filenameBase, "prefix", fmt.Sprintf("%x", key[:4]), "to_step", fmt.Sprintf("%.2f", float64(txTo)/float64(ii.aggregationStep)))
+					log.Info("[snapshots] prune history", "name", ii.filenameBase, "to_step", fmt.Sprintf("%.2f", float64(txTo)/float64(ii.aggregationStep)), "prefix", fmt.Sprintf("%x", key[:8]))
 				default:
 				}
 				return nil
@@ -1321,7 +1321,7 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		case <-ctx.Done():
 			return nil
 		case <-logEvery.C:
-			log.Info("[snapshots] prune history", "name", ii.filenameBase, "prefix", fmt.Sprintf("%x", key[:4]), "to_step", fmt.Sprintf("%.2f", float64(txTo)/float64(ii.aggregationStep)))
+			log.Info("[snapshots] prune history", "name", ii.filenameBase, "to_step", fmt.Sprintf("%.2f", float64(txTo)/float64(ii.aggregationStep)), "prefix", fmt.Sprintf("%x", key[:8]))
 		default:
 		}
 		return nil
