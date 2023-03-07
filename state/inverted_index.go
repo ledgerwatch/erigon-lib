@@ -1277,7 +1277,7 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	}
 
 	if err := collector.Load(ii.tx, "", func(key, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-		for k, v, err := idxC.SeekExact(key); k != nil; k, v, err = idxC.NextDup() {
+		for v, err := idxC.SeekBothRange(key, txKey[:]); v != nil; _, v, err = idxC.NextDup() {
 			if err != nil {
 				return err
 			}
