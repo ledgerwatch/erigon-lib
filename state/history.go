@@ -737,32 +737,14 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.
 		keyBuf = keyBuf[:len(key)+8]
 		for it.HasNext() {
 			txNum := it.Next()
-			//binary.BigEndian.PutUint64(txKey[:], txNum)
-
 			//TODO: use cursor range
 			binary.BigEndian.PutUint64(keyBuf[len(key):], txNum)
-
-			//v, err := keysCursor.SeekBothRange(txKey[:], []byte(key))
-			//if err != nil {
-			//	return HistoryCollation{}, err
-			//}
-			//if !bytes.HasPrefix(v, []byte(key)) {
-			//	continue
-			//}
 			if val, err = roTx.GetOne(h.historyValsTable, keyBuf); err != nil {
 				return HistoryCollation{}, fmt.Errorf("get %s history val [%x]: %w", h.filenameBase, k, err)
 			}
 			if len(val) == 0 {
 				val = nil
 			}
-			//valNum := binary.BigEndian.Uint64(v[len(v)-8:])
-			//if valNum == 0 {
-			//	val = nil
-			//} else {
-			//	if val, err = roTx.GetOne(h.historyValsTable, v[len(v)-8:]); err != nil {
-			//		return HistoryCollation{}, fmt.Errorf("get %s history val [%x]=>%d: %w", h.filenameBase, k, valNum, err)
-			//	}
-			//}
 			if err = historyComp.AddUncompressedWord(val); err != nil {
 				return HistoryCollation{}, fmt.Errorf("add %s history val [%x]=>[%x]: %w", h.filenameBase, k, val, err)
 			}
