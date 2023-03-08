@@ -138,7 +138,7 @@ func TestNonceFromAddress(t *testing.T) {
 			Nonce:  3,
 		}
 		txSlot1.IDHash[0] = 1
-		txSlots.Append(txSlot1, addr, true)
+		txSlots.Append(txSlot1, addr[:], true)
 
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -163,8 +163,8 @@ func TestNonceFromAddress(t *testing.T) {
 			Nonce:  6,
 		}
 		txSlot3.IDHash[0] = 3
-		txSlots.Append(txSlot2, addr, true)
-		txSlots.Append(txSlot3, addr, true)
+		txSlots.Append(txSlot2, addr[:], true)
+		txSlots.Append(txSlot3, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -184,7 +184,7 @@ func TestNonceFromAddress(t *testing.T) {
 			Nonce:  3,
 		}
 		txSlot1.IDHash[0] = 4
-		txSlots.Append(txSlot1, addr, true)
+		txSlots.Append(txSlot1, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -202,7 +202,7 @@ func TestNonceFromAddress(t *testing.T) {
 			Nonce:  1,
 		}
 		txSlot1.IDHash[0] = 5
-		txSlots.Append(txSlot1, addr, true)
+		txSlots.Append(txSlot1, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -258,7 +258,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 			Nonce:  3,
 		}
 		txSlot.IDHash[0] = 1
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -276,7 +276,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 			Nonce:  3,
 		}
 		txSlot.IDHash[0] = 2
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -296,7 +296,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 			Nonce:  3,
 		}
 		txSlot.IDHash[0] = 3
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -316,7 +316,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 			Nonce:  3,
 		}
 		txSlot.IDHash[0] = 4
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -375,7 +375,7 @@ func TestReverseNonces(t *testing.T) {
 			Nonce:  3,
 		}
 		txSlot.IDHash[0] = 1
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -403,7 +403,7 @@ func TestReverseNonces(t *testing.T) {
 			Nonce:  2,
 		}
 		txSlot.IDHash[0] = 2
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -431,7 +431,7 @@ func TestReverseNonces(t *testing.T) {
 			Nonce:  2,
 		}
 		txSlot.IDHash[0] = 3
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -504,7 +504,7 @@ func TestTxPoke(t *testing.T) {
 		}
 		txSlot.IDHash[0] = 1
 		idHash = append(idHash, txSlot.IDHash[:]...)
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -531,7 +531,7 @@ func TestTxPoke(t *testing.T) {
 			Nonce:  2,
 		}
 		txSlot.IDHash[0] = 1
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -560,7 +560,7 @@ func TestTxPoke(t *testing.T) {
 			Nonce:  2,
 		}
 		txSlot.IDHash[0] = 2
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
@@ -590,7 +590,7 @@ func TestTxPoke(t *testing.T) {
 			Nonce:  2,
 		}
 		txSlot.IDHash[0] = 1
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 		pool.AddRemoteTxs(ctx, txSlots)
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
@@ -612,7 +612,7 @@ func TestTxPoke(t *testing.T) {
 			Nonce:  2,
 		}
 		txSlot.IDHash[0] = 2
-		txSlots.Append(txSlot, addr, true)
+		txSlots.Append(txSlot, addr[:], true)
 		pool.AddRemoteTxs(ctx, txSlots)
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
@@ -748,7 +748,7 @@ func TestShanghaiValidateTx(t *testing.T) {
 
 			txns := types.TxSlots{
 				Txs:     append([]*types.TxSlot{}, txn),
-				Senders: make([]common.Address, 20),
+				Senders: types.Addresses{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 			}
 			err = pool.senders.registerNewSenders(&txns)
 			asrt.NoError(err)

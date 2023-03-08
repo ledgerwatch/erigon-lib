@@ -168,7 +168,7 @@ func TestPooledTransactionsPacket66(t *testing.T) {
 			require.NoError(err)
 			require.Equal(tt.requestID, requestID)
 			require.Equal(0, len(slots.Txs))
-			require.Equal(0, len(slots.Senders))
+			require.Equal(0, slots.Senders.Len())
 			require.Equal(0, len(slots.IsLocal))
 		})
 	}
@@ -226,7 +226,7 @@ func TestTransactionsPacket(t *testing.T) {
 			_, err := ParseTransactions(encodeBuf, 0, ctx, slots, func(bytes []byte) error { return ErrRejected })
 			require.NoError(err)
 			require.Equal(0, len(slots.Txs))
-			require.Equal(0, len(slots.Senders))
+			require.Equal(0, slots.Senders.Len())
 			require.Equal(0, len(slots.IsLocal))
 		})
 	}

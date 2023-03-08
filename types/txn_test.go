@@ -18,7 +18,6 @@ package types
 
 import (
 	"bytes"
-	"github.com/ledgerwatch/erigon-lib/common"
 	"strconv"
 	"testing"
 
@@ -111,22 +110,22 @@ func TestTxSlotsGrowth(t *testing.T) {
 	s := &TxSlots{}
 	s.Resize(11)
 	assert.Equal(11, len(s.Txs))
-	assert.Equal(11, len(s.Senders))
+	assert.Equal(11, s.Senders.Len())
 	s.Resize(23)
 	assert.Equal(23, len(s.Txs))
-	assert.Equal(23, len(s.Senders))
+	assert.Equal(23, s.Senders.Len())
 
-	s = &TxSlots{Txs: make([]*TxSlot, 20), Senders: make([]common.Address, 20)}
+	s = &TxSlots{Txs: make([]*TxSlot, 20), Senders: make(Addresses, 20*20)}
 	s.Resize(20)
 	assert.Equal(20, len(s.Txs))
-	assert.Equal(20, len(s.Senders))
+	assert.Equal(20, s.Senders.Len())
 	s.Resize(23)
 	assert.Equal(23, len(s.Txs))
-	assert.Equal(23, len(s.Senders))
+	assert.Equal(23, s.Senders.Len())
 
 	s.Resize(2)
 	assert.Equal(2, len(s.Txs))
-	assert.Equal(2, len(s.Senders))
+	assert.Equal(2, s.Senders.Len())
 }
 
 func TestDedupHashes(t *testing.T) {

@@ -638,7 +638,7 @@ func (h Addresses) Len() int        { return len(h) / length.Addr }
 
 type TxSlots struct {
 	Txs     []*TxSlot
-	Senders []common.Address
+	Senders Addresses
 	IsLocal []bool
 }
 
@@ -646,20 +646,21 @@ func (s *TxSlots) Valid() error {
 	if len(s.Txs) != len(s.IsLocal) {
 		return fmt.Errorf("TxSlots: expect equal len of isLocal=%d and txs=%d", len(s.IsLocal), len(s.Txs))
 	}
-
-	if len(s.Txs) != len(s.Senders) {
-		return fmt.Errorf("TxSlots: expect equal len of senders=%d and txs=%d", len(s.Senders), len(s.Txs))
+	if len(s.Txs) != s.Senders.Len() {
+		return fmt.Errorf("TxSlots: expect equal len of senders=%d and txs=%d", s.Senders.Len(), len(s.Txs))
 	}
 	return nil
 }
+
+var zeroAddr = make([]byte, 20)
 
 // Resize internal arrays to len=targetSize, shrinks if need. It rely on `append` algorithm to realloc
 func (s *TxSlots) Resize(targetSize uint) {
 	for uint(len(s.Txs)) < targetSize {
 		s.Txs = append(s.Txs, nil)
 	}
-	for uint(len(s.Senders)) < targetSize {
-		s.Senders = append(s.Senders, common.Address{})
+	for uint(s.Senders.Len()) < targetSize {
+		s.Senders = append(s.Senders, addressesGrowth...)
 	}
 	for uint(len(s.IsLocal)) < targetSize {
 		s.IsLocal = append(s.IsLocal, false)
@@ -670,26 +671,26 @@ func (s *TxSlots) Resize(targetSize uint) {
 	for i := oldLen; i < targetSize; i++ {
 		s.Txs[i] = nil
 	}
-	s.Senders = s.Senders[:targetSize]
+	s.Senders = s.Senders[:length.Addr*targetSize]
 	for i := oldLen; i < targetSize; i++ {
-		s.Senders[int(i)] = common.Address{}
+		copy(s.Senders.At(int(i)), zeroAddr)
 	}
 	s.IsLocal = s.IsLocal[:targetSize]
 	for i := oldLen; i < targetSize; i++ {
 		s.IsLocal[i] = false
 	}
 }
-func (s *TxSlots) Append(slot *TxSlot, sender common.Address, isLocal bool) {
+func (s *TxSlots) Append(slot *TxSlot, sender []byte, isLocal bool) {
 	n := len(s.Txs)
 	s.Resize(uint(len(s.Txs) + 1))
 	s.Txs[n] = slot
 	s.IsLocal[n] = isLocal
-	s.Senders[n] = sender
+	copy(s.Senders.At(n), sender)
 }
 
 type TxsRlp struct {
 	Txs     [][]byte
-	Senders []common.Address
+	Senders Addresses
 	IsLocal []bool
 }
 
@@ -698,8 +699,8 @@ func (s *TxsRlp) Resize(targetSize uint) {
 	for uint(len(s.Txs)) < targetSize {
 		s.Txs = append(s.Txs, nil)
 	}
-	for uint(len(s.Senders)) < targetSize {
-		s.Senders = append(s.Senders, common.Address{})
+	for uint(s.Senders.Len()) < targetSize {
+		s.Senders = append(s.Senders, addressesGrowth...)
 	}
 	for uint(len(s.IsLocal)) < targetSize {
 		s.IsLocal = append(s.IsLocal, false)
@@ -709,6 +710,8 @@ func (s *TxsRlp) Resize(targetSize uint) {
 	s.Senders = s.Senders[:length.Addr*targetSize]
 	s.IsLocal = s.IsLocal[:targetSize]
 }
+
+var addressesGrowth = make([]byte, length.Addr)
 
 func EncodeSenderLengthForStorage(nonce uint64, balance uint256.Int) uint {
 	var structLength uint = 1 // 1 byte for fieldset
