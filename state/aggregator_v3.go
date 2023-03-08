@@ -1056,6 +1056,7 @@ func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFiles
 	if err == nil {
 		closeFiles = false
 	}
+	runtime.GC()
 	return mf, err
 }
 
