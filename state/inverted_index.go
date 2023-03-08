@@ -996,8 +996,6 @@ type FrozenInvertedIdxIter struct {
 	hasNext bool
 	err     error
 
-	res []uint64
-
 	ef *eliasfano32.EliasFano
 }
 
@@ -1119,8 +1117,6 @@ type RecentInvertedIdxIter struct {
 
 	res []uint64
 	bm  *roaring64.Bitmap
-
-	ef *eliasfano32.EliasFano
 }
 
 func (it *RecentInvertedIdxIter) Close() {
