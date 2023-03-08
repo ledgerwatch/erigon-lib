@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
-	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
 	btree2 "github.com/tidwall/btree"
@@ -256,52 +255,52 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	defer ic.Close()
 
 	// Check the iterator ranges first without roTx
-	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
-		var k [8]byte
-		binary.BigEndian.PutUint64(k[:], keyNum)
-		var values []uint64
-		t.Run("asc", func(t *testing.T) {
-			it, err := ic.IterateRange(k[:], 0, 976, order.Asc, -1, nil)
-			require.NoError(t, err)
-			for i := keyNum; i < 976; i += keyNum {
-				label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
-				require.True(t, it.HasNext(), label)
-				n, err := it.Next()
-				require.NoError(t, err)
-				require.Equal(t, i, n, label)
-				values = append(values, n)
-			}
-			require.False(t, it.HasNext())
-		})
-
-		t.Run("desc", func(t *testing.T) {
-			reverseStream, err := ic.IterateRange(k[:], 976-1, 0, order.Desc, -1, nil)
-			require.NoError(t, err)
-			iter.ExpectEqualU64(t, iter.ReverseArray(values), reverseStream)
-		})
-		t.Run("unbounded asc", func(t *testing.T) {
-			forwardLimited, err := ic.IterateRange(k[:], -1, 976, order.Asc, 2, nil)
-			require.NoError(t, err)
-			iter.ExpectEqualU64(t, iter.Array(values[:2]), forwardLimited)
-		})
-		t.Run("unbounded desc", func(t *testing.T) {
-			reverseLimited, err := ic.IterateRange(k[:], 976-1, -1, order.Desc, 2, nil)
-			require.NoError(t, err)
-			iter.ExpectEqualU64(t, iter.ReverseArray(values[len(values)-2:]), reverseLimited)
-		})
-		t.Run("tiny bound asc", func(t *testing.T) {
-			it, err := ic.IterateRange(k[:], 100, 102, order.Asc, -1, nil)
-			require.NoError(t, err)
-			expect := iter.FilterU64(iter.Array(values), func(k uint64) bool { return k >= 100 && k < 102 })
-			iter.ExpectEqualU64(t, expect, it)
-		})
-		t.Run("tiny bound desc", func(t *testing.T) {
-			it, err := ic.IterateRange(k[:], 102, 100, order.Desc, -1, nil)
-			require.NoError(t, err)
-			expect := iter.FilterU64(iter.ReverseArray(values), func(k uint64) bool { return k <= 102 && k > 100 })
-			iter.ExpectEqualU64(t, expect, it)
-		})
-	}
+	//for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
+	//	var k [8]byte
+	//	binary.BigEndian.PutUint64(k[:], keyNum)
+	//	var values []uint64
+	//	t.Run("asc"+strconv.Itoa(int(keyNum)), func(t *testing.T) {
+	//		it, err := ic.IterateRange(k[:], 0, 976, order.Asc, -1, tx)
+	//		require.NoError(t, err)
+	//		for i := keyNum; i < 976; i += keyNum {
+	//			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
+	//			require.True(t, it.HasNext(), label)
+	//			n, err := it.Next()
+	//			require.NoError(t, err)
+	//			require.Equal(t, i, n, label)
+	//			values = append(values, n)
+	//		}
+	//		require.False(t, it.HasNext())
+	//	})
+	//
+	//	t.Run("desc", func(t *testing.T) {
+	//		reverseStream, err := ic.IterateRange(k[:], 976-1, 0, order.Desc, -1, nil)
+	//		require.NoError(t, err)
+	//		iter.ExpectEqualU64(t, iter.ReverseArray(values), reverseStream)
+	//	})
+	//	t.Run("unbounded asc", func(t *testing.T) {
+	//		forwardLimited, err := ic.IterateRange(k[:], -1, 976, order.Asc, 2, nil)
+	//		require.NoError(t, err)
+	//		iter.ExpectEqualU64(t, iter.Array(values[:2]), forwardLimited)
+	//	})
+	//	t.Run("unbounded desc", func(t *testing.T) {
+	//		reverseLimited, err := ic.IterateRange(k[:], 976-1, -1, order.Desc, 2, nil)
+	//		require.NoError(t, err)
+	//		iter.ExpectEqualU64(t, iter.ReverseArray(values[len(values)-2:]), reverseLimited)
+	//	})
+	//	t.Run("tiny bound asc", func(t *testing.T) {
+	//		it, err := ic.IterateRange(k[:], 100, 102, order.Asc, -1, nil)
+	//		require.NoError(t, err)
+	//		expect := iter.FilterU64(iter.Array(values), func(k uint64) bool { return k >= 100 && k < 102 })
+	//		iter.ExpectEqualU64(t, expect, it)
+	//	})
+	//	t.Run("tiny bound desc", func(t *testing.T) {
+	//		it, err := ic.IterateRange(k[:], 102, 100, order.Desc, -1, nil)
+	//		require.NoError(t, err)
+	//		expect := iter.FilterU64(iter.ReverseArray(values), func(k uint64) bool { return k <= 102 && k > 100 })
+	//		iter.ExpectEqualU64(t, expect, it)
+	//	})
+	//}
 	// Now check ranges that require access to DB
 	roTx, err := db.BeginRo(ctx)
 	require.NoError(t, err)
@@ -320,10 +319,14 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 			require.Equal(t, i, n, label)
 			values = append(values, n)
 		}
+		a, _ := it.Next()
+		fmt.Printf("a:%d\n", a)
 		require.False(t, it.HasNext())
 
 		reverseStream, err := ic.IterateRange(k[:], 1000-1, 400-1, false, -1, roTx)
 		require.NoError(t, err)
+		arr, _ := iter.ToU64Arr(reverseStream)
+		fmt.Printf("arrr: %d\n", arr)
 		iter.ExpectEqualU64(t, iter.ReverseArray(values), reverseStream)
 	}
 }

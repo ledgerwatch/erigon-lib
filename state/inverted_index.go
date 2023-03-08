@@ -832,7 +832,7 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 	if err != nil {
 		return nil, err
 	}
-	return iter.Union[uint64](frozenIt, recentIt), nil
+	return iter.Union[uint64](frozenIt, recentIt, asc), nil
 }
 func (ic *InvertedIndexContext) IterateRangeDeprecated(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (*InvertedIterator, error) {
 	if asc && (startTxNum >= 0 && endTxNum >= 0) && startTxNum > endTxNum {
@@ -890,16 +890,29 @@ func (ic *InvertedIndexContext) IterateRangeDeprecated(key []byte, startTxNum, e
 }
 
 func (ic *InvertedIndexContext) recentIterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
+	//optimization: return empty pre-allocated iterator if range is frozen
+	//if asc {
+	//	isFrozenRange := len(ic.files) > 0 && endTxNum >= 0 && ic.files[len(ic.files)-1].endTxNum >= uint64(endTxNum)
+	//	if isFrozenRange {
+	//		return iter.EmptyU64, nil
+	//	}
+	//} else {
+	//	isFrozenRange := len(ic.files) > 0 && startTxNum >= 0 && ic.files[len(ic.files)-1].endTxNum >= uint64(startTxNum)
+	//	if isFrozenRange {
+	//		return iter.EmptyU64, nil
+	//	}
+	//}
+
 	var from []byte
 	if startTxNum >= 0 {
-		from := make([]byte, 8)
+		from = make([]byte, 8)
 		binary.BigEndian.PutUint64(from, uint64(startTxNum))
 	}
 
 	var to []byte
 	if endTxNum >= 0 {
-		to := make([]byte, 8)
-		binary.BigEndian.PutUint64(to, uint64(startTxNum))
+		to = make([]byte, 8)
+		binary.BigEndian.PutUint64(to, uint64(endTxNum))
 	}
 
 	it, err := roTx.RangeDupSort(ic.ii.indexTable, key, from, to, asc, limit)

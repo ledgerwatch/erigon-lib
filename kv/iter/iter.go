@@ -19,6 +19,7 @@ package iter
 import (
 	"bytes"
 
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
 )
@@ -161,12 +162,13 @@ func (m *UnionKVIter) ToArray() (keys, values [][]byte, err error) { return ToKV
 // UnionUnary
 type UnionUnary[T constraints.Ordered] struct {
 	x, y           Unary[T]
+	asc            order.By
 	xHas, yHas     bool
 	xNextK, yNextK T
 	err            error
 }
 
-func Union[T constraints.Ordered](x, y Unary[T]) Unary[T] {
+func Union[T constraints.Ordered](x, y Unary[T], asc order.By) Unary[T] {
 	if x == nil && y == nil {
 		return &EmptyUnary[T]{}
 	}
@@ -182,7 +184,7 @@ func Union[T constraints.Ordered](x, y Unary[T]) Unary[T] {
 	if !y.HasNext() {
 		return x
 	}
-	m := &UnionUnary[T]{x: x, y: y}
+	m := &UnionUnary[T]{x: x, y: y, asc: asc}
 	m.advanceX()
 	m.advanceY()
 	return m
@@ -209,12 +211,17 @@ func (m *UnionUnary[T]) advanceY() {
 		m.yNextK, m.err = m.y.Next()
 	}
 }
+
+func (m *UnionUnary[T]) less() bool {
+	return (bool(m.asc) && m.xNextK < m.yNextK) || (!bool(m.asc) && m.xNextK > m.yNextK)
+}
+
 func (m *UnionUnary[T]) Next() (res T, err error) {
 	if m.err != nil {
 		return res, m.err
 	}
 	if m.xHas && m.yHas {
-		if m.xNextK < m.yNextK {
+		if m.less() {
 			k, err := m.xNextK, m.err
 			m.advanceX()
 			return k, err
