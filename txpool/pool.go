@@ -346,9 +346,9 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg Config, cache kvca
 		search:           &metaTx{Tx: &types.TxSlot{}},
 		senderIDTxnCount: map[uint64]int{},
 	}
-	tracedSenders := make(map[string]struct{})
+	tracedSenders := make(map[common.Address]struct{})
 	for _, sender := range cfg.TracedSenders {
-		tracedSenders[sender] = struct{}{}
+		tracedSenders[common.HexToAddress(sender)] = struct{}{}
 	}
 	return &TxPool{
 		lock:                    &sync.Mutex{},
@@ -540,19 +540,19 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	//log.Info("[txpool] on new txs", "amount", len(newPendingTxs.txs), "in", time.Since(t))
 	return nil
 }
-func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender []byte, isLocal bool, err error) {
+func (p *TxPool) getRlpLocked(tx kv.Tx, hash []byte) (rlpTxn []byte, sender common.Address, isLocal bool, err error) {
 	txn, ok := p.byHash[string(hash)]
 	if ok && txn.Tx.Rlp != nil {
 		return txn.Tx.Rlp, p.senders.senderID2Addr[txn.Tx.SenderID], txn.subPool&IsLocal > 0, nil
 	}
 	v, err := tx.GetOne(kv.PoolTransaction, hash)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, common.Address{}, false, err
 	}
 	if v == nil {
-		return nil, nil, false, nil
+		return nil, common.Address{}, false, nil
 	}
-	return v[20:], v[:20], txn != nil && txn.subPool&IsLocal > 0, nil
+	return v[20:], common.Address{}, txn != nil && txn.subPool&IsLocal > 0, nil
 }
 func (p *TxPool) GetRlp(tx kv.Tx, hash []byte) ([]byte, error) {
 	p.lock.Lock()
@@ -675,7 +675,8 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		}
 
 		txs.Txs[count] = rlpTx
-		copy(txs.Senders.At(count), sender)
+
+		txs.Senders[i] = sender
 		txs.IsLocal[count] = isLocal
 		toSkip.Add(mt.Tx.IDHash)
 		count++
@@ -724,7 +725,7 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 			continue
 		}
 		p.unprocessedRemoteByHash[string(txn.IDHash[:])] = len(p.unprocessedRemoteTxs.Txs)
-		p.unprocessedRemoteTxs.Append(txn, newTxs.Senders.At(i), false)
+		p.unprocessedRemoteTxs.Append(txn, newTxs.Senders[i], false)
 	}
 }
 
@@ -861,7 +862,7 @@ func (p *TxPool) validateTxs(txs *types.TxSlots, stateCache kvcache.CacheView) (
 		if reasons[i] == NotSet {
 			goodTxs.Txs[j] = txn
 			goodTxs.IsLocal[j] = txs.IsLocal[i]
-			copy(goodTxs.Senders.At(j), txs.Senders.At(i))
+			goodTxs.Senders[j] = txs.Senders[i]
 			j++
 		}
 	}
@@ -1089,7 +1090,7 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 					continue
 				}
 				addr := gointerfaces.ConvertH160toAddress(change.Address)
-				id, ok := senders.getID(addr[:])
+				id, ok := senders.getID(addr)
 				if !ok {
 					continue
 				}
@@ -1193,7 +1194,7 @@ func (p *TxPool) discardLocked(mt *metaTx, reason DiscardReason) {
 func (p *TxPool) NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	senderID, found := p.senders.getID(addr[:])
+	senderID, found := p.senders.getID(addr)
 	if !found {
 		return 0, false
 	}
@@ -1593,7 +1594,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 			addr, ok := p.senders.senderID2Addr[id]
 			if ok {
 				delete(p.senders.senderID2Addr, id)
-				delete(p.senders.senderIDs, string(addr))
+				delete(p.senders.senderIDs, addr)
 			}
 		}
 		//fmt.Printf("del:%d,%d,%d\n", mt.Tx.senderID, mt.Tx.nonce, mt.Tx.tip)
@@ -1627,12 +1628,13 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 			continue
 		}
 		v = common.EnsureEnoughSize(v, 20+len(metaTx.Tx.Rlp))
-		for addr, id := range p.senders.senderIDs { // no inverted index - tradeoff flush speed for memory usage
-			if id == metaTx.Tx.SenderID {
-				copy(v[:20], addr)
-				break
-			}
+
+		addr, ok := p.senders.senderID2Addr[metaTx.Tx.SenderID]
+		if !ok {
+			log.Warn("sender address not found by ID", metaTx.Tx.SenderID)
+			continue
 		}
+		copy(v[:20], addr.Bytes())
 		copy(v[20:], metaTx.Tx.Rlp)
 
 		has, err := tx.Has(kv.PoolTransaction, []byte(txHash))
@@ -1712,7 +1714,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		}
 		txn.Rlp = nil // means that we don't need store it in db anymore
 
-		txn.SenderID, txn.Traced = p.senders.getOrCreateID(addr)
+		txn.SenderID, txn.Traced = p.senders.getOrCreateID(common.BytesToAddress(addr))
 		binary.BigEndian.Uint64(v)
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
@@ -1723,7 +1725,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		txs.Resize(uint(i + 1))
 		txs.Txs[i] = txn
 		txs.IsLocal[i] = isLocalTx
-		copy(txs.Senders.At(i), addr)
+		txs.Senders[i] = common.BytesToAddress(addr)
 		i++
 	}
 
@@ -1839,7 +1841,7 @@ func (p *TxPool) logStats() {
 }
 
 // Deprecated need switch to streaming-like
-func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx) {
+func (p *TxPool) deprecatedForEach(_ context.Context, f func(rlp []byte, sender common.Address, t SubPoolType), tx kv.Tx) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.all.ascendAll(func(mt *metaTx) bool {
@@ -1984,28 +1986,28 @@ func (sc *sendersBatch) printDebug(prefix string) {
 // flushing to db periodicaly. it doesn't play as read-cache (because db is small and memory-mapped - doesn't need cache)
 // non thread-safe
 type sendersBatch struct {
-	senderIDs     map[string]uint64
-	senderID2Addr map[uint64][]byte
-	tracedSenders map[string]struct{}
+	senderIDs     map[common.Address]uint64
+	senderID2Addr map[uint64]common.Address
+	tracedSenders map[common.Address]struct{}
 	senderID      uint64
 }
 
-func newSendersCache(tracedSenders map[string]struct{}) *sendersBatch {
-	return &sendersBatch{senderIDs: map[string]uint64{}, senderID2Addr: map[uint64][]byte{}, tracedSenders: tracedSenders}
+func newSendersCache(tracedSenders map[common.Address]struct{}) *sendersBatch {
+	return &sendersBatch{senderIDs: map[common.Address]uint64{}, senderID2Addr: map[uint64]common.Address{}, tracedSenders: tracedSenders}
 }
 
-func (sc *sendersBatch) getID(addr []byte) (uint64, bool) {
-	id, ok := sc.senderIDs[string(addr)]
+func (sc *sendersBatch) getID(addr common.Address) (uint64, bool) {
+	id, ok := sc.senderIDs[addr]
 	return id, ok
 }
-func (sc *sendersBatch) getOrCreateID(addr []byte) (uint64, bool) {
-	_, traced := sc.tracedSenders[string(addr)]
-	id, ok := sc.senderIDs[string(addr)]
+func (sc *sendersBatch) getOrCreateID(addr common.Address) (uint64, bool) {
+	_, traced := sc.tracedSenders[addr]
+	id, ok := sc.senderIDs[addr]
 	if !ok {
-		copyAddr := common.Copy(addr)
+		copyAddr := addr
 		sc.senderID++
 		id = sc.senderID
-		sc.senderIDs[string(copyAddr)] = id
+		sc.senderIDs[copyAddr] = id
 		sc.senderID2Addr[id] = copyAddr
 		if traced {
 			log.Info(fmt.Sprintf("TX TRACING: allocated senderID %d to sender %x", id, addr))
@@ -2018,7 +2020,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 	if !ok {
 		panic("must not happen")
 	}
-	encoded, err := cacheView.Get(addr)
+	encoded, err := cacheView.Get(addr.Bytes())
 	if err != nil {
 		return 0, emptySender.balance, err
 	}
@@ -2034,7 +2036,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 
 func (sc *sendersBatch) registerNewSenders(newTxs *types.TxSlots) (err error) {
 	for i, txn := range newTxs.Txs {
-		txn.SenderID, txn.Traced = sc.getOrCreateID(newTxs.Senders.At(i))
+		txn.SenderID, txn.Traced = sc.getOrCreateID(newTxs.Senders[i])
 	}
 	return nil
 }
@@ -2042,15 +2044,15 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 	for _, diff := range stateChanges.ChangeBatch {
 		for _, change := range diff.Changes { // merge state changes
 			addrB := gointerfaces.ConvertH160toAddress(change.Address)
-			sc.getOrCreateID(addrB[:])
+			sc.getOrCreateID(addrB)
 		}
 
 		for i, txn := range unwindTxs.Txs {
-			txn.SenderID, txn.Traced = sc.getOrCreateID(unwindTxs.Senders.At(i))
+			txn.SenderID, txn.Traced = sc.getOrCreateID(unwindTxs.Senders[i])
 		}
 
 		for i, txn := range minedTxs.Txs {
-			txn.SenderID, txn.Traced = sc.getOrCreateID(minedTxs.Senders.At(i))
+			txn.SenderID, txn.Traced = sc.getOrCreateID(minedTxs.Senders[i])
 		}
 	}
 	return nil

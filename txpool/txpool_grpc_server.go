@@ -54,7 +54,7 @@ type txPool interface {
 	PeekBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error)
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	AddLocalTxs(ctx context.Context, newTxs types.TxSlots, tx kv.Tx) ([]DiscardReason, error)
-	deprecatedForEach(_ context.Context, f func(rlp, sender []byte, t SubPoolType), tx kv.Tx)
+	deprecatedForEach(_ context.Context, f func(rlp []byte, sender common.Address, t SubPoolType), tx kv.Tx)
 	CountContent() (int, int, int)
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool)
@@ -134,11 +134,10 @@ func (s *GrpcServer) All(ctx context.Context, _ *txpool_proto.AllRequest) (*txpo
 	defer tx.Rollback()
 	reply := &txpool_proto.AllReply{}
 	reply.Txs = make([]*txpool_proto.AllReply_Tx, 0, 32)
-	var senderArr [20]byte
-	s.txPool.deprecatedForEach(ctx, func(rlp, sender []byte, t SubPoolType) {
-		copy(senderArr[:], sender) // TODO: optimize
+
+	s.txPool.deprecatedForEach(ctx, func(rlp []byte, sender common.Address, t SubPoolType) {
 		reply.Txs = append(reply.Txs, &txpool_proto.AllReply_Tx{
-			Sender:  gointerfaces.ConvertAddressToH160(senderArr),
+			Sender:  gointerfaces.ConvertAddressToH160(sender),
 			TxnType: convertSubPoolType(t),
 			RlpTx:   common.Copy(rlp),
 		})
@@ -160,7 +159,7 @@ func (s *GrpcServer) Pending(ctx context.Context, _ *emptypb.Empty) (*txpool_pro
 	}
 	var senderArr [20]byte
 	for i := range txSlots.Txs {
-		copy(senderArr[:], txSlots.Senders.At(i)) // TODO: optimize
+		copy(senderArr[:], txSlots.Senders[i].Bytes()) // TODO: optimize
 		reply.Txs = append(reply.Txs, &txpool_proto.PendingReply_Tx{
 			Sender:  gointerfaces.ConvertAddressToH160(senderArr),
 			RlpTx:   txSlots.Txs[i],
@@ -192,7 +191,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 		slots.Resize(uint(j + 1))
 		slots.Txs[j] = &types.TxSlot{}
 		slots.IsLocal[j] = true
-		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.Txs[j], slots.Senders.At(j), false /* hasEnvelope */, func(hash []byte) error {
+		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.Txs[j], slots.Senders[j].Bytes(), false /* hasEnvelope */, func(hash []byte) error {
 			if known, _ := s.txPool.IdHashKnown(tx, hash); known {
 				return types.ErrAlreadyKnown
 			}

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"github.com/ledgerwatch/erigon-lib/common"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -164,7 +165,7 @@ func parseSenders(in []byte) (nonces []uint64, balances []uint256.Int) {
 	return
 }
 
-func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []byte) (sendersInfo map[uint64]*sender, senderIDs map[string]uint64, txs types.TxSlots, ok bool) {
+func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []byte) (sendersInfo map[uint64]*sender, senderIDs map[common.Address]uint64, txs types.TxSlots, ok bool) {
 	if len(rawTxNonce) < 1 || len(rawValues) < 1 || len(rawTips) < 1 || len(rawFeeCap) < 1 || len(rawSender) < 1+1 {
 		return nil, nil, txs, false
 	}
@@ -187,13 +188,13 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 	}
 
 	sendersInfo = map[uint64]*sender{}
-	senderIDs = map[string]uint64{}
-	senders := make(types.Addresses, 20*len(senderNonce))
+	senderIDs = map[common.Address]uint64{}
+	senders := make([]common.Address, len(senderNonce))
 	for i := 0; i < len(senderNonce); i++ {
 		senderID := uint64(i + 1) //non-zero expected
-		binary.BigEndian.PutUint64(senders.At(i%senders.Len()), senderID)
-		sendersInfo[senderID] = newSender(senderNonce[i], senderBalance[i%len(senderBalance)])
-		senderIDs[string(senders.At(i%senders.Len()))] = senderID
+		binary.BigEndian.PutUint64(senders[i].Bytes(), senderID)
+		sendersInfo[senderID] = newSender(senderNonce[i], senderBalance[i])
+		senderIDs[senders[i]] = senderID
 	}
 	txs.Txs = make([]*types.TxSlot, len(txNonce))
 	parseCtx := types.NewTxParseContext(*u256.N1)
@@ -205,12 +206,12 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 			Tip:    *uint256.NewInt(tips[i%len(tips)]),
 			FeeCap: *uint256.NewInt(feeCap[i%len(feeCap)]),
 		}
-		txRlp := fakeRlpTx(txs.Txs[i], senders.At(i%senders.Len()))
+		txRlp := fakeRlpTx(txs.Txs[i], senders[i%len(senders)].Bytes())
 		_, err := parseCtx.ParseTransaction(txRlp, 0, txs.Txs[i], nil, false, nil)
 		if err != nil {
 			panic(err)
 		}
-		txs.Senders = append(txs.Senders, senders.At(i%senders.Len())...)
+		txs.Senders = append(txs.Senders, senders[i%len(senders)])
 		txs.IsLocal = append(txs.IsLocal, true)
 	}
 
@@ -266,19 +267,19 @@ func splitDataset(in types.TxSlots) (types.TxSlots, types.TxSlots, types.TxSlots
 
 	p1.Txs = in.Txs[:l]
 	p1.IsLocal = in.IsLocal[:l]
-	p1.Senders = in.Senders[:l*20]
+	p1.Senders = in.Senders[:l]
 
 	p2.Txs = in.Txs[l : 2*l]
 	p2.IsLocal = in.IsLocal[l : 2*l]
-	p2.Senders = in.Senders[l*20 : 2*l*20]
+	p2.Senders = in.Senders[l : 2*l]
 
 	p3.Txs = in.Txs[2*l : 3*l]
 	p3.IsLocal = in.IsLocal[2*l : 3*l]
-	p3.Senders = in.Senders[2*l*20 : 3*l*20]
+	p3.Senders = in.Senders[2*l : 3*l]
 
 	p4.Txs = in.Txs[3*l : 4*l]
 	p4.IsLocal = in.IsLocal[3*l : 4*l]
-	p4.Senders = in.Senders[3*l*20 : 4*l*20]
+	p4.Senders = in.Senders[3*l : 4*l]
 
 	return p1, p2, p3, p4
 }
@@ -315,7 +316,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs
 		for addr, id := range senderIDs {
-			pool.senders.senderID2Addr[id] = []byte(addr)
+			pool.senders.senderID2Addr[id] = addr
 		}
 		pool.senders.senderID = uint64(len(senderIDs))
 		check := func(unwindTxs, minedTxs types.TxSlots, msg string) {
@@ -477,7 +478,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		}
 		for id, sender := range senders {
 			var addr [20]byte
-			copy(addr[:], pool.senders.senderID2Addr[id])
+			addr = pool.senders.senderID2Addr[id]
 			v := make([]byte, types.EncodeSenderLengthForStorage(sender.nonce, sender.balance))
 			types.EncodeSender(sender.nonce, sender.balance, v)
 			change.ChangeBatch[0].Changes = append(change.ChangeBatch[0].Changes, &remote.AccountChange{
