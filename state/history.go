@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/log/v3"
 	btree2 "github.com/tidwall/btree"
 	atomic2 "go.uber.org/atomic"
@@ -632,22 +633,18 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 			}
 		}
 	*/
+	ii := h.h.InvertedIndex
 	if h.buffered {
 		if err := h.historyVals.Collect(historyKey, original); err != nil {
+			return err
+		}
+		if err := ii.wal.indexKeys.Collect(ii.txNumBytes[:], historyKey[:lk]); err != nil {
 			return err
 		}
 	} else {
 		if err := h.h.tx.Put(h.h.historyValsTable, historyKey, original); err != nil {
 			return err
 		}
-	}
-
-	ii := h.h.InvertedIndex
-	if h.buffered {
-		if err := ii.wal.indexKeys.Collect(ii.txNumBytes[:], historyKey[:lk]); err != nil {
-			return err
-		}
-	} else {
 		if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], historyKey[:lk]); err != nil {
 			return err
 		}
@@ -2223,4 +2220,47 @@ func (h *History) CleanupDir() {
 		log.Debug("[clean] remove", "file", fName, "err", err)
 	}
 	h.InvertedIndex.CleanupDir()
+}
+
+func (hc *HistoryContext) recentIdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
+	from := make([]byte, len(key)+8)
+	copy(from, key)
+	to := common.Copy(from)
+
+	var dbIt iter.U64
+	if asc {
+		var fromTxNum uint64
+		if startTxNum >= 0 {
+			fromTxNum = uint64(startTxNum)
+		}
+		binary.BigEndian.PutUint64(from[len(key):], fromTxNum)
+
+		toTxNum := uint64(math.MaxUint64)
+		if toTxNum >= 0 {
+			toTxNum = uint64(endTxNum)
+		}
+		binary.BigEndian.PutUint64(to[len(key):], toTxNum)
+
+		it, err := roTx.RangeAscend(hc.h.historyValsTable, from, to, limit)
+		if err != nil {
+			return nil, err
+		}
+		dbIt = iter.TransformKV2U64(it, func(k, _ []byte) (uint64, error) {
+			return binary.BigEndian.Uint64(k[len(k)-8:]), nil
+		})
+	} else {
+		panic("implement me")
+	}
+	return dbIt, nil
+}
+func (hc *HistoryContext) IdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
+	frozenIt, err := hc.ic.FrozenIterateRange(key, startTxNum, endTxNum, asc, limit)
+	if err != nil {
+		return nil, err
+	}
+	recentIt, err := hc.recentIdxRange(key, startTxNum, endTxNum, asc, limit, roTx)
+	if err != nil {
+		return nil, err
+	}
+	return iter.Union[uint64](frozenIt, recentIt), nil
 }

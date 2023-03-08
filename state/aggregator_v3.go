@@ -34,6 +34,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
+	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 	"go.uber.org/atomic"
@@ -1282,14 +1283,14 @@ func (ac *AggregatorV3Context) TraceFromIterator(addr []byte, startTxNum, endTxN
 func (ac *AggregatorV3Context) TraceToIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, asc, limit, tx)
 }
-func (ac *AggregatorV3Context) AccountHistoyIdxIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
-	return ac.accounts.ic.IterateRange(addr, startTxNum, endTxNum, asc, limit, tx)
+func (ac *AggregatorV3Context) AccountHistoyIdxIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
+	return ac.accounts.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
 }
-func (ac *AggregatorV3Context) StorageHistoyIdxIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
-	return ac.storage.ic.IterateRange(addr, startTxNum, endTxNum, asc, limit, tx)
+func (ac *AggregatorV3Context) StorageHistoyIdxIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
+	return ac.storage.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
 }
-func (ac *AggregatorV3Context) CodeHistoyIdxIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
-	return ac.code.ic.IterateRange(addr, startTxNum, endTxNum, asc, limit, tx)
+func (ac *AggregatorV3Context) CodeHistoyIdxIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
+	return ac.code.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
 }
 
 // -- range end

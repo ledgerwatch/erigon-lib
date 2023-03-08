@@ -891,6 +891,181 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 	return it, nil
 }
 
+// IterateRange is to be used in public API, therefore it relies on read-only transaction
+// so that iteration can be done even when the inverted index is being updated.
+// [startTxNum; endNumTx)
+func (ic *InvertedIndexContext) FrozenIterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int) (*FrozenInvertedIdxIter, error) {
+	if asc && (startTxNum >= 0 && endTxNum >= 0) && startTxNum > endTxNum {
+		return nil, fmt.Errorf("startTxNum=%d epected to be lower than endTxNum=%d", startTxNum, endTxNum)
+	}
+	if !asc && (startTxNum >= 0 && endTxNum >= 0) && startTxNum < endTxNum {
+		return nil, fmt.Errorf("startTxNum=%d epected to be bigger than endTxNum=%d", startTxNum, endTxNum)
+	}
+
+	it := &FrozenInvertedIdxIter{
+		key:         key,
+		startTxNum:  startTxNum,
+		endTxNum:    endTxNum,
+		indexTable:  ic.ii.indexTable,
+		orderAscend: asc,
+		limit:       limit,
+		ef:          eliasfano32.NewEliasFano(1, 1),
+	}
+	if asc {
+		for i := len(ic.files) - 1; i >= 0; i-- {
+			// [from,to) && from < to
+			if endTxNum >= 0 && int(ic.files[i].startTxNum) >= endTxNum {
+				continue
+			}
+			if startTxNum >= 0 && ic.files[i].endTxNum <= uint64(startTxNum) {
+				break
+			}
+			it.stack = append(it.stack, ic.files[i])
+			it.stack[len(it.stack)-1].getter = it.stack[len(it.stack)-1].src.decompressor.MakeGetter()
+			it.stack[len(it.stack)-1].reader = it.stack[len(it.stack)-1].src.index.GetReaderFromPool()
+			it.hasNext = true
+		}
+	} else {
+		for i := 0; i < len(ic.files); i++ {
+			// [from,to) && from > to
+			if endTxNum >= 0 && int(ic.files[i].endTxNum) <= endTxNum {
+				continue
+			}
+			if startTxNum >= 0 && ic.files[i].startTxNum > uint64(startTxNum) {
+				break
+			}
+
+			it.stack = append(it.stack, ic.files[i])
+			it.stack[len(it.stack)-1].getter = it.stack[len(it.stack)-1].src.decompressor.MakeGetter()
+			it.stack[len(it.stack)-1].reader = it.stack[len(it.stack)-1].src.index.GetReaderFromPool()
+		}
+	}
+	it.advance()
+	return it, nil
+}
+
+// FrozenInvertedIdxIter allows iteration over range of tx numbers
+// Iteration is not implmented via callback function, because there is often
+// a requirement for interators to be composable (for example, to implement AND and OR for indices)
+// FrozenInvertedIdxIter must be closed after use to prevent leaking of resources like cursor
+type FrozenInvertedIdxIter struct {
+	key                  []byte
+	startTxNum, endTxNum int
+	limit                int
+	orderAscend          order.By
+
+	efIt       iter.Unary[uint64]
+	indexTable string
+	stack      []ctxItem
+
+	nextN   uint64
+	hasNext bool
+	nextErr error
+
+	res []uint64
+
+	ef *eliasfano32.EliasFano
+}
+
+func (it *FrozenInvertedIdxIter) Close() {
+	for _, item := range it.stack {
+		item.reader.Close()
+	}
+}
+
+func (it *FrozenInvertedIdxIter) advance() {
+	if it.orderAscend {
+		if it.hasNext {
+			it.advanceInFiles()
+		}
+	} else {
+		if it.hasNext {
+			it.advanceInFiles()
+		}
+	}
+}
+
+func (it *FrozenInvertedIdxIter) HasNext() bool {
+	if it.nextErr != nil { // always true, then .Next() call will return this error
+		return true
+	}
+	if it.limit == 0 { // limit reached
+		return false
+	}
+	return it.hasNext
+}
+
+func (it *FrozenInvertedIdxIter) Next() (uint64, error) { return it.next(), nil }
+
+func (it *FrozenInvertedIdxIter) next() uint64 {
+	it.limit--
+	n := it.nextN
+	it.advance()
+	return n
+}
+
+func (it *FrozenInvertedIdxIter) advanceInFiles() {
+	for {
+		for it.efIt == nil { //TODO: this loop may be optimized by LocalityIndex
+			if len(it.stack) == 0 {
+				it.hasNext = false
+				return
+			}
+			item := it.stack[len(it.stack)-1]
+			it.stack = it.stack[:len(it.stack)-1]
+			offset := item.reader.Lookup(it.key)
+			g := item.getter
+			g.Reset(offset)
+			k, _ := g.NextUncompressed()
+			if bytes.Equal(k, it.key) {
+				eliasVal, _ := g.NextUncompressed()
+				it.ef.Reset(eliasVal)
+				if it.orderAscend {
+					efiter := it.ef.Iterator()
+					if it.startTxNum > 0 {
+						efiter.Seek(uint64(it.startTxNum))
+					}
+					it.efIt = efiter
+				} else {
+					it.efIt = it.ef.ReverseIterator()
+				}
+			}
+		}
+
+		//TODO: add seek method
+		//Asc:  [from, to) AND from > to
+		//Desc: [from, to) AND from < to
+		if it.orderAscend {
+			for it.efIt.HasNext() {
+				n, _ := it.efIt.Next()
+				if it.endTxNum >= 0 && int(n) >= it.endTxNum {
+					it.hasNext = false
+					return
+				}
+				if int(n) >= it.startTxNum {
+					it.hasNext = true
+					it.nextN = n
+					return
+				}
+			}
+		} else {
+			for it.efIt.HasNext() {
+				n, _ := it.efIt.Next()
+				if int(n) <= it.endTxNum {
+					it.hasNext = false
+					return
+				}
+				if it.startTxNum >= 0 && int(n) <= it.startTxNum {
+					it.hasNext = true
+					it.nextN = n
+					return
+				}
+			}
+		}
+		it.efIt = nil // Exhausted this iterator
+	}
+}
+
 type InvertedIterator1 struct {
 	roTx           kv.Tx
 	cursor         kv.CursorDupSort
