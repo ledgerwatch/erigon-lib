@@ -1268,19 +1268,19 @@ func (a *AggregatorV3) EnableMadvNormal() *AggregatorV3 {
 }
 
 // -- range
-func (ac *AggregatorV3Context) LogAddrIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
+func (ac *AggregatorV3Context) LogAddrIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
 	return ac.logAddrs.IterateRange(addr, startTxNum, endTxNum, asc, limit, tx)
 }
 
-func (ac *AggregatorV3Context) LogTopicIterator(topic []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
+func (ac *AggregatorV3Context) LogTopicIterator(topic []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
 	return ac.logTopics.IterateRange(topic, startTxNum, endTxNum, asc, limit, tx)
 }
 
-func (ac *AggregatorV3Context) TraceFromIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
+func (ac *AggregatorV3Context) TraceFromIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
 	return ac.tracesFrom.IterateRange(addr, startTxNum, endTxNum, asc, limit, tx)
 }
 
-func (ac *AggregatorV3Context) TraceToIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (*InvertedIterator, error) {
+func (ac *AggregatorV3Context) TraceToIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
 	return ac.tracesTo.IterateRange(addr, startTxNum, endTxNum, asc, limit, tx)
 }
 func (ac *AggregatorV3Context) AccountHistoyIdxIterator(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
