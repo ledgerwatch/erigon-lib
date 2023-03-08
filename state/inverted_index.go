@@ -971,6 +971,7 @@ func (ic *InvertedIndexContext) frozenIterateRange(key []byte, startTxNum, endTx
 			it.stack = append(it.stack, ic.files[i])
 			it.stack[len(it.stack)-1].getter = it.stack[len(it.stack)-1].src.decompressor.MakeGetter()
 			it.stack[len(it.stack)-1].reader = it.stack[len(it.stack)-1].src.index.GetReaderFromPool()
+			it.hasNext = true
 		}
 	}
 	it.advance()

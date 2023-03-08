@@ -1874,9 +1874,6 @@ func (s *cursorDup2iter) HasNext() bool {
 	//Asc:  [from, to) AND from > to
 	//Desc: [from, to) AND from < to
 	cmp := bytes.Compare(s.nextV, s.toPrefix)
-	if s.orderAscend {
-		fmt.Printf("bb: %x, %x, %d\n", s.nextV, s.toPrefix, cmp)
-	}
 	return (s.orderAscend && cmp < 0) || (!s.orderAscend && cmp > 0)
 }
 func (s *cursorDup2iter) Next() (k, v []byte, err error) {
@@ -1892,7 +1889,6 @@ func (s *cursorDup2iter) Next() (k, v []byte, err error) {
 	} else {
 		_, s.nextV, s.err = s.c.PrevDup()
 	}
-	fmt.Printf("bb22: %s, %x\n", s.key, v)
 	return s.key, v, err
 }
 
