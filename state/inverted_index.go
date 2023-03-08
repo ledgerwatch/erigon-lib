@@ -828,7 +828,7 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 	if err != nil {
 		return nil, err
 	}
-	recentIt, err := ic.RecentIterateRange(key, startTxNum, endTxNum, asc, limit, roTx)
+	recentIt, err := ic.recentIterateRange(key, startTxNum, endTxNum, asc, limit, roTx)
 	if err != nil {
 		return nil, err
 	}
@@ -889,7 +889,7 @@ func (ic *InvertedIndexContext) IterateRangeDeprecated(key []byte, startTxNum, e
 	return it, nil
 }
 
-func (ic *InvertedIndexContext) RecentIterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
+func (ic *InvertedIndexContext) recentIterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
 	var from []byte
 	if startTxNum >= 0 {
 		from := make([]byte, 8)
