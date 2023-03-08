@@ -1467,6 +1467,7 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 	return &hi
 }
 
+// StateAsOfIter - returns state range at given time in history
 type StateAsOfIter struct {
 	roTx          kv.Tx
 	txNum2kCursor kv.CursorDupSort
