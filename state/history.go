@@ -1633,13 +1633,22 @@ func (hi *StateAsOfIter) advanceInDb() {
 		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
 			panic(err)
 		}
-		seek = append(common.Copy(hi.from), hi.startTxKey[:]...)
+		firstKey, _, err := hi.valsC.Seek(hi.from)
+		if err != nil {
+			panic(err)
+		}
+		if firstKey == nil {
+			hi.hasNextInDb = false
+			return
+		}
+		seek = append(common.Copy(firstKey[:len(firstKey)-8]), hi.startTxKey[:]...)
 	} else {
 		next, ok := kv.NextSubtree(hi.nextDbKey)
 		if !ok {
 			hi.hasNextInDb = false
 			return
 		}
+
 		seek = append(next, hi.startTxKey[:]...)
 	}
 	for k, v, err := hi.valsC.Seek(seek); k != nil; k, v, err = hi.valsC.Seek(seek) {
