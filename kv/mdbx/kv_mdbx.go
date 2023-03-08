@@ -1692,22 +1692,22 @@ func (tx *MdbxTx) Range(table string, fromPrefix, toPrefix []byte) (iter.KV, err
 	return tx.RangeAscend(table, fromPrefix, toPrefix, -1)
 }
 func (tx *MdbxTx) RangeAscend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
-	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, true, limit)
+	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, order.Asc, limit)
 }
 func (tx *MdbxTx) RangeDescend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
-	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, false, limit)
+	return tx.rangeOrderLimit(table, fromPrefix, toPrefix, order.Desc, limit)
 }
 
 type cursor2iter struct {
 	c                                  kv.Cursor
 	fromPrefix, toPrefix, nextK, nextV []byte
 	err                                error
-	orderAscend                        bool
+	orderAscend                        order.By
 	limit                              int64
 	ctx                                context.Context
 }
 
-func (tx *MdbxTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend bool, limit int) (*cursor2iter, error) {
+func (tx *MdbxTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, orderAscend order.By, limit int) (*cursor2iter, error) {
 	s := &cursor2iter{ctx: tx.ctx, fromPrefix: fromPrefix, toPrefix: toPrefix, orderAscend: orderAscend, limit: int64(limit)}
 	tx.streams = append(tx.streams, s)
 	return s.init(table, tx)
@@ -1740,7 +1740,14 @@ func (s *cursor2iter) init(table string, tx kv.Tx) (*cursor2iter, error) {
 	} else {
 		// seek exactly to given key or previous one
 		s.nextK, s.nextV, s.err = s.c.SeekExact(s.fromPrefix)
-		if s.nextK == nil { // no such key
+		if s.err != nil {
+			return s, s.err
+		}
+		if s.nextK != nil { // go to last value of this key
+			if casted, ok := s.c.(kv.CursorDupSort); ok {
+				s.nextV, s.err = casted.LastDup()
+			}
+		} else { // key not found, go to prev one
 			s.nextK, s.nextV, s.err = s.c.Prev()
 		}
 		return s, s.err
@@ -1769,7 +1776,7 @@ func (s *cursor2iter) HasNext() bool {
 	//Asc:  [from, to) AND from > to
 	//Desc: [from, to) AND from < to
 	cmp := bytes.Compare(s.nextK, s.toPrefix)
-	return (s.orderAscend && cmp < 0) || (!s.orderAscend && cmp > 0)
+	return (bool(s.orderAscend) && cmp < 0) || (!bool(s.orderAscend) && cmp > 0)
 }
 func (s *cursor2iter) Next() (k, v []byte, err error) {
 	select {
