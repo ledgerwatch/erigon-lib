@@ -1411,14 +1411,7 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 	if roTx == nil {
 		return nil, false, fmt.Errorf("roTx is nil")
 	}
-	v, ok, err = hc.getNoStateFromDB(key, txNum, roTx)
-	if err != nil {
-		return nil, ok, err
-	}
-	if ok {
-		return v, true, nil
-	}
-	return nil, false, err
+	return hc.getNoStateFromDB(key, txNum, roTx)
 }
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
@@ -1437,10 +1430,7 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	if kAndTxNum == nil || !bytes.Equal(kAndTxNum[:len(kAndTxNum)-8], key) {
 		return nil, false, nil
 	}
-	if len(val) == 0 {
-		// This is special val == []byte{}, which is empty value
-		return nil, false, nil
-	}
+	// val == []byte{},m eans key was created in this txNum and doesn't exists before.
 	return val, true, nil
 }
 

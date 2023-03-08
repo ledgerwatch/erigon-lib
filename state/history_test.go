@@ -513,7 +513,7 @@ func TestIterateChanged2(t *testing.T) {
 		txNum uint64
 	}
 	testCases := []testCase{
-		{txNum: 0, k: "0100000000000001"},
+		{txNum: 0, k: "0100000000000001", v: ""},
 		{txNum: 900, k: "0100000000000001", v: "ff00000000000383"},
 		{txNum: 1000, k: "0100000000000001", v: "ff000000000003e7"},
 	}
@@ -610,7 +610,7 @@ func TestIterateChanged2(t *testing.T) {
 		v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 0, tx)
 		require.NoError(err)
 		require.True(ok)
-		require.Nil(v)
+		require.Equal([]byte{}, v)
 		v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 1000, tx)
 		require.NoError(err)
 		require.True(ok)
