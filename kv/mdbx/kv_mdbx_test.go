@@ -132,6 +132,12 @@ func TestRange(t *testing.T) {
 		k, v, err := it.Next()
 		require.NoError(t, err)
 		require.Equal(t, "key3", string(k))
+		require.Equal(t, "value3.3", string(v))
+
+		require.True(t, it.HasNext())
+		k, v, err = it.Next()
+		require.NoError(t, err)
+		require.Equal(t, "key3", string(k))
 		require.Equal(t, "value3.1", string(v))
 
 		require.False(t, it.HasNext())
@@ -186,13 +192,13 @@ func TestRangeDupSort(t *testing.T) {
 		_, tx, _ := BaseCase(t)
 
 		//[from, to)
-		it, err := tx.RangeDescend("Table", []byte("key3"), []byte("key1"), -1)
+		it, err := tx.RangeDupSort("Table", []byte("key3"), nil, nil, order.Desc, -1)
 		require.NoError(t, err)
 		require.True(t, it.HasNext())
 		k, v, err := it.Next()
 		require.NoError(t, err)
 		require.Equal(t, "key3", string(k))
-		require.Equal(t, "value3.1", string(v))
+		require.Equal(t, "value3.3", string(v))
 
 		require.False(t, it.HasNext())
 
