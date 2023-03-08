@@ -1470,7 +1470,7 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 type StateAsOfIter struct {
 	roTx          kv.Tx
 	txNum2kCursor kv.CursorDupSort
-	idxCursor     kv.CursorDupSort
+	valsC         kv.Cursor
 	hc            *HistoryContext
 	valsTable     string
 	idxKeysTable  string
@@ -1503,8 +1503,8 @@ type StateAsOfIter struct {
 func (hi *StateAsOfIter) Stat() (int, int) { return hi.advDbCnt, hi.advFileCnt }
 
 func (hi *StateAsOfIter) Close() {
-	if hi.idxCursor != nil {
-		hi.idxCursor.Close()
+	if hi.valsC != nil {
+		hi.valsC.Close()
 	}
 	if hi.txNum2kCursor != nil {
 		hi.txNum2kCursor.Close()
@@ -1567,66 +1567,95 @@ func (hi *StateAsOfIter) advanceInFiles() {
 	hi.hasNextInFiles = false
 }
 
+/*
+	func (hi *HistoryChangesIter) advanceInDb() {
+		hi.advDbCnt++
+		//TODO: current implementation is brude-force but lazy. Need optimize but keep it lazy.
+		var k, v, kAndTxNum, seek []byte
+		var err error
+		var ok bool
+		if hi.valsC == nil {
+			if hi.valsC, err = hi.roTx.Cursor(hi.valsTable); err != nil {
+				panic(err)
+			}
+			seek = []byte{0}
+		} else {
+			seek, ok = kv.NextSubtree(hi.nextDbKey)
+			if !ok {
+				hi.hasNextInDb = false
+				return
+			}
+		}
+		//TODO: seems it's brude-force over all history. need optimize it
+		for k, v, err = hi.valsC.Seek(seek); k != nil; k, v, err = hi.valsC.Seek(seek) {
+			if err != nil {
+				panic(err)
+			}
+			seekToTxNum := common.Copy(k)
+			copy(seekToTxNum[len(k)-8:], hi.startTxKey[:])
+			kAndTxNum, v, err = hi.valsC.Seek(seekToTxNum)
+			if err != nil {
+				panic(err)
+			}
+			if kAndTxNum == nil { // end of table
+				break
+			}
+			kk, txNumBytes := kAndTxNum[:len(k)-8], kAndTxNum[len(k)-8:]
+			if !bytes.Equal(kk, k[:len(k)-8]) {
+				seek = kk
+				continue
+			}
+			if binary.BigEndian.Uint64(txNumBytes) >= hi.endTxNum {
+				seek, ok = kv.NextSubtree(kk)
+				if !ok {
+					hi.hasNextInDb = false
+					return
+				}
+				continue
+			}
+			hi.nextDbKey = append(hi.nextDbKey[:0], kk...)
+			hi.nextDbVal = append(hi.nextDbVal[:0], v...)
+			return
+		}
+		hi.hasNextInDb = false
+	}
+*/
 func (hi *StateAsOfIter) advanceInDb() {
 	hi.advDbCnt++
-	var k []byte
+	var seek []byte
 	var err error
-	if hi.idxCursor == nil {
-		if hi.idxCursor, err = hi.roTx.CursorDupSort(hi.indexTable); err != nil {
+	if hi.txNum2kCursor == nil {
+		if hi.valsC, err = hi.roTx.Cursor(hi.valsTable); err != nil {
 			// TODO pass error properly around
 			panic(err)
 		}
 		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
 			panic(err)
 		}
-		if k, _, err = hi.idxCursor.Seek(hi.from); err != nil {
-			// TODO pass error properly around
-			panic(err)
-		}
+		seek = append(common.Copy(hi.from), hi.startTxKey[:]...)
 	} else {
-		if k, _, err = hi.idxCursor.NextNoDup(); err != nil {
-			panic(err)
-		}
-	}
-	for ; k != nil; k, _, err = hi.idxCursor.NextNoDup() {
-		if err != nil {
-			panic(err)
-		}
-		if hi.to != nil && bytes.Compare(k, hi.to) >= 0 {
-			break
-		}
-
-		foundTxNumVal, err := hi.idxCursor.SeekBothRange(k, hi.startTxKey[:])
-		if err != nil {
-			panic(err)
-		}
-		if foundTxNumVal == nil {
-			continue
-		}
-		//txNum := binary.BigEndian.Uint64(foundTxNumVal)
-		//if txNum >= hi.endTxNum {
-		//	continue
-		//}
-		hi.nextDbKey = append(hi.nextDbKey[:0], k...)
-		vn, err := hi.txNum2kCursor.SeekBothRange(foundTxNumVal, k)
-		if err != nil {
-			panic(err)
-		}
-		valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
-		if valNum == 0 {
-			// This is special valNum == 0, which is empty value
-			hi.nextDbVal = hi.nextDbVal[:0]
+		next, ok := kv.NextSubtree(hi.nextDbKey)
+		if !ok {
+			hi.hasNextInDb = false
 			return
 		}
-		v, err := hi.roTx.GetOne(hi.valsTable, vn[len(vn)-8:])
+		seek = append(next, hi.startTxKey[:]...)
+	}
+	for k, v, err := hi.valsC.Seek(seek); k != nil; k, v, err = hi.valsC.Seek(seek) {
 		if err != nil {
 			panic(err)
 		}
+		if hi.to != nil && bytes.Compare(k[:len(k)-8], hi.to) >= 0 {
+			break
+		}
+		if !bytes.Equal(seek[:len(k)-8], k[:len(k)-8]) {
+			copy(seek[:len(k)-8], k[:len(k)-8])
+			continue
+		}
+		hi.nextDbKey = append(hi.nextDbKey[:0], k[:len(k)-8]...)
 		hi.nextDbVal = append(hi.nextDbVal[:0], v...)
 		return
 	}
-	hi.idxCursor.Close()
-	hi.idxCursor = nil
 	hi.hasNextInDb = false
 }
 
