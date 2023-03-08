@@ -710,10 +710,6 @@ func (tx *remoteTx) RangeDupSort(table string, key []byte, fromPrefix, toPrefix 
 	panic("not implemented yet")
 }
 
-func (tx *remoteTx) RangeDupSort(table string, key []byte, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error) {
-	panic("not supported yet")
-}
-
 /*
 type grpcStream[Msg any] interface {
 	Recv() (Msg, error)

@@ -2254,7 +2254,7 @@ func (hc *HistoryContext) recentIdxRange(key []byte, startTxNum, endTxNum int, a
 	return dbIt, nil
 }
 func (hc *HistoryContext) IdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
-	frozenIt, err := hc.ic.FrozenIterateRange(key, startTxNum, endTxNum, asc, limit)
+	frozenIt, err := hc.ic.frozenIterateRange(key, startTxNum, endTxNum, asc, limit)
 	if err != nil {
 		return nil, err
 	}
