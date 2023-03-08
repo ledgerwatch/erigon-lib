@@ -328,9 +328,7 @@ func (c AggV3Collation) Close() {
 func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64) (AggV3StaticFiles, error) {
 	logEvery := time.NewTicker(60 * time.Second)
 	defer logEvery.Stop()
-	defer func(t time.Time) {
-		log.Info(fmt.Sprintf("[snapshot] build %d-%d", step, step+1), "took", time.Since(t))
-	}(time.Now())
+	t := time.Now()
 	var sf AggV3StaticFiles
 	var ac AggV3Collation
 	closeColl := true
@@ -339,135 +337,95 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 			ac.Close()
 		}
 	}()
-	//var wg sync.WaitGroup
-	//wg.Add(7)
-	//errCh := make(chan error, 7)
-	//go func() {
-	//	defer wg.Done()
+
 	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-
 	if sf.accounts, err = a.accounts.buildFiles(ctx, step, ac.accounts); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-	//}()
-	//
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
+	ac.accounts = HistoryCollation{}
+	runtime.GC()
+
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-
 	if sf.storage, err = a.storage.buildFiles(ctx, step, ac.storage); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
+	ac.storage = HistoryCollation{}
+	runtime.GC()
+
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.code, err = a.code.collate(step, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-
 	if sf.code, err = a.code.buildFiles(ctx, step, ac.code); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
+	ac.code = HistoryCollation{}
+	runtime.GC()
+
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.logAddrs, err = a.logAddrs.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-
 	if sf.logAddrs, err = a.logAddrs.buildFiles(ctx, step, ac.logAddrs); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
+	ac.logAddrs = nil
+	runtime.GC()
+
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.logTopics, err = a.logTopics.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-
 	if sf.logTopics, err = a.logTopics.buildFiles(ctx, step, ac.logTopics); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
+	ac.logTopics = nil
+	runtime.GC()
+
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.tracesFrom, err = a.tracesFrom.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-
 	if sf.tracesFrom, err = a.tracesFrom.buildFiles(ctx, step, ac.tracesFrom); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-	//}()
-	//go func() {
-	//	defer wg.Done()
-	//	var err error
+	ac.tracesFrom = nil
+	runtime.GC()
+
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
 		ac.tracesTo, err = a.tracesTo.collate(ctx, txFrom, txTo, tx, logEvery)
 		return err
 	}); err != nil {
 		return sf, err
-		//errCh <- err
 	}
-
 	if sf.tracesTo, err = a.tracesTo.buildFiles(ctx, step, ac.tracesTo); err != nil {
 		return sf, err
-		//		errCh <- err
 	}
-	//}()
-	//go func() {
-	//	wg.Wait()
-	//close(errCh)
-	//}()
-	//var lastError error
-	//for err := range errCh {
-	//	if err != nil {
-	//		lastError = err
-	//	}
-	//}
-	//if lastError == nil {
+	ac.tracesTo = nil
+	runtime.GC()
+
 	closeColl = false
-	//}
+
+	log.Info(fmt.Sprintf("[snapshot] build %d-%d", step, step+1), "took", time.Since(t))
 	return sf, nil
 }
 
