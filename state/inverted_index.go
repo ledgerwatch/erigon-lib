@@ -778,20 +778,6 @@ func (it *InvertedIterator) next() uint64 {
 	it.advance()
 	return n
 }
-func (it *InvertedIterator) ToArray() (res []uint64) {
-	for it.HasNext() {
-		res = append(res, it.next())
-	}
-	return res
-}
-func (it *InvertedIterator) ToBitmap() (*roaring64.Bitmap, error) {
-	it.bm = bitmapdb.NewBitmap64()
-	bm := it.bm
-	for it.HasNext() {
-		bm.Add(it.next())
-	}
-	return bm, nil
-}
 
 type InvertedIndexContext struct {
 	ii      *InvertedIndex
@@ -891,6 +877,28 @@ func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum in
 	return it, nil
 }
 
+func (ic *InvertedIndexContext) RecentIterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
+	var from []byte
+	if startTxNum >= 0 {
+		from := make([]byte, 8)
+		binary.BigEndian.PutUint64(from, uint64(startTxNum))
+	}
+
+	var to []byte
+	if endTxNum >= 0 {
+		to := make([]byte, 8)
+		binary.BigEndian.PutUint64(to, uint64(startTxNum))
+	}
+
+	it, err := roTx.RangeDupSort(ic.ii.indexTable, key, from, to, asc, limit)
+	if err != nil {
+		return nil, err
+	}
+	return iter.TransformKV2U64(it, func(_, v []byte) (uint64, error) {
+		return binary.BigEndian.Uint64(v), nil
+	}), nil
+}
+
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
@@ -960,7 +968,7 @@ type FrozenInvertedIdxIter struct {
 
 	nextN   uint64
 	hasNext bool
-	nextErr error
+	err     error
 
 	res []uint64
 
@@ -986,7 +994,7 @@ func (it *FrozenInvertedIdxIter) advance() {
 }
 
 func (it *FrozenInvertedIdxIter) HasNext() bool {
-	if it.nextErr != nil { // always true, then .Next() call will return this error
+	if it.err != nil { // always true, then .Next() call will return this error
 		return true
 	}
 	if it.limit == 0 { // limit reached
@@ -1064,6 +1072,167 @@ func (it *FrozenInvertedIdxIter) advanceInFiles() {
 		}
 		it.efIt = nil // Exhausted this iterator
 	}
+}
+
+// RecentInvertedIdxIter allows iteration over range of tx numbers
+// Iteration is not implmented via callback function, because there is often
+// a requirement for interators to be composable (for example, to implement AND and OR for indices)
+type RecentInvertedIdxIter struct {
+	key                  []byte
+	startTxNum, endTxNum int
+	limit                int
+	orderAscend          order.By
+
+	roTx       kv.Tx
+	cursor     kv.CursorDupSort
+	indexTable string
+
+	nextN   uint64
+	hasNext bool
+	err     error
+
+	res []uint64
+	bm  *roaring64.Bitmap
+
+	ef *eliasfano32.EliasFano
+}
+
+func (it *RecentInvertedIdxIter) Close() {
+	if it.cursor != nil {
+		it.cursor.Close()
+	}
+	bitmapdb.ReturnToPool64(it.bm)
+}
+
+func (it *RecentInvertedIdxIter) advanceInDb() {
+	var v []byte
+	var err error
+	if it.cursor == nil {
+		if it.cursor, err = it.roTx.CursorDupSort(it.indexTable); err != nil {
+			// TODO pass error properly around
+			panic(err)
+		}
+		var k []byte
+		if k, _, err = it.cursor.SeekExact(it.key); err != nil {
+			panic(err)
+		}
+		if k == nil {
+			it.hasNext = false
+			return
+		}
+		//Asc:  [from, to) AND from > to
+		//Desc: [from, to) AND from < to
+		var keyBytes [8]byte
+		if it.startTxNum > 0 {
+			binary.BigEndian.PutUint64(keyBytes[:], uint64(it.startTxNum))
+		}
+		if v, err = it.cursor.SeekBothRange(it.key, keyBytes[:]); err != nil {
+			panic(err)
+		}
+		if v == nil {
+			if !it.orderAscend {
+				_, v, _ = it.cursor.PrevDup()
+				if err != nil {
+					panic(err)
+				}
+			}
+			if v == nil {
+				it.hasNext = false
+				return
+			}
+		}
+	} else {
+		if it.orderAscend {
+			_, v, err = it.cursor.NextDup()
+			if err != nil {
+				// TODO pass error properly around
+				panic(err)
+			}
+		} else {
+			_, v, err = it.cursor.PrevDup()
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	//Asc:  [from, to) AND from > to
+	//Desc: [from, to) AND from < to
+	if it.orderAscend {
+		for ; v != nil; _, v, err = it.cursor.NextDup() {
+			if err != nil {
+				// TODO pass error properly around
+				panic(err)
+			}
+			n := binary.BigEndian.Uint64(v)
+			if it.endTxNum >= 0 && int(n) >= it.endTxNum {
+				it.hasNext = false
+				return
+			}
+			if int(n) >= it.startTxNum {
+				it.hasNext = true
+				it.nextN = n
+				return
+			}
+		}
+	} else {
+		for ; v != nil; _, v, err = it.cursor.PrevDup() {
+			if err != nil {
+				// TODO pass error properly around
+				panic(err)
+			}
+			n := binary.BigEndian.Uint64(v)
+			if int(n) <= it.endTxNum {
+				it.hasNext = false
+				return
+			}
+			if it.startTxNum >= 0 && int(n) <= it.startTxNum {
+				it.hasNext = true
+				it.nextN = n
+				return
+			}
+		}
+	}
+
+	it.hasNext = false
+}
+
+func (it *RecentInvertedIdxIter) advance() {
+	if it.orderAscend {
+		if it.hasNext {
+			it.advanceInDb()
+		}
+	} else {
+		if it.hasNext {
+			it.advanceInDb()
+		}
+	}
+}
+
+func (it *RecentInvertedIdxIter) HasNext() bool {
+	if it.err != nil { // always true, then .Next() call will return this error
+		return true
+	}
+	if it.limit == 0 { // limit reached
+		return false
+	}
+	return it.hasNext
+}
+
+func (it *RecentInvertedIdxIter) Next() (uint64, error) { return it.next(), nil }
+func (it *RecentInvertedIdxIter) NextBatch() ([]uint64, error) {
+	it.res = append(it.res[:0], it.next())
+	for it.HasNext() && len(it.res) < 128 {
+		it.res = append(it.res, it.next())
+	}
+	return it.res, nil
+}
+
+func (it *RecentInvertedIdxIter) next() uint64 {
+	it.limit--
+	n := it.nextN
+	it.advance()
+	return n
 }
 
 type InvertedIterator1 struct {

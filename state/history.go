@@ -1580,7 +1580,7 @@ func (hi *StateAsOfIter) advanceInFiles() {
 		} else {
 			seek, ok = kv.NextSubtree(hi.nextDbKey)
 			if !ok {
-				hi.hasNextInDb = false
+				hi.hasNext = false
 				return
 			}
 		}
@@ -1606,7 +1606,7 @@ func (hi *StateAsOfIter) advanceInFiles() {
 			if binary.BigEndian.Uint64(txNumBytes) >= hi.endTxNum {
 				seek, ok = kv.NextSubtree(kk)
 				if !ok {
-					hi.hasNextInDb = false
+					hi.hasNext = false
 					return
 				}
 				continue
@@ -1615,7 +1615,7 @@ func (hi *StateAsOfIter) advanceInFiles() {
 			hi.nextDbVal = append(hi.nextDbVal[:0], v...)
 			return
 		}
-		hi.hasNextInDb = false
+		hi.hasNext = false
 	}
 */
 func (hi *StateAsOfIter) advanceInDb() {
@@ -1998,7 +1998,7 @@ type HistoryIterator2 struct {
 	valsTable     string
 	nextKey       []byte
 	nextVal       []byte
-	nextErr       error
+	err           error
 	endTxNum      uint64
 	startTxNum    uint64
 	advDbCnt      int
@@ -2022,22 +2022,22 @@ func (hi *HistoryIterator2) advanceInDb() {
 	var err error
 	if hi.txNum2kCursor == nil {
 		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
-			hi.nextErr, hi.hasNext = err, true
+			hi.err, hi.hasNext = err, true
 			return
 		}
 		if k, v, err = hi.txNum2kCursor.Seek(hi.startTxKey[:]); err != nil {
-			hi.nextErr, hi.hasNext = err, true
+			hi.err, hi.hasNext = err, true
 			return
 		}
 	} else {
 		if k, v, err = hi.txNum2kCursor.NextDup(); err != nil {
-			hi.nextErr, hi.hasNext = err, true
+			hi.err, hi.hasNext = err, true
 			return
 		}
 		if k == nil {
 			k, v, err = hi.txNum2kCursor.NextNoDup()
 			if err != nil {
-				hi.nextErr, hi.hasNext = err, true
+				hi.err, hi.hasNext = err, true
 				return
 			}
 			if k != nil && binary.BigEndian.Uint64(k) >= hi.endTxNum {
@@ -2052,7 +2052,7 @@ func (hi *HistoryIterator2) advanceInDb() {
 		hi.searchBuf = append(append(hi.searchBuf[:0], v...), k...)
 		val, err := hi.roTx.GetOne(hi.valsTable, hi.searchBuf)
 		if err != nil {
-			hi.nextErr, hi.hasNext = err, true
+			hi.err, hi.hasNext = err, true
 			return
 		}
 		hi.nextVal = val
@@ -2068,7 +2068,7 @@ func (hi *HistoryIterator2) HasNext() bool {
 }
 
 func (hi *HistoryIterator2) Next() ([]byte, []byte, error) {
-	k, v, err := hi.nextKey, hi.nextVal, hi.nextErr
+	k, v, err := hi.nextKey, hi.nextVal, hi.err
 	if err != nil {
 		return nil, nil, err
 	}
