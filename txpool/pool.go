@@ -348,7 +348,7 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg Config, cache kvca
 	}
 	tracedSenders := make(map[common.Address]struct{})
 	for _, sender := range cfg.TracedSenders {
-		tracedSenders[common.HexToAddress(sender)] = struct{}{}
+		tracedSenders[common.BytesToAddress([]byte(sender))] = struct{}{}
 	}
 	return &TxPool{
 		lock:                    &sync.Mutex{},
