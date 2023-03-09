@@ -959,7 +959,7 @@ func (it *RecentInvertedIdxIter) Next() (uint64, error) {
 	it.limit--
 	n := it.nextN
 	it.advance()
-	return n, it.err
+	return n, nil
 }
 
 type InvertedIterator1 struct {
