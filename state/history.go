@@ -2216,18 +2216,17 @@ func (h *History) CleanupDir() {
 }
 
 func (hc *HistoryContext) recentIdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
-	from := make([]byte, len(key)+8)
-	copy(from, key)
-	to := common.Copy(from)
-
 	var dbIt iter.U64
 	if asc {
+		from := make([]byte, len(key)+8)
+		copy(from, key)
 		var fromTxNum uint64
 		if startTxNum >= 0 {
 			fromTxNum = uint64(startTxNum)
 		}
 		binary.BigEndian.PutUint64(from[len(key):], fromTxNum)
 
+		to := common.Copy(from)
 		toTxNum := uint64(math.MaxUint64)
 		if endTxNum >= 0 {
 			toTxNum = uint64(endTxNum)
