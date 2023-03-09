@@ -65,9 +65,9 @@ type AggregatorV3 struct {
 	working                atomic.Bool
 	workingMerge           atomic.Bool
 	workingOptionalIndices atomic.Bool
-	warmupWorking          atomic.Bool
-	ctx                    context.Context
-	ctxCancel              context.CancelFunc
+	//warmupWorking          atomic.Bool
+	ctx       context.Context
+	ctxCancel context.CancelFunc
 
 	needSaveFilesListInDB atomic.Bool
 	wg                    sync.WaitGroup

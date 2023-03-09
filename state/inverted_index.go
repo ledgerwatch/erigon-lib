@@ -391,7 +391,7 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 func (ii *InvertedIndex) Add(key []byte) error {
 	return ii.wal.add(key, key)
 }
-func (ii *InvertedIndex) add(key, indexKey []byte) error {
+func (ii *InvertedIndex) add(key, indexKey []byte) error { //nolint
 	return ii.wal.add(key, indexKey)
 }
 
@@ -826,8 +826,7 @@ type RecentInvertedIdxIter struct {
 	hasNext bool
 	err     error
 
-	res []uint64
-	bm  *roaring64.Bitmap
+	bm *roaring64.Bitmap
 }
 
 func (it *RecentInvertedIdxIter) Close() {

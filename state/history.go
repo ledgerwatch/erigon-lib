@@ -1876,7 +1876,7 @@ func (hi *HistoryChangesIter) advanceInDb() {
 		}
 	}
 	//TODO: seems it's brude-force over all history. need optimize it
-	for k, v, err = hi.valsC.Seek(seek); k != nil; k, v, err = hi.valsC.Seek(seek) {
+	for k, _, err = hi.valsC.Seek(seek); k != nil; k, _, err = hi.valsC.Seek(seek) {
 		if err != nil {
 			panic(err)
 		}
@@ -2201,13 +2201,6 @@ func (hs *HistoryStep) Clone() *HistoryStep {
 	}
 }
 
-func u64or0(in []byte) (v uint64) {
-	if len(in) > 0 {
-		v = binary.BigEndian.Uint64(in)
-	}
-	return v
-}
-
 func (h *History) CleanupDir() {
 	files, _ := h.fileNamesOnDisk()
 	uselessFiles := h.scanStateFiles(files)
@@ -2236,7 +2229,7 @@ func (hc *HistoryContext) recentIdxRange(key []byte, startTxNum, endTxNum int, a
 		binary.BigEndian.PutUint64(from[len(key):], fromTxNum)
 
 		toTxNum := uint64(math.MaxUint64)
-		if toTxNum >= 0 {
+		if endTxNum >= 0 {
 			toTxNum = uint64(endTxNum)
 		}
 		binary.BigEndian.PutUint64(to[len(key):], toTxNum)
