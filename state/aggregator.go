@@ -933,7 +933,6 @@ func (a *Aggregator) AddLogTopic(topic []byte) error {
 	return a.logTopics.Add(topic)
 }
 
-
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
 func (a *Aggregator) StartWrites() *Aggregator {
 	a.accounts.StartWrites()
@@ -1283,4 +1282,3 @@ func bytesToUint64(buf []byte) (x uint64) {
 	}
 	return
 }
-
