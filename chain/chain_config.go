@@ -62,7 +62,7 @@ type Config struct {
 	TerminalTotalDifficultyPassed bool     `json:"terminalTotalDifficultyPassed,omitempty"` // Disable PoW sync for networks that have already passed through the Merge
 	MergeNetsplitBlock            *big.Int `json:"mergeNetsplitBlock,omitempty"`            // Virtual fork after The Merge to use as a network splitter; see FORK_NEXT_VALUE in EIP-3675
 
-	// Mainnet fork scheduling switched from blocks to timestamps after The Merge
+	// Mainnet fork scheduling switched from block numbers to timestamps after The Merge
 	ShanghaiTime     *big.Int `json:"shanghaiTime,omitempty"`
 	CancunTime       *big.Int `json:"cancunTime,omitempty"`
 	ShardingForkTime *big.Int `json:"shardingForkTime,omitempty"`
