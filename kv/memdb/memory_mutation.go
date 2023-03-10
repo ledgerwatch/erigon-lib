@@ -1,5 +1,5 @@
 /*
-   Copyright 2022 Erigon contributors
+   Copyright 2023 Erigon contributors
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
@@ -25,12 +25,14 @@ import (
 )
 
 type MemoryMutation struct {
-	memTx            kv.RwTx
-	memDb            kv.RwDB
-	deletedEntries   map[string]map[string]string
-	clearedTables    map[string]struct{}
-	db               kv.Tx
-	statelessCursors map[string]kv.RwCursor
+	memTx                 kv.RwTx
+	memDb                 kv.RwDB
+	deletedEntries        map[string]map[string]struct{}
+	deletedDupsortEntries map[string]map[string]map[string]struct{}
+	clearedTables         map[string]struct{}
+	db                    kv.Tx
+	statelessCursors      map[string]kv.RwCursor
+	tableConfigs          kv.TableCfg
 }
 
 // NewMemoryBatch - starts in-mem batch
@@ -43,6 +45,7 @@ type MemoryMutation struct {
 // batch.Commit()
 func NewMemoryBatch(tx kv.Tx, tmpDir string) *MemoryMutation {
 	tmpDB := mdbx.NewMDBX(log.New()).InMem(tmpDir).MustOpen()
+	cfgs := tmpDB.(*mdbx.MdbxKV).AllBuckets()
 	memTx, err := tmpDB.BeginRw(context.Background())
 	if err != nil {
 		panic(err)
@@ -52,11 +55,13 @@ func NewMemoryBatch(tx kv.Tx, tmpDir string) *MemoryMutation {
 	}
 
 	return &MemoryMutation{
-		db:             tx,
-		memDb:          tmpDB,
-		memTx:          memTx,
-		deletedEntries: map[string]map[string]string{},
-		clearedTables:  map[string]struct{}{},
+		db:                    tx,
+		memDb:                 tmpDB,
+		memTx:                 memTx,
+		deletedEntries:        map[string]map[string]struct{}{},
+		deletedDupsortEntries: map[string]map[string]map[string]struct{}{},
+		clearedTables:         map[string]struct{}{},
+		tableConfigs:          cfgs,
 	}
 }
 
@@ -71,11 +76,24 @@ func (m *MemoryMutation) isTableCleared(table string) bool {
 }
 
 func (m *MemoryMutation) isEntryDeleted(table string, key []byte) bool {
-	_, ok := m.deletedEntries[table]
+	t, ok := m.deletedEntries[table]
 	if !ok {
 		return ok
 	}
-	_, ok = m.deletedEntries[table][string(key)]
+	_, ok = t[string(key)]
+	return ok
+}
+
+func (m *MemoryMutation) isDupsortEntryDeleted(table string, key, value []byte) bool {
+	t, ok := m.deletedDupsortEntries[table]
+	if !ok {
+		return ok
+	}
+	e, ok := t[string(key)]
+	if !ok {
+		return ok
+	}
+	_, ok = e[string(value)]
 	return ok
 }
 
@@ -255,9 +273,9 @@ func (m *MemoryMutation) ForPrefix(bucket string, prefix []byte, walker func(k, 
 
 func (m *MemoryMutation) Delete(table string, k []byte) error {
 	if _, ok := m.deletedEntries[table]; !ok {
-		m.deletedEntries[table] = map[string]string{}
+		m.deletedEntries[table] = map[string]struct{}{}
 	}
-	m.deletedEntries[table][string(k)] = ""
+	m.deletedEntries[table][string(k)] = struct{}{}
 	return m.memTx.Delete(table, k)
 }
 
@@ -294,6 +312,8 @@ func (m *MemoryMutation) ListBuckets() ([]string, error) {
 
 func (m *MemoryMutation) ClearBucket(bucket string) error {
 	m.clearedTables[bucket] = struct{}{}
+	delete(m.deletedEntries, bucket)
+	delete(m.deletedDupsortEntries, bucket)
 	return m.memTx.ClearBucket(bucket)
 }
 
@@ -375,8 +395,26 @@ func isTablePurelyDupsort(bucket string) bool {
 }
 
 // Cursor creates a new cursor (the real fun begins here)
-func (m *MemoryMutation) makeCursor(bucket string, dupsort bool) (kv.RwCursorDupSort, error) {
-	c := &memoryMutationCursor{dupsort: dupsort}
+func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursor, error) {
+	c := &memoryMutationCursor{bucketCfg: m.tableConfigs[bucket]}
+	// We can filter duplicates in dup sorted table
+	c.table = bucket
+
+	var err error
+	c.cursor, err = m.db.CursorDupSort(bucket)
+	if err != nil {
+		return nil, err
+	}
+	c.memCursor, err = m.memTx.RwCursorDupSort(bucket)
+	if err != nil {
+		return nil, err
+	}
+	c.mutation = m
+	return c, err
+}
+
+func (m *MemoryMutation) makeCursorDupSort(bucket string) (kv.RwCursorDupSort, error) {
+	c := &memoryMutationCursorDupSort{bucketCfg: m.tableConfigs[bucket]}
 	// We can filter duplicates in dup sorted table
 	c.table = bucket
 
@@ -395,22 +433,22 @@ func (m *MemoryMutation) makeCursor(bucket string, dupsort bool) (kv.RwCursorDup
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) RwCursorDupSort(bucket string) (kv.RwCursorDupSort, error) {
-	return m.makeCursor(bucket, true /* dupsort */)
+	return m.makeCursorDupSort(bucket)
 }
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) RwCursor(bucket string) (kv.RwCursor, error) {
-	return m.makeCursor(bucket, false /* dupsort */)
+	return m.makeCursor(bucket)
 }
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) CursorDupSort(bucket string) (kv.CursorDupSort, error) {
-	return m.makeCursor(bucket, true /* dupsort */)
+	return m.makeCursorDupSort(bucket)
 }
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) Cursor(bucket string) (kv.Cursor, error) {
-	return m.makeCursor(bucket, false /* dupsort */)
+	return m.makeCursor(bucket)
 }
 
 func (m *MemoryMutation) ViewID() uint64 {
