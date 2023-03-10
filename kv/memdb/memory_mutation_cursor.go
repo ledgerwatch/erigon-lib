@@ -227,7 +227,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 	if m.isTableCleared() {
 		return memKey, memValue, nil
 	}
-	if m.mutation.isEntryDeleted(m.table, seek) {
+	if m.isEntryDeleted(seek) {
 		return nil, nil, nil
 	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
 		return nil, nil, err
@@ -1052,5 +1052,21 @@ func (m *memoryMutationCursorDupSort) CountDuplicates() (uint64, error) {
 }
 
 func (m *memoryMutationCursorDupSort) SeekBothExact(key, value []byte) ([]byte, []byte, error) {
-	panic("SeekBothExact Not implemented")
+	m.direction = ForwardDirection
+	m.preemptedNext = false
+	var err error
+	var memKey, memValue []byte
+	var dbKey, dbValue []byte
+	if memKey, memValue, err = m.memCursor.SeekBothExact(key, value); err != nil {
+		return nil, nil, err
+	}
+	if m.isTableCleared() {
+		return memKey, memValue, nil
+	}
+	if m.isEntryDeleted(key, value) {
+		return nil, nil, nil
+	} else if dbKey, dbValue, err = m.cursor.SeekBothExact(key, value); err != nil {
+		return nil, nil, err
+	}
+	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
 }

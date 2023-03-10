@@ -29,7 +29,7 @@ type MemoryMutation struct {
 	memTx                 kv.RwTx
 	memDb                 kv.RwDB
 	deletedEntries        map[string]map[string]struct{}
-	deletedDupsortEntries map[string]map[string]map[string]struct{}
+	deletedDupSortEntries map[string]map[string]map[string]struct{}
 	clearedTables         map[string]struct{}
 	db                    kv.Tx
 	statelessCursors      map[string]kv.RwCursor
@@ -60,7 +60,7 @@ func NewMemoryBatch(tx kv.Tx, tmpDir string) *MemoryMutation {
 		memDb:                 tmpDB,
 		memTx:                 memTx,
 		deletedEntries:        map[string]map[string]struct{}{},
-		deletedDupsortEntries: map[string]map[string]map[string]struct{}{},
+		deletedDupSortEntries: map[string]map[string]map[string]struct{}{},
 		clearedTables:         map[string]struct{}{},
 		tableConfigs:          cfgs,
 	}
@@ -86,7 +86,7 @@ func (m *MemoryMutation) isEntryDeleted(table string, key []byte) bool {
 }
 
 func (m *MemoryMutation) isDupsortEntryDeleted(table string, key, value []byte) bool {
-	t, ok := m.deletedDupsortEntries[table]
+	t, ok := m.deletedDupSortEntries[table]
 	if !ok {
 		return ok
 	}
@@ -154,8 +154,13 @@ func (m *MemoryMutation) statelessCursor(table string) (kv.RwCursor, error) {
 	}
 	c, ok := m.statelessCursors[table]
 	if !ok {
+		cfg, ok := m.tableConfigs[table]
 		var err error
-		c, err = m.RwCursor(table)
+		if ok && (cfg.Flags&kv.DupSort != 0) {
+			c, err = m.RwCursorDupSort(table)
+		} else {
+			c, err = m.RwCursor(table)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -204,7 +209,7 @@ func (m *MemoryMutation) AppendDup(table string, key []byte, value []byte) error
 	if err != nil {
 		return err
 	}
-	return c.(*memoryMutationCursor).AppendDup(key, value)
+	return c.(*memoryMutationCursorDupSort).AppendDup(key, value)
 }
 
 func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
@@ -317,7 +322,7 @@ func (m *MemoryMutation) ListBuckets() ([]string, error) {
 func (m *MemoryMutation) ClearBucket(bucket string) error {
 	m.clearedTables[bucket] = struct{}{}
 	delete(m.deletedEntries, bucket)
-	delete(m.deletedDupsortEntries, bucket)
+	delete(m.deletedDupSortEntries, bucket)
 	return m.memTx.ClearBucket(bucket)
 }
 

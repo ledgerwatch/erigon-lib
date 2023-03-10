@@ -40,7 +40,7 @@ func TestPutAppendHas(t *testing.T) {
 	require.NoError(t, batch.Put(kv.HashedAccounts, []byte("AAAA"), []byte("value1.3")))
 	require.NoError(t, batch.Append(kv.HashedAccounts, []byte("CBAA"), []byte("value3.5")))
 	require.Error(t, batch.Append(kv.HashedAccounts, []byte("CBAA"), []byte("value3.1")))
-	require.NoError(t, batch.AppendDup(kv.HashedAccounts, []byte("CBAA"), []byte("value3.1")))
+	//require.NoError(t, batch.AppendDup(kv.HashedAccounts, []byte("CBAA"), []byte("value3.1")))
 	require.Error(t, batch.Append(kv.HashedAccounts, []byte("AAAA"), []byte("value1.3")))
 
 	require.Nil(t, batch.Flush(rwTx))
