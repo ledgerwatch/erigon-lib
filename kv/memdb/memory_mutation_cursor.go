@@ -724,11 +724,6 @@ func (m *memoryMutationCursorDupSort) DeleteCurrentDuplicates() error {
 	m.direction = ForwardDirection
 	m.preemptedNext = false
 	fmt.Printf("current = %v\n", m.current)
-	if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
-		if err := m.memCursor.DeleteCurrentDuplicates(); err != nil {
-			return err
-		}
-	}
 	if m.isTableCleared() {
 		m.current = OverOnly
 		return nil
@@ -739,6 +734,21 @@ func (m *memoryMutationCursorDupSort) DeleteCurrentDuplicates() error {
 	}
 	if currKey == nil {
 		return nil
+	}
+	if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
+		if err := m.memCursor.DeleteCurrentDuplicates(); err != nil {
+			return err
+		}
+	} else if m.current != UnderOnly && m.current != NoCurrent {
+		currMemKey, _, err := m.memCursor.Current()
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(currKey, currMemKey) {
+			if err := m.memCursor.DeleteCurrentDuplicates(); err != nil {
+				return err
+			}
+		}
 	}
 	if _, ok := m.mutation.deletedDupSortEntries[m.table]; !ok {
 		m.mutation.deletedDupSortEntries[m.table] = map[string]map[string]struct{}{}
