@@ -16,6 +16,7 @@ package memdb
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
@@ -347,46 +348,86 @@ func (m *MemoryMutation) Flush(tx kv.RwTx) error {
 	}
 	// Obliterate entries who are to be deleted
 	for bucket, keys := range m.deletedEntries {
-		for key := range keys {
-			if err := tx.Delete(bucket, []byte(key)); err != nil {
-				return err
-			}
-		}
-	}
-	// Iterate over each bucket and apply changes accordingly.
-	for _, bucket := range buckets {
-		if isTablePurelyDupsort(bucket) {
-			cbucket, err := m.memTx.CursorDupSort(bucket)
+		if err := func() error {
+			dbCursor, err := tx.RwCursor(bucket)
 			if err != nil {
 				return err
 			}
-			defer cbucket.Close()
+			defer dbCursor.Close()
+			for key := range keys {
+				if err := dbCursor.Delete([]byte(key)); err != nil {
+					return err
+				}
+			}
+			return nil
+		}(); err != nil {
+			return err
+		}
+	}
+	for bucket, keyVals := range m.deletedDupSortEntries {
+		if err := func() error {
 			dbCursor, err := tx.RwCursorDupSort(bucket)
 			if err != nil {
 				return err
 			}
 			defer dbCursor.Close()
-			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+			for key, values := range keyVals {
+				for value := range values {
+					fmt.Printf("DeleteExact %s=%s\n", key, value)
+					if err := dbCursor.DeleteExact([]byte(key), []byte(value)); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		}(); err != nil {
+			return err
+		}
+	}
+	// Iterate over each bucket and apply changes accordingly.
+	for _, bucket := range buckets {
+		if isTablePurelyDupsort(bucket) {
+			if err := func() error {
+				cbucket, err := m.memTx.CursorDupSort(bucket)
 				if err != nil {
 					return err
 				}
-				if err := dbCursor.Put(k, v); err != nil {
+				defer cbucket.Close()
+				dbCursor, err := tx.RwCursorDupSort(bucket)
+				if err != nil {
 					return err
 				}
-			}
-		} else {
-			cbucket, err := m.memTx.Cursor(bucket)
-			if err != nil {
+				defer dbCursor.Close()
+				for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+					if err != nil {
+						return err
+					}
+					if err := dbCursor.Put(k, v); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
 				return err
 			}
-			defer cbucket.Close()
-			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+		} else {
+			if err := func() error {
+				cbucket, err := m.memTx.Cursor(bucket)
 				if err != nil {
 					return err
 				}
-				if err := tx.Put(bucket, k, v); err != nil {
-					return err
+				defer cbucket.Close()
+				for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+					if err != nil {
+						return err
+					}
+					if err := tx.Put(bucket, k, v); err != nil {
+						return err
+					}
 				}
+				return nil
+			}(); err != nil {
+				return err
 			}
 		}
 	}
