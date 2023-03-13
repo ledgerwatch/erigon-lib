@@ -1468,7 +1468,6 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 			heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
 			hi.hasNextInFiles = true
 		}
-		hi.total += uint64(item.getter.Size())
 	}
 	hi.hc = hc
 	hi.compressVals = hc.h.compressVals
@@ -1759,7 +1758,6 @@ type HistoryChangesIterF struct {
 	nextVal      []byte
 	nextKey      []byte
 	h            ReconHeap
-	total        uint64
 	endTxNum     uint64
 	startTxNum   uint64
 	startTxKey   [8]byte
