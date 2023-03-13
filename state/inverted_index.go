@@ -415,12 +415,12 @@ func (ii *InvertedIndex) Rotate() *invertedIndexWAL {
 }
 
 type invertedIndexWAL struct {
-	ii                           *InvertedIndex
-	index, indexFlushing         *etl.Collector
-	indexKeys, indexKeysFlushing *etl.Collector
-	tmpdir                       string
-	buffered                     bool
-	discard                      bool
+	ii        *InvertedIndex
+	index     *etl.Collector
+	indexKeys *etl.Collector
+	tmpdir    string
+	buffered  bool
+	discard   bool
 }
 
 // loadFunc - is analog of etl.Identity, but it signaling to etl - use .Put instead of .AppendDup - to allow duplicates
