@@ -27,6 +27,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/erigon-lib/recsplit"
@@ -36,13 +37,13 @@ import (
 	btree2 "github.com/tidwall/btree"
 )
 
-func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
+func testDbAndHistory(tb testing.TB, largeValues bool) (string, kv.RwDB, *History) {
 	tb.Helper()
 	path := tb.TempDir()
 	logger := log.New()
-	keysTable := "Keys"
-	indexTable := "Index"
-	valsTable := "Vals"
+	keysTable := "AccountKeys"
+	indexTable := "AccountIndex"
+	valsTable := "AccountVals"
 	settingsTable := "Settings"
 	db := mdbx.NewMDBX(logger).InMem(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
@@ -60,174 +61,185 @@ func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 }
 
 func TestHistoryCollationBuild(t *testing.T) {
-	defer log.Root().SetHandler(log.Root().GetHandler())
-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StderrHandler))
-
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	require := require.New(t)
-	_, db, h := testDbAndHistory(t)
 	ctx := context.Background()
-	tx, err := db.BeginRw(ctx)
-	require.NoError(err)
-	defer tx.Rollback()
-	h.SetTx(tx)
-	h.StartWrites()
-	defer h.FinishWrites()
 
-	h.SetTxNum(2)
-	err = h.AddPrevValue([]byte("key1"), nil, nil)
-	require.NoError(err)
+	test := func(t *testing.T, h *History, db kv.RwDB) {
+		t.Helper()
+		require := require.New(t)
+		tx, err := db.BeginRw(ctx)
+		require.NoError(err)
+		defer tx.Rollback()
+		h.SetTx(tx)
+		h.StartWrites()
+		defer h.FinishWrites()
 
-	h.SetTxNum(3)
-	err = h.AddPrevValue([]byte("key2"), nil, nil)
-	require.NoError(err)
+		h.SetTxNum(2)
+		err = h.AddPrevValue([]byte("key1"), nil, nil)
+		require.NoError(err)
 
-	h.SetTxNum(6)
-	err = h.AddPrevValue([]byte("key1"), nil, []byte("value1.1"))
-	require.NoError(err)
-	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.1"))
-	require.NoError(err)
+		h.SetTxNum(3)
+		err = h.AddPrevValue([]byte("key2"), nil, nil)
+		require.NoError(err)
 
-	flusher := h.Rotate()
+		h.SetTxNum(6)
+		err = h.AddPrevValue([]byte("key1"), nil, []byte("value1.1"))
+		require.NoError(err)
+		err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.1"))
+		require.NoError(err)
 
-	h.SetTxNum(7)
-	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.2"))
-	require.NoError(err)
-	err = h.AddPrevValue([]byte("key3"), nil, nil)
-	require.NoError(err)
+		flusher := h.Rotate()
 
-	err = flusher.Flush(ctx, tx)
-	require.NoError(err)
+		h.SetTxNum(7)
+		err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.2"))
+		require.NoError(err)
+		err = h.AddPrevValue([]byte("key3"), nil, nil)
+		require.NoError(err)
 
-	err = h.Rotate().Flush(ctx, tx)
-	require.NoError(err)
+		err = flusher.Flush(ctx, tx)
+		require.NoError(err)
 
-	c, err := h.collate(0, 0, 8, tx, logEvery)
-	require.NoError(err)
-	require.True(strings.HasSuffix(c.historyPath, "hist.0-1.v"))
-	require.Equal(6, c.historyCount)
-	require.Equal(3, len(c.indexBitmaps))
-	require.Equal([]uint64{7}, c.indexBitmaps["key3"].ToArray())
-	require.Equal([]uint64{3, 6, 7}, c.indexBitmaps["key2"].ToArray())
-	require.Equal([]uint64{2, 6}, c.indexBitmaps["key1"].ToArray())
+		err = h.Rotate().Flush(ctx, tx)
+		require.NoError(err)
 
-	sf, err := h.buildFiles(ctx, 0, c)
-	require.NoError(err)
-	defer sf.Close()
-	var valWords []string
-	g := sf.historyDecomp.MakeGetter()
-	g.Reset(0)
-	for g.HasNext() {
-		w, _ := g.Next(nil)
-		valWords = append(valWords, string(w))
-	}
-	require.Equal([]string{"", "value1.1", "", "value2.1", "value2.2", ""}, valWords)
-	require.Equal(6, int(sf.historyIdx.KeyCount()))
-	g = sf.efHistoryDecomp.MakeGetter()
-	g.Reset(0)
-	var keyWords []string
-	var intArrs [][]uint64
-	for g.HasNext() {
-		w, _ := g.Next(nil)
-		keyWords = append(keyWords, string(w))
-		w, _ = g.Next(w[:0])
-		ef, _ := eliasfano32.ReadEliasFano(w)
-		var ints []uint64
-		it := ef.Iterator()
-		for it.HasNext() {
-			v, _ := it.Next()
-			ints = append(ints, v)
+		c, err := h.collate(0, 0, 8, tx, logEvery)
+		require.NoError(err)
+		require.True(strings.HasSuffix(c.historyPath, "hist.0-1.v"))
+		require.Equal(6, c.historyCount)
+		require.Equal(3, len(c.indexBitmaps))
+		require.Equal([]uint64{7}, c.indexBitmaps["key3"].ToArray())
+		require.Equal([]uint64{3, 6, 7}, c.indexBitmaps["key2"].ToArray())
+		require.Equal([]uint64{2, 6}, c.indexBitmaps["key1"].ToArray())
+
+		sf, err := h.buildFiles(ctx, 0, c)
+		require.NoError(err)
+		defer sf.Close()
+		var valWords []string
+		g := sf.historyDecomp.MakeGetter()
+		g.Reset(0)
+		for g.HasNext() {
+			w, _ := g.Next(nil)
+			valWords = append(valWords, string(w))
 		}
-		intArrs = append(intArrs, ints)
-	}
-	require.Equal([]string{"key1", "key2", "key3"}, keyWords)
-	require.Equal([][]uint64{{2, 6}, {3, 6, 7}, {7}}, intArrs)
-	r := recsplit.NewIndexReader(sf.efHistoryIdx)
-	for i := 0; i < len(keyWords); i++ {
-		offset := r.Lookup([]byte(keyWords[i]))
-		g.Reset(offset)
-		w, _ := g.Next(nil)
-		require.Equal(keyWords[i], string(w))
-	}
-	r = recsplit.NewIndexReader(sf.historyIdx)
-	g = sf.historyDecomp.MakeGetter()
-	var vi int
-	for i := 0; i < len(keyWords); i++ {
-		ints := intArrs[i]
-		for j := 0; j < len(ints); j++ {
-			var txKey [8]byte
-			binary.BigEndian.PutUint64(txKey[:], ints[j])
-			offset := r.Lookup2(txKey[:], []byte(keyWords[i]))
+		require.Equal([]string{"", "value1.1", "", "value2.1", "value2.2", ""}, valWords)
+		require.Equal(6, int(sf.historyIdx.KeyCount()))
+		g = sf.efHistoryDecomp.MakeGetter()
+		g.Reset(0)
+		var keyWords []string
+		var intArrs [][]uint64
+		for g.HasNext() {
+			w, _ := g.Next(nil)
+			keyWords = append(keyWords, string(w))
+			w, _ = g.Next(w[:0])
+			ef, _ := eliasfano32.ReadEliasFano(w)
+			ints, err := iter.ToU64Arr(ef.Iterator())
+			require.NoError(err)
+			intArrs = append(intArrs, ints)
+		}
+		require.Equal([]string{"key1", "key2", "key3"}, keyWords)
+		require.Equal([][]uint64{{2, 6}, {3, 6, 7}, {7}}, intArrs)
+		r := recsplit.NewIndexReader(sf.efHistoryIdx)
+		for i := 0; i < len(keyWords); i++ {
+			offset := r.Lookup([]byte(keyWords[i]))
 			g.Reset(offset)
 			w, _ := g.Next(nil)
-			require.Equal(valWords[vi], string(w))
-			vi++
+			require.Equal(keyWords[i], string(w))
+		}
+		r = recsplit.NewIndexReader(sf.historyIdx)
+		g = sf.historyDecomp.MakeGetter()
+		var vi int
+		for i := 0; i < len(keyWords); i++ {
+			ints := intArrs[i]
+			for j := 0; j < len(ints); j++ {
+				var txKey [8]byte
+				binary.BigEndian.PutUint64(txKey[:], ints[j])
+				offset := r.Lookup2(txKey[:], []byte(keyWords[i]))
+				g.Reset(offset)
+				w, _ := g.Next(nil)
+				require.Equal(valWords[vi], string(w))
+				vi++
+			}
 		}
 	}
+	t.Run("large values", func(t *testing.T) {
+		_, db, h := testDbAndHistory(t, true)
+		test(t, h, db)
+	})
+	t.Run("small values", func(t *testing.T) {
+		_, db, h := testDbAndHistory(t, false)
+		test(t, h, db)
+	})
 }
 func TestHistoryAfterPrune(t *testing.T) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	_, db, h := testDbAndHistory(t)
 	ctx := context.Background()
-	tx, err := db.BeginRw(ctx)
-	require.NoError(t, err)
-	defer tx.Rollback()
-	h.SetTx(tx)
-	h.StartWrites()
-	defer h.FinishWrites()
+	test := func(t *testing.T, h *History, db kv.RwDB) {
+		t.Helper()
+		require := require.New(t)
+		tx, err := db.BeginRw(ctx)
+		require.NoError(err)
+		defer tx.Rollback()
+		h.SetTx(tx)
+		h.StartWrites()
+		defer h.FinishWrites()
 
-	h.SetTxNum(2)
-	err = h.AddPrevValue([]byte("key1"), nil, nil)
-	require.NoError(t, err)
+		h.SetTxNum(2)
+		err = h.AddPrevValue([]byte("key1"), nil, nil)
+		require.NoError(err)
 
-	h.SetTxNum(3)
-	err = h.AddPrevValue([]byte("key2"), nil, nil)
-	require.NoError(t, err)
+		h.SetTxNum(3)
+		err = h.AddPrevValue([]byte("key2"), nil, nil)
+		require.NoError(err)
 
-	h.SetTxNum(6)
-	err = h.AddPrevValue([]byte("key1"), nil, []byte("value1.1"))
-	require.NoError(t, err)
-	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.1"))
-	require.NoError(t, err)
+		h.SetTxNum(6)
+		err = h.AddPrevValue([]byte("key1"), nil, []byte("value1.1"))
+		require.NoError(err)
+		err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.1"))
+		require.NoError(err)
 
-	h.SetTxNum(7)
-	err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.2"))
-	require.NoError(t, err)
-	err = h.AddPrevValue([]byte("key3"), nil, nil)
-	require.NoError(t, err)
+		h.SetTxNum(7)
+		err = h.AddPrevValue([]byte("key2"), nil, []byte("value2.2"))
+		require.NoError(err)
+		err = h.AddPrevValue([]byte("key3"), nil, nil)
+		require.NoError(err)
 
-	err = h.Rotate().Flush(ctx, tx)
-	require.NoError(t, err)
+		err = h.Rotate().Flush(ctx, tx)
+		require.NoError(err)
 
-	c, err := h.collate(0, 0, 16, tx, logEvery)
-	require.NoError(t, err)
+		c, err := h.collate(0, 0, 16, tx, logEvery)
+		require.NoError(err)
 
-	sf, err := h.buildFiles(ctx, 0, c)
-	require.NoError(t, err)
+		sf, err := h.buildFiles(ctx, 0, c)
+		require.NoError(err)
 
-	h.integrateFiles(sf, 0, 16)
+		h.integrateFiles(sf, 0, 16)
 
-	err = h.prune(ctx, 0, 16, math.MaxUint64, logEvery)
-	require.NoError(t, err)
-	h.SetTx(tx)
+		err = h.prune(ctx, 0, 16, math.MaxUint64, logEvery)
+		require.NoError(err)
+		h.SetTx(tx)
 
-	for _, table := range []string{h.indexKeysTable, h.historyValsTable, h.indexTable} {
-		var cur kv.Cursor
-		cur, err = tx.Cursor(table)
-		require.NoError(t, err)
-		defer cur.Close()
-		var k []byte
-		k, _, err = cur.First()
-		require.NoError(t, err)
-		require.Nil(t, k, table)
+		for _, table := range []string{h.indexKeysTable, h.historyValsTable, h.indexTable} {
+			var cur kv.Cursor
+			cur, err = tx.Cursor(table)
+			require.NoError(err)
+			defer cur.Close()
+			var k []byte
+			k, _, err = cur.First()
+			require.NoError(err)
+			require.Nil(k, table)
+		}
 	}
+	t.Run("large values", func(t *testing.T) {
+		_, db, h := testDbAndHistory(t, false)
+		test(t, h, db)
+	})
 }
 
 func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
 	tb.Helper()
-	path, db, h := testDbAndHistory(tb)
+	path, db, h := testDbAndHistory(tb, false)
 	ctx := context.Background()
 	tx, err := db.BeginRw(ctx)
 	require.NoError(tb, err)

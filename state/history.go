@@ -1580,7 +1580,6 @@ type StateAsOfIter struct {
 	nextKey     []byte
 
 	h              ReconHeap
-	total          uint64
 	startTxNum     uint64
 	startTxKey     [8]byte
 	txnKey         [8]byte
@@ -2061,9 +2060,9 @@ type HistoryChangesIterDBDup struct {
 	startTxNum, endTxNum uint64
 	startTxKey           [8]byte
 
-	nextKey, nextVal       []byte
-	k, v, kBackup, vBackup []byte
-	err                    error
+	nextKey, nextVal []byte
+	k, v             []byte
+	err              error
 }
 
 func (hi *HistoryChangesIterDBDup) Close() {
@@ -2133,14 +2132,11 @@ func (hi *HistoryChangesIterDBDup) Next() ([]byte, []byte, error) {
 	if hi.err != nil {
 		return nil, nil, hi.err
 	}
-	hi.k, hi.v = append(hi.k[:0], hi.nextKey...), append(hi.v[:0], hi.nextVal...)
-
-	// Satisfy iter.Dual Invariant 2
-	hi.k, hi.kBackup, hi.v, hi.vBackup = hi.kBackup, hi.k, hi.vBackup, hi.v
+	hi.k, hi.v = hi.nextKey, hi.nextVal
 	if err := hi.advance(); err != nil {
 		return nil, nil, err
 	}
-	return hi.kBackup, hi.vBackup, nil
+	return hi.k, hi.v, nil
 }
 
 func (hc *HistoryContext) IterateRecentlyChanged(startTxNum, endTxNum uint64, roTx kv.Tx, f func([]byte, []byte) error) error {

@@ -47,10 +47,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
 
-var (
-	historyValCountKey = []byte("ValCount")
-)
-
 // filesItem corresponding to a pair of files (.dat and .idx)
 type filesItem struct {
 	decompressor *compress.Decompressor
