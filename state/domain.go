@@ -159,6 +159,7 @@ func NewDomain(
 	settingsTable string,
 	indexTable string,
 	compressVals bool,
+	largeValues bool,
 ) (*Domain, error) {
 	d := &Domain{
 		keysTable: keysTable,
@@ -168,7 +169,7 @@ func NewDomain(
 	}
 
 	var err error
-	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals, []string{"kv"}, false); err != nil {
+	if d.History, err = NewHistory(dir, tmpdir, aggregationStep, filenameBase, indexKeysTable, indexTable, historyValsTable, settingsTable, compressVals, []string{"kv"}, largeValues); err != nil {
 		return nil, err
 	}
 

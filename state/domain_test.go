@@ -50,13 +50,13 @@ func testDbAndDomain(t *testing.T) (string, kv.RwDB, *Domain) {
 			keysTable:        kv.TableCfgItem{Flags: kv.DupSort},
 			valsTable:        kv.TableCfgItem{},
 			historyKeysTable: kv.TableCfgItem{Flags: kv.DupSort},
-			historyValsTable: kv.TableCfgItem{},
+			historyValsTable: kv.TableCfgItem{Flags: kv.DupSort},
 			settingsTable:    kv.TableCfgItem{},
 			indexTable:       kv.TableCfgItem{Flags: kv.DupSort},
 		}
 	}).MustOpen()
 	t.Cleanup(db.Close)
-	d, err := NewDomain(path, path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, settingsTable, indexTable, true /* compressVals */)
+	d, err := NewDomain(path, path, 16 /* aggregationStep */, "base" /* filenameBase */, keysTable, valsTable, historyKeysTable, historyValsTable, settingsTable, indexTable, true /* compressVals */, false)
 	require.NoError(t, err)
 	t.Cleanup(d.Close)
 	return path, db, d
