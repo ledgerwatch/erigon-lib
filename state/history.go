@@ -1737,6 +1737,7 @@ func (hc *HistoryContext) iterateChangedDB(fromTxNum, toTxNum int, asc order.By,
 	if err := dbi.advance(); err != nil {
 		return nil, err
 	}
+	hc.Close()
 	return dbi, nil
 }
 
