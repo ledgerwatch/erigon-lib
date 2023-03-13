@@ -370,14 +370,14 @@ const (
 	AccountKeys        = "AccountKeys"
 	AccountVals        = "AccountVals"
 	AccountHistoryKeys = "AccountHistoryKeys"
-	AccountHistoryVals = "AccountHistoryVals"
+	AccountHistoryVals = "AccountHistoryVals2"
 	AccountSettings    = "AccountSettings"
 	AccountIdx         = "AccountIdx"
 
 	StorageKeys        = "StorageKeys"
 	StorageVals        = "StorageVals"
 	StorageHistoryKeys = "StorageHistoryKeys"
-	StorageHistoryVals = "StorageHistoryVals"
+	StorageHistoryVals = "StorageHistoryVals2"
 	StorageSettings    = "StorageSettings"
 	StorageIdx         = "StorageIdx"
 
