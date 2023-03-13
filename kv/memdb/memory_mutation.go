@@ -214,13 +214,21 @@ func (m *MemoryMutation) AppendDup(table string, key []byte, value []byte) error
 }
 
 func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
-	c, err := m.Cursor(bucket)
+	var c kv.Cursor
+	cfg, ok := m.tableConfigs[bucket]
+	var err error
+	if ok && (cfg.Flags&kv.DupSort != 0) {
+		c, err = m.CursorDupSort(bucket)
+	} else {
+		c, err = m.Cursor(bucket)
+	}
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
 	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
+		fmt.Printf("k=%s, v=%s\n", k, v)
 		if err != nil {
 			return err
 		}

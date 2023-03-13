@@ -48,12 +48,6 @@ const (
 	BackwardDirection
 )
 
-// entry for the cursor
-type cursorEntry struct {
-	key   []byte
-	value []byte
-}
-
 // cursor
 type memoryMutationCursor struct {
 	// entry history
@@ -381,6 +375,332 @@ func (m *memoryMutationCursor) Count() (uint64, error) {
 }
 
 // cursor
+type memoryMutationCursorAuto struct {
+	// entry history
+	cursor    kv.CursorDupSort
+	memCursor kv.RwCursorDupSort
+	// we keep the mining mutation so that we can insert new elements in db
+	mutation      *MemoryMutation
+	table         string
+	bucketCfg     kv.TableCfgItem
+	current       CurrentType
+	direction     DirectionType
+	preemptedNext bool
+}
+
+func (m *memoryMutationCursorAuto) isTableCleared() bool {
+	return m.mutation.isTableCleared(m.table)
+}
+
+func (m *memoryMutationCursorAuto) isEntryDeleted(key []byte) bool {
+	return m.mutation.isEntryDeleted(m.table, key)
+}
+
+func (m *memoryMutationCursorAuto) selectEntry(direction DirectionType, memKey, memValue, dbKey, dbValue []byte) ([]byte, []byte, error) {
+	//fmt.Printf("selectEntry direction %v, mem: %s=>%s, db: %s=>%s\n", direction, memKey, memValue, dbKey, dbValue)
+	if dbKey == nil {
+		if memKey == nil {
+			m.current = NoCurrent
+			return nil, nil, nil
+		} else {
+			m.current = OverOnly
+			return memKey, memValue, nil
+		}
+	} else if memKey == nil {
+		m.current = UnderOnly
+		return dbKey, dbValue, nil
+	}
+	c := bytes.Compare(dbKey, memKey)
+	if (direction == ForwardDirection && c < 0) || (direction == BackwardDirection && c > 0) {
+		m.current = UnderCurrent
+		return dbKey, dbValue, nil
+	}
+	if c == 0 {
+		m.current = BothCurrent
+	} else {
+		m.current = OverCurrent
+	}
+	return memKey, memValue, nil
+}
+
+// First move cursor to first position and return key and value accordingly.
+func (m *memoryMutationCursorAuto) First() ([]byte, []byte, error) {
+	m.direction = ForwardDirection
+	m.preemptedNext = false
+	var err error
+	var memKey, memValue []byte
+	if memKey, memValue, err = m.memCursor.First(); err != nil {
+		return nil, nil, err
+	}
+	if m.isTableCleared() {
+		m.current = OverOnly
+		return memKey, memValue, nil
+	}
+	var dbKey, dbValue []byte
+	for dbKey, dbValue, err = m.cursor.First(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Next() {
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+}
+
+// Current return the current key and values the cursor is on.
+func (m *memoryMutationCursorAuto) Current() ([]byte, []byte, error) {
+	switch m.current {
+	case OverCurrent, OverOnly, BothCurrent:
+		return m.memCursor.Current()
+	case UnderCurrent, UnderOnly:
+		return m.cursor.Current()
+	default:
+		return nil, nil, nil
+	}
+}
+
+// Next returns the next element of the mutation.
+func (m *memoryMutationCursorAuto) Next() ([]byte, []byte, error) {
+	//fmt.Printf("Next\n")
+	direction := m.direction
+	m.direction = ForwardDirection
+	preemptedNext := m.preemptedNext
+	m.preemptedNext = false
+	if m.isTableCleared() {
+		m.current = OverOnly
+		return m.memCursor.Next()
+	}
+	var err error
+	var memKey, memValue []byte
+	var dbKey, dbValue []byte
+	var memKeySet, dbKeySet bool
+	// Reverse direction if needed
+	if direction == BackwardDirection {
+		//fmt.Printf("Reverse direction\n")
+		switch m.current {
+		case OverCurrent:
+			for dbKey, dbValue, err = m.cursor.Next(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbKey, err = m.cursor.Next() {
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			dbKeySet = true
+		case UnderCurrent:
+			if memKey, memValue, err = m.memCursor.Next(); err != nil {
+				return nil, nil, err
+			}
+			memKeySet = true
+		}
+	}
+	if !preemptedNext {
+		//fmt.Printf("not preemptedNext, m.current = %v\n", m.current)
+		if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
+			if memKey, memValue, err = m.memCursor.Next(); err != nil {
+				return nil, nil, err
+			}
+			memKeySet = true
+		}
+		if m.current == UnderCurrent || m.current == UnderOnly || m.current == BothCurrent {
+			//fmt.Printf("UnderCurrent\n")
+			for dbKey, dbValue, err = m.cursor.Next(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Next() {
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			dbKeySet = true
+		}
+	}
+	if !memKeySet && m.current != UnderOnly && m.current != NoCurrent {
+		if memKey, memValue, err = m.memCursor.Current(); err != nil {
+			return nil, nil, err
+		}
+	}
+	if !dbKeySet && m.current != OverOnly && m.current != NoCurrent {
+		if dbKey, dbValue, err = m.cursor.Current(); err != nil {
+			return nil, nil, err
+		}
+	}
+	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+}
+
+// Seek move pointer to a key at a certain position.
+func (m *memoryMutationCursorAuto) Seek(seek []byte) ([]byte, []byte, error) {
+	//fmt.Printf("Seek %s\n", seek)
+	m.direction = ForwardDirection
+	m.preemptedNext = false
+	var err error
+	var memKey, memValue []byte
+	var dbKey, dbValue []byte
+	if memKey, memValue, err = m.memCursor.Seek(seek); err != nil {
+		return nil, nil, err
+	}
+	if m.isTableCleared() {
+		return memKey, memValue, nil
+	}
+	for dbKey, dbValue, err = m.cursor.Seek(seek); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Next() {
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+}
+
+// Seek move pointer to a key at a certain position.
+func (m *memoryMutationCursorAuto) SeekExact(seek []byte) ([]byte, []byte, error) {
+	m.direction = ForwardDirection
+	m.preemptedNext = false
+	var err error
+	var memKey, memValue []byte
+	var dbKey, dbValue []byte
+	if memKey, memValue, err = m.memCursor.SeekExact(seek); err != nil {
+		return nil, nil, err
+	}
+	if m.isTableCleared() {
+		return memKey, memValue, nil
+	}
+	if m.isEntryDeleted(seek) {
+		return nil, nil, nil
+	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
+		return nil, nil, err
+	}
+	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+}
+
+func (m *memoryMutationCursorAuto) Put(k, v []byte) error {
+	return m.memCursor.Put(common.Copy(k), common.Copy(v))
+}
+
+func (m *memoryMutationCursorAuto) Append(k []byte, v []byte) error {
+	return m.memCursor.Append(common.Copy(k), common.Copy(v))
+}
+
+func (m *memoryMutationCursorAuto) Delete(k []byte) error {
+	if _, ok := m.mutation.deletedEntries[m.table]; !ok {
+		m.mutation.deletedEntries[m.table] = map[string]struct{}{}
+	}
+	m.mutation.deletedEntries[m.table][string(k)] = struct{}{}
+	return m.memCursor.Delete(k)
+}
+
+func (m *memoryMutationCursorAuto) DeleteCurrent() error {
+	m.direction = ForwardDirection
+	m.preemptedNext = false
+	if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
+		var err error
+		if err = m.memCursor.DeleteCurrent(); err != nil {
+			return err
+		}
+	}
+	if m.isTableCleared() {
+		return nil
+	}
+	if m.current == UnderCurrent || m.current == UnderOnly || m.current == BothCurrent {
+		if _, ok := m.mutation.deletedEntries[m.table]; !ok {
+			m.mutation.deletedEntries[m.table] = map[string]struct{}{}
+		}
+		dbKey, _, err := m.cursor.Current()
+		if err != nil {
+			return err
+		}
+		m.mutation.deletedEntries[m.table][string(dbKey)] = struct{}{}
+		for dbKey, _, err = m.cursor.Next(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, _, err = m.cursor.Next() {
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *memoryMutationCursorAuto) Last() ([]byte, []byte, error) {
+	m.direction = BackwardDirection
+	m.preemptedNext = false
+	var err error
+	var memKey, memValue []byte
+	if memKey, memValue, err = m.memCursor.Last(); err != nil {
+		return nil, nil, err
+	}
+	if m.isTableCleared() {
+		m.current = OverOnly
+		return memKey, memValue, nil
+	}
+	var dbKey, dbValue []byte
+	for dbKey, dbValue, err = m.cursor.Last(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Prev() {
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+}
+
+func (m *memoryMutationCursorAuto) Prev() ([]byte, []byte, error) {
+	direction := m.direction
+	m.direction = BackwardDirection
+	m.preemptedNext = false
+	if m.isTableCleared() {
+		m.current = OverOnly
+		return m.memCursor.Prev()
+	}
+	var err error
+	var memKey, memValue []byte
+	var dbKey, dbValue []byte
+	var memKeySet, dbKeySet bool
+	// Reverse direction if needed
+	if direction == ForwardDirection {
+		switch m.current {
+		case OverCurrent:
+			for dbKey, dbValue, err = m.cursor.Prev(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbKey, err = m.cursor.Prev() {
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			dbKeySet = true
+		case UnderCurrent:
+			if memKey, memValue, err = m.memCursor.Prev(); err != nil {
+				return nil, nil, err
+			}
+			memKeySet = true
+		}
+	}
+	if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
+		if memKey, memValue, err = m.memCursor.Prev(); err != nil {
+			return nil, nil, err
+		}
+		memKeySet = true
+	}
+	if m.current == UnderCurrent || m.current == UnderOnly || m.current == BothCurrent {
+		for dbKey, dbValue, err = m.cursor.Prev(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Prev() {
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		dbKeySet = true
+	}
+	if !memKeySet && m.current != UnderOnly && m.current != NoCurrent {
+		if memKey, memValue, err = m.memCursor.Current(); err != nil {
+			return nil, nil, err
+		}
+	}
+	if !dbKeySet && m.current != OverOnly && m.current != NoCurrent {
+		if dbKey, dbValue, err = m.cursor.Current(); err != nil {
+			return nil, nil, err
+		}
+	}
+	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+}
+
+func (m *memoryMutationCursorAuto) Close() {
+	if m.cursor != nil {
+		m.cursor.Close()
+	}
+	if m.memCursor != nil {
+		m.memCursor.Close()
+	}
+}
+
+func (m *memoryMutationCursorAuto) Count() (uint64, error) {
+	panic("Not implemented")
+}
+
+// cursor
 type memoryMutationCursorDupSort struct {
 	// entry history
 	cursor    kv.CursorDupSort
@@ -645,10 +965,11 @@ func (m *memoryMutationCursorDupSort) PutNoDupData(key, value []byte) error {
 }
 
 func (m *memoryMutationCursorDupSort) Delete(k []byte) error {
-	foundK, _, err := m.cursor.SeekExact(k)
+	foundK, foundV, err := m.cursor.SeekExact(k)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("foundK = %s %s\n", foundK, foundV)
 	if err = m.memCursor.Delete(k); err != nil {
 		return err
 	}
