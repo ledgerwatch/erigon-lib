@@ -15,7 +15,6 @@ package memdb
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -965,11 +964,10 @@ func (m *memoryMutationCursorDupSort) PutNoDupData(key, value []byte) error {
 }
 
 func (m *memoryMutationCursorDupSort) Delete(k []byte) error {
-	foundK, foundV, err := m.cursor.SeekExact(k)
+	foundK, _, err := m.cursor.SeekExact(k)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("foundK = %s %s\n", foundK, foundV)
 	if err = m.memCursor.Delete(k); err != nil {
 		return err
 	}
@@ -1044,7 +1042,6 @@ func (m *memoryMutationCursorDupSort) DeleteExact(k1, k2 []byte) error {
 func (m *memoryMutationCursorDupSort) DeleteCurrentDuplicates() error {
 	m.direction = ForwardDirection
 	m.preemptedNext = false
-	fmt.Printf("current = %v\n", m.current)
 	if m.isTableCleared() {
 		m.current = OverOnly
 		return nil
@@ -1082,7 +1079,6 @@ func (m *memoryMutationCursorDupSort) DeleteCurrentDuplicates() error {
 	for dbValue, err = m.cursor.FirstDup(); err == nil && dbValue != nil && bytes.Equal(currKey, dbKey); dbKey, dbValue, err = m.cursor.NextDup() {
 		m.mutation.deletedDupSortEntries[m.table][string(currKey)][string(dbValue)] = struct{}{}
 	}
-	fmt.Printf("deletes: %+v\n", m.mutation.deletedDupSortEntries)
 	if err != nil {
 		return err
 	}

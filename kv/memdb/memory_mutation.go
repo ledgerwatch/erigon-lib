@@ -16,7 +16,6 @@ package memdb
 import (
 	"bytes"
 	"context"
-	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
@@ -236,7 +235,6 @@ func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k
 	defer c.Close()
 
 	for k, v, err := c.Seek(fromPrefix); k != nil; k, v, err = c.Next() {
-		fmt.Printf("k=%s, v=%s\n", k, v)
 		if err != nil {
 			return err
 		}
@@ -389,7 +387,6 @@ func (m *MemoryMutation) Flush(tx kv.RwTx) error {
 			defer dbCursor.Close()
 			for key, values := range keyVals {
 				for value := range values {
-					fmt.Printf("DeleteExact %s=%s\n", key, value)
 					if err := dbCursor.DeleteExact([]byte(key), []byte(value)); err != nil {
 						return err
 					}
