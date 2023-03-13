@@ -65,7 +65,7 @@ func (m *memoryMutationCursor) isEntryDeleted(key []byte, value []byte, t NextTy
 func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 	memKey, memValue, err := m.memCursor.First()
 	if err != nil || m.isTableCleared() {
-		fmt.Print("[%s] First()=>[%x;%x]\n", m.table, memKey, memValue)
+		fmt.Printf("[%s] First()=>[%x;%x]\n", m.table, memKey, memValue)
 		return memKey, memValue, err
 	}
 
@@ -81,7 +81,7 @@ func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 	}
 
 	k, v, e := m.resolveCursorPriority(memKey, memValue, dbKey, dbValue, Normal)
-	fmt.Print("[%s] First()=>[%x;%x]\n", m.table, k, v)
+	fmt.Printf("[%s] First()=>[%x;%x]\n", m.table, k, v)
 	return k, v, e
 }
 
@@ -148,11 +148,11 @@ func (m *memoryMutationCursor) convertAutoDupsort(key []byte, value []byte) []by
 func (m *memoryMutationCursor) Current() ([]byte, []byte, error) {
 	if m.isTableCleared() {
 		k, v, e := m.memCursor.Current()
-		fmt.Print("[%s] Current()=>[%x;%x]\n", m.table, k, v)
+		fmt.Printf("[%s] Current()=>[%x;%x]\n", m.table, k, v)
 		return k, v, e
 	}
 	k, v := common.Copy(m.currentPair.key), common.Copy(m.currentPair.value)
-	fmt.Print("[%s] Current()=>[%x;%x]\n", m.table, k, v)
+	fmt.Printf("[%s] Current()=>[%x;%x]\n", m.table, k, v)
 	return k, v, nil
 }
 
@@ -222,7 +222,7 @@ func (m *memoryMutationCursor) resolveCursorPriority(memKey, memValue, dbKey, db
 func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 	if m.isTableCleared() {
 		k, v, e := m.memCursor.Next()
-		fmt.Print("[%s] Next()=>[%x;%x]\n", m.table, k, v)
+		fmt.Printf("[%s] Next()=>[%x;%x]\n", m.table, k, v)
 		return k, v, e
 	}
 
@@ -232,7 +232,7 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 		k, v, e := m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, Normal)
-		fmt.Print("[%s] Next()=>[%x;%x]\n", m.table, k, v)
+		fmt.Printf("[%s] Next()=>[%x;%x]\n", m.table, k, v)
 		return k, v, e
 	}
 
@@ -242,7 +242,7 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 	}
 
 	k, v, e := m.resolveCursorPriority(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, Normal)
-	fmt.Print("[%s] Next()=>[%x;%x]\n", m.table, k, v)
+	fmt.Printf("[%s] Next()=>[%x;%x]\n", m.table, k, v)
 	return k, v, e
 }
 
@@ -250,7 +250,7 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 	if m.isTableCleared() {
 		k, v, e := m.memCursor.NextDup()
-		fmt.Print("[%s] NextDup()=>[%x;%x]\n", m.table, k, v)
+		fmt.Printf("[%s] NextDup()=>[%x;%x]\n", m.table, k, v)
 		return k, v, e
 	}
 
@@ -261,7 +261,7 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 		k, v, e := m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, Dup)
-		fmt.Print("[%s] NextDup()=>[%x;%x]\n", m.table, k, v)
+		fmt.Printf("[%s] NextDup()=>[%x;%x]\n", m.table, k, v)
 		return k, v, e
 	}
 
@@ -271,7 +271,7 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 	}
 
 	k, v, e := m.resolveCursorPriority(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, Dup)
-	fmt.Print("[%s] NextDup()=>[%x;%x]\n", m.table, k, v)
+	fmt.Printf("[%s] NextDup()=>[%x;%x]\n", m.table, k, v)
 	return k, v, e
 }
 
@@ -279,7 +279,7 @@ func (m *memoryMutationCursor) NextDup() ([]byte, []byte, error) {
 func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 	if m.isTableCleared() {
 		k, v, e := m.memCursor.Seek(seek)
-		fmt.Print("[%s] Seek(%x)=>[%x;%x]\n", m.table, seek, k, v)
+		fmt.Printf("[%s] Seek(%x)=>[%x;%x]\n", m.table, seek, k, v)
 		return k, v, e
 	}
 
@@ -302,7 +302,7 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 	}
 
 	k, v, e := m.resolveCursorPriority(memKey, memValue, dbKey, dbValue, Normal)
-	fmt.Print("[%s] Seek(%x)=>[%x;%x]\n", m.table, seek, k, v)
+	fmt.Printf("[%s] Seek(%x)=>[%x;%x]\n", m.table, seek, k, v)
 	return k, v, e
 }
 
@@ -310,7 +310,7 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 	memKey, memValue, err := m.memCursor.SeekExact(seek)
 	if err != nil || m.isTableCleared() {
-		fmt.Print("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		fmt.Printf("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
 		return memKey, memValue, err
 	}
 
@@ -320,7 +320,7 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		m.currentDbEntry.key, m.currentDbEntry.value, err = m.cursor.Seek(seek)
 		m.isPrevFromDb = false
 		m.currentPair = cursorEntry{memKey, memValue}
-		fmt.Print("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		fmt.Printf("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
 		return memKey, memValue, err
 	}
 
@@ -335,26 +335,26 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		m.currentMemEntry.key, m.currentMemEntry.value, err = m.memCursor.Seek(seek)
 		m.isPrevFromDb = true
 		m.currentPair = cursorEntry{dbKey, dbValue}
-		fmt.Print("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, dbKey, dbValue)
+		fmt.Printf("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, dbKey, dbValue)
 		return dbKey, dbValue, err
 	}
-	fmt.Print("[%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
+	fmt.Printf("[%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
 	return nil, nil, nil
 }
 
 func (m *memoryMutationCursor) Put(k, v []byte) error {
-	fmt.Print("[%s] Put(%x;%x)\n", m.table, k, v)
+	fmt.Printf("[%s] Put(%x;%x)\n", m.table, k, v)
 	return m.mutation.Put(m.table, common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursor) Append(k []byte, v []byte) error {
-	fmt.Print("[%s] Append(%x;%x)\n", m.table, k, v)
+	fmt.Printf("[%s] Append(%x;%x)\n", m.table, k, v)
 	return m.mutation.Append(m.table, common.Copy(k), common.Copy(v))
 
 }
 
 func (m *memoryMutationCursor) AppendDup(k []byte, v []byte) error {
-	fmt.Print("[%s] AppendDup(%x;%x)\n", m.table, k, v)
+	fmt.Printf("[%s] AppendDup(%x;%x)\n", m.table, k, v)
 	return m.memCursor.AppendDup(common.Copy(k), common.Copy(v))
 }
 
@@ -363,7 +363,7 @@ func (m *memoryMutationCursor) PutNoDupData(key, value []byte) error {
 }
 
 func (m *memoryMutationCursor) Delete(k []byte) error {
-	fmt.Print("[%s] Delete(%x)\n", m.table, k)
+	fmt.Printf("[%s] Delete(%x)\n", m.table, k)
 	return m.mutation.Delete(m.table, k)
 }
 
@@ -375,7 +375,7 @@ func (m *memoryMutationCursor) DeleteExact(k1, k2 []byte) error {
 }
 
 func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
-	fmt.Print("[%s] DeleteCurrentDuplicates()\n", m.table)
+	fmt.Printf("[%s] DeleteCurrentDuplicates()\n", m.table)
 	config, ok := kv.ChaindataTablesCfg[m.table]
 	autoKeyConversion := ok && config.AutoDupSortKeysConversion
 	if autoKeyConversion {
@@ -396,7 +396,7 @@ func (m *memoryMutationCursor) DeleteCurrentDuplicates() error {
 func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) {
 	if m.isTableCleared() {
 		v, e := m.memCursor.SeekBothRange(key, value)
-		fmt.Print("[%s] SeekBothRange(%x;%x)=>[%x]\n", m.table, key, value, v)
+		fmt.Printf("[%s] SeekBothRange(%x;%x)=>[%x]\n", m.table, key, value, v)
 		return v, e
 	}
 
@@ -417,14 +417,14 @@ func (m *memoryMutationCursor) SeekBothRange(key, value []byte) ([]byte, error) 
 		return nil, err
 	}
 	_, retValue, err := m.resolveCursorPriority(key, memValue, key, dbValue, Dup)
-	fmt.Print("[%s] SeekBothRange(%x;%x)=>[%x]\n", m.table, key, value, retValue)
+	fmt.Printf("[%s] SeekBothRange(%x;%x)=>[%x]\n", m.table, key, value, retValue)
 	return retValue, err
 }
 
 func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	memKey, memValue, err := m.memCursor.Last()
 	if err != nil || m.isTableCleared() {
-		fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+		fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
 		return memKey, memValue, err
 	}
 
@@ -445,19 +445,19 @@ func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	if dbKey != nil && m.isEntryDeleted(dbKey, dbValue, Normal) {
 		m.currentDbEntry = cursorEntry{}
 		m.isPrevFromDb = false
-		fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+		fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
 		return memKey, memValue, nil
 	}
 
 	if dbValue == nil {
 		m.isPrevFromDb = false
-		fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+		fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
 		return memKey, memValue, nil
 	}
 
 	if memValue == nil {
 		m.isPrevFromDb = true
-		fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, dbKey, dbValue)
+		fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, dbKey, dbValue)
 		return dbKey, dbValue, nil
 	}
 	// Check which one is last and return it
@@ -466,25 +466,25 @@ func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 		if bytes.Compare(memValue, dbValue) > 0 {
 			m.currentDbEntry = cursorEntry{}
 			m.isPrevFromDb = false
-			fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+			fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
 			return memKey, memValue, nil
 		}
 		m.currentMemEntry = cursorEntry{}
 		m.isPrevFromDb = true
-		fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, dbKey, dbValue)
+		fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, dbKey, dbValue)
 		return dbKey, dbValue, nil
 	}
 
 	if keyCompare > 0 {
 		m.currentDbEntry = cursorEntry{}
 		m.isPrevFromDb = false
-		fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+		fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
 		return memKey, memValue, nil
 	}
 
 	m.currentMemEntry = cursorEntry{}
 	m.isPrevFromDb = true
-	fmt.Print("[%s] Last()=>[%x;%x]\n", m.table, dbKey, dbValue)
+	fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, dbKey, dbValue)
 	return dbKey, dbValue, nil
 }
 
@@ -518,7 +518,7 @@ func (m *memoryMutationCursor) FirstDup() ([]byte, error) {
 func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
 	if m.isTableCleared() {
 		k, v, e := m.memCursor.NextNoDup()
-		fmt.Print("[%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
+		fmt.Printf("[%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
 		return k, v, e
 	}
 
@@ -528,7 +528,7 @@ func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 		k, v, e := m.resolveCursorPriority(m.currentMemEntry.key, m.currentMemEntry.value, k, v, NoDup)
-		fmt.Print("[%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
+		fmt.Printf("[%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
 		return k, v, e
 	}
 
@@ -538,7 +538,7 @@ func (m *memoryMutationCursor) NextNoDup() ([]byte, []byte, error) {
 	}
 
 	k, v, e := m.resolveCursorPriority(memK, memV, m.currentDbEntry.key, m.currentDbEntry.value, NoDup)
-	fmt.Print("[%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
+	fmt.Printf("[%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
 	return k, v, e
 }
 
