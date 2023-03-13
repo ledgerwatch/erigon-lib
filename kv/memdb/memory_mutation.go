@@ -472,7 +472,7 @@ func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursor, error) {
 	}
 	cfg, ok := m.tableConfigs[bucket]
 	if ok && cfg.AutoDupSortKeysConversion {
-		return &memoryMutationCursorAuto{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc}, nil
+		return &memoryMutationCursorAuto{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc, trace: true}, nil
 	} else {
 		return &memoryMutationCursor{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc}, nil
 	}

@@ -15,6 +15,7 @@ package memdb
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -385,6 +386,7 @@ type memoryMutationCursorAuto struct {
 	current       CurrentType
 	direction     DirectionType
 	preemptedNext bool
+	trace         bool
 }
 
 func (m *memoryMutationCursorAuto) isTableCleared() bool {
@@ -396,7 +398,6 @@ func (m *memoryMutationCursorAuto) isEntryDeleted(key []byte) bool {
 }
 
 func (m *memoryMutationCursorAuto) selectEntry(direction DirectionType, memKey, memValue, dbKey, dbValue []byte) ([]byte, []byte, error) {
-	//fmt.Printf("selectEntry direction %v, mem: %s=>%s, db: %s=>%s\n", direction, memKey, memValue, dbKey, dbValue)
 	if dbKey == nil {
 		if memKey == nil {
 			m.current = NoCurrent
@@ -433,6 +434,9 @@ func (m *memoryMutationCursorAuto) First() ([]byte, []byte, error) {
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("Auto [%s] First()=>[%x;%x]\n", m.table, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	var dbKey, dbValue []byte
@@ -441,31 +445,42 @@ func (m *memoryMutationCursorAuto) First() ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("Auto [%s] First()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Current return the current key and values the cursor is on.
 func (m *memoryMutationCursorAuto) Current() ([]byte, []byte, error) {
+	var k, v []byte
+	var e error
 	switch m.current {
 	case OverCurrent, OverOnly, BothCurrent:
-		return m.memCursor.Current()
+		k, v, e = m.memCursor.Current()
 	case UnderCurrent, UnderOnly:
-		return m.cursor.Current()
-	default:
-		return nil, nil, nil
+		k, v, e = m.cursor.Current()
 	}
+	if m.trace {
+		fmt.Printf("Auto [%s] Current()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Next returns the next element of the mutation.
 func (m *memoryMutationCursorAuto) Next() ([]byte, []byte, error) {
-	//fmt.Printf("Next\n")
 	direction := m.direction
 	m.direction = ForwardDirection
 	preemptedNext := m.preemptedNext
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.Next()
+		k, v, e := m.memCursor.Next()
+		if m.trace {
+			fmt.Printf("Auto [%s] Next()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -473,7 +488,6 @@ func (m *memoryMutationCursorAuto) Next() ([]byte, []byte, error) {
 	var memKeySet, dbKeySet bool
 	// Reverse direction if needed
 	if direction == BackwardDirection {
-		//fmt.Printf("Reverse direction\n")
 		switch m.current {
 		case OverCurrent:
 			for dbKey, dbValue, err = m.cursor.Next(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbKey, err = m.cursor.Next() {
@@ -490,7 +504,6 @@ func (m *memoryMutationCursorAuto) Next() ([]byte, []byte, error) {
 		}
 	}
 	if !preemptedNext {
-		//fmt.Printf("not preemptedNext, m.current = %v\n", m.current)
 		if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
 			if memKey, memValue, err = m.memCursor.Next(); err != nil {
 				return nil, nil, err
@@ -498,7 +511,6 @@ func (m *memoryMutationCursorAuto) Next() ([]byte, []byte, error) {
 			memKeySet = true
 		}
 		if m.current == UnderCurrent || m.current == UnderOnly || m.current == BothCurrent {
-			//fmt.Printf("UnderCurrent\n")
 			for dbKey, dbValue, err = m.cursor.Next(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Next() {
 			}
 			if err != nil {
@@ -517,12 +529,15 @@ func (m *memoryMutationCursorAuto) Next() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("Auto [%s] Next()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Seek move pointer to a key at a certain position.
 func (m *memoryMutationCursorAuto) Seek(seek []byte) ([]byte, []byte, error) {
-	//fmt.Printf("Seek %s\n", seek)
 	m.direction = ForwardDirection
 	m.preemptedNext = false
 	var err error
@@ -532,6 +547,9 @@ func (m *memoryMutationCursorAuto) Seek(seek []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	if m.isTableCleared() {
+		if m.trace {
+			fmt.Printf("Auto [%s] Seek(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	for dbKey, dbValue, err = m.cursor.Seek(seek); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Next() {
@@ -539,7 +557,11 @@ func (m *memoryMutationCursorAuto) Seek(seek []byte) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("Auto [%s] Seek(%x)=>[%x;%x]\n", m.table, seek, k, v)
+	}
+	return k, v, e
 }
 
 // Seek move pointer to a key at a certain position.
@@ -553,25 +575,44 @@ func (m *memoryMutationCursorAuto) SeekExact(seek []byte) ([]byte, []byte, error
 		return nil, nil, err
 	}
 	if m.isTableCleared() {
+		if m.trace {
+			fmt.Printf("Auto [%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	if m.isEntryDeleted(seek) {
+		if m.trace {
+			fmt.Printf("Auto [%s] SeekExact(%x)=>[nil;nik]\n", m.table, seek)
+		}
 		return nil, nil, nil
 	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("Auto [%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursorAuto) Put(k, v []byte) error {
+	if m.trace {
+		fmt.Printf("Auto [%s] Put(%x;%x)\n", m.table, k, v)
+	}
 	return m.memCursor.Put(common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursorAuto) Append(k []byte, v []byte) error {
+	if m.trace {
+		fmt.Printf("Auto [%s] Append(%x;%x)\n", m.table, k, v)
+	}
 	return m.memCursor.Append(common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursorAuto) Delete(k []byte) error {
+	if m.trace {
+		fmt.Printf("Auto [%s] Delete(%x)\n", m.table, k)
+	}
 	if _, ok := m.mutation.deletedEntries[m.table]; !ok {
 		m.mutation.deletedEntries[m.table] = map[string]struct{}{}
 	}
@@ -580,6 +621,9 @@ func (m *memoryMutationCursorAuto) Delete(k []byte) error {
 }
 
 func (m *memoryMutationCursorAuto) DeleteCurrent() error {
+	if m.trace {
+		fmt.Printf("Auto [%s] DeleteCurrent()\n", m.table)
+	}
 	m.direction = ForwardDirection
 	m.preemptedNext = false
 	if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
@@ -619,6 +663,9 @@ func (m *memoryMutationCursorAuto) Last() ([]byte, []byte, error) {
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("Auto [%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	var dbKey, dbValue []byte
@@ -627,7 +674,11 @@ func (m *memoryMutationCursorAuto) Last() ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("Auto [%s] Last()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursorAuto) Prev() ([]byte, []byte, error) {
@@ -636,7 +687,11 @@ func (m *memoryMutationCursorAuto) Prev() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.Prev()
+		k, v, e := m.memCursor.Prev()
+		if m.trace {
+			fmt.Printf("Auto [%s] Prev()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -683,7 +738,11 @@ func (m *memoryMutationCursorAuto) Prev() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("Auto [%s] Prev()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursorAuto) Close() {
