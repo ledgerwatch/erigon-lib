@@ -749,7 +749,7 @@ func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.
 					return HistoryCollation{}, err
 				}
 				if val != nil && binary.BigEndian.Uint64(val) == txNum {
-					val = val[:8]
+					val = val[8:]
 				} else {
 					val = nil
 				}
@@ -1488,7 +1488,26 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 }
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
-	c, err := tx.Cursor(hc.h.historyValsTable)
+	if hc.h.largeValues {
+		c, err := tx.Cursor(hc.h.historyValsTable)
+		if err != nil {
+			return nil, false, err
+		}
+		defer c.Close()
+		seek := make([]byte, len(key)+8)
+		copy(seek, key)
+		binary.BigEndian.PutUint64(seek[len(key):], txNum)
+		kAndTxNum, val, err := c.Seek(seek)
+		if err != nil {
+			return nil, false, err
+		}
+		if kAndTxNum == nil || !bytes.Equal(kAndTxNum[:len(kAndTxNum)-8], key) {
+			return nil, false, nil
+		}
+		// val == []byte{},m eans key was created in this txNum and doesn't exists before.
+		return val, true, nil
+	}
+	c, err := tx.CursorDupSort(hc.h.historyValsTable)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1496,15 +1515,15 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	seek := make([]byte, len(key)+8)
 	copy(seek, key)
 	binary.BigEndian.PutUint64(seek[len(key):], txNum)
-	kAndTxNum, val, err := c.Seek(seek)
+	val, err := c.SeekBothRange(key, seek[len(key):])
 	if err != nil {
 		return nil, false, err
 	}
-	if kAndTxNum == nil || !bytes.Equal(kAndTxNum[:len(kAndTxNum)-8], key) {
+	if val == nil {
 		return nil, false, nil
 	}
-	// val == []byte{},m eans key was created in this txNum and doesn't exists before.
-	return val, true, nil
+	// `val == []byte{}` means key was created in this txNum and doesn't exists before.
+	return val[8:], true, nil
 }
 
 func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.Tx, amount int) *StateAsOfIter {

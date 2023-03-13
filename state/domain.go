@@ -1472,39 +1472,7 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 		if roTx == nil {
 			return nil, false, fmt.Errorf("roTx is nil")
 		}
-		indexCursor, err := roTx.CursorDupSort(dc.d.indexTable)
-		if err != nil {
-			return nil, false, err
-		}
-		defer indexCursor.Close()
-		var txKey [8]byte
-		binary.BigEndian.PutUint64(txKey[:], txNum)
-		var foundTxNumVal []byte
-		if foundTxNumVal, err = indexCursor.SeekBothRange(key, txKey[:]); err != nil {
-			return nil, false, err
-		}
-		if foundTxNumVal != nil {
-			var historyKeysCursor kv.CursorDupSort
-			if historyKeysCursor, err = roTx.CursorDupSort(dc.d.indexKeysTable); err != nil {
-				return nil, false, err
-			}
-			defer historyKeysCursor.Close()
-			var vn []byte
-			if vn, err = historyKeysCursor.SeekBothRange(foundTxNumVal, key); err != nil {
-				return nil, false, err
-			}
-			valNum := binary.BigEndian.Uint64(vn[len(vn)-8:])
-			if valNum == 0 {
-				// This is special valNum == 0, which is empty value
-				return nil, true, nil
-			}
-			var v []byte
-			if v, err = roTx.GetOne(dc.d.historyValsTable, vn[len(vn)-8:]); err != nil {
-				return nil, false, err
-			}
-			return v, true, nil
-		}
-		return nil, false, nil
+		return dc.hc.getNoStateFromDB(key, txNum, roTx)
 	}
 	var txKey [8]byte
 	binary.BigEndian.PutUint64(txKey[:], foundTxNum)
