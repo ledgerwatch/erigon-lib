@@ -2149,6 +2149,11 @@ func (hc *HistoryContext) IterateRecentlyChanged(startTxNum, endTxNum uint64, ro
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if itc, ok := it.(kv.Closer); ok {
+			itc.Close()
+		}
+	}()
 	for it.HasNext() {
 		k, v, err := it.Next()
 		if err != nil {
@@ -2163,7 +2168,7 @@ func (hc *HistoryContext) IterateRecentlyChanged(startTxNum, endTxNum uint64, ro
 	}, etl.TransformArgs{})
 }
 
-func (hc *HistoryContext) IterateRecentlyChangedUnordered(startTxNum, endTxNum uint64, roTx kv.Tx) (*HistoryDBIterator, error) {
+func (hc *HistoryContext) IterateRecentlyChangedUnordered(startTxNum, endTxNum uint64, roTx kv.Tx) (iter.KV, error) {
 	hi := HistoryDBIterator{
 		roTx:         roTx,
 		idxKeysTable: hc.h.indexKeysTable,
