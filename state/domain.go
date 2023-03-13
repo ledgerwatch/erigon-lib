@@ -115,6 +115,8 @@ type DomainStats struct {
 	LastCollationTook    time.Duration
 	LastPruneTook        time.Duration
 	LastFileBuildingTook time.Duration
+	LastCollationSize    uint64
+	LastPruneSize        uint64
 
 	HistoryQueries uint64
 	TotalQueries   uint64
@@ -1297,6 +1299,7 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		if s <= step {
 			continue
 		}
+		d.stats.LastPruneSize++
 
 		select {
 		case <-logEvery.C:

@@ -25,6 +25,7 @@ import (
 	"hash"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/btree"
 	"github.com/ledgerwatch/log/v3"
@@ -81,6 +82,9 @@ type DomainCommitted struct {
 	keccak       hash.Hash
 	patriciaTrie commitment.Trie
 	branchMerger *commitment.BranchMerger
+
+	comKeys uint64
+	comTook time.Duration
 }
 
 func NewCommittedDomain(d *Domain, mode CommitmentMode, trieVariant commitment.TrieVariant) *DomainCommitted {
@@ -525,7 +529,11 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
 func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {
+	defer func(s time.Time) { d.comTook = time.Since(s) }(time.Now())
+
 	touchedKeys, hashedKeys, updates := d.TouchedKeyList()
+	d.comKeys = uint64(len(touchedKeys))
+
 	if len(touchedKeys) == 0 {
 		rootHash, err = d.patriciaTrie.RootHash()
 		return rootHash, nil, err
