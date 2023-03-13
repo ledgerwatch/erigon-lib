@@ -2176,6 +2176,7 @@ func (hc *HistoryContext) IterateRecentlyChangedUnordered(startTxNum, endTxNum u
 		hc:           hc,
 		startTxNum:   startTxNum,
 		endTxNum:     endTxNum,
+		largeValues:  hc.h.largeValues,
 	}
 	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
 	if err := hi.advanceInDb(); err != nil {
@@ -2187,6 +2188,7 @@ func (hc *HistoryContext) IterateRecentlyChangedUnordered(startTxNum, endTxNum u
 type HistoryDBIterator struct {
 	roTx          kv.Tx
 	txNum2kCursor kv.CursorDupSort
+	valsCDup      kv.CursorDupSort
 	hc            *HistoryContext
 	idxKeysTable  string
 	valsTable     string
@@ -2196,6 +2198,7 @@ type HistoryDBIterator struct {
 	endTxNum      uint64
 	startTxNum    uint64
 	startTxKey    [8]byte
+	largeValues   bool
 
 	searchBuf []byte
 }
@@ -2204,6 +2207,9 @@ func (hi *HistoryDBIterator) Close() {
 	if hi.txNum2kCursor != nil {
 		hi.txNum2kCursor.Close()
 	}
+	if hi.valsCDup != nil {
+		hi.valsCDup.Close()
+	}
 }
 
 func (hi *HistoryDBIterator) advanceInDb() (err error) {
@@ -2211,6 +2217,11 @@ func (hi *HistoryDBIterator) advanceInDb() (err error) {
 	if hi.txNum2kCursor == nil {
 		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
 			return err
+		}
+		if !hi.largeValues {
+			if hi.valsCDup, err = hi.roTx.CursorDupSort(hi.valsTable); err != nil {
+				return err
+			}
 		}
 		if k, v, err = hi.txNum2kCursor.Seek(hi.startTxKey[:]); err != nil {
 			return err
@@ -2235,10 +2246,23 @@ func (hi *HistoryDBIterator) advanceInDb() (err error) {
 	}
 	hi.nextKey = v
 
-	hi.searchBuf = append(append(hi.searchBuf[:0], v...), k...)
-	hi.nextVal, err = hi.roTx.GetOne(hi.valsTable, hi.searchBuf)
-	if err != nil {
-		return err
+	fmt.Printf("kv: %x, %x\n", k, v)
+
+	if hi.largeValues {
+		hi.searchBuf = append(append(hi.searchBuf[:0], v...), k...)
+		hi.nextVal, err = hi.roTx.GetOne(hi.valsTable, hi.searchBuf)
+		if err != nil {
+			return err
+		}
+	} else {
+		val, err := hi.valsCDup.SeekBothRange(v, k)
+		if err != nil {
+			return err
+		}
+		if val == nil || binary.BigEndian.Uint64(val) != binary.BigEndian.Uint64(k) {
+			return fmt.Errorf("not found in history:  %s, %x, %x\n", hi.hc.h.filenameBase, v, k)
+		}
+		hi.nextVal = val[8:]
 	}
 	return
 }

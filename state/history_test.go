@@ -242,9 +242,9 @@ func TestHistoryAfterPrune(t *testing.T) {
 	})
 }
 
-func filledHistory(tb testing.TB) (string, kv.RwDB, *History, uint64) {
+func filledHistory(tb testing.TB, largeValues bool) (string, kv.RwDB, *History, uint64) {
 	tb.Helper()
-	path, db, h := testDbAndHistory(tb, false)
+	path, db, h := testDbAndHistory(tb, largeValues)
 	ctx := context.Background()
 	tx, err := db.BeginRw(ctx)
 	require.NoError(tb, err)
@@ -353,11 +353,11 @@ func TestHistoryHistory(t *testing.T) {
 		checkHistoryHistory(t, db, h, txs)
 	}
 	t.Run("large values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, true)
 		test(t, h, db, txs)
 	})
 	t.Run("small values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, false)
 		test(t, h, db, txs)
 	})
 
@@ -412,10 +412,20 @@ func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 }
 
 func TestHistoryMergeFiles(t *testing.T) {
-	_, db, h, txs := filledHistory(t)
+	test := func(t *testing.T, h *History, db kv.RwDB, txs uint64) {
+		t.Helper()
+		collateAndMergeHistory(t, db, h, txs)
+		checkHistoryHistory(t, db, h, txs)
+	}
 
-	collateAndMergeHistory(t, db, h, txs)
-	checkHistoryHistory(t, db, h, txs)
+	t.Run("large values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t, true)
+		test(t, h, db, txs)
+	})
+	t.Run("small values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t, false)
+		test(t, h, db, txs)
+	})
 }
 
 func TestHistoryScanFiles(t *testing.T) {
@@ -435,11 +445,11 @@ func TestHistoryScanFiles(t *testing.T) {
 	}
 
 	t.Run("large values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, true)
 		test(t, h, db, txs)
 	})
 	t.Run("small values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, false)
 		test(t, h, db, txs)
 	})
 }
@@ -543,11 +553,11 @@ func TestIterateChanged(t *testing.T) {
 			"ff00000000000024"}, vals)
 	}
 	t.Run("large values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, true)
 		test(t, h, db, txs)
 	})
 	t.Run("small values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, false)
 		test(t, h, db, txs)
 	})
 }
@@ -724,11 +734,11 @@ func TestIterateChanged2(t *testing.T) {
 		})
 	}
 	t.Run("large values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, true)
 		test(t, h, db, txs)
 	})
 	t.Run("small values", func(t *testing.T) {
-		_, db, h, txs := filledHistory(t)
+		_, db, h, txs := filledHistory(t, false)
 		test(t, h, db, txs)
 	})
 }
