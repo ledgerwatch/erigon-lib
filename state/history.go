@@ -1455,6 +1455,10 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 		idxKeysTable: hc.h.indexKeysTable,
 		valsTable:    hc.h.historyValsTable,
 		from:         from, to: to, limit: amount,
+
+		hc:           hc,
+		compressVals: hc.h.compressVals,
+		startTxNum:   startTxNum,
 	}
 	for _, item := range hc.ic.files {
 		if item.endTxNum <= startTxNum {
@@ -1469,9 +1473,6 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 			hi.hasNextInFiles = true
 		}
 	}
-	hi.hc = hc
-	hi.compressVals = hc.h.compressVals
-	hi.startTxNum = startTxNum
 	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
 	hi.advanceInDb()
 	hi.advanceInFiles()
@@ -1683,6 +1684,62 @@ func (hi *StateAsOfIter) Next() ([]byte, []byte, error) {
 	return hi.kBackup, hi.vBackup, nil
 }
 
+func (hc *HistoryContext) iterateChangedF(fromTxNum, toTxNum int, asc order.By, limit int) (iter.KV, error) {
+	startTxNum, endTxNum := uint64(fromTxNum), uint64(toTxNum)
+	if len(hc.ic.files) == 0 || hc.ic.files[len(hc.ic.files)-1].endTxNum <= startTxNum {
+		return iter.EmptyKV, nil
+	}
+
+	hi := &HistoryChangesIterF{
+		hc:           hc,
+		compressVals: hc.h.compressVals,
+		startTxNum:   startTxNum,
+		endTxNum:     endTxNum,
+	}
+
+	for _, item := range hc.ic.files {
+		if item.endTxNum <= startTxNum {
+			continue
+		}
+		if item.startTxNum >= endTxNum {
+			break
+		}
+		g := item.src.decompressor.MakeGetter()
+		g.Reset(0)
+		if g.HasNext() {
+			key, offset := g.NextUncompressed()
+			heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
+		}
+	}
+	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
+	if err := hi.advance(); err != nil {
+		return nil, err
+	}
+	return hi, nil
+}
+
+func (hc *HistoryContext) iterateChangedDB(fromTxNum, toTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.KV, error) {
+	startTxNum, endTxNum := uint64(fromTxNum), uint64(toTxNum)
+	if len(hc.ic.files) > 0 && hc.ic.files[len(hc.ic.files)-1].endTxNum >= endTxNum {
+		return iter.EmptyKV, nil
+	}
+	dbi := &HistoryChangesIterDB{
+		hc:         hc,
+		startTxNum: startTxNum,
+		endTxNum:   endTxNum,
+
+		roTx:         roTx,
+		indexTable:   hc.h.indexTable,
+		idxKeysTable: hc.h.indexKeysTable,
+		valsTable:    hc.h.historyValsTable,
+	}
+	binary.BigEndian.PutUint64(dbi.startTxKey[:], startTxNum)
+	if err := dbi.advance(); err != nil {
+		return nil, err
+	}
+	return dbi, nil
+}
+
 func (hc *HistoryContext) IterateChanged(fromTxNum, toTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.KV, error) {
 	if asc == order.Desc {
 		panic("not supported yet")
@@ -1696,61 +1753,16 @@ func (hc *HistoryContext) IterateChanged(fromTxNum, toTxNum int, asc order.By, l
 	if toTxNum < 0 {
 		panic("not supported yet")
 	}
-	startTxNum, endTxNum := uint64(fromTxNum), uint64(toTxNum)
-
-	//TODO: use if don't need look into historical files iter.EmptyKV
-	hi := &HistoryChangesIterF{
-		hc:           hc,
-		compressVals: hc.h.compressVals,
-		startTxNum:   startTxNum,
-		endTxNum:     endTxNum,
+	itOnFiles, err := hc.iterateChangedF(fromTxNum, toTxNum, asc, limit)
+	if err != nil {
+		return nil, err
 	}
-	needLookInDB := true
-
-	for _, item := range hc.ic.files {
-		if item.endTxNum >= endTxNum {
-			needLookInDB = false
-		}
-		if item.endTxNum <= startTxNum {
-			continue
-		}
-		if item.startTxNum >= endTxNum {
-			break
-		}
-		g := item.src.decompressor.MakeGetter()
-		g.Reset(0)
-		if g.HasNext() {
-			key, offset := g.NextUncompressed()
-			heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
-		}
-		hi.total += uint64(g.Size())
-	}
-	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
-	if err := hi.advance(); err != nil {
+	itOnDB, err := hc.iterateChangedDB(fromTxNum, toTxNum, asc, limit, roTx)
+	if err != nil {
 		return nil, err
 	}
 
-	var dbit iter.KV
-	if needLookInDB {
-		dbi := &HistoryChangesIterDB{
-			hc:         hc,
-			startTxNum: startTxNum,
-			endTxNum:   endTxNum,
-
-			roTx:         roTx,
-			indexTable:   hc.h.indexTable,
-			idxKeysTable: hc.h.indexKeysTable,
-			valsTable:    hc.h.historyValsTable,
-		}
-		binary.BigEndian.PutUint64(dbi.startTxKey[:], startTxNum)
-		if err := dbi.advance(); err != nil {
-			return nil, err
-		}
-		dbit = dbi
-	} else {
-		dbit = iter.EmptyKV
-	}
-	return iter.UnionKV(hi, dbit), nil
+	return iter.UnionKV(itOnFiles, itOnDB), nil
 }
 
 type HistoryChangesIterF struct {
