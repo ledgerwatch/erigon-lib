@@ -171,6 +171,7 @@ func TestHistoryCollationBuild(t *testing.T) {
 		test(t, h, db)
 	})
 }
+
 func TestHistoryAfterPrune(t *testing.T) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -232,6 +233,10 @@ func TestHistoryAfterPrune(t *testing.T) {
 		}
 	}
 	t.Run("large values", func(t *testing.T) {
+		_, db, h := testDbAndHistory(t, true)
+		test(t, h, db)
+	})
+	t.Run("small values", func(t *testing.T) {
 		_, db, h := testDbAndHistory(t, false)
 		test(t, h, db)
 	})
@@ -324,26 +329,38 @@ func checkHistoryHistory(t *testing.T, db kv.RwDB, h *History, txs uint64) {
 func TestHistoryHistory(t *testing.T) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	_, db, h, txs := filledHistory(t)
 	ctx := context.Background()
-	tx, err := db.BeginRw(ctx)
-	require.NoError(t, err)
-	h.SetTx(tx)
-	defer tx.Rollback()
+	test := func(t *testing.T, h *History, db kv.RwDB, txs uint64) {
+		t.Helper()
+		require := require.New(t)
+		tx, err := db.BeginRw(ctx)
+		require.NoError(err)
+		h.SetTx(tx)
+		defer tx.Rollback()
 
-	// Leave the last 2 aggregation steps un-collated
-	for step := uint64(0); step < txs/h.aggregationStep-1; step++ {
-		func() {
-			c, err := h.collate(step, step*h.aggregationStep, (step+1)*h.aggregationStep, tx, logEvery)
-			require.NoError(t, err)
-			sf, err := h.buildFiles(ctx, step, c)
-			require.NoError(t, err)
-			h.integrateFiles(sf, step*h.aggregationStep, (step+1)*h.aggregationStep)
-			err = h.prune(ctx, step*h.aggregationStep, (step+1)*h.aggregationStep, math.MaxUint64, logEvery)
-			require.NoError(t, err)
-		}()
+		// Leave the last 2 aggregation steps un-collated
+		for step := uint64(0); step < txs/h.aggregationStep-1; step++ {
+			func() {
+				c, err := h.collate(step, step*h.aggregationStep, (step+1)*h.aggregationStep, tx, logEvery)
+				require.NoError(err)
+				sf, err := h.buildFiles(ctx, step, c)
+				require.NoError(err)
+				h.integrateFiles(sf, step*h.aggregationStep, (step+1)*h.aggregationStep)
+				err = h.prune(ctx, step*h.aggregationStep, (step+1)*h.aggregationStep, math.MaxUint64, logEvery)
+				require.NoError(err)
+			}()
+		}
+		checkHistoryHistory(t, db, h, txs)
 	}
-	checkHistoryHistory(t, db, h, txs)
+	t.Run("large values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
+	})
+	t.Run("small values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
+	})
+
 }
 
 func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
@@ -402,142 +419,57 @@ func TestHistoryMergeFiles(t *testing.T) {
 }
 
 func TestHistoryScanFiles(t *testing.T) {
-	_, db, h, txs := filledHistory(t)
-	var err error
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	test := func(t *testing.T, h *History, db kv.RwDB, txs uint64) {
+		t.Helper()
+		require := require.New(t)
 
-	collateAndMergeHistory(t, db, h, txs)
-	// Recreate domain and re-scan the files
-	txNum := h.txNum
-	require.NoError(t, h.OpenFolder())
-	//h.Close()
-	//h, err = NewHistory(path, path, h.aggregationStep, h.filenameBase, h.indexKeysTable, h.indexTable, h.historyValsTable, h.settingsTable, h.compressVals, nil)
-	require.NoError(t, err)
-	h.SetTxNum(txNum)
-	// Check the history
-	checkHistoryHistory(t, db, h, txs)
+		collateAndMergeHistory(t, db, h, txs)
+		// Recreate domain and re-scan the files
+		txNum := h.txNum
+		require.NoError(h.OpenFolder())
+		h.SetTxNum(txNum)
+		// Check the history
+		checkHistoryHistory(t, db, h, txs)
+	}
+
+	t.Run("large values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
+	})
+	t.Run("small values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
+	})
 }
 
 func TestIterateChanged(t *testing.T) {
-	_, db, h, txs := filledHistory(t)
-	collateAndMergeHistory(t, db, h, txs)
-	ctx, require := context.Background(), require.New(t)
-
-	tx, err := db.BeginRo(ctx)
-	require.NoError(err)
-	defer tx.Rollback()
-	var keys, vals []string
-	ic := h.MakeContext()
-	defer ic.Close()
-
-	it, err := ic.IterateChanged(2, 20, order.Asc, -1, tx)
-	require.NoError(err)
-	for it.HasNext() {
-		k, v, err := it.Next()
-		require.NoError(err)
-		keys = append(keys, fmt.Sprintf("%x", k))
-		vals = append(vals, fmt.Sprintf("%x", v))
-	}
-	require.Equal([]string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000007",
-		"0100000000000008",
-		"0100000000000009",
-		"010000000000000a",
-		"010000000000000b",
-		"010000000000000c",
-		"010000000000000d",
-		"010000000000000e",
-		"010000000000000f",
-		"0100000000000010",
-		"0100000000000011",
-		"0100000000000012",
-		"0100000000000013"}, keys)
-	require.Equal([]string{
-		"ff00000000000001",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		""}, vals)
-	it, err = ic.IterateChanged(995, 1000, order.Asc, -1, tx)
-	require.NoError(err)
-	keys, vals = keys[:0], vals[:0]
-	for it.HasNext() {
-		k, v, err := it.Next()
-		require.NoError(err)
-		keys = append(keys, fmt.Sprintf("%x", k))
-		vals = append(vals, fmt.Sprintf("%x", v))
-	}
-	require.Equal([]string{
-		"0100000000000001",
-		"0100000000000002",
-		"0100000000000003",
-		"0100000000000004",
-		"0100000000000005",
-		"0100000000000006",
-		"0100000000000009",
-		"010000000000000c",
-		"010000000000001b",
-	}, keys)
-
-	require.Equal([]string{
-		"ff000000000003e2",
-		"ff000000000001f1",
-		"ff0000000000014b",
-		"ff000000000000f8",
-		"ff000000000000c6",
-		"ff000000000000a5",
-		"ff0000000000006e",
-		"ff00000000000052",
-		"ff00000000000024"}, vals)
-}
-
-func TestIterateChanged2(t *testing.T) {
-	_, db, h, txs := filledHistory(t)
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
 	ctx := context.Background()
 
-	roTx, err := db.BeginRo(ctx)
-	require.NoError(t, err)
-	defer roTx.Rollback()
+	test := func(t *testing.T, h *History, db kv.RwDB, txs uint64) {
+		t.Helper()
+		require := require.New(t)
 
-	type testCase struct {
-		k, v  string
-		txNum uint64
-	}
-	testCases := []testCase{
-		{txNum: 0, k: "0100000000000001", v: ""},
-		{txNum: 900, k: "0100000000000001", v: "ff00000000000383"},
-		{txNum: 1000, k: "0100000000000001", v: "ff000000000003e7"},
-	}
-	var keys, vals []string
-	t.Run("before merge", func(t *testing.T) {
-		hc, require := h.MakeContext(), require.New(t)
-		defer hc.Close()
+		collateAndMergeHistory(t, db, h, txs)
 
-		err := hc.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
+		tx, err := db.BeginRo(ctx)
+		require.NoError(err)
+		defer tx.Rollback()
+		var keys, vals []string
+		ic := h.MakeContext()
+		defer ic.Close()
+
+		it, err := ic.IterateChanged(2, 20, order.Asc, -1, tx)
+		require.NoError(err)
+		for it.HasNext() {
+			k, v, err := it.Next()
+			require.NoError(err)
 			keys = append(keys, fmt.Sprintf("%x", k))
 			vals = append(vals, fmt.Sprintf("%x", v))
-			return nil
-		})
-		require.NoError(err)
+		}
 		require.Equal([]string{
 			"0100000000000001",
 			"0100000000000002",
@@ -578,13 +510,15 @@ func TestIterateChanged2(t *testing.T) {
 			"",
 			"",
 			""}, vals)
+		it, err = ic.IterateChanged(995, 1000, order.Asc, -1, tx)
+		require.NoError(err)
 		keys, vals = keys[:0], vals[:0]
-		err = hc.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
+		for it.HasNext() {
+			k, v, err := it.Next()
+			require.NoError(err)
 			keys = append(keys, fmt.Sprintf("%x", k))
 			vals = append(vals, fmt.Sprintf("%x", v))
-			return nil
-		})
-		require.NoError(err)
+		}
 		require.Equal([]string{
 			"0100000000000001",
 			"0100000000000002",
@@ -607,75 +541,195 @@ func TestIterateChanged2(t *testing.T) {
 			"ff0000000000006e",
 			"ff00000000000052",
 			"ff00000000000024"}, vals)
-
-		// single Get test-cases
-		tx, err := db.BeginRo(ctx)
-		require.NoError(err)
-		defer tx.Rollback()
-
-		v, ok, err := hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 900, tx)
-		require.NoError(err)
-		require.True(ok)
-		require.Equal(hexutility.MustDecodeHex("ff00000000000383"), v)
-		v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 0, tx)
-		require.NoError(err)
-		require.True(ok)
-		require.Equal([]byte{}, v)
-		v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 1000, tx)
-		require.NoError(err)
-		require.True(ok)
-		require.Equal(hexutility.MustDecodeHex("ff000000000003e7"), v)
-		_ = testCases
+	}
+	t.Run("large values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
 	})
-	t.Run("after merge", func(t *testing.T) {
-		collateAndMergeHistory(t, db, h, txs)
-		hc, require := h.MakeContext(), require.New(t)
-		defer hc.Close()
+	t.Run("small values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
+	})
+}
 
-		keys = keys[:0]
-		err = hc.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
-			keys = append(keys, fmt.Sprintf("%x", k))
-			return nil
+func TestIterateChanged2(t *testing.T) {
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+	ctx := context.Background()
+
+	test := func(t *testing.T, h *History, db kv.RwDB, txs uint64) {
+		t.Helper()
+		roTx, err := db.BeginRo(ctx)
+		require.NoError(t, err)
+		defer roTx.Rollback()
+
+		type testCase struct {
+			k, v  string
+			txNum uint64
+		}
+		testCases := []testCase{
+			{txNum: 0, k: "0100000000000001", v: ""},
+			{txNum: 900, k: "0100000000000001", v: "ff00000000000383"},
+			{txNum: 1000, k: "0100000000000001", v: "ff000000000003e7"},
+		}
+		var keys, vals []string
+		t.Run("before merge", func(t *testing.T) {
+			hc, require := h.MakeContext(), require.New(t)
+			defer hc.Close()
+
+			err := hc.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
+				keys = append(keys, fmt.Sprintf("%x", k))
+				vals = append(vals, fmt.Sprintf("%x", v))
+				return nil
+			})
+			require.NoError(err)
+			require.Equal([]string{
+				"0100000000000001",
+				"0100000000000002",
+				"0100000000000003",
+				"0100000000000004",
+				"0100000000000005",
+				"0100000000000006",
+				"0100000000000007",
+				"0100000000000008",
+				"0100000000000009",
+				"010000000000000a",
+				"010000000000000b",
+				"010000000000000c",
+				"010000000000000d",
+				"010000000000000e",
+				"010000000000000f",
+				"0100000000000010",
+				"0100000000000011",
+				"0100000000000012",
+				"0100000000000013"}, keys)
+			require.Equal([]string{
+				"ff00000000000001",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				""}, vals)
+			keys, vals = keys[:0], vals[:0]
+			err = hc.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
+				keys = append(keys, fmt.Sprintf("%x", k))
+				vals = append(vals, fmt.Sprintf("%x", v))
+				return nil
+			})
+			require.NoError(err)
+			require.Equal([]string{
+				"0100000000000001",
+				"0100000000000002",
+				"0100000000000003",
+				"0100000000000004",
+				"0100000000000005",
+				"0100000000000006",
+				"0100000000000009",
+				"010000000000000c",
+				"010000000000001b",
+			}, keys)
+
+			require.Equal([]string{
+				"ff000000000003e2",
+				"ff000000000001f1",
+				"ff0000000000014b",
+				"ff000000000000f8",
+				"ff000000000000c6",
+				"ff000000000000a5",
+				"ff0000000000006e",
+				"ff00000000000052",
+				"ff00000000000024"}, vals)
+
+			// single Get test-cases
+			tx, err := db.BeginRo(ctx)
+			require.NoError(err)
+			defer tx.Rollback()
+
+			v, ok, err := hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 900, tx)
+			require.NoError(err)
+			require.True(ok)
+			require.Equal(hexutility.MustDecodeHex("ff00000000000383"), v)
+			v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 0, tx)
+			require.NoError(err)
+			require.True(ok)
+			require.Equal([]byte{}, v)
+			v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 1000, tx)
+			require.NoError(err)
+			require.True(ok)
+			require.Equal(hexutility.MustDecodeHex("ff000000000003e7"), v)
+			_ = testCases
 		})
-		require.NoError(err)
-		require.Equal([]string{
-			"0100000000000001",
-			"0100000000000002",
-			"0100000000000003",
-			"0100000000000004",
-			"0100000000000005",
-			"0100000000000006",
-			"0100000000000007",
-			"0100000000000008",
-			"0100000000000009",
-			"010000000000000a",
-			"010000000000000b",
-			"010000000000000c",
-			"010000000000000d",
-			"010000000000000e",
-			"010000000000000f",
-			"0100000000000010",
-			"0100000000000011",
-			"0100000000000012",
-			"0100000000000013"}, keys)
+		t.Run("after merge", func(t *testing.T) {
+			collateAndMergeHistory(t, db, h, txs)
+			hc, require := h.MakeContext(), require.New(t)
+			defer hc.Close()
 
-		// single Get test-cases
-		tx, err := db.BeginRo(ctx)
-		require.NoError(err)
-		defer tx.Rollback()
+			keys = keys[:0]
+			err = hc.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
+				keys = append(keys, fmt.Sprintf("%x", k))
+				return nil
+			})
+			require.NoError(err)
+			require.Equal([]string{
+				"0100000000000001",
+				"0100000000000002",
+				"0100000000000003",
+				"0100000000000004",
+				"0100000000000005",
+				"0100000000000006",
+				"0100000000000007",
+				"0100000000000008",
+				"0100000000000009",
+				"010000000000000a",
+				"010000000000000b",
+				"010000000000000c",
+				"010000000000000d",
+				"010000000000000e",
+				"010000000000000f",
+				"0100000000000010",
+				"0100000000000011",
+				"0100000000000012",
+				"0100000000000013"}, keys)
 
-		v, ok, err := hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 900, tx)
-		require.NoError(err)
-		require.True(ok)
-		require.Equal(hexutility.MustDecodeHex("ff00000000000383"), v)
-		v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 0, tx)
-		require.NoError(err)
-		require.True(ok)
-		require.Equal([]byte{}, v)
-		v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 1000, tx)
-		require.NoError(err)
-		require.True(ok)
-		require.Equal(hexutility.MustDecodeHex("ff000000000003e7"), v)
+			// single Get test-cases
+			tx, err := db.BeginRo(ctx)
+			require.NoError(err)
+			defer tx.Rollback()
+
+			v, ok, err := hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 900, tx)
+			require.NoError(err)
+			require.True(ok)
+			require.Equal(hexutility.MustDecodeHex("ff00000000000383"), v)
+			v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 0, tx)
+			require.NoError(err)
+			require.True(ok)
+			require.Equal([]byte{}, v)
+			v, ok, err = hc.GetNoStateWithRecent(hexutility.MustDecodeHex("0100000000000001"), 1000, tx)
+			require.NoError(err)
+			require.True(ok)
+			require.Equal(hexutility.MustDecodeHex("ff000000000003e7"), v)
+		})
+	}
+	t.Run("large values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
+	})
+	t.Run("small values", func(t *testing.T) {
+		_, db, h, txs := filledHistory(t)
+		test(t, h, db, txs)
 	})
 }
 
