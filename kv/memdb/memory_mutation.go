@@ -16,6 +16,7 @@ package memdb
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
@@ -430,13 +431,19 @@ func (m *MemoryMutation) Flush(tx kv.RwTx) error {
 					return err
 				}
 				defer cbucket.Close()
+				dbCursor, err := tx.RwCursor(bucket)
+				if err != nil {
+					return err
+				}
+				defer dbCursor.Close()
 				for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
 					if err != nil {
 						return err
 					}
-					if err := tx.Put(bucket, k, v); err != nil {
+					if err := dbCursor.Put(k, v); err != nil {
 						return err
 					}
+					fmt.Printf("Flush %s (%x;%x)\n", bucket, k, v)
 				}
 				return nil
 			}(); err != nil {
