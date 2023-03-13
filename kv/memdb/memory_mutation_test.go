@@ -617,50 +617,52 @@ func TestAutoConversionSeekBothRange(t *testing.T) {
 	batch := NewMemoryBatch(rwTx, "")
 	defer batch.Close()
 
-	c, err := batch.RwCursorDupSort(kv.PlainState)
+	c, err := batch.RwCursor(kv.PlainState)
 	require.NoError(t, err)
 
 	require.NoError(t, c.Delete([]byte("A..........................._______________________________A")))
 	require.NoError(t, c.Put([]byte("D..........................._______________________________C"), []byte("6")))
 	require.NoError(t, c.Put([]byte("D..........................._______________________________E"), []byte("5")))
 
-	v, err := c.SeekBothRange([]byte("A..........................."), []byte("_______________________________A"))
+	cd, err := batch.CursorDupSort(kv.PlainState)
+	require.NoError(t, err)
+	v, err := cd.SeekBothRange([]byte("A..........................."), []byte("_______________________________A"))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("_______________________________C2"), v)
 
-	_, v, err = c.NextDup()
+	_, v, err = cd.NextDup()
 	require.NoError(t, err)
 	assert.Nil(t, v)
 
-	v, err = c.SeekBothRange([]byte("A..........................."), []byte("_______________________________X"))
+	v, err = cd.SeekBothRange([]byte("A..........................."), []byte("_______________________________X"))
 	require.NoError(t, err)
 	assert.Nil(t, v)
 
-	v, err = c.SeekBothRange([]byte("B..........................."), []byte(""))
+	v, err = cd.SeekBothRange([]byte("B..........................."), []byte(""))
 	require.NoError(t, err)
 	assert.Nil(t, v)
 
-	v, err = c.SeekBothRange([]byte("C..........................."), []byte(""))
+	v, err = cd.SeekBothRange([]byte("C..........................."), []byte(""))
 	require.NoError(t, err)
 	assert.Nil(t, v)
 
-	v, err = c.SeekBothRange([]byte("D..........................."), []byte(""))
+	v, err = cd.SeekBothRange([]byte("D..........................."), []byte(""))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("_______________________________A3"), v)
 
-	_, v, err = c.NextDup()
+	_, v, err = cd.NextDup()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("_______________________________C6"), v)
 
-	_, v, err = c.NextDup()
+	_, v, err = cd.NextDup()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("_______________________________E5"), v)
 
-	_, v, err = c.NextDup()
+	_, v, err = cd.NextDup()
 	require.NoError(t, err)
 	assert.Nil(t, v)
 
-	v, err = c.SeekBothRange([]byte("X..........................."), []byte("_______________________________Y"))
+	v, err = cd.SeekBothRange([]byte("X..........................."), []byte("_______________________________Y"))
 	require.NoError(t, err)
 	assert.Nil(t, v)
 }

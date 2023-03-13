@@ -51,8 +51,8 @@ const (
 // cursor
 type memoryMutationCursor struct {
 	// entry history
-	cursor    kv.CursorDupSort
-	memCursor kv.RwCursorDupSort
+	cursor    kv.Cursor
+	memCursor kv.RwCursor
 	// we keep the mining mutation so that we can insert new elements in db
 	mutation      *MemoryMutation
 	table         string
@@ -377,8 +377,8 @@ func (m *memoryMutationCursor) Count() (uint64, error) {
 // cursor
 type memoryMutationCursorAuto struct {
 	// entry history
-	cursor    kv.CursorDupSort
-	memCursor kv.RwCursorDupSort
+	cursor    kv.Cursor
+	memCursor kv.RwCursor
 	// we keep the mining mutation so that we can insert new elements in db
 	mutation      *MemoryMutation
 	table         string

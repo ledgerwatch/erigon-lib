@@ -131,7 +131,15 @@ func (m *MemoryMutation) ForAmount(bucket string, prefix []byte, amount uint32, 
 	if amount == 0 {
 		return nil
 	}
-	c, err := m.Cursor(bucket)
+	cfg, ok := m.tableConfigs[bucket]
+
+	var c kv.Cursor
+	var err error
+	if ok && (cfg.Flags&kv.DupSort != 0) {
+		c, err = m.RwCursorDupSort(bucket)
+	} else {
+		c, err = m.RwCursor(bucket)
+	}
 	if err != nil {
 		return err
 	}
@@ -218,9 +226,9 @@ func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k
 	cfg, ok := m.tableConfigs[bucket]
 	var err error
 	if ok && (cfg.Flags&kv.DupSort != 0) {
-		c, err = m.CursorDupSort(bucket)
+		c, err = m.RwCursorDupSort(bucket)
 	} else {
-		c, err = m.Cursor(bucket)
+		c, err = m.RwCursor(bucket)
 	}
 	if err != nil {
 		return err
@@ -454,21 +462,23 @@ func isTablePurelyDupsort(bucket string) bool {
 
 // Cursor creates a new cursor (the real fun begins here)
 func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursor, error) {
-	c := &memoryMutationCursor{bucketCfg: m.tableConfigs[bucket]}
-	// We can filter duplicates in dup sorted table
-	c.table = bucket
-
+	var c kv.Cursor
+	var mc kv.RwCursor
 	var err error
-	c.cursor, err = m.db.CursorDupSort(bucket)
+	c, err = m.db.Cursor(bucket)
 	if err != nil {
 		return nil, err
 	}
-	c.memCursor, err = m.memTx.RwCursorDupSort(bucket)
+	mc, err = m.memTx.RwCursor(bucket)
 	if err != nil {
 		return nil, err
 	}
-	c.mutation = m
-	return c, err
+	cfg, ok := m.tableConfigs[bucket]
+	if ok && cfg.AutoDupSortKeysConversion {
+		return &memoryMutationCursorAuto{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc}, nil
+	} else {
+		return &memoryMutationCursor{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc}, nil
+	}
 }
 
 func (m *MemoryMutation) makeCursorDupSort(bucket string) (kv.RwCursorDupSort, error) {
