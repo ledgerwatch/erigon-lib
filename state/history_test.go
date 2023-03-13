@@ -48,11 +48,11 @@ func testDbAndHistory(tb testing.TB) (string, kv.RwDB, *History) {
 		return kv.TableCfg{
 			keysTable:     kv.TableCfgItem{Flags: kv.DupSort},
 			indexTable:    kv.TableCfgItem{Flags: kv.DupSort},
-			valsTable:     kv.TableCfgItem{},
+			valsTable:     kv.TableCfgItem{Flags: kv.DupSort},
 			settingsTable: kv.TableCfgItem{},
 		}
 	}).MustOpen()
-	h, err := NewHistory(path, path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */, nil)
+	h, err := NewHistory(path, path, 16 /* aggregationStep */, "hist" /* filenameBase */, keysTable, indexTable, valsTable, settingsTable, false /* compressVals */, nil, false)
 	require.NoError(tb, err)
 	tb.Cleanup(db.Close)
 	tb.Cleanup(h.Close)
@@ -166,7 +166,6 @@ func TestHistoryCollationBuild(t *testing.T) {
 		}
 	}
 }
-
 func TestHistoryAfterPrune(t *testing.T) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
