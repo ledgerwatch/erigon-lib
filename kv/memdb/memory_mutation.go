@@ -474,12 +474,12 @@ func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursor, error) {
 	if ok && cfg.AutoDupSortKeysConversion {
 		return &memoryMutationCursorAuto{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc, trace: true}, nil
 	} else {
-		return &memoryMutationCursor{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc}, nil
+		return &memoryMutationCursor{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc, trace: true}, nil
 	}
 }
 
 func (m *MemoryMutation) makeCursorDupSort(bucket string) (kv.RwCursorDupSort, error) {
-	c := &memoryMutationCursorDupSort{bucketCfg: m.tableConfigs[bucket]}
+	c := &memoryMutationCursorDupSort{bucketCfg: m.tableConfigs[bucket], trace: true}
 	// We can filter duplicates in dup sorted table
 	c.table = bucket
 

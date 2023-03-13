@@ -60,6 +60,7 @@ type memoryMutationCursor struct {
 	current       CurrentType
 	direction     DirectionType
 	preemptedNext bool
+	trace         bool
 }
 
 func (m *memoryMutationCursor) isTableCleared() bool {
@@ -71,7 +72,6 @@ func (m *memoryMutationCursor) isEntryDeleted(key []byte) bool {
 }
 
 func (m *memoryMutationCursor) selectEntry(direction DirectionType, memKey, memValue, dbKey, dbValue []byte) ([]byte, []byte, error) {
-	//fmt.Printf("selectEntry direction %v, mem: %s=>%s, db: %s=>%s\n", direction, memKey, memValue, dbKey, dbValue)
 	if dbKey == nil {
 		if memKey == nil {
 			m.current = NoCurrent
@@ -108,6 +108,9 @@ func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("[%s] First()=>[%x;%x]\n", m.table, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	var dbKey, dbValue []byte
@@ -116,31 +119,42 @@ func (m *memoryMutationCursor) First() ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("[%s] First()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Current return the current key and values the cursor is on.
 func (m *memoryMutationCursor) Current() ([]byte, []byte, error) {
+	var k, v []byte
+	var e error
 	switch m.current {
 	case OverCurrent, OverOnly, BothCurrent:
-		return m.memCursor.Current()
+		k, v, e = m.memCursor.Current()
 	case UnderCurrent, UnderOnly:
-		return m.cursor.Current()
-	default:
-		return nil, nil, nil
+		k, v, e = m.cursor.Current()
 	}
+	if m.trace {
+		fmt.Printf("[%s] Current()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Next returns the next element of the mutation.
 func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
-	//fmt.Printf("Next\n")
 	direction := m.direction
 	m.direction = ForwardDirection
 	preemptedNext := m.preemptedNext
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.Next()
+		k, v, e := m.memCursor.Next()
+		if m.trace {
+			fmt.Printf("[%s] Next()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -148,7 +162,6 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 	var memKeySet, dbKeySet bool
 	// Reverse direction if needed
 	if direction == BackwardDirection {
-		//fmt.Printf("Reverse direction\n")
 		switch m.current {
 		case OverCurrent:
 			for dbKey, dbValue, err = m.cursor.Next(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbKey, err = m.cursor.Next() {
@@ -165,7 +178,6 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 		}
 	}
 	if !preemptedNext {
-		//fmt.Printf("not preemptedNext, m.current = %v\n", m.current)
 		if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
 			if memKey, memValue, err = m.memCursor.Next(); err != nil {
 				return nil, nil, err
@@ -173,7 +185,6 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 			memKeySet = true
 		}
 		if m.current == UnderCurrent || m.current == UnderOnly || m.current == BothCurrent {
-			//fmt.Printf("UnderCurrent\n")
 			for dbKey, dbValue, err = m.cursor.Next(); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Next() {
 			}
 			if err != nil {
@@ -192,12 +203,15 @@ func (m *memoryMutationCursor) Next() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("[%s] Next()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Seek move pointer to a key at a certain position.
 func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
-	//fmt.Printf("Seek %s\n", seek)
 	m.direction = ForwardDirection
 	m.preemptedNext = false
 	var err error
@@ -207,6 +221,9 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	if m.isTableCleared() {
+		if m.trace {
+			fmt.Printf("[%s] Seek(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	for dbKey, dbValue, err = m.cursor.Seek(seek); err == nil && dbKey != nil && m.isEntryDeleted(dbKey); dbKey, dbValue, err = m.cursor.Next() {
@@ -214,7 +231,11 @@ func (m *memoryMutationCursor) Seek(seek []byte) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("[%s] Seek(%x)=>[%x;%x]\n", m.table, seek, k, v)
+	}
+	return k, v, e
 }
 
 // Seek move pointer to a key at a certain position.
@@ -228,25 +249,44 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	if m.isTableCleared() {
+		if m.trace {
+			fmt.Printf("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	if m.isEntryDeleted(seek) {
+		if m.trace {
+			fmt.Printf("[%s] SeekExact(%x)=>[nil;nik]\n", m.table, seek)
+		}
 		return nil, nil, nil
 	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("[%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursor) Put(k, v []byte) error {
+	if m.trace {
+		fmt.Printf("[%s] Put(%x;%x)\n", m.table, k, v)
+	}
 	return m.memCursor.Put(common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursor) Append(k []byte, v []byte) error {
+	if m.trace {
+		fmt.Printf("[%s] Append(%x;%x)\n", m.table, k, v)
+	}
 	return m.memCursor.Append(common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursor) Delete(k []byte) error {
+	if m.trace {
+		fmt.Printf("[%s] Delete(%x)\n", m.table, k)
+	}
 	if _, ok := m.mutation.deletedEntries[m.table]; !ok {
 		m.mutation.deletedEntries[m.table] = map[string]struct{}{}
 	}
@@ -255,6 +295,9 @@ func (m *memoryMutationCursor) Delete(k []byte) error {
 }
 
 func (m *memoryMutationCursor) DeleteCurrent() error {
+	if m.trace {
+		fmt.Printf("[%s] DeleteCurrent()\n", m.table)
+	}
 	m.direction = ForwardDirection
 	m.preemptedNext = false
 	if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
@@ -294,6 +337,9 @@ func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	var dbKey, dbValue []byte
@@ -302,7 +348,11 @@ func (m *memoryMutationCursor) Last() ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("[%s] Last()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursor) Prev() ([]byte, []byte, error) {
@@ -311,7 +361,11 @@ func (m *memoryMutationCursor) Prev() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.Prev()
+		k, v, e := m.memCursor.Prev()
+		if m.trace {
+			fmt.Printf("[%s] Prev()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -358,7 +412,11 @@ func (m *memoryMutationCursor) Prev() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("[%s] Prev()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursor) Close() {
@@ -770,6 +828,7 @@ type memoryMutationCursorDupSort struct {
 	current       CurrentType
 	direction     DirectionType
 	preemptedNext bool
+	trace         bool
 }
 
 func (m *memoryMutationCursorDupSort) isTableCleared() bool {
@@ -820,6 +879,9 @@ func (m *memoryMutationCursorDupSort) First() ([]byte, []byte, error) {
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("DupSort [%s] First()=>[%x;%x]\n", m.table, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	var dbKey, dbValue []byte
@@ -828,19 +890,27 @@ func (m *memoryMutationCursorDupSort) First() ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] First()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Current return the current key and values the cursor is on.
 func (m *memoryMutationCursorDupSort) Current() ([]byte, []byte, error) {
+	var k, v []byte
+	var e error
 	switch m.current {
 	case OverCurrent, OverOnly, BothCurrent:
-		return m.memCursor.Current()
+		k, v, e = m.memCursor.Current()
 	case UnderCurrent, UnderOnly:
-		return m.cursor.Current()
-	default:
-		return nil, nil, nil
+		k, v, e = m.cursor.Current()
 	}
+	if m.trace {
+		fmt.Printf("DupSort [%s] Current()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Next returns the next element of the mutation.
@@ -851,7 +921,11 @@ func (m *memoryMutationCursorDupSort) Next() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.Next()
+		k, v, e := m.memCursor.Next()
+		if m.trace {
+			fmt.Printf("DupSort [%s] Next()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -900,7 +974,11 @@ func (m *memoryMutationCursorDupSort) Next() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] Next()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // NextDup returns the next element of the mutation.
@@ -911,7 +989,11 @@ func (m *memoryMutationCursorDupSort) NextDup() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.NextDup()
+		k, v, e := m.memCursor.NextDup()
+		if m.trace {
+			fmt.Printf("DupSort [%s] NextDup()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -960,7 +1042,11 @@ func (m *memoryMutationCursorDupSort) NextDup() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] NextDup()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 // Seek move pointer to a key at a certain position.
@@ -974,6 +1060,9 @@ func (m *memoryMutationCursorDupSort) Seek(seek []byte) ([]byte, []byte, error) 
 		return nil, nil, err
 	}
 	if m.isTableCleared() {
+		if m.trace {
+			fmt.Printf("DupSort [%s] Seek(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	for dbKey, dbValue, err = m.cursor.Seek(seek); err == nil && dbKey != nil && m.isEntryDeleted(dbKey, dbValue); dbKey, dbValue, err = m.cursor.NextDup() {
@@ -981,7 +1070,11 @@ func (m *memoryMutationCursorDupSort) Seek(seek []byte) ([]byte, []byte, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] Seek(%x)=>[%x;%x]\n", m.table, seek, k, v)
+	}
+	return k, v, e
 }
 
 // Seek move pointer to a key at a certain position.
@@ -995,34 +1088,59 @@ func (m *memoryMutationCursorDupSort) SeekExact(seek []byte) ([]byte, []byte, er
 		return nil, nil, err
 	}
 	if m.isTableCleared() {
+		if m.trace {
+			fmt.Printf("DupSort [%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	if m.mutation.isEntryDeleted(m.table, seek) {
+		if m.trace {
+			fmt.Printf("DupSort [%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
+		}
 		return nil, nil, nil
 	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] SeekExact(%x)=>[%x;%x]\n", m.table, seek, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursorDupSort) Put(k, v []byte) error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] Put(%x;%x)\n", m.table, k, v)
+	}
 	return m.memCursor.Put(common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursorDupSort) Append(k []byte, v []byte) error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] Append(%x;%x)\n", m.table, k, v)
+	}
 	return m.memCursor.Append(common.Copy(k), common.Copy(v))
 
 }
 
 func (m *memoryMutationCursorDupSort) AppendDup(k []byte, v []byte) error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] AppendDup(%x;%x)\n", m.table, k, v)
+	}
 	return m.memCursor.AppendDup(common.Copy(k), common.Copy(v))
 }
 
-func (m *memoryMutationCursorDupSort) PutNoDupData(key, value []byte) error {
-	return m.memCursor.PutNoDupData(common.Copy(key), common.Copy(value))
+func (m *memoryMutationCursorDupSort) PutNoDupData(k, v []byte) error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] PutNoDupData(%x;%x)\n", m.table, k, v)
+	}
+	return m.memCursor.PutNoDupData(common.Copy(k), common.Copy(v))
 }
 
 func (m *memoryMutationCursorDupSort) Delete(k []byte) error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] Delete(%x)\n", m.table, k)
+	}
 	foundK, _, err := m.cursor.SeekExact(k)
 	if err != nil {
 		return err
@@ -1042,6 +1160,9 @@ func (m *memoryMutationCursorDupSort) Delete(k []byte) error {
 }
 
 func (m *memoryMutationCursorDupSort) DeleteCurrent() error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] DeleteCurrent()\n", m.table)
+	}
 	m.direction = ForwardDirection
 	m.preemptedNext = false
 	if m.current == OverCurrent || m.current == OverOnly || m.current == BothCurrent {
@@ -1076,6 +1197,9 @@ func (m *memoryMutationCursorDupSort) DeleteCurrent() error {
 	return nil
 }
 func (m *memoryMutationCursorDupSort) DeleteExact(k1, k2 []byte) error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] DeleteExact(%x;%x)\n", m.table, k1, k2)
+	}
 	m.direction = ForwardDirection
 	foundK, foundV, err := m.cursor.SeekBothExact(k1, k2)
 	if err != nil {
@@ -1099,6 +1223,9 @@ func (m *memoryMutationCursorDupSort) DeleteExact(k1, k2 []byte) error {
 }
 
 func (m *memoryMutationCursorDupSort) DeleteCurrentDuplicates() error {
+	if m.trace {
+		fmt.Printf("DupSort [%s] DeleteCurrentDuplicates()\n", m.table)
+	}
 	m.direction = ForwardDirection
 	m.preemptedNext = false
 	if m.isTableCleared() {
@@ -1160,6 +1287,9 @@ func (m *memoryMutationCursorDupSort) SeekBothRange(key, value []byte) ([]byte, 
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("DupSort [%s] SeekBothRange(%x;%x)=>[%x]\n", m.table, key, value, memValue)
+		}
 		return memValue, nil
 	}
 	var dbKey = key
@@ -1173,6 +1303,9 @@ func (m *memoryMutationCursorDupSort) SeekBothRange(key, value []byte) ([]byte, 
 		dbValue = nil
 	}
 	_, val, err := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] SeekBothRange(%x;%x)=>[%x]\n", m.table, key, value, val)
+	}
 	return val, err
 }
 
@@ -1186,6 +1319,9 @@ func (m *memoryMutationCursorDupSort) Last() ([]byte, []byte, error) {
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("DupSort [%s] Last()=>[%x;%x]\n", m.table, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	var dbKey, dbValue []byte
@@ -1194,7 +1330,11 @@ func (m *memoryMutationCursorDupSort) Last() ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] Last()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursorDupSort) Prev() ([]byte, []byte, error) {
@@ -1204,7 +1344,11 @@ func (m *memoryMutationCursorDupSort) Prev() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.Prev()
+		k, v, e := m.memCursor.Prev()
+		if m.trace {
+			fmt.Printf("DupSort [%s] Prev()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -1253,7 +1397,11 @@ func (m *memoryMutationCursorDupSort) Prev() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] Prev()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 func (m *memoryMutationCursorDupSort) PrevDup() ([]byte, []byte, error) {
 	direction := m.direction
@@ -1262,7 +1410,11 @@ func (m *memoryMutationCursorDupSort) PrevDup() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.PrevDup()
+		k, v, e := m.memCursor.PrevDup()
+		if m.trace {
+			fmt.Printf("DupSort [%s] PrevDup()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -1311,7 +1463,11 @@ func (m *memoryMutationCursorDupSort) PrevDup() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] PrevDup()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 func (m *memoryMutationCursorDupSort) PrevNoDup() ([]byte, []byte, error) {
 	direction := m.direction
@@ -1320,7 +1476,11 @@ func (m *memoryMutationCursorDupSort) PrevNoDup() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.PrevNoDup()
+		k, v, e := m.memCursor.PrevNoDup()
+		if m.trace {
+			fmt.Printf("DupSort [%s] PrevNoDup()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -1369,8 +1529,11 @@ func (m *memoryMutationCursorDupSort) PrevNoDup() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
-
+	k, v, e := m.selectEntry(BackwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] PrevNoDup()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursorDupSort) Close() {
@@ -1424,7 +1587,11 @@ func (m *memoryMutationCursorDupSort) NextNoDup() ([]byte, []byte, error) {
 	m.preemptedNext = false
 	if m.isTableCleared() {
 		m.current = OverOnly
-		return m.memCursor.NextNoDup()
+		k, v, e := m.memCursor.NextNoDup()
+		if m.trace {
+			fmt.Printf("DupSort [%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
+		}
+		return k, v, e
 	}
 	var err error
 	var memKey, memValue []byte
@@ -1473,7 +1640,11 @@ func (m *memoryMutationCursorDupSort) NextNoDup() ([]byte, []byte, error) {
 			return nil, nil, err
 		}
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] NextNoDup()=>[%x;%x]\n", m.table, k, v)
+	}
+	return k, v, e
 }
 
 func (m *memoryMutationCursorDupSort) LastDup() ([]byte, error) {
@@ -1489,6 +1660,9 @@ func (m *memoryMutationCursorDupSort) LastDup() ([]byte, error) {
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("DupSort [%s] LastDup()=>[%x]\n", m.table, memValue)
+		}
 		return memValue, nil
 	}
 	var dbKey, dbValue []byte
@@ -1503,6 +1677,9 @@ func (m *memoryMutationCursorDupSort) LastDup() ([]byte, error) {
 	_, value, err := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
 	if err != nil {
 		return nil, err
+	}
+	if m.trace {
+		fmt.Printf("DupSort [%s] LastDup()=>[%x]\n", m.table, value)
 	}
 	return value, nil
 }
@@ -1522,12 +1699,22 @@ func (m *memoryMutationCursorDupSort) SeekBothExact(key, value []byte) ([]byte, 
 	}
 	if m.isTableCleared() {
 		m.current = OverOnly
+		if m.trace {
+			fmt.Printf("DupSort [%s] SeekBothExact(%x;%x)=>[%x;%x]\n", m.table, key, value, memKey, memValue)
+		}
 		return memKey, memValue, nil
 	}
 	if m.isEntryDeleted(key, value) {
+		if m.trace {
+			fmt.Printf("DupSort [%s] SeekBothExact(%x;%x)=>[nil;nil]\n", m.table, key, value)
+		}
 		return nil, nil, nil
 	} else if dbKey, dbValue, err = m.cursor.SeekBothExact(key, value); err != nil {
 		return nil, nil, err
 	}
-	return m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
+	if m.trace {
+		fmt.Printf("DupSort [%s] SeekBothExact(%x;%x)=>[%x;%x]\n", m.table, key, value, k, v)
+	}
+	return k, v, e
 }
