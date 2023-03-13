@@ -19,11 +19,14 @@ package iter
 import (
 	"bytes"
 
-	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
 )
+
+type Closer interface {
+	Close()
+}
 
 var (
 	EmptyU64 = &EmptyUnary[uint64]{}
@@ -161,10 +164,10 @@ func (m *UnionKVIter) Next() ([]byte, []byte, error) {
 
 // func (m *UnionKVIter) ToArray() (keys, values [][]byte, err error) { return ToKVArray(m) }
 func (m *UnionKVIter) Close() {
-	if x, ok := m.x.(kv.Closer); ok {
+	if x, ok := m.x.(Closer); ok {
 		x.Close()
 	}
-	if y, ok := m.y.(kv.Closer); ok {
+	if y, ok := m.y.(Closer); ok {
 		y.Close()
 	}
 }
@@ -255,10 +258,10 @@ func (m *UnionUnary[T]) Next() (res T, err error) {
 	return k, err
 }
 func (m *UnionUnary[T]) Close() {
-	if x, ok := m.x.(kv.Closer); ok {
+	if x, ok := m.x.(Closer); ok {
 		x.Close()
 	}
-	if y, ok := m.y.(kv.Closer); ok {
+	if y, ok := m.y.(Closer); ok {
 		y.Close()
 	}
 }
@@ -324,10 +327,10 @@ func (m *IntersectIter[T]) Next() (T, error) {
 	return k, err
 }
 func (m *IntersectIter[T]) Close() {
-	if x, ok := m.x.(kv.Closer); ok {
+	if x, ok := m.x.(Closer); ok {
 		x.Close()
 	}
-	if y, ok := m.y.(kv.Closer); ok {
+	if y, ok := m.y.(Closer); ok {
 		y.Close()
 	}
 }
@@ -350,7 +353,7 @@ func (m *TransformDualIter[K, V]) Next() (K, V, error) {
 	return m.transform(k, v)
 }
 func (m *TransformDualIter[K, v]) Close() {
-	if x, ok := m.it.(kv.Closer); ok {
+	if x, ok := m.it.(Closer); ok {
 		x.Close()
 	}
 }
@@ -372,7 +375,7 @@ func (m *TransformKV2U64Iter[K, V]) Next() (uint64, error) {
 	return m.transform(k, v)
 }
 func (m *TransformKV2U64Iter[K, v]) Close() {
-	if x, ok := m.it.(kv.Closer); ok {
+	if x, ok := m.it.(Closer); ok {
 		x.Close()
 	}
 }
@@ -423,7 +426,7 @@ func (m *FilterDualIter[K, V]) Next() (k K, v V, err error) {
 	return k, v, err
 }
 func (m *FilterDualIter[K, v]) Close() {
-	if x, ok := m.it.(kv.Closer); ok {
+	if x, ok := m.it.(Closer); ok {
 		x.Close()
 	}
 }
@@ -472,7 +475,7 @@ func (m *FilterUnaryIter[T]) Next() (k T, err error) {
 	return k, err
 }
 func (m *FilterUnaryIter[T]) Close() {
-	if x, ok := m.it.(kv.Closer); ok {
+	if x, ok := m.it.(Closer); ok {
 		x.Close()
 	}
 }
