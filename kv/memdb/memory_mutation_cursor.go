@@ -256,7 +256,8 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 	}
 	if m.isEntryDeleted(seek) {
 		if m.trace {
-			fmt.Printf("[%s] SeekExact(%x)=>[nil;nik]\n", m.table, seek)
+			fmt.Printf("entries deleted\n: %s\n, %s\n", m.mutation.deletedEntries, m.mutation.deletedDupSortEntries)
+			fmt.Printf("[%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
 		}
 		return nil, nil, nil
 	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
@@ -640,7 +641,7 @@ func (m *memoryMutationCursorAuto) SeekExact(seek []byte) ([]byte, []byte, error
 	}
 	if m.isEntryDeleted(seek) {
 		if m.trace {
-			fmt.Printf("Auto [%s] SeekExact(%x)=>[nil;nik]\n", m.table, seek)
+			fmt.Printf("Auto [%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
 		}
 		return nil, nil, nil
 	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
