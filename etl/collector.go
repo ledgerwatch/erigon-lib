@@ -165,10 +165,11 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 	var prevK []byte
 	loadNextFunc := func(originalK, k, v []byte) error {
 		if i == 0 {
+			i++
 			isEndOfBucket := lastKey == nil || bytes.Compare(lastKey, k) == -1
-			canUseAppend = haveSortingGuaranties && isEndOfBucket
+			//canUseAppend = haveSortingGuaranties && isEndOfBucket
+			canUseAppend = haveSortingGuaranties && isEndOfBucket && !(c.bufType == DupSortBuffer)
 		}
-		i++
 
 		// SortableOldestAppearedBuffer must guarantee that only 1 oldest value of key will appear
 		// but because size of buffer is limited - each flushed file does guarantee "oldest appeared"
@@ -230,7 +231,7 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 	simpleLoad := func(k, v []byte) error {
 		return loadFunc(k, v, currentTable, loadNextFunc)
 	}
-	if err := mergeSortFiles(c.logPrefix, c.dataProviders, simpleLoad, args); err != nil {
+	if err := mergeSortFiles(c.logPrefix, c.dataProviders, simpleLoad, args, c.bufType == DupSortBuffer); err != nil {
 		return fmt.Errorf("loadIntoTable %s: %w", toBucket, err)
 	}
 	//log.Trace(fmt.Sprintf("[%s] ETL Load done", c.logPrefix), "bucket", bucket, "records", i)
@@ -257,8 +258,8 @@ func (c *Collector) Close() {
 // for the next item, which is then added back to the heap.
 // The subsequent iterations pop the heap again and load up the provider associated with it to get the next element after processing LoadFunc.
 // this continues until all providers have reached their EOF.
-func mergeSortFiles(logPrefix string, providers []dataProvider, loadFunc simpleLoadFunc, args TransformArgs) error {
-	h := &Heap{}
+func mergeSortFiles(logPrefix string, providers []dataProvider, loadFunc simpleLoadFunc, args TransformArgs, sortValues bool) error {
+	h := &Heap{sortValues: sortValues}
 	heap.Init(h)
 	for i, provider := range providers {
 		if key, value, err := provider.Next(nil, nil); err == nil {
