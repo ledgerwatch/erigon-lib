@@ -419,6 +419,7 @@ func (m *MemoryMutation) Flush(tx kv.RwTx) error {
 					if err := dbCursor.Put(k, v); err != nil {
 						return err
 					}
+					fmt.Printf("Flush dupSort %s (%x;%x)\n", bucket, k, v)
 				}
 				return nil
 			}(); err != nil {
