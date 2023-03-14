@@ -1049,7 +1049,7 @@ func (h *History) isEmpty(tx kv.Tx) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		return k == nil || k2 == nil, nil
+		return k == nil && k2 == nil, nil
 	}
 	k, err := kv.FirstKey(tx, h.historyValsTable)
 	if err != nil {
@@ -1059,7 +1059,7 @@ func (h *History) isEmpty(tx kv.Tx) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return k == nil || k2 == nil, nil
+	return k == nil && k2 == nil, nil
 }
 
 func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {

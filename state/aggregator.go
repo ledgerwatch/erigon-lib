@@ -1010,8 +1010,8 @@ func (a *Aggregator) Stats() FilesStats {
 	res.IdxSize = stat.IndexSize
 	res.DataSize = stat.DataSize
 	res.FilesCount = stat.FilesCount
-	res.HistoryReads = stat.HistoryQueries
-	res.TotalReads = stat.TotalQueries
+	res.HistoryReads = stat.HistoryQueries.Load()
+	res.TotalReads = stat.TotalQueries.Load()
 	res.IdxAccess = stat.EfSearchTime
 	return res
 }
@@ -1048,7 +1048,8 @@ func (ac *AggregatorContext) ReadAccountData(addr []byte, roTx kv.Tx) ([]byte, e
 }
 
 func (ac *AggregatorContext) ReadAccountDataBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	return ac.accounts.GetBeforeTxNum(addr, txNum, roTx)
+	v, err := ac.accounts.GetBeforeTxNum(addr, txNum, roTx)
+	return v, err
 }
 
 func (ac *AggregatorContext) ReadAccountStorage(addr []byte, loc []byte, roTx kv.Tx) ([]byte, error) {
@@ -1063,7 +1064,8 @@ func (ac *AggregatorContext) ReadAccountStorageBeforeTxNum(addr []byte, loc []by
 	}
 	copy(ac.keyBuf, addr)
 	copy(ac.keyBuf[len(addr):], loc)
-	return ac.storage.GetBeforeTxNum(ac.keyBuf, txNum, roTx)
+	v, err := ac.storage.GetBeforeTxNum(ac.keyBuf, txNum, roTx)
+	return v, err
 }
 
 func (ac *AggregatorContext) ReadAccountCode(addr []byte, roTx kv.Tx) ([]byte, error) {
@@ -1075,11 +1077,13 @@ func (ac *AggregatorContext) ReadCommitment(addr []byte, roTx kv.Tx) ([]byte, er
 }
 
 func (ac *AggregatorContext) ReadCommitmentBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	return ac.commitment.GetBeforeTxNum(addr, txNum, roTx)
+	v, err := ac.commitment.GetBeforeTxNum(addr, txNum, roTx)
+	return v, err
 }
 
 func (ac *AggregatorContext) ReadAccountCodeBeforeTxNum(addr []byte, txNum uint64, roTx kv.Tx) ([]byte, error) {
-	return ac.code.GetBeforeTxNum(addr, txNum, roTx)
+	v, err := ac.code.GetBeforeTxNum(addr, txNum, roTx)
+	return v, err
 }
 
 func (ac *AggregatorContext) ReadAccountCodeSize(addr []byte, roTx kv.Tx) (int, error) {
