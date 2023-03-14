@@ -256,7 +256,10 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 	}
 	if m.isEntryDeleted(seek) {
 		if m.trace {
-			fmt.Printf("entries deleted\n: %s\n, %s\n", m.mutation.deletedEntries, m.mutation.deletedDupSortEntries)
+			fmt.Printf("entries deleted\n"
+			for tbl, m := range m.mutation.deletedEntries {
+				fmt.Printf("%x %s: %d\n", tbl, len(m))
+			}
 			fmt.Printf("[%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
 		}
 		return nil, nil, nil
