@@ -2571,32 +2571,56 @@ func (h *History) CleanupDir() {
 
 func (hc *HistoryContext) recentIdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
 	var dbIt iter.U64
-	if asc {
-		from := make([]byte, len(key)+8)
-		copy(from, key)
-		var fromTxNum uint64
-		if startTxNum >= 0 {
-			fromTxNum = uint64(startTxNum)
-		}
-		binary.BigEndian.PutUint64(from[len(key):], fromTxNum)
+	if hc.h.largeValues {
+		if asc {
+			from := make([]byte, len(key)+8)
+			copy(from, key)
+			var fromTxNum uint64
+			if startTxNum >= 0 {
+				fromTxNum = uint64(startTxNum)
+			}
+			binary.BigEndian.PutUint64(from[len(key):], fromTxNum)
 
-		to := common.Copy(from)
-		toTxNum := uint64(math.MaxUint64)
-		if endTxNum >= 0 {
-			toTxNum = uint64(endTxNum)
-		}
-		binary.BigEndian.PutUint64(to[len(key):], toTxNum)
+			to := common.Copy(from)
+			toTxNum := uint64(math.MaxUint64)
+			if endTxNum >= 0 {
+				toTxNum = uint64(endTxNum)
+			}
+			binary.BigEndian.PutUint64(to[len(key):], toTxNum)
 
-		it, err := roTx.RangeAscend(hc.h.historyValsTable, from, to, limit)
-		if err != nil {
-			return nil, err
+			it, err := roTx.RangeAscend(hc.h.historyValsTable, from, to, limit)
+			if err != nil {
+				return nil, err
+			}
+			dbIt = iter.TransformKV2U64(it, func(k, _ []byte) (uint64, error) {
+				return binary.BigEndian.Uint64(k[len(k)-8:]), nil
+			})
+		} else {
+			panic("implement me")
 		}
-		dbIt = iter.TransformKV2U64(it, func(k, _ []byte) (uint64, error) {
-			return binary.BigEndian.Uint64(k[len(k)-8:]), nil
-		})
 	} else {
-		panic("implement me")
+		if asc {
+			var from, to []byte
+			if startTxNum >= 0 {
+				from = make([]byte, 8)
+				binary.BigEndian.PutUint64(from, uint64(startTxNum))
+			}
+			if endTxNum >= 0 {
+				to = make([]byte, 8)
+				binary.BigEndian.PutUint64(to, uint64(endTxNum))
+			}
+			it, err := roTx.RangeDupSort(hc.h.historyValsTable, key, from, to, asc, limit)
+			if err != nil {
+				return nil, err
+			}
+			dbIt = iter.TransformKV2U64(it, func(_, v []byte) (uint64, error) {
+				return binary.BigEndian.Uint64(v), nil
+			})
+		} else {
+			panic("implement me")
+		}
 	}
+
 	return dbIt, nil
 }
 func (hc *HistoryContext) IdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
