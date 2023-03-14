@@ -586,7 +586,7 @@ func (ic *InvertedIndexContext) getFile(from, to uint64) (it ctxItem, ok bool) {
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
 func (ic *InvertedIndexContext) IterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
-	frozenIt, err := ic.frozenIterateRange(key, startTxNum, endTxNum, asc, limit)
+	frozenIt, err := ic.iterateRangeFrozen(key, startTxNum, endTxNum, asc, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -635,7 +635,7 @@ func (ic *InvertedIndexContext) recentIterateRange(key []byte, startTxNum, endTx
 // IterateRange is to be used in public API, therefore it relies on read-only transaction
 // so that iteration can be done even when the inverted index is being updated.
 // [startTxNum; endNumTx)
-func (ic *InvertedIndexContext) frozenIterateRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int) (*FrozenInvertedIdxIter, error) {
+func (ic *InvertedIndexContext) iterateRangeFrozen(key []byte, startTxNum, endTxNum int, asc order.By, limit int) (*FrozenInvertedIdxIter, error) {
 	if asc && (startTxNum >= 0 && endTxNum >= 0) && startTxNum > endTxNum {
 		return nil, fmt.Errorf("startTxNum=%d epected to be lower than endTxNum=%d", startTxNum, endTxNum)
 	}

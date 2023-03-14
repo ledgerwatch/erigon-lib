@@ -1898,7 +1898,7 @@ func (hi *StateAsOfIterDbDup) Next() ([]byte, []byte, error) {
 	return hi.kBackup, hi.vBackup, nil
 }
 
-func (hc *HistoryContext) iterateChangedF(fromTxNum, toTxNum int, asc order.By, limit int) (iter.KV, error) {
+func (hc *HistoryContext) iterateChangedFrozen(fromTxNum, toTxNum int, asc order.By, limit int) (iter.KV, error) {
 	startTxNum, endTxNum := uint64(fromTxNum), uint64(toTxNum)
 	if len(hc.ic.files) == 0 || hc.ic.files[len(hc.ic.files)-1].endTxNum <= startTxNum {
 		return iter.EmptyKV, nil
@@ -1932,7 +1932,7 @@ func (hc *HistoryContext) iterateChangedF(fromTxNum, toTxNum int, asc order.By, 
 	return hi, nil
 }
 
-func (hc *HistoryContext) iterateChangedDB(fromTxNum, toTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.KV, error) {
+func (hc *HistoryContext) iterateChangedRecent(fromTxNum, toTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.KV, error) {
 	startTxNum, endTxNum := uint64(fromTxNum), uint64(toTxNum)
 	if len(hc.ic.files) > 0 && hc.ic.files[len(hc.ic.files)-1].endTxNum >= endTxNum {
 		return iter.EmptyKV, nil
@@ -1984,11 +1984,11 @@ func (hc *HistoryContext) IterateChanged(fromTxNum, toTxNum int, asc order.By, l
 	if toTxNum < 0 {
 		panic("not supported yet")
 	}
-	itOnFiles, err := hc.iterateChangedF(fromTxNum, toTxNum, asc, limit)
+	itOnFiles, err := hc.iterateChangedFrozen(fromTxNum, toTxNum, asc, limit)
 	if err != nil {
 		return nil, err
 	}
-	itOnDB, err := hc.iterateChangedDB(fromTxNum, toTxNum, asc, limit, roTx)
+	itOnDB, err := hc.iterateChangedRecent(fromTxNum, toTxNum, asc, limit, roTx)
 	if err != nil {
 		return nil, err
 	}
@@ -2569,7 +2569,7 @@ func (h *History) CleanupDir() {
 	h.InvertedIndex.CleanupDir()
 }
 
-func (hc *HistoryContext) recentIdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
+func (hc *HistoryContext) idxRangeRecent(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
 	var dbIt iter.U64
 	if hc.h.largeValues {
 		if asc {
@@ -2624,11 +2624,11 @@ func (hc *HistoryContext) recentIdxRange(key []byte, startTxNum, endTxNum int, a
 	return dbIt, nil
 }
 func (hc *HistoryContext) IdxRange(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
-	frozenIt, err := hc.ic.frozenIterateRange(key, startTxNum, endTxNum, asc, limit)
+	frozenIt, err := hc.ic.iterateRangeFrozen(key, startTxNum, endTxNum, asc, limit)
 	if err != nil {
 		return nil, err
 	}
-	recentIt, err := hc.recentIdxRange(key, startTxNum, endTxNum, asc, limit, roTx)
+	recentIt, err := hc.idxRangeRecent(key, startTxNum, endTxNum, asc, limit, roTx)
 	if err != nil {
 		return nil, err
 	}
