@@ -254,13 +254,10 @@ func (m *memoryMutationCursor) SeekExact(seek []byte) ([]byte, []byte, error) {
 		}
 		return memKey, memValue, nil
 	}
-	if m.isEntryDeleted(seek) {
-		if m.trace {
-			fmt.Printf("[%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
+	if !m.isEntryDeleted(seek) {
+		if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
+			return nil, nil, err
 		}
-		return nil, nil, nil
-	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
-		return nil, nil, err
 	}
 	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
 	if m.trace {
@@ -638,13 +635,10 @@ func (m *memoryMutationCursorAuto) SeekExact(seek []byte) ([]byte, []byte, error
 		}
 		return memKey, memValue, nil
 	}
-	if m.isEntryDeleted(seek) {
-		if m.trace {
-			fmt.Printf("Auto [%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
+	if !m.isEntryDeleted(seek) {
+		if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
+			return nil, nil, err
 		}
-		return nil, nil, nil
-	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
-		return nil, nil, err
 	}
 	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
 	if m.trace {
@@ -1093,13 +1087,10 @@ func (m *memoryMutationCursorDupSort) SeekExact(seek []byte) ([]byte, []byte, er
 		}
 		return memKey, memValue, nil
 	}
-	if m.mutation.isEntryDeleted(m.table, seek) {
-		if m.trace {
-			fmt.Printf("DupSort [%s] SeekExact(%x)=>[nil;nil]\n", m.table, seek)
+	if !m.mutation.isEntryDeleted(m.table, seek) {
+		if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
+			return nil, nil, err
 		}
-		return nil, nil, nil
-	} else if dbKey, dbValue, err = m.cursor.SeekExact(seek); err != nil {
-		return nil, nil, err
 	}
 	k, v, e := m.selectEntry(ForwardDirection, memKey, memValue, dbKey, dbValue)
 	if m.trace {
