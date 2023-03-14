@@ -1861,18 +1861,16 @@ func (hi *StateAsOfIterDbDup) advanceInDb() error {
 		if hi.to != nil && bytes.Compare(k, hi.to) >= 0 {
 			break
 		}
-		{
-			v, err := hi.valsC.SeekBothRange(k, hi.startTxKey[:])
-			if err != nil {
-				return err
-			}
-			if v == nil {
-				continue
-			}
-			hi.nextKey = k
-			hi.nextVal = v[8:]
-			return nil
+		v, err := hi.valsC.SeekBothRange(k, hi.startTxKey[:])
+		if err != nil {
+			return err
 		}
+		if v == nil {
+			continue
+		}
+		hi.nextKey = k
+		hi.nextVal = v[8:]
+		return nil
 	}
 	hi.nextKey = nil
 	return nil
