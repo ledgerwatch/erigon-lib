@@ -78,22 +78,11 @@ func (m *MemoryMutation) isTableCleared(table string) bool {
 }
 
 func (m *MemoryMutation) isEntryDeleted(table string, key []byte) bool {
-	fmt.Printf("entries deleted\n")
-	for tbl, m := range m.deletedEntries {
-		fmt.Printf("%s: %d\n", tbl, len(m))
-		for dk := range m {
-			fmt.Printf("%x ", dk)
-		}
-		fmt.Printf("\n")
-	}
-	fmt.Printf("isEntryDeleted %s %x => ", table, key)
 	t, ok := m.deletedEntries[table]
 	if !ok {
-		fmt.Printf("%t 1\n", ok)
 		return ok
 	}
 	_, ok = t[string(key)]
-	fmt.Printf("%t 2\n", ok)
 	return ok
 }
 
@@ -217,10 +206,12 @@ func (m *MemoryMutation) Has(table string, key []byte) (bool, error) {
 }
 
 func (m *MemoryMutation) Put(table string, k, v []byte) error {
+	fmt.Printf("[%s] Put(%x;%x)\n", table, k, v)
 	return m.memTx.Put(table, k, v)
 }
 
 func (m *MemoryMutation) Append(table string, key []byte, value []byte) error {
+	fmt.Printf("[%s] Append(%x;%x)\n", table, key, value)
 	return m.memTx.Append(table, key, value)
 }
 
@@ -308,6 +299,7 @@ func (m *MemoryMutation) ForPrefix(bucket string, prefix []byte, walker func(k, 
 }
 
 func (m *MemoryMutation) Delete(table string, k []byte) error {
+	fmt.Printf("[%s] Delete(%x)\n", table, k)
 	if _, ok := m.deletedEntries[table]; !ok {
 		m.deletedEntries[table] = map[string]struct{}{}
 	}
