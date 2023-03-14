@@ -165,7 +165,7 @@ func (m *MemoryMutation) statelessCursor(table string) (kv.RwCursor, error) {
 	if !ok {
 		cfg, ok := m.tableConfigs[table]
 		var err error
-		if ok && (cfg.Flags&kv.DupSort != 0) {
+		if ok && (cfg.Flags&kv.DupSort != 0 && !cfg.AutoDupSortKeysConversion) {
 			c, err = m.RwCursorDupSort(table)
 		} else {
 			c, err = m.RwCursor(table)
