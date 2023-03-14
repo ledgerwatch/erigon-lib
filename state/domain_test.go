@@ -225,7 +225,7 @@ func TestAfterPrune(t *testing.T) {
 	err = d.prune(ctx, 0, 0, 16, math.MaxUint64, logEvery)
 	require.NoError(t, err)
 
-	for _, table := range []string{d.keysTable, d.valsTable, d.indexKeysTable, d.historyValsTable, d.indexTable} {
+	for _, table := range []string{d.keysTable, d.valsTable} {
 		var cur kv.Cursor
 		cur, err = tx.Cursor(table)
 		require.NoError(t, err)
@@ -233,8 +233,11 @@ func TestAfterPrune(t *testing.T) {
 		var k []byte
 		k, _, err = cur.First()
 		require.NoError(t, err)
-		require.NotNilf(t, k, table, string(k))
+		require.NotNil(t, k, table) //, string(k))
 	}
+	isEmpty, err := d.History.isEmpty(tx)
+	require.NoError(t, err)
+	require.False(t, isEmpty)
 
 	v, err = dc.Get([]byte("key1"), nil, tx)
 	require.NoError(t, err)

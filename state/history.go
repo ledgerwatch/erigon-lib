@@ -1039,6 +1039,29 @@ func (h *History) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) er
 	return nil
 }
 
+func (h *History) isEmpty(tx kv.Tx) (bool, error) {
+	if h.largeValues {
+		k, err := kv.FirstKey(tx, h.historyValsTable)
+		if err != nil {
+			return false, err
+		}
+		k2, err := kv.FirstKey(tx, h.indexKeysTable)
+		if err != nil {
+			return false, err
+		}
+		return k == nil || k2 == nil, nil
+	}
+	k, err := kv.FirstKey(tx, h.historyValsTable)
+	if err != nil {
+		return false, err
+	}
+	k2, err := kv.FirstKey(tx, h.indexKeysTable)
+	if err != nil {
+		return false, err
+	}
+	return k == nil || k2 == nil, nil
+}
+
 func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
