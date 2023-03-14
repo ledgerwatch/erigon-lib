@@ -301,7 +301,6 @@ func checkHistory(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 			binary.BigEndian.PutUint64(v[:], valNum)
 			val, err := dc.GetBeforeTxNum(k[:], txNum+1, roTx)
 			require.NoError(t, err, label)
-			require.True(t, ok)
 			if txNum >= keyNum {
 				require.Equal(t, v[:], val, label)
 			} else {
@@ -626,7 +625,6 @@ func TestDomain_Prune_AfterAllWrites(t *testing.T) {
 			val, err := dc.GetBeforeTxNum(k[:], txNum+1, roTx)
 			// during generation such keys are skipped so value should be nil for this call
 			require.NoError(t, err, label)
-			require.True(t, ok)
 			if !data[fmt.Sprintf("%d", keyNum)][txNum] {
 				if txNum > 1 {
 					binary.BigEndian.PutUint64(v[:], txNum-1)
@@ -719,7 +717,6 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 
 			val, err := dc.GetBeforeTxNum(k[:], txNum+1, tx)
 			require.NoError(t, err)
-			require.True(t, ok)
 			if keyNum == txNum%d.aggregationStep {
 				if txNum > 1 {
 					binary.BigEndian.PutUint64(v[:], txNum-1)
