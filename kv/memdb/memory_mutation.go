@@ -78,6 +78,14 @@ func (m *MemoryMutation) isTableCleared(table string) bool {
 }
 
 func (m *MemoryMutation) isEntryDeleted(table string, key []byte) bool {
+	fmt.Printf("entries deleted\n")
+	for tbl, m := range m.deletedEntries {
+		fmt.Printf("%s: %d\n", tbl, len(m))
+		for dk := range m {
+			fmt.Printf("%x ", dk)
+		}
+		fmt.Printf("\n")
+	}
 	fmt.Printf("isEntryDeleted %s %x => ", table, key)
 	t, ok := m.deletedEntries[table]
 	if !ok {
