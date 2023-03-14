@@ -1240,7 +1240,7 @@ func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) 
 			if err := f(txNum, v, vv[8:]); err != nil {
 				return err
 			}
-			if err = valsC.DeleteCurrent(); err != nil {
+			if err = valsCDup.DeleteCurrent(); err != nil {
 				return err
 			}
 		}
@@ -2269,8 +2269,6 @@ func (hi *HistoryDBIterator) advanceInDb() (err error) {
 		return nil
 	}
 	hi.nextKey = v
-
-	fmt.Printf("kv: %x, %x\n", k, v)
 
 	if hi.largeValues {
 		hi.searchBuf = append(append(hi.searchBuf[:0], v...), k...)
