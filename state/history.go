@@ -1550,14 +1550,9 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	return val[8:], true, nil
 }
 
-func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.Tx, amount int) *StateAsOfIter {
-	hi := StateAsOfIter{
-		hasNextInDb:  true,
-		roTx:         roTx,
-		indexTable:   hc.h.indexTable,
-		idxKeysTable: hc.h.indexKeysTable,
-		valsTable:    hc.h.historyValsTable,
-		from:         from, to: to, limit: amount,
+func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.Tx, amount int) iter.KV {
+	hi := &StateAsOfIterF{
+		from: from, to: to, limit: amount,
 
 		hc:           hc,
 		compressVals: hc.h.compressVals,
@@ -1573,57 +1568,72 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 		if g.HasNext() {
 			key, offset := g.NextUncompressed()
 			heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
-			hi.hasNextInFiles = true
 		}
 	}
 	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
-	hi.advanceInDb()
-	hi.advanceInFiles()
-	hi.advance()
-	return &hi
+	if err := hi.advanceInFiles(); err != nil {
+		panic(err)
+	}
+
+	var dbit iter.KV
+	if hc.h.largeValues {
+		dbi := &StateAsOfIterDb{
+			roTx:         roTx,
+			indexTable:   hc.h.indexTable,
+			idxKeysTable: hc.h.indexKeysTable,
+			valsTable:    hc.h.historyValsTable,
+			from:         from, to: to, limit: amount,
+
+			hc:         hc,
+			startTxNum: startTxNum,
+		}
+		binary.BigEndian.PutUint64(dbi.startTxKey[:], startTxNum)
+		if err := dbi.advanceInDb(); err != nil {
+			panic(err)
+		}
+		dbit = dbi
+	} else {
+		dbi := &StateAsOfIterDbDup{
+			roTx:         roTx,
+			indexTable:   hc.h.indexTable,
+			idxKeysTable: hc.h.indexKeysTable,
+			valsTable:    hc.h.historyValsTable,
+			from:         from, to: to, limit: amount,
+
+			hc:         hc,
+			startTxNum: startTxNum,
+		}
+		binary.BigEndian.PutUint64(dbi.startTxKey[:], startTxNum)
+		if err := dbi.advanceInDb(); err != nil {
+			panic(err)
+		}
+		dbit = dbi
+	}
+	return iter.UnionKV(hi, dbit)
 }
 
 // StateAsOfIter - returns state range at given time in history
-type StateAsOfIter struct {
-	roTx          kv.Tx
-	txNum2kCursor kv.CursorDupSort
-	valsC         kv.Cursor
-	hc            *HistoryContext
-	valsTable     string
-	idxKeysTable  string
-	indexTable    string
+type StateAsOfIterF struct {
+	hc    *HistoryContext
+	limit int
 
 	from, to []byte
-	limit    int
+	nextVal  []byte
+	nextKey  []byte
 
-	nextFileKey []byte
-	nextDbKey   []byte
-	nextDbVal   []byte
-	nextFileVal []byte
-	nextVal     []byte
-	nextKey     []byte
-
-	h              ReconHeap
-	startTxNum     uint64
-	startTxKey     [8]byte
-	txnKey         [8]byte
-	hasNextInFiles bool
-	hasNextInDb    bool
-	compressVals   bool
+	h            ReconHeap
+	startTxNum   uint64
+	startTxKey   [8]byte
+	txnKey       [8]byte
+	compressVals bool
 
 	k, v, kBackup, vBackup []byte
 }
 
-func (hi *StateAsOfIter) Close() {
-	if hi.valsC != nil {
-		hi.valsC.Close()
-	}
-	if hi.txNum2kCursor != nil {
-		hi.txNum2kCursor.Close()
-	}
+func (hi *StateAsOfIterF) Close() {
 }
 
-func (hi *StateAsOfIter) advanceInFiles() {
+func (hi *StateAsOfIterF) advanceInFiles() error {
 	for hi.h.Len() > 0 {
 		top := heap.Pop(&hi.h).(*ReconItem)
 		key := top.key
@@ -1648,7 +1658,7 @@ func (hi *StateAsOfIter) advanceInFiles() {
 			continue
 		}
 
-		if bytes.Equal(key, hi.nextFileKey) {
+		if bytes.Equal(key, hi.nextKey) {
 			continue
 		}
 		ef, _ := eliasfano32.ReadEliasFano(idxVal)
@@ -1657,59 +1667,105 @@ func (hi *StateAsOfIter) advanceInFiles() {
 			continue
 		}
 
-		hi.nextFileKey = key
+		hi.nextKey = key
 		binary.BigEndian.PutUint64(hi.txnKey[:], n)
 		historyItem, ok := hi.hc.getFile(top.startTxNum, top.endTxNum)
 		if !ok {
-			panic(fmt.Errorf("no %s file found for [%x]", hi.hc.h.filenameBase, hi.nextFileKey))
+			return fmt.Errorf("no %s file found for [%x]", hi.hc.h.filenameBase, hi.nextKey)
 		}
 		reader := hi.hc.statelessIdxReader(historyItem.i)
-		offset := reader.Lookup2(hi.txnKey[:], hi.nextFileKey)
+		offset := reader.Lookup2(hi.txnKey[:], hi.nextKey)
 		g := hi.hc.statelessGetter(historyItem.i)
 		g.Reset(offset)
 		if hi.compressVals {
-			hi.nextFileVal, _ = g.Next(nil)
+			hi.nextVal, _ = g.Next(nil)
 		} else {
-			hi.nextFileVal, _ = g.NextUncompressed()
+			hi.nextVal, _ = g.NextUncompressed()
 		}
-		hi.nextFileKey = key
-		return
+		return nil
 	}
-	hi.hasNextInFiles = false
+	hi.nextKey = nil
+	return nil
 }
 
-func (hi *StateAsOfIter) advanceInDb() {
+func (hi *StateAsOfIterF) HasNext() bool {
+	return hi.limit != 0 && hi.nextKey != nil
+}
+
+func (hi *StateAsOfIterF) Next() ([]byte, []byte, error) {
+	hi.limit--
+	hi.k, hi.v = append(hi.k[:0], hi.nextKey...), append(hi.v[:0], hi.nextVal...)
+
+	// Satisfy iter.Dual Invariant 2
+	hi.k, hi.kBackup, hi.v, hi.vBackup = hi.kBackup, hi.k, hi.vBackup, hi.v
+	if err := hi.advanceInFiles(); err != nil {
+		return nil, nil, err
+	}
+	return hi.kBackup, hi.vBackup, nil
+}
+
+// StateAsOfIter - returns state range at given time in history
+type StateAsOfIterDb struct {
+	roTx          kv.Tx
+	txNum2kCursor kv.CursorDupSort
+	valsC         kv.Cursor
+	hc            *HistoryContext
+	valsTable     string
+	idxKeysTable  string
+	indexTable    string
+
+	from, to []byte
+	limit    int
+
+	nextKey, nextVal []byte
+
+	startTxNum uint64
+	startTxKey [8]byte
+
+	k, v, kBackup, vBackup []byte
+	err                    error
+}
+
+func (hi *StateAsOfIterDb) Close() {
+	if hi.valsC != nil {
+		hi.valsC.Close()
+	}
+	if hi.txNum2kCursor != nil {
+		hi.txNum2kCursor.Close()
+	}
+}
+
+func (hi *StateAsOfIterDb) advanceInDb() error {
 	var seek []byte
 	var err error
 	if hi.txNum2kCursor == nil {
 		if hi.valsC, err = hi.roTx.Cursor(hi.valsTable); err != nil {
-			// TODO pass error properly around
-			panic(err)
+			return err
 		}
 		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
-			panic(err)
+			return err
 		}
 		firstKey, _, err := hi.valsC.Seek(hi.from)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		if firstKey == nil {
-			hi.hasNextInDb = false
-			return
+			hi.nextKey = nil
+			return nil
 		}
 		seek = append(common.Copy(firstKey[:len(firstKey)-8]), hi.startTxKey[:]...)
 	} else {
-		next, ok := kv.NextSubtree(hi.nextDbKey)
+		next, ok := kv.NextSubtree(hi.nextKey)
 		if !ok {
-			hi.hasNextInDb = false
-			return
+			hi.nextKey = nil
+			return nil
 		}
 
 		seek = append(next, hi.startTxKey[:]...)
 	}
 	for k, v, err := hi.valsC.Seek(seek); k != nil; k, v, err = hi.valsC.Seek(seek) {
 		if err != nil {
-			panic(err)
+			return err
 		}
 		if hi.to != nil && bytes.Compare(k[:len(k)-8], hi.to) >= 0 {
 			break
@@ -1718,57 +1774,129 @@ func (hi *StateAsOfIter) advanceInDb() {
 			copy(seek[:len(k)-8], k[:len(k)-8])
 			continue
 		}
-		hi.nextDbKey = append(hi.nextDbKey[:0], k[:len(k)-8]...)
-		hi.nextDbVal = append(hi.nextDbVal[:0], v...)
-		return
+		hi.nextKey = k[:len(k)-8]
+		hi.nextVal = v
+		return nil
 	}
-	hi.hasNextInDb = false
+	hi.nextKey = nil
+	return nil
 }
 
-func (hi *StateAsOfIter) advance() {
-	if hi.hasNextInFiles {
-		if hi.hasNextInDb {
-			c := bytes.Compare(hi.nextFileKey, hi.nextDbKey)
-			if c < 0 {
-				hi.nextKey = append(hi.nextKey[:0], hi.nextFileKey...)
-				hi.nextVal = append(hi.nextVal[:0], hi.nextFileVal...)
-				hi.advanceInFiles()
-			} else if c > 0 {
-				hi.nextKey = append(hi.nextKey[:0], hi.nextDbKey...)
-				hi.nextVal = append(hi.nextVal[:0], hi.nextDbVal...)
-				hi.advanceInDb()
-			} else {
-				hi.nextKey = append(hi.nextKey[:0], hi.nextFileKey...)
-				hi.nextVal = append(hi.nextVal[:0], hi.nextFileVal...)
-				hi.advanceInDb()
-				hi.advanceInFiles()
-			}
-		} else {
-			hi.nextKey = append(hi.nextKey[:0], hi.nextFileKey...)
-			hi.nextVal = append(hi.nextVal[:0], hi.nextFileVal...)
-			hi.advanceInFiles()
-		}
-	} else if hi.hasNextInDb {
-		hi.nextKey = append(hi.nextKey[:0], hi.nextDbKey...)
-		hi.nextVal = append(hi.nextVal[:0], hi.nextDbVal...)
-		hi.advanceInDb()
-	} else {
-		hi.nextKey = nil
-		hi.nextVal = nil
+func (hi *StateAsOfIterDb) HasNext() bool {
+	if hi.err != nil {
+		return true
 	}
+	return hi.limit != 0 && hi.nextKey != nil
 }
 
-func (hi *StateAsOfIter) HasNext() bool {
-	return hi.limit != 0 && (hi.hasNextInFiles || hi.hasNextInDb || hi.nextKey != nil)
-}
-
-func (hi *StateAsOfIter) Next() ([]byte, []byte, error) {
+func (hi *StateAsOfIterDb) Next() ([]byte, []byte, error) {
+	if hi.err != nil {
+		return nil, nil, hi.err
+	}
 	hi.limit--
-	hi.k, hi.v = append(hi.k[:0], hi.nextKey...), append(hi.v[:0], hi.nextVal...)
+	hi.k, hi.v = hi.nextKey, hi.nextVal
 
 	// Satisfy iter.Dual Invariant 2
 	hi.k, hi.kBackup, hi.v, hi.vBackup = hi.kBackup, hi.k, hi.vBackup, hi.v
-	hi.advance()
+	if err := hi.advanceInDb(); err != nil {
+		return nil, nil, err
+	}
+	return hi.kBackup, hi.vBackup, nil
+}
+
+// StateAsOfIter - returns state range at given time in history
+type StateAsOfIterDbDup struct {
+	roTx          kv.Tx
+	txNum2kCursor kv.CursorDupSort
+	valsC         kv.CursorDupSort
+	hc            *HistoryContext
+	valsTable     string
+	idxKeysTable  string
+	indexTable    string
+
+	from, to []byte
+	limit    int
+
+	nextKey, nextVal []byte
+
+	startTxNum uint64
+	startTxKey [8]byte
+
+	k, v, kBackup, vBackup []byte
+	err                    error
+}
+
+func (hi *StateAsOfIterDbDup) Close() {
+	if hi.valsC != nil {
+		hi.valsC.Close()
+	}
+	if hi.txNum2kCursor != nil {
+		hi.txNum2kCursor.Close()
+	}
+}
+
+func (hi *StateAsOfIterDbDup) advanceInDb() error {
+	var seek []byte
+	var err error
+	if hi.txNum2kCursor == nil {
+		if hi.valsC, err = hi.roTx.CursorDupSort(hi.valsTable); err != nil {
+			return err
+		}
+		if hi.txNum2kCursor, err = hi.roTx.CursorDupSort(hi.idxKeysTable); err != nil {
+			return err
+		}
+		seek = hi.from
+	} else {
+		next, ok := kv.NextSubtree(hi.nextKey)
+		if !ok {
+			hi.nextKey = nil
+			return nil
+		}
+		seek = next
+	}
+	for k, _, err := hi.valsC.Seek(seek); k != nil; k, _, err = hi.valsC.NextNoDup() {
+		if err != nil {
+			return err
+		}
+		if hi.to != nil && bytes.Compare(k, hi.to) >= 0 {
+			break
+		}
+		{
+			v, err := hi.valsC.SeekBothRange(k, hi.startTxKey[:])
+			if err != nil {
+				return err
+			}
+			if v == nil {
+				continue
+			}
+			hi.nextKey = k
+			hi.nextVal = v[8:]
+			return nil
+		}
+	}
+	hi.nextKey = nil
+	return nil
+}
+
+func (hi *StateAsOfIterDbDup) HasNext() bool {
+	if hi.err != nil {
+		return true
+	}
+	return hi.limit != 0 && hi.nextKey != nil
+}
+
+func (hi *StateAsOfIterDbDup) Next() ([]byte, []byte, error) {
+	if hi.err != nil {
+		return nil, nil, hi.err
+	}
+	hi.limit--
+	hi.k, hi.v = hi.nextKey, hi.nextVal
+
+	// Satisfy iter.Dual Invariant 2
+	hi.k, hi.kBackup, hi.v, hi.vBackup = hi.kBackup, hi.k, hi.vBackup, hi.v
+	if err := hi.advanceInDb(); err != nil {
+		return nil, nil, err
+	}
 	return hi.kBackup, hi.vBackup, nil
 }
 
