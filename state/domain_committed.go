@@ -566,9 +566,9 @@ var keyCommitmentState = []byte("state")
 
 // SeekCommitment searches for last encoded state from DomainCommitted
 // and if state found, sets it up to current domain
-func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error) {
+func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (blockNum, txNum uint64, err error) {
 	if d.patriciaTrie.Variant() != commitment.VariantHexPatriciaTrie {
-		return 0, fmt.Errorf("state storing is only supported hex patricia trie")
+		return 0, 0, fmt.Errorf("state storing is only supported hex patricia trie")
 	}
 	// todo add support of bin state dumping
 
@@ -588,7 +588,7 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error
 
 		s, err := ctx.Get(keyCommitmentState, stepbuf[:], d.tx)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		if len(s) < 8 {
 			break
@@ -605,18 +605,18 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error
 
 	var latest commitmentState
 	if err := latest.Decode(latestState); err != nil {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	if hext, ok := d.patriciaTrie.(*commitment.HexPatriciaHashed); ok {
 		if err := hext.SetState(latest.trieState); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 	} else {
-		return 0, fmt.Errorf("state storing is only supported hex patricia trie")
+		return 0, 0, fmt.Errorf("state storing is only supported hex patricia trie")
 	}
 
-	return latest.txNum, nil
+	return latest.blockNum, latest.txNum, nil
 }
 
 type commitmentState struct {

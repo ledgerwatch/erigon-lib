@@ -1374,6 +1374,8 @@ func (d *Domain) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) err
 	return d.History.warmup(ctx, txFrom, limit, tx)
 }
 
+var COMPARE_INDEXES = false // if true, will compare values from Btree and INvertedIndex
+
 func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool) {
 	var val []byte
 	var found bool
@@ -1392,9 +1394,27 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 			continue
 		}
 
+
 		if bytes.Equal(cur.Key(), filekey) {
 			val = cur.Value()
 			found = true
+
+			if COMPARE_INDEXES {
+				rd := recsplit.NewIndexReader(dc.files[i].src.index)
+				oft := rd.Lookup(filekey)
+				gt := dc.statelessGetter(i)
+				gt.Reset(oft)
+				var k, v []byte
+				if gt.HasNext() {
+					k, _ = gt.Next(nil)
+					v, _ = gt.Next(nil)
+				}
+				fmt.Printf("key: %x, val: %x\n", k, v)
+				if !bytes.Equal(v, val) {
+					panic("not equal")
+				}
+
+			}
 			break
 		}
 	}

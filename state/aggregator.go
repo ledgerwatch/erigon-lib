@@ -281,6 +281,8 @@ func (a *Aggregator) SetTxNum(txNum uint64) {
 	a.tracesTo.SetTxNum(txNum)
 }
 
+func (a *Aggregator) SetBlockNum(blockNum uint64) { a.blockNum = blockNum }
+
 func (a *Aggregator) SetWorkers(i int) {
 	a.accounts.compressWorkers = i
 	a.storage.compressWorkers = i
@@ -322,17 +324,17 @@ func (a *Aggregator) EndTxNumMinimax() uint64 {
 	return min
 }
 
-func (a *Aggregator) SeekCommitment() (txNum uint64, err error) {
+func (a *Aggregator) SeekCommitment() (blockNum, txNum uint64, err error) {
 	filesTxNum := a.EndTxNumMinimax()
-	txNum, err = a.commitment.SeekCommitment(a.aggregationStep, filesTxNum)
+	blockNum, txNum, err = a.commitment.SeekCommitment(a.aggregationStep, filesTxNum)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if txNum == 0 {
 		return
 	}
 	a.seekTxNum = txNum + 1
-	return txNum + 1, nil
+	return blockNum, txNum + 1, nil
 }
 
 func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
