@@ -1197,17 +1197,17 @@ func (a *AggregatorV3) BatchHistoryWriteEnd() {
 	a.walLock.RUnlock()
 }
 
-func (a *AggregatorV3) AddAccountPrev(addr []byte, prev []byte) error {
-	return a.accounts.AddPrevValue(addr, nil, prev)
+func (a *AggregatorV3) AddAccountPrev(addr, prev, txNumBytes []byte) error {
+	return a.accounts.AddPrevValue(addr, nil, prev, txNumBytes)
 }
 
-func (a *AggregatorV3) AddStoragePrev(addr []byte, loc []byte, prev []byte) error {
-	return a.storage.AddPrevValue(addr, loc, prev)
+func (a *AggregatorV3) AddStoragePrev(addr, loc, prev, txNumBytes []byte) error {
+	return a.storage.AddPrevValue(addr, loc, prev, txNumBytes)
 }
 
 // AddCodePrev - addr+inc => code
-func (a *AggregatorV3) AddCodePrev(addr []byte, prev []byte) error {
-	return a.code.AddPrevValue(addr, nil, prev)
+func (a *AggregatorV3) AddCodePrev(addr, prev, txNumBytes []byte) error {
+	return a.code.AddPrevValue(addr, nil, prev, txNumBytes)
 }
 
 func (a *AggregatorV3) AddTraceFrom(addr, txNumBytes []byte) error {

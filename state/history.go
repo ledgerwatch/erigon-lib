@@ -471,11 +471,11 @@ func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath
 	return nil
 }
 
-func (h *History) AddPrevValue(key1, key2, original []byte) (err error) {
+func (h *History) AddPrevValue(key1, key2, original, txNumBytes []byte) (err error) {
 	if original == nil {
 		original = []byte{}
 	}
-	return h.wal.addPrevValue(key1, key2, original)
+	return h.wal.addPrevValue(key1, key2, original, txNumBytes)
 }
 
 func (h *History) DiscardHistory() {
@@ -561,7 +561,7 @@ func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	return nil
 }
 
-func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
+func (h *historyWAL) addPrevValue(key1, key2, original, txNumBytes []byte) error {
 	if h.discard {
 		return nil
 	}
@@ -601,13 +601,13 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		if len(key2) > 0 {
 			copy(historyKey[len(key1):], key2)
 		}
-		copy(historyKey[lk:], h.h.InvertedIndex.txNumBytes[:])
+		copy(historyKey[lk:], txNumBytes)
 
 		if !h.buffered {
 			if err := h.h.tx.Put(h.h.historyValsTable, historyKey, original); err != nil {
 				return err
 			}
-			if err := ii.tx.Put(ii.indexKeysTable, ii.txNumBytes[:], historyKey[:lk]); err != nil {
+			if err := ii.tx.Put(ii.indexKeysTable, txNumBytes, historyKey[:lk]); err != nil {
 				return err
 			}
 			return nil
@@ -615,7 +615,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		if err := h.historyVals.Collect(historyKey, original); err != nil {
 			return err
 		}
-		if err := ii.wal.indexKeys.Collect(ii.txNumBytes[:], historyKey[:lk]); err != nil {
+		if err := ii.wal.indexKeys.Collect(txNumBytes, historyKey[:lk]); err != nil {
 			return err
 		}
 		return nil
