@@ -625,7 +625,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original, txNumBytes []byte) error
 	historyKey := h.historyKey[:lk+8+len(original)]
 	copy(historyKey, key1)
 	copy(historyKey[len(key1):], key2)
-	copy(historyKey[lk:], h.h.InvertedIndex.txNumBytes[:])
+	copy(historyKey[lk:], txNumBytes)
 	copy(historyKey[lk+8:], original)
 	historyKey1 := historyKey[:lk]
 	historyVal := historyKey[lk:]
