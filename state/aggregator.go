@@ -44,7 +44,8 @@ import (
 const StepsInBiggestFile = 32
 
 var (
-	mxTxProcessed              = metrics.GetOrCreateCounter("domain_tx_processed")
+	mxCurrentTx                = metrics.GetOrCreateCounter("domain_tx_processed")
+	mxCurrentBlock             = metrics.GetOrCreateCounter("domain_block_current")
 	mxRunningMerges            = metrics.GetOrCreateCounter("domain_running_merges")
 	mxRunningCollations        = metrics.GetOrCreateCounter("domain_running_collations")
 	mxCollateTook              = metrics.GetOrCreateHistogram("domain_collate_took")
@@ -271,6 +272,8 @@ func (a *Aggregator) SetTx(tx kv.RwTx) {
 }
 
 func (a *Aggregator) SetTxNum(txNum uint64) {
+	mxCurrentTx.Set(txNum)
+
 	a.txNum = txNum
 	a.accounts.SetTxNum(txNum)
 	a.storage.SetTxNum(txNum)
@@ -282,7 +285,10 @@ func (a *Aggregator) SetTxNum(txNum uint64) {
 	a.tracesTo.SetTxNum(txNum)
 }
 
-func (a *Aggregator) SetBlockNum(blockNum uint64) { a.blockNum = blockNum }
+func (a *Aggregator) SetBlockNum(blockNum uint64) {
+	a.blockNum = blockNum
+	mxCurrentBlock.Set(blockNum)
+}
 
 func (a *Aggregator) SetWorkers(i int) {
 	a.accounts.compressWorkers = i
@@ -872,7 +878,6 @@ func (a *Aggregator) ReadyToFinishTx() bool {
 
 func (a *Aggregator) FinishTx() (err error) {
 	atomic.AddUint64(&a.stats.TxCount, 1)
-	mxTxProcessed.Inc()
 
 	if !a.ReadyToFinishTx() {
 		return nil
