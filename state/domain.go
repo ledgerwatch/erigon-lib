@@ -482,7 +482,7 @@ func (d *Domain) Put(key1, key2, val []byte) error {
 		return nil
 	}
 	// This call to update needs to happen before d.tx.Put() later, because otherwise the content of `original`` slice is invalidated
-	if err = d.History.AddPrevValue(key1, key2, original); err != nil {
+	if err = d.History.AddPrevValue(key1, key2, original, d.History.txNumBytes[:]); err != nil {
 		return err
 	}
 	if err = d.update(key, original); err != nil {
@@ -510,7 +510,7 @@ func (d *Domain) Delete(key1, key2 []byte) error {
 		return nil
 	}
 	// This call to update needs to happen before d.tx.Delete() later, because otherwise the content of `original`` slice is invalidated
-	if err = d.History.AddPrevValue(key1, key2, original); err != nil {
+	if err = d.History.AddPrevValue(key1, key2, original, d.History.txNumBytes[:]); err != nil {
 		return err
 	}
 	if err = d.update(key, original); err != nil {
