@@ -477,8 +477,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 			},
 		}
 		for id, sender := range senders {
-			var addr [20]byte
-			addr = pool.senders.senderID2Addr[id]
+			addr := pool.senders.senderID2Addr[id]
 			v := make([]byte, types.EncodeSenderLengthForStorage(sender.nonce, sender.balance))
 			types.EncodeSender(sender.nonce, sender.balance, v)
 			change.ChangeBatch[0].Changes = append(change.ChangeBatch[0].Changes, &remote.AccountChange{

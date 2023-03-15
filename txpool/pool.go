@@ -704,7 +704,7 @@ func (p *TxPool) YieldBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, avail
 }
 
 func (p *TxPool) PeekBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error) {
-	set := mapset.NewSet[[32]byte]()
+	set := mapset.NewThreadUnsafeSet[[32]byte]()
 	onTime, _, err := p.best(n, txs, tx, onTopOf, availableGas, set)
 	return onTime, err
 }
@@ -1630,7 +1630,7 @@ func (p *TxPool) flushLocked(tx kv.RwTx) (err error) {
 
 		addr, ok := p.senders.senderID2Addr[metaTx.Tx.SenderID]
 		if !ok {
-			log.Warn("sender address not found by ID", metaTx.Tx.SenderID)
+			log.Warn("[txpool] flush: sender address not found by ID", metaTx.Tx.SenderID)
 			continue
 		}
 
