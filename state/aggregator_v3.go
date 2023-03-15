@@ -7,7 +7,7 @@
 
        http://www.apache.org/licenses/LICENSE-2.0
 
-   Unless required by applicable law or agreed to in writing, software
+   Unless required by appicable law or agreed to in writing, software
    distributed under the License is distributed on an "AS IS" BASIS,
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
@@ -1210,20 +1210,20 @@ func (a *AggregatorV3) AddCodePrev(addr []byte, prev []byte) error {
 	return a.code.AddPrevValue(addr, nil, prev)
 }
 
-func (a *AggregatorV3) AddTraceFrom(addr []byte) error {
-	return a.tracesFrom.Add(addr)
+func (a *AggregatorV3) AddTraceFrom(addr, txNumBytes []byte) error {
+	return a.tracesFrom.Add(addr, txNumBytes)
 }
 
-func (a *AggregatorV3) AddTraceTo(addr []byte) error {
-	return a.tracesTo.Add(addr)
+func (a *AggregatorV3) AddTraceTo(addr, txNumBytes []byte) error {
+	return a.tracesTo.Add(addr, txNumBytes)
 }
 
-func (a *AggregatorV3) AddLogAddr(addr []byte) error {
-	return a.logAddrs.Add(addr)
+func (a *AggregatorV3) AddLogAddr(addr, txNumBytes []byte) error {
+	return a.logAddrs.Add(addr, txNumBytes)
 }
 
-func (a *AggregatorV3) AddLogTopic(topic []byte) error {
-	return a.logTopics.Add(topic)
+func (a *AggregatorV3) AddLogTopic(topic, txNumBytes []byte) error {
+	return a.logTopics.Add(topic, txNumBytes)
 }
 
 // DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.

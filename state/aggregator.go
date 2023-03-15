@@ -918,19 +918,19 @@ func (a *Aggregator) WriteAccountStorage(addr, loc []byte, value []byte) error {
 }
 
 func (a *Aggregator) AddTraceFrom(addr []byte) error {
-	return a.tracesFrom.Add(addr)
+	return a.tracesFrom.Add(addr, a.tracesFrom.txNumBytes[:])
 }
 
 func (a *Aggregator) AddTraceTo(addr []byte) error {
-	return a.tracesTo.Add(addr)
+	return a.tracesTo.Add(addr, a.tracesFrom.txNumBytes[:])
 }
 
 func (a *Aggregator) AddLogAddr(addr []byte) error {
-	return a.logAddrs.Add(addr)
+	return a.logAddrs.Add(addr, a.tracesFrom.txNumBytes[:])
 }
 
 func (a *Aggregator) AddLogTopic(topic []byte) error {
-	return a.logTopics.Add(topic)
+	return a.logTopics.Add(topic, a.tracesFrom.txNumBytes[:])
 }
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`

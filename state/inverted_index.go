@@ -388,11 +388,11 @@ func (ii *InvertedIndex) SetTxNum(txNum uint64) {
 }
 
 // Add - !NotThreadSafe. Must use WalRLock/BatchHistoryWriteEnd
-func (ii *InvertedIndex) Add(key []byte) error {
-	return ii.wal.add(key, key)
+func (ii *InvertedIndex) Add(key, txNumBytes []byte) error {
+	return ii.wal.add(key, key, txNumBytes)
 }
-func (ii *InvertedIndex) add(key, indexKey []byte) error { //nolint
-	return ii.wal.add(key, indexKey)
+func (ii *InvertedIndex) add(key, indexKey, txNumBytes []byte) error { //nolint
+	return ii.wal.add(key, indexKey, txNumBytes)
 }
 
 func (ii *InvertedIndex) DiscardHistory(tmpdir string) {
@@ -485,24 +485,24 @@ func (ii *InvertedIndex) newWriter(tmpdir string, buffered, discard bool) *inver
 	return w
 }
 
-func (ii *invertedIndexWAL) add(key, indexKey []byte) error {
+func (ii *invertedIndexWAL) add(key, indexKey, txNumBytes []byte) error {
 	if ii.discard {
 		return nil
 	}
 
 	if ii.buffered {
-		if err := ii.indexKeys.Collect(ii.ii.txNumBytes[:], key); err != nil {
+		if err := ii.indexKeys.Collect(txNumBytes, key); err != nil {
 			return err
 		}
 
-		if err := ii.index.Collect(indexKey, ii.ii.txNumBytes[:]); err != nil {
+		if err := ii.index.Collect(indexKey, txNumBytes); err != nil {
 			return err
 		}
 	} else {
-		if err := ii.ii.tx.Put(ii.ii.indexKeysTable, ii.ii.txNumBytes[:], key); err != nil {
+		if err := ii.ii.tx.Put(ii.ii.indexKeysTable, txNumBytes, key); err != nil {
 			return err
 		}
-		if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, ii.ii.txNumBytes[:]); err != nil {
+		if err := ii.ii.tx.Put(ii.ii.indexTable, indexKey, txNumBytes); err != nil {
 			return err
 		}
 	}
