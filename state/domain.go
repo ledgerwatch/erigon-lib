@@ -114,6 +114,7 @@ type DomainStats struct {
 	MergesCount          uint64
 	LastCollationTook    time.Duration
 	LastPruneTook        time.Duration
+	LastPruneHistTook    time.Duration
 	LastFileBuildingTook time.Duration
 	LastCollationSize    uint64
 	LastPruneSize        uint64
@@ -1252,10 +1253,9 @@ func (d *Domain) integrateFiles(sf StaticFiles, txNumFrom, txNumTo uint64) {
 
 // [txFrom; txTo)
 func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
-	start := time.Now()
-	defer func() {
-		d.stats.LastPruneTook = time.Since(start)
-	}()
+	defer func(t time.Time) {
+		d.stats.LastPruneTook = time.Since(t)
+	}(time.Now())
 
 	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
 	if err != nil {
@@ -1293,7 +1293,9 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
+
 	var i uint64
+	d.stats.LastPruneSize = 0
 	for k, s := range keyMaxSteps {
 		i++
 		if s <= step {
@@ -1321,6 +1323,8 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 	if err != nil {
 		return fmt.Errorf("iterate over %s vals: %w", d.filenameBase, err)
 	}
+
+	defer func(t time.Time) { d.stats.LastPruneHistTook = time.Since(t) }(time.Now())
 
 	if err = d.History.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return fmt.Errorf("prune history at step %d [%d, %d): %w", step, txFrom, txTo, err)
@@ -1393,7 +1397,6 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 			log.Warn("failed to read from file", "file", reader.FileName(), "err", err)
 			continue
 		}
-
 
 		if bytes.Equal(cur.Key(), filekey) {
 			val = cur.Value()

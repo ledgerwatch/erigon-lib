@@ -49,6 +49,7 @@ var (
 	mxRunningCollations        = metrics.GetOrCreateCounter("domain_running_collations")
 	mxCollateTook              = metrics.GetOrCreateHistogram("domain_collate_took")
 	mxPruneTook                = metrics.GetOrCreateHistogram("domain_prune_took")
+	mxPruneHistTook            = metrics.GetOrCreateHistogram("domain_prune_took")
 	mxPruningProgress          = metrics.GetOrCreateCounter("domain_pruning_progress")
 	mxCollationSize            = metrics.GetOrCreateCounter("domain_collation_size")
 	mxCollationSizeHist        = metrics.GetOrCreateCounter("domain_collation_hist_size")
@@ -324,6 +325,20 @@ func (a *Aggregator) EndTxNumMinimax() uint64 {
 	return min
 }
 
+func (a *Aggregator) DomainEndTxNumMinimax() uint64 {
+	min := a.accounts.endTxNumMinimax()
+	if txNum := a.storage.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	if txNum := a.code.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	if txNum := a.commitment.endTxNumMinimax(); txNum < min {
+		min = txNum
+	}
+	return min
+}
+
 func (a *Aggregator) SeekCommitment() (blockNum, txNum uint64, err error) {
 	filesTxNum := a.EndTxNumMinimax()
 	blockNum, txNum, err = a.commitment.SeekCommitment(a.aggregationStep, filesTxNum)
@@ -335,6 +350,36 @@ func (a *Aggregator) SeekCommitment() (blockNum, txNum uint64, err error) {
 	}
 	a.seekTxNum = txNum + 1
 	return blockNum, txNum + 1, nil
+}
+
+func (a *Aggregator) mergeDomainSteps(ctx context.Context) error {
+	mergeStartedAt := time.Now()
+	maxEndTxNum := a.DomainEndTxNumMinimax()
+
+	var upmerges int
+	for {
+		a.defaultCtx.Close()
+		a.defaultCtx = a.MakeContext()
+
+		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
+		if err != nil {
+			return err
+		}
+
+		if !somethingMerged {
+			break
+		}
+		upmerges++
+	}
+
+	if upmerges > 1 {
+		log.Info("[stat] aggregation merged",
+			"upto_tx", maxEndTxNum,
+			"merge_took", time.Since(mergeStartedAt),
+			"merges_count", upmerges)
+	}
+
+	return nil
 }
 
 func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
@@ -391,21 +436,27 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 			d.stats.LastFileBuildingTook = time.Since(start)
 		}(&wg, d, collation)
 
-		//if i != 3 { // do not warmup commitment domain
-		//	if err := d.warmup(ctx, txFrom, d.aggregationStep/10, d.tx); err != nil {
-		//		return fmt.Errorf("warmup %q domain failed: %w", d.filenameBase, err)
-		//	}
-		//}
-		mxPruningProgress.Inc()
-		//start = time.Now()
+		mxPruningProgress.Add(2) // domain and history
 		if err := d.prune(ctx, step, txFrom, txTo, math.MaxUint64, logEvery); err != nil {
 			return err
 		}
-		//mxPruneTook.UpdateDuration(start)
 		mxPruningProgress.Dec()
+		mxPruningProgress.Dec()
+
 		mxPruneTook.Update(d.stats.LastPruneTook.Seconds())
+		mxPruneHistTook.Update(d.stats.LastPruneHistTook.Seconds())
 		mxPruneSize.Set(d.stats.LastPruneSize)
 	}
+
+	// when domain files are build and db is pruned, we can merge them
+	go func(wg *sync.WaitGroup) {
+		wg.Add(1)
+		defer wg.Done()
+
+		if err := a.mergeDomainSteps(ctx); err != nil {
+			errCh <- err
+		}
+	}(&wg)
 
 	// indices are built concurrently
 	for _, d := range []*InvertedIndex{a.logTopics, a.logAddrs, a.tracesFrom, a.tracesTo} {
@@ -473,38 +524,12 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	stepTook := time.Since(stepStartedAt)
 	log.Info("[stat] aggregation is finished , ready for mergeUpTo",
 		"range", fmt.Sprintf("%.2fM-%.2fM", float64(txFrom)/10e5, float64(txTo)/10e5),
-		"step_took", stepTook)
-
-	mergeStartedAt := time.Now()
-	maxEndTxNum := a.EndTxNumMinimax()
-
-	var upmerges int
-	for {
-		a.defaultCtx.Close()
-		a.defaultCtx = a.MakeContext()
-
-		somethingMerged, err := a.mergeLoopStep(ctx, maxEndTxNum, 1)
-		if err != nil {
-			return err
-		}
-
-		if !somethingMerged {
-			break
-		}
-		upmerges++
-	}
+		"took", time.Since(stepStartedAt))
 
 	mxStepTook.UpdateDuration(stepStartedAt)
 
-	log.Info("[stat] aggregation merged",
-		"upto_tx", maxEndTxNum,
-		"aggregation_took", time.Since(stepStartedAt),
-		"step_took", stepTook,
-		"merge_took", time.Since(mergeStartedAt),
-		"merges_count", upmerges)
 	return nil
 }
 
