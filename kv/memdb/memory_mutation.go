@@ -16,6 +16,7 @@ package memdb
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
@@ -34,6 +35,7 @@ type MemoryMutation struct {
 	db                    kv.Tx
 	statelessCursors      map[string]kv.RwCursor
 	tableConfigs          kv.TableCfg
+	trace                 bool
 }
 
 // NewMemoryBatch - starts in-mem batch
@@ -64,6 +66,10 @@ func NewMemoryBatch(tx kv.Tx, tmpDir string) *MemoryMutation {
 		clearedTables:         map[string]struct{}{},
 		tableConfigs:          cfgs,
 	}
+}
+
+func (m *MemoryMutation) SetTrace(trace bool) {
+	m.trace = trace
 }
 
 func (m *MemoryMutation) UpdateTxn(tx kv.Tx) {
@@ -135,9 +141,9 @@ func (m *MemoryMutation) ForAmount(bucket string, prefix []byte, amount uint32, 
 	var c kv.Cursor
 	var err error
 	if ok && (cfg.Flags&kv.DupSort != 0) {
-		c, err = m.RwCursorDupSort(bucket)
+		c, err = m.CursorDupSort(bucket)
 	} else {
-		c, err = m.RwCursor(bucket)
+		c, err = m.Cursor(bucket)
 	}
 	if err != nil {
 		return err
@@ -205,19 +211,28 @@ func (m *MemoryMutation) Has(table string, key []byte) (bool, error) {
 }
 
 func (m *MemoryMutation) Put(table string, k, v []byte) error {
+	if m.trace {
+		fmt.Printf("m [%s] Put(%x;%x)\n", table, k, v)
+	}
 	return m.memTx.Put(table, k, v)
 }
 
-func (m *MemoryMutation) Append(table string, key []byte, value []byte) error {
-	return m.memTx.Append(table, key, value)
+func (m *MemoryMutation) Append(table string, k []byte, v []byte) error {
+	if m.trace {
+		fmt.Printf("m [%s] Append(%x;%x)\n", table, k, v)
+	}
+	return m.memTx.Append(table, k, v)
 }
 
-func (m *MemoryMutation) AppendDup(table string, key []byte, value []byte) error {
+func (m *MemoryMutation) AppendDup(table string, k []byte, v []byte) error {
+	if m.trace {
+		fmt.Printf("m [%s] AppendDup(%x;%x)\n", table, k, v)
+	}
 	c, err := m.statelessCursor(table)
 	if err != nil {
 		return err
 	}
-	return c.(*memoryMutationCursorDupSort).AppendDup(key, value)
+	return c.(*memoryMutationCursorDupSort).AppendDup(k, v)
 }
 
 func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k, v []byte) error) error {
@@ -225,9 +240,9 @@ func (m *MemoryMutation) ForEach(bucket string, fromPrefix []byte, walker func(k
 	cfg, ok := m.tableConfigs[bucket]
 	var err error
 	if ok && (cfg.Flags&kv.DupSort != 0) {
-		c, err = m.RwCursorDupSort(bucket)
+		c, err = m.CursorDupSort(bucket)
 	} else {
-		c, err = m.RwCursor(bucket)
+		c, err = m.Cursor(bucket)
 	}
 	if err != nil {
 		return err
@@ -296,6 +311,9 @@ func (m *MemoryMutation) ForPrefix(bucket string, prefix []byte, walker func(k, 
 }
 
 func (m *MemoryMutation) Delete(table string, k []byte) error {
+	if m.trace {
+		fmt.Printf("m [%s] Delete(%x)\n", table, k)
+	}
 	if _, ok := m.deletedEntries[table]; !ok {
 		m.deletedEntries[table] = map[string]struct{}{}
 	}
@@ -477,14 +495,14 @@ func (m *MemoryMutation) makeCursor(bucket string) (kv.RwCursor, error) {
 	}
 	cfg, ok := m.tableConfigs[bucket]
 	if ok && cfg.AutoDupSortKeysConversion {
-		return &memoryMutationCursorAuto{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc, trace: false}, nil
+		return &memoryMutationCursorAuto{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc, trace: m.trace}, nil
 	} else {
-		return &memoryMutationCursor{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc, trace: false}, nil
+		return &memoryMutationCursor{table: bucket, mutation: m, bucketCfg: cfg, cursor: c, memCursor: mc, trace: m.trace}, nil
 	}
 }
 
 func (m *MemoryMutation) makeCursorDupSort(bucket string) (kv.RwCursorDupSort, error) {
-	c := &memoryMutationCursorDupSort{bucketCfg: m.tableConfigs[bucket], trace: false}
+	c := &memoryMutationCursorDupSort{bucketCfg: m.tableConfigs[bucket], trace: m.trace}
 	// We can filter duplicates in dup sorted table
 	c.table = bucket
 
