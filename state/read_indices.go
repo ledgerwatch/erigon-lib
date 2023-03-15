@@ -356,7 +356,7 @@ func (ri *ReadIndices) integrateMergedFiles(outs RSelectedStaticFiles, in RMerge
 }
 
 func (ri *ReadIndices) ReadAccountData(addr []byte) error {
-	return ri.accounts.Add(addr)
+	return ri.accounts.Add(addr, ri.accounts.txNumBytes[:])
 }
 
 func (ri *ReadIndices) ReadAccountStorage(addr []byte, loc []byte) error {
@@ -367,15 +367,15 @@ func (ri *ReadIndices) ReadAccountStorage(addr []byte, loc []byte) error {
 	}
 	copy(ri.keyBuf, addr)
 	copy(ri.keyBuf[len(addr):], loc)
-	return ri.storage.Add(ri.keyBuf)
+	return ri.storage.Add(ri.keyBuf, ri.storage.txNumBytes[:])
 }
 
 func (ri *ReadIndices) ReadAccountCode(addr []byte) error {
-	return ri.code.Add(addr)
+	return ri.code.Add(addr, ri.code.txNumBytes[:])
 }
 
 func (ri *ReadIndices) ReadAccountCodeSize(addr []byte) error {
-	return ri.code.Add(addr)
+	return ri.code.Add(addr, ri.code.txNumBytes[:])
 }
 
 func (ri *ReadIndices) FinishTx() error {
