@@ -59,7 +59,9 @@ var (
 	mxStepCurrent              = metrics.GetOrCreateCounter("domain_step_current")
 	mxStepTook                 = metrics.GetOrCreateHistogram("domain_step_took")
 	mxCommitmentKeys           = metrics.GetOrCreateCounter("domain_commitment_keys")
+	mxCommitmentRunning        = metrics.GetOrCreateCounter("domain_running_commitment")
 	mxCommitmentTook           = metrics.GetOrCreateSummary("domain_commitment_took")
+	mxCommitmentWriteTook      = metrics.GetOrCreateHistogram("domain_commitment_write_took")
 	mxCommitmentUpdates        = metrics.GetOrCreateCounter("domain_commitment_updates")
 	mxCommitmentUpdatesApplied = metrics.GetOrCreateCounter("domain_commitment_updates_applied")
 )
@@ -811,7 +813,10 @@ func (a *Aggregator) cleanAfterFreeze(in MergedFiles) {
 // If `saveStateAfter`=true, then trie state will be saved to DB after commitment evaluation.
 func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []byte, err error) {
 	// if commitment mode is Disabled, there will be nothing to compute on.
+	mxCommitmentRunning.Inc()
 	rootHash, branchNodeUpdates, err := a.commitment.ComputeCommitment(trace)
+	mxCommitmentRunning.Dec()
+
 	if err != nil {
 		return nil, err
 	}
@@ -822,6 +827,9 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 	mxCommitmentKeys.Set(a.commitment.comKeys)
 	mxCommitmentTook.Update(a.commitment.comTook.Seconds())
 	mxCommitmentUpdates.Set(uint64(len(branchNodeUpdates)))
+
+	writeStart := time.Now()
+	defer mxCommitmentWriteTook.UpdateDuration(writeStart)
 
 	var applied uint64
 	for pref, update := range branchNodeUpdates {
