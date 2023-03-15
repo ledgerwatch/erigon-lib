@@ -1046,6 +1046,7 @@ func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFiles
 		}
 	}()
 	if r.accounts.any() {
+		log.Info(fmt.Sprintf("[snapshots] merge: %d-%d", r.accounts.historyStartTxNum/a.aggregationStep, r.accounts.historyEndTxNum/a.aggregationStep))
 		g.Go(func() error {
 			var err error
 			mf.accountsIdx, mf.accountsHist, err = a.accounts.mergeFiles(ctx, files.accountsIdx, files.accountsHist, r.accounts, workers)
