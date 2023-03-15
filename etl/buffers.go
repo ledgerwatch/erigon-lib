@@ -460,9 +460,12 @@ func (b *dupSortBuffer) Write(w io.Writer) error {
 	var numBuf [binary.MaxVarintLen64]byte
 	for i, offset := range b.offsets {
 		l := b.lens[i]
-		n := binary.PutUvarint(numBuf[:], uint64(l))
+		n := binary.PutVarint(numBuf[:], int64(l))
 		if _, err := w.Write(numBuf[:n]); err != nil {
 			return err
+		}
+		if l <= 0 {
+			continue
 		}
 		if _, err := w.Write(b.data[offset : offset+l]); err != nil {
 			return err
