@@ -840,6 +840,7 @@ func (d *Domain) collator(valuesComp *compress.Compressor, pairs chan kvpair) (c
 	return count, nil
 }
 
+//nolint
 func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64, tx kv.Tx, logEvery *time.Ticker, collated chan struct{}) (err error) {
 	mxRunningCollations.Inc()
 	start := time.Now()

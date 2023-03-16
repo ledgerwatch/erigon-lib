@@ -457,8 +457,8 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 	}
 
 	// when domain files are build and db is pruned, we can merge them
+	wg.Add(1)
 	go func(wg *sync.WaitGroup) {
-		wg.Add(1)
 		defer wg.Done()
 
 		if err := a.mergeDomainSteps(ctx); err != nil {
