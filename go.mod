@@ -23,7 +23,7 @@ require (
 	github.com/go-stack/stack v1.8.1
 	github.com/google/btree v1.1.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
-	github.com/hashicorp/golang-lru/v2 v2.0.1
+	github.com/hashicorp/golang-lru/v2 v2.0.2
 	github.com/holiman/uint256 v1.2.1
 	github.com/matryer/moq v0.3.1
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
@@ -33,13 +33,13 @@ require (
 	github.com/tidwall/btree v1.6.0
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.7.0
-	golang.org/x/exp v0.0.0-20230307190834-24139beb5833
+	golang.org/x/exp v0.0.0-20230314191032-db074128a8ec
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.6.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.53.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.3.0
-	google.golang.org/protobuf v1.29.0
+	google.golang.org/protobuf v1.29.1
 )
 
 require (
