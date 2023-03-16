@@ -840,6 +840,44 @@ func (d *Domain) collator(valuesComp *compress.Compressor, pairs chan kvpair) (c
 	return count, nil
 }
 
+func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64, tx kv.Tx, logEvery *time.Ticker, collated chan struct{}) (err error) {
+	mxRunningCollations.Inc()
+	start := time.Now()
+	collation, err := d.collateStream(ctx, step, txFrom, txTo, tx, logEvery)
+	mxRunningCollations.Dec()
+	mxCollateTook.UpdateDuration(start)
+
+	close(collated)
+
+	mxCollationSize.Set(uint64(collation.valuesComp.Count()))
+	mxCollationSizeHist.Set(uint64(collation.historyComp.Count()))
+
+	if err != nil {
+		collation.Close()
+		//return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)
+		return err
+	}
+
+	mxRunningMerges.Inc()
+
+	start = time.Now()
+	sf, err := d.buildFiles(ctx, step, collation)
+	collation.Close()
+	defer sf.Close()
+
+	if err != nil {
+		sf.Close()
+		mxRunningMerges.Dec()
+		return
+	}
+
+	mxRunningMerges.Dec()
+
+	d.integrateFiles(sf, step*d.aggregationStep, (step+1)*d.aggregationStep)
+	d.stats.LastFileBuildingTook = time.Since(start)
+	return nil
+}
+
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
