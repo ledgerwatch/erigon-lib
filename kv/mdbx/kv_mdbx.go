@@ -1630,6 +1630,18 @@ func (c *MdbxDupSortCursor) CountDuplicates() (uint64, error) {
 	return res, nil
 }
 
+// Current - return key/data at current cursor position
+func (c *MdbxDupSortCursor) Current() ([]byte, []byte, error) {
+	k, v, err := c.getCurrent()
+	if err != nil {
+		if mdbx.IsNotFound(err) {
+			return nil, nil, nil
+		}
+		return []byte{}, nil, err
+	}
+	return k, v, nil
+}
+
 func bucketSlice(b kv.TableCfg) []string {
 	buckets := make([]string, 0, len(b))
 	for name := range b {
