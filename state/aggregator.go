@@ -50,7 +50,7 @@ var (
 	mxRunningCollations        = metrics.GetOrCreateCounter("domain_running_collations")
 	mxCollateTook              = metrics.GetOrCreateHistogram("domain_collate_took")
 	mxPruneTook                = metrics.GetOrCreateHistogram("domain_prune_took")
-	mxPruneHistTook            = metrics.GetOrCreateHistogram("domain_prune_took")
+	mxPruneHistTook            = metrics.GetOrCreateHistogram("domain_prune_hist_took")
 	mxPruningProgress          = metrics.GetOrCreateCounter("domain_pruning_progress")
 	mxCollationSize            = metrics.GetOrCreateCounter("domain_collation_size")
 	mxCollationSizeHist        = metrics.GetOrCreateCounter("domain_collation_hist_size")
@@ -532,7 +532,7 @@ func (a *Aggregator) aggregate(ctx context.Context, step uint64) error {
 		return fmt.Errorf("domain collate-build failed: %w", err)
 	}
 
-	log.Info("[stat] aggregation is finished , ready for mergeUpTo",
+	log.Info("[stat] aggregation is finished",
 		"range", fmt.Sprintf("%.2fM-%.2fM", float64(txFrom)/10e5, float64(txTo)/10e5),
 		"took", time.Since(stepStartedAt))
 
@@ -763,12 +763,12 @@ func (a *Aggregator) mergeFiles(ctx context.Context, files SelectedStaticFiles, 
 		}
 	}(&predicates)
 
-	go func(preidcates *sync.WaitGroup) {
-		mxRunningMerges.Inc()
-		defer mxRunningMerges.Dec()
-
+	go func(predicates *sync.WaitGroup) {
 		defer wg.Done()
 		predicates.Wait()
+
+		mxRunningMerges.Inc()
+		defer mxRunningMerges.Dec()
 
 		var err error
 		// requires storage|accounts to be merged at this point
@@ -777,7 +777,6 @@ func (a *Aggregator) mergeFiles(ctx context.Context, files SelectedStaticFiles, 
 				errCh <- err
 			}
 		}
-
 	}(&predicates)
 
 	go func() {
@@ -828,8 +827,7 @@ func (a *Aggregator) ComputeCommitment(saveStateAfter, trace bool) (rootHash []b
 	mxCommitmentTook.Update(a.commitment.comTook.Seconds())
 	mxCommitmentUpdates.Set(uint64(len(branchNodeUpdates)))
 
-	writeStart := time.Now()
-	defer mxCommitmentWriteTook.UpdateDuration(writeStart)
+	defer func(t time.Time) { mxCommitmentWriteTook.UpdateDuration(t) }(time.Now())
 
 	var applied uint64
 	for pref, update := range branchNodeUpdates {
@@ -907,11 +905,12 @@ func (a *Aggregator) FinishTx() (err error) {
 		return nil
 	}
 	step-- // Leave one step worth in the DB
-	if err := a.Flush(context.TODO()); err != nil {
+
+	ctx := context.Background()
+	if err := a.Flush(ctx); err != nil {
 		return err
 	}
 
-	ctx := context.Background()
 	if err := a.aggregate(ctx, step); err != nil {
 		return err
 	}
