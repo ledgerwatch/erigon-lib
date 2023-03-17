@@ -94,8 +94,10 @@ func (b adapterHandler) Handle(r lg.Record) {
 		if strings.Contains(str, "reservation cancelled") { // suppress useless errors
 			break
 		}
+		if strings.Contains(str, "received invalid reject") { // suppress useless errors
+			break
+		}
 
-		fmt.Printf("warn: %T, %+v\n", r, r)
 		log.Warn(str)
 	case lg.Error:
 		str := r.String()
