@@ -69,16 +69,16 @@ type Config struct {
 	PragueTime       *big.Int `json:"pragueTime,omitempty"`
 
 	// Parlia fork blocks
-	RamanujanBlock  *big.Int `json:"ramanujanBlock,omitempty" toml:",omitempty"`
-	NielsBlock      *big.Int `json:"nielsBlock,omitempty" toml:",omitempty"`
-	MirrorSyncBlock *big.Int `json:"mirrorSyncBlock,omitempty" toml:",omitempty"`
-	BrunoBlock      *big.Int `json:"brunoBlock,omitempty" toml:",omitempty"`
-	EulerBlock      *big.Int `json:"eulerBlock,omitempty" toml:",omitempty"`
-	GibbsBlock      *big.Int `json:"gibbsBlock,omitempty" toml:",omitempty"`
-	NanoBlock       *big.Int `json:"nanoBlock,omitempty" toml:",omitempty"`
-	MoranBlock      *big.Int `json:"moranBlock,omitempty" toml:",omitempty"`
-
-	// Forks specific to Gnosis Chain
+	RamanujanBlock  *big.Int `json:"ramanujanBlock,omitempty" toml:",omitempty"`  // ramanujanBlock switch block (nil = no fork, 0 = already activated)
+	NielsBlock      *big.Int `json:"nielsBlock,omitempty" toml:",omitempty"`      // nielsBlock switch block (nil = no fork, 0 = already activated)
+	MirrorSyncBlock *big.Int `json:"mirrorSyncBlock,omitempty" toml:",omitempty"` // mirrorSyncBlock switch block (nil = no fork, 0 = already activated)
+	BrunoBlock      *big.Int `json:"brunoBlock,omitempty" toml:",omitempty"`      // brunoBlock switch block (nil = no fork, 0 = already activated)
+	EulerBlock      *big.Int `json:"eulerBlock,omitempty" toml:",omitempty"`      // eulerBlock switch block (nil = no fork, 0 = already activated)
+	GibbsBlock      *big.Int `json:"gibbsBlock,omitempty" toml:",omitempty"`      // gibbsBlock switch block (nil = no fork, 0 = already activated)
+	NanoBlock       *big.Int `json:"nanoBlock,omitempty" toml:",omitempty"`       // nanoBlock switch block (nil = no fork, 0 = already activated)
+	MoranBlock      *big.Int `json:"moranBlock,omitempty" toml:",omitempty"`      // moranBlock switch block (nil = no fork, 0 = already activated)
+	PlanckBlock     *big.Int `json:"planckBlock,omitempty" toml:",omitempty"`     // planckBlock switch block (nil = no fork, 0 = already activated)
+	// Gnosis Chain fork blocks
 	PosdaoBlock *big.Int `json:"posdaoBlock,omitempty"`
 
 	Eip1559FeeCollector           *common.Address `json:"eip1559FeeCollector,omitempty"`           // (Optional) Address where burnt EIP-1559 fees go to
@@ -96,7 +96,7 @@ func (c *Config) String() string {
 	engine := c.getEngine()
 
 	if c.Consensus == ParliaConsensus {
-		return fmt.Sprintf("{ChainID: %v Ramanujan: %v, Niels: %v, MirrorSync: %v, Bruno: %v, Euler: %v, Gibbs: %v, Nano: %v, Moran: %v, Gibbs: %v, Engine: %v}",
+		return fmt.Sprintf("{ChainID: %v Ramanujan: %v, Niels: %v, MirrorSync: %v, Bruno: %v, Euler: %v, Gibbs: %v, Nano: %v, Moran: %v, Gibbs: %v, Planck: %v, Engine: %v}",
 			c.ChainID,
 			c.RamanujanBlock,
 			c.NielsBlock,
@@ -107,6 +107,7 @@ func (c *Config) String() string {
 			c.NanoBlock,
 			c.MoranBlock,
 			c.GibbsBlock,
+			c.PlanckBlock,
 			engine,
 		)
 	}
@@ -319,6 +320,14 @@ func (c *Config) IsEip1559FeeCollector(num uint64) bool {
 	return c.Eip1559FeeCollector != nil && isForked(c.Eip1559FeeCollectorTransition, num)
 }
 
+func (c *Config) IsPlanck(num uint64) bool {
+	return isForked(c.PlanckBlock, num)
+}
+
+func (c *Config) IsOnPlanck(num *big.Int) bool {
+	return numEqual(c.PlanckBlock, num)
+}
+
 // CheckCompatible checks whether scheduled fork transitions have been imported
 // with a mismatching chain configuration.
 func (c *Config) CheckCompatible(newcfg *Config, height uint64) *ConfigCompatError {
@@ -477,6 +486,9 @@ func (c *Config) checkCompatible(newcfg *Config, head uint64) *ConfigCompatError
 	}
 	if incompatible(c.MoranBlock, newcfg.MoranBlock, head) {
 		return newCompatError("moran fork block", c.MoranBlock, newcfg.MoranBlock)
+	}
+	if incompatible(c.PlanckBlock, newcfg.PlanckBlock, head) {
+		return newCompatError("planck fork block", c.PlanckBlock, newcfg.PlanckBlock)
 	}
 	return nil
 }
@@ -666,7 +678,7 @@ type Rules struct {
 	IsByzantium, IsConstantinople, IsPetersburg, IsIstanbul bool
 	IsBerlin, IsLondon, IsShanghai, IsCancun                bool
 	IsSharding, IsPrague                                    bool
-	IsNano, IsMoran, IsGibbs                                bool
+	IsNano, IsMoran, IsGibbs, IsPlanck                      bool
 	IsEip1559FeeCollector                                   bool
 	IsParlia, IsAura                                        bool
 }
@@ -695,6 +707,7 @@ func (c *Config) Rules(num uint64, time uint64) *Rules {
 		IsPrague:              c.IsPrague(time),
 		IsNano:                c.IsNano(num),
 		IsMoran:               c.IsMoran(num),
+		IsPlanck:              c.IsPlanck(num),
 		IsEip1559FeeCollector: c.IsEip1559FeeCollector(num),
 		IsParlia:              c.Parlia != nil,
 		IsAura:                c.Aura != nil,
