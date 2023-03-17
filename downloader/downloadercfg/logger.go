@@ -95,6 +95,7 @@ func (b adapterHandler) Handle(r lg.Record) {
 			break
 		}
 
+		fmt.Printf("warn: %T, %+v\n", r, r)
 		log.Warn(str)
 	case lg.Error:
 		str := r.String()
