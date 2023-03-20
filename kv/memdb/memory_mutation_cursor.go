@@ -830,7 +830,13 @@ func (m *memoryMutationCursorDupSort) isTableCleared() bool {
 }
 
 func (m *memoryMutationCursorDupSort) isEntryDeleted(key []byte, value []byte) bool {
-	return m.mutation.isDupsortEntryDeleted(m.table, key, value)
+	if m.mutation.isDupsortEntryDeleted(m.table, key, value) {
+		return true
+	}
+	if m.bucketCfg.AutoDupSortKeysConversion {
+		return m.mutation.isEntryDeleted(m.table, key)
+	}
+	return false
 }
 
 func (m *memoryMutationCursorDupSort) selectEntry(direction DirectionType, memKey, memValue, dbKey, dbValue []byte) ([]byte, []byte, error) {
