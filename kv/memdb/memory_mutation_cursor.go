@@ -834,16 +834,28 @@ func (m *memoryMutationCursorDupSort) isEntryDeleted(key []byte, value []byte) b
 }
 
 func (m *memoryMutationCursorDupSort) selectEntry(direction DirectionType, memKey, memValue, dbKey, dbValue []byte) ([]byte, []byte, error) {
+	if m.trace {
+		fmt.Printf("selectEntry %v: %x %x %x %x\n", direction, memKey, memValue, dbKey, dbValue)
+	}
 	if dbKey == nil {
 		if memKey == nil {
 			m.current = NoCurrent
+			if m.trace {
+				fmt.Printf("return nil nil\n")
+			}
 			return nil, nil, nil
 		} else {
 			m.current = OverOnly
+			if m.trace {
+				fmt.Printf("return OverOnly %x %x\n", memKey, memValue)
+			}
 			return memKey, memValue, nil
 		}
 	} else if memKey == nil {
 		m.current = UnderOnly
+		if m.trace {
+			fmt.Printf("return UnderOnly %x %x\n", dbKey, dbValue)
+		}
 		return dbKey, dbValue, nil
 	}
 	c := bytes.Compare(dbKey, memKey)
@@ -867,12 +879,21 @@ func (m *memoryMutationCursorDupSort) selectEntry(direction DirectionType, memKe
 	}
 	if (direction == ForwardDirection && c < 0) || (direction == BackwardDirection && c > 0) {
 		m.current = UnderCurrent
+		if m.trace {
+			fmt.Printf("return UnderCurrent %x %x\n", dbKey, dbValue)
+		}
 		return dbKey, dbValue, nil
 	}
 	if c == 0 {
 		m.current = BothCurrent
+		if m.trace {
+			fmt.Printf("return BothCurrent %x %x\n", memKey, memValue)
+		}
 	} else {
 		m.current = OverCurrent
+		if m.trace {
+			fmt.Printf("return OverCurrent %x %x\n", memKey, memValue)
+		}
 	}
 	return memKey, memValue, nil
 }
