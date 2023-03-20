@@ -864,13 +864,9 @@ func (m *memoryMutationCursorDupSort) selectEntry(direction DirectionType, memKe
 			var memValueTrunc, dbValueTrunc []byte // Truncated values
 			if len(memKey) == m.bucketCfg.DupToLen {
 				memValueTrunc = memValue[:m.bucketCfg.DupFromLen-m.bucketCfg.DupToLen]
-			} else {
-				memValueTrunc = memValue
 			}
 			if len(dbKey) == m.bucketCfg.DupToLen {
 				dbValueTrunc = dbValue[:m.bucketCfg.DupFromLen-m.bucketCfg.DupToLen]
-			} else {
-				dbValueTrunc = dbValue
 			}
 			c = bytes.Compare(dbValueTrunc, memValueTrunc)
 		} else {
