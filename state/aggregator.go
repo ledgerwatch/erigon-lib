@@ -49,6 +49,7 @@ var (
 	mxRunningMerges            = metrics.GetOrCreateCounter("domain_running_merges")
 	mxRunningCollations        = metrics.GetOrCreateCounter("domain_running_collations")
 	mxCollateTook              = metrics.GetOrCreateHistogram("domain_collate_took")
+	mxFinishTxTook             = metrics.GetOrCreateHistogram("domain_finishtx_took")
 	mxPruneTook                = metrics.GetOrCreateHistogram("domain_prune_took")
 	mxPruneHistTook            = metrics.GetOrCreateHistogram("domain_prune_hist_took")
 	mxPruningProgress          = metrics.GetOrCreateCounter("domain_pruning_progress")
@@ -885,6 +886,7 @@ func (a *Aggregator) ReadyToFinishTx() bool {
 
 func (a *Aggregator) FinishTx() (err error) {
 	atomic.AddUint64(&a.stats.TxCount, 1)
+	defer func(s time.Time) { mxFinishTxTook.UpdateDuration(s) }(time.Now())
 
 	if !a.ReadyToFinishTx() {
 		return nil
