@@ -273,18 +273,21 @@ type IntersectIter[T constraints.Ordered] struct {
 	x, y               Unary[T]
 	xHasNext, yHasNext bool
 	xNextK, yNextK     T
+	limit              int
 	err                error
 }
 
-func Intersect[T constraints.Ordered](x, y Unary[T]) Unary[T] {
+func Intersect[T constraints.Ordered](x, y Unary[T], limit int) Unary[T] {
 	if x == nil || y == nil || !x.HasNext() || !y.HasNext() {
 		return &EmptyUnary[T]{}
 	}
-	m := &IntersectIter[T]{x: x, y: y}
+	m := &IntersectIter[T]{x: x, y: y, limit: limit}
 	m.advance()
 	return m
 }
-func (m *IntersectIter[T]) HasNext() bool { return m.xHasNext && m.yHasNext }
+func (m *IntersectIter[T]) HasNext() bool {
+	return m.err != nil || (m.limit != 0 && m.xHasNext && m.yHasNext)
+}
 func (m *IntersectIter[T]) advance() {
 	m.advanceX()
 	m.advanceY()
@@ -324,6 +327,10 @@ func (m *IntersectIter[T]) advanceY() {
 	}
 }
 func (m *IntersectIter[T]) Next() (T, error) {
+	if m.err != nil {
+		return m.xNextK, m.err
+	}
+	m.limit--
 	k, err := m.xNextK, m.err
 	m.advance()
 	return k, err
