@@ -450,8 +450,6 @@ type RwCursorDupSort interface {
 	AppendDup(key, value []byte) error    // AppendDup - same as Append, but for sorted dup data
 }
 
-var ErrNotSupported = errors.New("not supported")
-
 // ---- Temporal part
 type (
 	Domain      string
