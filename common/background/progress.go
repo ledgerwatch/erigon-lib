@@ -69,7 +69,7 @@ func (s *ProgressSet) String() string {
 	var sb strings.Builder
 	var i int
 	s.list.Scan(func(_ int, p *Progress) bool {
-		sb.WriteString(fmt.Sprintf("%s=%d%%", p.Name.Load(), p.percent()))
+		sb.WriteString(fmt.Sprintf("%s=%d%%", *p.Name.Load(), p.percent()))
 		i++
 		if i != s.list.Len() {
 			sb.WriteString(", ")
