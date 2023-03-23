@@ -113,8 +113,8 @@ type DomainStats struct {
 	LastCollationSize    uint64
 	LastPruneSize        uint64
 
-	HistoryQueries atomic.Uint64
-	TotalQueries   atomic.Uint64
+	HistoryQueries *atomic.Uint64
+	TotalQueries   *atomic.Uint64
 	EfSearchTime   time.Duration
 	DataSize       uint64
 	IndexSize      uint64
