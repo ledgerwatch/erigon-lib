@@ -152,6 +152,7 @@ func NewDomain(dir, tmpdir string, aggregationStep uint64,
 		keysTable: keysTable,
 		valsTable: valsTable,
 		files:     btree2.NewBTreeGOptions[*filesItem](filesItemLess, btree2.Options{Degree: 128, NoLocks: false}),
+		stats:     DomainStats{HistoryQueries: &atomic.Uint64{}, TotalQueries: &atomic.Uint64{}},
 	}
 	d.roFiles.Store(&[]ctxItem{})
 
