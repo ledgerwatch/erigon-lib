@@ -16,7 +16,7 @@ require (
 	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444
 	github.com/anacrolix/go-libutp v1.2.0
 	github.com/anacrolix/log v0.13.2-0.20221123232138-02e2764801c3
-	github.com/anacrolix/torrent v1.49.0
+	github.com/anacrolix/torrent v1.48.1-0.20230219022425-e8971ea0f1bf
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/deckarep/golang-set/v2 v2.2.0
 	github.com/edsrzf/mmap-go v1.1.0

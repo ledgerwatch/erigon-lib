@@ -20,14 +20,14 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	btree2 "github.com/tidwall/btree"
-	"go.uber.org/atomic"
 )
 
 // Progress - tracks background job progress
 type Progress struct {
-	Name             atomic.String
+	Name             atomic.Pointer[string]
 	Processed, Total atomic.Uint64
 	i                int
 }
