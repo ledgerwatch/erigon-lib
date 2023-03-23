@@ -194,7 +194,7 @@ func (li *LocalityIndex) reCalcRoFiles() {
 }
 
 func (li *LocalityIndex) MakeContext() *ctxLocalityIdx {
-	if li == nil || li.file == nil {
+	if li == nil {
 		return nil
 	}
 	x := &ctxLocalityIdx{
