@@ -16,7 +16,7 @@ require (
 	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444
 	github.com/anacrolix/go-libutp v1.2.0
 	github.com/anacrolix/log v0.13.2-0.20221123232138-02e2764801c3
-	github.com/anacrolix/torrent v1.48.1-0.20230219022425-e8971ea0f1bf
+	github.com/anacrolix/torrent v1.49.0
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/deckarep/golang-set/v2 v2.2.0
 	github.com/edsrzf/mmap-go v1.1.0
@@ -24,7 +24,7 @@ require (
 	github.com/google/btree v1.1.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/hashicorp/golang-lru/v2 v2.0.2
-	github.com/holiman/uint256 v1.2.1
+	github.com/holiman/uint256 v1.2.2
 	github.com/matryer/moq v0.3.1
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
@@ -33,11 +33,11 @@ require (
 	github.com/tidwall/btree v1.6.0
 	go.uber.org/atomic v1.10.0
 	golang.org/x/crypto v0.7.0
-	golang.org/x/exp v0.0.0-20230314191032-db074128a8ec
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.6.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.53.0
+	google.golang.org/grpc v1.54.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.3.0
 	google.golang.org/protobuf v1.30.0
 )
