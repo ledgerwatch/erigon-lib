@@ -45,6 +45,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/downloader/trackers"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
+
 	atomic2 "go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
 )
