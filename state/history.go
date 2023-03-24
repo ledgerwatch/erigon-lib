@@ -1465,10 +1465,9 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 		return nil, false, err
 	}
 	defer c.Close()
-	seek := make([]byte, len(key)+8)
-	copy(seek, key)
-	binary.BigEndian.PutUint64(seek[len(key):], txNum)
-	val, err := c.SeekBothRange(key, seek[len(key):])
+	txNumBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(txNumBytes, txNum)
+	val, err := c.SeekBothRange(key, txNumBytes)
 	if err != nil {
 		return nil, false, err
 	}
