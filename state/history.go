@@ -2249,28 +2249,6 @@ func (hi *HistoryChangesIterDBDup) Next() ([]byte, []byte, error) {
 	return hi.k, hi.v, nil
 }
 
-func (hc *HistoryContext) IterateRecentlyChanged(startTxNum, endTxNum uint64, roTx kv.Tx, f func([]byte, []byte) error) error {
-	it, err := hc.IterateChanged(int(startTxNum), int(endTxNum), order.Asc, -1, roTx)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if itc, ok := it.(kv.Closer); ok {
-			itc.Close()
-		}
-	}()
-	for it.HasNext() {
-		k, v, err := it.Next()
-		if err != nil {
-			return err
-		}
-		if err := f(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (h *History) DisableReadAhead() {
 	h.InvertedIndex.DisableReadAhead()
 	h.files.Walk(func(items []*filesItem) bool {

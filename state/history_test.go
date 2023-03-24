@@ -626,11 +626,14 @@ func TestIterateChanged2(t *testing.T) {
 			hc, require := h.MakeContext(), require.New(t)
 			defer hc.Close()
 
-			err := hc.IterateRecentlyChanged(2, 20, roTx, func(k, v []byte) error {
+			it, err := hc.IterateChanged(2, 20, order.Asc, -1, roTx)
+			require.NoError(err)
+			for it.HasNext() {
+				k, v, err := it.Next()
+				require.NoError(err)
 				keys = append(keys, fmt.Sprintf("%x", k))
 				vals = append(vals, fmt.Sprintf("%x", v))
-				return nil
-			})
+			}
 			require.NoError(err)
 			require.Equal([]string{
 				"0100000000000001",
@@ -673,11 +676,15 @@ func TestIterateChanged2(t *testing.T) {
 				"",
 				""}, vals)
 			keys, vals = keys[:0], vals[:0]
-			err = hc.IterateRecentlyChanged(995, 1000, roTx, func(k, v []byte) error {
+
+			it, err = hc.IterateChanged(995, 1000, order.Asc, -1, roTx)
+			require.NoError(err)
+			for it.HasNext() {
+				k, v, err := it.Next()
+				require.NoError(err)
 				keys = append(keys, fmt.Sprintf("%x", k))
 				vals = append(vals, fmt.Sprintf("%x", v))
-				return nil
-			})
+			}
 			require.NoError(err)
 			require.Equal([]string{
 				"0100000000000001",
@@ -727,10 +734,13 @@ func TestIterateChanged2(t *testing.T) {
 			defer hc.Close()
 
 			keys = keys[:0]
-			err = hc.IterateRecentlyChanged(2, 20, roTx, func(k, _ []byte) error {
+			it, err := hc.IterateChanged(2, 20, order.Asc, -1, roTx)
+			require.NoError(err)
+			for it.HasNext() {
+				k, _, err := it.Next()
+				require.NoError(err)
 				keys = append(keys, fmt.Sprintf("%x", k))
-				return nil
-			})
+			}
 			require.NoError(err)
 			require.Equal([]string{
 				"0100000000000001",
