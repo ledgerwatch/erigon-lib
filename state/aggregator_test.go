@@ -346,7 +346,7 @@ func TestAggregator_RestartOnFiles(t *testing.T) {
 		require.NoError(t, err)
 		if len(stored) == 0 {
 			miss++
-			fmt.Printf("%x [%d/%d]", key, miss, i+1) // txnum starts from 1
+			//fmt.Printf("%x [%d/%d]", key, miss, i+1) // txnum starts from 1
 			continue
 		}
 
