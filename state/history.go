@@ -1860,23 +1860,28 @@ func (hi *StateAsOfIterDbDup) Next() ([]byte, []byte, error) {
 }
 
 func (hc *HistoryContext) iterateChangedFrozen(fromTxNum, toTxNum int, asc order.By, limit int) (iter.KV, error) {
-	startTxNum, endTxNum := uint64(fromTxNum), uint64(toTxNum)
-	if len(hc.ic.files) == 0 || hc.ic.files[len(hc.ic.files)-1].endTxNum <= startTxNum {
+	if len(hc.ic.files) == 0 {
+		return iter.EmptyKV, nil
+	}
+	if fromTxNum >= 0 && hc.ic.files[len(hc.ic.files)-1].endTxNum <= uint64(fromTxNum) {
 		return iter.EmptyKV, nil
 	}
 
 	hi := &HistoryChangesIterF{
 		hc:           hc,
 		compressVals: hc.h.compressVals,
-		startTxNum:   startTxNum,
-		endTxNum:     endTxNum,
+		startTxNum:   cmp.Max(0, uint64(fromTxNum)),
+		endTxNum:     toTxNum,
+		limit:        limit,
 	}
-
+	if fromTxNum >= 0 {
+		binary.BigEndian.PutUint64(hi.startTxKey[:], uint64(fromTxNum))
+	}
 	for _, item := range hc.ic.files {
-		if item.endTxNum <= startTxNum {
+		if fromTxNum >= 0 && item.endTxNum <= uint64(fromTxNum) {
 			continue
 		}
-		if item.startTxNum >= endTxNum {
+		if toTxNum >= 0 && item.startTxNum >= uint64(toTxNum) {
 			break
 		}
 		g := item.src.decompressor.MakeGetter()
@@ -1886,7 +1891,6 @@ func (hc *HistoryContext) iterateChangedFrozen(fromTxNum, toTxNum int, asc order
 			heap.Push(&hi.h, &ReconItem{g: g, key: key, startTxNum: item.startTxNum, endTxNum: item.endTxNum, txNum: item.endTxNum, startOffset: offset, lastOffset: offset})
 		}
 	}
-	binary.BigEndian.PutUint64(hi.startTxKey[:], startTxNum)
 	if err := hi.advance(); err != nil {
 		return nil, err
 	}
@@ -1894,38 +1898,38 @@ func (hc *HistoryContext) iterateChangedFrozen(fromTxNum, toTxNum int, asc order
 }
 
 func (hc *HistoryContext) iterateChangedRecent(fromTxNum, toTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.KV, error) {
-	startTxNum, endTxNum := uint64(fromTxNum), uint64(toTxNum)
-	if len(hc.ic.files) > 0 && hc.ic.files[len(hc.ic.files)-1].endTxNum >= endTxNum {
+	if len(hc.ic.files) > 0 && (fromTxNum >= 0 && hc.ic.files[len(hc.ic.files)-1].endTxNum >= uint64(fromTxNum)) {
 		return iter.EmptyKV, nil
 	}
 	if hc.h.largeValues {
 		dbi := &HistoryChangesIterDB{
-			hc:         hc,
-			startTxNum: startTxNum,
-			endTxNum:   endTxNum,
-
+			hc:           hc,
+			endTxNum:     toTxNum,
 			roTx:         roTx,
 			indexTable:   hc.h.indexTable,
 			idxKeysTable: hc.h.indexKeysTable,
 			valsTable:    hc.h.historyValsTable,
 		}
-		binary.BigEndian.PutUint64(dbi.startTxKey[:], startTxNum)
+		if fromTxNum >= 0 {
+			binary.BigEndian.PutUint64(dbi.startTxKey[:], uint64(fromTxNum))
+		}
 		if err := dbi.advance(); err != nil {
 			return nil, err
 		}
 		return dbi, nil
 	}
 	dbi := &HistoryChangesIterDBDup{
-		hc:         hc,
-		startTxNum: startTxNum,
-		endTxNum:   endTxNum,
+		hc:       hc,
+		endTxNum: toTxNum,
 
 		roTx:         roTx,
 		indexTable:   hc.h.indexTable,
 		idxKeysTable: hc.h.indexKeysTable,
 		valsTable:    hc.h.historyValsTable,
 	}
-	binary.BigEndian.PutUint64(dbi.startTxKey[:], startTxNum)
+	if fromTxNum >= 0 {
+		binary.BigEndian.PutUint64(dbi.startTxKey[:], uint64(fromTxNum))
+	}
 	if err := dbi.advance(); err != nil {
 		return nil, err
 	}
@@ -1934,15 +1938,6 @@ func (hc *HistoryContext) iterateChangedRecent(fromTxNum, toTxNum int, asc order
 
 func (hc *HistoryContext) IterateChanged(fromTxNum, toTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.KV, error) {
 	if asc == order.Desc {
-		panic("not supported yet")
-	}
-	if limit >= 0 {
-		panic("not supported yet")
-	}
-	if fromTxNum < 0 {
-		panic("not supported yet")
-	}
-	if toTxNum < 0 {
 		panic("not supported yet")
 	}
 	itOnFiles, err := hc.iterateChangedFrozen(fromTxNum, toTxNum, asc, limit)
@@ -1962,14 +1957,15 @@ type HistoryChangesIterF struct {
 	nextVal      []byte
 	nextKey      []byte
 	h            ReconHeap
-	endTxNum     uint64
 	startTxNum   uint64
+	endTxNum     int
 	startTxKey   [8]byte
 	txnKey       [8]byte
 	compressVals bool
 
 	k, v, kBackup, vBackup []byte
 	err                    error
+	limit                  int
 }
 
 func (hi *HistoryChangesIterF) Close() {
@@ -1998,11 +1994,11 @@ func (hi *HistoryChangesIterF) advance() error {
 			continue
 		}
 		ef, _ := eliasfano32.ReadEliasFano(idxVal)
-		n, ok := ef.Search(hi.startTxNum)
+		n, ok := ef.Search(hi.startTxNum) //TODO: if startTxNum==0, can do ef.Get(0)
 		if !ok {
 			continue
 		}
-		if n >= hi.endTxNum {
+		if int(n) >= hi.endTxNum {
 			continue
 		}
 
@@ -2031,9 +2027,9 @@ func (hi *HistoryChangesIterF) HasNext() bool {
 	if hi.err != nil { // always true, then .Next() call will return this error
 		return true
 	}
-	//if hi.limit == 0 { // limit reached
-	//	return false
-	//}
+	if hi.limit == 0 { // limit reached
+		return false
+	}
 	if hi.nextKey == nil { // EndOfTable
 		return false
 	}
@@ -2047,6 +2043,7 @@ func (hi *HistoryChangesIterF) Next() ([]byte, []byte, error) {
 	if hi.err != nil {
 		return nil, nil, hi.err
 	}
+	hi.limit--
 	hi.k, hi.v = append(hi.k[:0], hi.nextKey...), append(hi.v[:0], hi.nextVal...)
 
 	// Satisfy iter.Dual Invariant 2
@@ -2058,19 +2055,20 @@ func (hi *HistoryChangesIterF) Next() ([]byte, []byte, error) {
 }
 
 type HistoryChangesIterDB struct {
-	roTx                 kv.Tx
-	txNum2kCursor        kv.CursorDupSort
-	idxCursor            kv.CursorDupSort
-	hc                   *HistoryContext
-	valsTable            string
-	idxKeysTable         string
-	indexTable           string
-	startTxNum, endTxNum uint64
-	startTxKey           [8]byte
+	roTx          kv.Tx
+	txNum2kCursor kv.CursorDupSort
+	idxCursor     kv.CursorDupSort
+	hc            *HistoryContext
+	valsTable     string
+	idxKeysTable  string
+	indexTable    string
+	endTxNum      int
+	startTxKey    [8]byte
 
 	nextKey, nextVal       []byte
 	k, v, kBackup, vBackup []byte
 	err                    error
+	limit                  int
 }
 
 func (hi *HistoryChangesIterDB) Close() {
@@ -2112,7 +2110,7 @@ func (hi *HistoryChangesIterDB) advance() (err error) {
 			continue
 		}
 		txNum := binary.BigEndian.Uint64(foundTxNumVal)
-		if txNum >= hi.endTxNum {
+		if hi.endTxNum >= 0 && int(txNum) >= hi.endTxNum {
 			continue
 		}
 		hi.nextKey = k
@@ -2137,9 +2135,9 @@ func (hi *HistoryChangesIterDB) HasNext() bool {
 	if hi.err != nil { // always true, then .Next() call will return this error
 		return true
 	}
-	//if hi.limit == 0 { // limit reached
-	//	return false
-	//}
+	if hi.limit == 0 { // limit reached
+		return false
+	}
 	if hi.nextKey == nil { // EndOfTable
 		return false
 	}
@@ -2150,6 +2148,7 @@ func (hi *HistoryChangesIterDB) Next() ([]byte, []byte, error) {
 	if hi.err != nil {
 		return nil, nil, hi.err
 	}
+	hi.limit--
 	hi.k, hi.v = append(hi.k[:0], hi.nextKey...), append(hi.v[:0], hi.nextVal...)
 
 	// Satisfy iter.Dual Invariant 2
@@ -2161,15 +2160,15 @@ func (hi *HistoryChangesIterDB) Next() ([]byte, []byte, error) {
 }
 
 type HistoryChangesIterDBDup struct {
-	roTx                 kv.Tx
-	txNum2kCursor        kv.CursorDupSort
-	valsCursor           kv.CursorDupSort
-	hc                   *HistoryContext
-	valsTable            string
-	idxKeysTable         string
-	indexTable           string
-	startTxNum, endTxNum uint64
-	startTxKey           [8]byte
+	roTx          kv.Tx
+	txNum2kCursor kv.CursorDupSort
+	valsCursor    kv.CursorDupSort
+	hc            *HistoryContext
+	valsTable     string
+	idxKeysTable  string
+	indexTable    string
+	endTxNum      int
+	startTxKey    [8]byte
 
 	nextKey, nextVal []byte
 	k, v             []byte
@@ -2215,7 +2214,7 @@ func (hi *HistoryChangesIterDBDup) advance() (err error) {
 			continue
 		}
 		txNum := binary.BigEndian.Uint64(foundTxNumVal)
-		if txNum >= hi.endTxNum {
+		if hi.endTxNum >= 0 && int(txNum) >= hi.endTxNum {
 			continue
 		}
 		hi.nextKey = k
