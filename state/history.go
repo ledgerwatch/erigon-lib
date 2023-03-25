@@ -532,7 +532,7 @@ func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
 		largeValues:      h.largeValues,
 	}
 	if buffered {
-		w.historyVals = etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(WALCollectorRam))
+		w.historyVals = etl.NewCollector(h.historyValsTable, tmpdir, etl.NewSortableBuffer(WALCollectorRAM))
 		w.historyVals.LogLvl(log.LvlTrace)
 	}
 	return w
@@ -1534,7 +1534,7 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 
 	var dbit iter.KV
 	if hc.h.largeValues {
-		dbi := &StateAsOfIterDb{
+		dbi := &StateAsOfIterDB{
 			roTx:         roTx,
 			indexTable:   hc.h.indexTable,
 			idxKeysTable: hc.h.indexKeysTable,
@@ -1545,7 +1545,7 @@ func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.T
 			startTxNum: startTxNum,
 		}
 		binary.BigEndian.PutUint64(dbi.startTxKey[:], startTxNum)
-		if err := dbi.advanceInDb(); err != nil {
+		if err := dbi.advance(); err != nil {
 			panic(err)
 		}
 		dbit = dbi
@@ -1661,8 +1661,8 @@ func (hi *StateAsOfIterF) Next() ([]byte, []byte, error) {
 	return hi.kBackup, hi.vBackup, nil
 }
 
-// StateAsOfIter - returns state range at given time in history
-type StateAsOfIterDb struct {
+// StateAsOfIterDB - returns state range at given time in history
+type StateAsOfIterDB struct {
 	roTx          kv.Tx
 	txNum2kCursor kv.CursorDupSort
 	valsC         kv.Cursor
@@ -1683,7 +1683,7 @@ type StateAsOfIterDb struct {
 	err                    error
 }
 
-func (hi *StateAsOfIterDb) Close() {
+func (hi *StateAsOfIterDB) Close() {
 	if hi.valsC != nil {
 		hi.valsC.Close()
 	}
@@ -1692,7 +1692,7 @@ func (hi *StateAsOfIterDb) Close() {
 	}
 }
 
-func (hi *StateAsOfIterDb) advanceInDb() error {
+func (hi *StateAsOfIterDB) advance() error {
 	var seek []byte
 	var err error
 	if hi.txNum2kCursor == nil {
@@ -1739,14 +1739,14 @@ func (hi *StateAsOfIterDb) advanceInDb() error {
 	return nil
 }
 
-func (hi *StateAsOfIterDb) HasNext() bool {
+func (hi *StateAsOfIterDB) HasNext() bool {
 	if hi.err != nil {
 		return true
 	}
 	return hi.limit != 0 && hi.nextKey != nil
 }
 
-func (hi *StateAsOfIterDb) Next() ([]byte, []byte, error) {
+func (hi *StateAsOfIterDB) Next() ([]byte, []byte, error) {
 	if hi.err != nil {
 		return nil, nil, hi.err
 	}
@@ -1755,7 +1755,7 @@ func (hi *StateAsOfIterDb) Next() ([]byte, []byte, error) {
 
 	// Satisfy iter.Dual Invariant 2
 	hi.k, hi.kBackup, hi.v, hi.vBackup = hi.kBackup, hi.k, hi.vBackup, hi.v
-	if err := hi.advanceInDb(); err != nil {
+	if err := hi.advance(); err != nil {
 		return nil, nil, err
 	}
 	return hi.kBackup, hi.vBackup, nil
