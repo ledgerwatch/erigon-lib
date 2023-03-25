@@ -103,6 +103,7 @@ issues:
     - linters:
         - staticcheck
       text: "SA(1019|1029|5011)"
+    - path: pedersen_hash
     # Exclude some linters from running on tests files.
     - path: test\.go
       linters:
