@@ -623,12 +623,46 @@ func (c *remoteCursorDupSort) PrevNoDup() ([]byte, []byte, error) { return c.pre
 func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.lastDup() }
 
 // Temporal Methods
+func (tx *remoteTx) DomainGetAsOf(name kv.Domain, k []byte, ts uint64) (v []byte, ok bool, err error) {
+	reply, err := tx.db.remoteKV.DomainGet(tx.ctx, &remote.DomainGetReq{TxId: tx.id, Table: string(name), K: k, Ts: ts})
+	if err != nil {
+		return nil, false, err
+	}
+	return reply.V, reply.Ok, nil
+}
+
+func (tx *remoteTx) DomainGet(name kv.Domain, k []byte) (v []byte, ok bool, err error) {
+	reply, err := tx.db.remoteKV.DomainGet(tx.ctx, &remote.DomainGetReq{TxId: tx.id, Table: string(name), K: k, Latest: true})
+	if err != nil {
+		return nil, false, err
+	}
+	return reply.V, reply.Ok, nil
+}
+
+func (tx *remoteTx) DomainRange(name kv.Domain, fromKey, toKey []byte, ts uint64, asc order.By, limit int) (it iter.KV, err error) {
+	return iter.PaginateKV(func(pageToken string) (keys, vals [][]byte, nextPageToken string, err error) {
+		reply, err := tx.db.remoteKV.DomainRange(tx.ctx, &remote.DomainRangeReq{TxId: tx.id, Table: string(name), FromKey: fromKey, ToKey: toKey, Ts: ts, OrderAscend: bool(asc), Limit: int64(limit)})
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return reply.Keys, reply.Values, reply.NextPageToken, nil
+	}), nil
+}
 func (tx *remoteTx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
 	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxId: tx.id, Table: string(name), K: k, Ts: ts})
 	if err != nil {
 		return nil, false, err
 	}
 	return reply.V, reply.Ok, nil
+}
+func (tx *remoteTx) HistoryRange(name kv.History, fromTs, toTs int, asc order.By, limit int) (it iter.KV, err error) {
+	return iter.PaginateKV(func(pageToken string) (keys, vals [][]byte, nextPageToken string, err error) {
+		reply, err := tx.db.remoteKV.HistoryRange(tx.ctx, &remote.HistoryRangeReq{TxId: tx.id, Table: string(name), FromTs: int64(fromTs), ToTs: int64(toTs), OrderAscend: bool(asc), Limit: int64(limit)})
+		if err != nil {
+			return nil, nil, "", err
+		}
+		return reply.Keys, reply.Values, reply.NextPageToken, nil
+	}), nil
 }
 
 func (tx *remoteTx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps iter.U64, err error) {
@@ -649,43 +683,6 @@ func (tx *remoteTx) Prefix(table string, prefix []byte) (iter.KV, error) {
 	}
 	return tx.Range(table, prefix, nextPrefix)
 }
-
-/*
-func (tx *remoteTx) IndexStream(name kv.InvertedIdx, k []byte, fromTs, toTs, limit int) (timestamps iter.U64, err error) {
-	//TODO: maybe add ctx.WithCancel
-	stream, err := tx.db.remoteKV.IndexStream(tx.ctx, &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), Limit: int32(limit)})
-	if err != nil {
-		return nil, err
-	}
-	it := &grpc2U64Stream[*remote.IndexRangeReply]{
-		grpc2UnaryStream[*remote.IndexRangeReply, uint64]{stream: stream, unwrap: func(msg *remote.IndexRangeReply) []uint64 { return msg.Timestamps }},
-	}
-	tx.streams = append(tx.streams, it)
-	return it, nil
-}
-
-/*
-func (tx *remoteTx) streamOrderLimit(table string, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error) {
-	req := &remote.RangeReq{TxId: tx.id, Table: table, FromPrefix: fromPrefix, ToPrefix: toPrefix, OrderAscend: bool(asc), Limit: int32(limit)}
-	stream, err := tx.db.remoteKV.Stream(tx.ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	it := &grpc2Pairs[*remote.Pairs]{stream: stream}
-	tx.streams = append(tx.streams, it)
-	return it, nil
-}
-
-func (tx *remoteTx) Stream(table string, fromPrefix, toPrefix []byte) (iter.KV, error) {
-	return tx.StreamAscend(table, fromPrefix, toPrefix, -1)
-}
-func (tx *remoteTx) StreamAscend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
-	return tx.streamOrderLimit(table, fromPrefix, toPrefix, true, limit)
-}
-func (tx *remoteTx) StreamDescend(table string, fromPrefix, toPrefix []byte, limit int) (iter.KV, error) {
-	return tx.streamOrderLimit(table, fromPrefix, toPrefix, false, limit)
-}
-*/
 
 func (tx *remoteTx) rangeOrderLimit(table string, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error) {
 	return iter.PaginateKV(func(pageToken string) (keys [][]byte, values [][]byte, nextPageToken string, err error) {
@@ -709,120 +706,3 @@ func (tx *remoteTx) RangeDescend(table string, fromPrefix, toPrefix []byte, limi
 func (tx *remoteTx) RangeDupSort(table string, key []byte, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error) {
 	panic("not implemented yet")
 }
-
-/*
-type grpcStream[Msg any] interface {
-	Recv() (Msg, error)
-	CloseSend() error
-}
-
-type parisMsg interface {
-	GetKeys() [][]byte
-	GetValues() [][]byte
-}
-type grpc2Pairs[Msg parisMsg] struct {
-	stream     grpcStream[Msg]
-	lastErr    error
-	lastKeys   [][]byte
-	lastValues [][]byte
-	i          int
-}
-
-func (it *grpc2Pairs[Msg]) NextBatch() ([][]byte, [][]byte, error) {
-	keys := it.lastKeys[it.i:]
-	values := it.lastValues[it.i:]
-	it.i = len(it.lastKeys)
-	return keys, values, nil
-}
-func (it *grpc2Pairs[Msg]) HasNext() bool {
-	if it.lastErr != nil {
-		return true
-	}
-	if it.i < len(it.lastKeys) {
-		return true
-	}
-
-	it.i = 0
-	msg, err := it.stream.Recv()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return false
-		}
-		it.lastErr = err
-		return true
-	}
-	it.lastKeys = msg.GetKeys()
-	it.lastValues = msg.GetValues()
-	return len(it.lastKeys) > 0
-}
-func (it *grpc2Pairs[Msg]) Close() {
-	//_ = it.stream.CloseSend()
-}
-func (it *grpc2Pairs[Msg]) Next() ([]byte, []byte, error) {
-	if it.lastErr != nil {
-		return nil, nil, it.lastErr
-	}
-	k := it.lastKeys[it.i]
-	v := it.lastValues[it.i]
-	it.i++
-	return k, v, nil
-}
-
-type grpc2U64Stream[Msg any] struct {
-	grpc2UnaryStream[Msg, uint64]
-}
-
-func (it *grpc2U64Stream[Msg]) ToBitmap() (*roaring64.Bitmap, error) {
-	bm := roaring64.New()
-	for it.HasNext() {
-		batch, err := it.NextBatch()
-		if err != nil {
-			return nil, err
-		}
-		bm.AddMany(batch)
-	}
-	return bm, nil
-}
-
-type grpc2UnaryStream[Msg any, Res any] struct {
-	stream  grpcStream[Msg]
-	unwrap  func(Msg) []Res
-	lastErr error
-	last    []Res
-	i       int
-}
-
-func (it *grpc2UnaryStream[Msg, Res]) NextBatch() ([]Res, error) {
-	v := it.last[it.i:]
-	it.i = len(it.last)
-	return v, nil
-}
-func (it *grpc2UnaryStream[Msg, Res]) HasNext() bool {
-	if it.lastErr != nil {
-		return true
-	}
-	if it.i < len(it.last) {
-		return true
-	}
-
-	it.i = 0
-	msg, err := it.stream.Recv()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return false
-		}
-		it.lastErr = err
-		return true
-	}
-	it.last = it.unwrap(msg)
-	return len(it.last) > 0
-}
-func (it *grpc2UnaryStream[Msg, Res]) Close() {
-	//_ = it.stream.CloseSend()
-}
-func (it *grpc2UnaryStream[Msg, Res]) Next() (Res, error) {
-	v := it.last[it.i]
-	it.i++
-	return v, nil
-}
-*/
