@@ -1715,7 +1715,7 @@ func (s *binState) Encode(buf []byte) ([]byte, error) {
 	if err := binary.Write(ee, binary.BigEndian, uint16(len(s.Root))); err != nil {
 		return nil, fmt.Errorf("encode root len: %w", err)
 	}
-	if n, err := ee.Write(s.Root[:]); err != nil || n != len(s.Root) {
+	if n, err := ee.Write(s.Root); err != nil || n != len(s.Root) {
 		return nil, fmt.Errorf("encode root: %w", err)
 	}
 	d := make([]byte, len(s.Depths))

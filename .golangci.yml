@@ -6,6 +6,7 @@ linters:
     - bugs
     - error
     - unused
+    - performance
   disable:
     - exhaustive
     - musttag
@@ -20,13 +21,9 @@ linters:
     - wastedassign
     - thelper
     - gofmt
-    #    - gocritic
-    - gosec
-    #    - forcetypeassert
-    - prealloc
-#    - contextcheck
-#    - goerr113
+    - gocritic
 #    - revive
+#    - forcetypeassert
 #    - stylecheck
 
 linters-settings:
