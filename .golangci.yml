@@ -7,7 +7,7 @@ linters:
     - errorlint
     - unconvert
     - predeclared
-#    - wastedassign # go1.18
+    - wastedassign # go1.18
     - thelper
     - gofmt
     - errcheck
@@ -22,7 +22,7 @@ linters:
 #    - forcetypeassert
     - prealloc
 #    - contextcheck
-#    - goerr113
+    - goerr113
 #    - revive
 #    - stylecheck
 
