@@ -1542,7 +1542,7 @@ func (bph *BinPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 
 		update := updates[i]
 		// Update the cell
-		if update.Flags == DELETE_UPDATE {
+		if update.Flags == DeleteUpdate {
 			bph.deleteBinaryCell(hashedKey)
 			if bph.trace {
 				fmt.Printf("key %x deleted\n", plainKey)
@@ -1552,19 +1552,19 @@ func (bph *BinPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 			if bph.trace {
 				fmt.Printf("accountFn updated key %x =>", plainKey)
 			}
-			if update.Flags&BALANCE_UPDATE != 0 {
+			if update.Flags&BalanceUpdate != 0 {
 				if bph.trace {
 					fmt.Printf(" balance=%d", update.Balance.Uint64())
 				}
 				cell.Balance.Set(&update.Balance)
 			}
-			if update.Flags&NONCE_UPDATE != 0 {
+			if update.Flags&NonceUpdate != 0 {
 				if bph.trace {
 					fmt.Printf(" nonce=%d", update.Nonce)
 				}
 				cell.Nonce = update.Nonce
 			}
-			if update.Flags&CODE_UPDATE != 0 {
+			if update.Flags&CodeUpdate != 0 {
 				if bph.trace {
 					fmt.Printf(" codeHash=%x", update.CodeHashOrStorage)
 				}
@@ -1573,7 +1573,7 @@ func (bph *BinPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 			if bph.trace {
 				fmt.Printf("\n")
 			}
-			if update.Flags&STORAGE_UPDATE != 0 {
+			if update.Flags&StorageUpdate != 0 {
 				cell.setStorage(update.CodeHashOrStorage[:update.ValLength])
 				if bph.trace {
 					fmt.Printf("\rstorageFn filled key %x => %x\n", plainKey, update.CodeHashOrStorage[:update.ValLength])
