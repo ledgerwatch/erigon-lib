@@ -4,18 +4,19 @@ run:
 linters:
   disable-all: true
   enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
     - errorlint
     - unconvert
     - predeclared
     - wastedassign # go1.18
     - thelper
     - gofmt
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
 #    - gocritic
     - bodyclose # go1.18
     - gosec
