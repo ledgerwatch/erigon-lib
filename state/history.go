@@ -321,7 +321,7 @@ func (h *History) buildVi(ctx context.Context, item *filesItem) (err error) {
 	if err != nil {
 		return err
 	}
-	return buildVi(ctx, item, iiItem, idxPath, h.tmpdir, count, false /* values */, h.compressVals)
+	return buildVi(ctx, item, iiItem, idxPath, h.tmpdir, count, h.compressVals)
 }
 
 func (h *History) BuildMissedIndices(ctx context.Context, g *errgroup.Group) {
@@ -389,7 +389,7 @@ func iterateForVi(historyItem, iiItem *filesItem, compressVals bool, f func(v []
 	return count, nil
 }
 
-func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, count int, values, compressVals bool) error {
+func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath, tmpdir string, count int, compressVals bool) error {
 	_, fName := filepath.Split(historyIdxPath)
 	log.Debug("[snapshots] build idx", "file", fName)
 	rs, err := recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -1099,7 +1099,7 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 				}
 			}
 			return nil
-		}, etl.TransformArgs{}); err != nil {
+		}, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return err
 		}
 		if err != nil {
@@ -1132,7 +1132,7 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 				}
 			}
 			return nil
-		}, etl.TransformArgs{}); err != nil {
+		}, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 			return err
 		}
 		if err != nil {
@@ -1856,6 +1856,9 @@ func (hi *StateAsOfIterDbDup) Next() ([]byte, []byte, error) {
 }
 
 func (hc *HistoryContext) iterateChangedFrozen(fromTxNum, toTxNum int, asc order.By, limit int) (iter.KV, error) {
+	if asc == false {
+		panic("not supported yet")
+	}
 	if len(hc.ic.files) == 0 {
 		return iter.EmptyKV, nil
 	}
@@ -1894,6 +1897,12 @@ func (hc *HistoryContext) iterateChangedFrozen(fromTxNum, toTxNum int, asc order
 }
 
 func (hc *HistoryContext) iterateChangedRecent(fromTxNum, toTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.KV, error) {
+	if asc == false {
+		panic("not supported yet")
+	}
+	if limit < 0 {
+		panic("not supported yet")
+	}
 	if len(hc.ic.files) > 0 && (fromTxNum >= 0 && hc.ic.files[len(hc.ic.files)-1].endTxNum >= uint64(fromTxNum)) {
 		return iter.EmptyKV, nil
 	}
