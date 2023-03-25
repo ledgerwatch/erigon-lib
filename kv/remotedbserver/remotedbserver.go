@@ -513,7 +513,7 @@ func (s *KvServer) DomainGet(ctx context.Context, req *remote.DomainGetReq) (rep
 		if !ok {
 			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 		}
-		reply.V, reply.Ok, err = ttx.DomainGet(kv.Domain(req.Table), req.K, req.K2, req.Ts)
+		reply.V, reply.Ok, err = ttx.DomainGetAsOf(kv.Domain(req.Table), req.K, req.K2, req.Ts)
 		if err != nil {
 			return err
 		}

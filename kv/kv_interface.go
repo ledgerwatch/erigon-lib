@@ -463,7 +463,8 @@ type TemporalRoDb interface {
 }
 type TemporalTx interface {
 	Tx
-	DomainGet(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
+	DomainGet(name Domain, k, k2 []byte) (v []byte, ok bool, err error)
+	DomainGetAsOf(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
 
 	// IndexRange - return iterator over range of inverted index for given key `k`
