@@ -1900,7 +1900,7 @@ func (hc *HistoryContext) iterateChangedRecent(fromTxNum, toTxNum int, asc order
 	if asc == false {
 		panic("not supported yet")
 	}
-	if limit < 0 {
+	if limit >= 0 {
 		panic("not supported yet")
 	}
 	if len(hc.ic.files) > 0 && (fromTxNum >= 0 && hc.ic.files[len(hc.ic.files)-1].endTxNum >= uint64(fromTxNum)) {
