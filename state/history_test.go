@@ -286,7 +286,6 @@ func filledHistory(tb testing.TB, largeValues bool) (string, kv.RwDB, *History, 
 	if flusher != nil {
 		err = flusher.Flush(ctx, tx)
 		require.NoError(tb, err)
-		flusher = nil
 	}
 	err = h.Rotate().Flush(ctx, tx)
 	require.NoError(tb, err)

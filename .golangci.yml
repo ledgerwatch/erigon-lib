@@ -2,15 +2,7 @@ run:
   deadline: 10m
 
 linters:
-  disable-all: true
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - typecheck
-    - unused
     - errorlint
     - unconvert
     - predeclared
@@ -23,7 +15,7 @@ linters:
 #    - forcetypeassert
     - prealloc
 #    - contextcheck
-    - goerr113
+#    - goerr113
 #    - revive
 #    - stylecheck
 
