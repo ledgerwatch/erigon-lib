@@ -173,7 +173,7 @@ Loop:
 		for _, ext := range ii.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", ii.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(ii.dir, requiredFile)) {
-				log.Warn(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				log.Warn("[snapshots] skip because file doesn't exists", "name", name, "file", requiredFile)
 				continue Loop
 			}
 		}
@@ -296,12 +296,13 @@ func (ii *InvertedIndex) openFiles() error {
 			fromStep, toStep := item.startTxNum/ii.aggregationStep, item.endTxNum/ii.aggregationStep
 			datPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, fromStep, toStep))
 			if !dir.FileExist(datPath) {
+				log.Warn("InvertedIndex.openFiles: file not exists", "file", datPath)
 				invalidFileItems = append(invalidFileItems, item)
 				continue
 			}
 
 			if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-				log.Warn("InvertedIndex.openFiles: %w, %s", err, datPath)
+				log.Warn("InvertedIndex.openFiles", "err", err, "file", datPath)
 				continue
 			}
 
@@ -311,10 +312,12 @@ func (ii *InvertedIndex) openFiles() error {
 			idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
 			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-					log.Warn("InvertedIndex.openFiles: %w, %s", err, idxPath)
+					log.Warn("InvertedIndex.openFiles", "err", err, "file", idxPath)
 					return false
 				}
 				totalKeys += item.index.KeyCount()
+			} else {
+				log.Warn("InvertedIndex.openFiles: file not exists", "file", idxPath)
 			}
 		}
 		return true

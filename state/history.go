@@ -154,7 +154,7 @@ Loop:
 		for _, ext := range h.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", h.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(h.dir, requiredFile)) {
-				log.Warn(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				log.Warn("[snapshots] skip because file doesn't exists", "name", name, "file", requiredFile)
 				continue Loop
 			}
 		}
@@ -205,11 +205,12 @@ func (h *History) openFiles() error {
 			fromStep, toStep := item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep
 			datPath := filepath.Join(h.dir, fmt.Sprintf("%s.%d-%d.v", h.filenameBase, fromStep, toStep))
 			if !dir.FileExist(datPath) {
+				log.Warn("History.openFiles: file not exists", "file", datPath)
 				invalidFileItems = append(invalidFileItems, item)
 				continue
 			}
 			if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-				log.Warn("Hisrory.openFiles: %w, %s", err, datPath)
+				log.Warn("Hisrory.openFiles", "err", err, "file", datPath)
 				return false
 			}
 
@@ -223,6 +224,8 @@ func (h *History) openFiles() error {
 					return false
 				}
 				totalKeys += item.index.KeyCount()
+			} else {
+				log.Warn("History.openFiles: file not exists", "file", idxPath)
 			}
 		}
 		return true
