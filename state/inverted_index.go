@@ -173,7 +173,7 @@ Loop:
 		for _, ext := range ii.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", ii.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(ii.dir, requiredFile)) {
-				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				log.Warn(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
 				continue Loop
 			}
 		}
@@ -301,7 +301,7 @@ func (ii *InvertedIndex) openFiles() error {
 			}
 
 			if item.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-				log.Debug("InvertedIndex.openFiles: %w, %s", err, datPath)
+				log.Warn("InvertedIndex.openFiles: %w, %s", err, datPath)
 				continue
 			}
 
@@ -311,7 +311,7 @@ func (ii *InvertedIndex) openFiles() error {
 			idxPath := filepath.Join(ii.dir, fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, fromStep, toStep))
 			if dir.FileExist(idxPath) {
 				if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
-					log.Debug("InvertedIndex.openFiles: %w, %s", err, idxPath)
+					log.Warn("InvertedIndex.openFiles: %w, %s", err, idxPath)
 					return false
 				}
 				totalKeys += item.index.KeyCount()
