@@ -240,7 +240,7 @@ func (h *History) openFiles() error {
 	h.reCalcRoFiles()
 
 	a, _ := h.files.Max()
-	fmt.Printf("dbg hist: %d, %d\n", a.startTxNum, a.endTxNum)
+	fmt.Printf("dbg hist: %d, %d, %s\n", a.startTxNum, a.endTxNum, h.Files())
 	return nil
 }
 

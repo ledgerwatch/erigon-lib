@@ -332,7 +332,7 @@ func (ii *InvertedIndex) openFiles() error {
 	ii.reCalcRoFiles()
 
 	a, _ := ii.files.Max()
-	fmt.Printf("dbg idx: %d, %d\n", a.startTxNum, a.endTxNum)
+	fmt.Printf("dbg idx: %d, %d, %s\n", a.startTxNum, a.endTxNum, ii.Files())
 	return nil
 }
 
