@@ -26,10 +26,10 @@ import (
 )
 
 //Variables Naming:
-//  ts - TimeStap. Ususally it's Etherum's TransactionNumber (auto-increment ID). Or BlockNumber.
 //  tx - Database Transaction
 //  txn - Ethereum Transaction (and TxNum - is also number of Etherum Transaction)
 //  RoTx - Read-Only Database Transaction. RwTx - read-write
+//  ts - TimeStamp. Ususally it's Etherum's TransactionNumber (auto-increment ID). Or BlockNumber.
 //  k, v - key, value
 //  Cursor - low-level mdbx-tide api to navigate over Table
 //  Iter - high-level iterator-like api over Table/InvertedIndex/History/Domain. Has less features than Cursor. See package `iter`
