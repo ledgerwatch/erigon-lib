@@ -149,6 +149,7 @@ func (txNums) FindBlockNum(tx kv.Tx, endTxNumMinimax uint64) (ok bool, blockNum 
 	if err != nil {
 		return false, 0, err
 	}
+	fmt.Printf("dbg read:  %d -> %d, %d\n", endTxNumMinimax, blockNum, cnt)
 	if blockNum == cnt {
 		return false, 0, nil
 	}
