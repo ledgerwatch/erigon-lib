@@ -1621,6 +1621,7 @@ func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, 
 	if err != nil {
 		return nil, false, err
 	}
+	fmt.Printf("get2: %x, txNum=%d, %x\n", dc.keyBuf[:len(key)+8], fromTxNum, v)
 	return v, true, nil
 }
 
@@ -1631,4 +1632,13 @@ func (dc *DomainContext) Get(key1, key2 []byte, roTx kv.Tx) ([]byte, error) {
 	// keys larger than 52 bytes will panic
 	v, _, err := dc.get(dc.keyBuf[:len(key1)+len(key2)], dc.d.txNum, roTx)
 	return v, err
+}
+
+func (dc *DomainContext) Get2(key1, key2 []byte, roTx kv.Tx) ([]byte, bool, error) {
+	if key2 == nil {
+		return dc.get(key1, dc.d.txNum, roTx)
+	}
+	copy(dc.keyBuf[:], key1)
+	copy(dc.keyBuf[len(key1):], key2)
+	return dc.get(dc.keyBuf[:len(key1)+len(key2)], dc.d.txNum, roTx)
 }
