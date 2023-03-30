@@ -32,7 +32,6 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/log/v3"
 
 	"golang.org/x/sync/errgroup"
@@ -1919,127 +1918,18 @@ func (as *AggregatorStep) ReadAccountDataNoState(addr []byte, txNum uint64) ([]b
 }
 
 // --- Domain part START ---
-func (ac *AggregatorV3Context) ReadAccount(addr []byte, roTx kv.Tx) ([]byte, bool, error) {
-	return ac.accounts.Get2(addr, nil, roTx)
+func (ac *AggregatorV3Context) AccountLatest(addr []byte, roTx kv.Tx) ([]byte, bool, error) {
+	return ac.accounts.GetLatest(addr, nil, roTx)
 }
-func (ac *AggregatorV3Context) ReadStorage(addr []byte, loc []byte, roTx kv.Tx) ([]byte, bool, error) {
-	return ac.storage.Get2(addr, loc, roTx)
+func (ac *AggregatorV3Context) StorageLatest(addr []byte, loc []byte, roTx kv.Tx) ([]byte, bool, error) {
+	return ac.storage.GetLatest(addr, loc, roTx)
 }
-func (ac *AggregatorV3Context) ReadCode(addr []byte, roTx kv.Tx) ([]byte, bool, error) {
-	return ac.code.Get2(addr, nil, roTx)
+func (ac *AggregatorV3Context) CodeLatest(addr []byte, roTx kv.Tx) ([]byte, bool, error) {
+	return ac.code.GetLatest(addr, nil, roTx)
 }
-func (ac *AggregatorV3Context) putDomain(d *DomainContext, key1, key2 []byte, original, val []byte, tx kv.RwTx) error {
-	key := common2.Append(key1, key2)
-	if original == nil {
-		var err error
-		original, _, err = d.get(key, d.d.txNum, tx)
-		if err != nil {
-			return err
-		}
-	}
-	// This call to update needs to happen before d.tx.Put() later, because otherwise the content of `original`` slice is invalidated
-	if err := d.hc.h.AddPrevValue(key1, key2, original); err != nil {
-		return err
-	}
-
-	{
-		var invertedStep [8]byte
-		binary.BigEndian.PutUint64(invertedStep[:], ^(d.d.txNum / d.d.aggregationStep))
-		fmt.Printf("dbg put keys: %x, %x\n", key, invertedStep)
-		if err := tx.Put(d.d.keysTable, key, invertedStep[:]); err != nil {
-			return err
-		}
-	}
-	{
-		invertedStep := ^(d.d.txNum / d.d.aggregationStep)
-		keySuffix := make([]byte, len(key)+8)
-		copy(keySuffix, key)
-		binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
-		fmt.Printf("dbg put vals: %x, %x\n", keySuffix, val)
-		if err := tx.Put(d.d.valsTable, keySuffix, val); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func (ac *AggregatorV3Context) delDomain(d *DomainContext, key1, key2 []byte, tx kv.RwTx) error {
-	key := common2.Append(key1, key2)
-	original, ok, err := d.get(key, d.d.txNum, tx)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
-	}
-
-	// This call to update needs to happen before d.tx.Put() later, because otherwise the content of `original`` slice is invalidated
-	if err := d.hc.h.AddPrevValue(key1, key2, original); err != nil {
-		return err
-	}
-
-	{
-		var invertedStep [8]byte
-		binary.BigEndian.PutUint64(invertedStep[:], ^(d.d.txNum / d.d.aggregationStep))
-		if err := tx.Put(d.d.keysTable, key, invertedStep[:]); err != nil {
-			return err
-		}
-	}
-	{
-		invertedStep := ^(d.d.txNum / d.d.aggregationStep)
-		keySuffix := make([]byte, len(key)+8)
-		copy(keySuffix, key)
-		binary.BigEndian.PutUint64(keySuffix[len(key):], invertedStep)
-		if err = tx.Delete(d.d.valsTable, keySuffix); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-func (ac *AggregatorV3Context) PutAccount(addr []byte, original, account []byte, tx kv.RwTx) error {
-	//ac.commitment.TouchPlainKey(addr, account, ac.commitment.TouchPlainKeyAccount)
-	fmt.Printf("write: %x, txNum=%d\n", addr, ac.a.txNum.Load())
-	return ac.putDomain(ac.accounts, addr, nil, original, account, tx)
-}
-func (ac *AggregatorV3Context) PutCode(addr []byte, code []byte, tx kv.RwTx) error {
-	//ac.commitment.TouchPlainKey(addr, code, ac.commitment.TouchPlainKeyCode)
-	if len(code) == 0 {
-		return ac.delDomain(ac.code, addr, nil, tx)
-	}
-	return ac.putDomain(ac.accounts, addr, nil, nil, code, tx)
-}
-
-func (ac *AggregatorV3Context) DeleteAccount(addr []byte, tx kv.RwTx) error {
-	//ac.commitment.TouchPlainKey(addr, nil, ac.commitment.TouchPlainKeyAccount)
-	if err := ac.delDomain(ac.accounts, addr, nil, tx); err != nil {
-		return err
-	}
-	if err := ac.delDomain(ac.code, addr, nil, tx); err != nil {
-		return err
-	}
-	var e error
-	if err := ac.storage.IteratePrefix(addr, func(k, v []byte) {
-		//ac.commitment.TouchPlainKey(k, nil, ac.commitment.TouchPlainKeyStorage)
-		if e == nil {
-			if err := ac.delDomain(ac.storage, k[:20], k[20:], tx); err != nil {
-				e = err
-			}
-		}
-	}); err != nil {
-		return err
-	}
-	return e
-}
-
-func (ac *AggregatorV3Context) PutStorage(addr, loc []byte, original, value []byte, tx kv.RwTx) error {
-	composite := make([]byte, len(addr)+len(loc))
-	copy(composite, addr)
-	copy(composite[length.Addr:], loc)
-
-	//ac.commitment.TouchPlainKey(composite, value, ac.commitment.TouchPlainKeyStorage)
-	if len(value) == 0 {
-		return ac.delDomain(ac.storage, addr, loc, tx)
-	}
-	return ac.putDomain(ac.storage, addr, loc, original, value, tx)
+func (ac *AggregatorV3Context) IterAcc(prefix []byte, it func(k, v []byte), tx kv.RwTx) error {
+	ac.a.SetTx(tx)
+	return ac.accounts.IteratePrefix(prefix, it)
 }
 
 // --- Domain part END ---
