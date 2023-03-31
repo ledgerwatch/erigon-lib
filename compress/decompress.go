@@ -187,8 +187,11 @@ func NewDecompressor(compressedFilePath string) (*Decompressor, error) {
 
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
+		if d > 32 { // mainnet has maxDepth 31
+			log.Warn("dict with high depth", "d", d, "file", fName)
+		}
 		if d > 2048 {
-			return nil, fmt.Errorf("dictionary is invalid: patternMaxDepth=%d", d)
+			return nil, fmt.Errorf("dictionary is invalid: patternMaxDepth=%d, file=%s", d, fName)
 		}
 		depths = append(depths, d)
 		if d > patternMaxDepth {
