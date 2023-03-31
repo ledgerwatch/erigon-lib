@@ -330,30 +330,30 @@ func (c *Config) CheckCompatible(newcfg *Config, height uint64) *ConfigCompatErr
 	return lasterr
 }
 
-type forkPoint struct {
-	name    string
-	block   *big.Int
-	canSkip bool // if true, the fork may be nil and next fork is still allowed
+type forkBlockNumber struct {
+	name        string
+	blockNumber *big.Int
+	optional    bool // if true, the fork may be nil and next fork is still allowed
 }
 
-func (c *Config) forkPoints() []forkPoint {
-	return []forkPoint{
-		{name: "homesteadBlock", block: c.HomesteadBlock},
-		{name: "daoForkBlock", block: c.DAOForkBlock, canSkip: true},
-		{name: "eip150Block", block: c.TangerineWhistleBlock},
-		{name: "eip155Block", block: c.SpuriousDragonBlock},
-		{name: "byzantiumBlock", block: c.ByzantiumBlock},
-		{name: "constantinopleBlock", block: c.ConstantinopleBlock},
-		{name: "petersburgBlock", block: c.PetersburgBlock},
-		{name: "istanbulBlock", block: c.IstanbulBlock},
-		{name: "muirGlacierBlock", block: c.MuirGlacierBlock, canSkip: true},
-		{name: "eulerBlock", block: c.EulerBlock, canSkip: true},
-		{name: "gibbsBlock", block: c.GibbsBlock, canSkip: true},
-		{name: "berlinBlock", block: c.BerlinBlock},
-		{name: "londonBlock", block: c.LondonBlock},
-		{name: "arrowGlacierBlock", block: c.ArrowGlacierBlock, canSkip: true},
-		{name: "grayGlacierBlock", block: c.GrayGlacierBlock, canSkip: true},
-		{name: "mergeNetsplitBlock", block: c.MergeNetsplitBlock, canSkip: true},
+func (c *Config) forkBlockNumbers() []forkBlockNumber {
+	return []forkBlockNumber{
+		{name: "homesteadBlock", blockNumber: c.HomesteadBlock},
+		{name: "daoForkBlock", blockNumber: c.DAOForkBlock, optional: true},
+		{name: "eip150Block", blockNumber: c.TangerineWhistleBlock},
+		{name: "eip155Block", blockNumber: c.SpuriousDragonBlock},
+		{name: "byzantiumBlock", blockNumber: c.ByzantiumBlock},
+		{name: "constantinopleBlock", blockNumber: c.ConstantinopleBlock},
+		{name: "petersburgBlock", blockNumber: c.PetersburgBlock},
+		{name: "istanbulBlock", blockNumber: c.IstanbulBlock},
+		{name: "muirGlacierBlock", blockNumber: c.MuirGlacierBlock, optional: true},
+		{name: "eulerBlock", blockNumber: c.EulerBlock, optional: true},
+		{name: "gibbsBlock", blockNumber: c.GibbsBlock, optional: true},
+		{name: "berlinBlock", blockNumber: c.BerlinBlock},
+		{name: "londonBlock", blockNumber: c.LondonBlock},
+		{name: "arrowGlacierBlock", blockNumber: c.ArrowGlacierBlock, optional: true},
+		{name: "grayGlacierBlock", blockNumber: c.GrayGlacierBlock, optional: true},
+		{name: "mergeNetsplitBlock", blockNumber: c.MergeNetsplitBlock, optional: true},
 	}
 }
 
@@ -363,24 +363,24 @@ func (c *Config) CheckConfigForkOrder() error {
 		return nil
 	}
 
-	var lastFork forkPoint
+	var lastFork forkBlockNumber
 
-	for _, fork := range c.forkPoints() {
+	for _, fork := range c.forkBlockNumbers() {
 		if lastFork.name != "" {
 			// Next one must be higher number
-			if lastFork.block == nil && fork.block != nil {
+			if lastFork.blockNumber == nil && fork.blockNumber != nil {
 				return fmt.Errorf("unsupported fork ordering: %v not enabled, but %v enabled at %v",
-					lastFork.name, fork.name, fork.block)
+					lastFork.name, fork.name, fork.blockNumber)
 			}
-			if lastFork.block != nil && fork.block != nil {
-				if lastFork.block.Cmp(fork.block) > 0 {
+			if lastFork.blockNumber != nil && fork.blockNumber != nil {
+				if lastFork.blockNumber.Cmp(fork.blockNumber) > 0 {
 					return fmt.Errorf("unsupported fork ordering: %v enabled at %v, but %v enabled at %v",
-						lastFork.name, lastFork.block, fork.name, fork.block)
+						lastFork.name, lastFork.blockNumber, fork.name, fork.blockNumber)
 				}
 			}
 			// If it was optional and not set, then ignore it
 		}
-		if !fork.canSkip || fork.block != nil {
+		if !fork.optional || fork.blockNumber != nil {
 			lastFork = fork
 		}
 	}
