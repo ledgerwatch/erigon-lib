@@ -351,11 +351,11 @@ func (c AggV3Collation) Close() {
 }
 
 func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64) (AggV3StaticFiles, error) {
-	logEvery := time.NewTicker(60 * time.Second)
-	defer logEvery.Stop()
-	defer func(t time.Time) {
-		log.Info(fmt.Sprintf("[snapshot] build %d-%d", step, step+1), "took", time.Since(t))
-	}(time.Now())
+	//logEvery := time.NewTicker(60 * time.Second)
+	//defer logEvery.Stop()
+	//defer func(t time.Time) {
+	//	log.Info(fmt.Sprintf("[snapshot] build %d-%d", step, step+1), "took", time.Since(t))
+	//}(time.Now())
 	var sf AggV3StaticFiles
 	var ac AggV3Collation
 	closeColl := true
@@ -371,7 +371,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx, logEvery)
+		ac.accounts, err = a.accounts.collate(step, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -388,7 +388,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx, logEvery)
+		ac.storage, err = a.storage.collate(step, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -404,7 +404,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.code, err = a.code.collate(step, txFrom, txTo, tx, logEvery)
+		ac.code, err = a.code.collate(step, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -420,7 +420,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.logAddrs, err = a.logAddrs.collate(ctx, txFrom, txTo, tx, logEvery)
+		ac.logAddrs, err = a.logAddrs.collate(ctx, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -436,7 +436,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.logTopics, err = a.logTopics.collate(ctx, txFrom, txTo, tx, logEvery)
+		ac.logTopics, err = a.logTopics.collate(ctx, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -452,7 +452,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.tracesFrom, err = a.tracesFrom.collate(ctx, txFrom, txTo, tx, logEvery)
+		ac.tracesFrom, err = a.tracesFrom.collate(ctx, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -468,7 +468,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.tracesTo, err = a.tracesTo.collate(ctx, txFrom, txTo, tx, logEvery)
+		ac.tracesTo, err = a.tracesTo.collate(ctx, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err

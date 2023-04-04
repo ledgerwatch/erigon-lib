@@ -824,10 +824,10 @@ func (d *Domain) writeCollationPair(valuesComp *compress.Compressor, pairs chan 
 }
 
 // nolint
-func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64, tx kv.Tx, logEvery *time.Ticker, ps *background.ProgressSet) (err error) {
+func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64, tx kv.Tx, ps *background.ProgressSet) (err error) {
 	mxRunningCollations.Inc()
 	start := time.Now()
-	collation, err := d.collateStream(ctx, step, txFrom, txTo, tx, logEvery)
+	collation, err := d.collateStream(ctx, step, txFrom, txTo, tx)
 	mxRunningCollations.Dec()
 	mxCollateTook.UpdateDuration(start)
 
@@ -863,13 +863,13 @@ func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64
 // collate gathers domain changes over the specified step, using read-only transaction,
 // and returns compressors, elias fano, and bitmaps
 // [txFrom; txTo)
-func (d *Domain) collateStream(ctx context.Context, step, txFrom, txTo uint64, roTx kv.Tx, logEvery *time.Ticker) (Collation, error) {
+func (d *Domain) collateStream(ctx context.Context, step, txFrom, txTo uint64, roTx kv.Tx) (Collation, error) {
 	started := time.Now()
 	defer func() {
 		d.stats.LastCollationTook = time.Since(started)
 	}()
 
-	hCollation, err := d.History.collate(step, txFrom, txTo, roTx, logEvery)
+	hCollation, err := d.History.collate(step, txFrom, txTo, roTx)
 	if err != nil {
 		return Collation{}, err
 	}
@@ -902,10 +902,10 @@ func (d *Domain) collateStream(ctx context.Context, step, txFrom, txTo uint64, r
 		pairs    = make(chan kvpair, 1024)
 	)
 
-	totalKeys, err := keysCursor.Count()
-	if err != nil {
-		return Collation{}, fmt.Errorf("failed to obtain keys count for domain %q", d.filenameBase)
-	}
+	//totalKeys, err := keysCursor.Count()
+	//if err != nil {
+	//	return Collation{}, fmt.Errorf("failed to obtain keys count for domain %q", d.filenameBase)
+	//}
 
 	eg, _ := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -938,10 +938,6 @@ func (d *Domain) collateStream(ctx context.Context, step, txFrom, txTo uint64, r
 			select {
 			case <-ctx.Done():
 				return Collation{}, ctx.Err()
-			case <-logEvery.C:
-				log.Info("[snapshots] collate domain", "name", d.filenameBase,
-					"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)),
-					"progress", fmt.Sprintf("%.2f%%", float64(pos)/float64(totalKeys)*100))
 			default:
 			}
 
@@ -978,7 +974,7 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 		d.stats.LastCollationTook = time.Since(started)
 	}()
 
-	hCollation, err := d.History.collate(step, txFrom, txTo, roTx, logEvery)
+	hCollation, err := d.History.collate(step, txFrom, txTo, roTx)
 	if err != nil {
 		return Collation{}, err
 	}
@@ -1008,20 +1004,17 @@ func (d *Domain) collate(ctx context.Context, step, txFrom, txTo uint64, roTx kv
 		valuesCount uint
 	)
 
-	totalKeys, err := keysCursor.Count()
-	if err != nil {
-		return Collation{}, fmt.Errorf("failed to obtain keys count for domain %q", d.filenameBase)
-	}
+	//TODO: use prorgesSet
+	//totalKeys, err := keysCursor.Count()
+	//if err != nil {
+	//	return Collation{}, fmt.Errorf("failed to obtain keys count for domain %q", d.filenameBase)
+	//}
 	for k, _, err = keysCursor.First(); err == nil && k != nil; k, _, err = keysCursor.NextNoDup() {
 		if err != nil {
 			return Collation{}, err
 		}
 		pos++
 		select {
-		case <-logEvery.C:
-			log.Info("[snapshots] collate domain", "name", d.filenameBase,
-				"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)),
-				"progress", fmt.Sprintf("%.2f%%", float64(pos)/float64(totalKeys)*100))
 		case <-ctx.Done():
 			log.Warn("[snapshots] collate domain cancelled", "name", d.filenameBase, "err", ctx.Err())
 			return Collation{}, ctx.Err()

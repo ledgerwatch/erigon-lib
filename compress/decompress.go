@@ -256,7 +256,7 @@ func NewDecompressor(compressedFilePath string) (*Decompressor, error) {
 		}
 		buildPosTable(posDepths, poss, d.posDict, 0, 0, 0, posMaxDepth)
 	} else {
-		return nil, fmt.Errorf("dictionary is invalid: patternMaxDepth=%d", d)
+		return nil, fmt.Errorf("empty dictionary? dictSize=%d", dictSize)
 	}
 	d.wordsStart = pos + 8 + dictSize
 	return d, nil
