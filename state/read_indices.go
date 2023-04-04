@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/ledgerwatch/erigon-lib/common/background"
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
@@ -34,6 +35,7 @@ type ReadIndices struct {
 	keyBuf          []byte
 	aggregationStep uint64
 	txNum           uint64
+	ps              *background.ProgressSet
 }
 
 func NewReadIndices(
@@ -42,6 +44,7 @@ func NewReadIndices(
 ) (*ReadIndices, error) {
 	ri := &ReadIndices{
 		aggregationStep: aggregationStep,
+		ps:              background.NewProgressSet(),
 	}
 	closeIndices := true
 	defer func() {
@@ -150,21 +153,21 @@ func (ri *ReadIndices) buildFiles(ctx context.Context, step uint64, collation RC
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.accounts, err = ri.accounts.buildFiles(ctx, step, collation.accounts); err != nil {
+		if sf.accounts, err = ri.accounts.buildFiles(ctx, step, collation.accounts, ri.ps); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.storage, err = ri.storage.buildFiles(ctx, step, collation.storage); err != nil {
+		if sf.storage, err = ri.storage.buildFiles(ctx, step, collation.storage, ri.ps); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.code, err = ri.code.buildFiles(ctx, step, collation.code); err != nil {
+		if sf.code, err = ri.code.buildFiles(ctx, step, collation.code, ri.ps); err != nil {
 			errCh <- err
 		}
 	}()
@@ -312,7 +315,7 @@ func (ri *ReadIndices) mergeFiles(ctx context.Context, files RSelectedStaticFile
 		defer wg.Done()
 		var err error
 		if r.accounts {
-			if mf.accounts, err = ri.accounts.mergeFiles(ctx, files.accounts, r.accountsStartTxNum, r.accountsEndTxNum, workers); err != nil {
+			if mf.accounts, err = ri.accounts.mergeFiles(ctx, files.accounts, r.accountsStartTxNum, r.accountsEndTxNum, workers, ri.ps); err != nil {
 				errCh <- err
 			}
 		}
@@ -321,7 +324,7 @@ func (ri *ReadIndices) mergeFiles(ctx context.Context, files RSelectedStaticFile
 		defer wg.Done()
 		var err error
 		if r.storage {
-			if mf.storage, err = ri.storage.mergeFiles(ctx, files.storage, r.storageStartTxNum, r.storageEndTxNum, workers); err != nil {
+			if mf.storage, err = ri.storage.mergeFiles(ctx, files.storage, r.storageStartTxNum, r.storageEndTxNum, workers, ri.ps); err != nil {
 				errCh <- err
 			}
 		}
@@ -330,7 +333,7 @@ func (ri *ReadIndices) mergeFiles(ctx context.Context, files RSelectedStaticFile
 		defer wg.Done()
 		var err error
 		if r.code {
-			if mf.code, err = ri.code.mergeFiles(ctx, files.code, r.codeStartTxNum, r.codeEndTxNum, workers); err != nil {
+			if mf.code, err = ri.code.mergeFiles(ctx, files.code, r.codeStartTxNum, r.codeEndTxNum, workers, ri.ps); err != nil {
 				errCh <- err
 			}
 		}

@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/ledgerwatch/erigon-lib/common/background"
 	btree2 "github.com/tidwall/btree"
 	"golang.org/x/sync/errgroup"
 
@@ -195,15 +196,6 @@ func (d *Domain) openList(fNames []string) error {
 }
 
 func (d *Domain) OpenFolder() error {
-	eg, ctx := errgroup.WithContext(context.Background())
-	eg.SetLimit(32)
-	if err := d.BuildMissedIndices(ctx, eg); err != nil {
-		return err
-	}
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
 	files, err := d.fileNamesOnDisk()
 	if err != nil {
 		return err
@@ -832,7 +824,7 @@ func (d *Domain) writeCollationPair(valuesComp *compress.Compressor, pairs chan 
 }
 
 // nolint
-func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64, tx kv.Tx, logEvery *time.Ticker) (err error) {
+func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64, tx kv.Tx, logEvery *time.Ticker, ps *background.ProgressSet) (err error) {
 	mxRunningCollations.Inc()
 	start := time.Now()
 	collation, err := d.collateStream(ctx, step, txFrom, txTo, tx, logEvery)
@@ -851,7 +843,7 @@ func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64
 	mxRunningMerges.Inc()
 
 	start = time.Now()
-	sf, err := d.buildFiles(ctx, step, collation)
+	sf, err := d.buildFiles(ctx, step, collation, ps)
 	collation.Close()
 	defer sf.Close()
 
@@ -1108,13 +1100,13 @@ func (sf StaticFiles) Close() {
 
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
-func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collation) (StaticFiles, error) {
+func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collation, ps *background.ProgressSet) (StaticFiles, error) {
 	hStaticFiles, err := d.History.buildFiles(ctx, step, HistoryCollation{
 		historyPath:  collation.historyPath,
 		historyComp:  collation.historyComp,
 		historyCount: collation.historyCount,
 		indexBitmaps: collation.indexBitmaps,
-	})
+	}, ps)
 	if err != nil {
 		return StaticFiles{}, err
 	}
@@ -1136,7 +1128,6 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 			}
 		}
 	}()
-	valuesIdxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, step, step+1))
 	if err = valuesComp.Compress(); err != nil {
 		return StaticFiles{}, fmt.Errorf("compress %s values: %w", d.filenameBase, err)
 	}
@@ -1146,14 +1137,26 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
-	if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false); err != nil {
-		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
+	valuesIdxFileName := fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, step, step+1)
+	valuesIdxPath := filepath.Join(d.dir, valuesIdxFileName)
+	{
+		p := ps.AddNew(valuesIdxFileName, uint64(valuesDecomp.Count()))
+		defer ps.Delete(p)
+		if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false, p); err != nil {
+			return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
+		}
 	}
 
-	btPath := strings.TrimSuffix(valuesIdxPath, "kvi") + "bt"
-	bt, err := CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp)
-	if err != nil {
-		return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
+	var bt *BtIndex
+	btFileName := strings.TrimSuffix(valuesIdxFileName, "kvi") + "bt"
+	btPath := filepath.Join(d.dir, valuesIdxFileName)
+	{
+		p := ps.AddNew(btFileName, uint64(valuesDecomp.Count()))
+		defer ps.Delete(p)
+		bt, err = CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp, p)
+		if err != nil {
+			return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
+		}
 	}
 
 	closeComp = false
@@ -1182,17 +1185,19 @@ func (d *Domain) missedIdxFiles() (l []*filesItem) {
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
-func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group) (err error) {
-	d.History.BuildMissedIndices(ctx, g)
-	d.InvertedIndex.BuildMissedIndices(ctx, g)
+func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group, ps *background.ProgressSet) (err error) {
+	d.History.BuildMissedIndices(ctx, g, ps)
+	d.InvertedIndex.BuildMissedIndices(ctx, g, ps)
 	for _, item := range d.missedIdxFiles() {
 		//TODO: build .kvi
 		fitem := item
 		g.Go(func() error {
-			idxPath := filepath.Join(fitem.decompressor.FilePath(), fitem.decompressor.FileName())
-			idxPath = strings.TrimSuffix(idxPath, "kv") + "bt"
+			idxFileName := strings.TrimSuffix(fitem.decompressor.FileName(), "kv") + "bt"
+			idxPath := filepath.Join(fitem.decompressor.FilePath(), idxFileName)
 
-			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor); err != nil {
+			p := ps.AddNew(idxFileName, uint64(fitem.decompressor.Count()))
+			defer ps.Delete(p)
+			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor, p); err != nil {
 				return fmt.Errorf("failed to build btree index for %s:  %w", fitem.decompressor.FileName(), err)
 			}
 			return nil
@@ -1201,14 +1206,14 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group) (err
 	return nil
 }
 
-func buildIndexThenOpen(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) (*recsplit.Index, error) {
-	if err := buildIndex(ctx, d, idxPath, tmpdir, count, values); err != nil {
+func buildIndexThenOpen(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool, p *background.Progress) (*recsplit.Index, error) {
+	if err := buildIndex(ctx, d, idxPath, tmpdir, count, values, p); err != nil {
 		return nil, err
 	}
 	return recsplit.OpenIndex(idxPath)
 }
 
-func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool) error {
+func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool, p *background.Progress) error {
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -1247,6 +1252,8 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 			}
 			// Skip value
 			keyPos = g.Skip()
+
+			p.Processed.Add(1)
 		}
 		if err = rs.Build(); err != nil {
 			if rs.Collision() {
