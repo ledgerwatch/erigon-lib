@@ -263,6 +263,21 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, workers int) erro
 
 		g, ctx := errgroup.WithContext(ctx)
 		g.SetLimit(workers)
+		go func() {
+			logEvery := time.NewTicker(20 * time.Second)
+			defer logEvery.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-logEvery.C:
+					var m runtime.MemStats
+					dbg.ReadMemStats(&m)
+					log.Info("[snapshots] Indexing", "progress", ps.String(), "total-indexing-time", time.Since(startIndexingTime).Round(time.Second).String(), "alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
+				}
+			}
+		}()
+
 		a.accounts.BuildMissedIndices(ctx, g, ps)
 		a.storage.BuildMissedIndices(ctx, g, ps)
 		a.code.BuildMissedIndices(ctx, g, ps)
@@ -271,20 +286,6 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, workers int) erro
 		a.tracesFrom.BuildMissedIndices(ctx, g, ps)
 		a.tracesTo.BuildMissedIndices(ctx, g, ps)
 
-		g.Go(func() error {
-			logEvery := time.NewTicker(20 * time.Second)
-			defer logEvery.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-logEvery.C:
-					var m runtime.MemStats
-					dbg.ReadMemStats(&m)
-					log.Info("[snapshots] Indexing", "progress", ps.String(), "total-indexing-time", time.Since(startIndexingTime).Round(time.Second).String(), "alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
-				}
-			}
-		})
 		if err := g.Wait(); err != nil {
 			return err
 		}
