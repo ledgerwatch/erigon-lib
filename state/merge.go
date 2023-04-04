@@ -545,7 +545,7 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 		if comp, err = compress.NewCompressor(ctx, "merge", datPath, d.tmpdir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
 		}
-		p := ps.AddNew(datFileName, 1)
+		p := ps.AddNew("merege "+datFileName, 1)
 		defer ps.Delete(p)
 
 		var cp CursorHeap
@@ -640,19 +640,18 @@ func (d *Domain) mergeFiles(ctx context.Context, valuesFiles, indexFiles, histor
 		}
 		comp.Close()
 		comp = nil
+		ps.Delete(p)
+		frozen := (r.valuesEndTxNum-r.valuesStartTxNum)/d.aggregationStep == StepsInBiggestFile
+		valuesIn = &filesItem{startTxNum: r.valuesStartTxNum, endTxNum: r.valuesEndTxNum, frozen: frozen}
+		if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+
 		idxFileName := fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep)
 		idxPath := filepath.Join(d.dir, idxFileName)
-
-		{
-			p := ps.AddNew(datFileName, uint64(keyCount*2))
-			defer ps.Delete(p)
-			frozen := (r.valuesEndTxNum-r.valuesStartTxNum)/d.aggregationStep == StepsInBiggestFile
-			valuesIn = &filesItem{startTxNum: r.valuesStartTxNum, endTxNum: r.valuesEndTxNum, frozen: frozen}
-			if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
-				return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
-			}
-			ps.Delete(p)
-		}
+		p = ps.AddNew("merge "+idxFileName, uint64(keyCount*2))
+		defer ps.Delete(p)
+		ps.Delete(p)
 
 		//		if valuesIn.index, err = buildIndex(valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
 		if valuesIn.index, err = buildIndexThenOpen(ctx, valuesIn.decompressor, idxPath, d.tmpdir, keyCount, false /* values */, p); err != nil {
