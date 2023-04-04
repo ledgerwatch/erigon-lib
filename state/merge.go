@@ -719,7 +719,7 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	if comp, err = compress.NewCompressor(ctx, "Snapshots merge", datPath, ii.tmpdir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
 		return nil, fmt.Errorf("merge %s inverted index compressor: %w", ii.filenameBase, err)
 	}
-	p := ps.AddNew(datFileName, 1)
+	p := ps.AddNew("merge "+datFileName, 1)
 	defer ps.Delete(p)
 
 	var cp CursorHeap
@@ -800,15 +800,16 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	}
 	comp.Close()
 	comp = nil
-
-	idxFileName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, startTxNum/ii.aggregationStep, endTxNum/ii.aggregationStep)
-	idxPath := filepath.Join(ii.dir, idxFileName)
 	frozen := (endTxNum-startTxNum)/ii.aggregationStep == StepsInBiggestFile
 	outItem = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
 	if outItem.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 		return nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
 	}
-	p = ps.AddNew(datFileName, uint64(outItem.decompressor.Count()*2))
+	ps.Delete(p)
+
+	idxFileName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, startTxNum/ii.aggregationStep, endTxNum/ii.aggregationStep)
+	idxPath := filepath.Join(ii.dir, idxFileName)
+	p = ps.AddNew("merge "+idxFileName, uint64(outItem.decompressor.Count()*2))
 	defer ps.Delete(p)
 	if outItem.index, err = buildIndexThenOpen(ctx, outItem.decompressor, idxPath, ii.tmpdir, keyCount, false /* values */, p); err != nil {
 		return nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", ii.filenameBase, startTxNum, endTxNum, err)
@@ -878,7 +879,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		if comp, err = compress.NewCompressor(ctx, "merge", datPath, h.tmpdir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
 			return nil, nil, fmt.Errorf("merge %s history compressor: %w", h.filenameBase, err)
 		}
-		p := ps.AddNew(datFileName, 1)
+		p := ps.AddNew("merge "+datFileName, 1)
 		defer ps.Delete(p)
 		var cp CursorHeap
 		heap.Init(&cp)
@@ -959,7 +960,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 		}
 		ps.Delete(p)
 
-		p = ps.AddNew(idxFileName, uint64(2*keyCount))
+		p = ps.AddNew("merge "+idxFileName, uint64(2*keyCount))
 		defer ps.Delete(p)
 		if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
 			KeyCount:   keyCount,
