@@ -1126,14 +1126,14 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 	}
 	valuesComp.Close()
 	valuesComp = nil
-
 	if valuesDecomp, err = compress.NewDecompressor(collation.valuesPath); err != nil {
 		return StaticFiles{}, fmt.Errorf("open %s values decompressor: %w", d.filenameBase, err)
 	}
+
 	valuesIdxFileName := fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, step, step+1)
 	valuesIdxPath := filepath.Join(d.dir, valuesIdxFileName)
 	{
-		p := ps.AddNew(valuesIdxFileName, uint64(valuesDecomp.Count()))
+		p := ps.AddNew(valuesIdxFileName, uint64(valuesDecomp.Count()*2))
 		defer ps.Delete(p)
 		if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false, p); err != nil {
 			return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
@@ -1141,10 +1141,10 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 	}
 
 	var bt *BtIndex
-	btFileName := strings.TrimSuffix(valuesIdxFileName, "kvi") + "bt"
-	btPath := filepath.Join(d.dir, valuesIdxFileName)
 	{
-		p := ps.AddNew(btFileName, uint64(valuesDecomp.Count()))
+		btFileName := strings.TrimSuffix(valuesIdxFileName, "kvi") + "bt"
+		btPath := filepath.Join(d.dir, btFileName)
+		p := ps.AddNew(btFileName, uint64(valuesDecomp.Count()*2))
 		defer ps.Delete(p)
 		bt, err = CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp, p)
 		if err != nil {
@@ -1185,10 +1185,10 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group, ps *
 		//TODO: build .kvi
 		fitem := item
 		g.Go(func() error {
-			idxFileName := strings.TrimSuffix(fitem.decompressor.FileName(), "kv") + "bt"
-			idxPath := filepath.Join(fitem.decompressor.FilePath(), idxFileName)
+			idxPath := filepath.Join(fitem.decompressor.FilePath(), fitem.decompressor.FileName())
+			idxPath = strings.TrimSuffix(idxPath, "kv") + "bt"
 
-			p := ps.AddNew(idxFileName, uint64(fitem.decompressor.Count()))
+			p := ps.AddNew("fixme", uint64(fitem.decompressor.Count()))
 			defer ps.Delete(p)
 			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor, p); err != nil {
 				return fmt.Errorf("failed to build btree index for %s:  %w", fitem.decompressor.FileName(), err)
