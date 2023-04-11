@@ -439,7 +439,7 @@ func (f *Fetch) handleNewPeer(req *sentry.PeerEvent) error {
 		return nil
 	}
 	switch req.EventId {
-	case sentry.PeerEvent_Connect:
+	case sentry.PeerEvent_CONNECT:
 		f.pool.AddNewGoodPeer(req.PeerId)
 	}
 
