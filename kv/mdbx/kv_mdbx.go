@@ -138,6 +138,7 @@ func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.NoMemInit
 	opts.mapSize = 16 * datasize.MB
+	opts.growthStep = 512 * datasize.KB
 	opts.label = kv.InMem
 	return opts
 }
@@ -248,15 +249,15 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		}
 	}
 	if opts.flags&mdbx.Accede == 0 {
-		if opts.inMem {
-			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(2*datasize.MB), 0, 4*1024); err != nil {
-				return nil, err
-			}
-		} else {
-			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), -1, int(opts.pageSize)); err != nil {
-				return nil, err
-			}
+		//if opts.inMem {
+		//	if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(2*datasize.MB), 0, 4*1024); err != nil {
+		//		return nil, err
+		//	}
+		//} else {
+		if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), -1, int(opts.pageSize)); err != nil {
+			return nil, err
 		}
+		//}
 
 		if err = os.MkdirAll(opts.path, 0744); err != nil {
 			return nil, fmt.Errorf("could not create dir: %s, %w", opts.path, err)
