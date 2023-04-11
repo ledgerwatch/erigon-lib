@@ -310,7 +310,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		var prevHashes types.Hashes
 		ch := make(chan types.Announcements, 100)
-		db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+		db, coreDB := memdb.NewTestDB(kv.TxPoolDB, t), memdb.NewTestDB(kv.ChainDB, t)
 
 		cfg := txpoolcfg.DefaultConfig
 		sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)

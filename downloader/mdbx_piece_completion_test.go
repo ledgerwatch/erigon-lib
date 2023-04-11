@@ -19,6 +19,7 @@ package downloader
 import (
 	"testing"
 
+	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ import (
 )
 
 func TestMdbxPieceCompletion(t *testing.T) {
-	db := memdb.NewTestDownloaderDB(t)
+	db := memdb.NewTestDB(kv.DownloaderDB, t)
 	pc, err := NewMdbxPieceCompletion(db)
 	require.NoError(t, err)
 	defer pc.Close()

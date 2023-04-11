@@ -43,7 +43,7 @@ import (
 func TestNonceFromAddress(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	ch := make(chan types.Announcements, 100)
-	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+	db, coreDB := memdb.NewTestDB(kv.TxPoolDB, t), memdb.NewTestDB(kv.ChainDB, t)
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
@@ -163,7 +163,7 @@ func TestNonceFromAddress(t *testing.T) {
 func TestReplaceWithHigherFee(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	ch := make(chan types.Announcements, 100)
-	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+	db, coreDB := memdb.NewTestDB(kv.TxPoolDB, t), memdb.NewTestDB(kv.ChainDB, t)
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
@@ -280,7 +280,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 func TestReverseNonces(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	ch := make(chan types.Announcements, 100)
-	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+	db, coreDB := memdb.NewTestDB(kv.ChainDB, t), memdb.NewTestDB(kv.ChainDB, t)
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
@@ -407,7 +407,7 @@ func TestReverseNonces(t *testing.T) {
 func TestTxPoke(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	ch := make(chan types.Announcements, 100)
-	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+	db, coreDB := memdb.NewTestDB(kv.TxPoolDB, t), memdb.NewTestDB(kv.ChainDB, t)
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
@@ -665,7 +665,7 @@ func TestShanghaiValidateTx(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			ch := make(chan types.Announcements, 100)
-			_, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+			_, coreDB := memdb.NewTestDB(kv.TxPoolDB, t), memdb.NewTestDB(kv.ChainDB, t)
 			cfg := txpoolcfg.DefaultConfig
 
 			var shanghaiTime *big.Int

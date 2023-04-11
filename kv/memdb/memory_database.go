@@ -25,25 +25,26 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
-func New(tmpDir string) kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem(tmpDir).MustOpen()
+func New(l kv.Label, tmpDir string) kv.RwDB {
+	switch l {
+	case kv.SentryDB:
+		return mdbx.NewMDBX(log.New()).InMem(tmpDir).Label(kv.SentryDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.SentryTablesCfg }).MustOpen()
+	case kv.DownloaderDB:
+		return mdbx.NewMDBX(log.New()).InMem(tmpDir).Label(kv.DownloaderDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.DownloaderTablesCfg }).MustOpen()
+	case kv.TxPoolDB:
+		return mdbx.NewMDBX(log.New()).InMem(tmpDir).Label(kv.TxPoolDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).MustOpen()
+	case kv.ReconstDB:
+		return mdbx.NewMDBX(log.New()).InMem(tmpDir).Label(kv.ReconstDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.ReconTablesCfg }).MustOpen()
+	default:
+		return mdbx.NewMDBX(log.New()).InMem(tmpDir).MustOpen()
+	}
 }
 
-func NewPoolDB(tmpDir string) kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem(tmpDir).Label(kv.TxPoolDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).MustOpen()
-}
-func NewDownloaderDB(tmpDir string) kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem(tmpDir).Label(kv.DownloaderDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.DownloaderTablesCfg }).MustOpen()
-}
-func NewSentryDB(tmpDir string) kv.RwDB {
-	return mdbx.NewMDBX(log.New()).InMem(tmpDir).Label(kv.SentryDB).WithTableCfg(func(_ kv.TableCfg) kv.TableCfg { return kv.SentryTablesCfg }).MustOpen()
-}
-
-func NewTestDB(tb testing.TB) kv.RwDB {
+func NewTestDB(l kv.Label, tb testing.TB) kv.RwDB {
 	tb.Helper()
 	tmpDir := tb.TempDir()
 	tb.Helper()
-	db := New(tmpDir)
+	db := New(l, tmpDir)
 	tb.Cleanup(db.Close)
 	return db
 }
@@ -58,75 +59,15 @@ func BeginRw(tb testing.TB, db kv.RwDB) kv.RwTx {
 	return tx
 }
 
-func BeginRo(tb testing.TB, db kv.RoDB) kv.Tx {
-	tb.Helper()
-	tx, err := db.BeginRo(context.Background())
-	if err != nil {
-		tb.Fatal(err)
-	}
-	tb.Cleanup(tx.Rollback)
-	return tx
-}
-
-func NewTestPoolDB(tb testing.TB) kv.RwDB {
-	tb.Helper()
-	tmpDir := tb.TempDir()
-	db := NewPoolDB(tmpDir)
-	tb.Cleanup(db.Close)
-	return db
-}
-
-func NewTestDownloaderDB(tb testing.TB) kv.RwDB {
-	tb.Helper()
-	tmpDir := tb.TempDir()
-	db := NewDownloaderDB(tmpDir)
-	tb.Cleanup(db.Close)
-	return db
-}
-
-func NewTestSentrylDB(tb testing.TB) kv.RwDB {
-	tb.Helper()
-	tmpDir := tb.TempDir()
-	db := NewPoolDB(tmpDir)
-	tb.Cleanup(db.Close)
-	return db
-}
-
 func NewTestTx(tb testing.TB) (kv.RwDB, kv.RwTx) {
 	tb.Helper()
 	tmpDir := tb.TempDir()
-	db := New(tmpDir)
+	db := New(kv.ChainDB, tmpDir)
 	tb.Cleanup(db.Close)
 	tx, err := db.BeginRw(context.Background())
 	if err != nil {
 		tb.Fatal(err)
 	}
 	tb.Cleanup(tx.Rollback)
-	return db, tx
-}
-
-func NewTestPoolTx(tb testing.TB) (kv.RwDB, kv.RwTx) {
-	tb.Helper()
-	db := NewTestPoolDB(tb)
-	tx, err := db.BeginRw(context.Background()) //nolint
-	if err != nil {
-		tb.Fatal(err)
-	}
-	if tb != nil {
-		tb.Cleanup(tx.Rollback)
-	}
-	return db, tx
-}
-
-func NewTestSentryTx(tb testing.TB) (kv.RwDB, kv.RwTx) {
-	tb.Helper()
-	db := NewTestSentrylDB(tb)
-	tx, err := db.BeginRw(context.Background()) //nolint
-	if err != nil {
-		tb.Fatal(err)
-	}
-	if tb != nil {
-		tb.Cleanup(tx.Rollback)
-	}
 	return db, tx
 }

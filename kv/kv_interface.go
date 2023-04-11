@@ -138,6 +138,7 @@ const (
 	ConsensusDB  Label = 3
 	DownloaderDB Label = 4
 	InMem        Label = 5
+	ReconstDB    Label = 6
 )
 
 func (l Label) String() string {
