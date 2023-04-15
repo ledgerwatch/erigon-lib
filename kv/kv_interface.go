@@ -26,34 +26,45 @@ import (
 )
 
 //Variables Naming:
-//  ts - TimeStamp (usually it's TxnNumber)
 //  tx - Database Transaction
 //  txn - Ethereum Transaction (and TxNum - is also number of Etherum Transaction)
-//  RoTx - Read-Only Database Transaction
-//  RwTx - Read-Write Database Transaction
-//  k - key
-//  v - value
+//  RoTx - Read-Only Database Transaction. RwTx - read-write
+//  k, v - key, value
+//  ts - TimeStamp. Usually it's Etherum's TransactionNumber (auto-increment ID). Or BlockNumber.
 //  Cursor - low-level mdbx-tide api to navigate over Table
-//  Iter - high-level iterator-like api over Table, InvertedIndex, History, Domain. Has less features than Cursor.
+//  Iter - high-level iterator-like api over Table/InvertedIndex/History/Domain. Has less features than Cursor. See package `iter`
 
 //Methods Naming:
 //  Get: exact match of criterias
-//  Range: [from, to). Stream(from, nil) means [from, EndOfTable). Stream(nil, to) means [StartOfTable, to).
-//  Each: Range(from, nil)
+//  Range: [from, to). from=nil means StartOfTable, to=nil means EndOfTable, rangeLimit=-1 means Unlimited
 //  Prefix: `Range(Table, prefix, kv.NextSubtree(prefix))`
-//  Limit: [from, INF) AND maximum N records
 
-//Entity Naming:
-//  State: simple table in db
-//  InvertedIndex: supports range-scans
-//  History: can return value of key K as of given TimeStamp. Doesn't know about latest/current value of key K. Returns NIL if K not changed after TimeStamp.
-//  Domain: as History but also aware about latest/current value of key K.
+//Abstraction Layers:
+// LowLevel:
+//      1. DB/Tx - low-level key-value database
+//      2. Snapshots/Freeze - immutable files with historical data. May be downloaded at first App
+//              start or auto-generate by moving old data from DB to Snapshots.
+// MediumLevel:
+//      1. TemporalDB - abstracting DB+Snapshots. Target is:
+//              - provide 'time-travel' API for data: consistan snapshot of data as of given Timestamp.
+//              - to keep DB small - only for Hot/Recent data (can be update/delete by re-org).
+//              - using next entities:
+//                      - InvertedIndex: supports range-scans
+//                      - History: can return value of key K as of given TimeStamp. Doesn't know about latest/current
+//                          value of key K. Returns NIL if K not changed after TimeStamp.
+//                      - Domain: as History but also aware about latest/current value of key K. Can move
+//                          cold (updated long time ago) parts of state from db to snapshots.
+
+// HighLevel:
+//      1. Application - rely on TemporalDB (Ex: ExecutionLayer) or just DB (Ex: TxPool, Sentry, Downloader).
 
 const ReadersLimit = 32000 // MDBX_READERS_LIMIT=32767
 
+// const Unbounded []byte = nil
+const Unlim int = -1
+
 var (
 	ErrAttemptToDeleteNonDeprecatedBucket = errors.New("only buckets from dbutils.ChaindataDeprecatedTables can be deleted")
-	ErrUnknownBucket                      = errors.New("unknown bucket. add it to dbutils.ChaindataTables")
 
 	DbSize    = metrics.NewCounter(`db_size`)    //nolint
 	TxLimit   = metrics.NewCounter(`tx_limit`)   //nolint
@@ -70,37 +81,39 @@ var (
 	DbCommitEnding      = metrics.GetOrCreateSummary(`db_commit_seconds{phase="ending"}`)        //nolint
 	DbCommitTotal       = metrics.GetOrCreateSummary(`db_commit_seconds{phase="total"}`)         //nolint
 
-	DbPgopsNewly    = metrics.NewCounter(`db_pgops{phase="newly"}`)    //nolint
-	DbPgopsCow      = metrics.NewCounter(`db_pgops{phase="cow"}`)      //nolint
-	DbPgopsClone    = metrics.NewCounter(`db_pgops{phase="clone"}`)    //nolint
-	DbPgopsSplit    = metrics.NewCounter(`db_pgops{phase="split"}`)    //nolint
-	DbPgopsMerge    = metrics.NewCounter(`db_pgops{phase="merge"}`)    //nolint
-	DbPgopsSpill    = metrics.NewCounter(`db_pgops{phase="spill"}`)    //nolint
-	DbPgopsUnspill  = metrics.NewCounter(`db_pgops{phase="unspill"}`)  //nolint
-	DbPgopsWops     = metrics.NewCounter(`db_pgops{phase="wops"}`)     //nolint
-	DbPgopsPrefault = metrics.NewCounter(`db_pgops{phase="prefault"}`) //nolint
-	DbPgopsMinicore = metrics.NewCounter(`db_pgops{phase="minicore"}`) //nolint
-	DbPgopsMsync    = metrics.NewCounter(`db_pgops{phase="msync"}`)    //nolint
-	DbPgopsFsync    = metrics.NewCounter(`db_pgops{phase="fsync"}`)    //nolint
-	DbMiLastPgNo    = metrics.NewCounter(`db_mi_last_pgno`)            //nolint
+	DbPgopsNewly   = metrics.NewCounter(`db_pgops{phase="newly"}`)   //nolint
+	DbPgopsCow     = metrics.NewCounter(`db_pgops{phase="cow"}`)     //nolint
+	DbPgopsClone   = metrics.NewCounter(`db_pgops{phase="clone"}`)   //nolint
+	DbPgopsSplit   = metrics.NewCounter(`db_pgops{phase="split"}`)   //nolint
+	DbPgopsMerge   = metrics.NewCounter(`db_pgops{phase="merge"}`)   //nolint
+	DbPgopsSpill   = metrics.NewCounter(`db_pgops{phase="spill"}`)   //nolint
+	DbPgopsUnspill = metrics.NewCounter(`db_pgops{phase="unspill"}`) //nolint
+	DbPgopsWops    = metrics.NewCounter(`db_pgops{phase="wops"}`)    //nolint
+	/*
+		DbPgopsPrefault = metrics.NewCounter(`db_pgops{phase="prefault"}`) //nolint
+		DbPgopsMinicore = metrics.NewCounter(`db_pgops{phase="minicore"}`) //nolint
+		DbPgopsMsync    = metrics.NewCounter(`db_pgops{phase="msync"}`)    //nolint
+		DbPgopsFsync    = metrics.NewCounter(`db_pgops{phase="fsync"}`)    //nolint
+		DbMiLastPgNo    = metrics.NewCounter(`db_mi_last_pgno`)            //nolint
 
-	DbGcWorkRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_rtime"}`) //nolint
-	DbGcWorkRsteps   = metrics.NewCounter(`db_gc{phase="work_rsteps"}`)                //nolint
-	DbGcWorkRxpages  = metrics.NewCounter(`db_gc{phase="work_rxpages"}`)               //nolint
-	DbGcSelfRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_rtime"}`) //nolint
-	DbGcSelfXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_xtime"}`) //nolint
-	DbGcWorkXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_xtime"}`) //nolint
-	DbGcSelfRsteps   = metrics.NewCounter(`db_gc{phase="self_rsteps"}`)                //nolint
-	DbGcWloops       = metrics.NewCounter(`db_gc{phase="wloop"}`)                      //nolint
-	DbGcCoalescences = metrics.NewCounter(`db_gc{phase="coalescences"}`)               //nolint
-	DbGcWipes        = metrics.NewCounter(`db_gc{phase="wipes"}`)                      //nolint
-	DbGcFlushes      = metrics.NewCounter(`db_gc{phase="flushes"}`)                    //nolint
-	DbGcKicks        = metrics.NewCounter(`db_gc{phase="kicks"}`)                      //nolint
-	DbGcWorkMajflt   = metrics.NewCounter(`db_gc{phase="work_majflt"}`)                //nolint
-	DbGcSelfMajflt   = metrics.NewCounter(`db_gc{phase="self_majflt"}`)                //nolint
-	DbGcWorkCounter  = metrics.NewCounter(`db_gc{phase="work_counter"}`)               //nolint
-	DbGcSelfCounter  = metrics.NewCounter(`db_gc{phase="self_counter"}`)               //nolint
-	DbGcSelfXpages   = metrics.NewCounter(`db_gc{phase="self_xpages"}`)                //nolint
+		DbGcWorkRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_rtime"}`) //nolint
+		DbGcWorkRsteps   = metrics.NewCounter(`db_gc{phase="work_rsteps"}`)                //nolint
+		DbGcWorkRxpages  = metrics.NewCounter(`db_gc{phase="work_rxpages"}`)               //nolint
+		DbGcSelfRtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_rtime"}`) //nolint
+		DbGcSelfXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="self_xtime"}`) //nolint
+		DbGcWorkXtime    = metrics.GetOrCreateSummary(`db_gc_seconds{phase="work_xtime"}`) //nolint
+		DbGcSelfRsteps   = metrics.NewCounter(`db_gc{phase="self_rsteps"}`)                //nolint
+		DbGcWloops       = metrics.NewCounter(`db_gc{phase="wloop"}`)                      //nolint
+		DbGcCoalescences = metrics.NewCounter(`db_gc{phase="coalescences"}`)               //nolint
+		DbGcWipes        = metrics.NewCounter(`db_gc{phase="wipes"}`)                      //nolint
+		DbGcFlushes      = metrics.NewCounter(`db_gc{phase="flushes"}`)                    //nolint
+		DbGcKicks        = metrics.NewCounter(`db_gc{phase="kicks"}`)                      //nolint
+		DbGcWorkMajflt   = metrics.NewCounter(`db_gc{phase="work_majflt"}`)                //nolint
+		DbGcSelfMajflt   = metrics.NewCounter(`db_gc{phase="self_majflt"}`)                //nolint
+		DbGcWorkCounter  = metrics.NewCounter(`db_gc{phase="work_counter"}`)               //nolint
+		DbGcSelfCounter  = metrics.NewCounter(`db_gc{phase="self_counter"}`)               //nolint
+		DbGcSelfXpages   = metrics.NewCounter(`db_gc{phase="self_xpages"}`)                //nolint
+	*/
 
 	//DbGcWorkPnlMergeTime   = metrics.GetOrCreateSummary(`db_gc_pnl_seconds{phase="work_merge_time"}`) //nolint
 	//DbGcWorkPnlMergeVolume = metrics.NewCounter(`db_gc_pnl{phase="work_merge_volume"}`)               //nolint
@@ -298,6 +311,7 @@ type StatelessRwTx interface {
 //   - ReadOnly transactions do not lock goroutine to thread, RwTx does
 type Tx interface {
 	StatelessReadTx
+	BucketMigratorRO
 
 	// ID returns the identifier associated with this transaction. For a
 	// read-only transaction, this corresponds to the snapshot being read;
@@ -334,6 +348,9 @@ type Tx interface {
 	// Prefix - is exactly Range(Table, prefix, kv.NextSubtree(prefix))
 	Prefix(table string, prefix []byte) (iter.KV, error)
 
+	// RangeDupSort - like Range but for fixed single key and iterating over range of values
+	RangeDupSort(table string, key []byte, fromPrefix, toPrefix []byte, asc order.By, limit int) (iter.KV, error)
+
 	// --- High-Level methods: 1request -> 1page of values in response -> send next page request ---
 	// Paginate(table string, fromPrefix, toPrefix []byte) (PairsStream, error)
 
@@ -363,13 +380,17 @@ type RwTx interface {
 	CollectMetrics()
 }
 
+type BucketMigratorRO interface {
+	ListBuckets() ([]string, error)
+}
+
 // BucketMigrator used for buckets migration, don't use it in usual app code
 type BucketMigrator interface {
+	BucketMigratorRO
 	DropBucket(string) error
 	CreateBucket(string) error
 	ExistsBucket(string) (bool, error)
 	ClearBucket(string) error
-	ListBuckets() ([]string, error)
 }
 
 // Cursor - class for navigating through a database
@@ -441,22 +462,21 @@ type RwCursorDupSort interface {
 	AppendDup(key, value []byte) error    // AppendDup - same as Append, but for sorted dup data
 }
 
-var ErrNotSupported = errors.New("not supported")
-
 // ---- Temporal part
 type (
 	Domain      string
 	History     string
 	InvertedIdx string
 )
-type TemporalRoDb interface {
+type TemporalRoDB interface {
 	RoDB
 	BeginTemporalRo(ctx context.Context) (TemporalTx, error)
 	ViewTemporal(ctx context.Context, f func(tx TemporalTx) error) error
 }
 type TemporalTx interface {
 	Tx
-	DomainGet(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
+	DomainGet(name Domain, k, k2 []byte) (v []byte, ok bool, err error)
+	DomainGetAsOf(name Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error)
 	HistoryGet(name History, k []byte, ts uint64) (v []byte, ok bool, err error)
 
 	// IndexRange - return iterator over range of inverted index for given key `k`
@@ -468,10 +488,10 @@ type TemporalTx interface {
 	// Example: IndexRange("IndexName", -1, -1, order.Asc, 10)
 	IndexRange(name InvertedIdx, k []byte, fromTs, toTs int, asc order.By, limit int) (timestamps iter.U64, err error)
 	HistoryRange(name History, fromTs, toTs int, asc order.By, limit int) (it iter.KV, err error)
-	DomainRange(name Domain, k1, k2 []byte, asOfTs uint64, asc order.By, limit int) (it iter.KV, err error)
+	DomainRange(name Domain, fromKey, toKey []byte, ts uint64, asc order.By, limit int) (it iter.KV, err error)
 }
 
 type TemporalRwDB interface {
 	RwDB
-	TemporalRoDb
+	TemporalRoDB
 }

@@ -108,17 +108,17 @@ func (c *Collector) flushBuffer(canStoreInRam bool) error {
 		return nil
 	}
 	var provider dataProvider
-	var err error
 	c.buf.Sort()
 	if canStoreInRam && len(c.dataProviders) == 0 {
 		provider = KeepInRAM(c.buf)
 		c.allFlushed = true
 	} else {
 		doFsync := !c.autoClean /* is critical collector */
+		var err error
 		provider, err = FlushToDisk(c.logPrefix, c.buf, c.tmpdir, doFsync, c.logLvl)
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 	if provider != nil {
 		c.dataProviders = append(c.dataProviders, provider)
@@ -163,7 +163,7 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 
 	i := 0
 	var prevK []byte
-	loadNextFunc := func(originalK, k, v []byte) error {
+	loadNextFunc := func(_, k, v []byte) error {
 		if i == 0 {
 			isEndOfBucket := lastKey == nil || bytes.Compare(lastKey, k) == -1
 			canUseAppend = haveSortingGuaranties && isEndOfBucket
@@ -192,13 +192,16 @@ func (c *Collector) Load(db kv.RwTx, toBucket string, loadFunc LoadFunc, args Tr
 				logArs = append(logArs, "current_prefix", makeCurrentKeyStr(k))
 			}
 
-			log.Info(fmt.Sprintf("[%s] ETL [2/2] Loading", c.logPrefix), logArs...)
+			log.Log(c.logLvl, fmt.Sprintf("[%s] ETL [2/2] Loading", c.logPrefix), logArs...)
 		}
 
-		if canUseAppend && len(v) == 0 {
-			return nil // nothing to delete after end of bucket
-		}
-		if len(v) == 0 {
+		isNil := (c.bufType == SortableSliceBuffer && v == nil) ||
+			(c.bufType == SortableAppendBuffer && len(v) == 0) || //backward compatibility
+			(c.bufType == SortableOldestAppearedBuffer && len(v) == 0)
+		if isNil {
+			if canUseAppend {
+				return nil // nothing to delete after end of bucket
+			}
 			if err := cursor.Delete(k); err != nil {
 				return err
 			}

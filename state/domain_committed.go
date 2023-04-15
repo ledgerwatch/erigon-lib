@@ -24,8 +24,11 @@ import (
 	"fmt"
 	"hash"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/google/btree"
+	"github.com/ledgerwatch/erigon-lib/common/background"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/crypto/sha3"
 
@@ -33,7 +36,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/compress"
-	"github.com/ledgerwatch/erigon-lib/recsplit"
 )
 
 // Defines how to evaluate commitments
@@ -45,6 +47,32 @@ const (
 	CommitmentModeUpdate   CommitmentMode = 2
 )
 
+func (m CommitmentMode) String() string {
+	switch m {
+	case CommitmentModeDisabled:
+		return "disabled"
+	case CommitmentModeDirect:
+		return "direct"
+	case CommitmentModeUpdate:
+		return "update"
+	default:
+		return "unknown"
+	}
+}
+
+func ParseCommitmentMode(s string) CommitmentMode {
+	var mode CommitmentMode
+	switch s {
+	case "off":
+		mode = CommitmentModeDisabled
+	case "update":
+		mode = CommitmentModeUpdate
+	default:
+		mode = CommitmentModeDirect
+	}
+	return mode
+}
+
 type ValueMerger func(prev, current []byte) (merged []byte, err error)
 
 type DomainCommitted struct {
@@ -53,23 +81,23 @@ type DomainCommitted struct {
 	trace        bool
 	commTree     *btree.BTreeG[*CommitmentItem]
 	keccak       hash.Hash
-	patriciaTrie *commitment.HexPatriciaHashed
-	keyReplaceFn ValueMerger // defines logic performed with stored values during files merge
+	patriciaTrie commitment.Trie
 	branchMerger *commitment.BranchMerger
+
+	comKeys uint64
+	comTook time.Duration
 }
 
-func NewCommittedDomain(d *Domain, mode CommitmentMode) *DomainCommitted {
+func NewCommittedDomain(d *Domain, mode CommitmentMode, trieVariant commitment.TrieVariant) *DomainCommitted {
 	return &DomainCommitted{
 		Domain:       d,
-		patriciaTrie: commitment.NewHexPatriciaHashed(length.Addr, nil, nil, nil),
+		patriciaTrie: commitment.InitializeTrie(trieVariant),
 		commTree:     btree.NewG[*CommitmentItem](32, commitmentItemLess),
 		keccak:       sha3.NewLegacyKeccak256(),
 		mode:         mode,
 		branchMerger: commitment.NewHexBranchMerger(8192),
 	}
 }
-
-func (d *DomainCommitted) SetKeyReplacer(vm ValueMerger) { d.keyReplaceFn = vm }
 
 func (d *DomainCommitted) SetCommitmentMode(m CommitmentMode) { d.mode = m }
 
@@ -88,17 +116,17 @@ func (d *DomainCommitted) TouchPlainKey(key, val []byte, fn func(c *CommitmentIt
 
 func (d *DomainCommitted) TouchPlainKeyAccount(c *CommitmentItem, val []byte) {
 	if len(val) == 0 {
-		c.update.Flags = commitment.DELETE_UPDATE
+		c.update.Flags = commitment.DeleteUpdate
 		return
 	}
 	c.update.DecodeForStorage(val)
-	c.update.Flags = commitment.BALANCE_UPDATE | commitment.NONCE_UPDATE
+	c.update.Flags = commitment.BalanceUpdate | commitment.NonceUpdate
 	item, found := d.commTree.Get(&CommitmentItem{hashedKey: c.hashedKey})
 	if !found {
 		return
 	}
-	if item.update.Flags&commitment.CODE_UPDATE != 0 {
-		c.update.Flags |= commitment.CODE_UPDATE
+	if item.update.Flags&commitment.CodeUpdate != 0 {
+		c.update.Flags |= commitment.CodeUpdate
 		copy(c.update.CodeHashOrStorage[:], item.update.CodeHashOrStorage[:])
 	}
 }
@@ -106,15 +134,15 @@ func (d *DomainCommitted) TouchPlainKeyAccount(c *CommitmentItem, val []byte) {
 func (d *DomainCommitted) TouchPlainKeyStorage(c *CommitmentItem, val []byte) {
 	c.update.ValLength = len(val)
 	if len(val) == 0 {
-		c.update.Flags = commitment.DELETE_UPDATE
+		c.update.Flags = commitment.DeleteUpdate
 	} else {
-		c.update.Flags = commitment.STORAGE_UPDATE
+		c.update.Flags = commitment.StorageUpdate
 		copy(c.update.CodeHashOrStorage[:], val)
 	}
 }
 
 func (d *DomainCommitted) TouchPlainKeyCode(c *CommitmentItem, val []byte) {
-	c.update.Flags = commitment.CODE_UPDATE
+	c.update.Flags = commitment.CodeUpdate
 	item, found := d.commTree.Get(c)
 	if !found {
 		d.keccak.Reset()
@@ -122,16 +150,16 @@ func (d *DomainCommitted) TouchPlainKeyCode(c *CommitmentItem, val []byte) {
 		copy(c.update.CodeHashOrStorage[:], d.keccak.Sum(nil))
 		return
 	}
-	if item.update.Flags&commitment.BALANCE_UPDATE != 0 {
-		c.update.Flags |= commitment.BALANCE_UPDATE
+	if item.update.Flags&commitment.BalanceUpdate != 0 {
+		c.update.Flags |= commitment.BalanceUpdate
 		c.update.Balance.Set(&item.update.Balance)
 	}
-	if item.update.Flags&commitment.NONCE_UPDATE != 0 {
-		c.update.Flags |= commitment.NONCE_UPDATE
+	if item.update.Flags&commitment.NonceUpdate != 0 {
+		c.update.Flags |= commitment.NonceUpdate
 		c.update.Nonce = item.update.Nonce
 	}
-	if item.update.Flags == commitment.DELETE_UPDATE && len(val) == 0 {
-		c.update.Flags = commitment.DELETE_UPDATE
+	if item.update.Flags == commitment.DeleteUpdate && len(val) == 0 {
+		c.update.Flags = commitment.DeleteUpdate
 	} else {
 		d.keccak.Reset()
 		d.keccak.Write(val)
@@ -192,9 +220,17 @@ func (d *DomainCommitted) hashAndNibblizeKey(key []byte) []byte {
 }
 
 func (d *DomainCommitted) storeCommitmentState(blockNum, txNum uint64) error {
-	state, err := d.patriciaTrie.EncodeCurrentState(nil)
-	if err != nil {
-		return err
+	var state []byte
+	var err error
+
+	switch trie := (d.patriciaTrie).(type) {
+	case *commitment.HexPatriciaHashed:
+		state, err = trie.EncodeCurrentState(nil)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported state storing for patricia trie type: %T", d.patriciaTrie)
 	}
 	cs := &commitmentState{txNum: txNum, trieState: state, blockNum: blockNum}
 	encoded, err := cs.Encode()
@@ -216,54 +252,44 @@ func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, type
 	numBuf := [2]byte{}
 	var found bool
 	for _, item := range list {
-		g := item.decompressor.MakeGetter()
-		index := recsplit.NewIndexReader(item.index)
+		//g := item.decompressor.MakeGetter()
+		//index := recsplit.NewIndexReader(item.index)
 
-		offset := index.Lookup(fullKey)
-		g.Reset(offset)
-		if !g.HasNext() {
+		cur, err := item.bindex.Seek(fullKey)
+		if err != nil {
 			continue
 		}
-		if keyMatch, _ := g.Match(fullKey); keyMatch {
-			step := uint16(item.endTxNum / d.aggregationStep)
-			binary.BigEndian.PutUint16(numBuf[:], step)
+		step := uint16(item.endTxNum / d.aggregationStep)
+		binary.BigEndian.PutUint16(numBuf[:], step)
 
-			shortKey = encodeU64(offset, numBuf[:])
+		shortKey = encodeU64(cur.Ordinal(), numBuf[:])
 
-			if d.trace {
-				fmt.Printf("replacing %s [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", typeAS, fullKey, shortKey, step, offset, typeAS, item.startTxNum, item.endTxNum)
-			}
-			found = true
-			break
+		if d.trace {
+			fmt.Printf("replacing %s [%x] => {%x} [step=%d, offset=%d, file=%s.%d-%d]\n", typeAS, fullKey, shortKey, step, cur.Ordinal(), typeAS, item.startTxNum, item.endTxNum)
 		}
+		found = true
+		break
 	}
+	//if !found {
+	//	log.Warn("bt index key replacement seek failed", "key", fmt.Sprintf("%x", fullKey))
+	//}
 	return found
 }
 
+// nolint
 func (d *DomainCommitted) lookupShortenedKey(shortKey, fullKey []byte, typAS string, list []*filesItem) bool {
 	fileStep, offset := shortenedKey(shortKey)
 	expected := uint64(fileStep) * d.aggregationStep
-	var size uint64
-	switch typAS {
-	case "account":
-		size = length.Addr
-	case "storage":
-		size = length.Addr + length.Hash
-	default:
-		return false
-	}
 
 	var found bool
 	for _, item := range list {
 		if item.startTxNum > expected || item.endTxNum < expected {
 			continue
 		}
-		g := item.decompressor.MakeGetter()
-		if uint64(g.Size()) <= offset+size {
-			continue
-		}
-		g.Reset(offset)
-		fullKey, _ = g.Next(fullKey[:0])
+
+		cur := item.bindex.OrdinalLookup(offset)
+		//nolint
+		fullKey = cur.Key()
 		if d.trace {
 			fmt.Printf("offsetToKey %s [%x]=>{%x} step=%d offset=%d, file=%s.%d-%d.kv\n", typAS, fullKey, shortKey, fileStep, offset, typAS, item.startTxNum, item.endTxNum)
 		}
@@ -325,12 +351,12 @@ func (d *DomainCommitted) commitmentValTransform(files *SelectedStaticFiles, mer
 	return transValBuf, nil
 }
 
-func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStaticFiles, mergedFiles MergedFiles, r DomainRanges, workers int) (valuesIn, indexIn, historyIn *filesItem, err error) {
+func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStaticFiles, mergedFiles MergedFiles, r DomainRanges, workers int, ps *background.ProgressSet) (valuesIn, indexIn, historyIn *filesItem, err error) {
 	if !r.any() {
 		return
 	}
 
-	valuesFiles := oldFiles.commitment
+	domainFiles := oldFiles.commitment
 	indexFiles := oldFiles.commitmentIdx
 	historyFiles := oldFiles.commitmentHist
 
@@ -348,6 +374,9 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 				if indexIn.index != nil {
 					indexIn.index.Close()
 				}
+				if indexIn.bindex != nil {
+					indexIn.bindex.Close()
+				}
 			}
 			if historyIn != nil {
 				if historyIn.decompressor != nil {
@@ -356,6 +385,9 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 				if historyIn.index != nil {
 					historyIn.index.Close()
 				}
+				if historyIn.bindex != nil {
+					historyIn.bindex.Close()
+				}
 			}
 			if valuesIn != nil {
 				if valuesIn.decompressor != nil {
@@ -363,6 +395,9 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 				}
 				if valuesIn.index != nil {
 					valuesIn.index.Close()
+				}
+				if valuesIn.bindex != nil {
+					valuesIn.bindex.Close()
 				}
 			}
 		}
@@ -374,17 +409,22 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 			history:           r.history,
 			indexStartTxNum:   r.indexStartTxNum,
 			indexEndTxNum:     r.indexEndTxNum,
-			index:             r.index}, workers); err != nil {
+			index:             r.index}, workers, ps); err != nil {
 		return nil, nil, nil, err
 	}
+
 	if r.values {
-		datPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
-		if comp, err = compress.NewCompressor(context.Background(), "merge", datPath, d.dir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
-			return nil, nil, nil, fmt.Errorf("merge %s history compressor: %w", d.filenameBase, err)
+		datFileName := fmt.Sprintf("%s.%d-%d.kv", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep)
+		datPath := filepath.Join(d.dir, datFileName)
+		p := ps.AddNew(datFileName, 1)
+		defer ps.Delete(p)
+
+		if comp, err = compress.NewCompressor(ctx, "merge", datPath, d.dir, compress.MinPatternScore, workers, log.LvlTrace); err != nil {
+			return nil, nil, nil, fmt.Errorf("merge %s compressor: %w", d.filenameBase, err)
 		}
 		var cp CursorHeap
 		heap.Init(&cp)
-		for _, item := range valuesFiles {
+		for _, item := range domainFiles {
 			g := item.decompressor.MakeGetter()
 			g.Reset(0)
 			if g.HasNext() {
@@ -433,33 +473,20 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 					heap.Pop(&cp)
 				}
 			}
-			var skip bool
-			if d.prefixLen > 0 {
-				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0 && len(lastKey) != d.prefixLen
-			} else {
-				// For the rest of types, empty value means deletion
-				skip = r.valuesStartTxNum == 0 && len(lastVal) == 0
-			}
+			// For the rest of types, empty value means deletion
+			skip := r.valuesStartTxNum == 0 && len(lastVal) == 0
 			if !skip {
-				if keyBuf != nil && (d.prefixLen == 0 || len(keyBuf) != d.prefixLen || bytes.HasPrefix(lastKey, keyBuf)) {
+				if keyBuf != nil {
 					if err = comp.AddUncompressedWord(keyBuf); err != nil {
 						return nil, nil, nil, err
 					}
 					keyCount++ // Only counting keys, not values
-
-					if d.trace {
-						fmt.Printf("merge: multi-way key %x, total keys %d\n", keyBuf, keyCount)
-					}
-
-					valBuf, err = d.commitmentValTransform(&oldFiles, &mergedFiles, valBuf)
-					if err != nil {
-						return nil, nil, nil, fmt.Errorf("merge: valTransform [%x] %w", valBuf, err)
-					}
-					if d.compressVals {
+					switch d.compressVals {
+					case true:
 						if err = comp.AddWord(valBuf); err != nil {
 							return nil, nil, nil, err
 						}
-					} else {
+					default:
 						if err = comp.AddUncompressedWord(valBuf); err != nil {
 							return nil, nil, nil, err
 						}
@@ -494,13 +521,25 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 		}
 		comp.Close()
 		comp = nil
-		idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep))
 		valuesIn = &filesItem{startTxNum: r.valuesStartTxNum, endTxNum: r.valuesEndTxNum, frozen: (r.valuesEndTxNum-r.valuesStartTxNum)/d.aggregationStep == StepsInBiggestFile}
 		if valuesIn.decompressor, err = compress.NewDecompressor(datPath); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s decompressor [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
-		if valuesIn.index, err = buildIndex(ctx, valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */); err != nil {
+		ps.Delete(p)
+
+		idxFileName := fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, r.valuesStartTxNum/d.aggregationStep, r.valuesEndTxNum/d.aggregationStep)
+		idxPath := filepath.Join(d.dir, idxFileName)
+
+		p = ps.AddNew(datFileName, uint64(keyCount))
+		defer ps.Delete(p)
+		if valuesIn.index, err = buildIndexThenOpen(ctx, valuesIn.decompressor, idxPath, d.dir, keyCount, false /* values */, p); err != nil {
 			return nil, nil, nil, fmt.Errorf("merge %s buildIndex [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
+		}
+
+		btPath := strings.TrimSuffix(idxPath, "kvi") + "bt"
+		valuesIn.bindex, err = CreateBtreeIndexWithDecompressor(btPath, 2048, valuesIn.decompressor, p)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("create btindex %s [%d-%d]: %w", d.filenameBase, r.valuesStartTxNum, r.valuesEndTxNum, err)
 		}
 	}
 	closeItem = false
@@ -511,7 +550,11 @@ func (d *DomainCommitted) mergeFiles(ctx context.Context, oldFiles SelectedStati
 
 // Evaluates commitment for processed state. Commit=true - store trie state after evaluation
 func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {
+	defer func(s time.Time) { d.comTook = time.Since(s) }(time.Now())
+
 	touchedKeys, hashedKeys, updates := d.TouchedKeyList()
+	d.comKeys = uint64(len(touchedKeys))
+
 	if len(touchedKeys) == 0 {
 		rootHash, err = d.patriciaTrie.RootHash()
 		return rootHash, nil, err
@@ -532,6 +575,8 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 		if err != nil {
 			return nil, nil, err
 		}
+	case CommitmentModeDisabled:
+		return nil, nil, nil
 	default:
 		return nil, nil, fmt.Errorf("invalid commitment mode: %d", d.mode)
 	}
@@ -542,22 +587,29 @@ var keyCommitmentState = []byte("state")
 
 // SeekCommitment searches for last encoded state from DomainCommitted
 // and if state found, sets it up to current domain
-func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error) {
+func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (blockNum, txNum uint64, err error) {
+	if d.patriciaTrie.Variant() != commitment.VariantHexPatriciaTrie {
+		return 0, 0, fmt.Errorf("state storing is only supported hex patricia trie")
+	}
+	// todo add support of bin state dumping
+
 	var (
 		latestState []byte
 		stepbuf     [2]byte
-		step        uint16 = uint16(sinceTx/aggStep) - 1
+		step               = uint16(sinceTx/aggStep) - 1
 		latestTxNum uint64 = sinceTx - 1
 	)
+
 	d.SetTxNum(latestTxNum)
 	ctx := d.MakeContext()
+	defer ctx.Close()
 
 	for {
 		binary.BigEndian.PutUint16(stepbuf[:], step)
 
 		s, err := ctx.Get(keyCommitmentState, stepbuf[:], d.tx)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		if len(s) < 8 {
 			break
@@ -567,20 +619,25 @@ func (d *DomainCommitted) SeekCommitment(aggStep, sinceTx uint64) (uint64, error
 			break
 		}
 		latestTxNum, latestState = v, s
-		lookupTxN := latestTxNum + aggStep // - 1
+		lookupTxN := latestTxNum + aggStep
 		step = uint16(latestTxNum/aggStep) + 1
 		d.SetTxNum(lookupTxN)
 	}
 
 	var latest commitmentState
 	if err := latest.Decode(latestState); err != nil {
-		return 0, nil
+		return 0, 0, nil
 	}
 
-	if err := d.patriciaTrie.SetState(latest.trieState); err != nil {
-		return 0, err
+	if hext, ok := d.patriciaTrie.(*commitment.HexPatriciaHashed); ok {
+		if err := hext.SetState(latest.trieState); err != nil {
+			return 0, 0, err
+		}
+	} else {
+		return 0, 0, fmt.Errorf("state storing is only supported hex patricia trie")
 	}
-	return latest.txNum, nil
+
+	return latest.blockNum, latest.txNum, nil
 }
 
 type commitmentState struct {

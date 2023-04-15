@@ -19,9 +19,14 @@ package iter
 import (
 	"bytes"
 
+	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
 )
+
+type Closer interface {
+	Close()
+}
 
 var (
 	EmptyU64 = &EmptyUnary[uint64]{}
@@ -90,10 +95,11 @@ type UnionKVIter struct {
 	xHasNext, yHasNext bool
 	xNextK, xNextV     []byte
 	yNextK, yNextV     []byte
+	limit              int
 	err                error
 }
 
-func UnionKV(x, y KV) KV {
+func UnionKV(x, y KV, limit int) KV {
 	if x == nil && y == nil {
 		return EmptyKV
 	}
@@ -103,12 +109,14 @@ func UnionKV(x, y KV) KV {
 	if y == nil {
 		return x
 	}
-	m := &UnionKVIter{x: x, y: y}
+	m := &UnionKVIter{x: x, y: y, limit: limit}
 	m.advanceX()
 	m.advanceY()
 	return m
 }
-func (m *UnionKVIter) HasNext() bool { return m.xHasNext || m.yHasNext }
+func (m *UnionKVIter) HasNext() bool {
+	return m.err != nil || (m.limit != 0 && m.xHasNext) || (m.limit != 0 && m.yHasNext)
+}
 func (m *UnionKVIter) advanceX() {
 	if m.err != nil {
 		return
@@ -131,6 +139,7 @@ func (m *UnionKVIter) Next() ([]byte, []byte, error) {
 	if m.err != nil {
 		return nil, nil, m.err
 	}
+	m.limit--
 	if m.xHasNext && m.yHasNext {
 		cmp := bytes.Compare(m.xNextK, m.yNextK)
 		if cmp < 0 {
@@ -156,17 +165,28 @@ func (m *UnionKVIter) Next() ([]byte, []byte, error) {
 	m.advanceY()
 	return k, v, err
 }
-func (m *UnionKVIter) ToArray() (keys, values [][]byte, err error) { return ToKVArray(m) }
 
-// UnionIter
-type UnionIter[T constraints.Ordered] struct {
+// func (m *UnionKVIter) ToArray() (keys, values [][]byte, err error) { return ToKVArray(m) }
+func (m *UnionKVIter) Close() {
+	if x, ok := m.x.(Closer); ok {
+		x.Close()
+	}
+	if y, ok := m.y.(Closer); ok {
+		y.Close()
+	}
+}
+
+// UnionUnary
+type UnionUnary[T constraints.Ordered] struct {
 	x, y           Unary[T]
+	asc            bool
 	xHas, yHas     bool
 	xNextK, yNextK T
 	err            error
+	limit          int
 }
 
-func Union[T constraints.Ordered](x, y Unary[T]) Unary[T] {
+func Union[T constraints.Ordered](x, y Unary[T], asc order.By, limit int) Unary[T] {
 	if x == nil && y == nil {
 		return &EmptyUnary[T]{}
 	}
@@ -176,16 +196,22 @@ func Union[T constraints.Ordered](x, y Unary[T]) Unary[T] {
 	if y == nil {
 		return x
 	}
-	m := &UnionIter[T]{x: x, y: y}
+	if !x.HasNext() {
+		return y
+	}
+	if !y.HasNext() {
+		return x
+	}
+	m := &UnionUnary[T]{x: x, y: y, asc: bool(asc), limit: limit}
 	m.advanceX()
 	m.advanceY()
 	return m
 }
 
-func (m *UnionIter[T]) HasNext() bool {
-	return m.err != nil || m.xHas || m.yHas
+func (m *UnionUnary[T]) HasNext() bool {
+	return m.err != nil || (m.limit != 0 && m.xHas) || (m.limit != 0 && m.yHas)
 }
-func (m *UnionIter[T]) advanceX() {
+func (m *UnionUnary[T]) advanceX() {
 	if m.err != nil {
 		return
 	}
@@ -194,7 +220,7 @@ func (m *UnionIter[T]) advanceX() {
 		m.xNextK, m.err = m.x.Next()
 	}
 }
-func (m *UnionIter[T]) advanceY() {
+func (m *UnionUnary[T]) advanceY() {
 	if m.err != nil {
 		return
 	}
@@ -203,12 +229,18 @@ func (m *UnionIter[T]) advanceY() {
 		m.yNextK, m.err = m.y.Next()
 	}
 }
-func (m *UnionIter[T]) Next() (res T, err error) {
+
+func (m *UnionUnary[T]) less() bool {
+	return (m.asc && m.xNextK < m.yNextK) || (!m.asc && m.xNextK > m.yNextK)
+}
+
+func (m *UnionUnary[T]) Next() (res T, err error) {
 	if m.err != nil {
 		return res, m.err
 	}
+	m.limit--
 	if m.xHas && m.yHas {
-		if m.xNextK < m.yNextK {
+		if m.less() {
 			k, err := m.xNextK, m.err
 			m.advanceX()
 			return k, err
@@ -231,24 +263,35 @@ func (m *UnionIter[T]) Next() (res T, err error) {
 	m.advanceY()
 	return k, err
 }
+func (m *UnionUnary[T]) Close() {
+	if x, ok := m.x.(Closer); ok {
+		x.Close()
+	}
+	if y, ok := m.y.(Closer); ok {
+		y.Close()
+	}
+}
 
 // IntersectIter
 type IntersectIter[T constraints.Ordered] struct {
 	x, y               Unary[T]
 	xHasNext, yHasNext bool
 	xNextK, yNextK     T
+	limit              int
 	err                error
 }
 
-func Intersect[T constraints.Ordered](x, y Unary[T]) Unary[T] {
-	if x == nil || y == nil {
+func Intersect[T constraints.Ordered](x, y Unary[T], limit int) Unary[T] {
+	if x == nil || y == nil || !x.HasNext() || !y.HasNext() {
 		return &EmptyUnary[T]{}
 	}
-	m := &IntersectIter[T]{x: x, y: y}
+	m := &IntersectIter[T]{x: x, y: y, limit: limit}
 	m.advance()
 	return m
 }
-func (m *IntersectIter[T]) HasNext() bool { return m.xHasNext && m.yHasNext }
+func (m *IntersectIter[T]) HasNext() bool {
+	return m.err != nil || (m.limit != 0 && m.xHasNext && m.yHasNext)
+}
 func (m *IntersectIter[T]) advance() {
 	m.advanceX()
 	m.advanceY()
@@ -288,9 +331,21 @@ func (m *IntersectIter[T]) advanceY() {
 	}
 }
 func (m *IntersectIter[T]) Next() (T, error) {
+	if m.err != nil {
+		return m.xNextK, m.err
+	}
+	m.limit--
 	k, err := m.xNextK, m.err
 	m.advance()
 	return k, err
+}
+func (m *IntersectIter[T]) Close() {
+	if x, ok := m.x.(Closer); ok {
+		x.Close()
+	}
+	if y, ok := m.y.(Closer); ok {
+		y.Close()
+	}
 }
 
 // TransformDualIter - analog `map` (in terms of map-filter-reduce pattern)
@@ -309,6 +364,33 @@ func (m *TransformDualIter[K, V]) Next() (K, V, error) {
 		return k, v, err
 	}
 	return m.transform(k, v)
+}
+func (m *TransformDualIter[K, v]) Close() {
+	if x, ok := m.it.(Closer); ok {
+		x.Close()
+	}
+}
+
+type TransformKV2U64Iter[K, V []byte] struct {
+	it        KV
+	transform func(K, V) (uint64, error)
+}
+
+func TransformKV2U64[K, V []byte](it KV, transform func(K, V) (uint64, error)) *TransformKV2U64Iter[K, V] {
+	return &TransformKV2U64Iter[K, V]{it: it, transform: transform}
+}
+func (m *TransformKV2U64Iter[K, V]) HasNext() bool { return m.it.HasNext() }
+func (m *TransformKV2U64Iter[K, V]) Next() (uint64, error) {
+	k, v, err := m.it.Next()
+	if err != nil {
+		return 0, err
+	}
+	return m.transform(k, v)
+}
+func (m *TransformKV2U64Iter[K, v]) Close() {
+	if x, ok := m.it.(Closer); ok {
+		x.Close()
+	}
 }
 
 // FilterDualIter - analog `map` (in terms of map-filter-reduce pattern)
@@ -356,6 +438,11 @@ func (m *FilterDualIter[K, V]) Next() (k K, v V, err error) {
 	m.advance()
 	return k, v, err
 }
+func (m *FilterDualIter[K, v]) Close() {
+	if x, ok := m.it.(Closer); ok {
+		x.Close()
+	}
+}
 
 // FilterUnaryIter - analog `map` (in terms of map-filter-reduce pattern)
 // please avoid reading from Disk/DB more elements and then filter them. Better
@@ -399,6 +486,11 @@ func (m *FilterUnaryIter[T]) Next() (k T, err error) {
 	k, err = m.nextK, m.err
 	m.advance()
 	return k, err
+}
+func (m *FilterUnaryIter[T]) Close() {
+	if x, ok := m.it.(Closer); ok {
+		x.Close()
+	}
 }
 
 // PaginatedIter - for remote-list pagination

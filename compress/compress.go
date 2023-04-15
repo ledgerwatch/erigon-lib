@@ -129,6 +129,12 @@ func (c *Compressor) SetTrace(trace bool) {
 func (c *Compressor) Count() int { return int(c.wordsCount) }
 
 func (c *Compressor) AddWord(word []byte) error {
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	default:
+	}
+
 	c.wordsCount++
 	l := 2*len(word) + 2
 	if c.superstringLen+l > superstringLimit {
@@ -152,6 +158,12 @@ func (c *Compressor) AddWord(word []byte) error {
 }
 
 func (c *Compressor) AddUncompressedWord(word []byte) error {
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	default:
+	}
+
 	c.wordsCount++
 	return c.uncompressedFile.AppendUncompressed(word)
 }
@@ -729,11 +741,11 @@ func (r CompressionRatio) String() string { return fmt.Sprintf("%.2f", r) }
 func Ratio(f1, f2 string) (CompressionRatio, error) {
 	s1, err := os.Stat(f1)
 	if err != nil {
-		return 0, nil
+		return 0, err
 	}
 	s2, err := os.Stat(f2)
 	if err != nil {
-		return 0, nil
+		return 0, err
 	}
 	return CompressionRatio(float64(s1.Size()) / float64(s2.Size())), nil
 }

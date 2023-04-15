@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
+	"github.com/ledgerwatch/erigon-lib/common/background"
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
@@ -34,6 +35,7 @@ type ReadIndices struct {
 	keyBuf          []byte
 	aggregationStep uint64
 	txNum           uint64
+	ps              *background.ProgressSet
 }
 
 func NewReadIndices(
@@ -42,6 +44,7 @@ func NewReadIndices(
 ) (*ReadIndices, error) {
 	ri := &ReadIndices{
 		aggregationStep: aggregationStep,
+		ps:              background.NewProgressSet(),
 	}
 	closeIndices := true
 	defer func() {
@@ -98,10 +101,8 @@ type RCollation struct {
 func (c RCollation) Close() {
 }
 
-func (ri *ReadIndices) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (RCollation, error) {
+func (ri *ReadIndices) collate(txFrom, txTo uint64, roTx kv.Tx) (RCollation, error) {
 
-	logEvery := time.NewTicker(30 * time.Second)
-	defer logEvery.Stop()
 	var c RCollation
 	var err error
 	closeColl := true
@@ -111,13 +112,13 @@ func (ri *ReadIndices) collate(step uint64, txFrom, txTo uint64, roTx kv.Tx) (RC
 		}
 	}()
 	ctx := context.TODO()
-	if c.accounts, err = ri.accounts.collate(ctx, txFrom, txTo, roTx, logEvery); err != nil {
+	if c.accounts, err = ri.accounts.collate(ctx, txFrom, txTo, roTx); err != nil {
 		return RCollation{}, err
 	}
-	if c.storage, err = ri.storage.collate(ctx, txFrom, txTo, roTx, logEvery); err != nil {
+	if c.storage, err = ri.storage.collate(ctx, txFrom, txTo, roTx); err != nil {
 		return RCollation{}, err
 	}
-	if c.code, err = ri.code.collate(ctx, txFrom, txTo, roTx, logEvery); err != nil {
+	if c.code, err = ri.code.collate(ctx, txFrom, txTo, roTx); err != nil {
 		return RCollation{}, err
 	}
 	closeColl = false
@@ -150,21 +151,21 @@ func (ri *ReadIndices) buildFiles(ctx context.Context, step uint64, collation RC
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.accounts, err = ri.accounts.buildFiles(ctx, step, collation.accounts); err != nil {
+		if sf.accounts, err = ri.accounts.buildFiles(ctx, step, collation.accounts, ri.ps); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.storage, err = ri.storage.buildFiles(ctx, step, collation.storage); err != nil {
+		if sf.storage, err = ri.storage.buildFiles(ctx, step, collation.storage, ri.ps); err != nil {
 			errCh <- err
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		var err error
-		if sf.code, err = ri.code.buildFiles(ctx, step, collation.code); err != nil {
+		if sf.code, err = ri.code.buildFiles(ctx, step, collation.code, ri.ps); err != nil {
 			errCh <- err
 		}
 	}()
@@ -188,7 +189,7 @@ func (ri *ReadIndices) integrateFiles(sf RStaticFiles, txNumFrom, txNumTo uint64
 	ri.code.integrateFiles(sf.code, txNumFrom, txNumTo)
 }
 
-func (ri *ReadIndices) prune(step uint64, txFrom, txTo uint64) error {
+func (ri *ReadIndices) prune(txFrom, txTo uint64) error {
 	ctx := context.TODO()
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
@@ -312,7 +313,7 @@ func (ri *ReadIndices) mergeFiles(ctx context.Context, files RSelectedStaticFile
 		defer wg.Done()
 		var err error
 		if r.accounts {
-			if mf.accounts, err = ri.accounts.mergeFiles(ctx, files.accounts, r.accountsStartTxNum, r.accountsEndTxNum, workers); err != nil {
+			if mf.accounts, err = ri.accounts.mergeFiles(ctx, files.accounts, r.accountsStartTxNum, r.accountsEndTxNum, workers, ri.ps); err != nil {
 				errCh <- err
 			}
 		}
@@ -321,7 +322,7 @@ func (ri *ReadIndices) mergeFiles(ctx context.Context, files RSelectedStaticFile
 		defer wg.Done()
 		var err error
 		if r.storage {
-			if mf.storage, err = ri.storage.mergeFiles(ctx, files.storage, r.storageStartTxNum, r.storageEndTxNum, workers); err != nil {
+			if mf.storage, err = ri.storage.mergeFiles(ctx, files.storage, r.storageStartTxNum, r.storageEndTxNum, workers, ri.ps); err != nil {
 				errCh <- err
 			}
 		}
@@ -330,7 +331,7 @@ func (ri *ReadIndices) mergeFiles(ctx context.Context, files RSelectedStaticFile
 		defer wg.Done()
 		var err error
 		if r.code {
-			if mf.code, err = ri.code.mergeFiles(ctx, files.code, r.codeStartTxNum, r.codeEndTxNum, workers); err != nil {
+			if mf.code, err = ri.code.mergeFiles(ctx, files.code, r.codeStartTxNum, r.codeEndTxNum, workers, ri.ps); err != nil {
 				errCh <- err
 			}
 		}
@@ -384,7 +385,7 @@ func (ri *ReadIndices) FinishTx() error {
 	}
 	closeAll := true
 	step := ri.txNum / ri.aggregationStep
-	collation, err := ri.collate(step, step*ri.aggregationStep, (step+1)*ri.aggregationStep, ri.rwTx)
+	collation, err := ri.collate(step*ri.aggregationStep, (step+1)*ri.aggregationStep, ri.rwTx)
 	if err != nil {
 		return err
 	}
@@ -403,7 +404,7 @@ func (ri *ReadIndices) FinishTx() error {
 		}
 	}()
 	ri.integrateFiles(sf, step*ri.aggregationStep, (step+1)*ri.aggregationStep)
-	if err = ri.prune(step, step*ri.aggregationStep, (step+1)*ri.aggregationStep); err != nil {
+	if err = ri.prune(step*ri.aggregationStep, (step+1)*ri.aggregationStep); err != nil {
 		return err
 	}
 	maxEndTxNum := ri.endTxNumMinimax()

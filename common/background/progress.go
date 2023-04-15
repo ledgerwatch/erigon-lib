@@ -20,14 +20,14 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	btree2 "github.com/tidwall/btree"
-	"go.uber.org/atomic"
 )
 
 // Progress - tracks background job progress
 type Progress struct {
-	Name             atomic.String
+	Name             atomic.Pointer[string]
 	Processed, Total atomic.Uint64
 	i                int
 }
@@ -48,7 +48,13 @@ type ProgressSet struct {
 func NewProgressSet() *ProgressSet {
 	return &ProgressSet{list: btree2.NewMap[int, *Progress](128)}
 }
-
+func (s *ProgressSet) AddNew(fName string, total uint64) *Progress {
+	p := &Progress{}
+	p.Name.Store(&fName)
+	p.Total.Store(total)
+	s.Add(p)
+	return p
+}
 func (s *ProgressSet) Add(p *Progress) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -62,6 +68,11 @@ func (s *ProgressSet) Delete(p *Progress) {
 	defer s.lock.Unlock()
 	s.list.Delete(p.i)
 }
+func (s *ProgressSet) Has() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.list.Len() > 0
+}
 
 func (s *ProgressSet) String() string {
 	s.lock.RLock()
@@ -69,7 +80,7 @@ func (s *ProgressSet) String() string {
 	var sb strings.Builder
 	var i int
 	s.list.Scan(func(_ int, p *Progress) bool {
-		sb.WriteString(fmt.Sprintf("%s=%d%%", p.Name.Load(), p.percent()))
+		sb.WriteString(fmt.Sprintf("%s=%d%%", *p.Name.Load(), p.percent()))
 		i++
 		if i != s.list.Len() {
 			sb.WriteString(", ")

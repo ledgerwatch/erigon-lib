@@ -4,11 +4,26 @@ import (
 	"context"
 	"encoding/binary"
 	"math"
+	"sync/atomic"
 	"testing"
 
-	"github.com/ledgerwatch/erigon-lib/recsplit"
 	"github.com/stretchr/testify/require"
 )
+
+func BenchmarkName2(b *testing.B) {
+	b.Run("1", func(b *testing.B) {
+		j := atomic.Int32{}
+		for i := 0; i < b.N; i++ {
+			j.Add(1)
+		}
+	})
+	b.Run("2", func(b *testing.B) {
+		j := &atomic.Int32{}
+		for i := 0; i < b.N; i++ {
+			j.Add(1)
+		}
+	})
+}
 
 func TestLocality(t *testing.T) {
 	ctx, require := context.Background(), require.New(t)
@@ -72,9 +87,11 @@ func TestLocality(t *testing.T) {
 		require.Zero(snd)
 	})
 	t.Run("locality index: lookup", func(t *testing.T) {
+		liCtx := li.MakeContext()
+		defer liCtx.Close()
 		var k [8]byte
 		binary.BigEndian.PutUint64(k[:], 1)
-		v1, v2, from, ok1, ok2 := li.lookupIdxFiles(recsplit.NewIndexReader(files.index), files.bm, li.file, k[:], 1*li.aggregationStep*StepsInBiggestFile)
+		v1, v2, from, ok1, ok2 := li.lookupIdxFiles(liCtx, k[:], 1*li.aggregationStep*StepsInBiggestFile)
 		require.True(ok1)
 		require.False(ok2)
 		require.Equal(uint64(1*StepsInBiggestFile), v1)

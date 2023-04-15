@@ -23,9 +23,9 @@ import (
 	"math"
 	"os"
 	"testing"
-	"testing/fstest"
 	"time"
 
+	"github.com/ledgerwatch/erigon-lib/common/background"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
@@ -67,7 +67,7 @@ func TestInvIndexCollationBuild(t *testing.T) {
 	require.NoError(t, err)
 	defer tx.Rollback()
 	ii.SetTx(tx)
-	ii.StartWrites("")
+	ii.StartWrites()
 	defer ii.FinishWrites()
 
 	ii.SetTxNum(2)
@@ -93,14 +93,14 @@ func TestInvIndexCollationBuild(t *testing.T) {
 	require.NoError(t, err)
 	defer roTx.Rollback()
 
-	bs, err := ii.collate(ctx, 0, 7, roTx, logEvery)
+	bs, err := ii.collate(ctx, 0, 7, roTx)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(bs))
 	require.Equal(t, []uint64{3}, bs["key2"].ToArray())
 	require.Equal(t, []uint64{2, 6}, bs["key1"].ToArray())
 	require.Equal(t, []uint64{6}, bs["key3"].ToArray())
 
-	sf, err := ii.buildFiles(ctx, 0, bs)
+	sf, err := ii.buildFiles(ctx, 0, bs, background.NewProgressSet())
 	require.NoError(t, err)
 	defer sf.Close()
 
@@ -145,7 +145,7 @@ func TestInvIndexAfterPrune(t *testing.T) {
 		}
 	}()
 	ii.SetTx(tx)
-	ii.StartWrites("")
+	ii.StartWrites()
 	defer ii.FinishWrites()
 
 	ii.SetTxNum(2)
@@ -171,10 +171,10 @@ func TestInvIndexAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	defer roTx.Rollback()
 
-	bs, err := ii.collate(ctx, 0, 16, roTx, logEvery)
+	bs, err := ii.collate(ctx, 0, 16, roTx)
 	require.NoError(t, err)
 
-	sf, err := ii.buildFiles(ctx, 0, bs)
+	sf, err := ii.buildFiles(ctx, 0, bs, background.NewProgressSet())
 	require.NoError(t, err)
 
 	tx, err = db.BeginRw(ctx)
@@ -216,7 +216,7 @@ func filledInvIndexOfSize(tb testing.TB, txs, aggStep, module uint64) (string, k
 	require.NoError(err)
 	defer tx.Rollback()
 	ii.SetTx(tx)
-	ii.StartWrites("")
+	ii.StartWrites()
 	defer ii.FinishWrites()
 
 	var flusher flusher
@@ -262,9 +262,8 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		binary.BigEndian.PutUint64(k[:], keyNum)
 		var values []uint64
 		t.Run("asc", func(t *testing.T) {
-			it, err := ic.IterateRange(k[:], 0, 976, order.Asc, -1, nil)
+			it, err := ic.IdxRange(k[:], 0, 976, order.Asc, -1, nil)
 			require.NoError(t, err)
-			defer it.Close()
 			for i := keyNum; i < 976; i += keyNum {
 				label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
 				require.True(t, it.HasNext(), label)
@@ -277,34 +276,29 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		})
 
 		t.Run("desc", func(t *testing.T) {
-			reverseStream, err := ic.IterateRange(k[:], 976-1, 0, order.Desc, -1, nil)
+			reverseStream, err := ic.IdxRange(k[:], 976-1, 0, order.Desc, -1, nil)
 			require.NoError(t, err)
-			defer reverseStream.Close()
 			iter.ExpectEqualU64(t, iter.ReverseArray(values), reverseStream)
 		})
 		t.Run("unbounded asc", func(t *testing.T) {
-			forwardLimited, err := ic.IterateRange(k[:], -1, 976, order.Asc, 2, nil)
+			forwardLimited, err := ic.IdxRange(k[:], -1, 976, order.Asc, 2, nil)
 			require.NoError(t, err)
-			defer forwardLimited.Close()
 			iter.ExpectEqualU64(t, iter.Array(values[:2]), forwardLimited)
 		})
 		t.Run("unbounded desc", func(t *testing.T) {
-			reverseLimited, err := ic.IterateRange(k[:], 976-1, -1, order.Desc, 2, nil)
+			reverseLimited, err := ic.IdxRange(k[:], 976-1, -1, order.Desc, 2, nil)
 			require.NoError(t, err)
-			defer reverseLimited.Close()
 			iter.ExpectEqualU64(t, iter.ReverseArray(values[len(values)-2:]), reverseLimited)
 		})
 		t.Run("tiny bound asc", func(t *testing.T) {
-			it, err := ic.IterateRange(k[:], 100, 102, order.Asc, -1, nil)
+			it, err := ic.IdxRange(k[:], 100, 102, order.Asc, -1, nil)
 			require.NoError(t, err)
-			defer it.Close()
 			expect := iter.FilterU64(iter.Array(values), func(k uint64) bool { return k >= 100 && k < 102 })
 			iter.ExpectEqualU64(t, expect, it)
 		})
 		t.Run("tiny bound desc", func(t *testing.T) {
-			it, err := ic.IterateRange(k[:], 102, 100, order.Desc, -1, nil)
+			it, err := ic.IdxRange(k[:], 102, 100, order.Desc, -1, nil)
 			require.NoError(t, err)
-			defer it.Close()
 			expect := iter.FilterU64(iter.ReverseArray(values), func(k uint64) bool { return k <= 102 && k > 100 })
 			iter.ExpectEqualU64(t, expect, it)
 		})
@@ -316,9 +310,8 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	for keyNum := uint64(1); keyNum <= uint64(31); keyNum++ {
 		var k [8]byte
 		binary.BigEndian.PutUint64(k[:], keyNum)
-		it, err := ic.IterateRange(k[:], 400, 1000, true, -1, roTx)
+		it, err := ic.IdxRange(k[:], 400, 1000, true, -1, roTx)
 		require.NoError(t, err)
-		defer it.Close()
 		var values []uint64
 		for i := keyNum * ((400 + keyNum - 1) / keyNum); i < txs; i += keyNum {
 			label := fmt.Sprintf("keyNum=%d, txNum=%d", keyNum, i)
@@ -330,10 +323,11 @@ func checkRanges(t *testing.T, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 		}
 		require.False(t, it.HasNext())
 
-		reverseStream, err := ic.IterateRange(k[:], 1000-1, 400-1, false, -1, roTx)
+		reverseStream, err := ic.IdxRange(k[:], 1000-1, 400-1, false, -1, roTx)
 		require.NoError(t, err)
-		defer it.Close()
-		iter.ExpectEqualU64(t, iter.ReverseArray(values), reverseStream)
+		arr := iter.ToArrU64Must(reverseStream)
+		expect := iter.ToArrU64Must(iter.ReverseArray(values))
+		require.Equal(t, expect, arr)
 	}
 }
 
@@ -351,9 +345,9 @@ func mergeInverted(tb testing.TB, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 	// Leave the last 2 aggregation steps un-collated
 	for step := uint64(0); step < txs/ii.aggregationStep-1; step++ {
 		func() {
-			bs, err := ii.collate(ctx, step*ii.aggregationStep, (step+1)*ii.aggregationStep, tx, logEvery)
+			bs, err := ii.collate(ctx, step*ii.aggregationStep, (step+1)*ii.aggregationStep, tx)
 			require.NoError(tb, err)
-			sf, err := ii.buildFiles(ctx, step, bs)
+			sf, err := ii.buildFiles(ctx, step, bs, background.NewProgressSet())
 			require.NoError(tb, err)
 			ii.integrateFiles(sf, step*ii.aggregationStep, (step+1)*ii.aggregationStep)
 			err = ii.prune(ctx, step*ii.aggregationStep, (step+1)*ii.aggregationStep, math.MaxUint64, logEvery)
@@ -365,7 +359,7 @@ func mergeInverted(tb testing.TB, db kv.RwDB, ii *InvertedIndex, txs uint64) {
 			for found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan); found; found, startTxNum, endTxNum = ii.findMergeRange(maxEndTxNum, maxSpan) {
 				ic := ii.MakeContext()
 				outs, _ := ii.staticFilesInRange(startTxNum, endTxNum, ic)
-				in, err := ii.mergeFiles(ctx, outs, startTxNum, endTxNum, 1)
+				in, err := ii.mergeFiles(ctx, outs, startTxNum, endTxNum, 1, background.NewProgressSet())
 				require.NoError(tb, err)
 				ii.integrateMergedFiles(outs, in)
 				require.NoError(tb, err)
@@ -390,9 +384,9 @@ func TestInvIndexRanges(t *testing.T) {
 	// Leave the last 2 aggregation steps un-collated
 	for step := uint64(0); step < txs/ii.aggregationStep-1; step++ {
 		func() {
-			bs, err := ii.collate(ctx, step*ii.aggregationStep, (step+1)*ii.aggregationStep, tx, logEvery)
+			bs, err := ii.collate(ctx, step*ii.aggregationStep, (step+1)*ii.aggregationStep, tx)
 			require.NoError(t, err)
-			sf, err := ii.buildFiles(ctx, step, bs)
+			sf, err := ii.buildFiles(ctx, step, bs, background.NewProgressSet())
 			require.NoError(t, err)
 			ii.integrateFiles(sf, step*ii.aggregationStep, (step+1)*ii.aggregationStep)
 			err = ii.prune(ctx, step*ii.aggregationStep, (step+1)*ii.aggregationStep, math.MaxUint64, logEvery)
@@ -423,17 +417,6 @@ func TestInvIndexScanFiles(t *testing.T) {
 
 	mergeInverted(t, db, ii, txs)
 	checkRanges(t, db, ii, txs)
-}
-
-func BenchmarkName(b *testing.B) {
-	_, db, ii, txs := filledInvIndex(b)
-	mergeInverted(b, db, ii, txs)
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		ic := ii.MakeContext()
-		ic.Close()
-	}
 }
 
 func TestChangedKeysIterator(t *testing.T) {
@@ -501,39 +484,20 @@ func TestScanStaticFiles(t *testing.T) {
 	ii := &InvertedIndex{filenameBase: "test", aggregationStep: 1,
 		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
-	ffs := fstest.MapFS{
-		"test.0-1.ef": {},
-		"test.1-2.ef": {},
-		"test.0-4.ef": {},
-		"test.2-3.ef": {},
-		"test.3-4.ef": {},
-		"test.4-5.ef": {},
+	files := []string{
+		"test.0-1.ef",
+		"test.1-2.ef",
+		"test.0-4.ef",
+		"test.2-3.ef",
+		"test.3-4.ef",
+		"test.4-5.ef",
 	}
-	files, err := ffs.ReadDir(".")
-	require.NoError(t, err)
-	ii.scanStateFiles(files, nil)
-	var found []string
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			found = append(found, fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))
-		}
-		return true
-	})
-	require.Equal(t, 6, len(found))
+	ii.scanStateFiles(files)
+	require.Equal(t, 6, ii.files.Len())
 
+	//integrity extension case
 	ii.files.Clear()
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			fmt.Printf("%s\n", fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))
-		}
-		return true
-	})
-	ii.scanStateFiles(files, []string{"v"})
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			fmt.Printf("%s\n", fmt.Sprintf("%d-%d", item.startTxNum, item.endTxNum))
-		}
-		return true
-	})
+	ii.integrityFileExtensions = []string{"v"}
+	ii.scanStateFiles(files)
 	require.Equal(t, 0, ii.files.Len())
 }

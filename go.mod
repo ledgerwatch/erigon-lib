@@ -1,45 +1,45 @@
 module github.com/ledgerwatch/erigon-lib
 
-go 1.18
+go 1.19
 
 require (
-	github.com/ledgerwatch/interfaces v0.0.0-20230210062155-539b8171d9f0
+	github.com/ledgerwatch/interfaces v0.0.0-20230412092010-e1c4a1a4279e
 	github.com/ledgerwatch/log/v3 v3.7.0
 	github.com/ledgerwatch/secp256k1 v1.0.0
-	github.com/ledgerwatch/trackerslist v1.0.0
-	github.com/torquem-ch/mdbx-go v0.27.5
+	github.com/ledgerwatch/trackerslist v1.1.0
+	github.com/torquem-ch/mdbx-go v0.27.10
 )
 
 require (
-	github.com/RoaringBitmap/roaring v1.2.2
+	github.com/RoaringBitmap/roaring v1.2.3
 	github.com/VictoriaMetrics/metrics v1.23.1
+	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444
 	github.com/anacrolix/go-libutp v1.2.0
 	github.com/anacrolix/log v0.13.2-0.20221123232138-02e2764801c3
-	github.com/anacrolix/torrent v1.48.0
+	github.com/anacrolix/torrent v1.48.1-0.20230219022425-e8971ea0f1bf
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
-	github.com/deckarep/golang-set/v2 v2.1.0
+	github.com/deckarep/golang-set/v2 v2.3.0
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/go-stack/stack v1.8.1
 	github.com/google/btree v1.1.2
-	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
-	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
-	github.com/holiman/uint256 v1.2.1
-	github.com/matryer/moq v0.3.0
+	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
+	github.com/hashicorp/golang-lru/v2 v2.0.2
+	github.com/holiman/uint256 v1.2.2
+	github.com/matryer/moq v0.3.1
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/protolambda/go-kzg v0.0.0-20221224134646-c91cee5e954e
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/stretchr/testify v1.8.1
-	github.com/tidwall/btree v1.5.0
-	go.uber.org/atomic v1.10.0
-	golang.org/x/crypto v0.6.0
-	golang.org/x/exp v0.0.0-20230206171751-46f607a40771
+	github.com/stretchr/testify v1.8.2
+	github.com/tidwall/btree v1.6.0
+	golang.org/x/crypto v0.7.0
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.5.0
+	golang.org/x/sys v0.6.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.53.0
-	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.2.0
-	google.golang.org/protobuf v1.28.1
+	google.golang.org/grpc v1.54.0
+	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.3.0
+	google.golang.org/protobuf v1.30.0
 )
 
 require (
@@ -47,12 +47,11 @@ require (
 	github.com/ajwerner/btree v0.0.0-20211221152037-f427b3e689c0 // indirect
 	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
 	github.com/anacrolix/chansync v0.3.0 // indirect
-	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444 // indirect
 	github.com/anacrolix/envpprof v1.2.1 // indirect
 	github.com/anacrolix/generics v0.0.0-20220618083756-f99e35403a60 // indirect
 	github.com/anacrolix/missinggo v1.3.0 // indirect
 	github.com/anacrolix/missinggo/perf v1.0.0 // indirect
-	github.com/anacrolix/missinggo/v2 v2.7.0 // indirect
+	github.com/anacrolix/missinggo/v2 v2.7.1 // indirect
 	github.com/anacrolix/mmsg v1.0.0 // indirect
 	github.com/anacrolix/multiless v0.3.0 // indirect
 	github.com/anacrolix/stm v0.4.0 // indirect
@@ -67,18 +66,18 @@ require (
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/herumi/bls-eth-go-binary v1.28.1 // indirect
-	github.com/huandu/xstrings v1.3.2 // indirect
+	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/kilic/bls12-381 v0.1.1-0.20220929213557-ca162e8a70f4 // indirect
 	github.com/lispad/go-generics-tools v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/pion/datachannel v1.5.2 // indirect
-	github.com/pion/dtls/v2 v2.1.5 // indirect
+	github.com/pion/dtls/v2 v2.2.4 // indirect
 	github.com/pion/ice/v2 v2.2.6 // indirect
 	github.com/pion/interceptor v0.1.11 // indirect
 	github.com/pion/logging v0.2.2 // indirect
@@ -91,8 +90,9 @@ require (
 	github.com/pion/srtp/v2 v2.0.9 // indirect
 	github.com/pion/stun v0.3.5 // indirect
 	github.com/pion/transport v0.13.1 // indirect
+	github.com/pion/transport/v2 v2.0.0 // indirect
 	github.com/pion/turn/v2 v2.0.8 // indirect
-	github.com/pion/udp v0.1.1 // indirect
+	github.com/pion/udp v0.1.4 // indirect
 	github.com/pion/webrtc/v3 v3.1.42 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -102,12 +102,12 @@ require (
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.opentelemetry.io/otel v1.8.0 // indirect
 	go.opentelemetry.io/otel/trace v1.8.0 // indirect
-	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/net v0.6.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
-	golang.org/x/tools v0.3.0 // indirect
-	google.golang.org/genproto v0.0.0-20230202175211-008b39050e57 // indirect
+	golang.org/x/mod v0.9.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/tools v0.7.0 // indirect
+	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230125140013-a42dd5f11cb5
+replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230415160431-75e636779b49

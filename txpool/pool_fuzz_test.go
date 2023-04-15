@@ -8,6 +8,9 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
+
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/assert"
@@ -164,7 +167,7 @@ func parseSenders(in []byte) (nonces []uint64, balances []uint256.Int) {
 	return
 }
 
-func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []byte) (sendersInfo map[uint64]*sender, senderIDs map[string]uint64, txs types.TxSlots, ok bool) {
+func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []byte) (sendersInfo map[uint64]*sender, senderIDs map[common.Address]uint64, txs types.TxSlots, ok bool) {
 	if len(rawTxNonce) < 1 || len(rawValues) < 1 || len(rawTips) < 1 || len(rawFeeCap) < 1 || len(rawSender) < 1+1 {
 		return nil, nil, txs, false
 	}
@@ -187,13 +190,13 @@ func poolsFromFuzzBytes(rawTxNonce, rawValues, rawTips, rawFeeCap, rawSender []b
 	}
 
 	sendersInfo = map[uint64]*sender{}
-	senderIDs = map[string]uint64{}
+	senderIDs = map[common.Address]uint64{}
 	senders := make(types.Addresses, 20*len(senderNonce))
 	for i := 0; i < len(senderNonce); i++ {
 		senderID := uint64(i + 1) //non-zero expected
 		binary.BigEndian.PutUint64(senders.At(i%senders.Len()), senderID)
 		sendersInfo[senderID] = newSender(senderNonce[i], senderBalance[i%len(senderBalance)])
-		senderIDs[string(senders.At(i%senders.Len()))] = senderID
+		senderIDs[senders.AddressAt(i%senders.Len())] = senderID
 	}
 	txs.Txs = make([]*types.TxSlot, len(txNonce))
 	parseCtx := types.NewTxParseContext(*u256.N1)
@@ -309,13 +312,13 @@ func FuzzOnNewBlocks(f *testing.F) {
 		ch := make(chan types.Announcements, 100)
 		db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 
-		cfg := DefaultConfig
+		cfg := txpoolcfg.DefaultConfig
 		sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
 		pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil)
 		assert.NoError(err)
 		pool.senders.senderIDs = senderIDs
 		for addr, id := range senderIDs {
-			pool.senders.senderID2Addr[id] = []byte(addr)
+			pool.senders.senderID2Addr[id] = addr
 		}
 		pool.senders.senderID = uint64(len(senderIDs))
 		check := func(unwindTxs, minedTxs types.TxSlots, msg string) {
@@ -469,15 +472,14 @@ func FuzzOnNewBlocks(f *testing.F) {
 			return nil
 		})
 		change := &remote.StateChangeBatch{
-			StateVersionID:      txID,
+			StateVersionId:      txID,
 			PendingBlockBaseFee: pendingBaseFee,
 			ChangeBatch: []*remote.StateChange{
 				{BlockHeight: 0, BlockHash: h0},
 			},
 		}
 		for id, sender := range senders {
-			var addr [20]byte
-			copy(addr[:], pool.senders.senderID2Addr[id])
+			addr := pool.senders.senderID2Addr[id]
 			v := make([]byte, types.EncodeSenderLengthForStorage(sender.nonce, sender.balance))
 			types.EncodeSender(sender.nonce, sender.balance, v)
 			change.ChangeBatch[0].Changes = append(change.ChangeBatch[0].Changes, &remote.AccountChange{
@@ -495,7 +497,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		_, _, _ = p2pReceived, txs2, txs3
 		change = &remote.StateChangeBatch{
-			StateVersionID:      txID,
+			StateVersionId:      txID,
 			PendingBlockBaseFee: pendingBaseFee,
 			ChangeBatch: []*remote.StateChange{
 				{BlockHeight: 1, BlockHash: h0},
@@ -508,7 +510,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 
 		// unwind everything and switch to new fork (need unwind mined now)
 		change = &remote.StateChangeBatch{
-			StateVersionID:      txID,
+			StateVersionId:      txID,
 			PendingBlockBaseFee: pendingBaseFee,
 			ChangeBatch: []*remote.StateChange{
 				{BlockHeight: 0, BlockHash: h0, Direction: remote.Direction_UNWIND},
@@ -520,7 +522,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		checkNotify(txs2, types.TxSlots{}, "fork2")
 
 		change = &remote.StateChangeBatch{
-			StateVersionID:      txID,
+			StateVersionId:      txID,
 			PendingBlockBaseFee: pendingBaseFee,
 			ChangeBatch: []*remote.StateChange{
 				{BlockHeight: 1, BlockHash: h22},
@@ -543,7 +545,7 @@ func FuzzOnNewBlocks(f *testing.F) {
 		check(p2pReceived, types.TxSlots{}, "after_flush")
 		checkNotify(p2pReceived, types.TxSlots{}, "after_flush")
 
-		p2, err := New(ch, coreDB, DefaultConfig, sendersCache, *u256.N1, nil)
+		p2, err := New(ch, coreDB, txpoolcfg.DefaultConfig, sendersCache, *u256.N1, nil)
 		assert.NoError(err)
 		p2.senders = pool.senders // senders are not persisted
 		err = coreDB.View(ctx, func(coreTx kv.Tx) error { return p2.fromDB(ctx, tx, coreTx) })
