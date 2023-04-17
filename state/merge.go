@@ -360,9 +360,8 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 }
 
 func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (indexFiles, historyFiles []*filesItem, startJ int, err error) {
-	_ = hc // maybe will move this method to `hc` object
 	if !r.history && r.index {
-		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum, nil)
+		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum, hc.ic)
 		return indexFiles, historyFiles, startJ, nil
 	}
 
