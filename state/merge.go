@@ -722,6 +722,7 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	var cp CursorHeap
 	heap.Init(&cp)
 	for _, item := range files {
+		log.Warn("[dbg] merge.go:mergeEf", "1", item.decompressor.FileName())
 		g := item.decompressor.MakeGetter()
 		g.Reset(0)
 		if g.HasNext() {
