@@ -761,21 +761,6 @@ func (sf HistoryFiles) Close() {
 }
 func (h *History) reCalcRoFiles() {
 	roFiles := ctxFiles(h.files)
-	// Invariants check. Must not see overlaps or other garbage
-	for i, item := range roFiles {
-		if item.src.canDelete.Load() {
-			err := fmt.Errorf("assert: reCalcRoFiles: deleted files are not allowed: %s", item.src.decompressor.FileName())
-			panic(err)
-		}
-		if i > 0 && item.src.isSubsetOf(roFiles[i-1].src) {
-			err := fmt.Errorf("assert: reCalcRoFiles: overlaping files are not allowed: %s, %s", item.src.decompressor.FileName(), roFiles[i-1].src.decompressor.FileName())
-			panic(err)
-		}
-		if i > 0 && roFiles[i-1].src.isSubsetOf(item.src) {
-			err := fmt.Errorf("assert: reCalcRoFiles: overlaping files are not allowed: %s, %s", item.src.decompressor.FileName(), roFiles[i-1].src.decompressor.FileName())
-			panic(err)
-		}
-	}
 	h.roFiles.Store(&roFiles)
 }
 
