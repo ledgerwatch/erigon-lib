@@ -7,7 +7,7 @@ require (
 	github.com/ledgerwatch/log/v3 v3.7.0
 	github.com/ledgerwatch/secp256k1 v1.0.0
 	github.com/ledgerwatch/trackerslist v1.1.0
-	github.com/torquem-ch/mdbx-go v0.27.10
+	github.com/torquem-ch/mdbx-go v0.29.2-0.20230417053043-83c60f7b5425
 )
 
 require (
