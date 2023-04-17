@@ -96,7 +96,7 @@ func TestBucketCRUD(t *testing.T) {
 func TestReadOnlyMode(t *testing.T) {
 	path := t.TempDir()
 	logger := log.New()
-	db1 := mdbx.NewMDBX(logger).Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+	db1 := mdbx.NewMDBX(logger).InMem(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
 			kv.Headers: kv.TableCfgItem{},
 		}
@@ -104,7 +104,7 @@ func TestReadOnlyMode(t *testing.T) {
 	db1.Close()
 	time.Sleep(10 * time.Millisecond) // win sometime need time to close file
 
-	db2 := mdbx.NewMDBX(logger).Readonly().Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+	db2 := mdbx.NewMDBX(logger).InMem(path).Readonly().WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
 			kv.Headers: kv.TableCfgItem{},
 		}

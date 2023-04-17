@@ -33,7 +33,7 @@ func BaseCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursorDupSort) {
 	path := t.TempDir()
 	logger := log.New()
 	table := "Table"
-	db := NewMDBX(logger).Path(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
+	db := NewMDBX(logger).InMem(path).WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg {
 		return kv.TableCfg{
 			table:       kv.TableCfgItem{Flags: kv.DupSort},
 			kv.Sequence: kv.TableCfgItem{},
@@ -649,7 +649,7 @@ func baseAutoConversion(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursor) {
 	t.Helper()
 	path := t.TempDir()
 	logger := log.New()
-	db := NewMDBX(logger).Path(path).MustOpen()
+	db := NewMDBX(logger).InMem(path).MustOpen()
 
 	tx, err := db.BeginRw(context.Background())
 	require.NoError(t, err)
