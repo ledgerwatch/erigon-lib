@@ -381,44 +381,25 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 	if r.history {
 		startJ = 0
 
-		var prevStart uint64
-		var walkErr error
-		h.files.Walk(func(items []*filesItem) bool {
-			for _, item := range items {
-				if item.startTxNum < r.historyStartTxNum {
-					startJ++
-					continue
-				}
-				if item.endTxNum > r.historyEndTxNum {
-					return false
-				}
-
-				// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
-				// see super-set file, just drop sub-set files from list
-				if item.startTxNum < prevStart {
-					for len(historyFiles) > 0 {
-						if historyFiles[len(historyFiles)-1].startTxNum < item.startTxNum {
-							break
-						}
-						historyFiles = historyFiles[:len(historyFiles)-1]
-						indexFiles = indexFiles[:len(indexFiles)-1]
-					}
-				}
-
-				prevStart = item.startTxNum
-				historyFiles = append(historyFiles, item)
-				idxFile, ok := h.InvertedIndex.files.Get(item)
-				if ok {
-					indexFiles = append(indexFiles, idxFile)
-				} else {
-					walkErr = fmt.Errorf("file not found for merge: %s.%d-%d.efi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
-					return false
-				}
+		// Get history files from HistoryContext, but index files not from InvertedIndexContext
+		// because index files may already be merged (before `kill -9`) and it means not visible in InvertedIndexContext
+		for _, item := range hc.files {
+			if item.startTxNum < r.historyStartTxNum {
+				startJ++
+				continue
 			}
-			return true
-		})
-		if walkErr != nil {
-			return nil, nil, 0, walkErr
+			if item.endTxNum > r.historyEndTxNum {
+				break
+			}
+
+			historyFiles = append(historyFiles, item.src)
+			idxFile, ok := h.InvertedIndex.files.Get(item.src)
+			if ok {
+				indexFiles = append(indexFiles, idxFile)
+			} else {
+				walkErr := fmt.Errorf("file not found for merge: %s.%d-%d.efi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+				return nil, nil, 0, walkErr
+			}
 		}
 
 		for _, f := range historyFiles {
