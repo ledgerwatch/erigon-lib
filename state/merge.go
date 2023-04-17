@@ -363,6 +363,7 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 				files = files[:len(files)-1]
 			}
 		}
+		log.Warn("[dbg] add for merge", "1", item.src.decompressor.FileName())
 		files = append(files, item.src)
 		prevStart = item.startTxNum
 	}
