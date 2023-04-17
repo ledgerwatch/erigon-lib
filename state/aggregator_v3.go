@@ -63,9 +63,11 @@ type AggregatorV3 struct {
 
 	filesMutationLock sync.Mutex
 
-	working                atomic.Bool
-	workingMerge           atomic.Bool
-	workingOptionalIndices atomic.Bool
+	// Aggregator has 2 indepenent goroutines to build/merge files. Reason: to keep DB small - need move data to small files ASAP.
+	hasBgBuild                atomic.Bool
+	hasBgMerge                atomic.Bool
+	hasBgOptionalIndicesBuild atomic.Bool
+
 	//warmupWorking          atomic.Bool
 	ctx       context.Context
 	ctxCancel context.CancelFunc
@@ -225,13 +227,13 @@ func (a *AggregatorV3) Files() (res []string) {
 	return res
 }
 func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Context, workers int) {
-	if ok := a.workingOptionalIndices.CompareAndSwap(false, true); !ok {
+	if ok := a.hasBgOptionalIndicesBuild.CompareAndSwap(false, true); !ok {
 		return
 	}
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		defer a.workingOptionalIndices.Store(false)
+		defer a.hasBgOptionalIndicesBuild.Store(false)
 		if err := a.BuildOptionalMissedIndices(ctx, workers); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -516,24 +518,26 @@ func (sf AggV3StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
-func (a *AggregatorV3) BuildFiles(ctx context.Context, db kv.RoDB) (err error) {
-	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
-		return nil
-	}
+func (a *AggregatorV3) BuildFiles() (err error) {
+	a.BuildFilesInBackground()
 
-	// trying to create as much small-step-files as possible:
-	// - to reduce amount of small merges
-	// - to remove old data from db as early as possible
-	// - during files build, may happen commit of new data. on each loop step getting latest id in db
-	step := a.EndTxNumMinimax() / a.aggregationStep
-	for ; step < lastIdInDB(db, a.accounts.indexKeysTable)/a.aggregationStep; step++ {
-		if err := a.buildFilesInBackground(ctx, step); err != nil {
-			if !errors.Is(err, context.Canceled) {
-				log.Warn("buildFilesInBackground", "err", err)
+	logEvery := time.NewTicker(20 * time.Second)
+	defer logEvery.Stop()
+Loop:
+	for {
+		select {
+		case <-a.ctx.Done():
+			return a.ctx.Err()
+		case <-logEvery.C:
+			if !(a.hasBgBuild.Load() || a.hasBgMerge.Load() || a.hasBgOptionalIndicesBuild.Load()) {
+				break Loop
 			}
-			break
+			if a.HasBackgroundFilesBuild() {
+				log.Info("[snapshots] Files build", "progress", a.BackgroundProgress())
+			}
 		}
 	}
+
 	return nil
 }
 
@@ -1161,7 +1165,7 @@ func (a *AggregatorV3) BuildFilesInBackground() {
 	}
 
 	step := a.maxTxNum.Load() / a.aggregationStep
-	if ok := a.working.CompareAndSwap(false, true); !ok {
+	if ok := a.hasBgBuild.CompareAndSwap(false, true); !ok {
 		return
 	}
 
@@ -1170,7 +1174,7 @@ func (a *AggregatorV3) BuildFilesInBackground() {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		defer a.working.Store(false)
+		defer a.hasBgBuild.Store(false)
 
 		// check if db has enough data (maybe we didn't commit them yet)
 		lastInDB := lastIdInDB(a.db, a.accounts.indexKeysTable)
@@ -1194,13 +1198,13 @@ func (a *AggregatorV3) BuildFilesInBackground() {
 			step++
 		}
 
-		if ok := a.workingMerge.CompareAndSwap(false, true); !ok {
+		if ok := a.hasBgMerge.CompareAndSwap(false, true); !ok {
 			return
 		}
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
-			defer a.workingMerge.Store(false)
+			defer a.hasBgMerge.Store(false)
 			if err := a.MergeLoop(a.ctx, 1); err != nil {
 				if errors.Is(err, context.Canceled) {
 					return
