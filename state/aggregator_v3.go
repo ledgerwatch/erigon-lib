@@ -65,9 +65,9 @@ type AggregatorV3 struct {
 
 	// To keep DB small - need move data to small files ASAP.
 	// It means goroutine which creating small files - can't be locked by merge or indexing.
-	hasBgBuild                atomic.Bool
-	hasBgMerge                atomic.Bool
-	hasBgOptionalIndicesBuild atomic.Bool
+	buildingFiles           atomic.Bool
+	mergeingFiles           atomic.Bool
+	buildingOptionalIndices atomic.Bool
 
 	//warmupWorking          atomic.Bool
 	ctx       context.Context
@@ -228,13 +228,13 @@ func (a *AggregatorV3) Files() (res []string) {
 	return res
 }
 func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Context, workers int) {
-	if ok := a.hasBgOptionalIndicesBuild.CompareAndSwap(false, true); !ok {
+	if ok := a.buildingOptionalIndices.CompareAndSwap(false, true); !ok {
 		return
 	}
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		defer a.hasBgOptionalIndicesBuild.Store(false)
+		defer a.buildingOptionalIndices.Store(false)
 		if err := a.BuildOptionalMissedIndices(ctx, workers); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -520,7 +520,7 @@ func (sf AggV3StaticFiles) Close() {
 
 func (a *AggregatorV3) BuildFiles(toTxNum uint64) (err error) {
 	a.BuildFilesInBackground(toTxNum)
-	if !(a.hasBgBuild.Load() || a.hasBgMerge.Load() || a.hasBgOptionalIndicesBuild.Load()) {
+	if !(a.buildingFiles.Load() || a.mergeingFiles.Load() || a.buildingOptionalIndices.Load()) {
 		return nil
 	}
 
@@ -532,7 +532,7 @@ Loop:
 		case <-a.ctx.Done():
 			return a.ctx.Err()
 		case <-logEvery.C:
-			if !(a.hasBgBuild.Load() || a.hasBgMerge.Load() || a.hasBgOptionalIndicesBuild.Load()) {
+			if !(a.buildingFiles.Load() || a.mergeingFiles.Load() || a.buildingOptionalIndices.Load()) {
 				break Loop
 			}
 			if a.HasBackgroundFilesBuild() {
@@ -1169,7 +1169,7 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
 		return
 	}
 
-	if ok := a.hasBgBuild.CompareAndSwap(false, true); !ok {
+	if ok := a.buildingFiles.CompareAndSwap(false, true); !ok {
 		return
 	}
 
@@ -1179,7 +1179,7 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		defer a.hasBgBuild.Store(false)
+		defer a.buildingFiles.Store(false)
 
 		// check if db has enough data (maybe we didn't commit them yet)
 		lastInDB := lastIdInDB(a.db, a.accounts.indexKeysTable)
@@ -1203,13 +1203,13 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
 			step++
 		}
 
-		if ok := a.hasBgMerge.CompareAndSwap(false, true); !ok {
+		if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
 			return
 		}
 		a.wg.Add(1)
 		go func() {
 			defer a.wg.Done()
-			defer a.hasBgMerge.Store(false)
+			defer a.mergeingFiles.Store(false)
 			if err := a.MergeLoop(a.ctx, 1); err != nil {
 				if errors.Is(err, context.Canceled) {
 					return
