@@ -379,11 +379,11 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 			panic("must not happen")
 		}
 		if i > 0 && f.isSubsetOf(files[i-1]) {
-			err := fmt.Errorf("assert: invertedIndex.mergeFile: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
+			err := fmt.Errorf("assert: invertedIndex.staticFilesInRange: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
 			panic(err)
 		}
 		if i > 0 && files[i-1].isSubsetOf(f) {
-			err := fmt.Errorf("assert: invertedIndex.mergeFile: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
+			err := fmt.Errorf("assert: invertedIndex.staticFilesInRange: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
 			panic(err)
 		}
 
