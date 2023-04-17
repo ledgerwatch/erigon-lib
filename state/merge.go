@@ -318,19 +318,16 @@ func (d *Domain) staticFilesInRange(r DomainRanges, dc *DomainContext) (valuesFi
 		}
 	}
 	if r.values {
-		d.files.Walk(func(items []*filesItem) bool {
-			for _, item := range items {
-				if item.startTxNum < r.valuesStartTxNum {
-					startJ++
-					continue
-				}
-				if item.endTxNum > r.valuesEndTxNum {
-					return false
-				}
-				valuesFiles = append(valuesFiles, item)
+		for _, item := range dc.files {
+			if item.startTxNum < r.valuesStartTxNum {
+				startJ++
+				continue
 			}
-			return true
-		})
+			if item.endTxNum > r.valuesEndTxNum {
+				break
+			}
+			valuesFiles = append(valuesFiles, item.src)
+		}
 		for _, f := range valuesFiles {
 			if f == nil {
 				panic("must not happen")
