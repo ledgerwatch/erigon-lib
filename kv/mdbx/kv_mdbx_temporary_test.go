@@ -21,15 +21,13 @@ import (
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMemoryDatabase(t *testing.T) {
-	tmpDb, err := NewTemporaryMdbx()
-	require.NoError(t, err)
-
-	defer tmpDb.Close()
+	tmpDb := memdb.NewTestDB(t)
 
 	require.NoError(t, tmpDb.Update(context.TODO(), func(tx kv.RwTx) error {
 		return tx.Put(kv.Headers, []byte("lol"), []byte{0})
@@ -41,5 +39,4 @@ func TestMemoryDatabase(t *testing.T) {
 		assert.Equal(t, []byte{0}, v)
 		return nil
 	}))
-
 }
