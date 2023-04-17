@@ -139,7 +139,7 @@ func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.NoMemInit
 	opts.growthStep = 2 * datasize.MB
-	opts.mapSize = 3 * datasize.TB
+	opts.mapSize = 512 * datasize.GB
 	opts.label = kv.InMem
 	return opts
 }
