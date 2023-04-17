@@ -225,6 +225,8 @@ func (ii *InvertedIndex) reCalcRoFiles() {
 			//if item.startTxNum > h.endTxNumMinimax() {
 			//	continue
 			//}
+			log.Warn("[dbg] add to ro files", "1", item.decompressor.FileName(), "item.startTxNum", item.startTxNum, "prevStart", prevStart)
+
 			// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
 			// see super-set file, just drop sub-set files from list
 			if item.startTxNum < prevStart {
@@ -237,7 +239,6 @@ func (ii *InvertedIndex) reCalcRoFiles() {
 				}
 			}
 
-			log.Warn("[dbg] add to ro files", "1", item.decompressor.FileName())
 			roFiles = append(roFiles, ctxItem{
 				startTxNum: item.startTxNum,
 				endTxNum:   item.endTxNum,
@@ -257,15 +258,15 @@ func (ii *InvertedIndex) reCalcRoFiles() {
 	// Invariants check. Must not see overlaps or other garbage
 	for i, item := range roFiles {
 		if item.src.canDelete.Load() {
-			err := fmt.Errorf("assert: invertedIndex.reCalcRoFiles: deleted files are not allowed: %s", item.src.decompressor.FileName())
+			err := fmt.Errorf("assert: reCalcRoFiles: deleted files are not allowed: %s", item.src.decompressor.FileName())
 			panic(err)
 		}
 		if i > 0 && item.src.isSubsetOf(roFiles[i-1].src) {
-			err := fmt.Errorf("assert: invertedIndex.reCalcRoFiles: overlaping files are not allowed: %s, %s", item.src.decompressor.FileName(), roFiles[i-1].src.decompressor.FileName())
+			err := fmt.Errorf("assert: reCalcRoFiles: overlaping files are not allowed: %s, %s", item.src.decompressor.FileName(), roFiles[i-1].src.decompressor.FileName())
 			panic(err)
 		}
 		if i > 0 && roFiles[i-1].src.isSubsetOf(item.src) {
-			err := fmt.Errorf("assert: invertedIndex.reCalcRoFiles: overlaping files are not allowed: %s, %s", item.src.decompressor.FileName(), roFiles[i-1].src.decompressor.FileName())
+			err := fmt.Errorf("assert: reCalcRoFiles: overlaping files are not allowed: %s, %s", item.src.decompressor.FileName(), roFiles[i-1].src.decompressor.FileName())
 			panic(err)
 		}
 	}
