@@ -339,41 +339,33 @@ func (d *Domain) staticFilesInRange(r DomainRanges, dc *DomainContext) (valuesFi
 	}
 	return
 }
-
 func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *InvertedIndexContext) ([]*filesItem, int) {
-	_ = ic
 	var files []*filesItem
 	var startJ int
 
 	var prevStart uint64
-	ii.files.Walk(func(items []*filesItem) bool {
-		for i, item := range items {
-			if item.startTxNum < startTxNum {
-				startJ++
-				continue
-			}
-			if item.endTxNum > endTxNum {
-				return false
-			}
-			if i < len(files)-1 && item.isSubsetOf(files[i+1]) { // if bigger (already merged) file - use it
-				continue
-			}
-
-			// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
-			// see super-set file, just drop sub-set files from list
-			if item.startTxNum < prevStart {
-				for len(files) > 0 {
-					if files[len(files)-1].startTxNum < item.startTxNum {
-						break
-					}
-					files = files[:len(files)-1]
-				}
-			}
-			files = append(files, item)
-			prevStart = item.startTxNum
+	for _, item := range ic.files {
+		if item.startTxNum < startTxNum {
+			startJ++
+			continue
 		}
-		return true
-	})
+		if item.endTxNum > endTxNum {
+			break
+		}
+
+		// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
+		// see super-set file, just drop sub-set files from list
+		if item.startTxNum < prevStart {
+			for len(files) > 0 {
+				if files[len(files)-1].startTxNum < item.startTxNum {
+					break
+				}
+				files = files[:len(files)-1]
+			}
+		}
+		files = append(files, item.src)
+		prevStart = item.startTxNum
+	}
 	for i, f := range files {
 		if f == nil {
 			panic("must not happen")
