@@ -350,19 +350,10 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 		}
 		files = append(files, item.src)
 	}
-	for i, f := range files {
+	for _, f := range files {
 		if f == nil {
 			panic("must not happen")
 		}
-		if i > 0 && f.isSubsetOf(files[i-1]) {
-			err := fmt.Errorf("assert: invertedIndex.staticFilesInRange: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
-			panic(err)
-		}
-		if i > 0 && files[i-1].isSubsetOf(f) {
-			err := fmt.Errorf("assert: invertedIndex.staticFilesInRange: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
-			panic(err)
-		}
-
 	}
 
 	return files, startJ
@@ -691,15 +682,7 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	var cp CursorHeap
 	heap.Init(&cp)
 
-	for i, item := range files {
-		if i > 0 && item.isSubsetOf(files[i-1]) {
-			err := fmt.Errorf("assert: invertedIndex.mergeFile: overlaping files are not allowed: %s, %s", item.decompressor.FileName(), files[i-1].decompressor.FileName())
-			panic(err)
-		}
-		if i > 0 && files[i-1].isSubsetOf(item) {
-			err := fmt.Errorf("assert: invertedIndex.mergeFile: overlaping files are not allowed: %s, %s", item.decompressor.FileName(), files[i-1].decompressor.FileName())
-			panic(err)
-		}
+	for _, item := range files {
 		g := item.decompressor.MakeGetter()
 		g.Reset(0)
 		if g.HasNext() {

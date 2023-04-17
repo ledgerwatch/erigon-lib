@@ -524,19 +524,13 @@ func TestCtxFiles(t *testing.T) {
 	roFiles := ctxFiles(ii.files)
 	for i, item := range roFiles {
 		if item.src.canDelete.Load() {
-			err := fmt.Errorf("assert: reCalcRoFiles: deleted files are not allowed: %s", item.src.decompressor.FileName())
-			fmt.Printf("err: %s\n", err)
-			t.Fail()
+			require.Failf(t, "deleted file", "%d-%d", item.src.startTxNum, item.src.endTxNum)
 		}
-		if i > 0 && item.src.isSubsetOf(roFiles[i-1].src) {
-			err := fmt.Errorf("assert: reCalcRoFiles: overlaping files are not allowed: %d-%d, %d-%d", item.src.startTxNum, item.src.endTxNum, roFiles[i-1].src.startTxNum, roFiles[i-1].src.endTxNum)
-			fmt.Printf("err: %s\n", err)
-			t.Fail()
+		if i == 0 {
+			continue
 		}
-		if i > 0 && roFiles[i-1].src.isSubsetOf(item.src) {
-			err := fmt.Errorf("assert: reCalcRoFiles: overlaping files are not allowed: %d-%d, %d-%d", item.src.startTxNum, item.src.endTxNum, roFiles[i-1].src.startTxNum, roFiles[i-1].src.endTxNum)
-			fmt.Printf("err: %s\n", err)
-			t.Fail()
+		if item.src.isSubsetOf(roFiles[i-1].src) || roFiles[i-1].src.isSubsetOf(item.src) {
+			require.Failf(t, "overlaping files", "%d-%d, %d-%d", item.src.startTxNum, item.src.endTxNum, roFiles[i-1].src.startTxNum, roFiles[i-1].src.endTxNum)
 		}
 	}
 	require.Equal(t, 3, len(roFiles))
