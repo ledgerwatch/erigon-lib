@@ -343,7 +343,6 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 	var files []*filesItem
 	var startJ int
 
-	var prevStart uint64
 	for _, item := range ic.files {
 		if item.startTxNum < startTxNum {
 			startJ++
@@ -352,20 +351,8 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 		if item.endTxNum > endTxNum {
 			break
 		}
-
-		// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
-		// see super-set file, just drop sub-set files from list
-		if item.startTxNum < prevStart {
-			for len(files) > 0 {
-				if files[len(files)-1].startTxNum < item.startTxNum {
-					break
-				}
-				files = files[:len(files)-1]
-			}
-		}
 		log.Warn("[dbg] add for merge", "1", item.src.decompressor.FileName())
 		files = append(files, item.src)
-		prevStart = item.startTxNum
 	}
 	for i, f := range files {
 		if f == nil {
