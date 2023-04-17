@@ -521,6 +521,9 @@ func (sf AggV3StaticFiles) Close() {
 
 func (a *AggregatorV3) BuildFiles() (err error) {
 	a.BuildFilesInBackground()
+	if !(a.hasBgBuild.Load() || a.hasBgMerge.Load() || a.hasBgOptionalIndicesBuild.Load()) {
+		return nil
+	}
 
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
