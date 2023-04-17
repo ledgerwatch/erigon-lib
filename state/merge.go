@@ -397,7 +397,7 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 			if ok {
 				indexFiles = append(indexFiles, idxFile)
 			} else {
-				walkErr := fmt.Errorf("file not found for merge: %s.%d-%d.efi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
+				walkErr := fmt.Errorf("History.staticFilesInRange: required file not found: %s.%d-%d.efi", h.filenameBase, item.startTxNum/h.aggregationStep, item.endTxNum/h.aggregationStep)
 				return nil, nil, 0, walkErr
 			}
 		}
