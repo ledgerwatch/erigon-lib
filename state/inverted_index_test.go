@@ -507,15 +507,19 @@ func TestCtxFiles(t *testing.T) {
 		files: btree2.NewBTreeG[*filesItem](filesItemLess),
 	}
 	files := []string{
-		"test.0-1.ef",
+		"test.0-1.ef", // overlap with same `endTxNum=4`
 		"test.1-2.ef",
 		"test.0-4.ef",
 		"test.2-3.ef",
 		"test.3-4.ef",
-		"test.4-5.ef",
+		"test.4-5.ef",     // no overlap
+		"test.480-484.ef", // overlap with same `startTxNum=480`
+		"test.480-488.ef",
+		"test.480-496.ef",
+		"test.480-512.ef",
 	}
 	ii.scanStateFiles(files)
-	require.Equal(t, 6, ii.files.Len())
+	require.Equal(t, 10, ii.files.Len())
 
 	roFiles := ctxFiles(ii.files)
 	for i, item := range roFiles {
@@ -535,7 +539,7 @@ func TestCtxFiles(t *testing.T) {
 			t.Fail()
 		}
 	}
-	require.Equal(t, 2, len(roFiles))
+	require.Equal(t, 3, len(roFiles))
 
 	require.Equal(t, 0, int(roFiles[0].startTxNum))
 	require.Equal(t, 4, int(roFiles[0].endTxNum))
@@ -543,4 +547,6 @@ func TestCtxFiles(t *testing.T) {
 	require.Equal(t, 4, int(roFiles[1].startTxNum))
 	require.Equal(t, 5, int(roFiles[1].endTxNum))
 
+	require.Equal(t, 480, int(roFiles[2].startTxNum))
+	require.Equal(t, 512, int(roFiles[2].endTxNum))
 }

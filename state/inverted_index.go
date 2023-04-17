@@ -216,8 +216,6 @@ Loop:
 
 func ctxFiles(files *btree2.BTreeG[*filesItem]) []ctxItem {
 	roFiles := make([]ctxItem, 0, files.Len())
-	var prevStart uint64
-
 	files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.canDelete.Load() {
@@ -226,31 +224,28 @@ func ctxFiles(files *btree2.BTreeG[*filesItem]) []ctxItem {
 
 			// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
 			// see super-set file, just drop sub-set files from list
-			if item.startTxNum < prevStart {
-				for len(roFiles) > 0 {
-					if roFiles[len(roFiles)-1].startTxNum < item.startTxNum {
-						break
-					}
-					log.Warn("[dbg] del from ro files", "1", roFiles[len(roFiles)-1].src.decompressor.FileName())
-					roFiles[len(roFiles)-1].src = nil
-					roFiles = roFiles[:len(roFiles)-1]
-				}
+			for len(roFiles) > 0 && roFiles[len(roFiles)-1].src.isSubsetOf(item) {
+				roFiles[len(roFiles)-1].src = nil
+				roFiles = roFiles[:len(roFiles)-1]
 			}
-			log.Warn("[dbg] add to ro files", "1", item.decompressor.FileName())
+			//log.Warn("[dbg] add to ro files", "1", item.decompressor.FileName())
 			roFiles = append(roFiles, ctxItem{
 				startTxNum: item.startTxNum,
 				endTxNum:   item.endTxNum,
 				i:          len(roFiles),
 				src:        item,
 			})
-			prevStart = item.startTxNum
 		}
 		return true
 	})
 	if roFiles == nil {
 		roFiles = []ctxItem{}
 	}
+	return roFiles
+}
 
+func (ii *InvertedIndex) reCalcRoFiles() {
+	roFiles := ctxFiles(ii.files)
 	// Invariants check. Must not see overlaps or other garbage
 	for i, item := range roFiles {
 		if item.src.canDelete.Load() {
@@ -266,11 +261,6 @@ func ctxFiles(files *btree2.BTreeG[*filesItem]) []ctxItem {
 			panic(err)
 		}
 	}
-	return roFiles
-}
-
-func (ii *InvertedIndex) reCalcRoFiles() {
-	roFiles := ctxFiles(ii.files)
 	ii.roFiles.Store(&roFiles)
 }
 
