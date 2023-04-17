@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
@@ -37,7 +38,7 @@ func BaseCase(t *testing.T) (kv.RwDB, kv.RwTx, kv.RwCursorDupSort) {
 			table:       kv.TableCfgItem{Flags: kv.DupSort},
 			kv.Sequence: kv.TableCfgItem{},
 		}
-	}).MustOpen()
+	}).MapSize(128 * datasize.MB).MustOpen()
 	t.Cleanup(db.Close)
 
 	tx, err := db.BeginRw(context.Background())
