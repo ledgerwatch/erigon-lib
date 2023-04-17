@@ -337,7 +337,7 @@ func (d *Domain) staticFilesInRange(r DomainRanges, dc *DomainContext) (valuesFi
 	return
 }
 func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *InvertedIndexContext) ([]*filesItem, int) {
-	var files []*filesItem
+	files := make([]*filesItem, 0, len(ic.files))
 	var startJ int
 
 	for _, item := range ic.files {
