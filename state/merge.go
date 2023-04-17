@@ -351,7 +351,6 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 		if item.endTxNum > endTxNum {
 			break
 		}
-		log.Warn("[dbg] add for merge", "1", item.src.decompressor.FileName())
 		files = append(files, item.src)
 	}
 	for i, f := range files {
@@ -392,7 +391,6 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 				break
 			}
 
-			log.Warn("[dbg] add for merge", "1", item.src.decompressor.FileName())
 			historyFiles = append(historyFiles, item.src)
 			idxFile, ok := h.InvertedIndex.files.Get(item.src)
 			if ok {
@@ -697,7 +695,6 @@ func (ii *InvertedIndex) mergeFiles(ctx context.Context, files []*filesItem, sta
 	heap.Init(&cp)
 
 	for i, item := range files {
-		log.Warn("[dbg] merge.go:mergeEf", "1", item.decompressor.FileName())
 		if i > 0 && item.isSubsetOf(files[i-1]) {
 			err := fmt.Errorf("assert: invertedIndex.mergeFile: overlaping files are not allowed: %s, %s", item.decompressor.FileName(), files[i-1].decompressor.FileName())
 			panic(err)
