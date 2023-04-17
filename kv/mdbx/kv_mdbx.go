@@ -141,7 +141,7 @@ func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.NoMemInit
 	opts.growthStep = 2 * datasize.MB
-	opts.mapSize = 512 * datasize.GB
+	opts.mapSize = 128 * datasize.GB
 	opts.shrinkThreshold = 0 // disable
 	opts.label = kv.InMem
 	return opts
@@ -327,7 +327,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	//}
 
 	if opts.roTxsLimiter == nil {
-		targetSemCount := int64(runtime.GOMAXPROCS(-1) * 8)
+		targetSemCount := int64(runtime.GOMAXPROCS(-1) * 16)
 		opts.roTxsLimiter = semaphore.NewWeighted(targetSemCount) // 1 less than max to allow unlocking to happen
 	}
 	db := &MdbxKV{
