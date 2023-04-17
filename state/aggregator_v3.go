@@ -63,7 +63,8 @@ type AggregatorV3 struct {
 
 	filesMutationLock sync.Mutex
 
-	// Aggregator has 2 indepenent goroutines to build/merge files. Reason: to keep DB small - need move data to small files ASAP.
+	// To keep DB small - need move data to small files ASAP.
+	// It means goroutine which creating small files - can't be locked by merge or indexing.
 	hasBgBuild                atomic.Bool
 	hasBgMerge                atomic.Bool
 	hasBgOptionalIndicesBuild atomic.Bool
