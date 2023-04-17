@@ -80,6 +80,7 @@ func NewMDBX(log log.Logger) MdbxOpts {
 		// but for reproducibility of benchmarks - please don't rely on Available RAM
 		dirtySpace: 2 * (memory.TotalMemory() / 42),
 
+		mapSize:        8 * datasize.TB,
 		growthStep:     2 * datasize.GB,
 		mergeThreshold: 3 * 8192,
 	}
@@ -137,7 +138,8 @@ func (opts MdbxOpts) InMem(tmpDir string) MdbxOpts {
 	opts.path = path
 	opts.inMem = true
 	opts.flags = mdbx.UtterlyNoSync | mdbx.NoMetaSync | mdbx.LifoReclaim | mdbx.NoMemInit
-	opts.mapSize = 512 * datasize.MB
+	opts.growthStep = 2 * datasize.MB
+	opts.mapSize = 3 * datasize.TB
 	opts.label = kv.InMem
 	return opts
 }
@@ -242,20 +244,9 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		return nil, err
 	}
 
-	if opts.mapSize == 0 {
-		if !opts.inMem {
-			opts.mapSize = 3 * datasize.TB
-		}
-	}
 	if opts.flags&mdbx.Accede == 0 {
-		if opts.inMem {
-			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(2*datasize.MB), 0, 4*1024); err != nil {
-				return nil, err
-			}
-		} else {
-			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), -1, int(opts.pageSize)); err != nil {
-				return nil, err
-			}
+		if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), -1, int(opts.pageSize)); err != nil {
+			return nil, err
 		}
 
 		if err = os.MkdirAll(opts.path, 0744); err != nil {
