@@ -228,7 +228,6 @@ func ctxFiles(files *btree2.BTreeG[*filesItem]) []ctxItem {
 				roFiles[len(roFiles)-1].src = nil
 				roFiles = roFiles[:len(roFiles)-1]
 			}
-			//log.Warn("[dbg] add to ro files", "1", item.decompressor.FileName())
 			roFiles = append(roFiles, ctxItem{
 				startTxNum: item.startTxNum,
 				endTxNum:   item.endTxNum,
