@@ -347,13 +347,16 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 
 	var prevStart uint64
 	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
+		for i, item := range items {
 			if item.startTxNum < startTxNum {
 				startJ++
 				continue
 			}
 			if item.endTxNum > endTxNum {
 				return false
+			}
+			if i < len(files)-1 && item.isSubsetOf(files[i+1]) { // if bigger (already merged) file - use it
+				continue
 			}
 
 			// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
@@ -371,10 +374,19 @@ func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *Inv
 		}
 		return true
 	})
-	for _, f := range files {
+	for i, f := range files {
 		if f == nil {
 			panic("must not happen")
 		}
+		if i > 0 && f.isSubsetOf(files[i-1]) {
+			err := fmt.Errorf("assert: invertedIndex.mergeFile: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
+			panic(err)
+		}
+		if i > 0 && files[i-1].isSubsetOf(f) {
+			err := fmt.Errorf("assert: invertedIndex.mergeFile: overlaping files are not allowed: %s, %s", f.decompressor.FileName(), files[i-1].decompressor.FileName())
+			panic(err)
+		}
+
 	}
 
 	return files, startJ
