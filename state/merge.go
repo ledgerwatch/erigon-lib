@@ -378,11 +378,11 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 		indexFiles, startJ = h.InvertedIndex.staticFilesInRange(r.indexStartTxNum, r.indexEndTxNum, nil)
 		return indexFiles, historyFiles, startJ, nil
 	}
-	if r.history {
-		startJ = 0
 
-		// Get history files from HistoryContext, but index files not from InvertedIndexContext
+	if r.history {
+		// Get history files from HistoryContext (no "garbage/overalps"), but index files not from InvertedIndexContext
 		// because index files may already be merged (before `kill -9`) and it means not visible in InvertedIndexContext
+		startJ = 0
 		for _, item := range hc.files {
 			if item.startTxNum < r.historyStartTxNum {
 				startJ++
