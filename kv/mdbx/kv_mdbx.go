@@ -245,8 +245,14 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.flags&mdbx.Accede == 0 {
-		if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), -1, int(opts.pageSize)); err != nil {
-			return nil, err
+		if opts.inMem {
+			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), 0, int(opts.pageSize)); err != nil {
+				return nil, err
+			}
+		} else {
+			if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), -1, int(opts.pageSize)); err != nil {
+				return nil, err
+			}
 		}
 
 		if err = os.MkdirAll(opts.path, 0744); err != nil {
