@@ -392,6 +392,7 @@ func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (index
 				break
 			}
 
+			log.Warn("[dbg] add for merge", "1", item.src.decompressor.FileName())
 			historyFiles = append(historyFiles, item.src)
 			idxFile, ok := h.InvertedIndex.files.Get(item.src)
 			if ok {
