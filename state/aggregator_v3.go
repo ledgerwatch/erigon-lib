@@ -56,7 +56,6 @@ type AggregatorV3 struct {
 	logPrefix        string
 	dir              string
 	tmpdir           string
-	txNum            atomic.Uint64
 	aggregationStep  uint64
 	keepInDB         uint64
 	maxTxNum         atomic.Uint64
@@ -314,7 +313,6 @@ func (a *AggregatorV3) SetTx(tx kv.RwTx) {
 }
 
 func (a *AggregatorV3) SetTxNum(txNum uint64) {
-	a.txNum.Store(txNum)
 	a.accounts.SetTxNum(txNum)
 	a.storage.SetTxNum(txNum)
 	a.code.SetTxNum(txNum)
@@ -519,8 +517,8 @@ func (sf AggV3StaticFiles) Close() {
 	sf.tracesTo.Close()
 }
 
-func (a *AggregatorV3) BuildFiles() (err error) {
-	a.BuildFilesInBackground()
+func (a *AggregatorV3) BuildFiles(toTxNum uint64) (err error) {
+	a.BuildFilesInBackground(toTxNum)
 	if !(a.hasBgBuild.Load() || a.hasBgMerge.Load() || a.hasBgOptionalIndicesBuild.Load()) {
 		return nil
 	}
@@ -1163,16 +1161,16 @@ func (a *AggregatorV3) cleanFrozenParts(in MergedFilesV3) {
 // we can set it to 0, because no re-org on this blocks are possible
 func (a *AggregatorV3) KeepInDB(v uint64) { a.keepInDB = v }
 
-func (a *AggregatorV3) BuildFilesInBackground() {
-	if (a.txNum.Load() + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
+func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
+	if (txNum + 1) <= a.maxTxNum.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return
 	}
 
-	step := a.maxTxNum.Load() / a.aggregationStep
 	if ok := a.hasBgBuild.CompareAndSwap(false, true); !ok {
 		return
 	}
 
+	step := a.maxTxNum.Load() / a.aggregationStep
 	toTxNum := (step + 1) * a.aggregationStep
 	hasData := false
 	a.wg.Add(1)
