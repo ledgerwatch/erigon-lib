@@ -1104,6 +1104,12 @@ func (d *Domain) cleanAfterFreeze(f *filesItem) {
 		}
 		d.files.Delete(out)
 		out.canDelete.Store(true)
+		// normally HistoryContext.Close() does delete such files (last reader of file does it)
+		// but if file has 0 readers - means it's so old that not visible event for us
+		// in this case it's safe to delete file right here: nobody can see it in futurer because it removed from `h.files`
+		if out.refcount.Load() == 0 {
+			out.closeFilesAndRemove()
+		}
 	}
 	d.History.cleanFrozenParts(f)
 }
@@ -1132,6 +1138,12 @@ func (h *History) cleanFrozenParts(f *filesItem) {
 		}
 		h.files.Delete(out)
 		out.canDelete.Store(true)
+		// normally HistoryContext.Close() does delete such files (last reader of file does it)
+		// but if file has 0 readers - means it's so old that not visible event for us
+		// in this case it's safe to delete file right here: nobody can see it in futurer because it removed from `h.files`
+		if out.refcount.Load() == 0 {
+			out.closeFilesAndRemove()
+		}
 	}
 	h.InvertedIndex.cleanFrozenParts(f)
 }
@@ -1160,5 +1172,11 @@ func (ii *InvertedIndex) cleanFrozenParts(f *filesItem) {
 		}
 		ii.files.Delete(out)
 		out.canDelete.Store(true)
+		// normally HistoryContext.Close() does delete such files (last reader of file does it)
+		// but if file has 0 readers - means it's so old that not visible event for us
+		// in this case it's safe to delete file right here: nobody can see it in futurer because it removed from `h.files`
+		if out.refcount.Load() == 0 {
+			out.closeFilesAndRemove()
+		}
 	}
 }
