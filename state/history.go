@@ -1266,6 +1266,7 @@ func (hc *HistoryContext) Close() {
 			continue
 		}
 		refCnt := item.src.refcount.Add(-1)
+		log.Warn("ctx.close", "name", hc.h.filenameBase, "refCnt", refCnt, "canDelete", item.src.canDelete.Load())
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
 			item.src.closeFilesAndRemove()
