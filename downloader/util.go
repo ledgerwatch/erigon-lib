@@ -185,7 +185,7 @@ func seedableHistorySnapshots(dir string) ([]string, error) {
 		if to-from != snaptype.Erigon3SeedableSteps {
 			continue
 		}
-		res = append(res, filepath.Join("history", f.Name()))
+		res = append(res, f.Name())
 	}
 	return res, nil
 }
@@ -230,9 +230,8 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 	if err != nil {
 		return nil, err
 	}
-	files = append(files, files2...)
 
-	errs := make(chan error, len(files)*2)
+	errs := make(chan error, (len(files)+len(files2))*2)
 	wg := &sync.WaitGroup{}
 	workers := cmp.Max(1, runtime.GOMAXPROCS(-1)-1) * 2
 	var sem = semaphore.NewWeighted(int64(workers))
@@ -247,6 +246,29 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 			defer sem.Release(1)
 			defer wg.Done()
 			if err := buildTorrentIfNeed(f, snapDir); err != nil {
+				errs <- err
+			}
+
+			select {
+			default:
+			case <-ctx.Done():
+				errs <- ctx.Err()
+			case <-logEvery.C:
+				log.Info("[snapshots] Creating .torrent files", "Progress", fmt.Sprintf("%d/%d", i.Load(), len(files)))
+			}
+		}(f)
+	}
+	historySnapDir := filepath.Join(snapDir, "history")
+	for _, f := range files2 {
+		wg.Add(1)
+		if err := sem.Acquire(ctx, 1); err != nil {
+			return nil, err
+		}
+		go func(f string) {
+			defer i.Add(1)
+			defer sem.Release(1)
+			defer wg.Done()
+			if err := buildTorrentIfNeed(f, historySnapDir); err != nil {
 				errs <- err
 			}
 
