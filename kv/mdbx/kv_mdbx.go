@@ -81,7 +81,7 @@ func NewMDBX(log log.Logger) MdbxOpts {
 		// but for reproducibility of benchmarks - please don't rely on Available RAM
 		dirtySpace: 2 * (memory.TotalMemory() / 42),
 
-		mapSize:         8 * datasize.TB,
+		mapSize:         7 * datasize.TB,
 		growthStep:      2 * datasize.GB,
 		mergeThreshold:  3 * 8192,
 		shrinkThreshold: -1, // default
