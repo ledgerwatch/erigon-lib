@@ -404,7 +404,9 @@ func collateAndMergeHistory(tb testing.TB, db kv.RwDB, h *History, txs uint64) {
 		}()
 	}
 
-	err = h.BuildOptionalMissedIndices(ctx)
+	hc := h.MakeContext()
+	defer hc.Close()
+	err = hc.BuildOptionalMissedIndices(ctx)
 	require.NoError(err)
 
 	err = tx.Commit()
