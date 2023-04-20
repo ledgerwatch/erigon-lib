@@ -191,15 +191,17 @@ func (a *AggregatorV3) Close() {
 // CleanDir - call it manually on startup of Main application (don't call it from utilities or nother processes)
 //   - remove files ignored during opening of aggregator
 //   - remove files which marked as deleted but have no readers (usually last reader removing files marked as deleted)
-func (ac *AggregatorV3Context) CleanDir() {
-	ac.a.accounts.deleteGarbageFiles()
-	ac.a.storage.deleteGarbageFiles()
-	ac.a.code.deleteGarbageFiles()
-	ac.a.logAddrs.deleteGarbageFiles()
-	ac.a.logTopics.deleteGarbageFiles()
-	ac.a.tracesFrom.deleteGarbageFiles()
-	ac.a.tracesTo.deleteGarbageFiles()
+func (a *AggregatorV3) CleanDir() {
+	a.accounts.deleteGarbageFiles()
+	a.storage.deleteGarbageFiles()
+	a.code.deleteGarbageFiles()
+	a.logAddrs.deleteGarbageFiles()
+	a.logTopics.deleteGarbageFiles()
+	a.tracesFrom.deleteGarbageFiles()
+	a.tracesTo.deleteGarbageFiles()
 
+	ac := a.MakeContext()
+	defer ac.Close()
 	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
 	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
 	ac.a.code.cleanAfterFreeze(ac.code.frozenTo())
