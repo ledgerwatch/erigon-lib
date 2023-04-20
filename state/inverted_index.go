@@ -1376,53 +1376,54 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	return nil
 }
 
-func (ii *InvertedIndex) DisableReadAhead() {
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.DisableReadAhead()
-			if item.index != nil {
-				item.index.DisableReadAhead()
-			}
+func (ic *InvertedIndexContext) DisableReadAhead() {
+	for _, item := range ic.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
+		item.src.decompressor.DisableReadAhead()
+		if item.src.index != nil {
+			item.src.index.DisableReadAhead()
+		}
+	}
 }
 
-func (ii *InvertedIndex) EnableReadAhead() *InvertedIndex {
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.EnableReadAhead()
-			if item.index != nil {
-				item.index.EnableReadAhead()
-			}
+func (ic *InvertedIndexContext) EnableReadAhead() *InvertedIndexContext {
+	for _, item := range ic.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
-	return ii
+		item.src.decompressor.EnableReadAhead()
+		if item.src.index != nil {
+			item.src.index.EnableReadAhead()
+		}
+	}
+	return ic
 }
-func (ii *InvertedIndex) EnableMadvWillNeed() *InvertedIndex {
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.EnableWillNeed()
-			if item.index != nil {
-				item.index.EnableWillNeed()
-			}
+func (ic *InvertedIndexContext) EnableMadvWillNeed() *InvertedIndexContext {
+	for _, item := range ic.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
-	return ii
+		item.src.decompressor.EnableWillNeed()
+		if item.src.index != nil {
+			item.src.index.EnableWillNeed()
+		}
+	}
+	return ic
 }
-func (ii *InvertedIndex) EnableMadvNormalReadAhead() *InvertedIndex {
-	ii.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.EnableMadvNormal()
-			if item.index != nil {
-				item.index.EnableMadvNormal()
-			}
+func (ic *InvertedIndexContext) EnableMadvNormalReadAhead() *InvertedIndexContext {
+	for _, item := range ic.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
-	return ii
+
+		item.src.decompressor.EnableMadvNormal()
+		if item.src.index != nil {
+			item.src.index.EnableMadvNormal()
+		}
+	}
+	return ic
 }
 
 func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint64) {
@@ -1441,18 +1442,4 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 		return true
 	})
 	return filesCount, filesSize, idxSize
-}
-
-func (ii *InvertedIndex) CleanupDir() {
-	files, _ := ii.fileNamesOnDisk()
-	uselessFiles := ii.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err := os.Remove(filepath.Join(ii.dir, fName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err = os.Remove(filepath.Join(ii.dir, fIdxName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-	}
-	ii.localityIndex.CleanupDir()
 }

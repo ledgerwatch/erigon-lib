@@ -23,7 +23,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -2249,57 +2248,56 @@ func (hi *HistoryChangesIterDBDup) Next() ([]byte, []byte, error) {
 	return hi.k, hi.v, nil
 }
 
-func (h *History) DisableReadAhead() {
-	h.InvertedIndex.DisableReadAhead()
-	h.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.DisableReadAhead()
-			if item.index != nil {
-				item.index.DisableReadAhead()
-			}
+func (hc *HistoryContext) DisableReadAhead() {
+	hc.ic.DisableReadAhead()
+	for _, item := range hc.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
+		item.src.decompressor.DisableReadAhead()
+		if item.src.index != nil {
+			item.src.index.DisableReadAhead()
+		}
+	}
 }
-
-func (h *History) EnableReadAhead() *History {
-	h.InvertedIndex.EnableReadAhead()
-	h.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.EnableReadAhead()
-			if item.index != nil {
-				item.index.EnableReadAhead()
-			}
+func (hc *HistoryContext) EnableReadAhead() *HistoryContext {
+	hc.ic.EnableReadAhead()
+	for _, item := range hc.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
-	return h
+		item.src.decompressor.EnableReadAhead()
+		if item.src.index != nil {
+			item.src.index.EnableReadAhead()
+		}
+	}
+	return hc
 }
-func (h *History) EnableMadvWillNeed() *History {
-	h.InvertedIndex.EnableMadvWillNeed()
-	h.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.EnableWillNeed()
-			if item.index != nil {
-				item.index.EnableWillNeed()
-			}
+func (hc *HistoryContext) EnableMadvWillNeed() *HistoryContext {
+	hc.ic.EnableMadvWillNeed()
+	for _, item := range hc.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
-	return h
+		item.src.decompressor.EnableWillNeed()
+		if item.src.index != nil {
+			item.src.index.EnableWillNeed()
+		}
+	}
+	return hc
 }
-func (h *History) EnableMadvNormalReadAhead() *History {
-	h.InvertedIndex.EnableMadvNormalReadAhead()
-	h.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			item.decompressor.EnableMadvNormal()
-			if item.index != nil {
-				item.index.EnableMadvNormal()
-			}
+func (hc *HistoryContext) EnableMadvNormalReadAhead() *HistoryContext {
+	hc.ic.EnableMadvNormalReadAhead()
+	for _, item := range hc.files {
+		if item.src == nil {
+			continue
 		}
-		return true
-	})
-	return h
+		item.src.decompressor.EnableMadvNormal()
+		if item.src.index != nil {
+			item.src.index.EnableMadvNormal()
+		}
+	}
+	return hc
 }
 
 // HistoryStep used for incremental state reconsitution, it isolates only one snapshot interval
@@ -2372,20 +2370,6 @@ func (hs *HistoryStep) Clone() *HistoryStep {
 			reader:     recsplit.NewIndexReader(hs.historyItem.index),
 		},
 	}
-}
-
-func (h *History) CleanupDir() {
-	files, _ := h.fileNamesOnDisk()
-	uselessFiles := h.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		err := os.Remove(filepath.Join(h.dir, fName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-		fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		err = os.Remove(filepath.Join(h.dir, fIdxName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-	}
-	h.InvertedIndex.CleanupDir()
 }
 
 func (hc *HistoryContext) idxRangeRecent(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
