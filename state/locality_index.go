@@ -271,15 +271,15 @@ func (li *LocalityIndex) missedIdxFiles(ii *InvertedIndexContext) (toStep uint64
 	if len(ii.files) == 0 {
 		return 0, true
 	}
-	var a *ctxItem
+	var item *ctxItem
 	for i := len(ii.files) - 1; i >= 0; i-- {
 		if ii.files[i].src.frozen {
-			a = &ii.files[i]
+			item = &ii.files[i]
 			break
 		}
 	}
-	if a == nil {
-		toStep = a.endTxNum / li.aggregationStep
+	if item != nil {
+		toStep = item.endTxNum / li.aggregationStep
 	}
 	fName := fmt.Sprintf("%s.%d-%d.li", li.filenameBase, 0, toStep)
 	return toStep, dir.FileExist(filepath.Join(li.dir, fName))
