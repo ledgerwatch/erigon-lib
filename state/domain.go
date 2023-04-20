@@ -80,8 +80,11 @@ func (i *filesItem) closeFilesAndRemove() {
 		if err := i.decompressor.Close(); err != nil {
 			log.Trace("close", "err", err, "file", i.decompressor.FileName())
 		}
-		if err := os.Remove(i.decompressor.FilePath()); err != nil {
-			log.Trace("close", "err", err, "file", i.decompressor.FileName())
+		// paranoic-mode on: don't delete frozen files
+		if !i.frozen {
+			if err := os.Remove(i.decompressor.FilePath()); err != nil {
+				log.Trace("close", "err", err, "file", i.decompressor.FileName())
+			}
 		}
 		i.decompressor = nil
 	}
@@ -89,8 +92,11 @@ func (i *filesItem) closeFilesAndRemove() {
 		if err := i.index.Close(); err != nil {
 			log.Trace("close", "err", err, "file", i.index.FileName())
 		}
-		if err := os.Remove(i.index.FilePath()); err != nil {
-			log.Trace("close", "err", err, "file", i.index.FileName())
+		// paranoic-mode on: don't delete frozen files
+		if !i.frozen {
+			if err := os.Remove(i.index.FilePath()); err != nil {
+				log.Trace("close", "err", err, "file", i.index.FileName())
+			}
 		}
 		i.index = nil
 	}
