@@ -1180,10 +1180,12 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 		out.canDelete.Store(true)
 		if out.refcount.Load() == 0 {
 			// if it has no readers (invisible even for us) - it's safe to remove file right here
+			log.Warn("[dbg] dell immediately", "f", out.decompressor.FileName())
 			out.closeFilesAndRemove()
+		} else {
+			log.Warn("[dbg] mark as deleted", "f", out.decompressor.FileName())
 		}
 		h.files.Delete(out)
-		log.Warn("[dbg] mark as deleted", "f", out.decompressor.FileName())
 	}
 	h.InvertedIndex.cleanAfterFreeze(frozenTo)
 }
