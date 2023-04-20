@@ -188,7 +188,9 @@ func (a *AggregatorV3) Close() {
 	a.tracesTo.Close()
 }
 
-// CleanDir - remove all useless files. call it manually on startup of Main application (don't call it from utilities or nother processes)
+// CleanDir - call it manually on startup of Main application (don't call it from utilities or nother processes)
+//   - remove files ignored when opening aggregator
+//   - remove files marked as deleted but and which have no readers
 func (ac *AggregatorV3Context) CleanDir() {
 	log.Warn("[dbg] CleanDir0", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
 	ac.a.accounts.deleteGarbageFiles()
