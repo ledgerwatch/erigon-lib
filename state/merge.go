@@ -1163,7 +1163,7 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 	// but it may be useful for merges, until merge `frozen` file
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			log.Warn("[dbg] why not in list", "frozenTo", frozenTo/h.aggregationStep, "f", item.decompressor.FileName(), "item.frozen", item.frozen)
+			//log.Warn("[dbg] why not in list", "frozenTo", frozenTo/h.aggregationStep, "f", item.decompressor.FileName(), "item.frozen", item.frozen)
 			if item.frozen || item.endTxNum > frozenTo {
 				continue
 			}
@@ -1181,9 +1181,6 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 		// if it has no readers (invisible even for us) - it's safe to remove file right here
 		if out.refcount.Load() == 0 {
 			out.closeFilesAndRemove()
-			log.Warn("[dbg] dell immediately", "f", out.decompressor.FileName())
-		} else {
-			log.Warn("[dbg] mark as deleted", "f", out.decompressor.FileName())
 		}
 		h.files.Delete(out)
 	}
@@ -1200,6 +1197,7 @@ func (ii *InvertedIndex) cleanAfterFreeze(frozenTo uint64) {
 	// but it may be useful for merges, until merge `frozen` file
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
+			log.Warn("[dbg] why not in list", "frozenTo", frozenTo/ii.aggregationStep, "f", item.decompressor.FileName(), "item.frozen", item.frozen)
 			if item.frozen || item.endTxNum > frozenTo {
 				continue
 			}
