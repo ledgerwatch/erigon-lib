@@ -1089,6 +1089,7 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 	h.reCalcRoFiles()
 }
 
+// nolint
 func (dc *DomainContext) frozenTo() uint64 {
 	if len(dc.files) == 0 {
 		return 0
@@ -1220,6 +1221,7 @@ func (ii *InvertedIndex) cleanAfterFreeze(frozenTo uint64) {
 	}
 }
 
+// nolint
 func (d *Domain) deleteGarbageFiles() {
 	for _, item := range d.garbageFiles {
 		// paranoic-mode: don't delete frozen files
