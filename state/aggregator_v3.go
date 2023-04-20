@@ -190,6 +190,15 @@ func (a *AggregatorV3) Close() {
 
 // CleanDir - remove all useless files. call it manually on startup of Main application (don't call it from utilities or nother processes)
 func (ac *AggregatorV3Context) CleanDir() {
+	log.Warn("[dbg] CleanDir0", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
+	ac.a.accounts.deleteGarbageFiles()
+	ac.a.storage.deleteGarbageFiles()
+	ac.a.code.deleteGarbageFiles()
+	ac.a.logAddrs.deleteGarbageFiles()
+	ac.a.logTopics.deleteGarbageFiles()
+	ac.a.tracesFrom.deleteGarbageFiles()
+	ac.a.tracesTo.deleteGarbageFiles()
+
 	log.Warn("[dbg] CleanDir1", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
 	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
 	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
