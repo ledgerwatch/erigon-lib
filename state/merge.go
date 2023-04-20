@@ -1233,6 +1233,7 @@ func (d *Domain) deleteGarbageFiles() {
 		os.Remove(filepath.Join(d.dir, f2))
 	}
 	d.garbageFiles = nil
+	d.History.deleteGarbageFiles()
 }
 func (h *History) deleteGarbageFiles() {
 	for _, item := range h.garbageFiles {
@@ -1247,6 +1248,7 @@ func (h *History) deleteGarbageFiles() {
 		os.Remove(filepath.Join(h.dir, f2))
 	}
 	h.garbageFiles = nil
+	h.InvertedIndex.deleteGarbageFiles()
 }
 func (ii *InvertedIndex) deleteGarbageFiles() {
 	for _, item := range ii.garbageFiles {
