@@ -214,7 +214,7 @@ Loop:
 	return uselessFiles
 }
 
-func ctxFiles(files *btree2.BTreeG[*filesItem]) []ctxItem {
+func ctxFiles(files *btree2.BTreeG[*filesItem]) (roItems []ctxItem) {
 	roFiles := make([]ctxItem, 0, files.Len())
 	files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
@@ -1441,4 +1441,21 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 		return true
 	})
 	return filesCount, filesSize, idxSize
+}
+
+// deleteInvisibleFiles - delete files which marked as deleted and not visible by given context (refcount == 0)
+func (ic *InvertedIndexContext) deleteInvisibleFiles() {
+	var toDel []*filesItem
+	ic.ii.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			if item.canDelete.Load() && item.refcount.Load() == 0 {
+				toDel = append(toDel, item)
+			}
+		}
+		return true
+	})
+	for _, item := range toDel {
+		ic.ii.files.Delete(item)
+		item.closeFilesAndRemove()
+	}
 }

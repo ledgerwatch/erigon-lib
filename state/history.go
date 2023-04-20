@@ -31,7 +31,6 @@ import (
 
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ledgerwatch/erigon-lib/common/background"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	btree2 "github.com/tidwall/btree"
 	"golang.org/x/exp/slices"
@@ -1266,7 +1265,6 @@ func (hc *HistoryContext) Close() {
 			continue
 		}
 		refCnt := item.src.refcount.Add(-1)
-		log.Warn("HistoryContext.Close", "refCnt", refCnt, "canDelete", item.src.canDelete.Load(), "item", item.src.decompressor.FileName(), "stack", dbg.Stack())
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
 			item.src.closeFilesAndRemove()
@@ -2439,4 +2437,21 @@ func (hc *HistoryContext) IdxRange(key []byte, startTxNum, endTxNum int, asc ord
 		return nil, err
 	}
 	return iter.Union[uint64](frozenIt, recentIt, asc, limit), nil
+}
+
+// deleteInvisibleFiles - delete files which marked as deleted and not visible by given context (refcount == 0)
+func (hc *HistoryContext) deleteInvisibleFiles() {
+	var toDel []*filesItem
+	hc.h.files.Walk(func(items []*filesItem) bool {
+		for _, item := range items {
+			if item.canDelete.Load() && item.refcount.Load() == 0 {
+				toDel = append(toDel, item)
+			}
+		}
+		return true
+	})
+	for _, item := range toDel {
+		hc.h.files.Delete(item)
+		item.closeFilesAndRemove()
+	}
 }

@@ -188,18 +188,26 @@ func (a *AggregatorV3) Close() {
 	a.tracesTo.Close()
 }
 
-/*
-// CleanDir - remove all useless files. call it manually on startup of Main application (don't call it from utilities)
-func (a *AggregatorV3) CleanDir() {
-	a.accounts.CleanupDir()
-	a.storage.CleanupDir()
-	a.code.CleanupDir()
-	a.logAddrs.CleanupDir()
-	a.logTopics.CleanupDir()
-	a.tracesFrom.CleanupDir()
-	a.tracesTo.CleanupDir()
+// CleanDir - remove all useless files. call it manually on startup of Main application (don't call it from utilities or nother processes)
+func (ac *AggregatorV3Context) CleanDir() {
+	log.Warn("[dbg] CleanDir1", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
+	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
+	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
+	ac.a.code.cleanAfterFreeze(ac.code.frozenTo())
+	ac.a.logAddrs.cleanAfterFreeze(ac.logAddrs.frozenTo())
+	ac.a.logTopics.cleanAfterFreeze(ac.logTopics.frozenTo())
+	ac.a.tracesFrom.cleanAfterFreeze(ac.tracesFrom.frozenTo())
+	ac.a.tracesTo.cleanAfterFreeze(ac.tracesTo.frozenTo())
+
+	log.Warn("[dbg] CleanDir2", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
+	ac.accounts.deleteInvisibleFiles()
+	ac.storage.deleteInvisibleFiles()
+	ac.code.deleteInvisibleFiles()
+	ac.logAddrs.deleteInvisibleFiles()
+	ac.logTopics.deleteInvisibleFiles()
+	ac.tracesFrom.deleteInvisibleFiles()
+	ac.tracesTo.deleteInvisibleFiles()
 }
-*/
 
 func (a *AggregatorV3) SetWorkers(i int) {
 	a.accounts.compressWorkers = i
@@ -575,7 +583,6 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 	maxSpan := a.aggregationStep * StepsInBiggestFile
 	r := ac.findMergeRange(a.minimaxTxNumInFiles.Load(), maxSpan)
 	if !r.any() {
-		ac.cleanWhenNothingToMerge()
 		return false, nil
 	}
 
@@ -1153,16 +1160,6 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	a.tracesTo.integrateMergedFiles(outs.tracesTo, in.tracesTo)
 	a.cleanAfterNewFreeze(in)
 	return frozen
-}
-func (ac *AggregatorV3Context) cleanWhenNothingToMerge() {
-	log.Warn("[dbg] cleanWhenNothingToMerge", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
-	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
-	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
-	ac.a.code.cleanAfterFreeze(ac.code.frozenTo())
-	ac.a.logAddrs.cleanAfterFreeze(ac.logAddrs.frozenTo())
-	ac.a.logTopics.cleanAfterFreeze(ac.logTopics.frozenTo())
-	ac.a.tracesFrom.cleanAfterFreeze(ac.tracesFrom.frozenTo())
-	ac.a.tracesTo.cleanAfterFreeze(ac.tracesTo.frozenTo())
 }
 func (a *AggregatorV3) cleanAfterNewFreeze(in MergedFilesV3) {
 	if in.accountsHist.frozen {
