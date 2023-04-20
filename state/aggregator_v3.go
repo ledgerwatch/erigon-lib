@@ -575,6 +575,8 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 	maxSpan := a.aggregationStep * StepsInBiggestFile
 	r := ac.findMergeRange(a.minimaxTxNumInFiles.Load(), maxSpan)
 	if !r.any() {
+		ac.cleanWhenNothingToMerge()
+
 		return false, nil
 	}
 
@@ -1150,17 +1152,40 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	a.logTopics.integrateMergedFiles(outs.logTopics, in.logTopics)
 	a.tracesFrom.integrateMergedFiles(outs.tracesFrom, in.tracesFrom)
 	a.tracesTo.integrateMergedFiles(outs.tracesTo, in.tracesTo)
-	a.cleanFrozenParts(in)
+	a.cleanAfterNewFreeze(in)
 	return frozen
 }
-func (a *AggregatorV3) cleanFrozenParts(in MergedFilesV3) {
-	a.accounts.cleanFrozenParts(in.accountsHist)
-	a.storage.cleanFrozenParts(in.storageHist)
-	a.code.cleanFrozenParts(in.codeHist)
-	a.logAddrs.cleanFrozenParts(in.logAddrs)
-	a.logTopics.cleanFrozenParts(in.logTopics)
-	a.tracesFrom.cleanFrozenParts(in.tracesFrom)
-	a.tracesTo.cleanFrozenParts(in.tracesTo)
+func (ac *AggregatorV3Context) cleanWhenNothingToMerge() {
+	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
+	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
+	ac.a.code.cleanAfterFreeze(ac.code.frozenTo())
+	ac.a.logAddrs.cleanAfterFreeze(ac.logAddrs.frozenTo())
+	ac.a.logTopics.cleanAfterFreeze(ac.logTopics.frozenTo())
+	ac.a.tracesFrom.cleanAfterFreeze(ac.tracesFrom.frozenTo())
+	ac.a.tracesTo.cleanAfterFreeze(ac.tracesTo.frozenTo())
+}
+func (a *AggregatorV3) cleanAfterNewFreeze(in MergedFilesV3) {
+	if in.accountsHist.frozen {
+		a.accounts.cleanAfterFreeze(in.accountsHist.endTxNum)
+	}
+	if in.storageHist.frozen {
+		a.storage.cleanAfterFreeze(in.storageHist.endTxNum)
+	}
+	if in.codeHist.frozen {
+		a.code.cleanAfterFreeze(in.codeHist.endTxNum)
+	}
+	if in.logAddrs.frozen {
+		a.logAddrs.cleanAfterFreeze(in.logAddrs.endTxNum)
+	}
+	if in.logTopics.frozen {
+		a.logTopics.cleanAfterFreeze(in.logTopics.endTxNum)
+	}
+	if in.tracesFrom.frozen {
+		a.tracesFrom.cleanAfterFreeze(in.tracesFrom.endTxNum)
+	}
+	if in.tracesTo.frozen {
+		a.tracesTo.cleanAfterFreeze(in.tracesTo.endTxNum)
+	}
 }
 
 // KeepInDB - usually equal to one a.aggregationStep, but when we exec blocks from snapshots

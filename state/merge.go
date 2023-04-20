@@ -226,7 +226,9 @@ func (ii *InvertedIndex) mergeRangesUpTo(ctx context.Context, maxTxNum, maxSpan 
 		}()
 
 		ii.integrateMergedFiles(staticFiles, mergedIndex)
-		ii.cleanFrozenParts(mergedIndex)
+		if mergedIndex.frozen {
+			ii.cleanAfterFreeze(mergedIndex.endTxNum)
+		}
 	}
 	closeAll = false
 	return nil
@@ -1086,8 +1088,43 @@ func (h *History) integrateMergedFiles(indexOuts, historyOuts []*filesItem, inde
 	h.reCalcRoFiles()
 }
 
-func (d *Domain) cleanAfterFreeze(f *filesItem) {
-	if f == nil || !f.frozen {
+func (dc *DomainContext) frozenTo() uint64 {
+	if len(dc.files) == 0 {
+		return 0
+	}
+	for i := len(dc.files) - 1; i >= 0; i-- {
+		if dc.files[i].src.frozen {
+			return cmp.Min(dc.files[i].endTxNum, dc.hc.frozenTo())
+		}
+	}
+	return 0
+}
+
+func (hc *HistoryContext) frozenTo() uint64 {
+	if len(hc.files) == 0 {
+		return 0
+	}
+	for i := len(hc.files) - 1; i >= 0; i-- {
+		if hc.files[i].src.frozen {
+			return cmp.Min(hc.files[i].endTxNum, hc.ic.frozenTo())
+		}
+	}
+	return 0
+}
+func (ic *InvertedIndexContext) frozenTo() uint64 {
+	if len(ic.files) == 0 {
+		return 0
+	}
+	for i := len(ic.files) - 1; i >= 0; i-- {
+		if ic.files[i].src.frozen {
+			return ic.files[i].endTxNum
+		}
+	}
+	return 0
+}
+
+func (d *Domain) cleanAfterFreeze(frozenTo uint64) {
+	if frozenTo == 0 {
 		return
 	}
 
@@ -1096,7 +1133,7 @@ func (d *Domain) cleanAfterFreeze(f *filesItem) {
 	// but it may be useful for merges, until merge `frozen` file
 	d.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.frozen || item.endTxNum > f.endTxNum {
+			if item.frozen || item.endTxNum > frozenTo {
 				continue
 			}
 			outs = append(outs, item)
@@ -1111,12 +1148,12 @@ func (d *Domain) cleanAfterFreeze(f *filesItem) {
 		d.files.Delete(out)
 		out.canDelete.Store(true)
 	}
-	d.History.cleanFrozenParts(f)
+	d.History.cleanAfterFreeze(frozenTo)
 }
 
-// cleanFrozenParts - mark all small files before `f` as `canDelete=true`
-func (h *History) cleanFrozenParts(f *filesItem) {
-	if f == nil || !f.frozen {
+// cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
+func (h *History) cleanAfterFreeze(frozenTo uint64) {
+	if frozenTo == 0 {
 		return
 	}
 	var outs []*filesItem
@@ -1124,7 +1161,7 @@ func (h *History) cleanFrozenParts(f *filesItem) {
 	// but it may be useful for merges, until merge `frozen` file
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.frozen || item.endTxNum > f.endTxNum {
+			if item.frozen || item.endTxNum > frozenTo {
 				continue
 			}
 			outs = append(outs, item)
@@ -1139,12 +1176,12 @@ func (h *History) cleanFrozenParts(f *filesItem) {
 		h.files.Delete(out)
 		out.canDelete.Store(true)
 	}
-	h.InvertedIndex.cleanFrozenParts(f)
+	h.InvertedIndex.cleanAfterFreeze(frozenTo)
 }
 
-// cleanFrozenParts - mark all small files before `f` as `canDelete=true`
-func (ii *InvertedIndex) cleanFrozenParts(f *filesItem) {
-	if f == nil || !f.frozen {
+// cleanAfterFreeze - mark all small files before `f` as `canDelete=true`
+func (ii *InvertedIndex) cleanAfterFreeze(frozenTo uint64) {
+	if frozenTo == 0 {
 		return
 	}
 	var outs []*filesItem
@@ -1152,7 +1189,7 @@ func (ii *InvertedIndex) cleanFrozenParts(f *filesItem) {
 	// but it may be useful for merges, until merge `frozen` file
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			if item.frozen || item.endTxNum > f.endTxNum {
+			if item.frozen || item.endTxNum > frozenTo {
 				continue
 			}
 			outs = append(outs, item)
