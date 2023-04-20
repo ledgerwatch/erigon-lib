@@ -1213,6 +1213,7 @@ func (ii *InvertedIndex) cleanAfterFreeze(frozenTo uint64) {
 		out.canDelete.Store(true)
 		if out.refcount.Load() == 0 {
 			// if it has no readers (invisible even for us) - it's safe to remove file right here
+			log.Warn("[dbg] del immediately", "frozenTo", frozenTo/ii.aggregationStep, "f", out.decompressor.FileName(), "item.frozen", item.frozen)
 			out.closeFilesAndRemove()
 		}
 		ii.files.Delete(out)
