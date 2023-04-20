@@ -2452,6 +2452,7 @@ func (hc *HistoryContext) deleteInvisibleFiles() {
 	})
 	for _, item := range toDel {
 		hc.h.files.Delete(item)
+		log.Warn("[dbg] real delete", "f", item.decompressor.FileName())
 		item.closeFilesAndRemove()
 	}
 }

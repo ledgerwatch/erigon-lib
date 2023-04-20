@@ -1175,6 +1175,7 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 		}
 		h.files.Delete(out)
 		out.canDelete.Store(true)
+		log.Warn("[dbg] mark as deleted", "f", out.decompressor.FileName())
 	}
 	h.InvertedIndex.cleanAfterFreeze(frozenTo)
 }
