@@ -1260,44 +1260,44 @@ func (a *AggregatorV3) AddLogTopic(topic []byte) error {
 }
 
 // DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
-func (a *AggregatorV3) DisableReadAhead() {
-	a.accounts.DisableReadAhead()
-	a.storage.DisableReadAhead()
-	a.code.DisableReadAhead()
-	a.logAddrs.DisableReadAhead()
-	a.logTopics.DisableReadAhead()
-	a.tracesFrom.DisableReadAhead()
-	a.tracesTo.DisableReadAhead()
+func (ac *AggregatorV3Context) DisableReadAhead() {
+	ac.accounts.DisableReadAhead()
+	ac.storage.DisableReadAhead()
+	ac.code.DisableReadAhead()
+	ac.logAddrs.DisableReadAhead()
+	ac.logTopics.DisableReadAhead()
+	ac.tracesFrom.DisableReadAhead()
+	ac.tracesTo.DisableReadAhead()
 }
-func (a *AggregatorV3) EnableReadAhead() *AggregatorV3 {
-	a.accounts.EnableReadAhead()
-	a.storage.EnableReadAhead()
-	a.code.EnableReadAhead()
-	a.logAddrs.EnableReadAhead()
-	a.logTopics.EnableReadAhead()
-	a.tracesFrom.EnableReadAhead()
-	a.tracesTo.EnableReadAhead()
-	return a
+func (ac *AggregatorV3Context) EnableReadAhead() *AggregatorV3Context {
+	ac.accounts.EnableReadAhead()
+	ac.storage.EnableReadAhead()
+	ac.code.EnableReadAhead()
+	ac.logAddrs.EnableReadAhead()
+	ac.logTopics.EnableReadAhead()
+	ac.tracesFrom.EnableReadAhead()
+	ac.tracesTo.EnableReadAhead()
+	return ac
 }
-func (a *AggregatorV3) EnableMadvWillNeed() *AggregatorV3 {
-	a.accounts.EnableMadvWillNeed()
-	a.storage.EnableMadvWillNeed()
-	a.code.EnableMadvWillNeed()
-	a.logAddrs.EnableMadvWillNeed()
-	a.logTopics.EnableMadvWillNeed()
-	a.tracesFrom.EnableMadvWillNeed()
-	a.tracesTo.EnableMadvWillNeed()
-	return a
+func (ac *AggregatorV3Context) EnableMadvWillNeed() *AggregatorV3Context {
+	ac.accounts.EnableMadvWillNeed()
+	ac.storage.EnableMadvWillNeed()
+	ac.code.EnableMadvWillNeed()
+	ac.logAddrs.EnableMadvWillNeed()
+	ac.logTopics.EnableMadvWillNeed()
+	ac.tracesFrom.EnableMadvWillNeed()
+	ac.tracesTo.EnableMadvWillNeed()
+	return ac
 }
-func (a *AggregatorV3) EnableMadvNormal() *AggregatorV3 {
-	a.accounts.EnableMadvNormalReadAhead()
-	a.storage.EnableMadvNormalReadAhead()
-	a.code.EnableMadvNormalReadAhead()
-	a.logAddrs.EnableMadvNormalReadAhead()
-	a.logTopics.EnableMadvNormalReadAhead()
-	a.tracesFrom.EnableMadvNormalReadAhead()
-	a.tracesTo.EnableMadvNormalReadAhead()
-	return a
+func (ac *AggregatorV3Context) EnableMadvNormal() *AggregatorV3Context {
+	ac.accounts.EnableMadvNormalReadAhead()
+	ac.storage.EnableMadvNormalReadAhead()
+	ac.code.EnableMadvNormalReadAhead()
+	ac.logAddrs.EnableMadvNormalReadAhead()
+	ac.logTopics.EnableMadvNormalReadAhead()
+	ac.tracesFrom.EnableMadvNormalReadAhead()
+	ac.tracesTo.EnableMadvNormalReadAhead()
+	return ac
 }
 
 // -- range
