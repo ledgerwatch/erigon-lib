@@ -336,6 +336,8 @@ func (dc *DomainContext) staticFilesInRange(r DomainRanges) (valuesFiles, indexF
 	}
 	return
 }
+
+// nolint
 func (d *Domain) staticFilesInRange(r DomainRanges, dc *DomainContext) (valuesFiles, indexFiles, historyFiles []*filesItem, startJ int) {
 	panic("deprecated: use DomainContext.staticFilesInRange")
 }
@@ -361,6 +363,8 @@ func (ic *InvertedIndexContext) staticFilesInRange(startTxNum, endTxNum uint64) 
 
 	return files, startJ
 }
+
+// nolint
 func (ii *InvertedIndex) staticFilesInRange(startTxNum, endTxNum uint64, ic *InvertedIndexContext) ([]*filesItem, int) {
 	panic("deprecated: use InvertedIndexContext.staticFilesInRange")
 }
@@ -418,6 +422,8 @@ func (hc *HistoryContext) staticFilesInRange(r HistoryRanges) (indexFiles, histo
 	}
 	return
 }
+
+// nolint
 func (h *History) staticFilesInRange(r HistoryRanges, hc *HistoryContext) (indexFiles, historyFiles []*filesItem, startJ int, err error) {
 	panic("deprecated: use HistoryContext.staticFilesInRange")
 }

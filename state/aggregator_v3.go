@@ -978,7 +978,6 @@ func (sf SelectedStaticFilesV3) Close() {
 }
 
 func (ac *AggregatorV3Context) staticFilesInRange(r RangesV3) (sf SelectedStaticFilesV3, err error) {
-	_ = ac // maybe will move this method to `ac` object
 	if r.accounts.any() {
 		sf.accountsIdx, sf.accountsHist, sf.accountsI, err = ac.accounts.staticFilesInRange(r.accounts)
 		if err != nil {
