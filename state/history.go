@@ -2436,21 +2436,3 @@ func (hc *HistoryContext) IdxRange(key []byte, startTxNum, endTxNum int, asc ord
 	}
 	return iter.Union[uint64](frozenIt, recentIt, asc, limit), nil
 }
-
-// deleteInvisibleFiles - delete files which marked as deleted and not visible by given context (refcount == 0)
-func (hc *HistoryContext) deleteInvisibleFiles() {
-
-	var toDel []*filesItem
-	hc.h.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			if item.canDelete.Load() && item.refcount.Load() == 0 {
-				toDel = append(toDel, item)
-			}
-		}
-		return true
-	})
-	for _, item := range toDel {
-		hc.h.files.Delete(item)
-		item.closeFilesAndRemove()
-	}
-}

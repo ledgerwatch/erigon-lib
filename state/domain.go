@@ -1579,20 +1579,3 @@ func (dc *DomainContext) GetBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([
 	}
 	return v, nil
 }
-
-// deleteInvisibleFiles - delete files which marked as deleted and not visible by given context (refcount == 0)
-func (dc *DomainContext) deleteInvisibleFiles() {
-	var toDel []*filesItem
-	dc.d.files.Walk(func(items []*filesItem) bool {
-		for _, item := range items {
-			if item.canDelete.Load() && item.refcount.Load() == 0 {
-				toDel = append(toDel, item)
-			}
-		}
-		return true
-	})
-	for _, item := range toDel {
-		dc.d.files.Delete(item)
-		item.closeFilesAndRemove()
-	}
-}
