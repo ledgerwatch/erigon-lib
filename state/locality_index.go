@@ -130,10 +130,12 @@ func (li *LocalityIndex) scanStateFiles(fNames []string) (uselessFiles []*filesI
 
 		startTxNum, endTxNum := startStep*li.aggregationStep, endStep*li.aggregationStep
 		if li.file == nil {
-			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: false}
+			li.file = newFilesItem(startTxNum, endTxNum, li.aggregationStep)
+			li.file.frozen = false // LocalityIndex files are never frozen
 		} else if li.file.endTxNum < endTxNum {
 			uselessFiles = append(uselessFiles, li.file)
-			li.file = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: false}
+			li.file = newFilesItem(startTxNum, endTxNum, li.aggregationStep)
+			li.file.frozen = false // LocalityIndex files are never frozen
 		}
 	}
 	return uselessFiles

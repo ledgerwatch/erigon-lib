@@ -68,6 +68,8 @@ type History struct {
 	integrityFileExtensions []string
 	largeValues             bool // can't use DupSort optimization (aka. prefix-compression) if values size > 4kb
 
+	garbageFiles []*filesItem // files that exist on disk, but ignored on opening folder - because they are garbage
+
 	wal *historyWAL
 }
 
@@ -105,10 +107,7 @@ func (h *History) OpenList(fNames []string) error {
 }
 func (h *History) openList(fNames []string) error {
 	h.closeWhatNotInList(fNames)
-	u := h.scanStateFiles(fNames)
-	for _, it := range u {
-		log.Warn("[dbg] useless file after open", "f", fmt.Sprintf("%s.%d-%d", h.filenameBase, it.startTxNum/h.aggregationStep, it.endTxNum/h.aggregationStep))
-	}
+	h.garbageFiles = h.scanStateFiles(fNames)
 	if err := h.openFiles(); err != nil {
 		return fmt.Errorf("History.OpenList: %s, %w", h.filenameBase, err)
 	}
@@ -125,7 +124,7 @@ func (h *History) OpenFolder() error {
 
 // scanStateFiles
 // returns `uselessFiles` where file "is useless" means: it's subset of frozen file. such files can be safely deleted. subset of non-frozen file may be useful
-func (h *History) scanStateFiles(fNames []string) (uselessFiles []*filesItem) {
+func (h *History) scanStateFiles(fNames []string) (garbageFiles []*filesItem) {
 	re := regexp.MustCompile("^" + h.filenameBase + ".([0-9]+)-([0-9]+).v$")
 	var err error
 Loop:
@@ -152,8 +151,6 @@ Loop:
 		}
 
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
-		frozen := endStep-startStep == StepsInBiggestFile
-
 		for _, ext := range h.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", h.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(h.dir, requiredFile)) {
@@ -162,7 +159,7 @@ Loop:
 			}
 		}
 
-		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
+		var newFile = newFilesItem(startTxNum, endTxNum, h.aggregationStep)
 		if _, has := h.files.Get(newFile); has {
 			continue
 		}
@@ -179,21 +176,18 @@ Loop:
 				if newFile.isSubsetOf(item) {
 					if item.frozen {
 						addNewFile = false
-						uselessFiles = append(uselessFiles, newFile)
+						garbageFiles = append(garbageFiles, newFile)
 					}
 					continue
 				}
 			}
 			return true
 		})
-		//for _, subSet := range subSets {
-		//	h.files.Delete(subSet)
-		//}
 		if addNewFile {
 			h.files.Set(newFile)
 		}
 	}
-	return uselessFiles
+	return garbageFiles
 }
 
 func (h *History) openFiles() error {
@@ -936,13 +930,12 @@ func (h *History) integrateFiles(sf HistoryFiles, txNumFrom, txNumTo uint64) {
 		decomp: sf.efHistoryDecomp,
 		index:  sf.efHistoryIdx,
 	}, txNumFrom, txNumTo)
-	h.files.Set(&filesItem{
-		frozen:       (txNumTo-txNumFrom)/h.aggregationStep == StepsInBiggestFile,
-		startTxNum:   txNumFrom,
-		endTxNum:     txNumTo,
-		decompressor: sf.historyDecomp,
-		index:        sf.historyIdx,
-	})
+
+	fi := newFilesItem(txNumFrom, txNumTo, h.aggregationStep)
+	fi.decompressor = sf.historyDecomp
+	fi.index = sf.historyIdx
+	h.files.Set(fi)
+
 	h.reCalcRoFiles()
 }
 
@@ -2444,6 +2437,7 @@ func (hc *HistoryContext) IdxRange(key []byte, startTxNum, endTxNum int, asc ord
 
 // deleteInvisibleFiles - delete files which marked as deleted and not visible by given context (refcount == 0)
 func (hc *HistoryContext) deleteInvisibleFiles() {
+
 	var toDel []*filesItem
 	hc.h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {

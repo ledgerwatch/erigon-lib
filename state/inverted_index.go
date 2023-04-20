@@ -68,6 +68,8 @@ type InvertedIndex struct {
 	localityIndex           *LocalityIndex
 	tx                      kv.RwTx
 
+	garbageFiles []*filesItem // files that exist on disk, but ignored on opening folder - because they are garbage
+
 	// fields for history write
 	txNum      uint64
 	txNumBytes [8]byte
@@ -127,7 +129,7 @@ func (ii *InvertedIndex) OpenList(fNames []string) error {
 		return err
 	}
 	ii.closeWhatNotInList(fNames)
-	_ = ii.scanStateFiles(fNames)
+	ii.garbageFiles = ii.scanStateFiles(fNames)
 	if err := ii.openFiles(); err != nil {
 		return fmt.Errorf("NewHistory.openFiles: %s, %w", ii.filenameBase, err)
 	}
@@ -142,7 +144,7 @@ func (ii *InvertedIndex) OpenFolder() error {
 	return ii.OpenList(files)
 }
 
-func (ii *InvertedIndex) scanStateFiles(fileNames []string) (uselessFiles []*filesItem) {
+func (ii *InvertedIndex) scanStateFiles(fileNames []string) (garbageFiles []*filesItem) {
 	re := regexp.MustCompile("^" + ii.filenameBase + ".([0-9]+)-([0-9]+).ef$")
 	var err error
 Loop:
@@ -169,8 +171,6 @@ Loop:
 		}
 
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
-		frozen := endStep-startStep == StepsInBiggestFile
-
 		for _, ext := range ii.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", ii.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(ii.dir, requiredFile)) {
@@ -179,7 +179,7 @@ Loop:
 			}
 		}
 
-		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
+		var newFile = newFilesItem(startTxNum, endTxNum, ii.aggregationStep)
 		if _, has := ii.files.Get(newFile); has {
 			continue
 		}
@@ -196,7 +196,7 @@ Loop:
 				if newFile.isSubsetOf(item) {
 					if item.frozen {
 						addNewFile = false
-						uselessFiles = append(uselessFiles, newFile)
+						garbageFiles = append(garbageFiles, newFile)
 					}
 					continue
 				}
@@ -211,7 +211,7 @@ Loop:
 		}
 	}
 
-	return uselessFiles
+	return garbageFiles
 }
 
 func ctxFiles(files *btree2.BTreeG[*filesItem]) (roItems []ctxItem) {
@@ -1234,13 +1234,11 @@ func (ii *InvertedIndex) buildFiles(ctx context.Context, step uint64, bitmaps ma
 }
 
 func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uint64) {
-	ii.files.Set(&filesItem{
-		frozen:       (txNumTo-txNumFrom)/ii.aggregationStep == StepsInBiggestFile,
-		startTxNum:   txNumFrom,
-		endTxNum:     txNumTo,
-		decompressor: sf.decomp,
-		index:        sf.index,
-	})
+	fi := newFilesItem(txNumFrom, txNumTo, ii.aggregationStep)
+	fi.decompressor = sf.decomp
+	fi.index = sf.index
+	ii.files.Set(fi)
+
 	ii.reCalcRoFiles()
 }
 
