@@ -199,6 +199,7 @@ func (ac *AggregatorV3Context) CleanDir() {
 	ac.a.tracesFrom.cleanAfterFreeze(ac.tracesFrom.frozenTo())
 	ac.a.tracesTo.cleanAfterFreeze(ac.tracesTo.frozenTo())
 
+	return
 	log.Warn("[dbg] CleanDir2", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
 	ac.accounts.deleteInvisibleFiles()
 	ac.storage.deleteInvisibleFiles()

@@ -1146,6 +1146,10 @@ func (d *Domain) cleanAfterFreeze(frozenTo uint64) {
 			panic("must not happen: " + d.filenameBase)
 		}
 		d.files.Delete(out)
+		if out.refcount.Load() == 0 {
+			// if it has no readers (invisible even for us) - it's safe to remove file right here
+			out.closeFilesAndRemove()
+		}
 		out.canDelete.Store(true)
 	}
 	d.History.cleanAfterFreeze(frozenTo)
@@ -1173,8 +1177,12 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 		if out == nil {
 			panic("must not happen: " + h.filenameBase)
 		}
-		h.files.Delete(out)
 		out.canDelete.Store(true)
+		if out.refcount.Load() == 0 {
+			// if it has no readers (invisible even for us) - it's safe to remove file right here
+			out.closeFilesAndRemove()
+		}
+		h.files.Delete(out)
 		log.Warn("[dbg] mark as deleted", "f", out.decompressor.FileName())
 	}
 	h.InvertedIndex.cleanAfterFreeze(frozenTo)
@@ -1202,7 +1210,11 @@ func (ii *InvertedIndex) cleanAfterFreeze(frozenTo uint64) {
 		if out == nil {
 			panic("must not happen: " + ii.filenameBase)
 		}
-		ii.files.Delete(out)
 		out.canDelete.Store(true)
+		if out.refcount.Load() == 0 {
+			// if it has no readers (invisible even for us) - it's safe to remove file right here
+			out.closeFilesAndRemove()
+		}
+		ii.files.Delete(out)
 	}
 }
