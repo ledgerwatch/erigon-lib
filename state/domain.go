@@ -229,6 +229,7 @@ func (d *Domain) GetAndResetStats() DomainStats {
 func (d *Domain) scanStateFiles(fileNames []string) (garbageFiles []*filesItem) {
 	re := regexp.MustCompile("^" + d.filenameBase + ".([0-9]+)-([0-9]+).kv$")
 	var err error
+Loop:
 	for _, name := range fileNames {
 		subs := re.FindStringSubmatch(name)
 		if len(subs) != 3 {
@@ -253,6 +254,16 @@ func (d *Domain) scanStateFiles(fileNames []string) (garbageFiles []*filesItem) 
 
 		startTxNum, endTxNum := startStep*d.aggregationStep, endStep*d.aggregationStep
 		var newFile = newFilesItem(startTxNum, endTxNum, d.aggregationStep)
+
+		for _, ext := range d.integrityFileExtensions {
+			requiredFile := fmt.Sprintf("%s.%d-%d.%s", d.filenameBase, startStep, endStep, ext)
+			if !dir.FileExist(filepath.Join(d.dir, requiredFile)) {
+				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				garbageFiles = append(garbageFiles, newFile)
+				continue Loop
+			}
+		}
+
 		if _, has := d.files.Get(newFile); has {
 			continue
 		}

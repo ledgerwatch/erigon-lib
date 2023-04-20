@@ -151,15 +151,17 @@ Loop:
 		}
 
 		startTxNum, endTxNum := startStep*h.aggregationStep, endStep*h.aggregationStep
+		var newFile = newFilesItem(startTxNum, endTxNum, h.aggregationStep)
+
 		for _, ext := range h.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", h.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(h.dir, requiredFile)) {
-				log.Warn(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				garbageFiles = append(garbageFiles, newFile)
 				continue Loop
 			}
 		}
 
-		var newFile = newFilesItem(startTxNum, endTxNum, h.aggregationStep)
 		if _, has := h.files.Get(newFile); has {
 			continue
 		}
