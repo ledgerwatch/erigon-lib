@@ -576,7 +576,6 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 	r := ac.findMergeRange(a.minimaxTxNumInFiles.Load(), maxSpan)
 	if !r.any() {
 		ac.cleanWhenNothingToMerge()
-
 		return false, nil
 	}
 
@@ -1156,6 +1155,7 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	return frozen
 }
 func (ac *AggregatorV3Context) cleanWhenNothingToMerge() {
+	log.Warn("[dbg] cleanWhenNothingToMerge", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
 	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
 	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
 	ac.a.code.cleanAfterFreeze(ac.code.frozenTo())
