@@ -154,7 +154,7 @@ Loop:
 		for _, ext := range h.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", h.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(h.dir, requiredFile)) {
-				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				log.Warn(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
 				continue Loop
 			}
 		}
