@@ -992,6 +992,9 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 			return nil, nil, fmt.Errorf("open %s idx: %w", h.filenameBase, err)
 		}
 		historyIn = newFilesItem(r.historyStartTxNum, r.historyEndTxNum, h.aggregationStep)
+		historyIn.decompressor = decomp
+		historyIn.index = index
+
 		closeItem = false
 	}
 
