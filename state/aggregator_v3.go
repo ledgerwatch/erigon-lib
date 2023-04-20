@@ -588,7 +588,7 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 		return false, err
 	}
 
-	in, err := a.mergeFiles(ctx, outs, r, maxSpan, workers)
+	in, err := a.mergeFiles(ctx, outs, r, workers)
 	if err != nil {
 		return true, err
 	}
@@ -1072,7 +1072,7 @@ func (mf MergedFilesV3) Close() {
 	}
 }
 
-func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFilesV3, r RangesV3, maxSpan uint64, workers int) (MergedFilesV3, error) {
+func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFilesV3, r RangesV3, workers int) (MergedFilesV3, error) {
 	var mf MergedFilesV3
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(workers)
