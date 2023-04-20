@@ -2444,6 +2444,10 @@ func (hc *HistoryContext) deleteInvisibleFiles() {
 	var toDel []*filesItem
 	hc.h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
+			if item.canDelete.Load() {
+				log.Warn("[dbg] see deleted", "f", item.decompressor.FileName(), "refcnt", item.refcount.Load())
+			}
+
 			if item.canDelete.Load() && item.refcount.Load() == 0 {
 				toDel = append(toDel, item)
 			}
