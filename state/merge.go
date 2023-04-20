@@ -1165,7 +1165,7 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 	// but it may be useful for merges, until merge `frozen` file
 	h.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
-			log.Warn("[dbg] why not in list", "frozenTo", frozenTo/h.aggregationStep, "f", item.decompressor.FileName())
+			log.Warn("[dbg] why not in list", "frozenTo", frozenTo/h.aggregationStep, "f", item.decompressor.FileName(), "item.frozen", item.frozen)
 			if item.frozen || item.endTxNum > frozenTo {
 				continue
 			}
