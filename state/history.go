@@ -105,7 +105,10 @@ func (h *History) OpenList(fNames []string) error {
 }
 func (h *History) openList(fNames []string) error {
 	h.closeWhatNotInList(fNames)
-	_ = h.scanStateFiles(fNames)
+	u := h.scanStateFiles(fNames)
+	for _, it := range u {
+		log.Warn("[dbg] useless file after open", "f", fmt.Sprintf("%s.%d-%d", h.filenameBase, it.startTxNum/h.aggregationStep, it.endTxNum/h.aggregationStep))
+	}
 	if err := h.openFiles(); err != nil {
 		return fmt.Errorf("History.OpenList: %s, %w", h.filenameBase, err)
 	}
