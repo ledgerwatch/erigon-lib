@@ -189,10 +189,9 @@ func (a *AggregatorV3) Close() {
 }
 
 // CleanDir - call it manually on startup of Main application (don't call it from utilities or nother processes)
-//   - remove files ignored when opening aggregator
-//   - remove files marked as deleted but and which have no readers
+//   - remove files ignored during opening of aggregator
+//   - remove files which marked as deleted but have no readers (usually last reader removing files marked as deleted)
 func (ac *AggregatorV3Context) CleanDir() {
-	log.Warn("[dbg] CleanDir0", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
 	ac.a.accounts.deleteGarbageFiles()
 	ac.a.storage.deleteGarbageFiles()
 	ac.a.code.deleteGarbageFiles()
@@ -201,7 +200,6 @@ func (ac *AggregatorV3Context) CleanDir() {
 	ac.a.tracesFrom.deleteGarbageFiles()
 	ac.a.tracesTo.deleteGarbageFiles()
 
-	log.Warn("[dbg] CleanDir1", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
 	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
 	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
 	ac.a.code.cleanAfterFreeze(ac.code.frozenTo())
@@ -209,16 +207,6 @@ func (ac *AggregatorV3Context) CleanDir() {
 	ac.a.logTopics.cleanAfterFreeze(ac.logTopics.frozenTo())
 	ac.a.tracesFrom.cleanAfterFreeze(ac.tracesFrom.frozenTo())
 	ac.a.tracesTo.cleanAfterFreeze(ac.tracesTo.frozenTo())
-
-	return
-	log.Warn("[dbg] CleanDir2", "ac.accounts.frozenTo()", ac.accounts.frozenTo()/ac.a.aggregationStep)
-	ac.accounts.deleteInvisibleFiles()
-	ac.storage.deleteInvisibleFiles()
-	ac.code.deleteInvisibleFiles()
-	ac.logAddrs.deleteInvisibleFiles()
-	ac.logTopics.deleteInvisibleFiles()
-	ac.tracesFrom.deleteInvisibleFiles()
-	ac.tracesTo.deleteInvisibleFiles()
 }
 
 func (a *AggregatorV3) SetWorkers(i int) {
