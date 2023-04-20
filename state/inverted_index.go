@@ -1442,17 +1442,3 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 	})
 	return filesCount, filesSize, idxSize
 }
-
-func (ii *InvertedIndex) CleanupDir() {
-	files, _ := ii.fileNamesOnDisk()
-	uselessFiles := ii.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err := os.Remove(filepath.Join(ii.dir, fName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err = os.Remove(filepath.Join(ii.dir, fIdxName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-	}
-	ii.localityIndex.CleanupDir()
-}

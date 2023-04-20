@@ -235,7 +235,9 @@ func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Contex
 	go func() {
 		defer a.wg.Done()
 		defer a.buildingOptionalIndices.Store(false)
-		if err := a.BuildOptionalMissedIndices(ctx, workers); err != nil {
+		aggCtx := a.MakeContext()
+		defer aggCtx.Close()
+		if err := aggCtx.BuildOptionalMissedIndices(ctx, workers); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -244,17 +246,17 @@ func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Contex
 	}()
 }
 
-func (a *AggregatorV3) BuildOptionalMissedIndices(ctx context.Context, workers int) error {
+func (ac *AggregatorV3Context) BuildOptionalMissedIndices(ctx context.Context, workers int) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(workers)
-	if a.accounts != nil {
-		g.Go(func() error { return a.accounts.BuildOptionalMissedIndices(ctx) })
+	if ac.accounts != nil {
+		g.Go(func() error { return ac.accounts.BuildOptionalMissedIndices(ctx) })
 	}
-	if a.storage != nil {
-		g.Go(func() error { return a.storage.BuildOptionalMissedIndices(ctx) })
+	if ac.storage != nil {
+		g.Go(func() error { return ac.storage.BuildOptionalMissedIndices(ctx) })
 	}
-	if a.code != nil {
-		g.Go(func() error { return a.code.BuildOptionalMissedIndices(ctx) })
+	if ac.code != nil {
+		g.Go(func() error { return ac.code.BuildOptionalMissedIndices(ctx) })
 	}
 	return g.Wait()
 }
@@ -297,7 +299,9 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, workers int) erro
 		}
 	}
 
-	return a.BuildOptionalMissedIndices(ctx, workers)
+	ac := a.MakeContext()
+	defer ac.Close()
+	return ac.BuildOptionalMissedIndices(ctx, workers)
 }
 
 func (a *AggregatorV3) SetLogPrefix(v string) { a.logPrefix = v }

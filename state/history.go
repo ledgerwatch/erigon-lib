@@ -23,7 +23,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -303,8 +302,8 @@ func (h *History) missedIdxFiles() (l []*filesItem) {
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
-func (h *History) BuildOptionalMissedIndices(ctx context.Context) (err error) {
-	return h.localityIndex.BuildMissedIndices(ctx, h.InvertedIndex)
+func (hc *HistoryContext) BuildOptionalMissedIndices(ctx context.Context) (err error) {
+	return hc.h.localityIndex.BuildMissedIndices(ctx, hc.ic)
 }
 
 func (h *History) buildVi(ctx context.Context, item *filesItem, p *background.Progress) (err error) {
@@ -2372,20 +2371,6 @@ func (hs *HistoryStep) Clone() *HistoryStep {
 			reader:     recsplit.NewIndexReader(hs.historyItem.index),
 		},
 	}
-}
-
-func (h *History) CleanupDir() {
-	files, _ := h.fileNamesOnDisk()
-	uselessFiles := h.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.v", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		err := os.Remove(filepath.Join(h.dir, fName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-		fIdxName := fmt.Sprintf("%s.%d-%d.vi", h.filenameBase, f.startTxNum/h.aggregationStep, f.endTxNum/h.aggregationStep)
-		err = os.Remove(filepath.Join(h.dir, fIdxName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-	}
-	h.InvertedIndex.CleanupDir()
 }
 
 func (hc *HistoryContext) idxRangeRecent(key []byte, startTxNum, endTxNum int, asc order.By, limit int, roTx kv.Tx) (iter.U64, error) {
