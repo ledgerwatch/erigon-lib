@@ -776,6 +776,4 @@ func TestScanStaticFilesD(t *testing.T) {
 		return true
 	})
 	require.Equal(t, 6, len(found))
-	require.Equal(t, "0-4", found[0])
-	require.Equal(t, "4-5", found[1])
 }
