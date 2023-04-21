@@ -345,8 +345,8 @@ github.com/protolambda/go-kzg v0.0.0-20221224134646-c91cee5e954e/go.mod h1:7EhkB
 github.com/quasilyte/go-ruleguard/dsl v0.3.22 h1:wd8zkOhSNr+I+8Qeciml08ivDt1pSXe60+5DqOpCjPE=
 github.com/quasilyte/go-ruleguard/dsl v0.3.22/go.mod h1:KeCP03KrjuSO0H1kTuZQCWlQPulDV6YMIXmpQss17rU=
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
-github.com/roberto-bayardo/interfaces v0.0.0-20230415160431-75e636779b49 h1:RmyA3NHGT+2jWxYIw8T1ZCElWWE3kjwgn84GaMFSgo8=
-github.com/roberto-bayardo/interfaces v0.0.0-20230415160431-75e636779b49/go.mod h1:ugQv1QllJzBny3cKZKxUrSnykkjkBgm27eQM6dnGAcc=
+github.com/roberto-bayardo/interfaces v0.0.0-20230421214819-5d4427bd95e3 h1:tB2gKuJ7kF1OYHFGoGVck8eltuQ7PokHmFnxzGOQakg=
+github.com/roberto-bayardo/interfaces v0.0.0-20230421214819-5d4427bd95e3/go.mod h1:ugQv1QllJzBny3cKZKxUrSnykkjkBgm27eQM6dnGAcc=
 github.com/rogpeppe/go-internal v1.6.1/go.mod h1:xXDCJY+GAPziupqXw64V24skbSoqbTEfhy4qGm1nDQc=
 github.com/rogpeppe/go-internal v1.8.0/go.mod h1:WmiCO8CzOY8rg0OYDC4/i/2WRWAB6poM+XZ2dLUbcbE=
 github.com/rogpeppe/go-internal v1.9.0 h1:73kH8U+JUqXU8lRuOHeVHaa/SZPifC7BkcraZVejAe8=

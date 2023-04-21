@@ -110,4 +110,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230415160431-75e636779b49
+replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230421214819-5d4427bd95e3
