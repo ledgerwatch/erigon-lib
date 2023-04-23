@@ -1263,6 +1263,9 @@ func (hc *HistoryContext) Close() {
 			continue
 		}
 		refCnt := item.src.refcount.Add(-1)
+		if hc.h.filenameBase == "accounts" {
+			log.Warn("[history] HistoryContext.Close: check file to remove", "refCnt", refCnt, "name", item.src.decompressor.FileName())
+		}
 		//GC: last reader responsible to remove useles files: close it and delete
 		if refCnt == 0 && item.src.canDelete.Load() {
 			item.src.closeFilesAndRemove()

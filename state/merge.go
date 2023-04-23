@@ -1183,7 +1183,14 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 
 		// if it has no readers (invisible even for us) - it's safe to remove file right here
 		if out.refcount.Load() == 0 {
+			if h.filenameBase == "accounts" {
+				log.Warn("[history] History.cleanAfterFreeze: immediately delete", "name", out.decompressor.FileName())
+			}
 			out.closeFilesAndRemove()
+		} else {
+			if h.filenameBase == "accounts" {
+				log.Warn("[history] History.cleanAfterFreeze: mark as 'canDelete=true'", "name", out.decompressor.FileName())
+			}
 		}
 		h.files.Delete(out)
 	}
