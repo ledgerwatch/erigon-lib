@@ -27,7 +27,6 @@ import (
 	"strings"
 
 	"github.com/ledgerwatch/erigon-lib/common/background"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -421,7 +420,7 @@ func (hc *HistoryContext) staticFilesInRange(r HistoryRanges) (indexFiles, histo
 					sHist = append(sHist, fmt.Sprintf("%+v", fName))
 				}
 			}
-			log.Warn("something wrong with files for merge", "idx", strings.Join(sIdx, ","), "hist", strings.Join(sHist, ","))
+			log.Warn("[snapshots] something wrong with files for merge", "idx", strings.Join(sIdx, ","), "hist", strings.Join(sHist, ","))
 		}
 	}
 	return
@@ -1163,9 +1162,9 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 	if frozenTo == 0 {
 		return
 	}
-	if h.filenameBase == "accounts" {
-		log.Warn("[history] History.cleanAfterFreeze", "frozenTo", frozenTo/h.aggregationStep, "stack", dbg.Stack())
-	}
+	//if h.filenameBase == "accounts" {
+	//	log.Warn("[history] History.cleanAfterFreeze", "frozenTo", frozenTo/h.aggregationStep, "stack", dbg.Stack())
+	//}
 	var outs []*filesItem
 	// `kill -9` may leave some garbage
 	// but it may be useful for merges, until merge `frozen` file
@@ -1185,16 +1184,19 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 		}
 		out.canDelete.Store(true)
 
+		//if out.refcount.Load() == 0 {
+		//	if h.filenameBase == "accounts" {
+		//		log.Warn("[history] History.cleanAfterFreeze: immediately delete", "name", out.decompressor.FileName())
+		//	}
+		//} else {
+		//	if h.filenameBase == "accounts" {
+		//		log.Warn("[history] History.cleanAfterFreeze: mark as 'canDelete=true'", "name", out.decompressor.FileName())
+		//	}
+		//}
+
 		// if it has no readers (invisible even for us) - it's safe to remove file right here
 		if out.refcount.Load() == 0 {
-			if h.filenameBase == "accounts" {
-				log.Warn("[history] History.cleanAfterFreeze: immediately delete", "name", out.decompressor.FileName())
-			}
 			out.closeFilesAndRemove()
-		} else {
-			if h.filenameBase == "accounts" {
-				log.Warn("[history] History.cleanAfterFreeze: mark as 'canDelete=true'", "name", out.decompressor.FileName())
-			}
 		}
 		h.files.Delete(out)
 	}

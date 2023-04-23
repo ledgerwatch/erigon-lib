@@ -251,7 +251,7 @@ func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Contex
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			log.Warn("merge", "err", err)
+			log.Warn("[snapshots] merge", "err", err)
 		}
 	}()
 }
@@ -1224,7 +1224,7 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
 				if errors.Is(err, context.Canceled) {
 					return
 				}
-				log.Warn("buildFilesInBackground", "err", err)
+				log.Warn("[snapshots] buildFilesInBackground", "err", err)
 				break
 			}
 			step++
@@ -1241,7 +1241,7 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
 				if errors.Is(err, context.Canceled) {
 					return
 				}
-				log.Warn("merge", "err", err)
+				log.Warn("[snapshots] merge", "err", err)
 			}
 
 			a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
@@ -1503,7 +1503,7 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 		}
 		return nil
 	}); err != nil {
-		log.Warn("lastIdInDB", "err", err)
+		log.Warn("[snapshots] lastIdInDB", "err", err)
 	}
 	return lstInDb
 }
