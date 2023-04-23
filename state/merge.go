@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/ledgerwatch/erigon-lib/common/background"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon-lib/common"
@@ -1163,7 +1164,7 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 		return
 	}
 	if h.filenameBase == "accounts" {
-		log.Warn("[history] History.cleanAfterFreeze", "frozenTo", frozenTo/h.aggregationStep)
+		log.Warn("[history] History.cleanAfterFreeze", "frozenTo", frozenTo/h.aggregationStep, "stack", dbg.Stack())
 	}
 	var outs []*filesItem
 	// `kill -9` may leave some garbage
