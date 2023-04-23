@@ -1162,6 +1162,9 @@ func (h *History) cleanAfterFreeze(frozenTo uint64) {
 	if frozenTo == 0 {
 		return
 	}
+	if h.filenameBase == "accounts" {
+		log.Warn("[history] History.cleanAfterFreeze", "frozenTo", frozenTo/h.aggregationStep)
+	}
 	var outs []*filesItem
 	// `kill -9` may leave some garbage
 	// but it may be useful for merges, until merge `frozen` file
