@@ -1164,25 +1164,25 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	return frozen
 }
 func (a *AggregatorV3) cleanAfterNewFreeze(in MergedFilesV3) {
-	if in.accountsHist.frozen {
+	if in.accountsHist != nil && in.accountsHist.frozen {
 		a.accounts.cleanAfterFreeze(in.accountsHist.endTxNum)
 	}
-	if in.storageHist.frozen {
+	if in.storageHist != nil && in.storageHist.frozen {
 		a.storage.cleanAfterFreeze(in.storageHist.endTxNum)
 	}
-	if in.codeHist.frozen {
+	if in.codeHist != nil && in.codeHist.frozen {
 		a.code.cleanAfterFreeze(in.codeHist.endTxNum)
 	}
-	if in.logAddrs.frozen {
+	if in.logAddrs != nil && in.logAddrs.frozen {
 		a.logAddrs.cleanAfterFreeze(in.logAddrs.endTxNum)
 	}
-	if in.logTopics.frozen {
+	if in.logTopics != nil && in.logTopics.frozen {
 		a.logTopics.cleanAfterFreeze(in.logTopics.endTxNum)
 	}
-	if in.tracesFrom.frozen {
+	if in.tracesFrom != nil && in.tracesFrom.frozen {
 		a.tracesFrom.cleanAfterFreeze(in.tracesFrom.endTxNum)
 	}
-	if in.tracesTo.frozen {
+	if in.tracesTo != nil && in.tracesTo.frozen {
 		a.tracesTo.cleanAfterFreeze(in.tracesTo.endTxNum)
 	}
 }
