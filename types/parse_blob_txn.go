@@ -6,8 +6,10 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
 	"github.com/holiman/uint256"
-	"github.com/protolambda/go-kzg/eth"
+
+	"github.com/ledgerwatch/erigon-lib/crypto/kzg"
 )
 
 const (
@@ -17,13 +19,12 @@ const (
 
 	BlobSize = FieldElementsPerBlob * FieldElementSize // blob size in bytes
 
-	ProofSize = 48 // kzg proof size
+	ProofSize = 48 // kzg proof & commitment size
 
 	MaxBlobsPerBlock = 4
 )
 
 type wrapper struct {
-	proof                    eth.KZGProof
 	sigOffset                int // where the 65 byte signature starts in the payload
 	sigHashStart, sigHashEnd int // the portion of the payload to hash to get the signing hash
 
@@ -43,54 +44,14 @@ type wrapper struct {
 	blobHashesOffset int
 	numBlobHashes    int
 
-	blobKzgsOffset int
-	numBlobKzgs    int
+	commitmentsOffset int
+	numCommitments    int
 
 	blobsOffset int
 	numBlobs    int
-}
 
-type wrapperBlobSequence struct {
-	payload []byte
-	num     int
-}
-type wrapperKzgSequence struct {
-	payload []byte
-	num     int
-}
-type wrapperBlob []byte
-
-func (s wrapperBlobSequence) Len() int {
-	return s.num
-}
-func (s wrapperBlobSequence) At(i int) eth.Blob {
-	if i >= s.num {
-		return nil
-	}
-	r := wrapperBlob(s.payload[i*BlobSize : i*BlobSize+BlobSize])
-	return &r
-
-}
-func (s wrapperKzgSequence) Len() int {
-	return s.num
-}
-func (s wrapperKzgSequence) At(i int) eth.KZGCommitment {
-	kzg := eth.KZGCommitment{}
-	if i >= s.num {
-		return kzg
-	}
-	copy(kzg[:], s.payload[i*ProofSize:i*ProofSize+ProofSize])
-	return kzg
-}
-
-func (s wrapperBlob) Len() int { return len(s) / FieldElementSize }
-func (s wrapperBlob) At(i int) [FieldElementSize]byte {
-	r := [FieldElementSize]byte{}
-	if i*FieldElementSize+FieldElementSize > len(s) {
-		return r
-	}
-	copy(r[:], s[i*FieldElementSize:i*FieldElementSize+FieldElementSize])
-	return r
+	proofsOffset int
+	numProofs    int
 }
 
 func readUint256(payload []byte, offset int) (uint256.Int, error) {
@@ -154,36 +115,41 @@ func (w *wrapper) Deserialize(payload []byte) error {
 	if err != nil {
 		return err
 	}
-	kzgsOffset, err := readOffset(payload, 4, end, txOffset)
+	commitmentsOffset, err := readOffset(payload, 4, end, txOffset)
+	if err != nil {
+		return err
+	}
+	blobsOffset, err := readOffset(payload, 8, end, commitmentsOffset)
+	if err != nil {
+		return err
+	}
+	proofsOffset, err := readOffset(payload, 12, end, blobsOffset)
 	if err != nil {
 		return err
 	}
 
-	blobsOffset, err := readOffset(payload, 8, end, kzgsOffset)
-	if err != nil {
-		return err
+	w.commitmentsOffset = commitmentsOffset
+	w.numCommitments = blobsOffset - commitmentsOffset
+	if w.numCommitments%ProofSize != 0 {
+		return fmt.Errorf("expected multiple of proofsize, got: %v", w.numCommitments)
 	}
-
-	w.blobKzgsOffset = kzgsOffset
-	w.numBlobKzgs = blobsOffset - kzgsOffset
-	if w.numBlobKzgs%ProofSize != 0 {
-		return fmt.Errorf("expected multiple of proofsize, got: %v", w.numBlobKzgs)
-	}
-	w.numBlobKzgs /= ProofSize
+	w.numCommitments /= ProofSize
 
 	w.blobsOffset = blobsOffset
-	w.numBlobs = len(payload) - blobsOffset
+	w.numBlobs = proofsOffset - blobsOffset
 	if w.numBlobs%BlobSize != 0 {
 		return fmt.Errorf("expected multiple of blobsize, got: %v", w.numBlobs)
 	}
 	w.numBlobs /= BlobSize
 
-	if len(payload) < 12+ProofSize {
-		return fmt.Errorf("payload too short: %v", len(payload))
+	w.proofsOffset = proofsOffset
+	w.numProofs = len(payload) - proofsOffset
+	if w.numProofs%ProofSize != 0 {
+		return fmt.Errorf("expected multiple of proofsize, got: %v", w.numProofs)
 	}
-	copy(w.proof[:], payload[12:12+ProofSize])
+	w.numProofs /= ProofSize
 
-	err = w.DeserializeTx(payload, txOffset, kzgsOffset)
+	err = w.DeserializeTx(payload, txOffset, commitmentsOffset)
 	if err != nil {
 		return err
 	}
@@ -341,34 +307,54 @@ func (w *wrapper) DeserializeAccessList(payload []byte, begin, end int) error {
 }
 
 func (w *wrapper) VerifyBlobs(payload []byte) error {
-	blobs := wrapperBlobSequence{payload: payload[w.blobsOffset:], num: w.numBlobs}
-	kzgs := wrapperKzgSequence{payload: payload[w.blobKzgsOffset:], num: w.numBlobKzgs}
-	l1 := blobs.num
-	l2 := kzgs.num
-	l3 := w.numBlobHashes
-	if l1 != l2 || l2 != l3 {
-		return fmt.Errorf("lengths don't match %v %v %v", l1, l2, l3)
+	l1 := w.numBlobHashes
+	if l1 == 0 {
+		return fmt.Errorf("blob txs must contain at least one blob")
 	}
+	l2 := w.numBlobs
+	l3 := w.numCommitments
+	l4 := w.numProofs
+	if l1 != l2 || l1 != l3 || l1 != l4 {
+		return fmt.Errorf("lengths don't match %v %v %v %v", l1, l2, l3, l4)
+	}
+	// The following check isn't strictly necessary as it would be caught by data gas processing
+	// (and hence it is not explicitly in the spec for this function), but we prefer to fail
+	// early in case we are getting spammed with too many blobs or there is a bug somewhere.
 	if l1 > MaxBlobsPerBlock {
 		return fmt.Errorf("number of blobs exceeds max: %v", l1)
 	}
 
-	for i := 0; i < l3; i++ {
-		computed := eth.KZGToVersionedHash(kzgs.At(i))
-		h := [32]byte{}
+	comms := make([]gokzg4844.KZGCommitment, l1)
+	p := payload[w.commitmentsOffset:]
+	for i := range comms {
+		copy(comms[i][:], p[i*ProofSize:i*ProofSize+ProofSize])
+	}
+
+	blobs := make([]gokzg4844.Blob, l1)
+	p = payload[w.blobsOffset:]
+	for i := range blobs {
+		copy(blobs[i][:], p[i*BlobSize:i*BlobSize+BlobSize])
+	}
+
+	proofs := make([]gokzg4844.KZGProof, l1)
+	p = payload[w.proofsOffset:]
+	for i := range proofs {
+		copy(proofs[i][:], p[i*ProofSize:i*ProofSize+ProofSize])
+	}
+
+	kzgCtx := kzg.Ctx()
+	if err := kzgCtx.VerifyBlobKZGProofBatch(blobs, comms, proofs); err != nil {
+		return fmt.Errorf("error during proof verification: %v", err)
+	}
+
+	for i := 0; i < l1; i++ {
+		computed := kzg.KZGToVersionedHash(comms[i])
+		h := kzg.VersionedHash{}
 		offset := w.blobHashesOffset
 		copy(h[:], payload[offset+i*32:offset+i*32+32])
 		if computed != h {
 			return fmt.Errorf("versioned hash %d supposedly %x but does not match computed %x", i, h, computed)
 		}
-	}
-
-	ok, err := eth.VerifyAggregateKZGProof(blobs, kzgs, w.proof)
-	if err != nil {
-		return fmt.Errorf("error during proof verification: %v", err)
-	}
-	if !ok {
-		return fmt.Errorf("failed to verify kzg")
 	}
 
 	return nil
