@@ -867,28 +867,26 @@ func (a *AggregatorV3) prune(ctx context.Context, txFrom, txTo, limit uint64) er
 func (a *AggregatorV3) OpenContextsList() (res []string) {
 	if a.doTraceCtx {
 		a.traceCtxLock.Lock()
-		defer a.traceCtxLock.Unlock()
 		a.traceCtx.Scan(func(key uint64, value string) bool {
 			res = append(res, value)
 			return true
 		})
+		a.traceCtxLock.Unlock()
 	}
 	return res
 }
 func (a *AggregatorV3) addTraceCtx(ac *AggregatorV3Context) {
 	if a.doTraceCtx {
 		a.traceCtxLock.Lock()
-		defer a.traceCtxLock.Unlock()
 		a.traceCtx.Set(ac.id, ac.stack)
+		a.traceCtxLock.Unlock()
 	}
 }
 func (a *AggregatorV3) delTraceCtx(ac *AggregatorV3Context) {
 	if a.doTraceCtx {
 		a.traceCtxLock.Lock()
-		defer a.traceCtxLock.Unlock()
-		fmt.Printf("dbg: %t\n", ac == nil)
-		fmt.Printf("dbg: %t\n", a.traceCtx == nil)
 		a.traceCtx.Delete(ac.id)
+		a.traceCtxLock.Unlock()
 	}
 }
 func (a *AggregatorV3) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) uint64) {
