@@ -23,6 +23,7 @@ import (
 	"fmt"
 	math2 "math"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -870,7 +871,7 @@ func (a *AggregatorV3) SlowContextsList() (res []string) {
 		a.traceCtxLock.Lock()
 		a.traceCtx.Scan(func(key uint64, value *AggregatorV3Context) bool {
 			if time.Since(value.startTime) > time.Minute {
-				res = append(res, value.stack)
+				res = append(res, strconv.Itoa(int(key))+": "+value.stack)
 			}
 			return true
 		})
