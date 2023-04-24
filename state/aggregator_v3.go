@@ -82,10 +82,11 @@ type AggregatorV3 struct {
 
 	ps *background.ProgressSet
 
+	// next fields are set only if agg.doTraceCtx is true. can enable by env: TRACE_AGG=true
 	doTraceCtx   bool
 	traceCtxLock sync.Mutex
-	traceCtx     *btree2.Map[uint64, string]
-	aggCtxID     atomic.Uint64
+	traceCtx     *btree2.Map[uint64, *AggregatorV3Context]
+	traceCtxID   atomic.Uint64
 }
 
 type OnFreezeFunc func(frozenFileNames []string)
@@ -102,7 +103,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 		db:               db,
 		keepInDB:         2 * aggregationStep,
 		doTraceCtx:       dbg.TraceAgg(),
-		traceCtx:         btree2.NewMap[uint64, string](128),
+		traceCtx:         btree2.NewMap[uint64, *AggregatorV3Context](128),
 		ps:               background.NewProgressSet(),
 		backgroundResult: &BackgroundResult{},
 	}
@@ -864,11 +865,13 @@ func (a *AggregatorV3) prune(ctx context.Context, txFrom, txTo, limit uint64) er
 	return nil
 }
 
-func (a *AggregatorV3) OpenContextsList() (res []string) {
+func (a *AggregatorV3) SlowContextsList() (res []string) {
 	if a.doTraceCtx {
 		a.traceCtxLock.Lock()
-		a.traceCtx.Scan(func(key uint64, value string) bool {
-			res = append(res, value)
+		a.traceCtx.Scan(func(key uint64, value *AggregatorV3Context) bool {
+			if time.Since(value.startTime) > time.Minute {
+				res = append(res, value.stack)
+			}
 			return true
 		})
 		a.traceCtxLock.Unlock()
@@ -877,8 +880,11 @@ func (a *AggregatorV3) OpenContextsList() (res []string) {
 }
 func (a *AggregatorV3) addTraceCtx(ac *AggregatorV3Context) {
 	if a.doTraceCtx {
+		ac.id = a.traceCtxID.Add(1)
+		ac.stack = dbg.Stack()
+		ac.startTime = time.Now()
 		a.traceCtxLock.Lock()
-		a.traceCtx.Set(ac.id, ac.stack)
+		a.traceCtx.Set(ac.id, ac)
 		a.traceCtxLock.Unlock()
 	}
 }
@@ -1487,22 +1493,7 @@ func (a *AggregatorV3) Stats() FilesStats22 {
 	return fs
 }
 
-func (a *AggregatorV3) nextCtxID() uint64 {
-	if a.doTraceCtx {
-		return a.aggCtxID.Add(1)
-	}
-	return 0
-}
-func (a *AggregatorV3) nextCtxStack() string {
-	if a.doTraceCtx {
-		return dbg.Stack()
-	}
-	return ""
-}
-
 type AggregatorV3Context struct {
-	id         uint64
-	stack      string
 	a          *AggregatorV3
 	accounts   *HistoryContext
 	storage    *HistoryContext
@@ -1512,13 +1503,16 @@ type AggregatorV3Context struct {
 	tracesFrom *InvertedIndexContext
 	tracesTo   *InvertedIndexContext
 	keyBuf     []byte
+
+	// next fields are set only if agg.doTraceCtx is true
+	id        uint64
+	stack     string
+	startTime time.Time
 }
 
 func (a *AggregatorV3) MakeContext() *AggregatorV3Context {
 	ac := &AggregatorV3Context{
 		a:          a,
-		id:         a.nextCtxID(),
-		stack:      a.nextCtxStack(),
 		accounts:   a.accounts.MakeContext(),
 		storage:    a.storage.MakeContext(),
 		code:       a.code.MakeContext(),
