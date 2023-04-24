@@ -178,7 +178,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
 	if !legacy {
 		slot.Type = payload[p]
-		fmt.Println("TX TYPE", int(slot.Type))
 		if slot.Type == BlobTxType {
 			// TODO: Parsing the blob transaction requires we know the "scope" of the encoding
 			// since it is SSZ format. We assume the scope ends at the last byte of the payload

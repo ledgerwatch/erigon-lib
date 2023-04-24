@@ -76,17 +76,21 @@ func TestParseBlobTransaction(t *testing.T) {
 	if tx.AlStorCount != 3 {
 		t.Errorf("Expected 3 keys in access list, got %v", tx.AlStorCount)
 	}
+	sender := fmt.Sprintf("%x", txSender)
+	if sender != blobTxSender {
+		t.Errorf("Wrong sender. Expected %v, got: %v", blobTxSender, sender)
+	}
 
 	// One more test with the no-blob tx & known sender
 	ssz = hexutility.MustDecodeHex(blobTxCreateHex)
 	payload = append([]byte{byte(BlobTxType)}, ssz...)
 	parseEnd, err = ctx.ParseTransaction(payload, 0, tx, txSender[:], false /* hasEnvelope */, true /* networkVersion */, nil)
-	require.NoError(err)
-	require.Equal(len(payload), parseEnd)
-	sender := fmt.Sprintf("%x", txSender)
-	if sender != blobTxCreateSender {
-		t.Errorf("Wrong sender. Expected %v, got: %v", blobTxCreateSender, sender)
+	if err == nil {
+		// 0-blob transactions should error out in verification
+		t.Errorf("0-blob tx didn't fail parse")
 	}
+	require.Equal(len(payload), parseEnd)
+
 }
 
 func TestParseTransactionRLP(t *testing.T) {

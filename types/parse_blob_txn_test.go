@@ -49,29 +49,13 @@ var (
 	//go:embed testdata/blobtx.txt
 	blobTxHex string
 
+	// Sender address of the blobTxHex transaction
+	blobTxSender string = "a614f00e912255dae37395ee7ba37a095dc98f81"
+
 	// blobTxCreateHex is just like the previous test case only the To: field is nil (simulating
 	// contract creation) and there are no blobs
-	blobTxCreateHex string = "3c000000e0010000e0010000c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000045000000006db43b14d398f639307d0573db4c477a685ba311345d4222def987a54769ab8e901f26f19362e150d6e7ab75168c629ba0ebaafbb1f6880b3f4426c8a3eb3b2801000000000000000000000000000000000000000000000000000000000000000a000000000000002a000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000041e2010000000000c00000006400000000000000000000000000000000000000000000000000000000000000c1000000c700000000000000000000000000000000000000000000000000000000000000000000005f010000006162636465660800000060000000000000000000000000000000000000000000000118000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002180000000200000000000000000000000000000000000000000000000000000000000000"
-
-	// Sender address of the blobTxCreateHex transaction
-	blobTxCreateSender string = "7b3545fec2c8e06cb7446955f24962e3ca2dab29"
-
-	//go:embed testdata/new_blob_tx.txt
-	newBlobTxHex string
+	blobTxCreateHex string = "10000000b4010000b4010000b4010000450000000137d13cd1b1e351f12556ef6a6fa74142f5cec279aa50df41728757f2c1203e6e67db95d38790467fe12da748c6e1d7f22319649b94ae64d3fa2e4d5d5ae6d25a01000000000000000000000000000000000000000000000000000000000000000a000000000000002a000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000041e2010000000000c00000006400000000000000000000000000000000000000000000000000000000000000c1000000c700000000000000000000000000000000000000000000000000000000000000000000005f010000006162636465660800000060000000000000000000000000000000000000000000000118000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002180000000200000000000000000000000000000000000000000000000000000000000000"
 )
-
-func TestDeserializeNewBlobTx(t *testing.T) {
-	txBytes := hexutility.MustDecodeHex(strings.TrimSpace(newBlobTxHex))
-	w := wrapper{}
-	err := w.Deserialize(txBytes)
-	if err != nil {
-		t.Fatalf("couldn't deserialize blob tx: %v", err)
-	}
-	err = w.VerifyBlobs(txBytes)
-	if err != nil {
-		t.Errorf("blob verification failed: %v", err)
-	}
-}
 
 func TestDeserializeBlobTx(t *testing.T) {
 	txBytes := hexutility.MustDecodeHex(strings.TrimSpace(blobTxHex))
@@ -125,23 +109,22 @@ func TestDeserializeBlobTx(t *testing.T) {
 
 	// Now mangle a proof byte and make sure verification fails
 	// TODO: FIX these tests with updated blob tx spec
-	/*	oldByte := w.proof[0]
-		w.proof[0] = 0xff
-		err = w.VerifyBlobs(txBytes)
-		if err == nil {
-			t.Errorf("expected blob verification to fail")
-		}
-		t.Logf("Got error as expected: %v", err)
-		w.proof[0] = oldByte // restore the mangled byte
+	oldByte := txBytes[w.proofsOffset]
+	txBytes[w.proofsOffset+1] = 0xff
+	err = w.VerifyBlobs(txBytes)
+	if err == nil {
+		t.Errorf("expected blob verification to fail")
+	}
+	t.Logf("Got error as expected: %v", err)
+	txBytes[w.proofsOffset+1] = oldByte // restore the mangled byte
 
-		// Now mangle a blob byte and make sure verification fails
-		txBytes[w.blobsOffset] = 0xff
-		err = w.VerifyBlobs(txBytes)
-		if err == nil {
-			t.Errorf("expected blob verification to fail")
-		}
-		t.Logf("Got error as expected: %v", err)
-	*/
+	// Now mangle a blob byte and make sure verification fails
+	txBytes[w.blobsOffset] = 0xff
+	err = w.VerifyBlobs(txBytes)
+	if err == nil {
+		t.Errorf("expected blob verification to fail")
+	}
+	t.Logf("Got error as expected: %v", err)
 }
 
 func TestDeserializeBlobCreateTx(t *testing.T) {
@@ -159,9 +142,11 @@ func TestDeserializeBlobCreateTx(t *testing.T) {
 	if w.numBlobHashes != 0 {
 		t.Errorf("Expected 0 blob hashes, got %v", w.numBlobHashes)
 	}
+
+	// This should fail since the tx has 0 blobs
 	err = w.VerifyBlobs(txBytes)
-	if err != nil {
-		t.Errorf("blob verification failed: %v", err)
+	if err == nil {
+		t.Errorf("blob verification should have failed due to 0 blobs")
 	}
 
 	// Remaining fields should be same as last test case
