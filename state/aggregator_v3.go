@@ -23,6 +23,7 @@ import (
 	"fmt"
 	math2 "math"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
+	btree2 "github.com/tidwall/btree"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -80,13 +82,32 @@ type AggregatorV3 struct {
 	walLock  sync.RWMutex
 
 	ps *background.ProgressSet
+
+	// next fields are set only if agg.doTraceCtx is true. can enable by env: TRACE_AGG=true
+	doTraceCtx   bool
+	traceCtxLock sync.Mutex
+	traceCtx     *btree2.Map[uint64, *AggregatorV3Context]
+	traceCtxID   atomic.Uint64
 }
 
 type OnFreezeFunc func(frozenFileNames []string)
 
 func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep uint64, db kv.RoDB) (*AggregatorV3, error) {
 	ctx, ctxCancel := context.WithCancel(ctx)
-	a := &AggregatorV3{ctx: ctx, ctxCancel: ctxCancel, ps: background.NewProgressSet(), onFreeze: func(frozenFileNames []string) {}, dir: dir, tmpdir: tmpdir, aggregationStep: aggregationStep, backgroundResult: &BackgroundResult{}, db: db, keepInDB: 2 * aggregationStep}
+	a := &AggregatorV3{
+		ctx:              ctx,
+		ctxCancel:        ctxCancel,
+		onFreeze:         func(frozenFileNames []string) {},
+		dir:              dir,
+		tmpdir:           tmpdir,
+		aggregationStep:  aggregationStep,
+		db:               db,
+		keepInDB:         2 * aggregationStep,
+		doTraceCtx:       dbg.TraceAgg(),
+		traceCtx:         btree2.NewMap[uint64, *AggregatorV3Context](128),
+		ps:               background.NewProgressSet(),
+		backgroundResult: &BackgroundResult{},
+	}
 	var err error
 	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, false, nil, false); err != nil {
 		return nil, err
@@ -110,6 +131,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 		return nil, err
 	}
 	a.recalcMaxTxNum()
+
 	return a, nil
 }
 func (a *AggregatorV3) OnFreeze(f OnFreezeFunc) { a.onFreeze = f }
@@ -188,18 +210,28 @@ func (a *AggregatorV3) Close() {
 	a.tracesTo.Close()
 }
 
-/*
-// CleanDir - remove all useless files. call it manually on startup of Main application (don't call it from utilities)
+// CleanDir - call it manually on startup of Main application (don't call it from utilities or nother processes)
+//   - remove files ignored during opening of aggregator
+//   - remove files which marked as deleted but have no readers (usually last reader removing files marked as deleted)
 func (a *AggregatorV3) CleanDir() {
-	a.accounts.CleanupDir()
-	a.storage.CleanupDir()
-	a.code.CleanupDir()
-	a.logAddrs.CleanupDir()
-	a.logTopics.CleanupDir()
-	a.tracesFrom.CleanupDir()
-	a.tracesTo.CleanupDir()
+	a.accounts.deleteGarbageFiles()
+	a.storage.deleteGarbageFiles()
+	a.code.deleteGarbageFiles()
+	a.logAddrs.deleteGarbageFiles()
+	a.logTopics.deleteGarbageFiles()
+	a.tracesFrom.deleteGarbageFiles()
+	a.tracesTo.deleteGarbageFiles()
+
+	ac := a.MakeContext()
+	defer ac.Close()
+	ac.a.accounts.cleanAfterFreeze(ac.accounts.frozenTo())
+	ac.a.storage.cleanAfterFreeze(ac.storage.frozenTo())
+	ac.a.code.cleanAfterFreeze(ac.code.frozenTo())
+	ac.a.logAddrs.cleanAfterFreeze(ac.logAddrs.frozenTo())
+	ac.a.logTopics.cleanAfterFreeze(ac.logTopics.frozenTo())
+	ac.a.tracesFrom.cleanAfterFreeze(ac.tracesFrom.frozenTo())
+	ac.a.tracesTo.cleanAfterFreeze(ac.tracesTo.frozenTo())
 }
-*/
 
 func (a *AggregatorV3) SetWorkers(i int) {
 	a.accounts.compressWorkers = i
@@ -235,26 +267,28 @@ func (a *AggregatorV3) BuildOptionalMissedIndicesInBackground(ctx context.Contex
 	go func() {
 		defer a.wg.Done()
 		defer a.buildingOptionalIndices.Store(false)
-		if err := a.BuildOptionalMissedIndices(ctx, workers); err != nil {
+		aggCtx := a.MakeContext()
+		defer aggCtx.Close()
+		if err := aggCtx.BuildOptionalMissedIndices(ctx, workers); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			log.Warn("merge", "err", err)
+			log.Warn("[snapshots] merge", "err", err)
 		}
 	}()
 }
 
-func (a *AggregatorV3) BuildOptionalMissedIndices(ctx context.Context, workers int) error {
+func (ac *AggregatorV3Context) BuildOptionalMissedIndices(ctx context.Context, workers int) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(workers)
-	if a.accounts != nil {
-		g.Go(func() error { return a.accounts.BuildOptionalMissedIndices(ctx) })
+	if ac.accounts != nil {
+		g.Go(func() error { return ac.accounts.BuildOptionalMissedIndices(ctx) })
 	}
-	if a.storage != nil {
-		g.Go(func() error { return a.storage.BuildOptionalMissedIndices(ctx) })
+	if ac.storage != nil {
+		g.Go(func() error { return ac.storage.BuildOptionalMissedIndices(ctx) })
 	}
-	if a.code != nil {
-		g.Go(func() error { return a.code.BuildOptionalMissedIndices(ctx) })
+	if ac.code != nil {
+		g.Go(func() error { return ac.code.BuildOptionalMissedIndices(ctx) })
 	}
 	return g.Wait()
 }
@@ -297,7 +331,9 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, workers int) erro
 		}
 	}
 
-	return a.BuildOptionalMissedIndices(ctx, workers)
+	ac := a.MakeContext()
+	defer ac.Close()
+	return ac.BuildOptionalMissedIndices(ctx, workers)
 }
 
 func (a *AggregatorV3) SetLogPrefix(v string) { a.logPrefix = v }
@@ -564,17 +600,17 @@ func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64) 
 }
 
 func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethingDone bool, err error) {
+	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
+	defer ac.Close()
+
 	closeAll := true
 	maxSpan := a.aggregationStep * StepsInBiggestFile
-	r := a.findMergeRange(a.minimaxTxNumInFiles.Load(), maxSpan)
+	r := ac.findMergeRange(a.minimaxTxNumInFiles.Load(), maxSpan)
 	if !r.any() {
 		return false, nil
 	}
 
-	ac := a.MakeContext() // this need, to ensure we do all operations on files in "transaction-style", maybe we will ensure it on type-level in future
-	defer ac.Close()
-
-	outs, err := a.staticFilesInRange(r, ac)
+	outs, err := ac.staticFilesInRange(r)
 	defer func() {
 		if closeAll {
 			outs.Close()
@@ -584,7 +620,7 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 		return false, err
 	}
 
-	in, err := a.mergeFiles(ctx, outs, r, maxSpan, workers)
+	in, err := ac.mergeFiles(ctx, outs, r, workers)
 	if err != nil {
 		return true, err
 	}
@@ -830,6 +866,36 @@ func (a *AggregatorV3) prune(ctx context.Context, txFrom, txTo, limit uint64) er
 	return nil
 }
 
+func (a *AggregatorV3) SlowContextsList() (res []string) {
+	if a.doTraceCtx {
+		a.traceCtxLock.Lock()
+		a.traceCtx.Scan(func(key uint64, value *AggregatorV3Context) bool {
+			if time.Since(value.startTime) > time.Minute {
+				res = append(res, strconv.Itoa(int(key))+": "+value.stack)
+			}
+			return true
+		})
+		a.traceCtxLock.Unlock()
+	}
+	return res
+}
+func (a *AggregatorV3) addTraceCtx(ac *AggregatorV3Context) {
+	if a.doTraceCtx {
+		ac.id = a.traceCtxID.Add(1)
+		ac.stack = dbg.Stack()
+		ac.startTime = time.Now()
+		a.traceCtxLock.Lock()
+		a.traceCtx.Set(ac.id, ac)
+		a.traceCtxLock.Unlock()
+	}
+}
+func (a *AggregatorV3) delTraceCtx(ac *AggregatorV3Context) {
+	if a.doTraceCtx {
+		a.traceCtxLock.Lock()
+		a.traceCtx.Delete(ac.id)
+		a.traceCtxLock.Unlock()
+	}
+}
 func (a *AggregatorV3) LogStats(tx kv.Tx, tx2block func(endTxNumMinimax uint64) uint64) {
 	if a.minimaxTxNumInFiles.Load() == 0 {
 		return
@@ -924,15 +990,15 @@ func (r RangesV3) any() bool {
 	return r.accounts.any() || r.storage.any() || r.code.any() || r.logAddrs || r.logTopics || r.tracesFrom || r.tracesTo
 }
 
-func (a *AggregatorV3) findMergeRange(maxEndTxNum, maxSpan uint64) RangesV3 {
+func (ac *AggregatorV3Context) findMergeRange(maxEndTxNum, maxSpan uint64) RangesV3 {
 	var r RangesV3
-	r.accounts = a.accounts.findMergeRange(maxEndTxNum, maxSpan)
-	r.storage = a.storage.findMergeRange(maxEndTxNum, maxSpan)
-	r.code = a.code.findMergeRange(maxEndTxNum, maxSpan)
-	r.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum = a.logAddrs.findMergeRange(maxEndTxNum, maxSpan)
-	r.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum = a.logTopics.findMergeRange(maxEndTxNum, maxSpan)
-	r.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum = a.tracesFrom.findMergeRange(maxEndTxNum, maxSpan)
-	r.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum = a.tracesTo.findMergeRange(maxEndTxNum, maxSpan)
+	r.accounts = ac.a.accounts.findMergeRange(maxEndTxNum, maxSpan)
+	r.storage = ac.a.storage.findMergeRange(maxEndTxNum, maxSpan)
+	r.code = ac.a.code.findMergeRange(maxEndTxNum, maxSpan)
+	r.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum = ac.a.logAddrs.findMergeRange(maxEndTxNum, maxSpan)
+	r.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum = ac.a.logTopics.findMergeRange(maxEndTxNum, maxSpan)
+	r.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum = ac.a.tracesFrom.findMergeRange(maxEndTxNum, maxSpan)
+	r.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum = ac.a.tracesTo.findMergeRange(maxEndTxNum, maxSpan)
 	//log.Info(fmt.Sprintf("findMergeRange(%d, %d)=%+v\n", maxEndTxNum, maxSpan, r))
 	return r
 }
@@ -973,8 +1039,7 @@ func (sf SelectedStaticFilesV3) Close() {
 	}
 }
 
-func (a *AggregatorV3) staticFilesInRange(r RangesV3, ac *AggregatorV3Context) (sf SelectedStaticFilesV3, err error) {
-	_ = ac // maybe will move this method to `ac` object
+func (ac *AggregatorV3Context) staticFilesInRange(r RangesV3) (sf SelectedStaticFilesV3, err error) {
 	if r.accounts.any() {
 		sf.accountsIdx, sf.accountsHist, sf.accountsI, err = ac.accounts.staticFilesInRange(r.accounts)
 		if err != nil {
@@ -1068,7 +1133,7 @@ func (mf MergedFilesV3) Close() {
 	}
 }
 
-func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFilesV3, r RangesV3, maxSpan uint64, workers int) (MergedFilesV3, error) {
+func (ac *AggregatorV3Context) mergeFiles(ctx context.Context, files SelectedStaticFilesV3, r RangesV3, workers int) (MergedFilesV3, error) {
 	var mf MergedFilesV3
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(workers)
@@ -1081,7 +1146,7 @@ func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFiles
 	if r.accounts.any() {
 		g.Go(func() error {
 			var err error
-			mf.accountsIdx, mf.accountsHist, err = a.accounts.mergeFiles(ctx, files.accountsIdx, files.accountsHist, r.accounts, workers, a.ps)
+			mf.accountsIdx, mf.accountsHist, err = ac.a.accounts.mergeFiles(ctx, files.accountsIdx, files.accountsHist, r.accounts, workers, ac.a.ps)
 			return err
 		})
 	}
@@ -1089,42 +1154,42 @@ func (a *AggregatorV3) mergeFiles(ctx context.Context, files SelectedStaticFiles
 	if r.storage.any() {
 		g.Go(func() error {
 			var err error
-			mf.storageIdx, mf.storageHist, err = a.storage.mergeFiles(ctx, files.storageIdx, files.storageHist, r.storage, workers, a.ps)
+			mf.storageIdx, mf.storageHist, err = ac.a.storage.mergeFiles(ctx, files.storageIdx, files.storageHist, r.storage, workers, ac.a.ps)
 			return err
 		})
 	}
 	if r.code.any() {
 		g.Go(func() error {
 			var err error
-			mf.codeIdx, mf.codeHist, err = a.code.mergeFiles(ctx, files.codeIdx, files.codeHist, r.code, workers, a.ps)
+			mf.codeIdx, mf.codeHist, err = ac.a.code.mergeFiles(ctx, files.codeIdx, files.codeHist, r.code, workers, ac.a.ps)
 			return err
 		})
 	}
 	if r.logAddrs {
 		g.Go(func() error {
 			var err error
-			mf.logAddrs, err = a.logAddrs.mergeFiles(ctx, files.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum, workers, a.ps)
+			mf.logAddrs, err = ac.a.logAddrs.mergeFiles(ctx, files.logAddrs, r.logAddrsStartTxNum, r.logAddrsEndTxNum, workers, ac.a.ps)
 			return err
 		})
 	}
 	if r.logTopics {
 		g.Go(func() error {
 			var err error
-			mf.logTopics, err = a.logTopics.mergeFiles(ctx, files.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum, workers, a.ps)
+			mf.logTopics, err = ac.a.logTopics.mergeFiles(ctx, files.logTopics, r.logTopicsStartTxNum, r.logTopicsEndTxNum, workers, ac.a.ps)
 			return err
 		})
 	}
 	if r.tracesFrom {
 		g.Go(func() error {
 			var err error
-			mf.tracesFrom, err = a.tracesFrom.mergeFiles(ctx, files.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum, workers, a.ps)
+			mf.tracesFrom, err = ac.a.tracesFrom.mergeFiles(ctx, files.tracesFrom, r.tracesFromStartTxNum, r.tracesFromEndTxNum, workers, ac.a.ps)
 			return err
 		})
 	}
 	if r.tracesTo {
 		g.Go(func() error {
 			var err error
-			mf.tracesTo, err = a.tracesTo.mergeFiles(ctx, files.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum, workers, a.ps)
+			mf.tracesTo, err = ac.a.tracesTo.mergeFiles(ctx, files.tracesTo, r.tracesToStartTxNum, r.tracesToEndTxNum, workers, ac.a.ps)
 			return err
 		})
 	}
@@ -1147,17 +1212,31 @@ func (a *AggregatorV3) integrateMergedFiles(outs SelectedStaticFilesV3, in Merge
 	a.logTopics.integrateMergedFiles(outs.logTopics, in.logTopics)
 	a.tracesFrom.integrateMergedFiles(outs.tracesFrom, in.tracesFrom)
 	a.tracesTo.integrateMergedFiles(outs.tracesTo, in.tracesTo)
-	a.cleanFrozenParts(in)
+	a.cleanAfterNewFreeze(in)
 	return frozen
 }
-func (a *AggregatorV3) cleanFrozenParts(in MergedFilesV3) {
-	a.accounts.cleanFrozenParts(in.accountsHist)
-	a.storage.cleanFrozenParts(in.storageHist)
-	a.code.cleanFrozenParts(in.codeHist)
-	a.logAddrs.cleanFrozenParts(in.logAddrs)
-	a.logTopics.cleanFrozenParts(in.logTopics)
-	a.tracesFrom.cleanFrozenParts(in.tracesFrom)
-	a.tracesTo.cleanFrozenParts(in.tracesTo)
+func (a *AggregatorV3) cleanAfterNewFreeze(in MergedFilesV3) {
+	if in.accountsHist != nil && in.accountsHist.frozen {
+		a.accounts.cleanAfterFreeze(in.accountsHist.endTxNum)
+	}
+	if in.storageHist != nil && in.storageHist.frozen {
+		a.storage.cleanAfterFreeze(in.storageHist.endTxNum)
+	}
+	if in.codeHist != nil && in.codeHist.frozen {
+		a.code.cleanAfterFreeze(in.codeHist.endTxNum)
+	}
+	if in.logAddrs != nil && in.logAddrs.frozen {
+		a.logAddrs.cleanAfterFreeze(in.logAddrs.endTxNum)
+	}
+	if in.logTopics != nil && in.logTopics.frozen {
+		a.logTopics.cleanAfterFreeze(in.logTopics.endTxNum)
+	}
+	if in.tracesFrom != nil && in.tracesFrom.frozen {
+		a.tracesFrom.cleanAfterFreeze(in.tracesFrom.endTxNum)
+	}
+	if in.tracesTo != nil && in.tracesTo.frozen {
+		a.tracesTo.cleanAfterFreeze(in.tracesTo.endTxNum)
+	}
 }
 
 // KeepInDB - usually equal to one a.aggregationStep, but when we exec blocks from snapshots
@@ -1197,7 +1276,7 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
 				if errors.Is(err, context.Canceled) {
 					return
 				}
-				log.Warn("buildFilesInBackground", "err", err)
+				log.Warn("[snapshots] buildFilesInBackground", "err", err)
 				break
 			}
 			step++
@@ -1214,7 +1293,7 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) {
 				if errors.Is(err, context.Canceled) {
 					return
 				}
-				log.Warn("merge", "err", err)
+				log.Warn("[snapshots] merge", "err", err)
 			}
 
 			a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
@@ -1415,10 +1494,6 @@ func (a *AggregatorV3) Stats() FilesStats22 {
 	return fs
 }
 
-func (a *AggregatorV3) Code() *History     { return a.code }
-func (a *AggregatorV3) Accounts() *History { return a.accounts }
-func (a *AggregatorV3) Storage() *History  { return a.storage }
-
 type AggregatorV3Context struct {
 	a          *AggregatorV3
 	accounts   *HistoryContext
@@ -1429,10 +1504,15 @@ type AggregatorV3Context struct {
 	tracesFrom *InvertedIndexContext
 	tracesTo   *InvertedIndexContext
 	keyBuf     []byte
+
+	// next fields are set only if agg.doTraceCtx is true
+	id        uint64
+	stack     string
+	startTime time.Time
 }
 
 func (a *AggregatorV3) MakeContext() *AggregatorV3Context {
-	return &AggregatorV3Context{
+	ac := &AggregatorV3Context{
 		a:          a,
 		accounts:   a.accounts.MakeContext(),
 		storage:    a.storage.MakeContext(),
@@ -1442,8 +1522,11 @@ func (a *AggregatorV3) MakeContext() *AggregatorV3Context {
 		tracesFrom: a.tracesFrom.MakeContext(),
 		tracesTo:   a.tracesTo.MakeContext(),
 	}
+	a.addTraceCtx(ac)
+	return ac
 }
 func (ac *AggregatorV3Context) Close() {
+	ac.a.delTraceCtx(ac)
 	ac.accounts.Close()
 	ac.storage.Close()
 	ac.code.Close()
@@ -1476,7 +1559,7 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 		}
 		return nil
 	}); err != nil {
-		log.Warn("lastIdInDB", "err", err)
+		log.Warn("[snapshots] lastIdInDB", "err", err)
 	}
 	return lstInDb
 }
