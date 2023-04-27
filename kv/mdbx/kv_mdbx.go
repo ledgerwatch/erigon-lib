@@ -432,7 +432,6 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 			}
 			return tx.Commit() // when open db as read-only, commit of this RO transaction is required
 		}); err != nil {
-			panic(err)
 			return err
 		}
 	} else {
@@ -447,7 +446,6 @@ func (db *MdbxKV) openDBIs(buckets []string) error {
 			}
 			return nil
 		}); err != nil {
-			panic(err)
 			return err
 		}
 	}
