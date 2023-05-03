@@ -651,7 +651,6 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 		rootHash, err = d.patriciaTrie.RootHash()
 		return rootHash, nil, err
 	}
-	d.patriciaTrie.SetTrace(true)
 
 	// data accessing functions should be set once before
 	d.patriciaTrie.Reset()
