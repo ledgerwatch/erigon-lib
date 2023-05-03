@@ -1770,16 +1770,15 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 				}
 				cell.Nonce = update.Nonce
 			}
-			fmt.Printf("who set code: %x\n", update.CodeHashOrStorage)
 
 			if update.Flags&CodeUpdate != 0 {
 				if hph.trace {
 					fmt.Printf(" codeHash=%x", update.CodeHashOrStorage)
 				}
 				copy(cell.CodeHash[:], update.CodeHashOrStorage[:])
-				fmt.Printf("set code hash1: %x\n", cell.CodeHash[:])
+				fmt.Printf("set code hash1: %x, %x\n", cell.CodeHash[:], update.CodeHashOrStorage[:])
 			} else {
-				fmt.Printf("set code hash2: %x\n", cell.CodeHash[:])
+				fmt.Printf("set code hash2: %x, %x\n", cell.CodeHash[:], update.CodeHashOrStorage[:])
 			}
 			if hph.trace {
 				fmt.Printf("\n")
