@@ -595,7 +595,7 @@ func (a *Aggregator) mergeLoopStep(ctx context.Context, maxEndTxNum uint64, work
 		}
 	}()
 	a.integrateMergedFiles(outs, in)
-	a.cleanAfterFreeze(in)
+	a.cleanAfterNewFreeze(in)
 	closeAll = false
 
 	for _, s := range []DomainStats{a.accounts.stats, a.code.stats, a.storage.stats} {
@@ -680,16 +680,16 @@ func (sf SelectedStaticFiles) Close() {
 func (a *Aggregator) staticFilesInRange(r Ranges, ac *AggregatorContext) SelectedStaticFiles {
 	var sf SelectedStaticFiles
 	if r.accounts.any() {
-		sf.accounts, sf.accountsIdx, sf.accountsHist, sf.accountsI = a.accounts.staticFilesInRange(r.accounts, ac.accounts)
+		sf.accounts, sf.accountsIdx, sf.accountsHist, sf.accountsI = ac.accounts.staticFilesInRange(r.accounts)
 	}
 	if r.storage.any() {
-		sf.storage, sf.storageIdx, sf.storageHist, sf.storageI = a.storage.staticFilesInRange(r.storage, ac.storage)
+		sf.storage, sf.storageIdx, sf.storageHist, sf.storageI = ac.storage.staticFilesInRange(r.storage)
 	}
 	if r.code.any() {
-		sf.code, sf.codeIdx, sf.codeHist, sf.codeI = a.code.staticFilesInRange(r.code, ac.code)
+		sf.code, sf.codeIdx, sf.codeHist, sf.codeI = ac.code.staticFilesInRange(r.code)
 	}
 	if r.commitment.any() {
-		sf.commitment, sf.commitmentIdx, sf.commitmentHist, sf.commitmentI = a.commitment.staticFilesInRange(r.commitment, ac.commitment)
+		sf.commitment, sf.commitmentIdx, sf.commitmentHist, sf.commitmentI = ac.commitment.staticFilesInRange(r.commitment)
 	}
 	return sf
 }
@@ -830,11 +830,11 @@ func (a *Aggregator) integrateMergedFiles(outs SelectedStaticFiles, in MergedFil
 	a.commitment.integrateMergedFiles(outs.commitment, outs.commitmentIdx, outs.commitmentHist, in.commitment, in.commitmentIdx, in.commitmentHist)
 }
 
-func (a *Aggregator) cleanAfterFreeze(in MergedFiles) {
-	a.accounts.cleanAfterFreeze(in.accountsHist)
-	a.storage.cleanAfterFreeze(in.storageHist)
-	a.code.cleanAfterFreeze(in.codeHist)
-	a.commitment.cleanAfterFreeze(in.commitment)
+func (a *Aggregator) cleanAfterNewFreeze(in MergedFiles) {
+	a.accounts.cleanAfterFreeze(in.accountsHist.endTxNum)
+	a.storage.cleanAfterFreeze(in.storageHist.endTxNum)
+	a.code.cleanAfterFreeze(in.codeHist.endTxNum)
+	a.commitment.cleanAfterFreeze(in.commitment.endTxNum)
 }
 
 // ComputeCommitment evaluates commitment for processed state.

@@ -68,6 +68,8 @@ type InvertedIndex struct {
 	localityIndex           *LocalityIndex
 	tx                      kv.RwTx
 
+	garbageFiles []*filesItem // files that exist on disk, but ignored on opening folder - because they are garbage
+
 	// fields for history write
 	txNum      uint64
 	txNumBytes [8]byte
@@ -127,7 +129,7 @@ func (ii *InvertedIndex) OpenList(fNames []string) error {
 		return err
 	}
 	ii.closeWhatNotInList(fNames)
-	_ = ii.scanStateFiles(fNames)
+	ii.garbageFiles = ii.scanStateFiles(fNames)
 	if err := ii.openFiles(); err != nil {
 		return fmt.Errorf("NewHistory.openFiles: %s, %w", ii.filenameBase, err)
 	}
@@ -142,7 +144,7 @@ func (ii *InvertedIndex) OpenFolder() error {
 	return ii.OpenList(files)
 }
 
-func (ii *InvertedIndex) scanStateFiles(fileNames []string) (uselessFiles []*filesItem) {
+func (ii *InvertedIndex) scanStateFiles(fileNames []string) (garbageFiles []*filesItem) {
 	re := regexp.MustCompile("^" + ii.filenameBase + ".([0-9]+)-([0-9]+).ef$")
 	var err error
 Loop:
@@ -169,17 +171,17 @@ Loop:
 		}
 
 		startTxNum, endTxNum := startStep*ii.aggregationStep, endStep*ii.aggregationStep
-		frozen := endStep-startStep == StepsInBiggestFile
+		var newFile = newFilesItem(startTxNum, endTxNum, ii.aggregationStep)
 
 		for _, ext := range ii.integrityFileExtensions {
 			requiredFile := fmt.Sprintf("%s.%d-%d.%s", ii.filenameBase, startStep, endStep, ext)
 			if !dir.FileExist(filepath.Join(ii.dir, requiredFile)) {
 				log.Debug(fmt.Sprintf("[snapshots] skip %s because %s doesn't exists", name, requiredFile))
+				garbageFiles = append(garbageFiles, newFile)
 				continue Loop
 			}
 		}
 
-		var newFile = &filesItem{startTxNum: startTxNum, endTxNum: endTxNum, frozen: frozen}
 		if _, has := ii.files.Get(newFile); has {
 			continue
 		}
@@ -196,7 +198,7 @@ Loop:
 				if newFile.isSubsetOf(item) {
 					if item.frozen {
 						addNewFile = false
-						uselessFiles = append(uselessFiles, newFile)
+						garbageFiles = append(garbageFiles, newFile)
 					}
 					continue
 				}
@@ -211,40 +213,28 @@ Loop:
 		}
 	}
 
-	return uselessFiles
+	return garbageFiles
 }
 
-func (ii *InvertedIndex) reCalcRoFiles() {
-	roFiles := make([]ctxItem, 0, ii.files.Len())
-	var prevStart uint64
-	ii.files.Walk(func(items []*filesItem) bool {
+func ctxFiles(files *btree2.BTreeG[*filesItem]) (roItems []ctxItem) {
+	roFiles := make([]ctxItem, 0, files.Len())
+	files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
 			if item.canDelete.Load() {
 				continue
 			}
-			//if item.startTxNum > h.endTxNumMinimax() {
-			//	continue
-			//}
+
 			// `kill -9` may leave small garbage files, but if big one already exists we assume it's good(fsynced) and no reason to merge again
 			// see super-set file, just drop sub-set files from list
-			if item.startTxNum < prevStart {
-				for len(roFiles) > 0 {
-					if roFiles[len(roFiles)-1].startTxNum < item.startTxNum {
-						break
-					}
-					roFiles[len(roFiles)-1].src = nil
-					roFiles = roFiles[:len(roFiles)-1]
-				}
+			for len(roFiles) > 0 && roFiles[len(roFiles)-1].src.isSubsetOf(item) {
+				roFiles[len(roFiles)-1].src = nil
+				roFiles = roFiles[:len(roFiles)-1]
 			}
-
 			roFiles = append(roFiles, ctxItem{
 				startTxNum: item.startTxNum,
 				endTxNum:   item.endTxNum,
-				//getter:     item.decompressor.MakeGetter(),
-				//reader:     recsplit.NewIndexReader(item.index),
-
-				i:   len(roFiles),
-				src: item,
+				i:          len(roFiles),
+				src:        item,
 			})
 		}
 		return true
@@ -252,6 +242,11 @@ func (ii *InvertedIndex) reCalcRoFiles() {
 	if roFiles == nil {
 		roFiles = []ctxItem{}
 	}
+	return roFiles
+}
+
+func (ii *InvertedIndex) reCalcRoFiles() {
+	roFiles := ctxFiles(ii.files)
 	ii.roFiles.Store(&roFiles)
 }
 
@@ -1241,13 +1236,11 @@ func (ii *InvertedIndex) buildFiles(ctx context.Context, step uint64, bitmaps ma
 }
 
 func (ii *InvertedIndex) integrateFiles(sf InvertedFiles, txNumFrom, txNumTo uint64) {
-	ii.files.Set(&filesItem{
-		frozen:       (txNumTo-txNumFrom)/ii.aggregationStep == StepsInBiggestFile,
-		startTxNum:   txNumFrom,
-		endTxNum:     txNumTo,
-		decompressor: sf.decomp,
-		index:        sf.index,
-	})
+	fi := newFilesItem(txNumFrom, txNumTo, ii.aggregationStep)
+	fi.decompressor = sf.decomp
+	fi.index = sf.index
+	ii.files.Set(fi)
+
 	ii.reCalcRoFiles()
 }
 
@@ -1448,18 +1441,4 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 		return true
 	})
 	return filesCount, filesSize, idxSize
-}
-
-func (ii *InvertedIndex) CleanupDir() {
-	files, _ := ii.fileNamesOnDisk()
-	uselessFiles := ii.scanStateFiles(files)
-	for _, f := range uselessFiles {
-		fName := fmt.Sprintf("%s.%d-%d.ef", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err := os.Remove(filepath.Join(ii.dir, fName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-		fIdxName := fmt.Sprintf("%s.%d-%d.efi", ii.filenameBase, f.startTxNum/ii.aggregationStep, f.endTxNum/ii.aggregationStep)
-		err = os.Remove(filepath.Join(ii.dir, fIdxName))
-		log.Debug("[clean] remove", "file", fName, "err", err)
-	}
-	ii.localityIndex.CleanupDir()
 }
