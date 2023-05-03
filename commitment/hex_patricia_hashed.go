@@ -721,11 +721,11 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 		}
 		var valBuf [128]byte
 		valLen := cell.accountForHashing(valBuf[:], storageRootHash)
+		buf, err = hph.accountLeafHashWithKey(buf, cell.downHashedKey[:65-depth], rlp.RlpEncodedBytes(valBuf[:valLen]))
 		if hph.trace {
-			//fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", hph.hashAuxBuffer[:65-depth], valBuf[:valLen])
-			fmt.Printf("accountLeafHashWithKey for %d, [%x]=>[%x]\n", len(cell.downHashedKey[:65-depth]), cell.downHashedKey[:65-depth], valBuf[:valLen])
+			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\nHash [%x]\n", cell.downHashedKey[:65-depth], valBuf[:valLen], buf)
 		}
-		return hph.accountLeafHashWithKey(buf, cell.downHashedKey[:65-depth], rlp.RlpEncodedBytes(valBuf[:valLen]))
+		return buf, err
 	}
 	buf = append(buf, 0x80+32)
 	if cell.extLen > 0 {
