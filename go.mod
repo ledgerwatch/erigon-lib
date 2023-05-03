@@ -112,4 +112,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230421214819-5d4427bd95e3
+replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230503004724-25cf26e371dd
