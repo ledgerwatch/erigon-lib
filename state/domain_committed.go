@@ -651,11 +651,11 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 		rootHash, err = d.patriciaTrie.RootHash()
 		return rootHash, nil, err
 	}
+	d.patriciaTrie.SetTrace(true)
 
 	// data accessing functions should be set once before
 	d.patriciaTrie.Reset()
 	d.patriciaTrie.SetTrace(trace)
-
 	switch d.updates.mode {
 	case CommitmentModeDirect:
 		rootHash, branchNodeUpdates, err = d.patriciaTrie.ReviewKeys(touchedKeys, hashedKeys)
@@ -679,6 +679,7 @@ func (d *DomainCommitted) Close() {
 	d.Domain.Close()
 	d.updates.tree.Clear(true)
 }
+
 var keyCommitmentState = []byte("state")
 
 // SeekCommitment searches for last encoded state from DomainCommitted
