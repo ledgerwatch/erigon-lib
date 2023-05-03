@@ -1751,11 +1751,11 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 		} else {
 			cell := hph.updateCell(plainKey, hashedKey)
 			if hph.trace {
-				fmt.Printf("accountFn updated key %x =>", plainKey)
+				fmt.Printf("accountFn updated key %x =>", hashedKey)
 			}
 			if update.Flags&BalanceUpdate != 0 {
 				if hph.trace {
-					fmt.Printf(" balance=%d", update.Balance.Uint64())
+					fmt.Printf(" balance=%s", update.Balance.String())
 				}
 				cell.Balance.Set(&update.Balance)
 			}
