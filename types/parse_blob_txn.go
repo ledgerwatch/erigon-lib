@@ -110,22 +110,32 @@ func readLength(payload []byte, offset int, limit int) (int, error) {
 }
 
 func (w *wrapper) Deserialize(payload []byte) error {
+	pos := 0
 	end := len(payload)
-	txOffset, err := readOffset(payload, 0, end, 0)
+	txOffset, err := readOffset(payload, pos, end, 0)
 	if err != nil {
 		return err
 	}
-	commitmentsOffset, err := readOffset(payload, 4, end, txOffset)
+	pos += 4
+	commitmentsOffset, err := readOffset(payload, pos, end, txOffset)
 	if err != nil {
 		return err
 	}
-	blobsOffset, err := readOffset(payload, 8, end, commitmentsOffset)
+	pos += 4
+	blobsOffset, err := readOffset(payload, pos, end, commitmentsOffset)
 	if err != nil {
 		return err
 	}
-	proofsOffset, err := readOffset(payload, 12, end, blobsOffset)
+	pos += 4
+	proofsOffset, err := readOffset(payload, pos, end, blobsOffset)
 	if err != nil {
 		return err
+	}
+	pos += 4
+
+	offsetsEnd := pos
+	if offsetsEnd != txOffset {
+		return fmt.Errorf("signed tx offset not at expected position. got: %d, expected %d", txOffset, offsetsEnd)
 	}
 
 	w.commitmentsOffset = commitmentsOffset
@@ -158,14 +168,21 @@ func (w *wrapper) Deserialize(payload []byte) error {
 }
 
 func (w *wrapper) DeserializeTx(payload []byte, begin, end int) error {
-	messageOffset, err := readOffset(payload, begin, end, 0)
+	pos := begin
+	messageOffset, err := readOffset(payload, pos, end, 0)
 	if err != nil {
 		return err
 	}
-	if messageOffset != 69 {
-		return fmt.Errorf("expected message offset of 69, got: %v", messageOffset)
+	pos += 4
+
+	w.sigOffset = pos
+	pos += 65 // signature is fixed 65 bytes
+
+	offsetsEnd := pos - begin
+	if offsetsEnd != messageOffset {
+		return fmt.Errorf("message offset not at expected position. got: %d, expected %d", messageOffset, offsetsEnd)
 	}
-	w.sigOffset = begin + 4
+
 	return w.DeserializeMessage(payload, begin+messageOffset, end)
 }
 
@@ -257,6 +274,11 @@ func (w *wrapper) DeserializeMessage(payload []byte, begin, end int) error {
 	}
 	begin += 4
 
+	offsetsEnd := begin - originalBegin
+	if addressOffset != offsetsEnd {
+		return fmt.Errorf("address offset not at expected position. got: %d, expected %d", addressOffset, offsetsEnd)
+	}
+
 	w.blobHashesOffset = originalBegin + blobHashesOffset
 	w.numBlobHashes = end - w.blobHashesOffset
 	if w.numBlobHashes%32 != 0 {
@@ -268,7 +290,6 @@ func (w *wrapper) DeserializeMessage(payload []byte, begin, end int) error {
 	if err != nil {
 		return err
 	}
-	begin += 4
 
 	return nil
 }
@@ -277,25 +298,25 @@ func (w *wrapper) DeserializeAccessList(payload []byte, begin, end int) error {
 	if begin == end {
 		return nil
 	}
-	originalBegin := begin
-	length, err := readLength(payload, begin, 1<<24)
+	pos := begin
+	length, err := readLength(payload, pos, 1<<24)
 	if err != nil {
 		return err
 	}
 	w.accessListAddressCount = length
-	begin += 4
+	pos += 4
 
 	offset := length * 4
 	nextOffset := 0
 	for i := 0; i < length; i++ {
 		if i == length-1 {
-			nextOffset = end - originalBegin
+			nextOffset = end - begin
 		} else {
-			nextOffset, err = readOffset(payload, begin, end, offset)
+			nextOffset, err = readOffset(payload, pos, end, offset)
 			if err != nil {
 				return err
 			}
-			begin += 4
+			pos += 4
 		}
 		// an access list tuple consists of 20 bytes for the address, and then 4 bytes for the
 		// "offset", followed by the list of 32-byte storage keys.
