@@ -162,6 +162,9 @@ func (w *wrapper) DeserializeTx(payload []byte, begin, end int) error {
 	if err != nil {
 		return err
 	}
+	if messageOffset != 69 {
+		return fmt.Errorf("expected message offset of 69, got: %v", messageOffset)
+	}
 	w.sigOffset = begin + 4
 	return w.DeserializeMessage(payload, begin+messageOffset, end)
 }
