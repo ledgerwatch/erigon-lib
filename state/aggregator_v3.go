@@ -106,7 +106,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 		aggregationStep:  aggregationStep,
 		db:               db,
 		keepInDB:         2 * aggregationStep,
-		leakDetector:     dbg.NewLeakDetector("agg", dbg.DetectLeak()),
+		leakDetector:     dbg.NewLeakDetector("agg", dbg.SlowTx()),
 		ps:               background.NewProgressSet(),
 		backgroundResult: &BackgroundResult{},
 	}

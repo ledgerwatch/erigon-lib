@@ -343,7 +343,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		txSize:       dirtyPagesLimit * opts.pageSize,
 		roTxsLimiter: opts.roTxsLimiter,
 
-		leakDetector: dbg.NewLeakDetector("db."+opts.label.String(), dbg.DetectLeak()),
+		leakDetector: dbg.NewLeakDetector("db."+opts.label.String(), dbg.SlowTx()),
 	}
 
 	customBuckets := opts.bucketsCfg(kv.ChaindataTablesCfg)
