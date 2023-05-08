@@ -193,23 +193,43 @@ func BigRwTxKb() uint {
 }
 
 var (
-	slowCommit    time.Duration
-	getSlowCommit sync.Once
+	slowCommit     time.Duration
+	slowCommitOnce sync.Once
 )
 
 func SlowCommit() time.Duration {
-	getSlowCommit.Do(func() {
-		v, _ := os.LookupEnv("DEBUG_SLOW_COMMIT_MS")
+	slowCommitOnce.Do(func() {
+		v, _ := os.LookupEnv("SLOW_COMMIT")
 		if v != "" {
-			i, err := strconv.Atoi(v)
+			var err error
+			slowCommit, err = time.ParseDuration(v)
 			if err != nil {
 				panic(err)
 			}
-			slowCommit = time.Duration(i) * time.Millisecond
-			log.Info("[Experiment]", "DEBUG_BIG_RW_TX_KB", slowCommit)
+			log.Info("[Experiment]", "SLOW_COMMIT", slowCommit.String())
 		}
 	})
 	return slowCommit
+}
+
+var (
+	slowTx     time.Duration
+	slowTxOnce sync.Once
+)
+
+func SlowTx() time.Duration {
+	slowTxOnce.Do(func() {
+		v, _ := os.LookupEnv("SLOW_TX")
+		if v != "" {
+			var err error
+			slowTx, err = time.ParseDuration(v)
+			if err != nil {
+				panic(err)
+			}
+			log.Info("[Experiment]", "SLOW_TX", slowTx.String())
+		}
+	})
+	return slowTx
 }
 
 var (
@@ -260,20 +280,4 @@ func StopAfterReconst() bool {
 		}
 	})
 	return stopAfterReconst
-}
-
-var (
-	detectLeak     bool
-	detectLeakOnce sync.Once
-)
-
-func DetectLeak() bool {
-	detectLeakOnce.Do(func() {
-		v, _ := os.LookupEnv("DETECT_LEAK")
-		if v == "true" {
-			detectLeak = true
-			log.Info("[Experiment]", "DETECT_LEAK", detectLeak)
-		}
-	})
-	return detectLeak
 }
