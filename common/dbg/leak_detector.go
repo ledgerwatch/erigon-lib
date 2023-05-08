@@ -32,16 +32,13 @@ func NewLeakDetector(name string, enabled bool) *LeakDetector {
 	}
 	d := &LeakDetector{enabled: enabled, list: map[uint64]LeakDetectorItem{}}
 	if enabled {
-		log.Warn("m1")
 		go func() {
 			logEvery := time.NewTicker(60 * time.Second)
 			defer logEvery.Stop()
-			log.Warn("m2")
 
 			for {
 				select {
 				case <-logEvery.C:
-					log.Warn("m3")
 					if list := d.slowList(); len(list) > 0 {
 						log.Info(fmt.Sprintf("[dbg.%s]", name), "slow", strings.Join(d.slowList(), ", "))
 					}
