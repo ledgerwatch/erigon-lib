@@ -14,16 +14,14 @@
    limitations under the License.
 */
 
-package dbg
+package ssz
 
-import (
-	stack2 "github.com/go-stack/stack"
+import "errors"
+
+var (
+	ErrLowBufferSize    = errors.New("ssz(DecodeSSZ): bad encoding size")
+	ErrBadDynamicLength = errors.New("ssz(DecodeSSZ): bad dynamic length")
+	ErrBadOffset        = errors.New("ssz(DecodeSSZ): invalid offset")
+	ErrBufferNotRounded = errors.New("ssz(DecodeSSZ): badly rounded operator")
+	ErrTooBigList       = errors.New("ssz(DecodeSSZ): list too big")
 )
-
-// Stack returns stack-trace in logger-friendly compact formatting
-func Stack() string {
-	return stack2.Trace().TrimBelow(stack2.Caller(1)).String()
-}
-func StackSkip(skip int) string {
-	return stack2.Trace().TrimBelow(stack2.Caller(skip)).String()
-}

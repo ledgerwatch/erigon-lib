@@ -263,17 +263,17 @@ func StopAfterReconst() bool {
 }
 
 var (
-	traceAgg     bool
-	traceAggOnce sync.Once
+	detectLeak     bool
+	detectLeakOnce sync.Once
 )
 
-func TraceAgg() bool {
-	traceAggOnce.Do(func() {
-		v, _ := os.LookupEnv("TRACE_AGG")
+func DetectLeak() bool {
+	detectLeakOnce.Do(func() {
+		v, _ := os.LookupEnv("DETECT_LEAK")
 		if v == "true" {
-			traceAgg = true
-			log.Info("[Experiment]", "TRACE_AGG", traceAgg)
+			detectLeak = true
+			log.Info("[Experiment]", "DETECT_LEAK", detectLeak)
 		}
 	})
-	return traceAgg
+	return detectLeak
 }
