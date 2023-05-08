@@ -1723,6 +1723,30 @@ func commonPrefixLen(b1, b2 []byte) int {
 	return i
 }
 
+func (hph *HexPatriciaHashed) foldRoot() (BranchData, error) {
+	if hph.trace {
+		fmt.Printf("foldRoot: activeRows: %d\n", hph.activeRows)
+	}
+	if hph.activeRows != 0 {
+		return nil, fmt.Errorf("cannot fold root - there are still active rows: %d", hph.activeRows)
+	}
+	if hph.root.downHashedLen == 0 {
+		// Not overwrite previous branch node
+		return nil, nil
+	}
+
+	rootGetter := func(_ int, _ bool) (*Cell, error) {
+		_, err := hph.RootHash()
+		if err != nil {
+			return nil, fmt.Errorf("folding root failed: %w", err)
+		}
+		return &hph.root, nil
+	}
+
+	branchData, _, err := EncodeBranch(1, 1, 1, rootGetter)
+	return branchData, err
+}
+
 func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []Update) (rootHash []byte, branchNodeUpdates map[string]BranchData, err error) {
 	branchNodeUpdates = make(map[string]BranchData)
 
@@ -1800,6 +1824,12 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 		}
 	}
 
+	if branchData, err := hph.foldRoot(); err != nil {
+		return nil, nil, fmt.Errorf("foldRoot: %w", err)
+	} else if branchData != nil {
+		branchNodeUpdates[string(hexToCompact([]byte{}))] = branchData
+	}
+
 	rootHash, err = hph.RootHash()
 	if err != nil {
 		return nil, branchNodeUpdates, fmt.Errorf("root hash evaluation failed: %w", err)
@@ -1870,28 +1900,37 @@ type Update struct {
 	ValLength         int
 }
 
-func (u *Update) DecodeForStorage(enc []byte) {
-	u.Nonce = 0
+func (u *Update) Reset() {
+	u.Flags = 0
 	u.Balance.Clear()
+	u.Nonce = 0
+	u.ValLength = 0
 	copy(u.CodeHashOrStorage[:], EmptyCodeHash)
+}
+
+func (u *Update) DecodeForStorage(enc []byte) {
+	u.Reset()
 
 	pos := 0
 	nonceBytes := int(enc[pos])
 	pos++
 	if nonceBytes > 0 {
 		u.Nonce = bytesToUint64(enc[pos : pos+nonceBytes])
+		u.Flags |= NonceUpdate
 		pos += nonceBytes
 	}
 	balanceBytes := int(enc[pos])
 	pos++
 	if balanceBytes > 0 {
 		u.Balance.SetBytes(enc[pos : pos+balanceBytes])
+		u.Flags |= BalanceUpdate
 		pos += balanceBytes
 	}
 	codeHashBytes := int(enc[pos])
 	pos++
 	if codeHashBytes > 0 {
 		copy(u.CodeHashOrStorage[:], enc[pos:pos+codeHashBytes])
+		u.Flags |= CodeUpdate
 	}
 }
 

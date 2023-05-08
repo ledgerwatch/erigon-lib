@@ -109,16 +109,12 @@ func (t *UpdateTree) TouchAccountKey(c *CommitmentItem, val []byte) {
 		return
 	}
 	c.update.DecodeForStorage(val)
-	c.update.Flags = commitment.BalanceUpdate | commitment.NonceUpdate
 	item, found := t.tree.Get(&CommitmentItem{hashedKey: c.hashedKey})
 	fmt.Printf("TouchAccountKey: found=%t, %x\n", found, c.hashedKey)
 	if item != nil {
 		fmt.Printf("TouchAccountKey2: %t, %x, %x\n", item.update.Flags&commitment.CodeUpdate != 0, item.update.CodeHashOrStorage[:], c.update.CodeHashOrStorage[:])
 	}
-	if !found {
-		return
-	}
-	if item.update.Flags&commitment.CodeUpdate != 0 {
+	if found && item.update.Flags&commitment.CodeUpdate != 0 {
 		c.update.Flags |= commitment.CodeUpdate
 		copy(c.update.CodeHashOrStorage[:], item.update.CodeHashOrStorage[:])
 	}
