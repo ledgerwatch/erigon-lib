@@ -33,21 +33,21 @@ func Stack() string {
 	return stack2.Trace().TrimBelow(stack2.Caller(1)).String()
 }
 
-type LeackDetector struct {
+type LeakDetector struct {
 	enabled       bool
 	doTraceTxs    bool
-	traceTxs      map[uint64]LeackDetectorItem
+	traceTxs      map[uint64]LeakDetectorItem
 	autoIncrement atomic.Uint64
 	lock          sync.Mutex
 }
 
-type LeackDetectorItem struct {
+type LeakDetectorItem struct {
 	stack   string
 	started time.Time
 }
 
-func NewLeackDetector(name string, enabled bool) *LeackDetector {
-	d := &LeackDetector{enabled: enabled}
+func NewLeakDetector(name string, enabled bool) *LeakDetector {
+	d := &LeakDetector{enabled: enabled}
 	if enabled {
 		go func() {
 			logEvery := time.NewTicker(30 * time.Second)
@@ -64,7 +64,7 @@ func NewLeackDetector(name string, enabled bool) *LeackDetector {
 	return d
 }
 
-func (d *LeackDetector) slowList() (res []string) {
+func (d *LeakDetector) slowList() (res []string) {
 	if d == nil || !d.enabled {
 		return res
 	}
@@ -78,7 +78,7 @@ func (d *LeackDetector) slowList() (res []string) {
 	return res
 }
 
-func (d *LeackDetector) Del(id uint64) {
+func (d *LeakDetector) Del(id uint64) {
 	if d == nil || !d.enabled {
 		return
 	}
@@ -86,11 +86,11 @@ func (d *LeackDetector) Del(id uint64) {
 	defer d.lock.Unlock()
 	delete(d.traceTxs, id)
 }
-func (d *LeackDetector) Add() uint64 {
+func (d *LeakDetector) Add() uint64 {
 	if d == nil || !d.enabled {
 		return 0
 	}
-	ac := LeackDetectorItem{
+	ac := LeakDetectorItem{
 		stack:   Stack(),
 		started: time.Now(),
 	}

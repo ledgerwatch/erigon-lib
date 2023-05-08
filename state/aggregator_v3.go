@@ -82,7 +82,7 @@ type AggregatorV3 struct {
 	ps *background.ProgressSet
 
 	// next fields are set only if agg.doTraceCtx is true. can enable by env: TRACE_AGG=true
-	leackDetector *dbg.LeackDetector
+	leakDetector *dbg.LeakDetector
 }
 
 type OnFreezeFunc func(frozenFileNames []string)
@@ -98,7 +98,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 		aggregationStep:  aggregationStep,
 		db:               db,
 		keepInDB:         2 * aggregationStep,
-		leackDetector:    dbg.NewLeackDetector("agg", dbg.DetectLeack()),
+		leakDetector:     dbg.NewLeakDetector("agg", dbg.DetectLeak()),
 		ps:               background.NewProgressSet(),
 		backgroundResult: &BackgroundResult{},
 	}
@@ -1486,13 +1486,13 @@ func (a *AggregatorV3) MakeContext() *AggregatorV3Context {
 		tracesFrom: a.tracesFrom.MakeContext(),
 		tracesTo:   a.tracesTo.MakeContext(),
 
-		id: a.leackDetector.Add(),
+		id: a.leakDetector.Add(),
 	}
 
 	return ac
 }
 func (ac *AggregatorV3Context) Close() {
-	ac.a.leackDetector.Del(ac.id)
+	ac.a.leakDetector.Del(ac.id)
 	ac.accounts.Close()
 	ac.storage.Close()
 	ac.code.Close()

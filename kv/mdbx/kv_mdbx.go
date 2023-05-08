@@ -343,7 +343,7 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		txSize:       dirtyPagesLimit * opts.pageSize,
 		roTxsLimiter: opts.roTxsLimiter,
 
-		leackDetector: dbg.NewLeackDetector("db."+string(opts.label), dbg.DetectLeack()),
+		leakDetector: dbg.NewLeakDetector("db."+string(opts.label), dbg.DetectLeak()),
 	}
 
 	customBuckets := opts.bucketsCfg(kv.ChaindataTablesCfg)
@@ -414,7 +414,7 @@ type MdbxKV struct {
 	closed       atomic.Bool
 	path         string
 
-	leackDetector *dbg.LeackDetector
+	leakDetector *dbg.LeakDetector
 }
 
 func (db *MdbxKV) PageSize() uint64 { return db.opts.pageSize }
@@ -512,7 +512,7 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		db:       db,
 		tx:       tx,
 		readOnly: true,
-		id:       db.leackDetector.Add(),
+		id:       db.leakDetector.Add(),
 	}, nil
 }
 
@@ -549,7 +549,7 @@ func (db *MdbxKV) beginRw(ctx context.Context, flags uint) (txn kv.RwTx, err err
 		db:  db,
 		tx:  tx,
 		ctx: ctx,
-		id:  db.leackDetector.Add(),
+		id:  db.leakDetector.Add(),
 	}, nil
 }
 
@@ -793,7 +793,7 @@ func (tx *MdbxTx) Commit() error {
 		} else {
 			runtime.UnlockOSThread()
 		}
-		tx.db.leackDetector.Del(tx.id)
+		tx.db.leakDetector.Del(tx.id)
 	}()
 	tx.closeCursors()
 
@@ -844,7 +844,7 @@ func (tx *MdbxTx) Rollback() {
 		} else {
 			runtime.UnlockOSThread()
 		}
-		tx.db.leackDetector.Del(tx.id)
+		tx.db.leakDetector.Del(tx.id)
 	}()
 	tx.closeCursors()
 	//tx.printDebugInfo()

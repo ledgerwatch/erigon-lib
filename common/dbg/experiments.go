@@ -263,17 +263,17 @@ func StopAfterReconst() bool {
 }
 
 var (
-	detectLeacks     bool
-	detectLeacksOnce sync.Once
+	detectLeak     bool
+	detectLeakOnce sync.Once
 )
 
-func DetectLeack() bool {
-	detectLeacksOnce.Do(func() {
-		v, _ := os.LookupEnv("DETECT_LEACK")
+func DetectLeak() bool {
+	detectLeakOnce.Do(func() {
+		v, _ := os.LookupEnv("DETECT_LEAK")
 		if v == "true" {
-			detectLeacks = true
-			log.Info("[Experiment]", "DETECT_LEACK", detectLeacks)
+			detectLeak = true
+			log.Info("[Experiment]", "DETECT_LEAK", detectLeak)
 		}
 	})
-	return detectLeacks
+	return detectLeak
 }
