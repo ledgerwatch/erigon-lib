@@ -54,10 +54,15 @@ func (d *LeakDetector) slowList() (res []string) {
 	}
 	d.lock.Lock()
 	defer d.lock.Unlock()
+	i := 0
 	for key, value := range d.list {
 		living := time.Since(value.started)
 		if living > time.Minute {
 			res = append(res, fmt.Sprintf("%d(%s): %s", key, living, value.stack))
+		}
+		i++
+		if i > 10 { // protect logs from too many output
+			break
 		}
 	}
 	return res
