@@ -39,7 +39,7 @@ func NewLeakDetector(name string, enabled bool) *LeakDetector {
 				select {
 				case <-logEvery.C:
 					if list := d.slowList(); len(list) > 0 {
-						log.Info(fmt.Sprintf("[dbg.%s]", name), "slow", strings.Join(d.slowList(), ", "))
+						log.Info(fmt.Sprintf("[dbg.%s] long living resources", name), "list", strings.Join(d.slowList(), ", "))
 					}
 				}
 			}
@@ -55,8 +55,9 @@ func (d *LeakDetector) slowList() (res []string) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	for key, value := range d.list {
-		if time.Since(value.started) > time.Minute {
-			res = append(res, fmt.Sprintf("%d(%s): %s", key, value.started, value.stack))
+		living := time.Since(value.started)
+		if living > time.Minute {
+			res = append(res, fmt.Sprintf("%d(%s): %s", key, living, value.stack))
 		}
 	}
 	return res
