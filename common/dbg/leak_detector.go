@@ -88,5 +88,5 @@ func (d *LeakDetector) Add() uint64 {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	d.list[id] = ac
-	return 0
+	return id
 }
