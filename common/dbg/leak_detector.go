@@ -13,8 +13,7 @@ import (
 
 type LeakDetector struct {
 	enabled       bool
-	doTraceTxs    bool
-	traceTxs      map[uint64]LeakDetectorItem
+	list          map[uint64]LeakDetectorItem
 	autoIncrement atomic.Uint64
 	lock          sync.Mutex
 }
@@ -25,7 +24,7 @@ type LeakDetectorItem struct {
 }
 
 func NewLeakDetector(name string, enabled bool) *LeakDetector {
-	d := &LeakDetector{enabled: enabled}
+	d := &LeakDetector{enabled: enabled, list: map[uint64]LeakDetectorItem{}}
 	if enabled {
 		go func() {
 			logEvery := time.NewTicker(30 * time.Second)
@@ -50,7 +49,7 @@ func (d *LeakDetector) slowList() (res []string) {
 	}
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	for key, value := range d.traceTxs {
+	for key, value := range d.list {
 		if time.Since(value.started) > time.Minute {
 			res = append(res, strconv.Itoa(int(key))+": "+value.stack)
 		}
@@ -64,7 +63,7 @@ func (d *LeakDetector) Del(id uint64) {
 	}
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	delete(d.traceTxs, id)
+	delete(d.list, id)
 }
 func (d *LeakDetector) Add() uint64 {
 	if d == nil || !d.enabled {
@@ -77,6 +76,6 @@ func (d *LeakDetector) Add() uint64 {
 	id := d.autoIncrement.Add(1)
 	d.lock.Lock()
 	defer d.lock.Unlock()
-	d.traceTxs[id] = ac
+	d.list[id] = ac
 	return 0
 }
