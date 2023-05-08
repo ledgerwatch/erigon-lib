@@ -11,6 +11,9 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
+// LeakDetector - use it to find which resource was created but not closed (leaked)
+// periodically does print in logs resources which living longer than 1min with their creation stack trace
+// For example db transactions can call Add/Del from Begin/Commit/Rollback methods
 type LeakDetector struct {
 	enabled       bool
 	list          map[uint64]LeakDetectorItem
@@ -24,17 +27,23 @@ type LeakDetectorItem struct {
 }
 
 func NewLeakDetector(name string, enabled bool) *LeakDetector {
+	if !enabled {
+		return nil
+	}
 	d := &LeakDetector{enabled: enabled, list: map[uint64]LeakDetectorItem{}}
 	if enabled {
+		log.Warn("m1")
 		go func() {
-			logEvery := time.NewTicker(30 * time.Second)
+			logEvery := time.NewTicker(60 * time.Second)
 			defer logEvery.Stop()
+			log.Warn("m2")
 
 			for {
 				select {
 				case <-logEvery.C:
+					log.Warn("m3")
 					if list := d.slowList(); len(list) > 0 {
-						log.Info(fmt.Sprintf("[dbg.%s]", name), "slow", strings.Join(d.slowList(), ","))
+						log.Info(fmt.Sprintf("[dbg.%s]", name), "slow", strings.Join(d.slowList(), ", "))
 					}
 				}
 			}
@@ -70,7 +79,7 @@ func (d *LeakDetector) Add() uint64 {
 		return 0
 	}
 	ac := LeakDetectorItem{
-		stack:   Stack(),
+		stack:   StackSkip(1),
 		started: time.Now(),
 	}
 	id := d.autoIncrement.Add(1)
