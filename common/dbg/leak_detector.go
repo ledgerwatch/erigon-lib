@@ -2,7 +2,6 @@ package dbg
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,7 +56,7 @@ func (d *LeakDetector) slowList() (res []string) {
 	defer d.lock.Unlock()
 	for key, value := range d.list {
 		if time.Since(value.started) > time.Minute {
-			res = append(res, strconv.Itoa(int(key))+": "+value.stack)
+			res = append(res, fmt.Sprintf("%d(%s): %s", key, value.started, value.stack))
 		}
 	}
 	return res
