@@ -14,10 +14,12 @@ import (
 // periodically does print in logs resources which living longer than 1min with their creation stack trace
 // For example db transactions can call Add/Del from Begin/Commit/Rollback methods
 type LeakDetector struct {
-	enabled       bool
-	list          map[uint64]LeakDetectorItem
+	enabled       atomic.Bool
+	slowThreshold atomic.Pointer[time.Duration]
 	autoIncrement atomic.Uint64
-	lock          sync.Mutex
+
+	list     map[uint64]LeakDetectorItem
+	listLock sync.Mutex
 }
 
 type LeakDetectorItem struct {
@@ -25,11 +27,14 @@ type LeakDetectorItem struct {
 	started time.Time
 }
 
-func NewLeakDetector(name string, enabled bool) *LeakDetector {
+func NewLeakDetector(name string, slowThreshold time.Duration) *LeakDetector {
+	enabled := slowThreshold > 0
 	if !enabled {
 		return nil
 	}
-	d := &LeakDetector{enabled: enabled, list: map[uint64]LeakDetectorItem{}}
+	d := &LeakDetector{list: map[uint64]LeakDetectorItem{}}
+	d.SetSlowThreshold(slowThreshold)
+
 	if enabled {
 		go func() {
 			logEvery := time.NewTicker(60 * time.Second)
@@ -49,15 +54,17 @@ func NewLeakDetector(name string, enabled bool) *LeakDetector {
 }
 
 func (d *LeakDetector) slowList() (res []string) {
-	if d == nil || !d.enabled {
+	if d == nil || !d.Enabled() {
 		return res
 	}
-	d.lock.Lock()
-	defer d.lock.Unlock()
+	slowThreshold := *d.slowThreshold.Load()
+
+	d.listLock.Lock()
+	defer d.listLock.Unlock()
 	i := 0
 	for key, value := range d.list {
 		living := time.Since(value.started)
-		if living > time.Minute {
+		if living > slowThreshold {
 			res = append(res, fmt.Sprintf("%d(%s): %s", key, living, value.stack))
 		}
 		i++
@@ -69,15 +76,15 @@ func (d *LeakDetector) slowList() (res []string) {
 }
 
 func (d *LeakDetector) Del(id uint64) {
-	if d == nil || !d.enabled {
+	if d == nil || !d.Enabled() {
 		return
 	}
-	d.lock.Lock()
-	defer d.lock.Unlock()
+	d.listLock.Lock()
+	defer d.listLock.Unlock()
 	delete(d.list, id)
 }
 func (d *LeakDetector) Add() uint64 {
-	if d == nil || !d.enabled {
+	if d == nil || !d.Enabled() {
 		return 0
 	}
 	ac := LeakDetectorItem{
@@ -85,8 +92,14 @@ func (d *LeakDetector) Add() uint64 {
 		started: time.Now(),
 	}
 	id := d.autoIncrement.Add(1)
-	d.lock.Lock()
-	defer d.lock.Unlock()
+	d.listLock.Lock()
+	defer d.listLock.Unlock()
 	d.list[id] = ac
 	return id
+}
+
+func (d *LeakDetector) Enabled() bool { return d.enabled.Load() }
+func (d *LeakDetector) SetSlowThreshold(t time.Duration) {
+	d.slowThreshold.Store(&t)
+	d.enabled.Store(t > 0)
 }
