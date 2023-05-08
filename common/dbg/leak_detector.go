@@ -16,6 +16,7 @@ import (
 type LeakDetector struct {
 	enabled       bool
 	list          map[uint64]LeakDetectorItem
+	slowThreshold time.Duration
 	autoIncrement atomic.Uint64
 	lock          sync.Mutex
 }
@@ -25,11 +26,12 @@ type LeakDetectorItem struct {
 	started time.Time
 }
 
-func NewLeakDetector(name string, enabled bool) *LeakDetector {
+func NewLeakDetector(name string, slowThreshold time.Duration) *LeakDetector {
+	enabled := slowThreshold > 0
 	if !enabled {
 		return nil
 	}
-	d := &LeakDetector{enabled: enabled, list: map[uint64]LeakDetectorItem{}}
+	d := &LeakDetector{enabled: enabled, list: map[uint64]LeakDetectorItem{}, slowThreshold: slowThreshold}
 	if enabled {
 		go func() {
 			logEvery := time.NewTicker(60 * time.Second)
@@ -57,7 +59,7 @@ func (d *LeakDetector) slowList() (res []string) {
 	i := 0
 	for key, value := range d.list {
 		living := time.Since(value.started)
-		if living > time.Minute {
+		if living > d.slowThreshold {
 			res = append(res, fmt.Sprintf("%d(%s): %s", key, living, value.stack))
 		}
 		i++
