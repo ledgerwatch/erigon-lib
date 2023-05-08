@@ -76,7 +76,7 @@ func (d *LeakDetector) Add() uint64 {
 		return 0
 	}
 	ac := LeakDetectorItem{
-		stack:   StackSkip(1),
+		stack:   StackSkip(2),
 		started: time.Now(),
 	}
 	id := d.autoIncrement.Add(1)
