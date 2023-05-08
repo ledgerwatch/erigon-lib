@@ -56,7 +56,9 @@ func NewLeakDetector(name string, enabled bool) *LeakDetector {
 			for {
 				select {
 				case <-logEvery.C:
-					log.Info(fmt.Sprintf("[dbg.%s]", name), "slow", strings.Join(d.slowList(), ","))
+					if list := d.slowList(); len(list) > 0 {
+						log.Info(fmt.Sprintf("[dbg.%s]", name), "slow", strings.Join(d.slowList(), ","))
+					}
 				}
 			}
 		}()
