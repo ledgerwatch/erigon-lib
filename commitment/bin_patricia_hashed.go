@@ -1550,7 +1550,7 @@ func (bph *BinPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 		} else {
 			cell := bph.updateBinaryCell(plainKey, hashedKey)
 			if bph.trace {
-				fmt.Printf("accountFn updated key %x =>", plainKey)
+				fmt.Printf("accountFn updated key %x =>", hashedKey)
 			}
 			if update.Flags&BalanceUpdate != 0 {
 				if bph.trace {
