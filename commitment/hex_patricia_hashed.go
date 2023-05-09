@@ -443,7 +443,7 @@ func (cell *Cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]
 		}
 	}
 	pos += 1 + nonceBytes
-	fmt.Printf("enc1: %x\n", buffer[:pos])
+	//fmt.Printf("enc1: %x\n", buffer[:pos])
 
 	// Encoding balance
 	if cell.Balance.LtUint64(128) && !cell.Balance.IsZero() {
@@ -455,19 +455,19 @@ func (cell *Cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]
 		cell.Balance.WriteToSlice(buffer[pos : pos+balanceBytes])
 		pos += balanceBytes
 	}
-	fmt.Printf("enc2: %x\n", buffer[:pos])
+	//fmt.Printf("enc2: %x\n", buffer[:pos])
 
 	// Encoding Root and CodeHash
 	buffer[pos] = 128 + 32
 	pos++
 	copy(buffer[pos:], storageRootHash[:])
 	pos += 32
-	fmt.Printf("enc3: %x, %x\n", buffer[:pos], storageRootHash[:])
+	//fmt.Printf("enc3: %x, %x\n", buffer[:pos], storageRootHash[:])
 	buffer[pos] = 128 + 32
 	pos++
 	copy(buffer[pos:], cell.CodeHash[:])
 	pos += 32
-	fmt.Printf("enc4: %x, %x\n", buffer[:pos], cell.CodeHash[:])
+	//fmt.Printf("enc4: %x, %x\n", buffer[:pos], cell.CodeHash[:])
 	return pos
 }
 
