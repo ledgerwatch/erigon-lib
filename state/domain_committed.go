@@ -174,7 +174,7 @@ func (t *UpdateTree) List() ([][]byte, [][]byte, []commitment.Update) {
 
 	j := 0
 	t.tree.Ascend(func(item *CommitmentItem) bool {
-		fmt.Printf("List(): hk=%x, balance=%s, nonce=%d, %x\n", item.hashedKey, item.update.Balance.String(), item.update.Nonce, item.update.CodeHashOrStorage)
+		fmt.Printf("List(): hk=%x,  %x, balance=%s, nonce=%d, %x\n", item.hashedKey, item.plainKey, item.update.Balance.String(), item.update.Nonce, item.update.CodeHashOrStorage)
 		plainKeys[j] = item.plainKey
 		hashedKeys[j] = item.hashedKey
 		updates[j] = item.update
