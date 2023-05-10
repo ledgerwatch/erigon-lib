@@ -3,7 +3,7 @@ module github.com/ledgerwatch/erigon-lib
 go 1.19
 
 require (
-	github.com/ledgerwatch/interfaces v0.0.0-20230429175934-bed450a4dd75
+	github.com/ledgerwatch/interfaces v0.0.0-20230506191109-292e4ca4d85f
 	github.com/ledgerwatch/log/v3 v3.7.0
 	github.com/ledgerwatch/secp256k1 v1.0.0
 	github.com/ledgerwatch/trackerslist v1.1.0
@@ -18,7 +18,7 @@ require (
 	github.com/anacrolix/log v0.13.2-0.20221123232138-02e2764801c3
 	github.com/anacrolix/torrent v1.48.1-0.20230219022425-e8971ea0f1bf
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
-	github.com/crate-crypto/go-kzg-4844 v0.1.0
+	github.com/crate-crypto/go-kzg-4844 v0.2.0
 	github.com/deckarep/golang-set/v2 v2.3.0
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/go-stack/stack v1.8.1
@@ -33,11 +33,11 @@ require (
 	github.com/stretchr/testify v1.8.2
 	github.com/tidwall/btree v1.6.0
 	golang.org/x/crypto v0.8.0
-	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
-	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.7.0
+	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
+	golang.org/x/sync v0.2.0
+	golang.org/x/sys v0.8.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.54.0
+	google.golang.org/grpc v1.55.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.3.0
 	google.golang.org/protobuf v1.30.0
 )
@@ -112,4 +112,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230503004724-25cf26e371dd
+replace github.com/ledgerwatch/interfaces => github.com/roberto-bayardo/interfaces v0.0.0-20230510172713-341516616378

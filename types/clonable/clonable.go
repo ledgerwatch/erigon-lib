@@ -14,16 +14,8 @@
    limitations under the License.
 */
 
-package dbg
+package clonable
 
-import (
-	stack2 "github.com/go-stack/stack"
-)
-
-// Stack returns stack-trace in logger-friendly compact formatting
-func Stack() string {
-	return stack2.Trace().TrimBelow(stack2.Caller(1)).String()
-}
-func StackSkip(skip int) string {
-	return stack2.Trace().TrimBelow(stack2.Caller(skip)).String()
+type Clonable interface {
+	Clone() Clonable
 }

@@ -81,7 +81,7 @@ func NewMDBX(log log.Logger) MdbxOpts {
 		// but for reproducibility of benchmarks - please don't rely on Available RAM
 		dirtySpace: 2 * (memory.TotalMemory() / 42),
 
-		mapSize:         7 * datasize.TB,
+		mapSize:         2 * datasize.TB,
 		growthStep:      2 * datasize.GB,
 		mergeThreshold:  3 * 8192,
 		shrinkThreshold: -1, // default
@@ -342,6 +342,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		buckets:      kv.TableCfg{},
 		txSize:       dirtyPagesLimit * opts.pageSize,
 		roTxsLimiter: opts.roTxsLimiter,
+
+		leakDetector: dbg.NewLeakDetector("db."+opts.label.String(), dbg.SlowTx()),
 	}
 
 	customBuckets := opts.bucketsCfg(kv.ChaindataTablesCfg)
@@ -411,6 +413,8 @@ type MdbxKV struct {
 	txSize       uint64
 	closed       atomic.Bool
 	path         string
+
+	leakDetector *dbg.LeakDetector
 }
 
 func (db *MdbxKV) PageSize() uint64 { return db.opts.pageSize }
@@ -508,6 +512,7 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		db:       db,
 		tx:       tx,
 		readOnly: true,
+		id:       db.leakDetector.Add(),
 	}, nil
 }
 
@@ -544,6 +549,7 @@ func (db *MdbxKV) beginRw(ctx context.Context, flags uint) (txn kv.RwTx, err err
 		db:  db,
 		tx:  tx,
 		ctx: ctx,
+		id:  db.leakDetector.Add(),
 	}, nil
 }
 
@@ -556,6 +562,7 @@ type MdbxTx struct {
 	readOnly         bool
 	cursorID         uint64
 	ctx              context.Context
+	id               uint64 // set only if TRACE_TX=true
 }
 
 type MdbxCursor struct {
@@ -786,6 +793,7 @@ func (tx *MdbxTx) Commit() error {
 		} else {
 			runtime.UnlockOSThread()
 		}
+		tx.db.leakDetector.Del(tx.id)
 	}()
 	tx.closeCursors()
 
@@ -836,6 +844,7 @@ func (tx *MdbxTx) Rollback() {
 		} else {
 			runtime.UnlockOSThread()
 		}
+		tx.db.leakDetector.Del(tx.id)
 	}()
 	tx.closeCursors()
 	//tx.printDebugInfo()
