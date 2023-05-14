@@ -269,6 +269,50 @@ func Test_Sepolia(t *testing.T) {
 	}
 }
 
+func Test_Sepolia2(t *testing.T) {
+	ms := NewMockState(t)
+
+	type TestData struct {
+		balances     map[string][]byte
+		expectedRoot string
+	}
+
+	tests := []TestData{
+		{
+			expectedRoot: "5eb6e371a698b8d68f665192350ffcecbbbf322916f4b51bd79bb6887da3f494",
+			balances: map[string][]byte{
+				"03a6d93439144ffe4d27c9e088dcd8b783946263": {0xd3, 0xc2, 0x1b, 0xce, 0xcc, 0xed, 0xa1, 0x00, 0x00, 0x00},
+				"0911295936aa79d594139de1b2e12629414f3bdb": {0xd3, 0xc2, 0x1b, 0xce, 0xcc, 0xed, 0xa1, 0x00, 0x00, 0x00},
+				"199d329e5f583419167cd722962485926e338f4a": {0x0d, 0xe0, 0xb6, 0xb3, 0xa7, 0x64, 0x00, 0x00},
+			},
+		},
+	}
+
+	hph := NewHexPatriciaHashed(length.Addr, ms.branchFn, ms.accountFn, ms.storageFn)
+	hph.SetTrace(true)
+
+	for _, testData := range tests {
+		builder := NewUpdateBuilder()
+
+		for address, balance := range testData.balances {
+			builder.IncrementBalance(address, balance)
+		}
+		plainKeys, hashedKeys, updates := builder.Build()
+
+		if err := ms.applyPlainUpdates(plainKeys, updates); err != nil {
+			t.Fatal(err)
+		}
+
+		rootHash, branchNodeUpdates, err := hph.ReviewKeys(plainKeys, hashedKeys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ms.applyBranchNodeUpdates(branchNodeUpdates)
+
+		require.EqualValues(t, testData.expectedRoot, fmt.Sprintf("%x", rootHash))
+	}
+}
+
 func Test_HexPatriciaHashed_StateEncode(t *testing.T) {
 	//trie := NewHexPatriciaHashed(length.Hash, nil, nil, nil)
 	var s state

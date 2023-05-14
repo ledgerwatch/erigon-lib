@@ -889,7 +889,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		col = hashedKey[upDepth-1]
 		upCell = &hph.grid[hph.activeRows-1][col]
 		touched = hph.touchMap[hph.activeRows-1]&(uint16(1)<<col) != 0
-		//present = hph.afterMap[hph.activeRows-1]&(uint16(1)<<col) != 0
+		present = hph.afterMap[hph.activeRows-1]&(uint16(1)<<col) != 0
 		fmt.Printf("present??: %t, %d, %d, %016b\n", present, hph.activeRows-1, col, hph.afterMap)
 		if hph.trace {
 			fmt.Printf("upCell (%d, %x), touched %t, present %t\n", hph.activeRows-1, col, touched, present)
@@ -944,7 +944,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		}
 		if present {
 			hph.afterMap[row] = uint16(1) << nibble
-			fmt.Printf("set3: hph.afterMap[%d]=%016b, upCell.downHashedKey=%x\n", row, hph.afterMap[row], upCell.downHashedKey)
+			fmt.Printf("set3: hph.afterMap[%d]=%016b, upCell.downHashedKey=%x\n", row, hph.afterMap[row], upCell.downHashedKey[:upCell.downHashedLen])
 		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, upCell.downHashedLen)
