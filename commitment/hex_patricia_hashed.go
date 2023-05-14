@@ -826,9 +826,11 @@ func (hph *HexPatriciaHashed) unfoldBranchNode(row int, deleted bool, depth int)
 		// All cells come as deleted (touched but not present after)
 		hph.afterMap[row] = 0
 		hph.touchMap[row] = bitmap
+		fmt.Printf("set0: hph.afterMap[%d]=%016b\n", row, hph.afterMap[row])
 	} else {
 		hph.afterMap[row] = bitmap
 		hph.touchMap[row] = 0
+		fmt.Printf("set1: hph.afterMap[%d]=%016b\n", row, hph.afterMap[row])
 	}
 	//fmt.Printf("unfoldBranchNode [%x], afterMap = [%016b], touchMap = [%016b]\n", branchData, hph.afterMap[row], hph.touchMap[row])
 	// Loop iterating over the set bits of modMask
@@ -881,12 +883,14 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		if hph.trace {
 			fmt.Printf("unfold root, touched %t, present %t, column %d\n", touched, present, col)
 		}
+		fmt.Printf("present root??: %t,  %016b\n", present, hph.afterMap)
 	} else {
 		upDepth = hph.depths[hph.activeRows-1]
 		col = hashedKey[upDepth-1]
 		upCell = &hph.grid[hph.activeRows-1][col]
 		touched = hph.touchMap[hph.activeRows-1]&(uint16(1)<<col) != 0
-		present = hph.afterMap[hph.activeRows-1]&(uint16(1)<<col) != 0
+		//present = hph.afterMap[hph.activeRows-1]&(uint16(1)<<col) != 0
+		fmt.Printf("present??: %t, %d, %d, %016b\n", present, hph.activeRows-1, col, hph.afterMap)
 		if hph.trace {
 			fmt.Printf("upCell (%d, %x), touched %t, present %t\n", hph.activeRows-1, col, touched, present)
 		}
@@ -916,6 +920,8 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		}
 		if present {
 			hph.afterMap[row] = uint16(1) << nibble
+			fmt.Printf("set2: hph.afterMap[%d]=%016b, upCell.downHashedKey=%x, apk=%x, dhl=%d, hl=%d, extL=%d\n", row, hph.afterMap[row], upCell.downHashedKey, upCell.apk, upCell.downHashedLen, upCell.hl, upCell.extLen)
+			fmt.Printf("set2: unfolding=%d ext=%x, h=%x\n", unfolding, upCell.extension, upCell.h)
 		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, unfolding)
@@ -938,6 +944,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 		}
 		if present {
 			hph.afterMap[row] = uint16(1) << nibble
+			fmt.Printf("set3: hph.afterMap[%d]=%016b, upCell.downHashedKey=%x\n", row, hph.afterMap[row], upCell.downHashedKey)
 		}
 		cell := &hph.grid[row][nibble]
 		cell.fillFromUpperCell(upCell, depth, upCell.downHashedLen)
@@ -954,6 +961,7 @@ func (hph *HexPatriciaHashed) unfold(hashedKey []byte, unfolding int) error {
 	}
 	hph.depths[hph.activeRows] = depth
 	hph.activeRows++
+	fmt.Printf("unfold end: %016b\n", hph.afterMap)
 	return nil
 }
 
@@ -1010,10 +1018,12 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 				// Special case - all storage items of an account have been deleted, but it does not automatically delete the account, just makes it empty storage
 				// Therefore we are not propagating deletion upwards, but turn it into a modification
 				hph.touchMap[row-1] |= (uint16(1) << col)
+				fmt.Printf("set6(!!!): %016b, upCell.downHashedKey=%x\n", (uint16(1) << col))
 			} else {
 				// Deletion is propagated upwards
 				hph.touchMap[row-1] |= (uint16(1) << col)
 				hph.afterMap[row-1] &^= (uint16(1) << col)
+				fmt.Printf("set5: hph.afterMap[%d]=%016b, upCell.downHashedKey=%x\n", row-1, hph.afterMap[row-1])
 			}
 		}
 		upCell.hl = 0
@@ -1081,23 +1091,30 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 		}
 		// Calculate total length of all hashes
 		totalBranchLen := 17 - partsCount // For every empty cell, one byte
+		fmt.Printf("totalSize0: %d\n", totalBranchLen)
 		for bitset, j := hph.afterMap[row], 0; bitset != 0; j++ {
 			bit := bitset & -bitset
 			nibble := bits.TrailingZeros16(bit)
 			cell := &hph.grid[row][nibble]
 			totalBranchLen += hph.computeCellHashLen(cell, depth)
+			fmt.Printf("totalSize1: %d, %d\n", totalBranchLen, hph.computeCellHashLen(cell, depth))
 			bitset ^= bit
 		}
+		fmt.Printf("totalSize: %d\n", totalBranchLen)
 
 		hph.keccak2.Reset()
 		pt := rlp.GenerateStructLen(hph.hashAuxBuffer[:], totalBranchLen)
+		fmt.Printf("buf write0: %x\n", hph.hashAuxBuffer[:pt])
 		if _, err := hph.keccak2.Write(hph.hashAuxBuffer[:pt]); err != nil {
 			return nil, nil, err
 		}
 
+		var cnt int
 		b := [...]byte{0x80}
 		cellGetter := func(nibble int, skip bool) (*Cell, error) {
 			if skip {
+				cnt++
+				fmt.Printf("buf write5: %x\n", b[:])
 				if _, err := hph.keccak2.Write(b[:]); err != nil {
 					return nil, fmt.Errorf("failed to write empty nibble to hash: %w", err)
 				}
@@ -1114,6 +1131,8 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 			if hph.trace {
 				fmt.Printf("%x: computeCellHash(%d,%x,depth=%d)=[%x]\n", nibble, row, nibble, depth, cellHash)
 			}
+			cnt++
+			fmt.Printf("buf write3: %x\n", cellHash)
 			if _, err := hph.keccak2.Write(cellHash); err != nil {
 				return nil, err
 			}
@@ -1131,6 +1150,8 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 			return nil, nil, fmt.Errorf("failed to encode branch update: %w", err)
 		}
 		for i := lastNibble; i < 17; i++ {
+			cnt++
+			fmt.Printf("buf write5: %x\n", b[:])
 			if _, err := hph.keccak2.Write(b[:]); err != nil {
 				return nil, nil, err
 			}
@@ -1153,7 +1174,7 @@ func (hph *HexPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 			return nil, nil, err
 		}
 		if hph.trace {
-			fmt.Printf("} [%x]\n", upCell.h[:])
+			fmt.Printf("} [%x], %d\n", upCell.h[:], cnt)
 		}
 		hph.activeRows--
 		if upDepth > 0 {
@@ -1194,6 +1215,7 @@ func (hph *HexPatriciaHashed) deleteCell(hashedKey []byte) {
 			// Prevent "spurios deletions", i.e. deletion of absent items
 			hph.touchMap[row] |= (uint16(1) << col)
 			hph.afterMap[row] &^= (uint16(1) << col)
+			fmt.Printf("set9: hph.afterMap[%d]=%016b\n", row, hph.afterMap[row])
 			if hph.trace {
 				fmt.Printf("deleteCell setting (%d, %x)\n", row, col)
 			}
@@ -1222,6 +1244,7 @@ func (hph *HexPatriciaHashed) updateCell(plainKey, hashedKey []byte) *Cell {
 		cell = &hph.grid[row][col]
 		hph.touchMap[row] |= (uint16(1) << col)
 		hph.afterMap[row] |= (uint16(1) << col)
+		fmt.Printf("set10: hph.afterMap[%d]=%016b\n", row, hph.afterMap[row])
 		if hph.trace {
 			fmt.Printf("updateCell setting (%d, %x), depth=%d\n", row, col, depth)
 		}
@@ -1627,6 +1650,7 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 	copy(hph.branchBefore[:], s.BranchBefore[:])
 	copy(hph.touchMap[:], s.TouchMap[:])
 	copy(hph.afterMap[:], s.AfterMap[:])
+	fmt.Printf("set11\n")
 
 	return nil
 }

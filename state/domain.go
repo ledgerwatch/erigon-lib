@@ -1599,9 +1599,12 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 	var k, v []byte
 	var err error
 
+	dc.d.values.Iter()
 	dc.d.values.Ascend(hex.EncodeToString(prefix), func(kx string, v []byte) bool {
 		k, _ := hex.DecodeString(kx)
-		fmt.Printf("kx: %s, k: %x\n", kx, k)
+		if !bytes.HasPrefix(k, prefix) {
+			return true
+		}
 		if len(kx) > 0 && bytes.HasPrefix(k, prefix) {
 			heap.Push(&cp, &CursorItem{t: RAM_CURSOR, key: common.Copy(k), val: common.Copy(v), endTxNum: dc.d.txNum, reverse: true})
 			return true
@@ -1654,13 +1657,7 @@ func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) erro
 			ci1 := cp[0]
 			switch ci1.t {
 			case RAM_CURSOR:
-				if k != nil && bytes.HasPrefix(k, prefix) {
-					ci1.key = common.Copy(k)
-					ci1.val = common.Copy(v)
-					heap.Fix(&cp, 0)
-				} else {
-					heap.Pop(&cp)
-				}
+				heap.Pop(&cp)
 			case FILE_CURSOR:
 				if ci1.dg.HasNext() {
 					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
