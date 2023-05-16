@@ -334,6 +334,7 @@ func (d *Downloader) verify(ctx context.Context) error {
 			}(time.Now())
 			j.Add(int64(t.NumPieces()))
 			for i := 0; i < t.NumPieces(); i++ {
+				i := i
 				g.Go(func() error {
 					t.Piece(i).VerifyData()
 					return nil
