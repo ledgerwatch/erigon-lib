@@ -325,7 +325,12 @@ func (d *Downloader) verify() error {
 		go func(t *torrent.Torrent) {
 			defer wg.Done()
 			<-t.GotInfo()
-			defer func(tt time.Time) { fmt.Printf("verify: %s %s\n", t.Name(), time.Since(tt)) }(time.Now())
+			defer func(tt time.Time) {
+				sz := t.Length() / 1024 / 1024 / 1024
+				if sz > 1 {
+					fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
+				}
+			}(time.Now())
 			for i := 0; i < t.NumPieces(); i++ {
 				j.Add(1)
 				t.Piece(i).VerifyData()

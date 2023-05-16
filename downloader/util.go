@@ -334,7 +334,12 @@ func mmapFile(name string) (mm mmap.MMap, err error) {
 }
 
 func verifyTorrent(info *metainfo.Info, root string, consumer func(i int, good bool) error) error {
-	defer func(t time.Time) { fmt.Printf("verifyTorrent: %s, %s\n", info.Name, time.Since(t)) }(time.Now())
+	defer func(t time.Time) {
+		sz := info.Length / 1024 / 1024 / 1024
+		if sz > 1 {
+			fmt.Printf("verifyTorrent: %dGb, %s, %s\n", sz, info.Name, time.Since(t))
+		}
+	}(time.Now())
 
 	span := new(mmap_span.MMapSpan)
 	for _, file := range info.UpvertedFiles() {
