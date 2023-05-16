@@ -303,6 +303,7 @@ func moveFromTmp(snapDir string) error {
 }
 
 func (d *Downloader) verify() error {
+	defer func(t time.Time) { fmt.Printf("verify: %s\n", time.Since(t)) }(time.Now())
 	total := 0
 	for _, t := range d.torrentClient.Torrents() {
 		select {
@@ -324,6 +325,7 @@ func (d *Downloader) verify() error {
 		go func(t *torrent.Torrent) {
 			defer wg.Done()
 			<-t.GotInfo()
+			defer func(tt time.Time) { fmt.Printf("verify: %s %s\n", t.Name(), time.Since(tt)) }(time.Now())
 			for i := 0; i < t.NumPieces(); i++ {
 				j.Add(1)
 				t.Piece(i).VerifyData()
