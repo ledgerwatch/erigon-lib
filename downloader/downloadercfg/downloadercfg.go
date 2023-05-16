@@ -67,7 +67,7 @@ func Default() *torrent.ClientConfig {
 	torrentConfig.Seed = true
 	torrentConfig.UpnpID = torrentConfig.UpnpID + "leecher"
 
-	torrentConfig.PieceHashersPerTorrent = runtime.GOMAXPROCS(-1) * 4
+	torrentConfig.PieceHashersPerTorrent = runtime.GOMAXPROCS(-1)
 
 	return torrentConfig
 }
