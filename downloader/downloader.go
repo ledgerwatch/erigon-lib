@@ -35,6 +35,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -302,7 +303,7 @@ func moveFromTmp(snapDir string) error {
 	return nil
 }
 
-func (d *Downloader) verify() error {
+func (d *Downloader) verify(ctx context.Context) error {
 	defer func(t time.Time) { fmt.Printf("verify: %s\n", time.Since(t)) }(time.Now())
 	total := 0
 	for _, t := range d.torrentClient.Torrents() {
@@ -319,11 +320,11 @@ func (d *Downloader) verify() error {
 
 	wg := &sync.WaitGroup{}
 	j := atomic.Int64{}
+	g, ctx := errgroup.WithContext(ctx)
 
 	for _, t := range d.torrentClient.Torrents() {
-		wg.Add(1)
-		go func(t *torrent.Torrent) {
-			defer wg.Done()
+		t := t
+		g.Go(func() error {
 			<-t.GotInfo()
 			defer func(tt time.Time) {
 				sz := t.Length() / 1024 / 1024 / 1024
@@ -331,19 +332,28 @@ func (d *Downloader) verify() error {
 					fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
 				}
 			}(time.Now())
+			j.Add(int64(t.NumPieces()))
 			for i := 0; i < t.NumPieces(); i++ {
-				j.Add(1)
-				t.Piece(i).VerifyData()
-
-				select {
-				case <-logEvery.C:
-					log.Info("[snapshots] Verifying", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
-				default:
-				}
+				g.Go(func() error {
+					t.Piece(i).VerifyData()
+					return nil
+				})
 				//<-t.Complete.On()
 			}
-		}(t)
+			return nil
+		})
 	}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-logEvery.C:
+				log.Info("[snapshots] Verifying", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
+			}
+		}
+	}()
 	wg.Wait()
 
 	// force fsync of db. to not loose results of validation on power-off
