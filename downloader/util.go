@@ -357,7 +357,7 @@ func verifyTorrent(info *metainfo.Info, root string, consumer func(i int, good b
 	for i, numPieces := 0, info.NumPieces(); i < numPieces; i += 1 {
 		p := info.Piece(i)
 		hash := sha1.New() //nolint:gosec
-		_, err := io.Copy(hash, io.NewSectionReader(span, p.Offset(), p.Length()))
+		_, err := io.CopyBuffer(hash, io.NewSectionReader(span, p.Offset(), p.Length()), make([]byte, 64*1024*1024))
 		if err != nil {
 			return err
 		}
