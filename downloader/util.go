@@ -334,6 +334,8 @@ func mmapFile(name string) (mm mmap.MMap, err error) {
 }
 
 func verifyTorrent(info *metainfo.Info, root string, consumer func(i int, good bool) error) error {
+	defer func(t time.Time) { fmt.Printf("verifyTorrent: %s, %s\n", info.Name, time.Since(t)) }(time.Now())
+
 	span := new(mmap_span.MMapSpan)
 	for _, file := range info.UpvertedFiles() {
 		filename := filepath.Join(append([]string{root, info.Name}, file.Path...)...)
@@ -397,6 +399,7 @@ func AddTorrentFile(torrentFilePath string, torrentClient *torrent.Client) (*tor
 var ErrSkip = fmt.Errorf("skip")
 
 func VerifyDtaFiles(ctx context.Context, snapDir string) error {
+	defer func(t time.Time) { fmt.Printf("VerifyDtaFiles: %s\n", time.Since(t)) }(time.Now())
 	logEvery := time.NewTicker(5 * time.Second)
 	defer logEvery.Stop()
 
