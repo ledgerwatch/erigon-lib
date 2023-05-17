@@ -354,6 +354,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
 		g.Go(func() error {
+			defer func(tt time.Time) { fmt.Printf("downloader.go:357: %s %s\n", t.Name(), time.Since(t)) }(time.Now())
 			return d.verifyFile(ctx, t, j)
 		})
 	}
