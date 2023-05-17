@@ -33,7 +33,6 @@ import (
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
-	"github.com/edsrzf/mmap-go"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	dir2 "github.com/ledgerwatch/erigon-lib/common/dir"
@@ -311,22 +310,6 @@ func createTorrentFileFromInfo(root string, info *metainfo.Info, mi *metainfo.Me
 func segmentFileNameFromTorrentFileName(in string) string {
 	ext := filepath.Ext(in)
 	return in[0 : len(in)-len(ext)]
-}
-
-func mmapFile(name string) (mm mmap.MMap, err error) {
-	f, err := os.Open(name)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return
-	}
-	if fi.Size() == 0 {
-		return
-	}
-	return mmap.MapRegion(f, -1, mmap.RDONLY, mmap.COPY, 0)
 }
 
 // AddTorrentFile - adding .torrent file to torrentClient (and checking their hashes), if .torrent file
