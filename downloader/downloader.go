@@ -341,7 +341,9 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			for i := 0; i < t.NumPieces(); i++ {
 				i := i
 				//g.Go(func() error {
+				fmt.Printf("start %s %d \n", t.Name(), i)
 				t.Piece(i).VerifyData()
+				fmt.Printf("end %s %d \n", t.Name(), i)
 				//return nil
 				//})
 				//<-t.Complete.On()
