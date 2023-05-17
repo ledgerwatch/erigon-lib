@@ -19,7 +19,6 @@ package downloader
 import (
 	"context"
 	//nolint:gosec
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -363,69 +362,6 @@ func AddTorrentFile(torrentFilePath string, torrentClient *torrent.Client) (*tor
 }
 
 var ErrSkip = fmt.Errorf("skip")
-
-func VerifyDtaFiles(ctx context.Context, snapDir string) error {
-	defer func(t time.Time) { fmt.Printf("VerifyDtaFiles: %s\n", time.Since(t)) }(time.Now())
-	logEvery := time.NewTicker(5 * time.Second)
-	defer logEvery.Stop()
-
-	files, err := AllTorrentPaths(snapDir)
-	if err != nil {
-		return err
-	}
-	totalPieces := 0
-	for _, f := range files {
-		metaInfo, err := metainfo.LoadFromFile(f)
-		if err != nil {
-			return err
-		}
-		info, err := metaInfo.UnmarshalInfo()
-		if err != nil {
-			return err
-		}
-		totalPieces += info.NumPieces()
-	}
-
-	j := 0
-	failsAmount := 0
-	for _, f := range files {
-		metaInfo, err := metainfo.LoadFromFile(f)
-		if err != nil {
-			return err
-		}
-		info, err := metaInfo.UnmarshalInfo()
-		if err != nil {
-			return err
-		}
-
-		if err = verifyTorrent(&info, snapDir, func(i int, good bool) error {
-			j++
-			if !good {
-				failsAmount++
-				log.Error("[snapshots] Verify hash mismatch", "at piece", i, "file", info.Name)
-				return ErrSkip
-			}
-			select {
-			case <-logEvery.C:
-				log.Info("[snapshots] Verify", "Progress", fmt.Sprintf("%.2f%%", 100*float64(j)/float64(totalPieces)))
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-			return nil
-		}); err != nil {
-			if errors.Is(ErrSkip, err) {
-				continue
-			}
-			return err
-		}
-	}
-	if failsAmount > 0 {
-		return fmt.Errorf("not all files are valid")
-	}
-	log.Info("[snapshots] Verify done")
-	return nil
-}
 
 func portMustBeTCPAndUDPOpen(port int) error {
 	tcpAddr := &net.TCPAddr{
