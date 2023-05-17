@@ -342,7 +342,28 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		}
 	}
 
-	j := &atomic.Uint64{}
+	completedPieces := &atomic.Uint64{}
+
+	{
+		defer log.Info("[snapshots] Verify done")
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		logInterval := 20 * time.Second
+		logEvery := time.NewTicker(logInterval)
+		defer logEvery.Stop()
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					log.Warn("[dbg} verify", "err", ctx.Err())
+					return
+				case <-logEvery.C:
+					log.Info("[snapshots] Verify", "progress", fmt.Sprintf("%.2f%%", 100*float64(completedPieces.Load())/float64(total)))
+				}
+			}
+		}()
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 	// torrent lib internally limiting amount of hashers per file
 	// so we only limit amount of parallel files check
@@ -352,27 +373,10 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		t := t
 		g.Go(func() error {
 			defer func(tt time.Time) { fmt.Printf("downloader.go:357: %s %s\n", t.Name(), time.Since(tt)) }(time.Now())
-			return d.verifyFile(ctx, t, j)
+			return d.verifyFile(ctx, t, completedPieces)
 		})
 	}
 
-	defer log.Info("[snapshots] Verify done")
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	logInterval := 20 * time.Second
-	logEvery := time.NewTicker(logInterval)
-	defer logEvery.Stop()
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				log.Warn("[dbg} verify", "err", ctx.Err())
-				return
-			case <-logEvery.C:
-				log.Info("[snapshots] Verify", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
-			}
-		}
-	}()
 	g.Wait()
 	// force fsync of db. to not loose results of validation on power-off
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
