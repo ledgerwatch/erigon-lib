@@ -330,6 +330,7 @@ func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, complet
 }
 
 func (d *Downloader) VerifyData(ctx context.Context) error {
+	log.Info("[snapshots] Verify start")
 	total := 0
 	for _, t := range d.torrentClient.Torrents() {
 		select {
