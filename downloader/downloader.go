@@ -355,6 +355,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		})
 	}
 
+	defer log.Info("[snapshots] Verifying done")
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
