@@ -346,6 +346,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			})
 			//<-t.Complete.On()
 		}
+		<-t.Complete.On()
 		//return nil
 		//})
 	}
