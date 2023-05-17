@@ -324,6 +324,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
+		j.Add(int64(t.NumPieces()))
 		g.Go(func() error {
 			<-t.GotInfo()
 			defer func(tt time.Time) {
@@ -332,7 +333,6 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 					fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
 				}
 			}(time.Now())
-			j.Add(int64(t.NumPieces()))
 			for i := 0; i < t.NumPieces(); i++ {
 				i := i
 				g.Go(func() error {
