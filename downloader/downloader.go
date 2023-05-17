@@ -365,6 +365,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		for {
 			select {
 			case <-ctx.Done():
+				log.Warn("[dbg} verify", "err", ctx.Err())
 				return
 			case <-logEvery.C:
 				log.Info("[snapshots] Verify", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
