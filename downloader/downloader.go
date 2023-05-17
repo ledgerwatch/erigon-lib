@@ -348,10 +348,9 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
-		//g.Go(func() error {
-		d.verifyFile(ctx, t, j)
-		//return nil
-		//})
+		g.Go(func() error {
+			return d.verifyFile(ctx, t, j)
+		})
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
