@@ -303,10 +303,10 @@ func moveFromTmp(snapDir string) error {
 	return nil
 }
 
-func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, completePieces *atomic.Uint64) {
+func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, completePieces *atomic.Uint64) error {
 	select {
 	case <-ctx.Done():
-		return
+		return ctx.Err()
 	case <-t.GotInfo():
 	}
 
@@ -326,7 +326,7 @@ func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, complet
 		})
 		//<-t.Complete.On()
 	}
-	g.Wait()
+	return g.Wait()
 }
 func (d *Downloader) VerifyData(ctx context.Context) error {
 	defer func(t time.Time) { fmt.Printf("downloader.go:307: %s\n", time.Since(t)) }(time.Now())
