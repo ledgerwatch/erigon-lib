@@ -319,6 +319,8 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	defer logEvery.Stop()
 
 	j := atomic.Int64{}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 
 	for _, t := range d.torrentClient.Torrents() {
@@ -349,6 +351,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-logEvery.C:
+				fmt.Printf("a: %d, %d\n", j.Load(), total)
 				log.Info("[snapshots] Verifying", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
 			}
 		}
