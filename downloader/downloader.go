@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -348,7 +349,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	// torrent lib internally limiting amount of hashers per file
 	// so we only limit amount of parallel files check
-	g.SetLimit(16)
+	g.SetLimit(runtime.GOMAXPROCS(-1))
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
