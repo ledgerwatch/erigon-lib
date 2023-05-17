@@ -303,7 +303,7 @@ func moveFromTmp(snapDir string) error {
 	return nil
 }
 
-func (d *Downloader) verify(ctx context.Context) error {
+func (d *Downloader) VerifyData(ctx context.Context) error {
 	defer func(t time.Time) { fmt.Printf("verify: %s\n", time.Since(t)) }(time.Now())
 	total := 0
 	for _, t := range d.torrentClient.Torrents() {
