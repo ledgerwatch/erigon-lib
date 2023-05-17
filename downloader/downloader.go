@@ -336,6 +336,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 				fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
 			}
 		}(time.Now())
+		g, _ := errgroup.WithContext(ctx)
 
 		for i := 0; i < t.NumPieces(); i++ {
 			i := i
@@ -346,7 +347,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			})
 			//<-t.Complete.On()
 		}
-		<-t.Complete.On()
+		g.Wait()
 		//return nil
 		//})
 	}
