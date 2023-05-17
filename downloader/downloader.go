@@ -319,7 +319,7 @@ func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, complet
 	g := &errgroup.Group{}
 	for i := 0; i < t.NumPieces(); i++ {
 		i := i
-		g.Go(func() error {
+		g.Go(func() error { // lib internally limiting amount of hashers per file
 			t.Piece(i).VerifyData()
 			completePieces.Add(1)
 			return nil
@@ -348,7 +348,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
-		g.Go(func() error {
+		g.Go(func() error { // lib internally limiting amount of hashers per file
 			return d.verifyFile(ctx, t, j)
 		})
 	}
