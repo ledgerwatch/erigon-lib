@@ -335,10 +335,10 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			}(time.Now())
 			for i := 0; i < t.NumPieces(); i++ {
 				i := i
-				g.Go(func() error {
-					t.Piece(i).VerifyData()
-					return nil
-				})
+				//g.Go(func() error {
+				t.Piece(i).VerifyData()
+				//return nil
+				//})
 				//<-t.Complete.On()
 			}
 			return nil
