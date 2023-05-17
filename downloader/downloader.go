@@ -304,7 +304,7 @@ func moveFromTmp(snapDir string) error {
 }
 
 func (d *Downloader) VerifyData(ctx context.Context) error {
-	defer func(t time.Time) { fmt.Printf("verify: %s\n", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { fmt.Printf("downloader.go:307: %s\n", time.Since(t)) }(time.Now())
 	total := 0
 	for _, t := range d.torrentClient.Torrents() {
 		select {
@@ -319,13 +319,10 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	defer logEvery.Stop()
 
 	j := atomic.Int64{}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
-		j.Add(int64(t.NumPieces()))
 		g.Go(func() error {
 			select {
 			case <-ctx.Done():
@@ -337,6 +334,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 				i := i
 				g.Go(func() error {
 					t.Piece(i).VerifyData()
+					j.Add(1)
 					return nil
 				})
 				//<-t.Complete.On()
@@ -345,13 +343,14 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		})
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-logEvery.C:
-				fmt.Printf("a: %d, %d\n", j.Load(), total)
 				log.Info("[snapshots] Verifying", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
 			}
 		}

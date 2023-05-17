@@ -17,12 +17,10 @@
 package downloader
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha1" //nolint:gosec
+	//nolint:gosec
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -36,7 +34,6 @@ import (
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
-	"github.com/anacrolix/torrent/mmap_span"
 	"github.com/edsrzf/mmap-go"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
@@ -331,42 +328,6 @@ func mmapFile(name string) (mm mmap.MMap, err error) {
 		return
 	}
 	return mmap.MapRegion(f, -1, mmap.RDONLY, mmap.COPY, 0)
-}
-
-func verifyTorrent(info *metainfo.Info, root string, consumer func(i int, good bool) error) error {
-	defer func(t time.Time) {
-		sz := info.Length / 1024 / 1024 / 1024
-		if sz > 1 {
-			fmt.Printf("verifyTorrent: %dGb, %s, %s\n", sz, info.Name, time.Since(t))
-		}
-	}(time.Now())
-
-	span := new(mmap_span.MMapSpan)
-	for _, file := range info.UpvertedFiles() {
-		filename := filepath.Join(append([]string{root, info.Name}, file.Path...)...)
-		mm, err := mmapFile(filename)
-		if err != nil {
-			return err
-		}
-		if int64(len(mm)) != file.Length {
-			return fmt.Errorf("file %q has wrong length", filename)
-		}
-		span.Append(mm)
-	}
-	span.InitIndex()
-	for i, numPieces := 0, info.NumPieces(); i < numPieces; i += 1 {
-		p := info.Piece(i)
-		hash := sha1.New() //nolint:gosec
-		_, err := io.CopyBuffer(hash, io.NewSectionReader(span, p.Offset(), p.Length()), make([]byte, 64*1024*1024))
-		if err != nil {
-			return err
-		}
-		good := bytes.Equal(hash.Sum(nil), p.Hash().Bytes())
-		if err := consumer(i, good); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // AddTorrentFile - adding .torrent file to torrentClient (and checking their hashes), if .torrent file
