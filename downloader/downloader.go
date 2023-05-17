@@ -314,7 +314,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			continue
 		}
 	}
-	logInterval := 20 * time.Second
+	logInterval := 5 * time.Second
 	logEvery := time.NewTicker(logInterval)
 	defer logEvery.Stop()
 
