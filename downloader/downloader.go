@@ -35,6 +35,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -318,9 +319,8 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	logEvery := time.NewTicker(logInterval)
 	defer logEvery.Stop()
 
-	wg := &sync.WaitGroup{}
 	j := atomic.Int64{}
-	//g, ctx := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
@@ -339,11 +339,11 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		}(time.Now())
 		for i := 0; i < t.NumPieces(); i++ {
 			i := i
-			//g.Go(func() error {
-			t.Piece(i).VerifyData()
-			//return nil
-			//})
-			//<-t.Complete.On()
+			g.Go(func() error {
+				t.Piece(i).VerifyData()
+				return nil
+			})
+			<-t.Complete.On()
 		}
 		//return nil
 		//})
@@ -360,7 +360,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		}
 	}()
 	fmt.Printf("[dbg] before\n")
-	wg.Wait()
+	g.Wait()
 	fmt.Printf("[dbg] after\n")
 	// force fsync of db. to not loose results of validation on power-off
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
