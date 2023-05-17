@@ -336,8 +336,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 				fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
 			}
 		}(time.Now())
-		g, _ := errgroup.WithContext(ctx)
-
+		g := &errgroup.Group{}
 		for i := 0; i < t.NumPieces(); i++ {
 			i := i
 			g.Go(func() error {
