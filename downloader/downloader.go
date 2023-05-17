@@ -314,8 +314,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			continue
 		}
 	}
-	fmt.Printf("[dbg] before1\n")
-	logInterval := 5 * time.Second
+	logInterval := 20 * time.Second
 	logEvery := time.NewTicker(logInterval)
 	defer logEvery.Stop()
 
@@ -331,19 +330,14 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 				return ctx.Err()
 			case <-t.GotInfo():
 			}
-			defer func(tt time.Time) {
-				sz := t.Length() / 1024 / 1024 / 1024
-				if sz > 1 {
-					fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
-				}
-			}(time.Now())
+
 			for i := 0; i < t.NumPieces(); i++ {
 				i := i
 				g.Go(func() error {
 					t.Piece(i).VerifyData()
 					return nil
 				})
-				<-t.Complete.On()
+				//<-t.Complete.On()
 			}
 			return nil
 		})
@@ -360,9 +354,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			}
 		}
 	}()
-	fmt.Printf("[dbg] before\n")
 	g.Wait()
-	fmt.Printf("[dbg] after\n")
 	// force fsync of db. to not loose results of validation on power-off
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
