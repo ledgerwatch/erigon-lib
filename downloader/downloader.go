@@ -343,7 +343,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	logEvery := time.NewTicker(logInterval)
 	defer logEvery.Stop()
 
-	j := atomic.Int64{}
+	j := &atomic.Uint64{}
 	g, ctx := errgroup.WithContext(ctx)
 
 	for _, t := range d.torrentClient.Torrents() {
