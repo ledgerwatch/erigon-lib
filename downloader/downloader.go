@@ -355,7 +355,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		})
 	}
 
-	defer log.Info("[snapshots] Verifying done")
+	defer log.Info("[snapshots] Verify done")
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -364,7 +364,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-logEvery.C:
-				log.Info("[snapshots] Verifying", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
+				log.Info("[snapshots] Verify", "progress", fmt.Sprintf("%.2f%%", 100*float64(j.Load())/float64(total)))
 			}
 		}
 	}()
