@@ -314,6 +314,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			continue
 		}
 	}
+	fmt.Printf("[dbg] before1\n")
 	logInterval := 5 * time.Second
 	logEvery := time.NewTicker(logInterval)
 	defer logEvery.Stop()
@@ -359,8 +360,9 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			}
 		}
 	}()
+	fmt.Printf("[dbg] before\n")
 	wg.Wait()
-
+	fmt.Printf("[dbg] after\n")
 	// force fsync of db. to not loose results of validation on power-off
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
