@@ -331,7 +331,6 @@ func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, complet
 }
 
 func (d *Downloader) VerifyData(ctx context.Context) error {
-	log.Info("[snapshots] Verify start")
 	total := 0
 	for _, t := range d.torrentClient.Torrents() {
 		select {
@@ -345,6 +344,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	completedPieces := &atomic.Uint64{}
 
 	{
+		log.Info("[snapshots] Verify start")
 		defer log.Info("[snapshots] Verify done")
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
