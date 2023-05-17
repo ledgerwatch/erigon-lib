@@ -341,9 +341,6 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 			continue
 		}
 	}
-	logInterval := 20 * time.Second
-	logEvery := time.NewTicker(logInterval)
-	defer logEvery.Stop()
 
 	j := &atomic.Uint64{}
 	g, ctx := errgroup.WithContext(ctx)
@@ -362,6 +359,9 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	defer log.Info("[snapshots] Verify done")
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	logInterval := 20 * time.Second
+	logEvery := time.NewTicker(logInterval)
+	defer logEvery.Stop()
 	go func() {
 		for {
 			select {
