@@ -326,7 +326,11 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		t := t
 		j.Add(int64(t.NumPieces()))
 		g.Go(func() error {
-			<-t.GotInfo()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-t.GotInfo():
+			}
 			defer func(tt time.Time) {
 				sz := t.Length() / 1024 / 1024 / 1024
 				if sz > 1 {
