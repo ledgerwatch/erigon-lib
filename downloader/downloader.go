@@ -325,28 +325,28 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
 		j.Add(int64(t.NumPieces()))
-		//g.Go(func() error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-t.GotInfo():
-		}
-		defer func(tt time.Time) {
-			sz := t.Length() / 1024 / 1024 / 1024
-			if sz > 1 {
-				fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
+		g.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-t.GotInfo():
 			}
-		}(time.Now())
-		for i := 0; i < t.NumPieces(); i++ {
-			i := i
-			g.Go(func() error {
-				t.Piece(i).VerifyData()
-				return nil
-			})
-			<-t.Complete.On()
-		}
-		//return nil
-		//})
+			defer func(tt time.Time) {
+				sz := t.Length() / 1024 / 1024 / 1024
+				if sz > 1 {
+					fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
+				}
+			}(time.Now())
+			for i := 0; i < t.NumPieces(); i++ {
+				i := i
+				g.Go(func() error {
+					t.Piece(i).VerifyData()
+					return nil
+				})
+				<-t.Complete.On()
+			}
+			return nil
+		})
 	}
 
 	go func() {
