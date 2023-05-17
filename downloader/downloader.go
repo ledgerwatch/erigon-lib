@@ -311,17 +311,17 @@ func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, complet
 	case <-t.GotInfo():
 	}
 
-	defer func(tt time.Time) {
-		sz := t.Length() / 1024 / 1024 / 1024
-		if sz > 1 {
-			fmt.Printf("verify: %dgb %s %s\n", sz, t.Name(), time.Since(tt))
-		}
-	}(time.Now())
 	g := &errgroup.Group{}
 	g.SetLimit(runtime.GOMAXPROCS(-1)) // torrent lib internally limiting amount of hashers per file
 	for i := 0; i < t.NumPieces(); i++ {
 		i := i
 		g.Go(func() error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
 			t.Piece(i).VerifyData()
 			completePieces.Add(1)
 			return nil
@@ -330,8 +330,8 @@ func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, complet
 	}
 	return g.Wait()
 }
+
 func (d *Downloader) VerifyData(ctx context.Context) error {
-	defer func(t time.Time) { fmt.Printf("downloader.go:307: %s\n", time.Since(t)) }(time.Now())
 	total := 0
 	for _, t := range d.torrentClient.Torrents() {
 		select {
