@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -317,7 +318,7 @@ func (d *Downloader) verifyFile(ctx context.Context, t *torrent.Torrent, complet
 		}
 	}(time.Now())
 	g := &errgroup.Group{}
-	g.SetLimit(16) // torrent lib internally limiting amount of hashers per file
+	g.SetLimit(runtime.GOMAXPROCS(-1)) // torrent lib internally limiting amount of hashers per file
 	for i := 0; i < t.NumPieces(); i++ {
 		i := i
 		g.Go(func() error {
@@ -346,7 +347,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 
 	j := &atomic.Uint64{}
 	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(16) // torrent lib internally limiting amount of hashers per file
+	g.SetLimit(runtime.GOMAXPROCS(-1)) // torrent lib internally limiting amount of hashers per file
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
