@@ -35,7 +35,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -321,7 +320,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 
 	wg := &sync.WaitGroup{}
 	j := atomic.Int64{}
-	g, ctx := errgroup.WithContext(ctx)
+	//g, ctx := errgroup.WithContext(ctx)
 
 	for _, t := range d.torrentClient.Torrents() {
 		t := t
