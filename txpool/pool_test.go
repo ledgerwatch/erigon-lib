@@ -714,7 +714,6 @@ func TestShanghaiValidateTx(t *testing.T) {
 }
 
 func TestOverdraftByReplacement(t *testing.T) {
-	t.Skip("TODO")
 	assert, require := assert.New(t), require.New(t)
 	ch := make(chan types.Announcements, 100)
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
@@ -834,7 +833,7 @@ func TestOverdraftByReplacement(t *testing.T) {
 		value := (*pendingTx).Tx.Value
 		assert.Equal(*replacementTxValue, value)
 		senderID := (*pendingTx).Tx.SenderID
-		assert.LessOrEqual(senderID, uint(10))
-		assert.GreaterOrEqual(senderID, uint(6))
+		assert.LessOrEqual(senderID, uint64(10))
+		assert.GreaterOrEqual(senderID, uint64(6))
 	}
 }

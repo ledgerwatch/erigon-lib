@@ -482,8 +482,12 @@ func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 		return err
 	}
 
+	add := func(mt *metaTx, announcements *types.Announcements) DiscardReason {
+		return p.addLockedWithChecks(mt, announcements, cacheView)
+	}
 	announcements, _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, newTxs,
-		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked, true)
+		p.pendingBaseFee.Load(), p.blockGasLimit.Load(), p.pending, p.baseFee, p.queued, p.all, p.byHash, add, p.discardLocked, true)
+
 	if err != nil {
 		return err
 	}
@@ -1074,6 +1078,41 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, bool) {
 	return p.pendingBaseFee.Load(), changed
 }
 
+func (p *TxPool) addLockedWithChecks(mt *metaTx, announcements *types.Announcements, cacheView kvcache.CacheView) DiscardReason {
+	// Discard the transaction if it would invalidate others in the pool by overdraft
+	senderID := mt.Tx.SenderID
+	if p.all.count(senderID) >= 2 {
+		nonce, currentBalance, err := p.senders.info(cacheView, senderID)
+		if err != nil {
+			log.Error("Could not fetch sender's balance:", "err", err)
+			return NotReplaced // TODO better fitting code?
+		}
+		overdraft := false
+		balance := &currentBalance
+
+		p.all.ascendFrom(nonce, senderID, func(mt1 *metaTx) bool {
+			mt2 := mt1
+			if mt1.Tx.Nonce == mt.Tx.Nonce {
+				mt2 = mt
+			}
+
+			needBalance := uint256.NewInt(mt2.Tx.Gas)
+			needBalance.Mul(needBalance, &mt2.Tx.FeeCap)
+			needBalance.Add(needBalance, &mt.Tx.Value)
+
+			_, overdraft = balance.SubOverflow(balance, needBalance)
+
+			return !overdraft
+		})
+
+		if overdraft {
+			return InsufficientFunds
+		}
+	}
+
+	return p.addLocked(mt, announcements)
+}
+
 func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) DiscardReason {
 	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
 	found := p.all.get(mt.Tx.SenderID, mt.Tx.Nonce)
@@ -1199,7 +1238,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*types.TxSlot, pending *P
 }
 
 // onSenderStateChange is the function that recalculates ephemeral fields of transactions and determines
-// which sub pool they will need to go to. Sice this depends on other transactions from the same sender by with lower
+// which sub pool they will need to go to. Since this depends on other transactions from the same sender by with lower
 // nonces, and also affect other transactions from the same sender with higher nonce, it loops through all transactions
 // for a given senderID
 func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce,
@@ -1694,6 +1733,7 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 	if err != nil {
 		return err
 	}
+
 	if _, _, err := addTxs(p.lastSeenBlock.Load(), cacheView, p.senders, txs,
 		pendingBaseFee, math.MaxUint64 /* blockGasLimit */, p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked, false); err != nil {
 		return err
@@ -2040,16 +2080,19 @@ func (b *BySenderAndNonce) ascendAll(f func(*metaTx) bool) {
 		return f(mt)
 	})
 }
-func (b *BySenderAndNonce) ascend(senderID uint64, f func(*metaTx) bool) {
+func (b *BySenderAndNonce) ascendFrom(nonce uint64, senderID uint64, f func(*metaTx) bool) {
 	s := b.search
 	s.Tx.SenderID = senderID
-	s.Tx.Nonce = 0
+	s.Tx.Nonce = nonce
 	b.tree.AscendGreaterOrEqual(s, func(mt *metaTx) bool {
 		if mt.Tx.SenderID != senderID {
 			return false
 		}
 		return f(mt)
 	})
+}
+func (b *BySenderAndNonce) ascend(senderID uint64, f func(*metaTx) bool) {
+	b.ascendFrom(0, senderID, f)
 }
 func (b *BySenderAndNonce) descend(senderID uint64, f func(*metaTx) bool) {
 	s := b.search
