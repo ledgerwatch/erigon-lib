@@ -29,4 +29,10 @@ const (
 	Ts = 8
 	// Incarnation length of uint64 for contract incarnations
 	Incarnation = 8
+	// BLS public key length
+	PublicKeyBLS = 48
+	// BLS signature length
+	SignatureBLS = 96
+	// KZG commitment length
+	KZGCommittment = 48
 )

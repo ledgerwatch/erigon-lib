@@ -27,6 +27,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/crypto/cryptopool"
+	"github.com/ledgerwatch/erigon-lib/types/clonable"
 )
 
 var (
@@ -180,4 +181,25 @@ func (a *Address) Scan(src interface{}) error {
 // Value implements valuer for database/sql.
 func (a Address) Value() (driver.Value, error) {
 	return a[:], nil
+}
+
+func (a Address) EncodeSSZ(buf []byte) ([]byte, error) {
+	return append(buf, a[:]...), nil
+}
+
+func (Address) EncodingSizeSSZ() int {
+	return length.Addr
+}
+
+func (a *Address) DecodeSSZ(buf []byte, _ int) error {
+	copy(a[:], buf)
+	return nil
+}
+
+func (a *Address) HashSSZ() (root [32]byte, err error) {
+	copy(root[:], a[:])
+	return
+}
+func (Address) Clone() clonable.Clonable {
+	return Address{}
 }

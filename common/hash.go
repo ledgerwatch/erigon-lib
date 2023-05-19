@@ -26,6 +26,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 	"github.com/ledgerwatch/erigon-lib/common/length"
+	"github.com/ledgerwatch/erigon-lib/types/clonable"
 )
 
 var (
@@ -166,6 +167,27 @@ func (h *Hash) Scan(src interface{}) error {
 // Value implements valuer for database/sql.
 func (h Hash) Value() (driver.Value, error) {
 	return h[:], nil
+}
+
+func (h Hash) EncodeSSZ(buf []byte) ([]byte, error) {
+	return append(buf, h[:]...), nil
+}
+
+func (Hash) EncodingSizeSSZ() int {
+	return length.Hash
+}
+
+func (h *Hash) DecodeSSZ(buf []byte, _ int) error {
+	copy(h[:], buf)
+	return nil
+}
+
+func (h Hash) HashSSZ() (root [32]byte, err error) {
+	copy(root[:], h[:])
+	return
+}
+func (Hash) Clone() clonable.Clonable {
+	return Hash{}
 }
 
 type CodeRecord struct {
