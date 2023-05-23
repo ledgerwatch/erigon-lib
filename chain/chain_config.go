@@ -410,9 +410,10 @@ type BorConfig struct {
 	OverrideStateSyncRecords map[string]int         `json:"overrideStateSyncRecords"` // override state records count
 	BlockAlloc               map[string]interface{} `json:"blockAlloc"`
 
-	CalcuttaBlock *big.Int `json:"calcuttaBlock"` // Calcutta switch block (nil = no fork, 0 = already on calcutta)
-	JaipurBlock   *big.Int `json:"jaipurBlock"`   // Jaipur switch block (nil = no fork, 0 = already on jaipur)
-	DelhiBlock    *big.Int `json:"delhiBlock"`    // Delhi switch block (nil = no fork, 0 = already on delhi)
+	CalcuttaBlock         *big.Int `json:"calcuttaBlock"`         // Calcutta switch block (nil = no fork, 0 = already on calcutta)
+	JaipurBlock           *big.Int `json:"jaipurBlock"`           // Jaipur switch block (nil = no fork, 0 = already on jaipur)
+	DelhiBlock            *big.Int `json:"delhiBlock"`            // Delhi switch block (nil = no fork, 0 = already on delhi)
+	ParallelUniverseBlock *big.Int `json:"parallelUniverseBlock"` // TODO: update all occurrence, change name and finalize number (hardfork for block-stm related changes)
 }
 
 // String implements the stringer interface, returning the consensus engine details.
@@ -450,6 +451,17 @@ func (c *BorConfig) IsCalcutta(number uint64) bool {
 
 func (c *BorConfig) IsOnCalcutta(number *big.Int) bool {
 	return numEqual(c.CalcuttaBlock, number)
+}
+
+// TODO: modify this function once the block number is finalized
+func (c *BorConfig) IsParallelUniverse(number uint64) bool {
+	if c.ParallelUniverseBlock != nil {
+		if c.ParallelUniverseBlock.Cmp(big.NewInt(0)) == 0 {
+			return false
+		}
+	}
+
+	return isForked(c.ParallelUniverseBlock, number)
 }
 
 func (c *BorConfig) calcConfig(field map[string]uint64, number uint64) uint64 {
