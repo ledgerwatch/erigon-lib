@@ -244,24 +244,30 @@ const (
 	// Data item prefixes (use single byte to avoid mixing data types, avoid `i`, used for indexes).
 	HeaderNumber = "HeaderNumber" // header_hash -> num_u64
 
+	// Naming:
+	//   BlockNum - Ethereum-specific block number. All nodes will have same BlockNum.
+	//   BlockID - auto-increment ID. All nodes will assign different ID to same block.
+	//   Same about TxNum vs TxID
 	HeaderCanonical = "CanonicalHeader"        // block_num_u64 -> header hash
 	Headers         = "Header"                 // block_num_u64 + hash -> header (RLP)
 	HeaderTD        = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
 
+	// EthTxV3 - stores only txs of canonical blocks. Here key is txID + block_hash.
+	BlockID = "BlockID" // block_num_u64 + hash -> block_id_u64
+
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
-	// EthTx - stores only txs of canonical blocks. As a result - id's used in this table are also
+	// EthTx:
+	// v2: stores only txs of canonical blocks. As a result - id's used in this table are also
 	// canonical - same across all nodex in network - regardless reorgs. Transactions of
 	// non-canonical blocs are not removed, but moved to NonCanonicalTransaction - then during re-org don't
 	// need re-download block from network.
 	// Also this table has system-txs before and after block: if
 	// block has no system-tx - records are absent, but sequence increasing
+	// v3: block_id_u64 + tx_idx_in_block -> rlp(tx)
 	EthTx           = "BlockTransaction"        // tbl_sequence_u64 -> rlp(tx)
 	NonCanonicalTxs = "NonCanonicalTransaction" // tbl_sequence_u64 -> rlp(tx)
 	MaxTxNum        = "MaxTxNum"                // block_number_u64 -> max_tx_num_in_block_u64
-
-	// EthTxV3 - stores only txs of canonical blocks. Here key is txID + block_hash.
-	EthTxV3 = "BlockTransactionV3" // tbl_sequence_u64 -> rlp(tx)
 
 	Receipts = "Receipt"        // block_num_u64 -> canonical block receipts (non-canonical are not stored)
 	Log      = "TransactionLog" // block_num_u64 + txId -> logs of transaction
@@ -465,6 +471,7 @@ var ChaindataTables = []string{
 	StorageHistory,
 	Code,
 	ContractCode,
+	BlockID,
 	HeaderNumber,
 	BlockBody,
 	Receipts,
@@ -497,7 +504,6 @@ var ChaindataTables = []string{
 	Log,
 	Sequence,
 	EthTx,
-	EthTxV3,
 	NonCanonicalTxs,
 	TrieOfAccounts,
 	TrieOfStorage,
