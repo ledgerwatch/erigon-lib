@@ -15,8 +15,8 @@ require (
 	github.com/VictoriaMetrics/metrics v1.23.1
 	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444
 	github.com/anacrolix/go-libutp v1.2.0
-	github.com/anacrolix/log v0.13.2-0.20230518105052-6aef2c4c91f1
-	github.com/anacrolix/torrent v1.51.1
+	github.com/anacrolix/log v0.14.0
+	github.com/anacrolix/torrent v1.51.3
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/crate-crypto/go-kzg-4844 v0.2.0
 	github.com/deckarep/golang-set/v2 v2.3.0
