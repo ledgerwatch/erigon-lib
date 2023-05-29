@@ -142,13 +142,13 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				if err := sem.Acquire(ctx, 1); err != nil {
 					return
 				}
-				t.AllowDataDownload()
-				t.DownloadAll()
 				go func(t *torrent.Torrent) {
 					defer sem.Release(1)
 					//r := t.NewReader()
 					//r.SetReadahead(t.Length())
 					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
+					t.AllowDataDownload()
+					t.DownloadAll()
 
 					<-t.Complete.On()
 				}(t)
