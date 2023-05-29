@@ -254,7 +254,7 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 			case <-ctx.Done():
 				errs <- ctx.Err()
 			case <-logEvery.C:
-				log.Info("[snapshots] Creating .torrent files", "Progress", fmt.Sprintf("%d/%d", i.Load(), len(files)))
+				log.Info("[snapshots] Creating .torrent files", "Progress", fmt.Sprintf("%d/%d", i.Load(), len(files)+len(files2)))
 			}
 		}(f)
 	}
@@ -277,7 +277,7 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 			case <-ctx.Done():
 				errs <- ctx.Err()
 			case <-logEvery.C:
-				log.Info("[snapshots] Creating .torrent files", "Progress", fmt.Sprintf("%d/%d", i.Load(), len(files)))
+				log.Info("[snapshots] Creating .torrent files", "Progress", fmt.Sprintf("%d/%d", i.Load(), len(files)+len(files2)))
 			}
 		}(f)
 	}
