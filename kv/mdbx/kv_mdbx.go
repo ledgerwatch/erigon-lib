@@ -81,7 +81,7 @@ func NewMDBX(log log.Logger) MdbxOpts {
 		// but for reproducibility of benchmarks - please don't rely on Available RAM
 		dirtySpace: 2 * (memory.TotalMemory() / 42),
 
-		mapSize:         7 * datasize.TB,
+		mapSize:         2 * datasize.TB,
 		growthStep:      2 * datasize.GB,
 		mergeThreshold:  3 * 8192,
 		shrinkThreshold: -1, // default
@@ -248,10 +248,6 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 	}
 
 	if opts.flags&mdbx.Accede == 0 {
-		if opts.label == kv.ChainDB {
-			log.Info(fmt.Sprintf("[db] params: growStep=%s, mapsSize=%s, shrinkThreshold=%d, pageSize=%s, ", opts.growthStep, opts.mapSize, opts.shrinkThreshold, datasize.ByteSize(opts.pageSize)) +
-				fmt.Sprintf("label=%s, WriteMap=%t, Durable=%t, NoReadahead=%t, ", opts.label, opts.flags&mdbx.WriteMap != 0, opts.flags&mdbx.Durable != 0, opts.flags&mdbx.NoReadahead != 0))
-		}
 		if err = env.SetGeometry(-1, -1, int(opts.mapSize), int(opts.growthStep), opts.shrinkThreshold, int(opts.pageSize)); err != nil {
 			return nil, err
 		}
@@ -342,6 +338,8 @@ func (opts MdbxOpts) Open() (kv.RwDB, error) {
 		buckets:      kv.TableCfg{},
 		txSize:       dirtyPagesLimit * opts.pageSize,
 		roTxsLimiter: opts.roTxsLimiter,
+
+		leakDetector: dbg.NewLeakDetector("db."+opts.label.String(), dbg.SlowTx()),
 	}
 
 	customBuckets := opts.bucketsCfg(kv.ChaindataTablesCfg)
@@ -411,6 +409,8 @@ type MdbxKV struct {
 	txSize       uint64
 	closed       atomic.Bool
 	path         string
+
+	leakDetector *dbg.LeakDetector
 }
 
 func (db *MdbxKV) PageSize() uint64 { return db.opts.pageSize }
@@ -508,6 +508,7 @@ func (db *MdbxKV) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 		db:       db,
 		tx:       tx,
 		readOnly: true,
+		id:       db.leakDetector.Add(),
 	}, nil
 }
 
@@ -544,6 +545,7 @@ func (db *MdbxKV) beginRw(ctx context.Context, flags uint) (txn kv.RwTx, err err
 		db:  db,
 		tx:  tx,
 		ctx: ctx,
+		id:  db.leakDetector.Add(),
 	}, nil
 }
 
@@ -556,6 +558,7 @@ type MdbxTx struct {
 	readOnly         bool
 	cursorID         uint64
 	ctx              context.Context
+	id               uint64 // set only if TRACE_TX=true
 }
 
 type MdbxCursor struct {
@@ -579,7 +582,7 @@ func (db *MdbxKV) AllDBI() map[string]kv.DBI {
 	return res
 }
 
-func (db *MdbxKV) AllBuckets() kv.TableCfg {
+func (db *MdbxKV) AllTables() kv.TableCfg {
 	return db.buckets
 }
 
@@ -685,7 +688,7 @@ func (tx *MdbxTx) CreateBucket(name string) error {
 	cnfCopy := tx.db.buckets[name]
 	dbi, err := tx.tx.OpenDBI(name, mdbx.DBAccede, nil, nil)
 	if err != nil && !mdbx.IsNotFound(err) {
-		return fmt.Errorf("create bucket: %s, %w", name, err)
+		return fmt.Errorf("create table: %s, %w", name, err)
 	}
 	if err == nil {
 		cnfCopy.DBI = kv.DBI(dbi)
@@ -719,7 +722,7 @@ func (tx *MdbxTx) CreateBucket(name string) error {
 	dbi, err = tx.tx.OpenDBI(name, nativeFlags, nil, nil)
 
 	if err != nil {
-		return fmt.Errorf("create bucket: %s, %w", name, err)
+		return fmt.Errorf("create table: %s, %w", name, err)
 	}
 	cnfCopy.DBI = kv.DBI(dbi)
 
@@ -786,6 +789,7 @@ func (tx *MdbxTx) Commit() error {
 		} else {
 			runtime.UnlockOSThread()
 		}
+		tx.db.leakDetector.Del(tx.id)
 	}()
 	tx.closeCursors()
 
@@ -836,6 +840,7 @@ func (tx *MdbxTx) Rollback() {
 		} else {
 			runtime.UnlockOSThread()
 		}
+		tx.db.leakDetector.Del(tx.id)
 	}()
 	tx.closeCursors()
 	//tx.printDebugInfo()
