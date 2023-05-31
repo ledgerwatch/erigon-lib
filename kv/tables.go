@@ -241,19 +241,16 @@ const (
 	// DatabaseInfo is used to store information about data layout.
 	DatabaseInfo = "DbInfo"
 
-	// Data item prefixes (use single byte to avoid mixing data types, avoid `i`, used for indexes).
-	HeaderNumber = "HeaderNumber" // header_hash -> num_u64
-
 	// Naming:
-	//   BlockNum - Ethereum-specific block number. All nodes will have same BlockNum.
-	//   BlockID - auto-increment ID. All nodes will assign different ID to same block.
+	//   NeaderNumber - Ethereum-specific block number. All nodes have same BlockNum.
+	//   NeaderID - auto-increment ID. Depends on order in which node see headers.
+	//      Invariant: for all headers in snapshots Number == ID. It means no reason to store Num/ID for this headers in DB.
 	//   Same about TxNum vs TxID
-	HeaderCanonical = "CanonicalHeader"        // block_num_u64 -> header hash
-	Headers         = "Header"                 // block_num_u64 + hash -> header (RLP)
-	HeaderTD        = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
-
-	// EthTxV3 - stores only txs of canonical blocks. Here key is txID + block_hash.
-	BlockID = "BlockID" // block_num_u64 + hash -> block_id_u64
+	HeaderNumber           = "HeaderNumber"           // header_hash -> header_num_u64
+	HeaderCanonical        = "CanonicalHeader"        // block_num_u64 -> header hash
+	Headers                = "Header"                 // block_num_u64 + hash -> header (RLP)
+	HeadersTotalDifficulty = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
+	HeaderID               = "HeaderID"               // block_num_u64 + hash -> block_id_u64
 
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
@@ -266,6 +263,7 @@ const (
 	// Also this table has system-txs before and after block: if
 	// block has no system-tx - records are absent, but sequence increasing
 	// v3: block_id_u64 + tx_idx_in_block -> rlp(tx)
+	// stores canonical and non-canonical block transactions
 	EthTx           = "BlockTransaction"        // tbl_sequence_u64 -> rlp(tx)
 	NonCanonicalTxs = "NonCanonicalTransaction" // tbl_sequence_u64 -> rlp(tx)
 	MaxTxNum        = "MaxTxNum"                // block_number_u64 -> max_tx_num_in_block_u64
@@ -472,7 +470,7 @@ var ChaindataTables = []string{
 	StorageHistory,
 	Code,
 	ContractCode,
-	BlockID,
+	HeaderID,
 	HeaderNumber,
 	BlockBody,
 	Receipts,
@@ -512,7 +510,7 @@ var ChaindataTables = []string{
 	HashedStorage,
 	HeaderCanonical,
 	Headers,
-	HeaderTD,
+	HeadersTotalDifficulty,
 	Epoch,
 	PendingEpoch,
 	Issuance,
