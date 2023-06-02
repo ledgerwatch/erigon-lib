@@ -45,7 +45,7 @@ import (
 //Abstraction Layers:
 // LowLevel:
 //    1. DB/Tx - low-level key-value database
-//    2. Snapshots/FreezenData - immutable files with historical data. May be downloaded at first App
+//    2. Snapshots/FrozenData - immutable files with historical data. May be downloaded at first App
 //         start or auto-generate by moving old data from DB to Snapshots.
 //         Most important difference between DB and Snapshots: creation of
 //         snapshot files (build/merge) doesn't mutate any existing files - only producing new one!
