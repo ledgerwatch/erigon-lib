@@ -245,26 +245,22 @@ const (
 	//   NeaderNumber - Ethereum-specific block number. All nodes have same BlockNum.
 	//   NeaderID - auto-increment ID. Depends on order in which node see headers.
 	//      Invariant: for all headers in snapshots Number == ID. It means no reason to store Num/ID for this headers in DB.
-	//   Same about TxNum vs TxID
+	//   Same about: TxNum/TxID, BlockNum/BlockID
 	HeaderNumber           = "HeaderNumber"           // header_hash -> header_num_u64
 	HeaderCanonical        = "CanonicalHeader"        // block_num_u64 -> header hash
 	Headers                = "Header"                 // block_num_u64 + hash -> header (RLP)
 	HeadersTotalDifficulty = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
-	HeaderID               = "HeaderID"               // block_num_u64 + hash -> block_id_u64
 
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
 	// EthTx:
-	// v2: tbl_sequence_u64 -> rlp(tx)
 	// stores only txs of canonical blocks. As a result - id's used in this table are also
 	// canonical - same across all nodex in network - regardless reorgs. Transactions of
 	// non-canonical blocs are not removed, but moved to NonCanonicalTransaction - then during re-org don't
 	// need re-download block from network.
 	// Also this table has system-txs before and after block: if
 	// block has no system-tx - records are absent, but sequence increasing
-	// v3: block_id_u64 + tx_idx_in_block -> rlp(tx)
-	// stores canonical and non-canonical block transactions
-	EthTx           = "BlockTransaction"        // tbl_sequence_u64 -> rlp(tx)
+	EthTx           = "BlockTransaction"        // txn_id_u64 -> rlp(tx)
 	NonCanonicalTxs = "NonCanonicalTransaction" // tbl_sequence_u64 -> rlp(tx)
 	MaxTxNum        = "MaxTxNum"                // block_number_u64 -> max_tx_num_in_block_u64
 
@@ -470,7 +466,6 @@ var ChaindataTables = []string{
 	StorageHistory,
 	Code,
 	ContractCode,
-	HeaderID,
 	HeaderNumber,
 	BlockBody,
 	Receipts,
