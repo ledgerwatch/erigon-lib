@@ -35,11 +35,14 @@ import (
 //  k, v - key, value
 //  ts - TimeStamp. Usually it's Etherum's TransactionNumber (auto-increment ID). Or BlockNumber.
 //  Cursor - low-level mdbx-tide api to navigate over Table
-//  Iter - high-level iterator-like api over Table/InvertedIndex/History/Domain. Has less features than Cursor. See package `iter`
+//  Iter - high-level iterator-like api over Table/InvertedIndex/History/Domain. Has less features than Cursor. See package `iter`.
 
 //Methods Naming:
+//  Prune: delete old data
+//  Unwind: delete recent data
 //  Get: exact match of criterias
 //  Range: [from, to). from=nil means StartOfTable, to=nil means EndOfTable, rangeLimit=-1 means Unlimited
+//      Range is analog of SQL's: SELECT * FROM Table WHERE k>=from AND k<to ORDER BY k ASC/DESC LIMIT n
 //  Prefix: `Range(Table, prefix, kv.NextSubtree(prefix))`
 
 //Abstraction Layers:
