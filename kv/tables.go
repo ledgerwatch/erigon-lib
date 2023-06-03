@@ -247,10 +247,10 @@ const (
 	//   NeaderID - auto-increment ID. Depends on order in which node see headers.
 	//      Invariant: for all headers in snapshots Number == ID. It means no reason to store Num/ID for this headers in DB.
 	//   Same about: TxNum/TxID, BlockNum/BlockID
-	HeaderNumber           = "HeaderNumber"           // header_hash -> header_num_u64
-	HeaderCanonical        = "CanonicalHeader"        // block_num_u64 -> header hash
-	Headers                = "Header"                 // block_num_u64 + hash -> header (RLP)
-	HeadersTotalDifficulty = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
+	HeaderNumber    = "HeaderNumber"           // header_hash -> header_num_u64
+	HeaderCanonical = "CanonicalHeader"        // block_num_u64 -> header hash
+	Headers         = "Header"                 // block_num_u64 + hash -> header (RLP)
+	HeadersTD       = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
 
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
@@ -506,7 +506,7 @@ var ChaindataTables = []string{
 	HashedStorage,
 	HeaderCanonical,
 	Headers,
-	HeadersTotalDifficulty,
+	HeadersTD,
 	Epoch,
 	PendingEpoch,
 	Issuance,
