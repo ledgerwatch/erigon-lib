@@ -250,7 +250,7 @@ const (
 	HeaderNumber    = "HeaderNumber"           // header_hash -> header_num_u64
 	HeaderCanonical = "CanonicalHeader"        // block_num_u64 -> header hash
 	Headers         = "Header"                 // block_num_u64 + hash -> header (RLP)
-	HeadersTD       = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
+	HeaderTD        = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
 
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
@@ -506,7 +506,7 @@ var ChaindataTables = []string{
 	HashedStorage,
 	HeaderCanonical,
 	Headers,
-	HeadersTD,
+	HeaderTD,
 	Epoch,
 	PendingEpoch,
 	Issuance,
