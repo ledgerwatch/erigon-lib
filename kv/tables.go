@@ -248,6 +248,7 @@ const (
 	//      Invariant: for all headers in snapshots Number == ID. It means no reason to store Num/ID for this headers in DB.
 	//   Same about: TxNum/TxID, BlockNum/BlockID
 	HeaderNumber    = "HeaderNumber"           // header_hash -> header_num_u64
+	BadHeaderNumber = "BadHeaderNumber"        // header_hash -> header_num_u64
 	HeaderCanonical = "CanonicalHeader"        // block_num_u64 -> header hash
 	Headers         = "Header"                 // block_num_u64 + hash -> header (RLP)
 	HeaderTD        = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
@@ -468,6 +469,7 @@ var ChaindataTables = []string{
 	Code,
 	ContractCode,
 	HeaderNumber,
+	BadHeaderNumber,
 	BlockBody,
 	Receipts,
 	TxLookup,
