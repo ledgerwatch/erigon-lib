@@ -492,6 +492,7 @@ func (h *History) StartWrites() {
 	fmt.Printf("[dbg] History start writers: %t\n", h.wal != nil)
 }
 func (h *History) FinishWrites() {
+	fmt.Printf("[dbg] History FinishWrites\n")
 	h.InvertedIndex.FinishWrites()
 	h.wal.close()
 	h.wal = nil
@@ -567,6 +568,7 @@ func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 }
 
 func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
+	fmt.Printf("[dbg] historyWAL.addPrevValue: %t\n", h != nil)
 	if h.discard {
 		return nil
 	}
