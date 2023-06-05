@@ -892,7 +892,7 @@ func TestCollationBuildInMem(t *testing.T) {
 }
 
 func TestDomainContext_IteratePrefix(t *testing.T) {
-	_, db, d := testDbAndDomain(t)
+	_, db, d := testDbAndDomain(t, log.New())
 	defer db.Close()
 	defer d.Close()
 
