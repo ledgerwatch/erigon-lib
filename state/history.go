@@ -489,6 +489,7 @@ func (h *History) StartUnbufferedWrites() {
 func (h *History) StartWrites() {
 	h.InvertedIndex.StartWrites()
 	h.wal = h.newWriter(h.tmpdir, true, false)
+	fmt.Printf("[dbg] History start writers: %t\n", h.wal != nil)
 }
 func (h *History) FinishWrites() {
 	h.InvertedIndex.FinishWrites()
