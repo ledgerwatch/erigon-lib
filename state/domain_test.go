@@ -796,7 +796,7 @@ func TestScanStaticFilesD(t *testing.T) {
 func TestCollationBuildInMem(t *testing.T) {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	_, db, d := testDbAndDomain(t)
+	_, db, d := testDbAndDomain(t, log.New())
 	ctx := context.Background()
 	defer d.Close()
 
