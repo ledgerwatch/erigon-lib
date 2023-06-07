@@ -33,9 +33,9 @@ func InitializeCryptoCtx() {
 // Ctx returns a context object that stores all of the necessary configurations to allow one to
 // create and verify blob proofs.  This function is expensive to run if the crypto context isn't
 // initialized, so production services should pre-initialize by calling InitializeCryptoCtx.
-func Ctx() gokzg4844.Context {
+func Ctx() *gokzg4844.Context {
 	InitializeCryptoCtx()
-	return gCryptoCtx
+	return &gCryptoCtx
 }
 
 // KZGToVersionedHash implements kzg_to_versioned_hash from EIP-4844
