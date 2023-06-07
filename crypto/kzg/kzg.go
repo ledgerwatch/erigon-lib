@@ -14,19 +14,19 @@ const (
 
 type VersionedHash [32]byte
 
-var gCryptoCtx gokzg4844.Context
+var gCryptoCtx *gokzg4844.Context
 var initCryptoCtx sync.Once
 
 // InitializeCryptoCtx initializes the global context object returned via CryptoCtx
 func InitializeCryptoCtx() {
 	initCryptoCtx.Do(func() {
+		var err error
 		// Initialize context to match the configurations that the
 		// specs are using.
-		ctx, err := gokzg4844.NewContext4096Insecure1337()
+		gCryptoCtx, err = gokzg4844.NewContext4096Insecure1337()
 		if err != nil {
 			panic(fmt.Sprintf("could not create context, err : %v", err))
 		}
-		gCryptoCtx = *ctx
 	})
 }
 
@@ -35,7 +35,7 @@ func InitializeCryptoCtx() {
 // initialized, so production services should pre-initialize by calling InitializeCryptoCtx.
 func Ctx() *gokzg4844.Context {
 	InitializeCryptoCtx()
-	return &gCryptoCtx
+	return gCryptoCtx
 }
 
 // KZGToVersionedHash implements kzg_to_versioned_hash from EIP-4844
