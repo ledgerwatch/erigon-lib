@@ -554,7 +554,7 @@ type MdbxTx struct {
 	db               *MdbxKV
 	cursors          map[uint64]*mdbx.Cursor
 	streams          []kv.Closer
-	statelessCursors map[string]kv.Cursor
+	statelessCursors map[string]kv.RwCursor
 	readOnly         bool
 	cursorID         uint64
 	ctx              context.Context
@@ -897,18 +897,48 @@ func (tx *MdbxTx) closeCursors() {
 
 func (tx *MdbxTx) statelessCursor(bucket string) (kv.RwCursor, error) {
 	if tx.statelessCursors == nil {
-		tx.statelessCursors = make(map[string]kv.Cursor)
+		tx.statelessCursors = make(map[string]kv.RwCursor)
 	}
 	c, ok := tx.statelessCursors[bucket]
 	if !ok {
 		var err error
-		c, err = tx.Cursor(bucket)
+		c, err = tx.RwCursor(bucket)
 		if err != nil {
 			return nil, err
 		}
 		tx.statelessCursors[bucket] = c
 	}
-	return c.(kv.RwCursor), nil
+	return c, nil
+}
+func (tx *MdbxTx) statelessCursor2(bucket string) (kv.Cursor, error) {
+	if tx.statelessCursors == nil {
+		tx.statelessCursors = make(map[string]kv.RwCursor)
+	}
+	c, ok := tx.statelessCursors[bucket]
+	if !ok {
+		var err error
+		c, err = tx.RwCursor(bucket)
+		if err != nil {
+			return nil, err
+		}
+		tx.statelessCursors[bucket] = c
+	}
+	return c, nil
+}
+func (tx *MdbxTx) statelessCursor3(bucket string) (kv.Cursor, error) {
+	if tx.statelessCursors == nil {
+		tx.statelessCursors = make(map[string]kv.RwCursor)
+	}
+	c, ok := tx.statelessCursors[bucket]
+	if !ok {
+		var err error
+		c, err = tx.RwCursor(bucket)
+		if err != nil {
+			return nil, err
+		}
+		tx.statelessCursors[bucket] = c
+	}
+	return c, nil
 }
 
 func (tx *MdbxTx) Put(table string, k, v []byte) error {
