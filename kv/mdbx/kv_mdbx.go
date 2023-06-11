@@ -910,36 +910,6 @@ func (tx *MdbxTx) statelessCursor(bucket string) (kv.RwCursor, error) {
 	}
 	return c, nil
 }
-func (tx *MdbxTx) statelessCursor2(bucket string) (kv.Cursor, error) {
-	if tx.statelessCursors == nil {
-		tx.statelessCursors = make(map[string]kv.RwCursor)
-	}
-	c, ok := tx.statelessCursors[bucket]
-	if !ok {
-		var err error
-		c, err = tx.RwCursor(bucket)
-		if err != nil {
-			return nil, err
-		}
-		tx.statelessCursors[bucket] = c
-	}
-	return c, nil
-}
-func (tx *MdbxTx) statelessCursor3(bucket string) (kv.Cursor, error) {
-	if tx.statelessCursors == nil {
-		tx.statelessCursors = make(map[string]kv.RwCursor)
-	}
-	c, ok := tx.statelessCursors[bucket]
-	if !ok {
-		var err error
-		c, err = tx.RwCursor(bucket)
-		if err != nil {
-			return nil, err
-		}
-		tx.statelessCursors[bucket] = c
-	}
-	return c, nil
-}
 
 func (tx *MdbxTx) Put(table string, k, v []byte) error {
 	c, err := tx.statelessCursor(table)
