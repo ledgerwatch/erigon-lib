@@ -158,8 +158,8 @@ StorageHistory
 	key - address + storage_key + shard_id_u64
 	value - roaring bitmap - list of block where it changed
 */
-const AccountsHistory = "AccountHistory"
-const StorageHistory = "StorageHistory"
+const E2AccountsHistory = "AccountHistory"
+const E2StorageHistory = "StorageHistory"
 
 const (
 
@@ -475,8 +475,8 @@ var (
 // This list will be sorted in `init` method.
 // ChaindataTablesCfg - can be used to find index in sorted version of ChaindataTables list by name
 var ChaindataTables = []string{
-	AccountsHistory,
-	StorageHistory,
+	E2AccountsHistory,
+	E2StorageHistory,
 	Code,
 	ContractCode,
 	HeaderNumber,
@@ -779,3 +779,28 @@ func reinit() {
 		}
 	}
 }
+
+// Temporal
+
+const (
+	AccountsDomain Domain = "AccountsDomain"
+	StorageDomain  Domain = "StorageDomain"
+	CodeDomain     Domain = "CodeDomain"
+)
+
+const (
+	AccountsHistory History = "AccountsHistory"
+	StorageHistory  History = "StorageHistory"
+	CodeHistory     History = "CodeHistory"
+)
+
+const (
+	AccountsHistoryIdx InvertedIdx = "AccountsHistoryIdx"
+	StorageHistoryIdx  InvertedIdx = "StorageHistoryIdx"
+	CodeHistoryIdx     InvertedIdx = "CodeHistoryIdx"
+
+	LogTopicIdx   InvertedIdx = "LogTopicIdx"
+	LogAddrIdx    InvertedIdx = "LogAddrIdx"
+	TracesFromIdx InvertedIdx = "TracesFromIdx"
+	TracesToIdx   InvertedIdx = "TracesToIdx"
+)
