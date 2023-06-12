@@ -105,6 +105,7 @@ const (
 	LegacyTxType     byte = 0
 	AccessListTxType byte = 1
 	DynamicFeeTxType byte = 2
+	BlobTxType       byte = 3
 )
 
 var ErrParseTxn = fmt.Errorf("%w transaction", rlp.ErrParse)

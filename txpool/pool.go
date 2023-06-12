@@ -1472,18 +1472,22 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 							continue
 						}
 
-						// Empty rlp can happen if a transaction we want to broadcase has just been mined, for example
+						// Empty rlp can happen if a transaction we want to broadcast has just been mined, for example
 						slotsRlp = append(slotsRlp, slotRlp)
 						if p.IsLocal(hash) {
 							localTxTypes = append(localTxTypes, t)
 							localTxSizes = append(localTxSizes, size)
 							localTxHashes = append(localTxHashes, hash...)
-							localTxRlps = append(localTxRlps, slotRlp)
+							if t != types.BlobTxType { // "Nodes MUST NOT automatically broadcast blob transactions to their peers" - EIP-4844
+								localTxRlps = append(localTxRlps, slotRlp)
+							}
 						} else {
 							remoteTxTypes = append(remoteTxTypes, t)
 							remoteTxSizes = append(remoteTxSizes, size)
 							remoteTxHashes = append(remoteTxHashes, hash...)
-							remoteTxRlps = append(remoteTxRlps, slotRlp)
+							if t != types.BlobTxType { // "Nodes MUST NOT automatically broadcast blob transactions to their peers" - EIP-4844
+								remoteTxRlps = append(remoteTxRlps, slotRlp)
+							}
 						}
 					}
 					return nil
@@ -1492,6 +1496,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 					return
 				}
 				if newSlotsStreams != nil {
+					// TODO(yperbasis) What is this for? Is it OK to broadcast blob transactions?
 					newSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp}, p.logger)
 				}
 
