@@ -497,7 +497,7 @@ func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, se
 			return fmt.Errorf("%w: blob verification failed: %s", ErrParseTxn, err)
 		}
 	} else if err := tx.DeserializeTx(payload, 0, len(payload)); err != nil {
-		return fmt.Errorf("%w: deserializing signed blob tx ssz: %s", ErrParseTxn, err)
+		return fmt.Errorf("%w: deserializing signed blob tx ssz: %s", ErrParseTxn, err) //nolint
 	}
 	slot.Nonce = tx.nonce
 	slot.Tip = tx.maxPriorityFeePerGas
@@ -534,7 +534,7 @@ func (ctx *TxParseContext) ParseBlobTransaction(payload []byte, slot *TxSlot, se
 	ctx.Keccak2.Write(payload[tx.sigHashStart:tx.sigHashEnd])
 	ctx.Keccak2.(io.Reader).Read(ctx.Sighash[:32])
 	if err := ctx.RecoverSender(vByte, sender); err != nil {
-		return fmt.Errorf("%w: recovering sender from signature: %s", ErrParseTxn, err)
+		return fmt.Errorf("%w: recovering sender from signature: %s", ErrParseTxn, err) //nolint
 	}
 	return nil
 }

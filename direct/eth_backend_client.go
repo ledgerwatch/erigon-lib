@@ -58,10 +58,6 @@ func (s *EthBackendClientDirect) EngineGetPayload(ctx context.Context, in *remot
 	return s.server.EngineGetPayload(ctx, in)
 }
 
-func (s *EthBackendClientDirect) EngineGetPayloadWithBlobs(ctx context.Context, in *remote.EngineGetPayloadRequest, opts ...grpc.CallOption) (*remote.EngineGetPayloadResponse, error) {
-	return s.server.EngineGetPayloadWithBlobs(ctx, in)
-}
-
 func (s *EthBackendClientDirect) EngineGetPayloadBodiesByHashV1(ctx context.Context, in *remote.EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*remote.EngineGetPayloadBodiesV1Response, error) {
 	return s.server.EngineGetPayloadBodiesByHashV1(ctx, in)
 }

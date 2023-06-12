@@ -368,7 +368,7 @@ func (w *wrapper) VerifyBlobs(payload []byte) error {
 
 	kzgCtx := kzg.Ctx()
 	if err := kzgCtx.VerifyBlobKZGProofBatch(blobs, comms, proofs); err != nil {
-		return fmt.Errorf("error during proof verification: %v", err)
+		return fmt.Errorf("error during proof verification: %w", err)
 	}
 
 	for i := 0; i < l1; i++ {
