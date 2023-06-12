@@ -22,7 +22,11 @@ PROTOC_INCLUDE = build/include/google
 
 default: gen
 
-gen: grpc mocks
+gen: grpc $(GOBINREL)/moq $(GOBINREL)/enumer
+	rm -f gointerfaces/remote/mocks.go
+	rm -f gointerfaces/sentry/mocks.go
+
+	PATH="$(GOBIN):$(PATH)" go generate ./...
 
 $(GOBINREL):
 	mkdir -p "$(GOBIN)"
@@ -66,10 +70,8 @@ grpc: protoc-all
 $(GOBINREL)/moq: | $(GOBINREL)
 	$(GOBUILD) -o "$(GOBIN)/moq" github.com/matryer/moq
 
-mocks: $(GOBINREL)/moq
-	rm -f gointerfaces/remote/mocks.go
-	rm -f gointerfaces/sentry/mocks.go
-	PATH="$(GOBIN):$(PATH)" go generate ./...
+$(GOBINREL)/enumer: | $(GOBINREL)
+	$(GOBUILD) -o "$(GOBIN)/enumer" github.com/dmarkham/enumer
 
 lint: $(GOBINREL)/golangci-lint
 	@"$(GOBIN)/golangci-lint" run --config ./.golangci.yml

@@ -513,10 +513,12 @@ type RwCursorDupSort interface {
 
 // ---- Temporal part
 
+//go:generate enumer -type Domain,History,InvertedIdx --output temporal_enum_gen.go  -gqlgen -json -text -yaml
+
 type (
-	Domain      string
-	History     string
-	InvertedIdx string
+	Domain      int
+	History     int
+	InvertedIdx int
 )
 
 type TemporalTx interface {

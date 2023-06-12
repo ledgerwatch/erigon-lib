@@ -1293,13 +1293,13 @@ func (a *AggregatorV3) AddCodePrev(addr []byte, prev []byte) error {
 
 func (a *AggregatorV3) PutIdx(idx kv.InvertedIdx, key []byte) error {
 	switch idx {
-	case kv.TblTracesFromIdx:
+	case kv.TracesFromIdx:
 		return a.tracesFrom.Add(key)
-	case kv.TblTracesToIdx:
+	case kv.TracesToIdx:
 		return a.tracesTo.Add(key)
-	case kv.TblLogAddressIdx:
+	case kv.LogAddrIdx:
 		return a.logAddrs.Add(key)
-	case kv.LogTopicIndex:
+	case kv.LogTopicIdx:
 		return a.logTopics.Add(key)
 	default:
 		panic(idx)
