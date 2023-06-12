@@ -37,6 +37,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
+	"github.com/ledgerwatch/erigon-lib/kv/kvt"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/sync/errgroup"
@@ -1291,15 +1292,15 @@ func (a *AggregatorV3) AddCodePrev(addr []byte, prev []byte) error {
 	return a.code.AddPrevValue(addr, nil, prev)
 }
 
-func (a *AggregatorV3) PutIdx(idx kv.InvertedIdx, key []byte) error {
+func (a *AggregatorV3) PutIdx(idx kvt.InvertedIdx, key []byte) error {
 	switch idx {
-	case kv.TracesFromIdx:
+	case kvt.TracesFromIdx:
 		return a.tracesFrom.Add(key)
-	case kv.TracesToIdx:
+	case kvt.TracesToIdx:
 		return a.tracesTo.Add(key)
-	case kv.LogAddrIdx:
+	case kvt.LogAddrIdx:
 		return a.logAddrs.Add(key)
-	case kv.LogTopicIdx:
+	case kvt.LogTopicIdx:
 		return a.logTopics.Add(key)
 	default:
 		panic(idx)

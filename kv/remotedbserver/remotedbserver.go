@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ledgerwatch/erigon-lib/kv/kvt"
 	"github.com/ledgerwatch/log/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -509,24 +510,19 @@ func (s *StateChangePubSub) remove(id uint) {
 
 // Temporal methods
 func (s *KvServer) DomainGet(ctx context.Context, req *remote.DomainGetReq) (reply *remote.DomainGetReply, err error) {
-	domain, err := kv.DomainString(req.Table)
-	if err != nil {
-		return nil, err
-	}
-
 	reply = &remote.DomainGetReply{}
 	if err := s.with(req.TxId, func(tx kv.Tx) error {
-		ttx, ok := tx.(kv.TemporalTx)
+		ttx, ok := tx.(kvt.TemporalTx)
 		if !ok {
 			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 		}
 		if req.Latest {
-			reply.V, reply.Ok, err = ttx.DomainGet(domain, req.K, req.K2)
+			reply.V, reply.Ok, err = ttx.DomainGet(kvt.Domain(req.Table), req.K, req.K2)
 			if err != nil {
 				return err
 			}
 		} else {
-			reply.V, reply.Ok, err = ttx.DomainGetAsOf(domain, req.K, req.K2, req.Ts)
+			reply.V, reply.Ok, err = ttx.DomainGetAsOf(kvt.Domain(req.Table), req.K, req.K2, req.Ts)
 			if err != nil {
 				return err
 			}
@@ -538,18 +534,13 @@ func (s *KvServer) DomainGet(ctx context.Context, req *remote.DomainGetReq) (rep
 	return reply, nil
 }
 func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (reply *remote.HistoryGetReply, err error) {
-	historyName, err := kv.HistoryString(req.Table)
-	if err != nil {
-		return nil, err
-	}
-
 	reply = &remote.HistoryGetReply{}
 	if err := s.with(req.TxId, func(tx kv.Tx) error {
-		ttx, ok := tx.(kv.TemporalTx)
+		ttx, ok := tx.(kvt.TemporalTx)
 		if !ok {
 			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 		}
-		reply.V, reply.Ok, err = ttx.HistoryGet(historyName, req.K, req.Ts)
+		reply.V, reply.Ok, err = ttx.HistoryGet(kvt.History(req.Table), req.K, req.Ts)
 		if err != nil {
 			return err
 		}
@@ -563,10 +554,6 @@ func (s *KvServer) HistoryGet(ctx context.Context, req *remote.HistoryGetReq) (r
 const PageSizeLimit = 4 * 4096
 
 func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*remote.IndexRangeReply, error) {
-	idxName, err := kv.InvertedIdxString(req.Table)
-	if err != nil {
-		return nil, err
-	}
 	reply := &remote.IndexRangeReply{}
 	from, limit := int(req.FromTs), int(req.Limit)
 	if req.PageToken != "" {
@@ -581,11 +568,11 @@ func (s *KvServer) IndexRange(ctx context.Context, req *remote.IndexRangeReq) (*
 	}
 
 	if err := s.with(req.TxId, func(tx kv.Tx) error {
-		ttx, ok := tx.(kv.TemporalTx)
+		ttx, ok := tx.(kvt.TemporalTx)
 		if !ok {
 			return fmt.Errorf("server DB doesn't implement kv.Temporal interface")
 		}
-		it, err := ttx.IndexRange(idxName, req.K, from, int(req.ToTs), order.By(req.OrderAscend), limit)
+		it, err := ttx.IndexRange(kvt.InvertedIdx(req.Table), req.K, from, int(req.ToTs), order.By(req.OrderAscend), limit)
 		if err != nil {
 			return err
 		}

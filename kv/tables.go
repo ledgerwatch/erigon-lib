@@ -779,38 +779,3 @@ func reinit() {
 		}
 	}
 }
-
-// Temporal
-
-const (
-	AccountsDomain     Domain = 0
-	StorageDomain      Domain = 1
-	CodeDomain         Domain = 2
-	CommitmentDomain   Domain = 3
-	CodeSizeFakeDomain Domain = 4
-
-	DomainsAmount = 5
-)
-
-const (
-	AccountsHistory   History = 0
-	StorageHistory    History = 1
-	CodeHistory       History = 2
-	CommitmentHistory History = 3
-
-	HistoriesAmount = 4
-)
-
-const (
-	AccountsHistoryIdx   InvertedIdx = 0
-	StorageHistoryIdx    InvertedIdx = 1
-	CodeHistoryIdx       InvertedIdx = 2
-	CommitmentHistoryIdx InvertedIdx = 3
-
-	LogTopicIdx   InvertedIdx = 4
-	LogAddrIdx    InvertedIdx = 5
-	TracesFromIdx InvertedIdx = 6
-	TracesToIdx   InvertedIdx = 7
-
-	InvertedIndicesAmount = 8
-)

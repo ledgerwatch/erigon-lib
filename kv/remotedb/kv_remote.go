@@ -24,6 +24,7 @@ import (
 	"runtime"
 
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
+	"github.com/ledgerwatch/erigon-lib/kv/kvt"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/sync/semaphore"
@@ -46,7 +47,7 @@ type remoteOpts struct {
 	version     gointerfaces.Version
 }
 
-var _ kv.TemporalTx = (*tx)(nil)
+var _ kvt.TemporalTx = (*tx)(nil)
 
 type DB struct {
 	remoteKV     remote.KVClient
@@ -179,12 +180,12 @@ func (db *DB) BeginRo(ctx context.Context) (txn kv.Tx, err error) {
 	}
 	return &tx{ctx: ctx, db: db, stream: stream, streamCancelFn: streamCancelFn, viewID: msg.ViewId, id: msg.TxId}, nil
 }
-func (db *DB) BeginTemporalRo(ctx context.Context) (kv.TemporalTx, error) {
+func (db *DB) BeginTemporalRo(ctx context.Context) (kvt.TemporalTx, error) {
 	t, err := db.BeginRo(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return t.(kv.TemporalTx), nil
+	return t.(kvt.TemporalTx), nil
 }
 func (db *DB) BeginRw(ctx context.Context) (kv.RwTx, error) {
 	return nil, fmt.Errorf("remote db provider doesn't support .BeginRw method")
@@ -207,7 +208,7 @@ func (db *DB) View(ctx context.Context, f func(tx kv.Tx) error) (err error) {
 	defer tx.Rollback()
 	return f(tx)
 }
-func (db *DB) ViewTemporal(ctx context.Context, f func(tx kv.TemporalTx) error) (err error) {
+func (db *DB) ViewTemporal(ctx context.Context, f func(tx kvt.TemporalTx) error) (err error) {
 	tx, err := db.BeginTemporalRo(ctx)
 	if err != nil {
 		return err
@@ -644,23 +645,23 @@ func (c *remoteCursorDupSort) PrevNoDup() ([]byte, []byte, error) { return c.pre
 func (c *remoteCursorDupSort) LastDup() ([]byte, error)           { return c.lastDup() }
 
 // Temporal Methods
-func (tx *tx) DomainGetAsOf(name kv.Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error) {
-	reply, err := tx.db.remoteKV.DomainGet(tx.ctx, &remote.DomainGetReq{TxId: tx.id, Table: string(name), K: k, K2: k2, Ts: ts})
+func (tx *tx) DomainGetAsOf(name kvt.Domain, k, k2 []byte, ts uint64) (v []byte, ok bool, err error) {
+	reply, err := tx.db.remoteKV.DomainGet(tx.ctx, &remote.DomainGetReq{TxId: tx.id, Table: remote.Domain(name), K: k, K2: k2, Ts: ts})
 	if err != nil {
 		return nil, false, err
 	}
 	return reply.V, reply.Ok, nil
 }
 
-func (tx *tx) DomainGet(name kv.Domain, k, k2 []byte) (v []byte, ok bool, err error) {
-	reply, err := tx.db.remoteKV.DomainGet(tx.ctx, &remote.DomainGetReq{TxId: tx.id, Table: string(name), K: k, K2: k2, Latest: true})
+func (tx *tx) DomainGet(name kvt.Domain, k, k2 []byte) (v []byte, ok bool, err error) {
+	reply, err := tx.db.remoteKV.DomainGet(tx.ctx, &remote.DomainGetReq{TxId: tx.id, Table: remote.Domain(name), K: k, K2: k2, Latest: true})
 	if err != nil {
 		return nil, false, err
 	}
 	return reply.V, reply.Ok, nil
 }
 
-func (tx *tx) DomainRange(name kv.Domain, fromKey, toKey []byte, ts uint64, asc order.By, limit int) (it iter.KV, err error) {
+func (tx *tx) DomainRange(name kvt.Domain, fromKey, toKey []byte, ts uint64, asc order.By, limit int) (it iter.KV, err error) {
 	return iter.PaginateKV(func(pageToken string) (keys, vals [][]byte, nextPageToken string, err error) {
 		reply, err := tx.db.remoteKV.DomainRange(tx.ctx, &remote.DomainRangeReq{TxId: tx.id, Table: string(name), FromKey: fromKey, ToKey: toKey, Ts: ts, OrderAscend: bool(asc), Limit: int64(limit)})
 		if err != nil {
@@ -669,14 +670,14 @@ func (tx *tx) DomainRange(name kv.Domain, fromKey, toKey []byte, ts uint64, asc 
 		return reply.Keys, reply.Values, reply.NextPageToken, nil
 	}), nil
 }
-func (tx *tx) HistoryGet(name kv.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
-	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxId: tx.id, Table: string(name), K: k, Ts: ts})
+func (tx *tx) HistoryGet(name kvt.History, k []byte, ts uint64) (v []byte, ok bool, err error) {
+	reply, err := tx.db.remoteKV.HistoryGet(tx.ctx, &remote.HistoryGetReq{TxId: tx.id, Table: remote.History(name), K: k, Ts: ts})
 	if err != nil {
 		return nil, false, err
 	}
 	return reply.V, reply.Ok, nil
 }
-func (tx *tx) HistoryRange(name kv.History, fromTs, toTs int, asc order.By, limit int) (it iter.KV, err error) {
+func (tx *tx) HistoryRange(name kvt.History, fromTs, toTs int, asc order.By, limit int) (it iter.KV, err error) {
 	return iter.PaginateKV(func(pageToken string) (keys, vals [][]byte, nextPageToken string, err error) {
 		reply, err := tx.db.remoteKV.HistoryRange(tx.ctx, &remote.HistoryRangeReq{TxId: tx.id, Table: string(name), FromTs: int64(fromTs), ToTs: int64(toTs), OrderAscend: bool(asc), Limit: int64(limit)})
 		if err != nil {
@@ -686,9 +687,9 @@ func (tx *tx) HistoryRange(name kv.History, fromTs, toTs int, asc order.By, limi
 	}), nil
 }
 
-func (tx *tx) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs int, asc order.By, limit int) (timestamps iter.U64, err error) {
+func (tx *tx) IndexRange(name kvt.InvertedIdx, k []byte, fromTs, toTs int, asc order.By, limit int) (timestamps iter.U64, err error) {
 	return iter.PaginateU64(func(pageToken string) (arr []uint64, nextPageToken string, err error) {
-		req := &remote.IndexRangeReq{TxId: tx.id, Table: string(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), OrderAscend: bool(asc), Limit: int64(limit)}
+		req := &remote.IndexRangeReq{TxId: tx.id, Table: remote.InvertedIdx(name), K: k, FromTs: int64(fromTs), ToTs: int64(toTs), OrderAscend: bool(asc), Limit: int64(limit)}
 		reply, err := tx.db.remoteKV.IndexRange(tx.ctx, req)
 		if err != nil {
 			return nil, "", err

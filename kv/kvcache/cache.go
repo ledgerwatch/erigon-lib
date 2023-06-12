@@ -293,9 +293,9 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 			case remote.Action_REMOVE:
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 				c.add(addr[:], nil, r, id)
-			case remote.Action_STORAGE:
+			case remote.Action_UPDATE_STORAGE:
 				//skip, will check later
-			case remote.Action_CODE:
+			case remote.Action_UPDATE_CODE:
 				c.hasher.Reset()
 				c.hasher.Write(sc.Changes[i].Code)
 				k := make([]byte, 32)
