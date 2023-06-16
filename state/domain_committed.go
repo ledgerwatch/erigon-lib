@@ -410,7 +410,7 @@ func (d *DomainCommitted) storeCommitmentState(blockNum uint64, rh []byte) error
 	mw := md5.New()
 	mw.Write(encoded)
 
-	fmt.Printf("commitment put %d rh %x vh %x\n", d.txNum, rh, mw.Sum(nil))
+	//fmt.Printf("commitment put %d rh %x vh %x\n", d.txNum, rh, mw.Sum(nil))
 	if err := d.Domain.PutWithPrev(keyCommitmentState, dbuf[:], encoded, d.prevState); err != nil {
 		return err
 	}
@@ -507,6 +507,7 @@ func (d *DomainCommitted) commitmentValTransform(files *SelectedStaticFiles, mer
 	transAccountPks := make([][]byte, 0, len(accountPlainKeys))
 	var apkBuf, spkBuf []byte
 	for _, accountPlainKey := range accountPlainKeys {
+		fmt.Printf("commit acc: %x\n", accountPlainKeys)
 		if len(accountPlainKey) == length.Addr {
 			// Non-optimised key originating from a database record
 			apkBuf = append(apkBuf[:0], accountPlainKey...)
@@ -754,7 +755,7 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 	//}
 
 	// data accessing functions should be set once before
-	d.patriciaTrie.SetTrace(trace)
+	//d.patriciaTrie.SetTrace(trace)
 
 	switch d.mode {
 	case CommitmentModeDirect:
