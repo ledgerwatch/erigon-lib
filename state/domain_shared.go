@@ -586,6 +586,14 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 	return nil
 }
 
+func (sd *SharedDomains) Clean() {
+	sd.account.Clear()
+	sd.code.Clear()
+	sd.storage.Clear()
+	sd.commitment.Clear()
+	sd.estSize.Store(0)
+}
+
 func (sd *SharedDomains) Close() {
 	sd.aggCtx.Close()
 	sd.account.Clear()
