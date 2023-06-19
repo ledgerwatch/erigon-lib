@@ -320,7 +320,7 @@ func (sd *SharedDomains) StorageFn(plainKey []byte, cell *commitment.Cell) error
 	if err != nil {
 		return err
 	}
-	fmt.Printf("storageFn[sd]: %x|%x - %x\n", addr, loc, enc)
+	//fmt.Printf("storageFn[sd]: %x|%x - %x\n", addr, loc, enc)
 	cell.StorageLen = len(enc)
 	copy(cell.Storage[:], enc)
 	cell.Delete = cell.StorageLen == 0
