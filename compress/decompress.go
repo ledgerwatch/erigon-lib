@@ -186,7 +186,9 @@ func NewDecompressor(compressedFilePath string) (d *Decompressor, err error) {
 	var patterns [][]byte
 	var i uint64
 	var patternMaxDepth uint64
+
 	defer func(t time.Time) { fmt.Printf("decompress.go:189: %s\n", time.Since(t)) }(time.Now())
+	defer d.EnableReadAhead().DisableReadAhead()
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
 		if d > 64 { // mainnet has maxDepth 31
@@ -222,7 +224,6 @@ func NewDecompressor(compressedFilePath string) (d *Decompressor, err error) {
 	dictSize = binary.BigEndian.Uint64(d.data[pos : pos+8])
 	data = d.data[pos+8 : pos+8+dictSize]
 	defer func(t time.Time) { fmt.Printf("decompress.go:226: %s,%s\n", time.Since(t), fName) }(time.Now())
-	//defer d.EnableReadAhead().DisableReadAhead()
 
 	var posDepths []uint64
 	var poss []uint64
