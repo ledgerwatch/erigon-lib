@@ -218,7 +218,7 @@ func NewDecompressor(compressedFilePath string) (d *Decompressor, err error) {
 	pos := 24 + dictSize
 	dictSize = binary.BigEndian.Uint64(d.data[pos : pos+8])
 	data = d.data[pos+8 : pos+8+dictSize]
-	defer func(t time.Time) { fmt.Printf("decompress.go:226: %s\n", time.Since(t)) }(time.Now())
+	defer func(t time.Time) { fmt.Printf("decompress.go:226: %s,%s\n", time.Since(t), fName) }(time.Now())
 	//defer d.EnableReadAhead().DisableReadAhead()
 
 	var posDepths []uint64
