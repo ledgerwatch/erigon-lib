@@ -1131,6 +1131,7 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 	if err != nil {
 		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
+	return nil
 
 	/*
 		   historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
@@ -1261,7 +1262,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		   		}
 		   	}
 	*/
-	return nil
 }
 
 func (h *History) pruneF(txFrom, txTo uint64, f func(txNum uint64, k, v []byte) error) error {
