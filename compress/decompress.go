@@ -170,6 +170,7 @@ func NewDecompressor(compressedFilePath string) (d *Decompressor, err error) {
 		return nil, fmt.Errorf("compressed file is too short: %d", d.size)
 	}
 	d.modTime = stat.ModTime()
+	defer func(t time.Time) { fmt.Printf("decompress.go:173: %s\n", time.Since(t)) }(time.Now())
 	if d.mmapHandle1, d.mmapHandle2, err = mmap.Mmap(d.f, int(d.size)); err != nil {
 		return nil, err
 	}
@@ -185,7 +186,7 @@ func NewDecompressor(compressedFilePath string) (d *Decompressor, err error) {
 	var patterns [][]byte
 	var i uint64
 	var patternMaxDepth uint64
-
+	defer func(t time.Time) { fmt.Printf("decompress.go:189: %s\n", time.Since(t)) }(time.Now())
 	for i < dictSize {
 		d, ns := binary.Uvarint(data[i:])
 		if d > 64 { // mainnet has maxDepth 31
@@ -202,6 +203,7 @@ func NewDecompressor(compressedFilePath string) (d *Decompressor, err error) {
 		//fmt.Printf("depth = %d, pattern = [%x]\n", d, data[i:i+l])
 		i += l
 	}
+	defer func(t time.Time) { fmt.Printf("decompress.go:206: %s\n", time.Since(t)) }(time.Now())
 
 	if dictSize > 0 {
 		var bitLen int
