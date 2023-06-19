@@ -659,9 +659,11 @@ func (a *AggregatorV3) HasNewFrozenFiles() bool {
 	return a.needSaveFilesListInDB.CompareAndSwap(true, false)
 }
 
-func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64) error {
+func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64, tx kv.RwTx) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
+	a.SetTx(tx)
+	defer a.SetTx(nil)
 	if err := a.accounts.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
 		return err
 	}
