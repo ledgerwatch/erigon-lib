@@ -272,7 +272,7 @@ func (sd *SharedDomains) BranchFn(pref []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("branchFn failed: %w", err)
 	}
-	fmt.Printf("branchFn[sd]: %x: %x\n", pref, v)
+	//fmt.Printf("branchFn[sd]: %x: %x\n", pref, v)
 	if len(v) == 0 {
 		return nil, nil
 	}
@@ -294,7 +294,7 @@ func (sd *SharedDomains) AccountFn(plainKey []byte, cell *commitment.Cell) error
 		if len(chash) > 0 {
 			copy(cell.CodeHash[:], chash)
 		}
-		fmt.Printf("accountFn[sd]: %x: n=%d b=%d ch=%x\n", plainKey, nonce, balance, chash)
+		//fmt.Printf("accountFn[sd]: %x: n=%d b=%d ch=%x\n", plainKey, nonce, balance, chash)
 	}
 
 	code, err := sd.LatestCode(plainKey)
@@ -302,7 +302,7 @@ func (sd *SharedDomains) AccountFn(plainKey []byte, cell *commitment.Cell) error
 		return fmt.Errorf("accountFn[sd]: failed to read latest code: %w", err)
 	}
 	if len(code) > 0 {
-		fmt.Printf("accountFn[sd]: code %x - %x\n", plainKey, code)
+		//fmt.Printf("accountFn[sd]: code %x - %x\n", plainKey, code)
 		sd.Commitment.updates.keccak.Reset()
 		sd.Commitment.updates.keccak.Write(code)
 		copy(cell.CodeHash[:], sd.Commitment.updates.keccak.Sum(nil))
