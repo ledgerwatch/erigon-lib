@@ -144,6 +144,7 @@ func SetDecompressionTableCondensity(fromBitSize int) {
 }
 
 func NewDecompressor(compressedFilePath string) (d *Decompressor, err error) {
+	defer func(t time.Time) { fmt.Printf("decompress.go:147: %s\n", time.Since(t)) }(time.Now())
 	_, fName := filepath.Split(compressedFilePath)
 	d = &Decompressor{
 		filePath: compressedFilePath,
