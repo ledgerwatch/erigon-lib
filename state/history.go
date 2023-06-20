@@ -585,11 +585,15 @@ func (h *History) newWriter(tmpdir string, buffered, discard bool) *historyWAL {
 	return w
 }
 
+func loadHistPrintFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	return next(k, k, v)
+}
+
 func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if h.discard || !h.buffered {
 		return nil
 	}
-	if err := h.historyVals.Load(tx, h.h.historyValsTable, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadHistPrintFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
 	h.close()
