@@ -1053,6 +1053,9 @@ func (a *AggregatorV3) Flush(ctx context.Context, tx kv.RwTx) error {
 			return err
 		}
 	}
+	if a.domains != nil {
+		a.domains.clear()
+	}
 	return nil
 }
 
