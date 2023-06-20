@@ -33,7 +33,6 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring/roaring64"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	btree2 "github.com/tidwall/btree"
 	"golang.org/x/sync/errgroup"
 
@@ -220,8 +219,6 @@ func (d *Domain) FinishWrites() {
 	}
 	if d.wal != nil {
 		d.wal.close()
-		fmt.Printf("FinishWrites: %s\n", dbg.Stack())
-
 		d.wal = nil
 	}
 	d.History.FinishWrites()
