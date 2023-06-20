@@ -1316,17 +1316,17 @@ func (d *Domain) pruneF(ctx context.Context, step, txFrom, txTo, limit uint64, f
 		if err != nil {
 			return err
 		}
-		fmt.Printf("recent %x txn '%x' v '%x' ? ", k, txNumHist, pv)
+		//fmt.Printf("recent %x txn '%x' v '%x' ? ", k, txNumHist, pv)
 		if len(pk) != 0 {
 			if txNumHist < txFrom && len(pv) == 0 {
 				// recent value installed at txNumHist is in domain, skip
-				fmt.Printf("skip\n")
+				//fmt.Printf("skip\n")
 				continue
 			}
 			//if _, ok := seen[string(k)]; ok {
 			//	continue
 			//}
-			fmt.Printf("restoring\n")
+			//fmt.Printf("restoring\n")
 			wal.addValue(k, v, pv)
 			seen[string(k)] = txNumHist
 			//continue
@@ -1344,7 +1344,7 @@ func (d *Domain) pruneF(ctx context.Context, step, txFrom, txTo, limit uint64, f
 				}
 			}
 			if kk != nil {
-				fmt.Printf("rm large value %x v %x\n", kk, vv)
+				//fmt.Printf("rm large value %x v %x\n", kk, vv)
 				if err = valsC.DeleteCurrent(); err != nil {
 					return err
 				}
@@ -1359,12 +1359,12 @@ func (d *Domain) pruneF(ctx context.Context, step, txFrom, txTo, limit uint64, f
 					return err
 				}
 			}
-			dups, err := valsCDup.CountDuplicates()
-			if err != nil {
-				return err
-			}
+			//dups, err := valsCDup.CountDuplicates()
+			//if err != nil {
+			//	return err
+			//}
 
-			fmt.Printf("rm %d dupes %x v %x\n", dups, seek, vv)
+			//fmt.Printf("rm %d dupes %x v %x\n", dups, seek, vv)
 			if err = valsCDup.DeleteCurrentDuplicates(); err != nil {
 				return err
 			}
