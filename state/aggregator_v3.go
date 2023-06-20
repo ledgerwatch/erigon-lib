@@ -939,19 +939,6 @@ func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64) error {
 	//}
 	//fmt.Printf("Unwind domains to block %d, txn %d wanted to %d\n", bn, txn, txUnwindTo)
 
-	a.accounts.MakeContext().IteratePrefix(a.rwTx, []byte{}, func(k, v []byte) {
-		n, b, _ := DecodeAccountBytes(v)
-		fmt.Printf("acc - %x - n=%d b=%d\n", k, n, b.Uint64())
-	})
-	a.code.MakeContext().IteratePrefix(a.rwTx, []byte{}, func(k, v []byte) {
-		fmt.Printf("cod - %x : %x\n", k, v)
-	})
-	a.storage.MakeContext().IteratePrefix(a.rwTx, []byte{}, func(k, v []byte) {
-		fmt.Printf("sto - %x : %x\n", k, v)
-	})
-	a.commitment.MakeContext().IteratePrefix(a.rwTx, []byte{}, func(k, v []byte) {
-		fmt.Printf("com - %x : %x\n", k, v)
-	})
 	return nil
 }
 

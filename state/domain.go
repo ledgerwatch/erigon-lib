@@ -1298,7 +1298,7 @@ func (d *Domain) pruneF(ctx context.Context, step, txFrom, txTo, limit uint64, f
 		defer valsCDup.Close()
 	}
 
-	fmt.Printf("prune %s from %d to %d step %d\n", d.filenameBase, txFrom, txTo, step)
+	//fmt.Printf("prune %s from %d to %d step %d\n", d.filenameBase, txFrom, txTo, step)
 	mc := d.MakeContext()
 	defer mc.Close()
 
