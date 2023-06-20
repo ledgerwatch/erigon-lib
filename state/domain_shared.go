@@ -159,16 +159,17 @@ func (sd *SharedDomains) Unwind(ctx context.Context, rwtx kv.RwTx, step uint64, 
 		return err
 	}
 
-	cmcx := sd.Commitment.MakeContext()
-	defer cmcx.Close()
+	//cmcx := sd.Commitment.MakeContext()
+	//defer cmcx.Close()
 
-	_, _, rv, err := cmcx.hc.GetRecent(keyCommitmentState, txUnwindTo, rwtx)
-	if err != nil {
-		return err
-	}
-	bn, txn, err := sd.Commitment.Restore(rv)
-	fmt.Printf("Unwind domains to block %d, txn %d wanted to %d\n", bn, txn, txUnwindTo)
-	return err
+	//_, _, rv, err := cmcx.hc.GetRecent(keyCommitmentState, txUnwindTo, rwtx)
+	//if err != nil {
+	//	return err
+	//}
+	//bn, txn, err := sd.Commitment.Restore(rv)
+	//fmt.Printf("Unwind domains to block %d, txn %d wanted to %d\n", bn, txn, txUnwindTo)
+	//return err
+	return nil
 }
 
 func (sd *SharedDomains) clear() {
