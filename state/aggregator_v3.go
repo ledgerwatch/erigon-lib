@@ -988,6 +988,11 @@ func (a *AggregatorV3) DiscardHistory() *AggregatorV3 {
 }
 
 // StartWrites - pattern: `defer agg.StartWrites().FinishWrites()`
+func (a *AggregatorV3) Check() {
+	if a.accounts.wal == nil {
+		panic(88)
+	}
+}
 func (a *AggregatorV3) StartWrites() *AggregatorV3 {
 	a.walLock.Lock()
 	defer a.walLock.Unlock()

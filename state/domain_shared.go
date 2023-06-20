@@ -426,6 +426,9 @@ func (sd *SharedDomains) UpdateCommitmentData(prefix []byte, data, prev []byte) 
 func (sd *SharedDomains) DeleteAccount(addr, prev []byte) error {
 	sd.Commitment.TouchPlainKey(addr, nil, sd.Commitment.TouchAccount)
 
+	if sd.Account.wal == nil {
+		panic("what")
+	}
 	sd.put(kv.AccountsDomain, addr, nil)
 	if err := sd.Account.DeleteWithPrev(addr, nil, prev); err != nil {
 		return err
