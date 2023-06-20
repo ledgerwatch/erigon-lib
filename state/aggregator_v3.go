@@ -992,6 +992,15 @@ func (a *AggregatorV3) Check() {
 	if a.accounts.wal == nil {
 		panic(88)
 	}
+	if a.accounts.InvertedIndex.wal == nil {
+		panic(89)
+	}
+	if a.storage.wal == nil {
+		panic(98)
+	}
+	if a.storage.InvertedIndex.wal == nil {
+		panic(99)
+	}
 }
 func (a *AggregatorV3) StartWrites() *AggregatorV3 {
 	a.walLock.Lock()
