@@ -557,19 +557,14 @@ func (h *domainWAL) size() uint64 {
 	return h.kvsize.Load()
 }
 
-func loadPrintFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
-	fmt.Printf("[flush] %x -> %x\n", k, v)
-	return next(k, k, v)
-}
-
 func (h *domainWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if h.discard || !h.buffered {
 		return nil
 	}
-	if err := h.keys.Load(tx, h.d.keysTable, loadPrintFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+	if err := h.keys.Load(tx, h.d.keysTable, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
-	if err := h.values.Load(tx, h.d.valsTable, loadPrintFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+	if err := h.values.Load(tx, h.d.valsTable, etl.IdentityLoadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
 	return nil
