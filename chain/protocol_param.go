@@ -16,4 +16,9 @@
 
 package chain
 
-const MaxBlobsPerBlock = 6
+const (
+	// EIP-4844: Shard Blob Transactions
+	DataGasPerBlob        uint64 = 0x20000
+	TargetDataGasPerBlock uint64 = 0x60000
+	MaxDataGasPerBlock    uint64 = 0xC0000
+)
