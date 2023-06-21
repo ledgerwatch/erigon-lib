@@ -602,8 +602,6 @@ func (h *domainWAL) addValue(key1, key2, value []byte) error {
 		kl -= 8
 	}
 
-	fmt.Printf("[wal] txn %d %x -> %x\n", h.d.txNum, fullkey, truncate(value, 80))
-
 	if h.largeValues {
 		if !h.buffered {
 			//fmt.Printf("put: %s, %x, %x\n", h.d.filenameBase, fullkey[:kl], fullkey[kl:])
