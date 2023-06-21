@@ -1417,7 +1417,7 @@ func (ac *AggregatorV3Context) mergeFiles(ctx context.Context, files SelectedSta
 
 	if r.storage.any() {
 		predicates.Add(1)
-		log.Info(fmt.Sprintf("[snapshots] merge storeage: %d-%d", r.accounts.historyStartTxNum/ac.a.aggregationStep, r.accounts.historyEndTxNum/ac.a.aggregationStep))
+		//log.Info(fmt.Sprintf("[snapshots] merge storeage: %d-%d", r.accounts.historyStartTxNum/ac.a.aggregationStep, r.accounts.historyEndTxNum/ac.a.aggregationStep))
 		g.Go(func() (err error) {
 			mf.storage, mf.storageIdx, mf.storageHist, err = ac.a.storage.mergeFiles(ctx, files.storage, files.storageIdx, files.storageHist, r.storage, workers, ac.a.ps)
 			predicates.Done()
@@ -1432,7 +1432,7 @@ func (ac *AggregatorV3Context) mergeFiles(ctx context.Context, files SelectedSta
 	}
 	if r.commitment.any() {
 		predicates.Wait()
-		log.Info(fmt.Sprintf("[snapshots] merge commitment: %d-%d", r.accounts.historyStartTxNum/ac.a.aggregationStep, r.accounts.historyEndTxNum/ac.a.aggregationStep))
+		//log.Info(fmt.Sprintf("[snapshots] merge commitment: %d-%d", r.accounts.historyStartTxNum/ac.a.aggregationStep, r.accounts.historyEndTxNum/ac.a.aggregationStep))
 		g.Go(func() (err error) {
 			var v4Files SelectedStaticFiles
 			var v4MergedF MergedFiles
