@@ -600,7 +600,7 @@ func (h *historyWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if h.discard || !h.buffered {
 		return nil
 	}
-	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadHistPrintFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
+	if err := h.historyVals.Load(tx, h.h.historyValsTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
 		return err
 	}
 	h.close()
@@ -1512,26 +1512,29 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	return val[8:], true, nil
 }
 
-func (hc *HistoryContext) GetRecent(key []byte, txNum uint64, roTx kv.Tx) (uint64, []byte, []byte, error) {
-	v, ok, err := hc.GetNoState(key, txNum)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	if ok {
-		return 0, key, v, nil
-	}
+// Iwant to know
+// - key, value, txNum when value was added
+// - is it last presence of key in history
+func (hc *HistoryContext) GetRecent(key []byte, txNum uint64, roTx kv.Tx) (uint64, bool, []byte, []byte, error) {
+	//v, ok, err := hc.GetNoState(key, txNum)
+	//if err != nil {
+	//	return 0, nil, nil, err
+	//}
+	//if ok {
+	//	return 0, key, v, nil
+	//}
 
 	// Value not found in history files, look in the recent history
 	if roTx == nil {
-		return 0, nil, nil, fmt.Errorf("roTx is nil")
+		return 0, false, nil, nil, fmt.Errorf("roTx is nil")
 	}
 	return hc.getRecentFromDB(key, txNum, roTx)
 }
 
-// keyNewTx -> value
-// if points to nil key then actual value stored in domain
-// if points to non-nil key then first 8 bytes of value stores txNum when value has been added
-func (hc *HistoryContext) getRecentFromDB(key []byte, beforeTxNum uint64, tx kv.Tx) (uint64, []byte, []byte, error) {
+// key[NewTxNum] -> value
+// - ask for exact value from beforeTxNum
+// - seek left and right neighbours. If right neighbour is not found, then it is the only value (of nil).
+func (hc *HistoryContext) getRecentFromDB(key []byte, beforeTxNum uint64, tx kv.Tx) (uint64, bool, []byte, []byte, error) {
 	proceedKV := func(kAndTxNum, val []byte) (uint64, []byte, []byte, bool) {
 		newTxn := binary.BigEndian.Uint64(kAndTxNum[len(kAndTxNum)-8:])
 		if newTxn < beforeTxNum {
@@ -1547,7 +1550,7 @@ func (hc *HistoryContext) getRecentFromDB(key []byte, beforeTxNum uint64, tx kv.
 	if hc.h.largeValues {
 		c, err := tx.Cursor(hc.h.historyValsTable)
 		if err != nil {
-			return 0, nil, nil, err
+			return 0, false, nil, nil, err
 		}
 		defer c.Close()
 		seek := make([]byte, len(key)+8)
@@ -1556,37 +1559,34 @@ func (hc *HistoryContext) getRecentFromDB(key []byte, beforeTxNum uint64, tx kv.
 
 		kAndTxNum, val, err := c.Seek(seek)
 		if err != nil {
-			return 0, nil, nil, err
+			return 0, false, nil, nil, err
 		}
 		if len(kAndTxNum) > 0 && bytes.Equal(kAndTxNum[:len(kAndTxNum)-8], key) && bytes.Equal(kAndTxNum[len(kAndTxNum)-8:], seek[len(key):]) {
 			// exact match
-			return beforeTxNum, kAndTxNum, val, nil
+			return beforeTxNum, true, kAndTxNum, val, nil
 		}
 
 		for kAndTxNum, val, err = c.Prev(); kAndTxNum != nil && bytes.Equal(kAndTxNum[:len(kAndTxNum)-8], key); kAndTxNum, val, err = c.Prev() {
 			txn, k, v, exit := proceedKV(kAndTxNum, val)
 			if exit {
-				return txn, k, v, nil
+				kk, vv, err := c.Next()
+				if err != nil {
+					return 0, false, nil, nil, err
+				}
+				isLatest := true
+				if kk != nil && bytes.Equal(kk[:len(kk)-8], key) {
+					v = vv
+					isLatest = false
+				}
+				fmt.Printf("checked neighbour %x -> %x\n", kk, vv)
+				return txn, isLatest, k, v, nil
 			}
-			//newTxn := binary.BigEndian.Uint64(kAndTxNum[len(kAndTxNum)-8:])
-			//if newTxn < beforeTxNum {
-			//	fmt.Printf("OLDL1 k %x val: %x\n", seek, val)
-			//	// val == []byte{} means key was created in this txNum and doesn't exists before.
-			//	return newTxn, kAndTxNum[:len(kAndTxNum)-8], val, nil
-			//}
-			//if len(val) != 0 && len(val) >= 8 {
-			//	oldTxn := binary.BigEndian.Uint64(val[:8])
-			//	if oldTxn < beforeTxNum {
-			//		fmt.Printf("OLDL2 k %x val: %x\n", seek, val)
-			//		return oldTxn, kAndTxNum[:len(kAndTxNum)-8], val, nil
-			//	}
-			//}
 		}
-		return 0, nil, nil, nil
+		return 0, false, nil, nil, nil
 	}
 	c, err := tx.CursorDupSort(hc.h.historyValsTable)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, false, nil, nil, err
 	}
 	defer c.Close()
 
@@ -1597,26 +1597,26 @@ func (hc *HistoryContext) getRecentFromDB(key []byte, beforeTxNum uint64, tx kv.
 
 	val, err := c.SeekBothRange(key, kAndTxNum[len(key):])
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, false, nil, nil, err
 	}
 	if val == nil {
-		return 0, nil, nil, nil
+		return 0, false, nil, nil, nil
 	}
 
 	txn, k, v, exit := proceedKV(kAndTxNum, val)
 	if exit {
-		return txn, k, v, nil
+		return txn, true, k, v, nil
 	}
 
 	for kAndTxNum, val, err = c.Prev(); kAndTxNum != nil && bytes.Equal(kAndTxNum[:len(kAndTxNum)-8], key); kAndTxNum, val, err = c.Prev() {
 		fmt.Printf("dup %x %x\n", kAndTxNum, val)
 		txn, k, v, exit = proceedKV(kAndTxNum, val)
 		if exit {
-			return txn, k, v, nil
+			return txn, false, k, v, nil
 		}
 	}
-	return 0, nil, nil, err
 	// `val == []byte{}` means key was created in this beforeTxNum and doesn't exists before.
+	return 0, false, nil, nil, err
 }
 
 func (hc *HistoryContext) WalkAsOf(startTxNum uint64, from, to []byte, roTx kv.Tx, limit int) (iter.KV, error) {
