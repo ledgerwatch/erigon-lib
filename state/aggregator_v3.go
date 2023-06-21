@@ -33,7 +33,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/background"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
-	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
@@ -656,29 +655,22 @@ func (a *AggregatorV3) integrateFiles(sf AggV3StaticFiles, txNumFrom, txNumTo ui
 	a.tracesTo.integrateFiles(sf.tracesTo, txNumFrom, txNumTo)
 }
 
-func (a *AggregatorV3) NeedSaveFilesListInDB() bool {
+func (a *AggregatorV3) HasNewFrozenFiles() bool {
 	return a.needSaveFilesListInDB.CompareAndSwap(true, false)
 }
 
-func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad etl.LoadFunc) error {
-	stateChanges := etl.NewCollector(a.logPrefix, a.tmpdir, etl.NewOldestEntryBuffer(etl.BufferOptimalSize), a.logger)
-	defer stateChanges.Close()
-	if err := a.accounts.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
-		return stateChanges.Collect(k, v)
-	}); err != nil {
-		return err
-	}
-	if err := a.storage.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
-		return stateChanges.Collect(k, v)
-	}); err != nil {
-		return err
-	}
-
-	if err := stateChanges.Load(a.rwTx, kv.PlainState, stateLoad, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
-		return err
-	}
+func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
+	if err := a.accounts.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
+		return err
+	}
+	if err := a.storage.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
+		return err
+	}
+	if err := a.code.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
+		return err
+	}
 	if err := a.logAddrs.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
 		return err
 	}
@@ -1347,30 +1339,25 @@ func (a *AggregatorV3) EnableMadvNormal() *AggregatorV3 {
 	return a
 }
 
-// -- range
-func (ac *AggregatorV3Context) LogAddrRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.logAddrs.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-
-func (ac *AggregatorV3Context) LogTopicRange(topic []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.logTopics.IdxRange(topic, startTxNum, endTxNum, asc, limit, tx)
-}
-
-func (ac *AggregatorV3Context) TraceFromRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.tracesFrom.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-
-func (ac *AggregatorV3Context) TraceToRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.tracesTo.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-func (ac *AggregatorV3Context) AccountHistoyIdxRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.accounts.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-func (ac *AggregatorV3Context) StorageHistoyIdxRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.storage.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-func (ac *AggregatorV3Context) CodeHistoyIdxRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.code.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
+func (ac *AggregatorV3Context) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs int, asc order.By, limit int, tx kv.Tx) (timestamps iter.U64, err error) {
+	switch name {
+	case kv.AccountsHistoryIdx:
+		return ac.accounts.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.StorageHistoryIdx:
+		return ac.storage.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.CodeHistoryIdx:
+		return ac.code.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.LogTopicIdx:
+		return ac.logTopics.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.LogAddrIdx:
+		return ac.logAddrs.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.TracesFromIdx:
+		return ac.tracesFrom.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.TracesToIdx:
+		return ac.tracesTo.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	default:
+		return nil, fmt.Errorf("unexpected history name: %s", name)
+	}
 }
 
 // -- range end
