@@ -1711,6 +1711,8 @@ func (a *AggregatorV3) UpdateStorage(addr, loc []byte, value, preVal []byte) err
 // ComputeCommitment evaluates commitment for processed state.
 // If `saveStateAfter`=true, then trie state will be saved to DB after commitment evaluation.
 func (a *AggregatorV3) ComputeCommitment(saveStateAfter, trace bool) (rootHash []byte, err error) {
+	defer func(t time.Time) { fmt.Printf("ComputeCommitment aggregator_v3.go:1714: %s\n", time.Since(t)) }(time.Now())
+
 	// if commitment mode is Disabled, there will be nothing to compute on.
 	// TODO: create new SharedDomain with new aggregator Context to compute commitment on most recent committed state.
 	//       for now we use only one sharedDomain -> no major difference among contexts.
