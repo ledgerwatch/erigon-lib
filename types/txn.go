@@ -103,9 +103,9 @@ type TxSlot struct {
 
 const (
 	LegacyTxType     byte = 0
-	AccessListTxType byte = 1
-	DynamicFeeTxType byte = 2
-	BlobTxType       byte = 3
+	AccessListTxType byte = 1 // EIP-2930
+	DynamicFeeTxType byte = 2 // EIP-1559
+	BlobTxType       byte = 3 // EIP-4844
 )
 
 var ErrParseTxn = fmt.Errorf("%w transaction", rlp.ErrParse)

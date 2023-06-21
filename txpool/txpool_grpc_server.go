@@ -188,7 +188,7 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
 
 	j := 0
-	for i := 0; i < len(in.RlpTxs); i++ { // some incoming txs may be rejected, so - need secnod index
+	for i := 0; i < len(in.RlpTxs); i++ { // some incoming txs may be rejected, so - need second index
 		slots.Resize(uint(j + 1))
 		slots.Txs[j] = &types.TxSlot{}
 		slots.IsLocal[j] = true
