@@ -1484,6 +1484,8 @@ func (hc *HistoryContext) GetNoStateWithRecent(key []byte, txNum uint64, roTx kv
 }
 
 func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) ([]byte, bool, error) {
+	fmt.Printf("getNoStateFromDB: %x,%d\n", key, txNum)
+
 	if hc.h.largeValues {
 		c, err := tx.Cursor(hc.h.historyValsTable)
 		if err != nil {
@@ -1498,9 +1500,11 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 			return nil, false, err
 		}
 		if kAndTxNum == nil || !bytes.Equal(kAndTxNum[:len(kAndTxNum)-8], key) {
+			fmt.Printf("getNoStateFromDB1\n\n")
 			return nil, false, nil
 		}
 		// val == []byte{},m eans key was created in this txNum and doesn't exists before.
+		fmt.Printf("getNoStateFromDB2: %x,%t\n", val, true)
 		return val, true, nil
 	}
 	c, err := tx.CursorDupSort(hc.h.historyValsTable)
@@ -1518,6 +1522,7 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	if val == nil {
 		return nil, false, nil
 	}
+	fmt.Printf("getNoStateFromDB4: %x,%t\n", val[8:], true)
 	// `val == []byte{}` means key was created in this txNum and doesn't exists before.
 	return val[8:], true, nil
 }
