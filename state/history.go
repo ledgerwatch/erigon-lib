@@ -1519,6 +1519,7 @@ func (hc *HistoryContext) getNoStateFromDB(key []byte, txNum uint64, tx kv.Tx) (
 	if err != nil {
 		return nil, false, err
 	}
+	fmt.Printf("getNoStateFromDB0: seekBothRange(%x, %x) -> %x, %x\n", key, seek[len(key):], val[:8], val[8:])
 	if val == nil {
 		return nil, false, nil
 	}
