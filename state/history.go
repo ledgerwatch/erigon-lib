@@ -624,6 +624,7 @@ func (h *historyWAL) addPrevValue(key1, key2, original []byte) error {
 		}
 		return nil
 	}
+	fmt.Printf("put2: %x, %x,%x\n", historyKey1, historyVal[:lk], historyVal[lk:])
 	if err := h.historyVals.Collect(historyKey1, historyVal); err != nil {
 		return err
 	}
