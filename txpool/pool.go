@@ -1419,7 +1419,7 @@ func MainLoop(ctx context.Context, db kv.RwDB, coreDB kv.RoDB, p *TxPool, newTxs
 					return
 				}
 				if newSlotsStreams != nil {
-					// TODO(yperbasis) What is this for? Is it OK to broadcast blob transactions?
+					// TODO(eip-4844) What is this for? Is it OK to broadcast blob transactions?
 					newSlotsStreams.Broadcast(&proto_txpool.OnAddReply{RplTxs: slotsRlp}, p.logger)
 				}
 
