@@ -549,9 +549,8 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		// Skip transactions that require more data gas than is available
 		if mt.Tx.BlobCount*chain.DataGasPerBlob > availableDataGas {
 			continue
-		} else {
-			availableDataGas -= mt.Tx.BlobCount * chain.DataGasPerBlob
 		}
+		availableDataGas -= mt.Tx.BlobCount * chain.DataGasPerBlob
 
 		// make sure we have enough gas in the caller to add this transaction.
 		// not an exact science using intrinsic gas but as close as we could hope for at
@@ -560,9 +559,8 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		if intrinsicGas > availableGas {
 			// we might find another TX with a low enough intrinsic gas to include so carry on
 			continue
-		} else {
-			availableGas -= intrinsicGas
 		}
+		availableGas -= intrinsicGas
 
 		txs.Txs[count] = rlpTx
 		copy(txs.Senders.At(count), sender.Bytes())
