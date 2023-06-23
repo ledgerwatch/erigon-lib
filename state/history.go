@@ -2211,7 +2211,6 @@ func (hi *HistoryChangesIterDB) advance() error {
 			copy(seek[:len(k)-8], k[:len(k)-8])
 			continue
 		}
-		fmt.Printf("next: %x, %x, %x\n", k[len(k)-8:], k[:len(k)-8], v)
 		hi.nextKey = k[:len(k)-8]
 		hi.nextVal = v
 		return nil
