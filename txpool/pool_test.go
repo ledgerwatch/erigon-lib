@@ -124,7 +124,7 @@ func TestNonceFromAddress(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(uint64(6), nonce)
 	}
-	// test too expencive tx
+	// test too expensive tx
 	{
 		var txSlots types.TxSlots
 		txSlot1 := &types.TxSlot{
