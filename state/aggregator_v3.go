@@ -733,6 +733,7 @@ func (a *AggregatorV3) aggregate(ctx context.Context, step uint64) error {
 			}
 			log.Warn("[snapshots] merge", "err", err)
 		}
+		fmt.Printf("mergeDomainSteps finish\n")
 
 		a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
 	}()
