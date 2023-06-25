@@ -1531,11 +1531,6 @@ func (a *AggregatorV3) AggregateFilesInBackground() {
 		return
 	}
 
-	if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
-		return
-	}
-	defer a.mergeingFiles.Store(false)
-
 	if err := a.buildFilesInBackground(a.ctx, step); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
