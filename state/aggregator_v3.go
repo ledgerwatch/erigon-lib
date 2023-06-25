@@ -727,13 +727,15 @@ func (a *AggregatorV3) aggregate(ctx context.Context, step uint64) error {
 	go func() {
 		defer a.wg.Done()
 		defer a.mergeingFiles.Store(false)
-		if err := a.mergeDomainSteps(ctx, 1); err != nil {
+		fmt.Printf("merge started\n")
+		defer fmt.Printf("mergeDomainSteps finish\n")
+		if err := a.mergeDomainSteps(a.ctx, 1); err != nil {
 			if errors.Is(err, context.Canceled) {
+				fmt.Printf("mergeDomainSteps canceled\n")
 				return
 			}
 			log.Warn("[snapshots] merge", "err", err)
 		}
-		fmt.Printf("mergeDomainSteps finish\n")
 
 		a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
 	}()
