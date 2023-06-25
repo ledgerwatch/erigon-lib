@@ -720,6 +720,7 @@ func (a *AggregatorV3) aggregate(ctx context.Context, step uint64) error {
 		"took", time.Since(stepStartedAt))
 
 	if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
+		fmt.Printf("already 1 merge in progress\n")
 		return nil
 	}
 	a.wg.Add(1)
@@ -749,6 +750,7 @@ func (a *AggregatorV3) mergeDomainSteps(ctx context.Context, workers int) error 
 		if err != nil {
 			return err
 		}
+		fmt.Printf("somethingMerged: %t\n", somethingMerged)
 
 		if !somethingMerged {
 			break
