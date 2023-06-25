@@ -749,7 +749,6 @@ func (a *AggregatorV3) mergeDomainSteps(ctx context.Context, workers int) error 
 		if err != nil {
 			return err
 		}
-		fmt.Printf("somethingMerged: %t\n", somethingMerged)
 
 		if !somethingMerged {
 			break
