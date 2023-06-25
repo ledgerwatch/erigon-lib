@@ -720,18 +720,14 @@ func (a *AggregatorV3) aggregate(ctx context.Context, step uint64) error {
 		"took", time.Since(stepStartedAt))
 
 	if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
-		fmt.Printf("already 1 merge in progress\n")
 		return nil
 	}
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		defer a.mergeingFiles.Store(false)
-		fmt.Printf("merge started\n")
-		defer fmt.Printf("mergeDomainSteps finish\n")
 		if err := a.mergeDomainSteps(a.ctx, 1); err != nil {
 			if errors.Is(err, context.Canceled) {
-				fmt.Printf("mergeDomainSteps canceled\n")
 				return
 			}
 			log.Warn("[snapshots] merge", "err", err)
