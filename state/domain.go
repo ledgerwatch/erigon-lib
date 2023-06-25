@@ -863,9 +863,9 @@ func (d *Domain) collateStream(ctx context.Context, step, txFrom, txTo uint64, r
 	)
 
 	eg, _ := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		valCount, err = d.writeCollationPair(valuesComp, pairs)
-		return err
+	eg.Go(func() (errInternal error) {
+		valCount, errInternal = d.writeCollationPair(valuesComp, pairs)
+		return errInternal
 	})
 
 	var (
