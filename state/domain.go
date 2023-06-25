@@ -804,7 +804,6 @@ func (d *Domain) aggregate(ctx context.Context, step uint64, txFrom, txTo uint64
 	sf, err := d.buildFiles(ctx, step, collation, ps)
 	collation.Close()
 	defer sf.Close()
-
 	if err != nil {
 		sf.Close()
 		mxRunningMerges.Dec()
@@ -826,6 +825,9 @@ func (d *Domain) collateStream(ctx context.Context, step, txFrom, txTo uint64, r
 	defer func() {
 		d.stats.LastCollationTook = time.Since(started)
 	}()
+	mxRunningCollations.Inc()
+	defer mxRunningCollations.Dec()
+	defer mxCollateTook.UpdateDuration(started)
 
 	hCollation, err := d.History.collate(step, txFrom, txTo, roTx)
 	if err != nil {
@@ -1052,6 +1054,11 @@ func (sf StaticFiles) Close() {
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
 func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collation, ps *background.ProgressSet) (StaticFiles, error) {
+	start := time.Now()
+	defer func() {
+		d.stats.LastFileBuildingTook = time.Since(start)
+	}()
+
 	hStaticFiles, err := d.History.buildFiles(ctx, step, HistoryCollation{
 		historyPath:  collation.historyPath,
 		historyComp:  collation.historyComp,
@@ -1369,6 +1376,8 @@ func (d *Domain) unwind(ctx context.Context, step, txFrom, txTo, limit uint64, f
 
 // history prunes keys in range [txFrom; txTo), domain prunes whole step.
 func (d *Domain) prune(ctx context.Context, step, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
+	mxPruneTook.Update(d.stats.LastPruneTook.Seconds())
+
 	keysCursor, err := d.tx.RwCursorDupSort(d.keysTable)
 	if err != nil {
 		return fmt.Errorf("create %s domain cursor: %w", d.filenameBase, err)
@@ -1436,6 +1445,7 @@ func (d *Domain) prune(ctx context.Context, step, txFrom, txTo, limit uint64, lo
 	if err := d.History.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return fmt.Errorf("prune history at step %d [%d, %d): %w", step, txFrom, txTo, err)
 	}
+	mxPruneHistTook.Update(d.stats.LastPruneHistTook.Seconds())
 	return nil
 }
 
