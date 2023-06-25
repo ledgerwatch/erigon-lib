@@ -586,7 +586,7 @@ func (tx *MdbxTx) CollectMetrics() {
 	if tx.db.opts.label != kv.ChainDB {
 		return
 	}
-
+	defer func(t time.Time) { fmt.Printf("kv_mdbx.go:589: %s\n", time.Since(t)) }(time.Now())
 	info, err := tx.db.env.Info(tx.tx)
 	if err != nil {
 		return
@@ -608,7 +608,7 @@ func (tx *MdbxTx) CollectMetrics() {
 	kv.DbPgopsSpill.Set(info.PageOps.Spill)
 	kv.DbPgopsUnspill.Set(info.PageOps.Unspill)
 	kv.DbPgopsWops.Set(info.PageOps.Wops)
-
+	defer func(t time.Time) { fmt.Printf("kv_mdbx.go:611: %s\n", time.Since(t)) }(time.Now())
 	txInfo, err := tx.tx.Info(true)
 	if err != nil {
 		return
@@ -618,7 +618,7 @@ func (tx *MdbxTx) CollectMetrics() {
 	kv.TxLimit.Set(tx.db.txSize)
 	kv.TxSpill.Set(txInfo.Spill)
 	kv.TxUnspill.Set(txInfo.Unspill)
-
+	defer func(t time.Time) { fmt.Printf("kv_mdbx.go:621: %s\n", time.Since(t)) }(time.Now())
 	gc, err := tx.BucketStat("gc")
 	if err != nil {
 		return
