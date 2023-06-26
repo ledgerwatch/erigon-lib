@@ -251,7 +251,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// Only note if To field is empty or not
 	slot.Creation = dataLen == 0
 	p = dataPos + dataLen
-
 	// Next follows value
 	p, err = rlp.U256(payload, p, &slot.Value)
 	if err != nil {
