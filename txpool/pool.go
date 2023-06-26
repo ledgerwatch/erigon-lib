@@ -1,5 +1,5 @@
 /*
-   Copyright 2022 Erigon contributors
+   Copyright 2022 The Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -38,7 +39,6 @@ import (
 	"github.com/google/btree"
 	"github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon-lib/chain"
@@ -55,6 +55,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
+	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
 	"github.com/ledgerwatch/erigon-lib/types"
 )
 
@@ -213,12 +214,14 @@ type TxPool struct {
 	started                 atomic.Bool
 	pendingBaseFee          atomic.Uint64
 	blockGasLimit           atomic.Uint64
-	shanghaiTime            *big.Int
+	shanghaiTime            *uint64
 	isPostShanghai          atomic.Bool
+	cancunTime              *uint64
+	isPostCancun            atomic.Bool
 	logger                  log.Logger
 }
 
-func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, cache kvcache.Cache, chainID uint256.Int, shanghaiTime *big.Int, logger log.Logger) (*TxPool, error) {
+func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, cache kvcache.Cache, chainID uint256.Int, shanghaiTime, cancunTime *big.Int, logger log.Logger) (*TxPool, error) {
 	var err error
 	localsHistory, err := simplelru.NewLRU[string, struct{}](10_000, nil)
 	if err != nil {
@@ -238,7 +241,8 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 	for _, sender := range cfg.TracedSenders {
 		tracedSenders[common.BytesToAddress([]byte(sender))] = struct{}{}
 	}
-	return &TxPool{
+
+	res := &TxPool{
 		lock:                    &sync.Mutex{},
 		byHash:                  map[string]*metaTx{},
 		isLocalLRU:              localsHistory,
@@ -256,9 +260,25 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 		chainID:                 chainID,
 		unprocessedRemoteTxs:    &types.TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
-		shanghaiTime:            shanghaiTime,
 		logger:                  logger,
-	}, nil
+	}
+
+	if shanghaiTime != nil {
+		if !shanghaiTime.IsUint64() {
+			return nil, errors.New("shanghaiTime overflow")
+		}
+		shanghaiTimeU64 := shanghaiTime.Uint64()
+		res.shanghaiTime = &shanghaiTimeU64
+	}
+	if cancunTime != nil {
+		if !cancunTime.IsUint64() {
+			return nil, errors.New("cancunTime overflow")
+		}
+		cancunTimeU64 := cancunTime.Uint64()
+		res.cancunTime = &cancunTimeU64
+	}
+
+	return res, nil
 }
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs types.TxSlots, tx kv.Tx) error {
@@ -623,7 +643,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 			return txpoolcfg.InitCodeTooLarge
 		}
 	}
-	isCancun := false
+	isCancun := p.isCancun()
 	if txn.Type == types.BlobTxType {
 		if !isCancun {
 			return txpoolcfg.TypeNotActivated
@@ -726,20 +746,45 @@ func (p *TxPool) isShanghai() bool {
 	if p.shanghaiTime == nil {
 		return false
 	}
-	shanghaiTime := p.shanghaiTime.Uint64()
+	shanghaiTime := *p.shanghaiTime
 
-	// a zero here means shanghai is always active
+	// a zero here means Shanghai is always active
 	if shanghaiTime == 0 {
 		p.isPostShanghai.Swap(true)
 		return true
 	}
 
-	now := big.NewInt(time.Now().Unix())
-	is := now.Uint64() >= shanghaiTime
-	if is {
+	now := time.Now().Unix()
+	activated := uint64(now) >= shanghaiTime
+	if activated {
 		p.isPostShanghai.Swap(true)
 	}
-	return is
+	return activated
+}
+
+func (p *TxPool) isCancun() bool {
+	// once this flag has been set for the first time we no longer need to check the timestamp
+	set := p.isPostCancun.Load()
+	if set {
+		return true
+	}
+	if p.cancunTime == nil {
+		return false
+	}
+	cancunTime := *p.cancunTime
+
+	// a zero here means Cancun is always active
+	if cancunTime == 0 {
+		p.isPostCancun.Swap(true)
+		return true
+	}
+
+	now := time.Now().Unix()
+	activated := uint64(now) >= cancunTime
+	if activated {
+		p.isPostCancun.Swap(true)
+	}
+	return activated
 }
 
 func (p *TxPool) ValidateSerializedTxn(serializedTxn []byte) error {
