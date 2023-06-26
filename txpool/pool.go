@@ -663,9 +663,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 		return txpoolcfg.NonceTooLow
 	}
 	// Transactor should have enough funds to cover the costs
-	total := uint256.NewInt(txn.Gas)
-	total.Mul(total, &txn.FeeCap)
-	total.Add(total, &txn.Value)
+	total := requiredBalance(txn)
 	if senderBalance.Cmp(total) < 0 {
 		if txn.Traced {
 			p.logger.Info(fmt.Sprintf("TX TRACING: validateTx insufficient funds idHash=%x balance in state=%d, txn.gas*txn.tip=%d", txn.IDHash, senderBalance, total))
@@ -673,6 +671,38 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 		return txpoolcfg.InsufficientFunds
 	}
 	return txpoolcfg.Success
+}
+
+var maxUint256 = new(uint256.Int).SetAllOne()
+
+// Sender should have enough balance for: gasLimit x feeCap + dataGas x dataFeeCap + transferred_value
+// See YP, Eq (61) in Section 6.2 "Execution"
+func requiredBalance(txn *types.TxSlot) *uint256.Int {
+	// See https://github.com/ethereum/EIPs/pull/3594
+	total := uint256.NewInt(txn.Gas)
+	_, overflow := total.MulOverflow(total, &txn.FeeCap)
+	if overflow {
+		return maxUint256
+	}
+	// and https://eips.ethereum.org/EIPS/eip-4844#gas-accounting
+	if txn.BlobCount != 0 {
+		maxDataGasCost := uint256.NewInt(chain.DataGasPerBlob)
+		maxDataGasCost.Mul(maxDataGasCost, uint256.NewInt(txn.BlobCount))
+		_, overflow = maxDataGasCost.MulOverflow(maxDataGasCost, &txn.DataFeeCap)
+		if overflow {
+			return maxUint256
+		}
+		_, overflow = total.AddOverflow(total, maxDataGasCost)
+		if overflow {
+			return maxUint256
+		}
+	}
+
+	_, overflow = total.AddOverflow(total, &txn.Value)
+	if overflow {
+		return maxUint256
+	}
+	return total
 }
 
 func (p *TxPool) isShanghai() bool {
@@ -999,6 +1029,9 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, bool) {
 	return p.pendingBaseFee.Load(), changed
 }
 
+// TODO(eip-4844) logic similar to base fee for data gasprice
+// DataFeeCap must be >= data gasprice
+
 func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoolcfg.DiscardReason {
 	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
 	found := p.all.get(mt.Tx.SenderID, mt.Tx.Nonce)
@@ -1170,10 +1203,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			mt.nonceDistance = mt.Tx.Nonce - senderNonce
 		}
 
-		// Sender has enough balance for: gasLimit x feeCap + transferred_value
-		needBalance := uint256.NewInt(mt.Tx.Gas)
-		needBalance.Mul(needBalance, &mt.Tx.FeeCap)
-		needBalance.Add(needBalance, &mt.Tx.Value)
+		needBalance := requiredBalance(mt.Tx)
 		// 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol
 		// parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means
 		// this transaction will never be included into this particular chain.
