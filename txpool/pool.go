@@ -643,9 +643,8 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 			return txpoolcfg.InitCodeTooLarge
 		}
 	}
-	isCancun := p.isCancun()
 	if txn.Type == types.BlobTxType {
-		if !isCancun {
+		if !p.isCancun() {
 			return txpoolcfg.TypeNotActivated
 		}
 		if txn.Creation {
