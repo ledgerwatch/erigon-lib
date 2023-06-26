@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand"
@@ -952,7 +951,7 @@ func TestDomainContext_IteratePrefix(t *testing.T) {
 		rnd.Read(key[2:])
 		rnd.Read(value)
 
-		values[hex.EncodeToString(key)] = common.Copy(value)
+		values[string(key)] = common.Copy(value)
 
 		err := d.PutWithPrev(key, nil, value, nil)
 		require.NoError(t, err)
@@ -965,7 +964,7 @@ func TestDomainContext_IteratePrefix(t *testing.T) {
 				return
 			}
 			counter++
-			v, ok := values[hex.EncodeToString(kx)]
+			v, ok := values[string(kx)]
 			require.True(t, ok)
 			require.Equal(t, v, vx)
 		})
@@ -983,7 +982,7 @@ func TestDomainContext_IteratePrefix(t *testing.T) {
 				return
 			}
 			counter++
-			v, ok := values[hex.EncodeToString(kx)]
+			v, ok := values[string(kx)]
 			require.True(t, ok)
 			require.Equal(t, v, vx)
 		}
