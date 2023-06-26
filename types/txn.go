@@ -161,6 +161,9 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
 	if !legacy {
 		slot.Type = payload[p]
+		if slot.Type > BlobTxType {
+			return 0, fmt.Errorf("%w: unknown transaction type: %d", ErrParseTxn, slot.Type)
+		}
 		if _, err = ctx.Keccak1.Write(payload[p : p+1]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err) //nolint
 		}
@@ -247,9 +250,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 	// Only note if To field is empty or not
 	slot.Creation = dataLen == 0
-	if slot.Creation && slot.Type == BlobTxType {
-		return 0, fmt.Errorf("%w: blob transactions cannot have the form of a create transaction", ErrParseTxn)
-	}
 	p = dataPos + dataLen
 
 	// Next follows value
@@ -339,9 +339,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			return 0, fmt.Errorf("%w: extraneous space in the blob versioned hashes", ErrParseTxn)
 		}
 		p = dataPos + dataLen
-		if slot.BlobCount == 0 {
-			return 0, fmt.Errorf("%w: there must be at least one blob", ErrParseTxn)
-		}
 	}
 	// This is where the data for Sighash ends
 	// Next follows V of the signature

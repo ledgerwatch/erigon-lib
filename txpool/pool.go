@@ -623,6 +623,18 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 			return txpoolcfg.InitCodeTooLarge
 		}
 	}
+	isCancun := false
+	if txn.Type == types.BlobTxType {
+		if !isCancun {
+			return txpoolcfg.TypeNotActivated
+		}
+		if txn.Creation {
+			return txpoolcfg.CreateBlobTxn
+		}
+		if txn.BlobCount == 0 {
+			return txpoolcfg.NoBlobs
+		}
+	}
 
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !isLocal && uint256.NewInt(p.cfg.MinFeeCap).Cmp(&txn.FeeCap) == 1 {
