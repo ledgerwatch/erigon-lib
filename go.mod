@@ -2,6 +2,8 @@ module github.com/ledgerwatch/erigon-lib
 
 go 1.19
 
+replace github.com/ledgerwatch/interfaces v0.0.0-20230602104541-cdc6e215fb3e => github.com/pcw109550/interfaces v0.0.0-20230626133253-4703f87f5461
+
 require (
 	github.com/ledgerwatch/interfaces v0.0.0-20230602104541-cdc6e215fb3e
 	github.com/ledgerwatch/log/v3 v3.8.0
