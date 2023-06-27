@@ -650,6 +650,10 @@ func (c HistoryCollation) Close() {
 }
 
 func (h *History) collate(step, txFrom, txTo uint64, roTx kv.Tx) (HistoryCollation, error) {
+	if h.filenameBase == "accounts" {
+		log.Warn("[dbg] collate", "step", step, "txFrom", txFrom, "txTo", txTo)
+	}
+
 	var historyComp *compress.Compressor
 	var err error
 	closeComp := true
@@ -787,6 +791,9 @@ func (h *History) reCalcRoFiles() {
 // buildFiles performs potentially resource intensive operations of creating
 // static files and their indices
 func (h *History) buildFiles(ctx context.Context, step uint64, collation HistoryCollation, ps *background.ProgressSet) (HistoryFiles, error) {
+	if h.filenameBase == "accounts" {
+		log.Warn("[dbg] buildFiles", "step", step)
+	}
 	historyComp := collation.historyComp
 	var historyDecomp, efHistoryDecomp *compress.Decompressor
 	var historyIdx, efHistoryIdx *recsplit.Index
@@ -1038,6 +1045,9 @@ func (h *History) isEmpty(tx kv.Tx) (bool, error) {
 }
 
 func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
+	if h.filenameBase == "accounts" {
+		log.Warn("[dbg] prune", "txFrom", txFrom, "txTo", txTo)
+	}
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
