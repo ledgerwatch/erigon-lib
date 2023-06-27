@@ -155,6 +155,15 @@ func (ds *DomainStats) Accumulate(other DomainStats) {
 // Domain is a part of the state (examples are Accounts, Storage, Code)
 // Domain should not have any go routines or locks
 type Domain struct {
+	/*
+	   not large:
+	    	keys: key -> ^step
+	    	vals: key -> ^step+value (DupSort)
+	   large:
+	    	keys: key -> ^step
+	   	    vals: key + ^step -> value
+	*/
+
 	*History
 	files *btree2.BTreeG[*filesItem] // thread-safe, but maybe need 1 RWLock for all trees in AggregatorV3
 	// roFiles derivative from field `file`, but without garbage (canDelete=true, overlaps, etc...)
@@ -533,6 +542,11 @@ func (h *domainWAL) close() {
 	if h.values != nil {
 		h.values.Close()
 	}
+}
+
+func loadPrintFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+	fmt.Printf("load: %x -> %x\n", k, v)
+	return next(k, k, v)
 }
 
 func (h *domainWAL) flush(ctx context.Context, tx kv.RwTx) error {
