@@ -1681,7 +1681,7 @@ func (dc *DomainContext) getBeforeTxNum(key []byte, fromTxNum uint64, roTx kv.Tx
 }
 
 func (dc *DomainContext) getLatest(key []byte, roTx kv.Tx) ([]byte, bool, error) {
-	dc.d.stats.TotalQueries.Add(1)
+	//dc.d.stats.TotalQueries.Add(1)
 
 	/*
 		keyCursor, err := roTx.CursorDupSort(dc.d.keysTable)
@@ -1699,6 +1699,7 @@ func (dc *DomainContext) getLatest(key []byte, roTx kv.Tx) ([]byte, bool, error)
 		return nil, false, err
 	}
 	if foundInvStep == nil {
+		return nil, false, nil //TODO: uncomment when fixed files
 		v, found, err := dc.getLatestFromFiles(key)
 		if err != nil {
 			return nil, false, err
@@ -1718,8 +1719,6 @@ func (dc *DomainContext) getLatest(key []byte, roTx kv.Tx) ([]byte, bool, error)
 }
 
 func (dc *DomainContext) GetLatest(key1, key2 []byte, roTx kv.Tx) ([]byte, bool, error) {
-	dc.d.stats.TotalQueries.Add(1)
-
 	if key2 == nil {
 		return dc.getLatest(key1, roTx)
 	}
