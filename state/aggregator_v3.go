@@ -474,7 +474,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.accounts, err = a.accounts.collateStream(ctx, step, txFrom, txTo, tx)
+		ac.accounts, err = a.accounts.collate(ctx, step, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -491,7 +491,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.storage, err = a.storage.collateStream(ctx, step, txFrom, txTo, tx)
+		ac.storage, err = a.storage.collate(ctx, step, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -507,7 +507,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//	defer wg.Done()
 	//	var err error
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.code, err = a.code.collateStream(ctx, step, txFrom, txTo, tx)
+		ac.code, err = a.code.collate(ctx, step, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -521,7 +521,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step, txFrom, txTo uint64
 	//}()
 
 	if err = a.db.View(ctx, func(tx kv.Tx) error {
-		ac.commitment, err = a.commitment.collateStream(ctx, step, txFrom, txTo, tx)
+		ac.commitment, err = a.commitment.collate(ctx, step, txFrom, txTo, tx)
 		return err
 	}); err != nil {
 		return sf, err
@@ -644,22 +644,28 @@ func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64) 
 
 	defer a.needSaveFilesListInDB.Store(true)
 	defer a.recalcMaxTxNum()
+	var static AggV3StaticFiles
+
+	roTx, err := a.db.BeginRo(ctx)
+	if err != nil {
+		return err
+	}
+	defer roTx.Rollback()
+	log.Warn("[dbg] collate", "step", step)
 
 	g, ctx := errgroup.WithContext(ctx)
 	for _, d := range []*Domain{a.accounts, a.storage, a.code, a.commitment.Domain} {
 		d := d
+		var collation Collation
+		var err error
+		collation, err = d.collate(ctx, step, txFrom, txTo, roTx)
+		if err != nil {
+			collation.Close() // TODO: it must be handled inside collateStream func - by defer
+			return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)
+		}
+		a.wg.Add(1)
 		g.Go(func() error {
-			var collation Collation
-			if err := a.db.View(ctx, func(roTx kv.Tx) (err error) {
-				collation, err = d.collateStream(ctx, step, txFrom, txTo, roTx)
-				if err != nil {
-					collation.Close() // TODO: it must be handled inside collateStream func - by defer
-					return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)
-				}
-				return nil
-			}); err != nil {
-				return fmt.Errorf("domain collation %q oops: %w", d.filenameBase, err)
-			}
+			defer a.wg.Done()
 			mxCollationSize.Set(uint64(collation.valuesComp.Count()))
 			mxCollationSizeHist.Set(uint64(collation.historyComp.Count()))
 
@@ -672,12 +678,19 @@ func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64) 
 				return err
 			}
 
-			//can use agg.integrateFiles ???
-			a.filesMutationLock.Lock()
-			defer a.filesMutationLock.Unlock()
-			defer a.needSaveFilesListInDB.Store(true)
-			defer a.recalcMaxTxNum()
-			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
+			switch kv.Domain(d.valsTable) {
+			case kv.TblAccountVals:
+				static.accounts = sf
+			case kv.TblStorageVals:
+				static.storage = sf
+			case kv.TblCodeVals:
+				static.code = sf
+			case kv.TblCommitmentVals:
+				static.commitment = sf
+			default:
+				panic("unknown domain " + d.valsTable)
+			}
+
 			return nil
 		})
 	}
@@ -685,29 +698,33 @@ func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64) 
 	// indices are built concurrently
 	for _, d := range []*InvertedIndex{a.logTopics, a.logAddrs, a.tracesFrom, a.tracesTo} {
 		d := d
+		var collation map[string]*roaring64.Bitmap
+		var err error
+		collation, err = d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, roTx)
+		if err != nil {
+			return fmt.Errorf("index collation %q has failed: %w", d.filenameBase, err)
+		}
+		a.wg.Add(1)
 		g.Go(func() error {
-			var collation map[string]*roaring64.Bitmap
-			if err := a.db.View(ctx, func(roTx kv.Tx) (err error) {
-				collation, err = d.collate(ctx, step*a.aggregationStep, (step+1)*a.aggregationStep, roTx)
-				if err != nil {
-					return fmt.Errorf("index collation %q has failed: %w", d.filenameBase, err)
-				}
-				return nil
-			}); err != nil {
-				return fmt.Errorf("domain collation %q oops: %w", d.filenameBase, err)
-			}
-
+			defer a.wg.Done()
 			sf, err := d.buildFiles(ctx, step, collation, a.ps)
 			if err != nil {
 				sf.Close()
 				return err
 			}
 
-			a.filesMutationLock.Lock()
-			defer a.filesMutationLock.Unlock()
-			defer a.needSaveFilesListInDB.Store(true)
-			defer a.recalcMaxTxNum()
-			d.integrateFiles(sf, step*a.aggregationStep, (step+1)*a.aggregationStep)
+			switch kv.Domain(d.indexKeysTable) {
+			case kv.TblLogTopicsKeys:
+				static.logTopics = sf
+			case kv.TblLogAddressKeys:
+				static.logAddrs = sf
+			case kv.TblTracesFromKeys:
+				static.tracesFrom = sf
+			case kv.TblTracesToKeys:
+				static.tracesTo = sf
+			default:
+				panic("unknown index " + d.indexKeysTable)
+			}
 			return nil
 		})
 	}
@@ -720,46 +737,8 @@ func (a *AggregatorV3) buildFilesInBackground(ctx context.Context, step uint64) 
 		"step", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(a.aggregationStep), float64(txTo)/float64(a.aggregationStep)),
 		"took", time.Since(stepStartedAt))
 
-	//if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
-	//	return nil
-	//}
-	//a.wg.Add(1)
-	//go func() {
-	//	defer a.wg.Done()
-	//	defer a.mergeingFiles.Store(false)
-	//	if err := a.mergeDomainSteps(a.ctx, 1); err != nil {
-	//		if errors.Is(err, context.Canceled) {
-	//			return
-	//		}
-	//		log.Warn("[snapshots] merge", "err", err)
-	//	}
-	//
-	//	a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
-	//}()
-
-	//mxStepTook.UpdateDuration(stepStartedAt)
-
-	return nil
-}
-
-func (a *AggregatorV3) mergeDomainSteps(ctx context.Context, workers int) error {
-	mergeStartedAt := time.Now()
-	var upmerges int
-	for {
-		somethingMerged, err := a.mergeLoopStep(ctx, workers)
-		if err != nil {
-			return err
-		}
-
-		if !somethingMerged {
-			break
-		}
-		upmerges++
-	}
-
-	if upmerges > 1 {
-		log.Info("[stat] aggregation merged", "merge_took", time.Since(mergeStartedAt), "merges_count", upmerges)
-	}
+	mxStepTook.UpdateDuration(stepStartedAt)
+	a.integrateFiles(static, txFrom, txTo)
 	return nil
 }
 
@@ -767,9 +746,6 @@ func (a *AggregatorV3) BuildFiles(toTxNum uint64) (err error) {
 	txn := a.txNum.Load() + 1
 	if txn <= a.minimaxTxNumInFiles.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
 		return nil
-	}
-	if _, err = a.ComputeCommitment(true, false); err != nil {
-		return err
 	}
 
 	finished := a.BuildFilesInBackground(toTxNum)
@@ -994,8 +970,6 @@ func (a *AggregatorV3) rotate() []flusher {
 	}
 }
 func (a *AggregatorV3) Flush(ctx context.Context, tx kv.RwTx) error {
-	a.domains.ClearRam()
-
 	flushers := a.rotate()
 	defer func(t time.Time) { log.Debug("[snapshots] history flush", "took", time.Since(t)) }(time.Now())
 	for _, f := range flushers {
@@ -1053,10 +1027,14 @@ func (a *AggregatorV3) Prune(ctx context.Context, limit uint64) error {
 	return a.prune(ctx, 0, to, limit)
 }
 
+// [from, to)
 func (a *AggregatorV3) prune(ctx context.Context, txFrom, txTo, limit uint64) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	step := txTo / a.aggregationStep
+	step := uint64(0)
+	if txTo > 0 {
+		step = (txTo - 1) / a.aggregationStep
+	}
 	if err := a.accounts.prune(ctx, step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
@@ -1479,67 +1457,35 @@ func (a *AggregatorV3) cleanAfterNewFreeze(in MergedFilesV3) {
 // we can set it to 0, because no re-org on this blocks are possible
 func (a *AggregatorV3) KeepInDB(v uint64) { a.keepInDB = v }
 
-func (a *AggregatorV3) AggregateFilesInBackground() {
-	if a.domains != nil {
-		a.txNum.Store(a.domains.txNum.Load())
-	}
-	if (a.txNum.Load() + 1) <= a.minimaxTxNumInFiles.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
-		return
-	}
-
-	step := a.minimaxTxNumInFiles.Load() / a.aggregationStep
-	if ok := a.buildingFiles.CompareAndSwap(false, true); !ok {
-		return
-	}
-	defer a.buildingFiles.Store(false)
-
-	if _, err := a.SharedDomains().Commit(true, false); err != nil {
-		log.Warn("ComputeCommitment before aggregation has failed", "err", err)
-		return
-	}
-
-	if err := a.buildFilesInBackground(a.ctx, step); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		log.Warn("buildFilesInBackground", "err", err)
-	}
-	if err := a.BuildMissedIndices(a.ctx, 1); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		log.Warn("BuildMissedIndices", "err", err)
-	}
-}
-
 // Returns channel which is closed when aggregation is done
 func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) chan struct{} {
 	fin := make(chan struct{})
 
 	if (txNum + 1) <= a.minimaxTxNumInFiles.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
+		log.Warn("[dbg] BuildFilesInBackground1")
 		return fin
 	}
 
-	if _, err := a.SharedDomains().Commit(true, false); err != nil {
-		log.Warn("ComputeCommitment before aggregation has failed", "err", err)
-		return fin
-	}
+	//if _, err := a.SharedDomains().Commit(true, false); err != nil {
+	//	log.Warn("ComputeCommitment before aggregation has failed", "err", err)
+	//	return fin
+	//}
 	if ok := a.buildingFiles.CompareAndSwap(false, true); !ok {
 		return fin
 	}
+	log.Warn("[dbg] BuildFilesInBackground2")
 
 	step := a.minimaxTxNumInFiles.Load() / a.aggregationStep
-	toTxNum := (step + 1) * a.aggregationStep
+	//toTxNum := (step + 1) * a.aggregationStep
 	hasData := false
-
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		defer a.buildingFiles.Store(false)
 
-		// check if db has enough data (maybe we didn't commit them yet)
-		lastInDB := lastIdInDB(a.db, a.accounts.indexKeysTable)
-		hasData = lastInDB >= toTxNum
+		// check if db has enough data (maybe we didn't commit them yet or all keys are unique so history is empty)
+		lastInDB := lastIdInDB(a.db, a.accounts.valsTable)
+		hasData = lastInDB >= step
 		if !hasData {
 			close(fin)
 			return
@@ -1549,7 +1495,7 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) chan struct{} {
 		// - to reduce amount of small merges
 		// - to remove old data from db as early as possible
 		// - during files build, may happen commit of new data. on each loop step getting latest id in db
-		for step < lastIdInDB(a.db, a.accounts.indexKeysTable)/a.aggregationStep {
+		for step <= lastIdInDB(a.db, a.accounts.valsTable) {
 			if err := a.buildFilesInBackground(a.ctx, step); err != nil {
 				if errors.Is(err, context.Canceled) {
 					close(fin)
@@ -1561,24 +1507,25 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) chan struct{} {
 			step++
 		}
 
-		if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
-			close(fin)
-			return
-		}
-		a.wg.Add(1)
-		go func() {
-			defer a.wg.Done()
-			defer a.mergeingFiles.Store(false)
-			defer func() { close(fin) }()
-			if err := a.MergeLoop(a.ctx, 1); err != nil {
-				if errors.Is(err, context.Canceled) {
-					return
-				}
-				log.Warn("[snapshots] merge", "err", err)
-			}
-
-			a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
-		}()
+		//TODO: disabling merge until sepolia/mainnet execution works
+		//if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
+		//	close(fin)
+		//	return
+		//}
+		//a.wg.Add(1)
+		//go func() {
+		//	defer a.wg.Done()
+		//	defer a.mergeingFiles.Store(false)
+		//	defer func() { close(fin) }()
+		//	if err := a.MergeLoop(a.ctx, 1); err != nil {
+		//		if errors.Is(err, context.Canceled) {
+		//			return
+		//		}
+		//		log.Warn("[snapshots] merge", "err", err)
+		//	}
+		//
+		//	a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
+		//}()
 	}()
 	return fin
 }
@@ -1910,35 +1857,37 @@ func (ac *AggregatorV3Context) DomainRangeLatest(tx kv.Tx, domain kv.Domain, fro
 func (ac *AggregatorV3Context) IterateAccounts(tx kv.Tx, pref []byte, fn func(key, value []byte)) error {
 	return ac.accounts.IteratePrefix(tx, pref, fn)
 }
-
-func (ac *AggregatorV3Context) DomainGet(tx kv.Tx, domain kv.Domain, k, k2 []byte) (v []byte, ok bool, err error) {
-	panic(1)
-	/*
-		switch domain {
-		case temporal.AccountsDomain:
-			return ac.accounts.GetLatest(k, k2, tx)
-		case temporal.StorageDomain:
-			return ac.storage.GetLatest(k, k2, tx)
-		case temporal.CodeDomain:
-			return ac.code.GetLatest(k, k2, tx)
-		case temporal.CommitmentDomain:
-			return ac.commitment.GetLatest(k, k2, tx)
-		default:
-			panic(fmt.Sprintf("unexpected: %s", domain))
-		}
-	*/
+func (ac *AggregatorV3Context) DomainGetAsOf(tx kv.Tx, name kv.Domain, key []byte, ts uint64) (v []byte, ok bool, err error) {
+	switch name {
+	case kv.AccountsDomain:
+		v, err := ac.accounts.GetBeforeTxNum(key, ts, tx)
+		return v, v != nil, err
+	case kv.StorageDomain:
+		v, err := ac.storage.GetBeforeTxNum(key, ts, tx)
+		return v, v != nil, err
+	case kv.CodeDomain:
+		v, err := ac.code.GetBeforeTxNum(key, ts, tx)
+		return v, v != nil, err
+	case kv.CommitmentDomain:
+		v, err := ac.commitment.GetBeforeTxNum(key, ts, tx)
+		return v, v != nil, err
+	default:
+		panic(fmt.Sprintf("unexpected: %s", name))
+	}
 }
-func (ac *AggregatorV3Context) AccountLatest(addr []byte, roTx kv.Tx) ([]byte, bool, error) {
-	return ac.accounts.GetLatest(addr, nil, roTx)
-}
-func (ac *AggregatorV3Context) StorageLatest(addr []byte, loc []byte, roTx kv.Tx) ([]byte, bool, error) {
-	return ac.storage.GetLatest(addr, loc, roTx)
-}
-func (ac *AggregatorV3Context) CodeLatest(addr []byte, roTx kv.Tx) ([]byte, bool, error) {
-	return ac.code.GetLatest(addr, nil, roTx)
-}
-func (ac *AggregatorV3Context) CommitmentLatest(addr []byte, roTx kv.Tx) ([]byte, bool, error) {
-	return ac.commitment.GetLatest(addr, nil, roTx)
+func (ac *AggregatorV3Context) GetLatest(domain kv.Domain, k, k2 []byte, tx kv.Tx) (v []byte, ok bool, err error) {
+	switch domain {
+	case kv.AccountsDomain:
+		return ac.accounts.GetLatest(k, k2, tx)
+	case kv.StorageDomain:
+		return ac.storage.GetLatest(k, k2, tx)
+	case kv.CodeDomain:
+		return ac.code.GetLatest(k, k2, tx)
+	case kv.CommitmentDomain:
+		return ac.commitment.GetLatest(k, k2, tx)
+	default:
+		panic(fmt.Sprintf("unexpected: %s", domain))
+	}
 }
 
 // --- Domain part END ---
@@ -1975,7 +1924,7 @@ func lastIdInDB(db kv.RoDB, table string) (lstInDb uint64) {
 	if err := db.View(context.Background(), func(tx kv.Tx) error {
 		lst, _ := kv.LastKey(tx, table)
 		if len(lst) > 0 {
-			lstInDb = binary.BigEndian.Uint64(lst)
+			lstInDb = ^binary.BigEndian.Uint64(lst[len(lst)-8:])
 		}
 		return nil
 	}); err != nil {

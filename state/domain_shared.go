@@ -144,12 +144,12 @@ func (sd *SharedDomains) SeekCommitment() (bn, txn uint64, err error) {
 		return 0, 0, err
 	}
 
-	//rv, _, err := cmcx.GetLatest(keyCommitmentState, nil, sd.roTx)
-	//if err != nil {
-	//	return 0, 0, err
-	//}
+	rv, _, err := cmcx.GetLatest(keyCommitmentState, nil, sd.roTx)
+	if err != nil {
+		return 0, 0, err
+	}
 
-	bn, txn, err = sd.Commitment.Restore(topValue)
+	bn, txn, err = sd.Commitment.Restore(rv)
 	fmt.Printf("restored domains to block %d, txn %d\n", bn, txn)
 	if txn != 0 {
 		sd.SetTxNum(txn)
@@ -162,11 +162,10 @@ func (sd *SharedDomains) ClearRam() {
 	defer sd.muMaps.Unlock()
 	sd.account = map[string][]byte{}
 	sd.code = map[string][]byte{}
-	sd.commitment.Clear()
-
+	sd.commitment = btree2.NewMap[string, []byte](128)
 	sd.Commitment.updates.List(true)
 	sd.Commitment.patriciaTrie.Reset()
-	sd.storage.Clear()
+	sd.storage = btree2.NewMap[string, []byte](128)
 	sd.estSize.Store(0)
 }
 
@@ -258,7 +257,7 @@ func (sd *SharedDomains) LatestCommitment(prefix []byte) ([]byte, error) {
 	if ok {
 		return v0, nil
 	}
-	v, _, err := sd.aggCtx.CommitmentLatest(prefix, sd.roTx)
+	v, _, err := sd.aggCtx.GetLatest(kv.CommitmentDomain, prefix, nil, sd.roTx)
 	if err != nil {
 		return nil, fmt.Errorf("commitment prefix %x read error: %w", prefix, err)
 	}
@@ -270,7 +269,7 @@ func (sd *SharedDomains) LatestCode(addr []byte) ([]byte, error) {
 	if ok {
 		return v0, nil
 	}
-	v, _, err := sd.aggCtx.CodeLatest(addr, sd.roTx)
+	v, _, err := sd.aggCtx.GetLatest(kv.CodeDomain, addr, nil, sd.roTx)
 	if err != nil {
 		return nil, fmt.Errorf("code %x read error: %w", addr, err)
 	}
@@ -282,7 +281,7 @@ func (sd *SharedDomains) LatestAccount(addr []byte) ([]byte, error) {
 	if ok {
 		return v0, nil
 	}
-	v, _, err := sd.aggCtx.AccountLatest(addr, sd.roTx)
+	v, _, err := sd.aggCtx.GetLatest(kv.AccountsDomain, addr, nil, sd.roTx)
 	if err != nil {
 		return nil, fmt.Errorf("account %x read error: %w", addr, err)
 	}
@@ -346,7 +345,7 @@ func (sd *SharedDomains) LatestStorage(addr, loc []byte) ([]byte, error) {
 	if ok {
 		return v0, nil
 	}
-	v, _, err := sd.aggCtx.StorageLatest(addr, loc, sd.roTx)
+	v, _, err := sd.aggCtx.GetLatest(kv.StorageDomain, addr, loc, sd.roTx)
 	if err != nil {
 		return nil, fmt.Errorf("storage %x|%x read error: %w", addr, loc, err)
 	}
@@ -458,14 +457,11 @@ func (sd *SharedDomains) DeleteAccount(addr, prev []byte) error {
 		if !bytes.HasPrefix(k, addr) {
 			return
 		}
-		sd.put(kv.StorageDomain, k, nil)
-		sd.Commitment.TouchPlainKey(k, nil, sd.Commitment.TouchStorage)
-		err = sd.Storage.DeleteWithPrev(k, nil, v)
-
 		tombs = append(tombs, pair{k, v})
 	})
 
 	for _, tomb := range tombs {
+		sd.put(kv.StorageDomain, tomb.k, nil)
 		sd.Commitment.TouchPlainKey(tomb.k, nil, sd.Commitment.TouchStorage)
 		err = sd.Storage.DeleteWithPrev(tomb.k, nil, tomb.v)
 	}
@@ -687,8 +683,4 @@ func (sd *SharedDomains) Close() {
 	sd.code = nil
 	sd.storage.Clear()
 	sd.commitment.Clear()
-	sd.Account.Close()
-	sd.Storage.Close()
-	sd.Code.Close()
-	sd.Commitment.Close()
 }

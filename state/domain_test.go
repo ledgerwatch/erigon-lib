@@ -93,45 +93,88 @@ func TestCollationBuild(t *testing.T) {
 	err = d.Put([]byte("key1"), nil, []byte("value1.2"))
 	require.NoError(t, err)
 
+	d.SetTxNum(d.aggregationStep + 2)
+	err = d.Put([]byte("key1"), nil, []byte("value1.3"))
+	require.NoError(t, err)
+
+	d.SetTxNum(d.aggregationStep + 3)
+	err = d.Put([]byte("key1"), nil, []byte("value1.4"))
+	require.NoError(t, err)
+
+	d.SetTxNum(2*d.aggregationStep + 2)
+	err = d.Put([]byte("key1"), nil, []byte("value1.5"))
+	require.NoError(t, err)
+
 	err = d.Rotate().Flush(ctx, tx)
 	require.NoError(t, err)
+	{
+		c, err := d.collate(ctx, 0, 0, 7, tx)
 
-	c, err := d.collate(ctx, 0, 0, 7, tx, logEvery)
+		require.NoError(t, err)
+		require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
+		require.Equal(t, 2, c.valuesCount)
+		require.True(t, strings.HasSuffix(c.historyPath, "base.0-1.v"))
+		require.Equal(t, 3, c.historyCount)
+		require.Equal(t, 2, len(c.indexBitmaps))
+		require.Equal(t, []uint64{3}, c.indexBitmaps["key2"].ToArray())
+		require.Equal(t, []uint64{2, 6}, c.indexBitmaps["key1"].ToArray())
 
-	require.NoError(t, err)
-	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
-	require.Equal(t, 2, c.valuesCount)
-	require.True(t, strings.HasSuffix(c.historyPath, "base.0-1.v"))
-	require.Equal(t, 3, c.historyCount)
-	require.Equal(t, 2, len(c.indexBitmaps))
-	require.Equal(t, []uint64{3}, c.indexBitmaps["key2"].ToArray())
-	require.Equal(t, []uint64{2, 6}, c.indexBitmaps["key1"].ToArray())
+		sf, err := d.buildFiles(ctx, 0, c, background.NewProgressSet())
+		require.NoError(t, err)
+		defer sf.Close()
+		c.Close()
 
-	sf, err := d.buildFiles(ctx, 0, c, background.NewProgressSet())
-	require.NoError(t, err)
-	defer sf.Close()
-	c.Close()
+		g := sf.valuesDecomp.MakeGetter()
+		g.Reset(0)
+		var words []string
+		for g.HasNext() {
+			w, _ := g.Next(nil)
+			words = append(words, string(w))
+		}
+		require.Equal(t, []string{"key1", "value1.2", "key2", "value2.1"}, words)
+		// Check index
+		require.Equal(t, 2, int(sf.valuesIdx.KeyCount()))
 
-	g := sf.valuesDecomp.MakeGetter()
-	g.Reset(0)
-	var words []string
-	for g.HasNext() {
-		w, _ := g.Next(nil)
-		words = append(words, string(w))
+		r := recsplit.NewIndexReader(sf.valuesIdx)
+		defer r.Close()
+		for i := 0; i < len(words); i += 2 {
+			offset := r.Lookup([]byte(words[i]))
+			g.Reset(offset)
+			w, _ := g.Next(nil)
+			require.Equal(t, words[i], string(w))
+			w, _ = g.Next(nil)
+			require.Equal(t, words[i+1], string(w))
+		}
 	}
-	require.Equal(t, []string{"key1", "value1.2", "key2", "value2.1"}, words)
-	// Check index
-	require.Equal(t, 2, int(sf.valuesIdx.KeyCount()))
+	{
+		c, err := d.collate(ctx, 1, 1*d.aggregationStep, 2*d.aggregationStep, tx)
+		require.NoError(t, err)
+		sf, err := d.buildFiles(ctx, 1, c, background.NewProgressSet())
+		require.NoError(t, err)
+		defer sf.Close()
+		c.Close()
 
-	r := recsplit.NewIndexReader(sf.valuesIdx)
-	defer r.Close()
-	for i := 0; i < len(words); i += 2 {
-		offset := r.Lookup([]byte(words[i]))
-		g.Reset(offset)
-		w, _ := g.Next(nil)
-		require.Equal(t, words[i], string(w))
-		w, _ = g.Next(nil)
-		require.Equal(t, words[i+1], string(w))
+		g := sf.valuesDecomp.MakeGetter()
+		g.Reset(0)
+		var words []string
+		for g.HasNext() {
+			w, _ := g.Next(nil)
+			words = append(words, string(w))
+		}
+		require.Equal(t, []string{"key1", "value1.4"}, words)
+		// Check index
+		require.Equal(t, 1, int(sf.valuesIdx.KeyCount()))
+
+		r := recsplit.NewIndexReader(sf.valuesIdx)
+		defer r.Close()
+		for i := 0; i < len(words); i += 2 {
+			offset := r.Lookup([]byte(words[i]))
+			g.Reset(offset)
+			w, _ := g.Next(nil)
+			require.Equal(t, words[i], string(w))
+			w, _ = g.Next(nil)
+			require.Equal(t, words[i+1], string(w))
+		}
 	}
 }
 
@@ -227,7 +270,7 @@ func TestAfterPrune(t *testing.T) {
 	err = d.Rotate().Flush(ctx, tx)
 	require.NoError(t, err)
 
-	c, err := d.collate(ctx, 0, 0, 16, tx, logEvery)
+	c, err := d.collate(ctx, 0, 0, 16, tx)
 	require.NoError(t, err)
 
 	sf, err := d.buildFiles(ctx, 0, c, background.NewProgressSet())
@@ -237,10 +280,12 @@ func TestAfterPrune(t *testing.T) {
 	var v []byte
 	dc := d.MakeContext()
 	defer dc.Close()
-	v, err = dc.Get([]byte("key1"), nil, tx)
+	v, found, err := dc.GetLatest([]byte("key1"), nil, tx)
+	require.Truef(t, found, "key1 not found")
 	require.NoError(t, err)
 	require.Equal(t, []byte("value1.3"), v)
-	v, err = dc.Get([]byte("key2"), nil, tx)
+	v, found, err = dc.GetLatest([]byte("key2"), nil, tx)
+	require.Truef(t, found, "key2 not found")
 	require.NoError(t, err)
 	require.Equal(t, []byte("value2.2"), v)
 
@@ -251,11 +296,14 @@ func TestAfterPrune(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, isEmpty)
 
-	v, err = dc.Get([]byte("key1"), nil, tx)
+	v, found, err = dc.GetLatest([]byte("key1"), nil, tx)
 	require.NoError(t, err)
+	require.Truef(t, found, "key1 not found")
 	require.Equal(t, []byte("value1.3"), v)
-	v, err = dc.Get([]byte("key2"), nil, tx)
+
+	v, found, err = dc.GetLatest([]byte("key2"), nil, tx)
 	require.NoError(t, err)
+	require.Truef(t, found, "key2 not found")
 	require.Equal(t, []byte("value2.2"), v)
 }
 
@@ -331,7 +379,8 @@ func checkHistory(t *testing.T, db kv.RwDB, d *Domain, txs uint64) {
 				require.Nil(val, label)
 			}
 			if txNum == txs {
-				val, err := dc.Get(k[:], nil, roTx)
+				val, found, err := dc.GetLatest(k[:], nil, roTx)
+				require.Truef(found, "txNum=%d, keyNum=%d", txNum, keyNum)
 				require.NoError(err)
 				require.EqualValues(v[:], val)
 			}
@@ -353,7 +402,7 @@ func TestHistory(t *testing.T) {
 	// Leave the last 2 aggregation steps un-collated
 	for step := uint64(0); step < txs/d.aggregationStep-1; step++ {
 		func() {
-			c, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, tx, logEvery)
+			c, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, tx)
 			require.NoError(t, err)
 			sf, err := d.buildFiles(ctx, step, c, background.NewProgressSet())
 			require.NoError(t, err)
@@ -416,7 +465,7 @@ func TestIterationMultistep(t *testing.T) {
 
 	for step := uint64(0); step <= 2; step++ {
 		func() {
-			c, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, tx, logEvery)
+			c, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, tx)
 			require.NoError(t, err)
 			sf, err := d.buildFiles(ctx, step, c, background.NewProgressSet())
 			require.NoError(t, err)
@@ -470,7 +519,7 @@ func collateAndMerge(t *testing.T, db kv.RwDB, tx kv.RwTx, d *Domain, txs uint64
 	d.SetTx(tx)
 	// Leave the last 2 aggregation steps un-collated
 	for step := uint64(0); step < txs/d.aggregationStep-1; step++ {
-		c, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, tx, logEvery)
+		c, err := d.collate(ctx, step, step*d.aggregationStep, (step+1)*d.aggregationStep, tx)
 		require.NoError(t, err)
 		sf, err := d.buildFiles(ctx, step, c, background.NewProgressSet())
 		require.NoError(t, err)
@@ -512,7 +561,7 @@ func collateAndMergeOnce(t *testing.T, d *Domain, step uint64) {
 	ctx := context.Background()
 	txFrom, txTo := (step)*d.aggregationStep, (step+1)*d.aggregationStep
 
-	c, err := d.collate(ctx, step, txFrom, txTo, d.tx, logEvery)
+	c, err := d.collate(ctx, step, txFrom, txTo, d.tx)
 	require.NoError(t, err)
 
 	sf, err := d.buildFiles(ctx, step, c, background.NewProgressSet())
@@ -588,7 +637,7 @@ func TestDelete(t *testing.T) {
 	defer dc.Close()
 	for txNum := uint64(0); txNum < 1000; txNum++ {
 		label := fmt.Sprintf("txNum=%d", txNum)
-		//val, ok, err := dc.GetBeforeTxNum([]byte("key1"), txNum+1, tx)
+		//val, ok, err := dc.GetLatestBeforeTxNum([]byte("key1"), txNum+1, tx)
 		//require.NoError(err)
 		//require.True(ok)
 		//if txNum%2 == 0 {
@@ -698,7 +747,8 @@ func TestDomain_Prune_AfterAllWrites(t *testing.T) {
 		label := fmt.Sprintf("txNum=%d, keyNum=%d\n", txCount, keyNum)
 		binary.BigEndian.PutUint64(k[:], keyNum)
 
-		storedV, err := dc.Get(k[:], nil, roTx)
+		storedV, found, err := dc.GetLatest(k[:], nil, roTx)
+		require.Truef(t, found, label)
 		require.NoError(t, err, label)
 		require.EqualValues(t, v[:], storedV, label)
 	}
@@ -794,8 +844,9 @@ func TestDomain_PruneOnWrite(t *testing.T) {
 		label := fmt.Sprintf("txNum=%d, keyNum=%d\n", txCount, keyNum)
 		binary.BigEndian.PutUint64(k[:], keyNum)
 
-		storedV, err := dc.Get(k[:], nil, tx)
-		require.NoError(t, err, label)
+		storedV, found, err := dc.GetLatest(k[:], nil, tx)
+		require.Truef(t, found, label)
+		require.NoErrorf(t, err, label)
 		require.EqualValues(t, v[:], storedV, label)
 	}
 }
@@ -883,7 +934,7 @@ func TestCollationBuildInMem(t *testing.T) {
 	err = d.Rotate().Flush(ctx, tx)
 	require.NoError(t, err)
 
-	c, err := d.collate(ctx, 0, 0, maxTx, tx, logEvery)
+	c, err := d.collate(ctx, 0, 0, maxTx, tx)
 
 	require.NoError(t, err)
 	require.True(t, strings.HasSuffix(c.valuesPath, "base.0-1.kv"))
