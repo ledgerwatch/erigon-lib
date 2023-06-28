@@ -20,20 +20,15 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Execution_InsertHeaders_FullMethodName                   = "/execution.Execution/InsertHeaders"
-	Execution_InsertBodies_FullMethodName                    = "/execution.Execution/InsertBodies"
-	Execution_ValidateChain_FullMethodName                   = "/execution.Execution/ValidateChain"
-	Execution_UpdateForkChoice_FullMethodName                = "/execution.Execution/UpdateForkChoice"
-	Execution_AssembleBlock_FullMethodName                   = "/execution.Execution/AssembleBlock"
-	Execution_GetHeader_FullMethodName                       = "/execution.Execution/GetHeader"
-	Execution_GetBody_FullMethodName                         = "/execution.Execution/GetBody"
-	Execution_IsCanonicalHash_FullMethodName                 = "/execution.Execution/IsCanonicalHash"
-	Execution_GetHeaderHashNumber_FullMethodName             = "/execution.Execution/GetHeaderHashNumber"
-	Execution_EngineNewPayload_FullMethodName                = "/execution.Execution/EngineNewPayload"
-	Execution_EngineForkChoiceUpdated_FullMethodName         = "/execution.Execution/EngineForkChoiceUpdated"
-	Execution_EngineGetPayload_FullMethodName                = "/execution.Execution/EngineGetPayload"
-	Execution_EngineGetPayloadBodiesByHashV1_FullMethodName  = "/execution.Execution/EngineGetPayloadBodiesByHashV1"
-	Execution_EngineGetPayloadBodiesByRangeV1_FullMethodName = "/execution.Execution/EngineGetPayloadBodiesByRangeV1"
+	Execution_InsertHeaders_FullMethodName       = "/execution.Execution/InsertHeaders"
+	Execution_InsertBodies_FullMethodName        = "/execution.Execution/InsertBodies"
+	Execution_ValidateChain_FullMethodName       = "/execution.Execution/ValidateChain"
+	Execution_UpdateForkChoice_FullMethodName    = "/execution.Execution/UpdateForkChoice"
+	Execution_AssembleBlock_FullMethodName       = "/execution.Execution/AssembleBlock"
+	Execution_GetHeader_FullMethodName           = "/execution.Execution/GetHeader"
+	Execution_GetBody_FullMethodName             = "/execution.Execution/GetBody"
+	Execution_IsCanonicalHash_FullMethodName     = "/execution.Execution/IsCanonicalHash"
+	Execution_GetHeaderHashNumber_FullMethodName = "/execution.Execution/GetHeaderHashNumber"
 )
 
 // ExecutionClient is the client API for Execution service.
@@ -52,14 +47,6 @@ type ExecutionClient interface {
 	GetBody(ctx context.Context, in *GetSegmentRequest, opts ...grpc.CallOption) (*GetBodyResponse, error)
 	IsCanonicalHash(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*IsCanonicalResponse, error)
 	GetHeaderHashNumber(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*GetHeaderHashNumberResponse, error)
-	// Validate and possibly execute the payload.
-	EngineNewPayload(ctx context.Context, in *types.ExecutionPayload, opts ...grpc.CallOption) (*EnginePayloadStatus, error)
-	// Update fork choice
-	EngineForkChoiceUpdated(ctx context.Context, in *EngineForkChoiceUpdatedRequest, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedResponse, error)
-	// Fetch the payload along with its blobs by ID.
-	EngineGetPayload(ctx context.Context, in *EngineGetPayloadRequest, opts ...grpc.CallOption) (*EngineGetPayloadResponse, error)
-	EngineGetPayloadBodiesByHashV1(ctx context.Context, in *EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error)
-	EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error)
 }
 
 type executionClient struct {
@@ -151,51 +138,6 @@ func (c *executionClient) GetHeaderHashNumber(ctx context.Context, in *types.H25
 	return out, nil
 }
 
-func (c *executionClient) EngineNewPayload(ctx context.Context, in *types.ExecutionPayload, opts ...grpc.CallOption) (*EnginePayloadStatus, error) {
-	out := new(EnginePayloadStatus)
-	err := c.cc.Invoke(ctx, Execution_EngineNewPayload_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *executionClient) EngineForkChoiceUpdated(ctx context.Context, in *EngineForkChoiceUpdatedRequest, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedResponse, error) {
-	out := new(EngineForkChoiceUpdatedResponse)
-	err := c.cc.Invoke(ctx, Execution_EngineForkChoiceUpdated_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *executionClient) EngineGetPayload(ctx context.Context, in *EngineGetPayloadRequest, opts ...grpc.CallOption) (*EngineGetPayloadResponse, error) {
-	out := new(EngineGetPayloadResponse)
-	err := c.cc.Invoke(ctx, Execution_EngineGetPayload_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *executionClient) EngineGetPayloadBodiesByHashV1(ctx context.Context, in *EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error) {
-	out := new(EngineGetPayloadBodiesV1Response)
-	err := c.cc.Invoke(ctx, Execution_EngineGetPayloadBodiesByHashV1_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *executionClient) EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error) {
-	out := new(EngineGetPayloadBodiesV1Response)
-	err := c.cc.Invoke(ctx, Execution_EngineGetPayloadBodiesByRangeV1_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ExecutionServer is the server API for Execution service.
 // All implementations must embed UnimplementedExecutionServer
 // for forward compatibility
@@ -212,14 +154,6 @@ type ExecutionServer interface {
 	GetBody(context.Context, *GetSegmentRequest) (*GetBodyResponse, error)
 	IsCanonicalHash(context.Context, *types.H256) (*IsCanonicalResponse, error)
 	GetHeaderHashNumber(context.Context, *types.H256) (*GetHeaderHashNumberResponse, error)
-	// Validate and possibly execute the payload.
-	EngineNewPayload(context.Context, *types.ExecutionPayload) (*EnginePayloadStatus, error)
-	// Update fork choice
-	EngineForkChoiceUpdated(context.Context, *EngineForkChoiceUpdatedRequest) (*EngineForkChoiceUpdatedResponse, error)
-	// Fetch the payload along with its blobs by ID.
-	EngineGetPayload(context.Context, *EngineGetPayloadRequest) (*EngineGetPayloadResponse, error)
-	EngineGetPayloadBodiesByHashV1(context.Context, *EngineGetPayloadBodiesByHashV1Request) (*EngineGetPayloadBodiesV1Response, error)
-	EngineGetPayloadBodiesByRangeV1(context.Context, *EngineGetPayloadBodiesByRangeV1Request) (*EngineGetPayloadBodiesV1Response, error)
 	mustEmbedUnimplementedExecutionServer()
 }
 
@@ -253,21 +187,6 @@ func (UnimplementedExecutionServer) IsCanonicalHash(context.Context, *types.H256
 }
 func (UnimplementedExecutionServer) GetHeaderHashNumber(context.Context, *types.H256) (*GetHeaderHashNumberResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetHeaderHashNumber not implemented")
-}
-func (UnimplementedExecutionServer) EngineNewPayload(context.Context, *types.ExecutionPayload) (*EnginePayloadStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineNewPayload not implemented")
-}
-func (UnimplementedExecutionServer) EngineForkChoiceUpdated(context.Context, *EngineForkChoiceUpdatedRequest) (*EngineForkChoiceUpdatedResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineForkChoiceUpdated not implemented")
-}
-func (UnimplementedExecutionServer) EngineGetPayload(context.Context, *EngineGetPayloadRequest) (*EngineGetPayloadResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayload not implemented")
-}
-func (UnimplementedExecutionServer) EngineGetPayloadBodiesByHashV1(context.Context, *EngineGetPayloadBodiesByHashV1Request) (*EngineGetPayloadBodiesV1Response, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayloadBodiesByHashV1 not implemented")
-}
-func (UnimplementedExecutionServer) EngineGetPayloadBodiesByRangeV1(context.Context, *EngineGetPayloadBodiesByRangeV1Request) (*EngineGetPayloadBodiesV1Response, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayloadBodiesByRangeV1 not implemented")
 }
 func (UnimplementedExecutionServer) mustEmbedUnimplementedExecutionServer() {}
 
@@ -444,96 +363,6 @@ func _Execution_GetHeaderHashNumber_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Execution_EngineNewPayload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(types.ExecutionPayload)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExecutionServer).EngineNewPayload(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Execution_EngineNewPayload_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).EngineNewPayload(ctx, req.(*types.ExecutionPayload))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Execution_EngineForkChoiceUpdated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineForkChoiceUpdatedRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExecutionServer).EngineForkChoiceUpdated(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Execution_EngineForkChoiceUpdated_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).EngineForkChoiceUpdated(ctx, req.(*EngineForkChoiceUpdatedRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Execution_EngineGetPayload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineGetPayloadRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExecutionServer).EngineGetPayload(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Execution_EngineGetPayload_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).EngineGetPayload(ctx, req.(*EngineGetPayloadRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Execution_EngineGetPayloadBodiesByHashV1_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineGetPayloadBodiesByHashV1Request)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExecutionServer).EngineGetPayloadBodiesByHashV1(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Execution_EngineGetPayloadBodiesByHashV1_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).EngineGetPayloadBodiesByHashV1(ctx, req.(*EngineGetPayloadBodiesByHashV1Request))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Execution_EngineGetPayloadBodiesByRangeV1_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineGetPayloadBodiesByRangeV1Request)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ExecutionServer).EngineGetPayloadBodiesByRangeV1(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Execution_EngineGetPayloadBodiesByRangeV1_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).EngineGetPayloadBodiesByRangeV1(ctx, req.(*EngineGetPayloadBodiesByRangeV1Request))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // Execution_ServiceDesc is the grpc.ServiceDesc for Execution service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -576,26 +405,6 @@ var Execution_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetHeaderHashNumber",
 			Handler:    _Execution_GetHeaderHashNumber_Handler,
-		},
-		{
-			MethodName: "EngineNewPayload",
-			Handler:    _Execution_EngineNewPayload_Handler,
-		},
-		{
-			MethodName: "EngineForkChoiceUpdated",
-			Handler:    _Execution_EngineForkChoiceUpdated_Handler,
-		},
-		{
-			MethodName: "EngineGetPayload",
-			Handler:    _Execution_EngineGetPayload_Handler,
-		},
-		{
-			MethodName: "EngineGetPayloadBodiesByHashV1",
-			Handler:    _Execution_EngineGetPayloadBodiesByHashV1_Handler,
-		},
-		{
-			MethodName: "EngineGetPayloadBodiesByRangeV1",
-			Handler:    _Execution_EngineGetPayloadBodiesByRangeV1_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
