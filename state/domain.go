@@ -1699,6 +1699,7 @@ func (dc *DomainContext) getLatest(key []byte, roTx kv.Tx) ([]byte, bool, error)
 		return nil, false, err
 	}
 	if foundInvStep == nil {
+		return nil, false, nil
 		v, found, err := dc.getLatestFromFiles(key)
 		if err != nil {
 			return nil, false, err
@@ -1720,6 +1721,9 @@ func (dc *DomainContext) getLatest(key []byte, roTx kv.Tx) ([]byte, bool, error)
 func (dc *DomainContext) GetLatest(key1, key2 []byte, roTx kv.Tx) ([]byte, bool, error) {
 	dc.d.stats.TotalQueries.Add(1)
 
+	if key2 == nil {
+		return dc.getLatest(key1, roTx)
+	}
 	copy(dc.keyBuf[:], key1)
 	copy(dc.keyBuf[len(key1):], key2)
 	return dc.getLatest(dc.keyBuf[:len(key1)+len(key2)], roTx)

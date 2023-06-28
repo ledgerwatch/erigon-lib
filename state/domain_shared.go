@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	btree2 "github.com/tidwall/btree"
 
@@ -230,9 +231,8 @@ func (sd *SharedDomains) Get(table kv.Domain, key []byte) (v []byte, ok bool) {
 }
 
 func (sd *SharedDomains) get(table kv.Domain, key []byte) (v []byte, ok bool) {
-	//keyS := *(*string)(unsafe.Pointer(&key))
-	keyS := string(key)
-	//keyS := hex.EncodeToString(key)
+	keyS := *(*string)(unsafe.Pointer(&key))
+	//keyS := string(key)
 	switch table {
 	case kv.AccountsDomain:
 		v, ok = sd.account[keyS]
@@ -340,14 +340,14 @@ func (sd *SharedDomains) ReadsValid(readLists map[string]*KvList) bool {
 	return true
 }
 
-func (sd *SharedDomains) LatestStorage(addr, loc []byte) ([]byte, error) {
-	v0, ok := sd.Get(kv.StorageDomain, common.Append(addr, loc))
+func (sd *SharedDomains) LatestStorage(key []byte) ([]byte, error) {
+	v0, ok := sd.Get(kv.StorageDomain, key)
 	if ok {
 		return v0, nil
 	}
-	v, _, err := sd.aggCtx.GetLatest(kv.StorageDomain, addr, loc, sd.roTx)
+	v, _, err := sd.aggCtx.GetLatest(kv.StorageDomain, key[:20], key[20:], sd.roTx)
 	if err != nil {
-		return nil, fmt.Errorf("storage %x|%x read error: %w", addr, loc, err)
+		return nil, fmt.Errorf("storage %x|%x read error: %w", key[:20], key[20:], err)
 	}
 	return v, nil
 }
@@ -400,8 +400,7 @@ func (sd *SharedDomains) AccountFn(plainKey []byte, cell *commitment.Cell) error
 
 func (sd *SharedDomains) StorageFn(plainKey []byte, cell *commitment.Cell) error {
 	// Look in the summary table first
-	addr, loc := splitKey(plainKey)
-	enc, err := sd.LatestStorage(addr, loc)
+	enc, err := sd.LatestStorage(plainKey)
 	if err != nil {
 		return err
 	}

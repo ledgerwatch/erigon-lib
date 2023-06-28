@@ -149,7 +149,7 @@ func (t *UpdateTree) getWithDomain(key []byte, domain *SharedDomains) (*commitme
 		}
 		return c, true
 	case length.Addr + length.Hash:
-		enc, err := domain.LatestStorage(key[:length.Addr], key[length.Addr:])
+		enc, err := domain.LatestStorage(key)
 		if err != nil {
 			return nil, false
 		}
