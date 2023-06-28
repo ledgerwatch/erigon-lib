@@ -91,16 +91,18 @@ type TxSlot struct {
 	Nonce          uint64      // Nonce of the transaction
 	DataLen        int         // Length of transaction's data (for calculation of intrinsic gas)
 	DataNonZeroLen int
-	AlAddrCount    int         // Number of addresses in the access list
-	AlStorCount    int         // Number of storage keys in the access list
-	BlobCount      uint64      // Number of blobs contained by the transaction
-	DataFeeCap     uint256.Int // max_fee_per_data_gas in EIP-4844
-	Gas            uint64      // Gas limit of the transaction
-	IDHash         [32]byte    // Transaction hash for the purposes of using it as a transaction Id
-	Traced         bool        // Whether transaction needs to be traced throughout transaction pool code and generate debug printing
-	Creation       bool        // Set to true if "To" field of the transaction is not set
-	Type           byte        // Transaction type
-	Size           uint32      // Size of the payload
+	AlAddrCount    int      // Number of addresses in the access list
+	AlStorCount    int      // Number of storage keys in the access list
+	Gas            uint64   // Gas limit of the transaction
+	IDHash         [32]byte // Transaction hash for the purposes of using it as a transaction Id
+	Traced         bool     // Whether transaction needs to be traced throughout transaction pool code and generate debug printing
+	Creation       bool     // Set to true if "To" field of the transaction is not set
+	Type           byte     // Transaction type
+	Size           uint32   // Size of the payload
+
+	// EIP-4844: Shard Blob Transactions
+	DataFeeCap uint256.Int // max_fee_per_data_gas
+	BlobHashes []common.Hash
 }
 
 const (
@@ -327,11 +329,12 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		}
 		hashPos := dataPos
 		for hashPos < dataPos+dataLen {
-			hashPos, err = rlp.StringOfLen(payload, hashPos, 32)
+			var hash common.Hash
+			hashPos, err = rlp.ParseHash(payload, hashPos, hash[:])
 			if err != nil {
 				return 0, fmt.Errorf("%w: blob hash: %s", ErrParseTxn, err) //nolint
 			}
-			slot.BlobCount++
+			slot.BlobHashes = append(slot.BlobHashes, hash)
 			hashPos += 32
 		}
 		if hashPos != dataPos+dataLen {

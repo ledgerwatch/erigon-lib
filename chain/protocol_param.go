@@ -21,4 +21,5 @@ const (
 	DataGasPerBlob        uint64 = 0x20000
 	TargetDataGasPerBlock uint64 = 0x60000
 	MaxDataGasPerBlock    uint64 = 0xC0000
+	MaxBlobsPerBlock      uint64 = MaxDataGasPerBlock / DataGasPerBlob
 )
