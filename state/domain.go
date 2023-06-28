@@ -1699,7 +1699,6 @@ func (dc *DomainContext) getLatest(key []byte, roTx kv.Tx) ([]byte, bool, error)
 		return nil, false, err
 	}
 	if foundInvStep == nil {
-		return nil, false, nil
 		v, found, err := dc.getLatestFromFiles(key)
 		if err != nil {
 			return nil, false, err
