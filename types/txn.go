@@ -31,6 +31,7 @@ import (
 	"github.com/ledgerwatch/secp256k1"
 	"golang.org/x/crypto/sha3"
 
+	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
@@ -104,7 +105,7 @@ type TxSlot struct {
 	// EIP-4844: Shard Blob Transactions
 	DataFeeCap  uint256.Int // max_fee_per_data_gas
 	BlobHashes  []common.Hash
-	Blobs       []uint256.Int
+	Blobs       [][]byte
 	Commitments []gokzg4844.KZGCommitment
 	Proofs      []gokzg4844.KZGProof
 }
@@ -160,6 +161,8 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 
 	p = dataPos
 
+	var wrapperDataPos, wrapperDataLen int
+
 	// If it is non-legacy transaction, the transaction type follows, and then the the list
 	if !legacy {
 		slot.Type = payload[p]
@@ -177,15 +180,99 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		// For legacy transaction, the entire payload in expected to be in "rlp" field
 		// whereas for non-legacy, only the content of the envelope (start with position p)
 		slot.Rlp = payload[p-1 : dataPos+dataLen]
+
+		if slot.Type == BlobTxType && wrappedWithBlobs {
+			wrapperDataPos = dataPos
+			wrapperDataLen = dataLen
+			dataPos, dataLen, err = rlp.List(payload, dataPos)
+			if err != nil {
+				return 0, fmt.Errorf("%w: wrapped blob tx: %s", ErrParseTxn, err) //nolint
+			}
+			p = dataPos
+		}
 	} else {
 		slot.Type = LegacyTxType
 		slot.Rlp = payload[pos : dataPos+dataLen]
 	}
 
-	return ctx.parseTransactionPayload(payload, pos, p, slot, sender, validateHash)
+	p, err = ctx.parseTransactionBody(payload, pos, p, slot, sender, validateHash)
+	if err != nil {
+		return p, err
+	}
+
+	if slot.Type == BlobTxType && wrappedWithBlobs {
+		if p != dataPos+dataLen {
+			return 0, fmt.Errorf("%w: unexpected leftover after blob tx body", ErrParseTxn)
+		}
+
+		dataPos, dataLen, err = rlp.List(payload, p)
+		if err != nil {
+			return 0, fmt.Errorf("%w: blobs len: %s", ErrParseTxn, err) //nolint
+		}
+		blobPos := dataPos
+		for blobPos < dataPos+dataLen {
+			blobPos, err = rlp.StringOfLen(payload, blobPos, chain.BlobSize)
+			if err != nil {
+				return 0, fmt.Errorf("%w: blob: %s", ErrParseTxn, err) //nolint
+			}
+			slot.Blobs = append(slot.Blobs, payload[blobPos:blobPos+chain.BlobSize])
+			blobPos += chain.BlobSize
+		}
+		if blobPos != dataPos+dataLen {
+			return 0, fmt.Errorf("%w: extraneous space in blobs", ErrParseTxn)
+		}
+		p = blobPos
+
+		dataPos, dataLen, err = rlp.List(payload, p)
+		if err != nil {
+			return 0, fmt.Errorf("%w: commitments len: %s", ErrParseTxn, err) //nolint
+		}
+		commitmentPos := dataPos
+		for commitmentPos < dataPos+dataLen {
+			commitmentPos, err = rlp.StringOfLen(payload, commitmentPos, 48)
+			if err != nil {
+				return 0, fmt.Errorf("%w: commitment: %s", ErrParseTxn, err) //nolint
+			}
+			var commitment gokzg4844.KZGCommitment
+			copy(commitment[:], payload[commitmentPos:commitmentPos+48])
+			slot.Commitments = append(slot.Commitments, commitment)
+			commitmentPos += 48
+		}
+		if commitmentPos != dataPos+dataLen {
+			return 0, fmt.Errorf("%w: extraneous space in commitments", ErrParseTxn)
+		}
+		p = commitmentPos
+
+		dataPos, dataLen, err = rlp.List(payload, p)
+		if err != nil {
+			return 0, fmt.Errorf("%w: proofs len: %s", ErrParseTxn, err) //nolint
+		}
+		proofPos := dataPos
+		for proofPos < dataPos+dataLen {
+			proofPos, err = rlp.StringOfLen(payload, proofPos, 48)
+			if err != nil {
+				return 0, fmt.Errorf("%w: proof: %s", ErrParseTxn, err) //nolint
+			}
+			var proof gokzg4844.KZGProof
+			copy(proof[:], payload[proofPos:proofPos+48])
+			slot.Proofs = append(slot.Proofs, proof)
+			proofPos += 48
+		}
+		if proofPos != dataPos+dataLen {
+			return 0, fmt.Errorf("%w: extraneous space in proofs", ErrParseTxn)
+		}
+		p = proofPos
+
+		if p != wrapperDataPos+wrapperDataLen {
+			return 0, fmt.Errorf("%w: extraneous elements in blobs wrapper", ErrParseTxn)
+		}
+	}
+
+	slot.Size = uint32(p - pos)
+	return p, err
 }
 
-func (ctx *TxParseContext) parseTransactionPayload(payload []byte, pos, p0 int, slot *TxSlot, sender []byte, validateHash func([]byte) error) (p int, err error) {
+func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slot *TxSlot, sender []byte, validateHash func([]byte) error) (p int, err error) {
 	p = p0
 	legacy := slot.Type == LegacyTxType
 
@@ -513,7 +600,6 @@ func (ctx *TxParseContext) parseTransactionPayload(payload []byte, pos, p0 int, 
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
 
-	slot.Size = uint32(p - pos)
 	return p, nil
 }
 
