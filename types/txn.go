@@ -26,6 +26,7 @@ import (
 	"math/bits"
 	"sort"
 
+	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/secp256k1"
 	"golang.org/x/crypto/sha3"
@@ -101,8 +102,11 @@ type TxSlot struct {
 	Size           uint32   // Size of the payload
 
 	// EIP-4844: Shard Blob Transactions
-	DataFeeCap uint256.Int // max_fee_per_data_gas
-	BlobHashes []common.Hash
+	DataFeeCap  uint256.Int // max_fee_per_data_gas
+	BlobHashes  []common.Hash
+	Blobs       []uint256.Int
+	Commitments []gokzg4844.KZGCommitment
+	Proofs      []gokzg4844.KZGProof
 }
 
 const (
@@ -131,17 +135,13 @@ func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {
 // wrappedWithBlobs means that for blob (type 3) transactions the full version with blobs/commitments/proofs is expected
 // (see https://eips.ethereum.org/EIPS/eip-4844#networking).
 func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (p int, err error) {
-	// TODO(eip-4844) implement blob txn parsing when wrappedWithBlobs is true
-
 	if len(payload) == 0 {
 		return 0, fmt.Errorf("%w: empty rlp", ErrParseTxn)
 	}
 	if ctx.withSender && len(sender) != 20 {
 		return 0, fmt.Errorf("%w: expect sender buffer of len 20", ErrParseTxn)
 	}
-	// Compute transaction hash
-	ctx.Keccak1.Reset()
-	ctx.Keccak2.Reset()
+
 	// Legacy transactions have list Prefix, whereas EIP-2718 transactions have string Prefix
 	// therefore we assign the first returned value of Prefix function (list) to legacy variable
 	dataPos, dataLen, legacy, err := rlp.Prefix(payload, pos)
@@ -166,12 +166,6 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		if slot.Type > BlobTxType {
 			return 0, fmt.Errorf("%w: unknown transaction type: %d", ErrParseTxn, slot.Type)
 		}
-		if _, err = ctx.Keccak1.Write(payload[p : p+1]); err != nil {
-			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err) //nolint
-		}
-		if _, err = ctx.Keccak2.Write(payload[p : p+1]); err != nil {
-			return 0, fmt.Errorf("%w: computing signHash (hashing type Prefix): %s", ErrParseTxn, err) //nolint
-		}
 		p++
 		if p >= len(payload) {
 			return 0, fmt.Errorf("%w: unexpected end of payload after txType", ErrParseTxn)
@@ -180,17 +174,41 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		if err != nil {
 			return 0, fmt.Errorf("%w: envelope Prefix: %s", ErrParseTxn, err) //nolint
 		}
-		// Hash the envelope, not the full payload
-		if _, err = ctx.Keccak1.Write(payload[p : dataPos+dataLen]); err != nil {
-			return 0, fmt.Errorf("%w: computing IdHash (hashing the envelope): %s", ErrParseTxn, err) //nolint
-		}
 		// For legacy transaction, the entire payload in expected to be in "rlp" field
 		// whereas for non-legacy, only the content of the envelope (start with position p)
 		slot.Rlp = payload[p-1 : dataPos+dataLen]
-		p = dataPos
 	} else {
 		slot.Type = LegacyTxType
 		slot.Rlp = payload[pos : dataPos+dataLen]
+	}
+
+	return ctx.parseTransactionPayload(payload, pos, p, slot, sender, validateHash)
+}
+
+func (ctx *TxParseContext) parseTransactionPayload(payload []byte, pos, p0 int, slot *TxSlot, sender []byte, validateHash func([]byte) error) (p int, err error) {
+	p = p0
+	legacy := slot.Type == LegacyTxType
+
+	// Compute transaction hash
+	ctx.Keccak1.Reset()
+	ctx.Keccak2.Reset()
+	if !legacy {
+		typeByte := []byte{slot.Type}
+		if _, err = ctx.Keccak1.Write(typeByte); err != nil {
+			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err) //nolint
+		}
+		if _, err = ctx.Keccak2.Write(typeByte); err != nil {
+			return 0, fmt.Errorf("%w: computing signHash (hashing type Prefix): %s", ErrParseTxn, err) //nolint
+		}
+		dataPos, dataLen, err := rlp.List(payload, p)
+		if err != nil {
+			return 0, fmt.Errorf("%w: envelope Prefix: %s", ErrParseTxn, err) //nolint
+		}
+		// Hash the content of envelope, not the full payload
+		if _, err = ctx.Keccak1.Write(payload[p : dataPos+dataLen]); err != nil {
+			return 0, fmt.Errorf("%w: computing IdHash (hashing the envelope): %s", ErrParseTxn, err) //nolint
+		}
+		p = dataPos
 	}
 
 	if ctx.validateRlp != nil {
@@ -242,7 +260,7 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		return 0, fmt.Errorf("%w: gas: %s", ErrParseTxn, err) //nolint
 	}
 	// Next follows the destination address (if present)
-	dataPos, dataLen, err = rlp.String(payload, p)
+	dataPos, dataLen, err := rlp.String(payload, p)
 	if err != nil {
 		return 0, fmt.Errorf("%w: to len: %s", ErrParseTxn, err) //nolint
 	}
