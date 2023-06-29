@@ -14,14 +14,16 @@ import (
 	"time"
 
 	"github.com/c2h5oh/datasize"
-	"github.com/ledgerwatch/erigon-lib/common/background"
+	"github.com/edsrzf/mmap-go"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
+
+	"github.com/ledgerwatch/erigon-lib/common/background"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
-	"github.com/ledgerwatch/erigon-lib/mmap"
 )
 
 func logBase(n, base uint64) uint64 {
@@ -709,8 +711,8 @@ func (btw *BtIndexWriter) Build() error {
 	if btw.indexF, err = os.Create(tmpIdxFilePath); err != nil {
 		return fmt.Errorf("create index file %s: %w", btw.indexFile, err)
 	}
-	defer btw.indexF.Sync()
 	defer btw.indexF.Close()
+	defer btw.indexF.Sync()
 	btw.indexW = bufio.NewWriterSize(btw.indexF, etl.BufIOSize)
 	defer btw.indexW.Flush()
 
@@ -779,8 +781,7 @@ func (btw *BtIndexWriter) AddKey(key []byte, offset uint64) error {
 
 type BtIndex struct {
 	alloc        *btAlloc
-	mmapWin      *[mmap.MaxMapSize]byte
-	mmapUnix     []byte
+	m            mmap.MMap
 	data         []byte
 	file         *os.File
 	size         int64
@@ -804,18 +805,18 @@ func CreateBtreeIndex(indexPath, dataPath string, M uint64, logger log.Logger) (
 
 var DefaultBtreeM = uint64(2048)
 
-func CreateBtreeIndexWithDecompressor(indexPath string, M uint64, decompressor *compress.Decompressor, p *background.Progress, logger log.Logger) (*BtIndex, error) {
-	err := BuildBtreeIndexWithDecompressor(indexPath, decompressor, p, logger)
+func CreateBtreeIndexWithDecompressor(indexPath string, M uint64, decompressor *compress.Decompressor, p *background.Progress, tmpdir string, logger log.Logger) (*BtIndex, error) {
+	err := BuildBtreeIndexWithDecompressor(indexPath, decompressor, p, tmpdir, logger)
 	if err != nil {
 		return nil, err
 	}
 	return OpenBtreeIndexWithDecompressor(indexPath, M, decompressor)
 }
 
-func BuildBtreeIndexWithDecompressor(indexPath string, kv *compress.Decompressor, p *background.Progress, logger log.Logger) error {
+func BuildBtreeIndexWithDecompressor(indexPath string, kv *compress.Decompressor, p *background.Progress, tmpdir string, logger log.Logger) error {
 	args := BtIndexWriterArgs{
 		IndexFile: indexPath,
-		TmpDir:    filepath.Dir(indexPath),
+		TmpDir:    tmpdir,
 	}
 
 	iw, err := NewBtIndexWriter(args, logger)
@@ -913,10 +914,11 @@ func OpenBtreeIndexWithDecompressor(indexPath string, M uint64, kv *compress.Dec
 		return nil, err
 	}
 
-	if idx.mmapUnix, idx.mmapWin, err = mmap.Mmap(idx.file, int(idx.size)); err != nil {
+	idx.m, err = mmap.MapRegion(idx.file, int(idx.size), mmap.RDONLY, 0, 0)
+	if err != nil {
 		return nil, err
 	}
-	idx.data = idx.mmapUnix[:idx.size]
+	idx.data = idx.m[:idx.size]
 
 	// Read number of keys and bytes per record
 	pos := 8
@@ -932,11 +934,13 @@ func OpenBtreeIndexWithDecompressor(indexPath string, M uint64, kv *compress.Dec
 
 	idx.getter = kv.MakeGetter()
 
-	idx.alloc = newBtAlloc(idx.keyCount, M, false)
-	idx.alloc.dataLookup = idx.dataLookup
 	idx.dataoffset = uint64(pos)
-	idx.alloc.traverseDfs()
-	idx.alloc.fillSearchMx()
+	idx.alloc = newBtAlloc(idx.keyCount, M, false)
+	if idx.alloc != nil {
+		idx.alloc.dataLookup = idx.dataLookup
+		idx.alloc.traverseDfs()
+		idx.alloc.fillSearchMx()
+	}
 	return idx, nil
 }
 
@@ -958,10 +962,11 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 		return nil, err
 	}
 
-	if idx.mmapUnix, idx.mmapWin, err = mmap.Mmap(idx.file, int(idx.size)); err != nil {
+	idx.m, err = mmap.MapRegion(idx.file, int(idx.size), mmap.RDONLY, 0, 0)
+	if err != nil {
 		return nil, err
 	}
-	idx.data = idx.mmapUnix[:idx.size]
+	idx.data = idx.m[:idx.size]
 
 	// Read number of keys and bytes per record
 	pos := 8
@@ -984,11 +989,13 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 	}
 	idx.getter = idx.decompressor.MakeGetter()
 
-	idx.alloc = newBtAlloc(idx.keyCount, M, false)
-	idx.alloc.dataLookup = idx.dataLookup
 	idx.dataoffset = uint64(pos)
-	idx.alloc.traverseDfs()
-	idx.alloc.fillSearchMx()
+	idx.alloc = newBtAlloc(idx.keyCount, M, false)
+	if idx.alloc != nil {
+		idx.alloc.dataLookup = idx.dataLookup
+		idx.alloc.traverseDfs()
+		idx.alloc.fillSearchMx()
+	}
 	return idx, nil
 }
 
@@ -1030,41 +1037,47 @@ func (b *BtIndex) FilePath() string { return b.filePath }
 
 func (b *BtIndex) FileName() string { return path.Base(b.filePath) }
 
-func (b *BtIndex) Empty() bool { return b.keyCount == 0 }
+func (b *BtIndex) Empty() bool { return b == nil || b.keyCount == 0 }
 
 func (b *BtIndex) KeyCount() uint64 { return b.keyCount }
 
-func (b *BtIndex) Close() error {
+func (b *BtIndex) Close() {
 	if b == nil {
-		return nil
+		return
 	}
-	if err := mmap.Munmap(b.mmapUnix, b.mmapWin); err != nil {
-		return err
-	}
-	if err := b.file.Close(); err != nil {
-		return err
+	if b.file != nil {
+		if err := b.m.Unmap(); err != nil {
+			log.Log(dbg.FileCloseLogLevel, "unmap", "err", err, "file", b.FileName(), "stack", dbg.Stack())
+		}
+		b.m = nil
+		if err := b.file.Close(); err != nil {
+			log.Log(dbg.FileCloseLogLevel, "close", "err", err, "file", b.FileName(), "stack", dbg.Stack())
+		}
+		b.file = nil
 	}
 	if b.decompressor != nil {
-		if err := b.decompressor.Close(); err != nil {
-			return err
-		}
+		b.decompressor.Close()
+		b.decompressor = nil
 	}
-	return nil
 }
 
 func (b *BtIndex) Seek(x []byte) (*Cursor, error) {
-	if b.alloc != nil {
-		cursor, err := b.alloc.Seek(x)
-		if err != nil {
-			return nil, fmt.Errorf("seek key %x: %w", x, err)
-		}
-		return cursor, nil
+	if b.alloc == nil {
+		return nil, nil
 	}
-	return nil, fmt.Errorf("seek has been failed")
+	cursor, err := b.alloc.Seek(x)
+	if err != nil {
+		return nil, fmt.Errorf("seek key %x: %w", x, err)
+	}
+	// cursor could be nil along with err if nothing found
+	return cursor, nil
 }
 
 // deprecated
 func (b *BtIndex) Lookup(key []byte) uint64 {
+	if b.alloc == nil {
+		return 0
+	}
 	cursor, err := b.alloc.Seek(key)
 	if err != nil {
 		panic(err)
@@ -1073,6 +1086,9 @@ func (b *BtIndex) Lookup(key []byte) uint64 {
 }
 
 func (b *BtIndex) OrdinalLookup(i uint64) *Cursor {
+	if b.alloc == nil {
+		return nil
+	}
 	if i > b.alloc.K {
 		return nil
 	}
