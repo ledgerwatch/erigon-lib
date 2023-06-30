@@ -1749,7 +1749,7 @@ func commonPrefixLen(b1, b2 []byte) int {
 }
 
 func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, updates []Update) (rootHash []byte, branchNodeUpdates map[string]BranchData, err error) {
-	hph.SetTrace(true)
+	hph.SetTrace(false)
 	branchNodeUpdates = make(map[string]BranchData)
 	for i, plainKey := range plainKeys {
 		if hph.trace {

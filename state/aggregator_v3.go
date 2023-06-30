@@ -1308,7 +1308,6 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) chan struct{} {
 	fin := make(chan struct{})
 
 	if (txNum + 1) <= a.minimaxTxNumInFiles.Load()+a.aggregationStep+a.keepInDB { // Leave one step worth in the DB
-		log.Warn("[dbg] BuildFilesInBackground1")
 		return fin
 	}
 
@@ -1319,7 +1318,6 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) chan struct{} {
 	if ok := a.buildingFiles.CompareAndSwap(false, true); !ok {
 		return fin
 	}
-	log.Warn("[dbg] BuildFilesInBackground2")
 
 	step := a.minimaxTxNumInFiles.Load() / a.aggregationStep
 	//toTxNum := (step + 1) * a.aggregationStep

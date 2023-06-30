@@ -120,7 +120,7 @@ func (t *UpdateTree) TouchPlainKey(key, val []byte, fn func(c *commitmentItem, v
 }
 
 func (t *UpdateTree) TouchAccount(c *commitmentItem, val []byte) {
-	fmt.Printf("TouchAccount: %x %x\n", c.plainKey, val)
+	//fmt.Printf("TouchAccount: %x %x\n", c.plainKey, val)
 	if len(val) == 0 {
 		c.update.Reset()
 		c.update.Flags = commitment.DeleteUpdate
@@ -174,7 +174,7 @@ func (t *UpdateTree) UpdatePrefix(prefix, val []byte, fn func(c *commitmentItem,
 }
 
 func (t *UpdateTree) TouchStorage(c *commitmentItem, val []byte) {
-	fmt.Printf("TouchStorage: %x %x\n", c.plainKey, val)
+	//fmt.Printf("TouchStorage: %x %x\n", c.plainKey, val)
 	c.update.ValLength = len(val)
 	if len(val) == 0 {
 		c.update.Flags = commitment.DeleteUpdate
@@ -185,7 +185,7 @@ func (t *UpdateTree) TouchStorage(c *commitmentItem, val []byte) {
 }
 
 func (t *UpdateTree) TouchCode(c *commitmentItem, val []byte) {
-	fmt.Printf("TouchCode: %x %x\n", c.plainKey, val)
+	//fmt.Printf("TouchCode: %x %x\n", c.plainKey, val)
 	t.keccak.Reset()
 	t.keccak.Write(val)
 	copy(c.update.CodeHashOrStorage[:], t.keccak.Sum(nil))
@@ -310,7 +310,7 @@ func NewCommittedDomain(d *Domain, mode CommitmentMode, trieVariant commitment.T
 	return &DomainCommitted{
 		Domain:       d,
 		mode:         mode,
-		trace:        true,
+		trace:        false,
 		updates:      NewUpdateTree(),
 		discard:      dbg.DiscardCommitment(),
 		patriciaTrie: commitment.InitializeTrie(trieVariant),
