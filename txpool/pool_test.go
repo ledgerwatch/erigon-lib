@@ -715,3 +715,129 @@ func TestShanghaiValidateTx(t *testing.T) {
 		})
 	}
 }
+
+func TestOverdraftByReplacement(t *testing.T) {
+	t.Skip("TODO")
+	assert, require := assert.New(t), require.New(t)
+	ch := make(chan types.Announcements, 100)
+	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
+
+	cfg := txpoolcfg.DefaultConfig
+	cfg.PendingSubPoolLimit = 30
+	cfg.AccountSlots = 6
+
+	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil)
+	assert.NoError(err)
+	require.True(pool != nil)
+
+	ctx := context.Background()
+	var stateVersionID uint64 = 0
+	pendingBaseFee := uint64(200000)
+
+	h1 := gointerfaces.ConvertHashToH256([32]byte{})
+	changes := &remote.StateChangeBatch{
+		StateVersionId:      stateVersionID,
+		PendingBlockBaseFee: pendingBaseFee,
+		BlockGasLimit:       1_000_000,
+		ChangeBatch: []*remote.StateChange{
+			{BlockHeight: 0, BlockHash: h1},
+		},
+	}
+
+	var addrs [10][20]byte
+	balance := uint256.NewInt(1 * common.Ether)
+	for i := 0; i < 10; i++ {
+		addrs[i][0] = byte(i + 1)
+		v := make([]byte, types.EncodeSenderLengthForStorage(1, *balance))
+		types.EncodeSender(1, *balance, v)
+		changes.ChangeBatch[0].Changes = append(changes.ChangeBatch[0].Changes, &remote.AccountChange{
+			Action:  remote.Action_UPSERT,
+			Address: gointerfaces.ConvertAddressToH160(addrs[i]),
+			Data:    v,
+		})
+	}
+
+	tx, err := db.BeginRw(ctx)
+	require.NoError(err)
+	defer tx.Rollback()
+	err = pool.OnNewBlock(ctx, changes, types.TxSlots{}, types.TxSlots{}, tx)
+	assert.NoError(err)
+
+	var txSlots1 types.TxSlots
+
+	// legit transactions
+	for i := 0; i < 5; i++ {
+		txSlot := &types.TxSlot{
+			Tip:    *uint256.NewInt(300000),
+			FeeCap: *uint256.NewInt(300000),
+			Gas:    100000,
+			Nonce:  1,
+		}
+		txSlot.IDHash[0] = byte(i + 1)
+		txSlots1.Append(txSlot, addrs[i][:], true)
+	}
+
+	pool.AddRemoteTxs(ctx, txSlots1)
+	err = pool.processRemoteTxs(ctx)
+	assert.NoError(err)
+
+	// replacement transactions to fill the pool
+	var txSlots2 types.TxSlots
+	replacementTxValue := uint256.NewInt(common.Ether / 10)
+	for i := 5; i < 10; i++ {
+		for j := 1; j <= 6; j++ {
+			txSlot := &types.TxSlot{
+				Tip:    *uint256.NewInt(400000),
+				Value:  *replacementTxValue,
+				FeeCap: *uint256.NewInt(400000),
+				Gas:    200000,
+				Nonce:  uint64(j),
+			}
+			txSlot.IDHash[0] = byte(i*10 + j)
+			txSlots2.Append(txSlot, addrs[i][:], true)
+		}
+	}
+
+	pool.AddRemoteTxs(ctx, txSlots2)
+	err = pool.processRemoteTxs(ctx)
+	assert.NoError(err)
+
+	// pending pool is full and the legit transactions are out
+	assert.Equal(30, pool.pending.Len())
+	for _, pendingTx := range pool.pending.best.ms {
+		senderID := (*pendingTx).Tx.SenderID
+		assert.LessOrEqual(senderID, uint64(10))
+		assert.GreaterOrEqual(senderID, uint64(6))
+	}
+
+	// draining transactions
+	var txSlots3 types.TxSlots
+	drainTxValue := uint256.NewInt(common.Ether * 0.95)
+	for i := 5; i < 10; i++ {
+		txSlot := &types.TxSlot{
+			Tip:    *uint256.NewInt(500000),
+			Value:  *drainTxValue,
+			FeeCap: *uint256.NewInt(500000),
+			Gas:    300000,
+			Nonce:  1,
+		}
+		txSlot.IDHash[0] = byte(i*10 + 9)
+		txSlots3.Append(txSlot, addrs[i][:], true)
+	}
+
+	pool.AddRemoteTxs(ctx, txSlots3)
+	err = pool.processRemoteTxs(ctx)
+	assert.NoError(err)
+
+	// expected behavior:
+	// have been rejected, so replacement tx are still there
+	assert.Equal(30, pool.pending.Len())
+	for _, pendingTx := range pool.pending.best.ms {
+		value := (*pendingTx).Tx.Value
+		assert.Equal(*replacementTxValue, value)
+		senderID := (*pendingTx).Tx.SenderID
+		assert.LessOrEqual(senderID, uint(10))
+		assert.GreaterOrEqual(senderID, uint(6))
+	}
+}
