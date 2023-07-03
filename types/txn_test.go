@@ -175,3 +175,27 @@ func toHashes(h ...byte) (out Hashes) {
 	}
 	return out
 }
+
+func TestBlobTxParsing(t *testing.T) {
+	bodyRlpHex := "b9012b03f9012705078502540be4008506fc23ac008357b58494811a752c8cd697e3cb27" +
+		"279c330ed1ada745a8d7808204f7f872f85994de0b295669a9fd93d5f28d9ec85e40f4cb697b" +
+		"aef842a00000000000000000000000000000000000000000000000000000000000000003a000" +
+		"00000000000000000000000000000000000000000000000000000000000007d694bb9bc244d7" +
+		"98123fde783fcc1c72d3bb8c189413c07bf842a0c6bdd1de713471bd6cfa62dd8b5a5b42969e" +
+		"d09e26212d3377f3f8426d8ec210a08aaeccaf3873d07cef005aca28c39f8a9f8bdb1ec8d79f" +
+		"fc25afc0a4fa2ab73601a036b241b061a36a32ab7fe86c7aa9eb592dd59018cd0443adc09035" +
+		"90c16b02b0a05edcc541b4741c5cc6dd347c5ed9577ef293a62787b4510465fadbfe39ee4094"
+	bodyRlp := hexutility.MustDecodeHex(bodyRlpHex)
+
+	ctx := NewTxParseContext(*uint256.NewInt(5))
+	ctx.withSender = false
+
+	var tx TxSlot
+	wrappedWithBlobs := false
+	p, err := ctx.ParseTransaction(bodyRlp, 0, &tx, nil, true /* hasEnvelope */, wrappedWithBlobs, nil)
+	require.NoError(t, err)
+	assert.Equal(t, len(bodyRlp), p)
+	assert.Equal(t, 2, len(tx.BlobHashes))
+
+	// TODO(eip-4844) test that IDHash is the same with & without wrappedWithBlobs
+}

@@ -440,7 +440,6 @@ func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slo
 				return 0, fmt.Errorf("%w: blob hash: %s", ErrParseTxn, err) //nolint
 			}
 			slot.BlobHashes = append(slot.BlobHashes, hash)
-			hashPos += 32
 		}
 		if hashPos != dataPos+dataLen {
 			return 0, fmt.Errorf("%w: extraneous space in the blob versioned hashes", ErrParseTxn)
