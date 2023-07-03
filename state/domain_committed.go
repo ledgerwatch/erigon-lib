@@ -175,7 +175,7 @@ func (t *UpdateTree) UpdatePrefix(prefix, val []byte, fn func(c *commitmentItem,
 }
 
 func (t *UpdateTree) TouchStorage(c *commitmentItem, val []byte) {
-	//fmt.Printf("TouchStorage: %x %x\n", c.plainKey, val)
+	fmt.Printf("TouchStorage: %x %x\n", c.plainKey, val)
 	c.update.ValLength = len(val)
 	if len(val) == 0 {
 		c.update.Flags = commitment.DeleteUpdate

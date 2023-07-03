@@ -159,6 +159,13 @@ func (sd *SharedDomains) SeekCommitment() (bn, txn uint64, err error) {
 	return bn, txn, err
 }
 
+func (sd *SharedDomains) PrintUpdates() {
+	sd.Commitment.updates.plainKeys.Ascend(func(i string) bool {
+		dec, _ := hex.DecodeString(i)
+		fmt.Printf("plain key update %x\n", dec)
+		return true
+	})
+}
 func (sd *SharedDomains) ClearRam() {
 	sd.muMaps.Lock()
 	defer sd.muMaps.Unlock()
