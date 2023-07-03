@@ -690,13 +690,13 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 
 	for i, key := range touchedKeys {
 		if updates[i].Flags&commitment.StorageUpdate != 0 {
-			fmt.Printf("plain: %x, %x\n", key, updates[i].CodeHashOrStorage[:updates[i].ValLength])
+			fmt.Printf("plain: %x, %x, %x\n", key, updates[i].CodeHashOrStorage[:updates[i].ValLength], hashedKeys[i])
 		} else if updates[i].Flags&commitment.BalanceUpdate != 0 ||
 			updates[i].Flags&commitment.NonceUpdate != 0 ||
 			updates[i].Flags&commitment.DeleteUpdate != 0 {
-			fmt.Printf("plain: %x, %d, %d\n", key, &updates[i].Balance, updates[i].Nonce)
+			fmt.Printf("plain: %x, %d, %d, %x\n", key, &updates[i].Balance, updates[i].Nonce, hashedKeys[i])
 		} else {
-			fmt.Printf("plain ?: %x, %s, %#v\n", key, updates[i].Flags, updates[i])
+			fmt.Printf("plain ?: %x, %s, %#v, %x\n", key, updates[i].Flags, updates[i], hashedKeys[i])
 		}
 	}
 	if len(touchedKeys) == 0 {
