@@ -688,8 +688,8 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 	touchedKeys, hashedKeys, updates := d.updates.List(true)
 	d.comKeys = uint64(len(touchedKeys))
 
-	for _, key := range touchedKeys {
-		fmt.Printf("plain: %x\n", key)
+	for i, key := range touchedKeys {
+		fmt.Printf("plain: %x, %x\n", key, updates[i].CodeValue)
 	}
 	if len(touchedKeys) == 0 {
 		rootHash, err = d.patriciaTrie.RootHash()
