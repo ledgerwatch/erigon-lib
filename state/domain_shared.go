@@ -504,9 +504,6 @@ func (sd *SharedDomains) SetBlockNum(blockNum uint64) {
 }
 
 func (sd *SharedDomains) Commit(saveStateAfter, trace bool) (rootHash []byte, err error) {
-	if trace {
-		panic(1)
-	}
 	// if commitment mode is Disabled, there will be nothing to compute on.
 	rootHash, branchNodeUpdates, err := sd.Commitment.ComputeCommitment(trace)
 	if err != nil {
