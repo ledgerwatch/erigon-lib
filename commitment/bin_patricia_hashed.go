@@ -1553,7 +1553,7 @@ func (bph *BinPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 			}
 			if update.Flags&BalanceUpdate != 0 {
 				if bph.trace {
-					fmt.Printf(" balance=%d", update.Balance.Uint64())
+					fmt.Printf(" balance=%d", &update.Balance)
 				}
 				cell.Balance.Set(&update.Balance)
 			}

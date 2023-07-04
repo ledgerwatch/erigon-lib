@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/crypto/sha3"
 
@@ -1787,10 +1788,11 @@ func (hph *HexPatriciaHashed) ProcessUpdates(plainKeys, hashedKeys [][]byte, upd
 			cell := hph.updateCell(plainKey, hashedKey)
 			if hph.trace && len(plainKey) == hph.accountKeyLen {
 				fmt.Printf("accountFn updated key %x =>", plainKey)
+				fmt.Printf("\n%s\n", dbg.Stack())
 			}
 			if update.Flags&BalanceUpdate != 0 {
 				if hph.trace {
-					fmt.Printf(" balance=%d", update.Balance.Uint64())
+					fmt.Printf(" balance=%d", &update.Balance)
 				}
 				cell.Balance.Set(&update.Balance)
 			}
