@@ -453,6 +453,7 @@ func (cell *Cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]
 	pos++
 	copy(buffer[pos:], cell.CodeHash[:])
 	pos += 32
+	fmt.Printf("acc: %x, %x, %d, %d\n", storageRootHash, cell.CodeHash, cell.Balance.Uint64(), cell.Nonce)
 	return pos
 }
 
