@@ -453,7 +453,6 @@ func (cell *Cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]
 	pos++
 	copy(buffer[pos:], cell.CodeHash[:])
 	pos += 32
-	fmt.Printf("buf: %x, %d, %d, %x, %x\n", buffer[:pos], cell.Balance.Uint64(), cell.Nonce, cell.CodeHash, storageRootHash)
 	return pos
 }
 
@@ -690,7 +689,6 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 			return nil, err
 		}
 		cell.downHashedKey[64-depth] = 16 // Add terminator
-		fmt.Printf("alex: storageRootHashIsSet=%t\n", storageRootHashIsSet)
 		if !storageRootHashIsSet {
 			if cell.extLen > 0 {
 				// Extension
@@ -701,16 +699,13 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *Cell, depth int, buf []byte)
 					if storageRootHash, err = hph.extensionHash(cell.extension[:cell.extLen], cell.h[:cell.hl]); err != nil {
 						return nil, err
 					}
-					fmt.Printf("alex1: %x\n", storageRootHash)
 				} else {
 					return nil, fmt.Errorf("computeCellHash extension without hash")
 				}
 			} else if cell.hl > 0 {
 				storageRootHash = cell.h
-				fmt.Printf("alex2: %x\n", cell.h)
 			} else {
 				storageRootHash = *(*[length.Hash]byte)(EmptyRootHash)
-				fmt.Printf("alex3: %x\n", storageRootHash)
 			}
 		}
 		var valBuf [128]byte
