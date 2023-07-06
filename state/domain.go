@@ -1023,7 +1023,7 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 		btPath := filepath.Join(d.dir, btFileName)
 		p := ps.AddNew(btFileName, uint64(valuesDecomp.Count()*2))
 		defer ps.Delete(p)
-		bt, err = CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp, p, d.logger)
+		bt, err = CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp, p, d.tmpdir, d.logger)
 		if err != nil {
 			return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
 		}
@@ -1067,7 +1067,7 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group, ps *
 
 			p := ps.AddNew("fixme", uint64(fitem.decompressor.Count()))
 			defer ps.Delete(p)
-			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor, p, d.logger); err != nil {
+			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor, p, d.tmpdir, d.logger); err != nil {
 				return fmt.Errorf("failed to build btree index for %s:  %w", fitem.decompressor.FileName(), err)
 			}
 			return nil

@@ -16,7 +16,6 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	"github.com/edsrzf/mmap-go"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon-lib/common/background"
@@ -1051,23 +1050,25 @@ func (b *BtIndex) Empty() bool { return b == nil || b.keyCount == 0 }
 
 func (b *BtIndex) KeyCount() uint64 { return b.keyCount }
 
-func (b *BtIndex) Close() {
+func (b *BtIndex) Close() error {
 	if b == nil {
-		return
+		return nil
 	}
 	if b.file != nil {
 		if err := b.m.Unmap(); err != nil {
-			log.Log(dbg.FileCloseLogLevel, "unmap", "err", err, "file", b.FileName(), "stack", dbg.Stack())
+			return err
 		}
 		if err := b.file.Close(); err != nil {
-			log.Log(dbg.FileCloseLogLevel, "close", "err", err, "file", b.FileName(), "stack", dbg.Stack())
+			return err
 		}
 		b.file = nil
 	}
 	if b.decompressor != nil {
-		b.decompressor.Close()
-		b.decompressor = nil
+		if err := b.decompressor.Close(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (b *BtIndex) Seek(x []byte) (*Cursor, error) {
