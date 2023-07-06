@@ -1333,14 +1333,18 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	}
 	defer idxC.Close()
 
+	fmt.Printf("kk: %x, %t\n", k, k != nil)
 	// Invariant: if some `txNum=N` pruned - it's pruned Fully
 	// Means: can use DeleteCurrentDuplicates all values of given `txNum`
-	for ; err == nil && k != nil; k, v, err = keysCursor.NextNoDup() {
+	for ; k != nil; k, v, err = keysCursor.NextNoDup() {
+		if err != nil {
+			return err
+		}
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		for ; err == nil && k != nil; k, v, err = keysCursor.NextDup() {
+		for ; err == nil && v != nil; _, v, err = keysCursor.NextDup() {
 			if err := collector.Collect(v, nil); err != nil {
 				return err
 			}
