@@ -1045,6 +1045,11 @@ func (h *History) isEmpty(tx kv.Tx) (bool, error) {
 }
 
 func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
+	historyKeysCursorForDeletes, err := h.tx.RwCursorDupSort(h.indexKeysTable)
+	if err != nil {
+		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
+	}
+	defer historyKeysCursorForDeletes.Close()
 	historyKeysCursor, err := h.tx.RwCursorDupSort(h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", h.filenameBase, err)
@@ -1068,10 +1073,7 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		}
 		defer valsCDup.Close()
 	}
-	for k, v, err = historyKeysCursor.Seek(txKey[:]); k != nil; k, v, err = historyKeysCursor.Next() {
-		if err != nil {
-			return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
-		}
+	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
@@ -1083,14 +1085,8 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 
 		if h.largeValues {
 			seek := append(common.Copy(v), k...)
-			kk, _, err := valsC.SeekExact(seek)
-			if err != nil {
+			if err := valsC.Delete(seek); err != nil {
 				return err
-			}
-			if kk != nil {
-				if err = valsC.DeleteCurrent(); err != nil {
-					return err
-				}
 			}
 		} else {
 			vv, err := valsCDup.SeekBothRange(v, k)
@@ -1106,7 +1102,10 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		}
 
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
-		if err = h.tx.Delete(h.indexKeysTable, k); err != nil {
+		if _, _, err = historyKeysCursorForDeletes.SeekBothExact(k, v); err != nil {
+			return err
+		}
+		if err = historyKeysCursorForDeletes.DeleteCurrent(); err != nil {
 			return err
 		}
 	}
