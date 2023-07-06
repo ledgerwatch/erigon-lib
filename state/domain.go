@@ -1233,7 +1233,6 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
 	}
 
-	_state = "delete vals"
 	pos.Store(0)
 	// It is important to clean up tables in a specific order
 	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
@@ -1242,11 +1241,6 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
-
-	totalKeys, err = valsCursor.Count()
-	if err != nil {
-		return fmt.Errorf("count of %s keys: %w", d.filenameBase, err)
-	}
 
 	for k, _, err := valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
 		if bytes.HasSuffix(k, stepBytes) {
