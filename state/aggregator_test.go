@@ -620,7 +620,6 @@ func generateCompressedKV(tb testing.TB, tmp string, keySize, valueSize, keyCoun
 func Test_InitBtreeIndex(t *testing.T) {
 	logger := log.New()
 	tmp := t.TempDir()
-	defer os.RemoveAll(tmp)
 
 	keyCount, M := 100, uint64(4)
 	compPath := generateCompressedKV(t, tmp, 52, 300, keyCount, logger)

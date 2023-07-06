@@ -401,8 +401,7 @@ func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, 
 	}
 	if len(foundInvStep) == 0 {
 		dc.d.stats.HistoryQueries.Add(1)
-		v, found := dc.readFromFiles(key, fromTxNum)
-		return v, found, nil
+		return dc.readFromFiles(key, fromTxNum)
 	}
 	//keySuffix := make([]byte, len(key)+8)
 	copy(dc.keyBuf[:], key)
@@ -1187,11 +1186,11 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 			}
 			s := ^binary.BigEndian.Uint64(vl)
 			if s > step {
-				kn, vn, err := keysCursor.NextDup()
+				_, vn, err := keysCursor.NextDup()
 				if err != nil {
 					break
 				}
-				if bytes.Equal(kn, k) && bytes.Equal(vn, stepBytes) {
+				if bytes.Equal(vn, stepBytes) {
 					if err := keysCursor.DeleteCurrent(); err != nil {
 						return fmt.Errorf("prune key %x: %w", k, err)
 					}
@@ -1222,7 +1221,6 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
 	}
 
-	_state = "delete vals"
 	pos.Store(0)
 	// It is important to clean up tables in a specific order
 	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
@@ -1231,11 +1229,6 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
-
-	totalKeys, err = valsCursor.Count()
-	if err != nil {
-		return fmt.Errorf("count of %s keys: %w", d.filenameBase, err)
-	}
 
 	for k, _, err := valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
 		if bytes.HasSuffix(k, stepBytes) {
@@ -1254,10 +1247,8 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-logEvery.C:
-			d.logger.Info("[snapshots] prune domain", "name", d.filenameBase,
-				"stage", _state,
-				"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)),
-				"progress", fmt.Sprintf("%.2f%%", (float64(pos.Load())/float64(totalKeys))*100))
+			d.logger.Info("[snapshots] prune domain", "name", d.filenameBase, "step", step)
+			//"steps", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		default:
 		}
 	}
@@ -1343,7 +1334,7 @@ func (d *Domain) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) err
 
 var COMPARE_INDEXES = false // if true, will compare values from Btree and INvertedIndex
 
-func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool) {
+func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool, error) {
 	var val []byte
 	var found bool
 
@@ -1357,34 +1348,20 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 		}
 		cur, err := reader.Seek(filekey)
 		if err != nil {
-			dc.d.logger.Warn("failed to read from file", "file", reader.FileName(), "err", err)
+			//return nil, false, nil //TODO: uncomment me
+			return nil, false, err
+		}
+		if cur == nil {
 			continue
 		}
 
 		if bytes.Equal(cur.Key(), filekey) {
 			val = cur.Value()
 			found = true
-
-			if COMPARE_INDEXES {
-				rd := recsplit.NewIndexReader(dc.files[i].src.index)
-				oft := rd.Lookup(filekey)
-				gt := dc.statelessGetter(i)
-				gt.Reset(oft)
-				var k, v []byte
-				if gt.HasNext() {
-					k, _ = gt.Next(nil)
-					v, _ = gt.Next(nil)
-				}
-				fmt.Printf("key: %x, val: %x\n", k, v)
-				if !bytes.Equal(v, val) {
-					panic("not equal")
-				}
-
-			}
 			break
 		}
 	}
-	return val, found
+	return val, found, nil
 }
 
 // historyBeforeTxNum searches history for a value of specified key before txNum
@@ -1424,9 +1401,11 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 			cur, err := reader.Seek(key)
 			if err != nil {
 				dc.d.logger.Warn("failed to read history before from file", "key", key, "err", err)
+				return nil, false, err
+			}
+			if cur == nil {
 				continue
 			}
-
 			if bytes.Equal(cur.Key(), key) {
 				val = cur.Value()
 				break
