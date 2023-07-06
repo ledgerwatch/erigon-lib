@@ -1068,7 +1068,10 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		}
 		defer valsCDup.Close()
 	}
-	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
+	for k, v, err = historyKeysCursor.Seek(txKey[:]); k != nil; k, v, err = historyKeysCursor.Next() {
+		if err != nil {
+			return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
+		}
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
@@ -1080,8 +1083,14 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 
 		if h.largeValues {
 			seek := append(common.Copy(v), k...)
-			if err := valsC.Delete(seek); err != nil {
+			kk, _, err := valsC.SeekExact(seek)
+			if err != nil {
 				return err
+			}
+			if kk != nil {
+				if err = valsC.DeleteCurrent(); err != nil {
+					return err
+				}
 			}
 		} else {
 			vv, err := valsCDup.SeekBothRange(v, k)
@@ -1100,9 +1109,6 @@ func (h *History) prune(ctx context.Context, txFrom, txTo, limit uint64, logEver
 		if err = h.tx.Delete(h.indexKeysTable, k); err != nil {
 			return err
 		}
-	}
-	if err != nil {
-		return fmt.Errorf("iterate over %s history keys: %w", h.filenameBase, err)
 	}
 	return nil
 }

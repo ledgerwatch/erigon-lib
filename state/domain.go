@@ -1198,11 +1198,11 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 			}
 			s := ^binary.BigEndian.Uint64(vl)
 			if s > step {
-				kn, vn, err := keysCursor.NextDup()
+				_, vn, err := keysCursor.NextDup()
 				if err != nil {
 					break
 				}
-				if bytes.Equal(kn, k) && bytes.Equal(vn, stepBytes) {
+				if bytes.Equal(vn, stepBytes) {
 					if err := keysCursor.DeleteCurrent(); err != nil {
 						return fmt.Errorf("prune key %x: %w", k, err)
 					}
