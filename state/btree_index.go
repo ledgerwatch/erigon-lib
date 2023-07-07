@@ -494,6 +494,80 @@ func (a *btAlloc) Seek(ik []byte) (*Cursor, error) {
 	return a.newCursor(context.TODO(), k, v, di), nil
 }
 
+func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, err error) {
+	var (
+		lm, rm int64
+		L, R   = uint64(0), uint64(len(a.nodes[0]) - 1)
+	)
+	minD, maxD = uint64(0), a.K
+
+	for l, level := range a.nodes {
+		if len(level) == 1 && l == 0 {
+			ln = a.nodes[0][0]
+			maxD = ln.d
+			break
+		}
+		ln, lm, rm = a.bsNode(uint64(l), L, R, ik)
+		if ln.key == nil { // should return node which is nearest to key from the left so never nil
+			if a.trace {
+				fmt.Printf("found nil key %x pos_range[%d-%d] naccess_ram=%d\n", l, lm, rm, a.naccess)
+			}
+			return minD, maxD, ln, false, fmt.Errorf("bt index nil node at level %d", l)
+		}
+		//fmt.Printf("b: %x, %x\n", ik, ln.key)
+		cmp := bytes.Compare(ln.key, ik)
+		switch cmp {
+		case 1: // key > ik
+			maxD = ln.d
+		case -1: // key < ik
+			minD = ln.d
+		case 0:
+			if a.trace {
+				fmt.Printf("found key %x v=%x naccess_ram=%d\n", ik, ln.val /*level[m].d,*/, a.naccess)
+			}
+			return minD, maxD, ln, true, nil
+		}
+
+		//fmt.Printf("l=%d, lm=%d, rm=%d, minD=%d, maxD=%d\n", l, lm, rm, minD, maxD)
+		// space between nodes:
+		// rm = -1, lm = 2
+		// rm =  0, lm = 2
+		// rm =  0, lm =
+		if rm-lm >= 1 {
+			if lm >= 0 {
+				minD = a.nodes[l][lm].d
+			}
+			if rm >= 0 {
+				maxD = a.nodes[l][rm].d
+			}
+			break
+		}
+
+		if lm >= 0 {
+			minD = a.nodes[l][lm].d
+			L = level[lm].fc
+		} else if l+1 != len(a.nodes) {
+			L = a.seekLeast(uint64(l+1), minD)
+			if L == uint64(len(a.nodes[l+1])) {
+				L--
+			}
+		}
+		if rm >= 0 {
+			maxD = a.nodes[l][rm].d
+			R = level[rm].fc
+		} else if l+1 != len(a.nodes) {
+			R = a.seekLeast(uint64(l+1), maxD)
+			if R == uint64(len(a.nodes[l+1])) {
+				R--
+			}
+		}
+
+		if a.trace {
+			fmt.Printf("range={%x d=%d p=%d} (%d, %d) L=%d naccess_ram=%d\n", ln.key, ln.d, ln.p, minD, maxD, l, a.naccess)
+		}
+	}
+	return minD, maxD, ln, false, nil
+}
 func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 	if a.trace {
 		fmt.Printf("seek key %x\n", ik)
@@ -536,7 +610,7 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 		// space between nodes:
 		// rm = -1, lm = 2
 		// rm =  0, lm = 2
-		// rm =  0, lm = -1
+		// rm =  0, lm =
 		if rm-lm >= 1 {
 			if lm >= 0 {
 				minD = a.nodes[l][lm].d
@@ -1127,6 +1201,15 @@ func (b *BtIndex) Get(lookup []byte) (k, v []byte, err error) {
 	return k, v, nil
 }
 
+func (b *BtIndex) FindNodeDbg(x []byte) (minD, maxD uint64, ln node, found bool, err error) {
+	if b.Empty() {
+		return
+	}
+	if b.alloc == nil {
+		return
+	}
+	return b.alloc.findNode(x)
+}
 func (b *BtIndex) Seek(x []byte) (*Cursor, error) {
 	if b.Empty() {
 		return nil, nil
