@@ -1241,7 +1241,7 @@ func (b *BtIndex) Seek(x []byte) (*Cursor, error) {
 	}
 	cursor, err := b.alloc.Seek(x)
 	if err != nil {
-		return nil, fmt.Errorf("seek key %x: %w", x, err)
+		return nil, fmt.Errorf("seek key %x: %w, file: %s", x, err, b.FileName())
 	}
 	// cursor could be nil along with err if nothing found
 	return cursor, nil
