@@ -585,6 +585,10 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 			fmt.Printf("break: M %d, %d\n", a.M, maxD-minD)
 			//break
 		}
+		if maxD-minD <= a.M+2 {
+			fmt.Printf("real break: M %d, %d\n", a.M, maxD-minD)
+			break
+		}
 
 		if a.trace {
 			fmt.Printf("range={%x d=%d p=%d} (%d, %d) L=%d naccess_ram=%d\n", ln.key, ln.d, ln.p, minD, maxD, l, a.naccess)
