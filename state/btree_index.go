@@ -528,7 +528,7 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 			return minD, maxD, ln, true, nil
 		}
 
-		fmt.Printf("loop: l=%d, lm=%d:%d, minD=%d:%d\n", l, lm, rm, minD, maxD)
+		fmt.Printf("loop step: l=%d, lm=%d:%d, minD=%d:%d\n", l, lm, rm, minD, maxD)
 		// space between nodes:
 		// rm = -1, lm = 2
 		// rm =  0, lm = 2
@@ -540,6 +540,7 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 			if rm >= 0 {
 				maxD = a.nodes[l][rm].d
 			}
+			fmt.Printf("loop break: l=%d, lm=%d:%d, minD=%d:%d\n", l, lm, rm, minD, maxD)
 			break
 		}
 
