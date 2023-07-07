@@ -537,6 +537,8 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 		// rm = -1, lm = 2
 		// rm =  0, lm = 2
 		// rm =  0, lm =
+
+		// 0 - (-1) >= 1
 		if ln.s <= 1 && rm-lm >= 1 {
 			if lm >= 0 {
 				//minD = a.nodes[l][lm].d
@@ -626,7 +628,7 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 		// rm = -1, lm = 2
 		// rm =  0, lm = 2
 		// rm =  0, lm =
-		if ln.s == 0 && rm-lm >= 1 {
+		if ln.s <= 1 && rm-lm >= 1 {
 			if lm >= 0 {
 				//minD = a.nodes[l][lm].d
 				if minD < a.nodes[l][lm].d {
