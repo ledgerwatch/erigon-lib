@@ -449,7 +449,7 @@ func (a *btAlloc) bsKey(x []byte, l, r uint64) (k, v []byte, di uint64, err erro
 }
 
 func (a *btAlloc) bsNode(i, l, r uint64, x []byte) (n node, lm int64, rm int64) {
-	n, lm, rm = node{}, -1, -1
+	lm, rm = -1, -1
 
 	for l < r {
 		m := (l + r) >> 1
