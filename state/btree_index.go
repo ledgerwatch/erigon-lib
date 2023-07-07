@@ -39,17 +39,19 @@ func min64(a, b uint64) uint64 {
 }
 
 type markupCursor struct {
-	l, p, di, si uint64
-	//l - level
-	//p - pos inside level
-	//si - current, actual son index
-	//di - data array index
+	l  uint64 //l - level
+	p  uint64 //p - pos inside level
+	di uint64 //di - data array index
+	si uint64 //si - current, actual son index
 }
 
 type node struct {
-	p, d, s, fc uint64
-	key         []byte
-	val         []byte
+	p   uint64 //p - pos inside level
+	d   uint64
+	s   uint64 // sons
+	fc  uint64
+	key []byte
+	val []byte
 }
 
 type Cursor struct {
