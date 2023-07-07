@@ -1213,7 +1213,7 @@ func (b *BtIndex) Get(lookup []byte) (k, v []byte, err error) {
 	}
 	k, v, _, err = b.alloc.seek(lookup)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("seek key %x: %w, file: %s", lookup, err, b.FileName())
 	}
 	if k == nil {
 		return nil, nil, nil
