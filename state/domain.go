@@ -1434,6 +1434,7 @@ func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found boo
 
 	var k []byte
 	for i := len(dc.files) - 1; i >= 0; i-- {
+		fmt.Printf("file: %s\n", dc.files[i].src.decompressor.FileName())
 		k, v, err = dc.statelessBtree(i).Get(filekey)
 		if err != nil {
 			return nil, false, err
