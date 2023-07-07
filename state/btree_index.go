@@ -629,17 +629,16 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 		//node: 1, 0, 1, sons=1
 		if ln.s <= 1 && rm-lm >= 1 {
 			if lm >= 0 {
-				//minD = a.nodes[l][lm].d
-				if minD < a.nodes[l][lm].d {
-					log.Warn(fmt.Sprintf("break: seems can improve minD=%d to %d", minD, a.nodes[l][lm].d))
-				}
+				minD = a.nodes[l][lm].d
+				//if minD < a.nodes[l][lm].d {
+				//	log.Warn(fmt.Sprintf("break: seems can improve minD=%d to %d", minD, a.nodes[l][lm].d))
+				//}
 			}
 			if rm >= 0 {
-				//maxD = a.nodes[l][rm].d
-				//maxD = a.nodes[l][rm].d
-				if maxD > a.nodes[l][rm].d {
-					log.Warn(fmt.Sprintf("break: seems can improve maxD=%d to %d", maxD, a.nodes[l][rm].d))
-				}
+				maxD = a.nodes[l][rm].d
+				//if maxD > a.nodes[l][rm].d {
+				//	log.Warn(fmt.Sprintf("break: seems can improve maxD=%d to %d", maxD, a.nodes[l][rm].d))
+				//}
 			}
 			break
 		}
