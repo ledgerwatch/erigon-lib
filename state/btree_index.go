@@ -577,6 +577,7 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 		if rm-lm >= 1 {
 			fmt.Printf("break: L:R %d:%d, lm:rm %d, %d\n", L, R, lm, rm)
 			fmt.Printf("break: sons %d:%d\n", a.nodes[l][lm].s, a.nodes[l][rm].s)
+			fmt.Printf("break: M %d, %d\n", a.M, maxD-minD)
 			//break
 		}
 
