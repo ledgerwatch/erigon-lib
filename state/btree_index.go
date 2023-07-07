@@ -669,7 +669,8 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 
 	a.naccess = 0 // reset count before actually go to disk
 	if maxD-minD > 2*a.M {
-		log.Warn("too big binary search", "minD", minD, "maxD", maxD, "keysCount", a.K, "key", fmt.Sprintf("%x", ik))
+		return nil, nil, 0, fmt.Errorf("too big binary search: minD=%d, maxD=%d, keysCount=%d, key=%x", minD, maxD, a.K, ik)
+		//log.Warn("too big binary search", "minD", minD, "maxD", maxD, "keysCount", a.K, "key", fmt.Sprintf("%x", ik))
 	}
 	k, v, di, err = a.bsKey(ik, minD, maxD)
 	if err != nil {
