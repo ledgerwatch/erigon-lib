@@ -615,13 +615,7 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 		// rm = -1, lm = 2
 		// rm =  0, lm = 2
 		// rm =  0, lm =
-		if rm-lm >= 1 {
-			if lm >= 0 {
-				minD = a.nodes[l][lm].d
-			}
-			if rm >= 0 {
-				maxD = a.nodes[l][rm].d
-			}
+		if l == len(a.nodes) && rm-lm >= 1 {
 			break
 		}
 
