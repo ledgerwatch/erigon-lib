@@ -539,22 +539,22 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 		// rm =  0, lm =
 
 		// 0 - (-1) >= 1
-		if ln.s <= 1 && rm-lm >= 1 {
-			if lm >= 0 {
-				if minD > a.nodes[l][lm].d {
-					log.Warn(fmt.Sprintf("break: seems made worse minD=%d to %d", minD, a.nodes[l][lm].d))
-				}
-				minD = a.nodes[l][lm].d
-			}
-			if rm >= 0 {
-				if maxD < a.nodes[l][rm].d {
-					log.Warn(fmt.Sprintf("break: seems made worse maxD=%d to %d", maxD, a.nodes[l][rm].d))
-				}
-				maxD = a.nodes[l][rm].d
-			}
-			fmt.Printf("break\n")
-			break
-		}
+		//if ln.s <= 1 && rm-lm >= 1 {
+		//	if lm >= 0 {
+		//		if minD > a.nodes[l][lm].d {
+		//			log.Warn(fmt.Sprintf("break: seems made worse minD=%d to %d", minD, a.nodes[l][lm].d))
+		//		}
+		//		minD = a.nodes[l][lm].d
+		//	}
+		//	if rm >= 0 {
+		//		if maxD < a.nodes[l][rm].d {
+		//			log.Warn(fmt.Sprintf("break: seems made worse maxD=%d to %d", maxD, a.nodes[l][rm].d))
+		//		}
+		//		maxD = a.nodes[l][rm].d
+		//	}
+		//	fmt.Printf("break\n")
+		//	break
+		//}
 
 		if lm >= 0 {
 			minD = a.nodes[l][lm].d
@@ -573,6 +573,10 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 			if R == uint64(len(a.nodes[l+1])) {
 				R--
 			}
+		}
+		if rm-lm >= 1 {
+			fmt.Printf("break\n")
+			break
 		}
 
 		if a.trace {
@@ -626,16 +630,6 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 		// space between nodes:
 		//loop step: l=0, lm=-1:0, minD=0:1
 		//node: 1, 0, 1, sons=1
-		if ln.s <= 1 && rm-lm >= 1 {
-			if lm >= 0 {
-				minD = a.nodes[l][lm].d
-			}
-			if rm >= 0 {
-				maxD = a.nodes[l][rm].d
-			}
-			break
-		}
-
 		if lm >= 0 {
 			minD = a.nodes[l][lm].d
 			L = level[lm].fc
@@ -653,6 +647,10 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 			if R == uint64(len(a.nodes[l+1])) {
 				R--
 			}
+		}
+
+		if rm-lm >= 1 {
+			break
 		}
 
 		if a.trace {
