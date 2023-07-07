@@ -912,7 +912,7 @@ func CreateBtreeIndex(indexPath, dataPath string, M uint64, logger log.Logger) (
 	if err != nil {
 		return nil, err
 	}
-	return OpenBtreeIndex(indexPath, dataPath, M)
+	return OpenBtreeIndex(indexPath, dataPath, M, false)
 }
 
 var DefaultBtreeM = uint64(2048)
@@ -1056,7 +1056,7 @@ func OpenBtreeIndexWithDecompressor(indexPath string, M uint64, kv *compress.Dec
 	return idx, nil
 }
 
-func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
+func OpenBtreeIndex(indexPath, dataPath string, M uint64, trace bool) (*BtIndex, error) {
 	s, err := os.Stat(indexPath)
 	if err != nil {
 		return nil, err
@@ -1102,7 +1102,7 @@ func OpenBtreeIndex(indexPath, dataPath string, M uint64) (*BtIndex, error) {
 	idx.getter = idx.decompressor.MakeGetter()
 
 	idx.dataoffset = uint64(pos)
-	idx.alloc = newBtAlloc(idx.keyCount, M, false)
+	idx.alloc = newBtAlloc(idx.keyCount, M, trace)
 	if idx.alloc != nil {
 		idx.alloc.dataLookup = idx.dataLookup
 		idx.alloc.traverseDfs()
