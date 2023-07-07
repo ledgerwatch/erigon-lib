@@ -528,7 +528,7 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 			return minD, maxD, ln, true, nil
 		}
 
-		//fmt.Printf("l=%d, lm=%d, rm=%d, minD=%d, maxD=%d\n", l, lm, rm, minD, maxD)
+		fmt.Printf("l=%d, lm=%d, rm=%d, minD=%d, maxD=%d\n", l, lm, rm, minD, maxD)
 		// space between nodes:
 		// rm = -1, lm = 2
 		// rm =  0, lm = 2
