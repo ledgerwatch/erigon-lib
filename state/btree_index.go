@@ -46,9 +46,9 @@ type markupCursor struct {
 }
 
 type node struct {
-	p   uint64 //p - pos inside level
+	p   uint64 // pos inside level
 	d   uint64
-	s   uint64 // sons
+	s   uint64 // sons pos inside level
 	fc  uint64
 	key []byte
 	val []byte
@@ -660,7 +660,7 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 			}
 		}
 
-		if rm-lm >= 1 {
+		if maxD-minD <= a.M+2 {
 			break
 		}
 
