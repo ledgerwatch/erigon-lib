@@ -595,6 +595,7 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 			if a.trace {
 				fmt.Printf("found nil key %x pos_range[%d-%d] naccess_ram=%d\n", l, lm, rm, a.naccess)
 			}
+			fmt.Printf("found nil key %x pos_range[%d-%d] naccess_ram=%d\n", l, lm, rm, a.naccess)
 			return nil, nil, 0, fmt.Errorf("bt index nil node at level %d", l)
 		}
 		//fmt.Printf("b: %x, %x\n", ik, ln.key)
