@@ -575,7 +575,7 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 			}
 		}
 		if rm-lm >= 1 {
-			fmt.Printf("break\n")
+			fmt.Printf("break: L:R %d:%d, lm:rm %d, %d\n", L, R, lm, rm)
 			break
 		}
 
