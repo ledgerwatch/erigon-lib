@@ -533,6 +533,11 @@ func (a *btAlloc) seek(ik []byte) (k, v []byte, di uint64, err error) {
 			return common.Copy(ln.key), common.Copy(ln.val), ln.d, nil
 		}
 
+		fmt.Printf("l=%d, lm=%d, rm=%d, minD=%d, maxD=%d\n", l, lm, rm, minD, maxD)
+		// space between nodes:
+		// rm = -1, lm = 2
+		// rm =  0, lm = 2
+		// rm =  0, lm = -1
 		if rm-lm >= 1 {
 			if lm >= 0 {
 				minD = a.nodes[l][lm].d
