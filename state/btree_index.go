@@ -551,6 +551,7 @@ func (a *btAlloc) findNode(ik []byte) (minD, maxD uint64, ln node, found bool, e
 					log.Warn(fmt.Sprintf("break: seems can improve maxD=%d to %d", maxD, a.nodes[l][rm].d))
 				}
 			}
+			fmt.Printf("break\n")
 			break
 		}
 
