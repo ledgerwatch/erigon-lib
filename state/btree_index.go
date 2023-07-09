@@ -840,7 +840,7 @@ func CreateBtreeIndex(indexPath, dataPath string, M uint64, logger log.Logger) (
 	return OpenBtreeIndex(indexPath, dataPath, M, false)
 }
 
-var DefaultBtreeM = uint64(2048)
+var DefaultBtreeM = uint64(2048) / 2
 
 func CreateBtreeIndexWithDecompressor(indexPath string, M uint64, decompressor *compress.Decompressor, p *background.Progress, tmpdir string, logger log.Logger) (*BtIndex, error) {
 	err := BuildBtreeIndexWithDecompressor(indexPath, decompressor, p, tmpdir, logger)
