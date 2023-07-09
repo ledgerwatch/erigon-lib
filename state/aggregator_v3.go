@@ -267,7 +267,7 @@ func (a *AggregatorV3) SharedDomains(ac *AggregatorV3Context) *SharedDomains {
 	return a.domains
 }
 
-func (a *AggregatorV3) SetWorkers(i int) {
+func (a *AggregatorV3) SetCompressWorkers(i int) {
 	a.accounts.compressWorkers = i
 	a.storage.compressWorkers = i
 	a.code.compressWorkers = i
