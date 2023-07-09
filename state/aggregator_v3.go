@@ -116,7 +116,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	if a.accounts, err = NewDomain(dir, a.tmpdir, aggregationStep, "accounts", kv.TblAccountKeys, kv.TblAccountVals, kv.TblAccountHistoryKeys, kv.TblAccountHistoryVals, kv.TblAccountIdx, false, AccDomainLargeValues, logger); err != nil {
 		return nil, err
 	}
-	if a.storage, err = NewDomain(dir, a.tmpdir, aggregationStep, "storage", kv.TblStorageKeys, kv.TblStorageVals, kv.TblStorageHistoryKeys, kv.TblStorageHistoryVals, kv.TblStorageIdx, true, StorageDomainLargeValues, logger); err != nil {
+	if a.storage, err = NewDomain(dir, a.tmpdir, aggregationStep, "storage", kv.TblStorageKeys, kv.TblStorageVals, kv.TblStorageHistoryKeys, kv.TblStorageHistoryVals, kv.TblStorageIdx, false, StorageDomainLargeValues, logger); err != nil {
 		return nil, err
 	}
 	if a.code, err = NewDomain(dir, a.tmpdir, aggregationStep, "code", kv.TblCodeKeys, kv.TblCodeVals, kv.TblCodeHistoryKeys, kv.TblCodeHistoryVals, kv.TblCodeIdx, true, true, logger); err != nil {
