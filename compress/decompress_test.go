@@ -100,6 +100,31 @@ func TestDecompressMatchOK(t *testing.T) {
 	}
 }
 
+func TestDecompressMatchOKUncompressed(t *testing.T) {
+	d := prepareLoremDictUncompressed(t)
+	defer d.Close()
+	g := d.MakeGetter()
+	i := 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		if i%2 != 0 {
+			expected := fmt.Sprintf("%s %d", w, i)
+			// ok, _ := g.Match([]byte(expected))
+			result := g.Match([]byte(expected))
+			if result != 0 {
+				t.Errorf("expexted match with %s", expected)
+			}
+		} else {
+			word, _ := g.Next(nil)
+			expected := fmt.Sprintf("%s %d", w, i)
+			if string(word) != expected {
+				t.Errorf("expected %s, got (hex) %s", expected, word)
+			}
+		}
+		i++
+	}
+}
+
 func prepareStupidDict(t *testing.T, size int) *Decompressor {
 	t.Helper()
 	logger := log.New()
@@ -126,9 +151,62 @@ func prepareStupidDict(t *testing.T, size int) *Decompressor {
 	return d
 }
 
+func prepareStupidDictUncompressed(t *testing.T, size int) *Decompressor {
+	t.Helper()
+	logger := log.New()
+	tmpDir := t.TempDir()
+	file := filepath.Join(tmpDir, "compressed2")
+	t.Name()
+	c, err := NewCompressor(context.Background(), t.Name(), file, tmpDir, 1, 2, log.LvlDebug, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for i := 0; i < size; i++ {
+		if err = c.AddUncompressedWord([]byte(fmt.Sprintf("word-%d", i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = c.Compress(); err != nil {
+		t.Fatal(err)
+	}
+	var d *Decompressor
+	if d, err = NewDecompressor(file); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func TestDecompressMatchOKCondensed(t *testing.T) {
 	condensePatternTableBitThreshold = 4
 	d := prepareStupidDict(t, 10000)
+	defer func() { condensePatternTableBitThreshold = 9 }()
+	defer d.Close()
+
+	g := d.MakeGetter()
+	i := 0
+	for g.HasNext() {
+		if i%2 != 0 {
+			expected := fmt.Sprintf("word-%d", i)
+			// ok, _ := g.Match([]byte(expected))
+			result := g.Match([]byte(expected))
+			if result != 0 {
+				t.Errorf("expexted match with %s", expected)
+			}
+		} else {
+			word, _ := g.Next(nil)
+			expected := fmt.Sprintf("word-%d", i)
+			if string(word) != expected {
+				t.Errorf("expected %s, got (hex) %s", expected, word)
+			}
+		}
+		i++
+	}
+}
+
+func TestDecompressMatchOKCondensedUncompressed(t *testing.T) {
+	condensePatternTableBitThreshold = 4
+	d := prepareStupidDictUncompressed(t, 10000)
 	defer func() { condensePatternTableBitThreshold = 9 }()
 	defer d.Close()
 
@@ -177,8 +255,72 @@ func TestDecompressMatchNotOK(t *testing.T) {
 	}
 }
 
+func TestDecompressMatchNotOKUncompressed(t *testing.T) {
+	d := prepareLoremDictUncompressed(t)
+	defer d.Close()
+	g := d.MakeGetter()
+	i := 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		if i%2 != 0 {
+			expected := fmt.Sprintf("%s %d", w, i)
+			// ok, _ := g.Match([]byte(expected))
+			result := g.Match([]byte(expected))
+			if result != 0 {
+				t.Errorf("expexted match with %s", expected)
+			}
+		} else {
+			word, _ := g.Next(nil)
+			expected := fmt.Sprintf("%s %d", w, i)
+			if string(word) != expected {
+				t.Errorf("expected %s, got (hex) %s", expected, word)
+			}
+		}
+		i++
+	}
+}
+
 func TestDecompressMatchPrefix(t *testing.T) {
 	d := prepareLoremDict(t)
+	defer d.Close()
+	g := d.MakeGetter()
+	i := 0
+	skipCount := 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
+		expected = expected[:len(expected)/2]
+		if !g.MatchPrefix(expected) {
+			t.Errorf("expexted match with %s", expected)
+		}
+		g.Skip()
+		skipCount++
+		i++
+	}
+	if skipCount != i {
+		t.Errorf("something wrong with match logic")
+	}
+	g.Reset(0)
+	skipCount = 0
+	i = 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
+		expected = expected[:len(expected)/2]
+		if len(expected) > 0 {
+			expected[len(expected)-1]++
+			if g.MatchPrefix(expected) {
+				t.Errorf("not expexted match with %s", expected)
+			}
+		}
+		g.Skip()
+		skipCount++
+		i++
+	}
+}
+
+func TestDecompressMatchPrefixUncompressed(t *testing.T) {
+	d := prepareLoremDictUncompressed(t)
 	defer d.Close()
 	g := d.MakeGetter()
 	i := 0

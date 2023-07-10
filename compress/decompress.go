@@ -692,7 +692,6 @@ func (g *Getter) Match(buf []byte) int {
 		if lenBuf > int(wordLen) {
 			return 1
 		}
-		// return lenBuf == int(wordLen), g.dataP
 	}
 
 	var bufPos int
@@ -702,18 +701,13 @@ func (g *Getter) Match(buf []byte) int {
 		pattern := g.nextPattern()
 		compared := bytes.Compare(buf[bufPos:bufPos+len(pattern)], pattern)
 		if compared != 0 {
+			g.dataP, g.dataBit = savePos, 0
 			return compared
 		}
 		if lenBuf < bufPos+len(pattern) {
 			g.dataP, g.dataBit = savePos, 0
 			return -1
-			// return false, savePos
 		}
-		// if lenBuf < bufPos+len(pattern) || !bytes.Equal(buf[bufPos:bufPos+len(pattern)], pattern) {
-		// 	g.dataP, g.dataBit = savePos, 0
-		// 	return -1
-		// 	// return false, savePos
-		// }
 	}
 	if g.dataBit > 0 {
 		g.dataP++
@@ -731,18 +725,13 @@ func (g *Getter) Match(buf []byte) int {
 			dif := uint64(bufPos - lastUncovered)
 			compared := bytes.Compare(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
 			if compared != 0 {
+				g.dataP, g.dataBit = savePos, 0
 				return compared
 			}
-
 			if lenBuf < bufPos {
 				g.dataP, g.dataBit = savePos, 0
 				return -1
 			}
-
-			// if lenBuf < bufPos || !bytes.Equal(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif]) {
-			// 	g.dataP, g.dataBit = savePos, 0
-			// 	return false, savePos
-			// }
 			postLoopPos += dif
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
@@ -752,18 +741,13 @@ func (g *Getter) Match(buf []byte) int {
 
 		compared := bytes.Compare(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
 		if compared != 0 {
+			g.dataP, g.dataBit = savePos, 0
 			return compared
 		}
-
 		if lenBuf < int(wordLen) {
 			g.dataP, g.dataBit = savePos, 0
 			return -1
 		}
-
-		// if lenBuf < int(wordLen) || !bytes.Equal(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif]) {
-		// 	g.dataP, g.dataBit = savePos, 0
-		// 	return false, savePos
-		// }
 		postLoopPos += dif
 	}
 	if lenBuf < int(wordLen) {
@@ -774,10 +758,6 @@ func (g *Getter) Match(buf []byte) int {
 		g.dataP, g.dataBit = savePos, 0
 		return 1
 	}
-	// if lenBuf != int(wordLen) {
-	// 	g.dataP, g.dataBit = savePos, 0
-	// 	return false, savePos
-	// }
 	g.dataP, g.dataBit = postLoopPos, 0
 	return 0
 }
