@@ -180,6 +180,7 @@ func toHashes(h ...byte) (out Hashes) {
 }
 
 func TestBlobTxParsing(t *testing.T) {
+	// Some arbitrary hardcoded example
 	bodyRlpHex := "f9012705078502540be4008506fc23ac008357b58494811a752c8cd697e3cb27" +
 		"279c330ed1ada745a8d7808204f7f872f85994de0b295669a9fd93d5f28d9ec85e40f4cb697b" +
 		"aef842a00000000000000000000000000000000000000000000000000000000000000003a000" +
@@ -198,7 +199,7 @@ func TestBlobTxParsing(t *testing.T) {
 
 	hasEnvelope := true
 	wrappedWithBlobs := false
-	var thinTx TxSlot
+	var thinTx TxSlot // only tx body, no blobs
 	p, err := ctx.ParseTransaction(bodyEnvelope, 0, &thinTx, nil, hasEnvelope, wrappedWithBlobs, nil)
 	require.NoError(t, err)
 	assert.Equal(t, len(bodyEnvelope), p)
@@ -225,6 +226,7 @@ func TestBlobTxParsing(t *testing.T) {
 	rand.Read(proof0[:])
 	rand.Read(proof1[:])
 
+	// Now parse the same tx body, but with blobs/commitments/proofs
 	wrapperRlp := hexutility.MustDecodeHex("03fa0401fe")
 	wrapperRlp = append(wrapperRlp, bodyRlp...)
 	wrapperRlp = append(wrapperRlp, blobsRlpPrefix...)
@@ -245,7 +247,7 @@ func TestBlobTxParsing(t *testing.T) {
 
 	hasEnvelope = false
 	wrappedWithBlobs = true
-	var fatTx TxSlot
+	var fatTx TxSlot // with blobs/commitments/proofs
 	p, err = ctx.ParseTransaction(wrapperRlp, 0, &fatTx, nil, hasEnvelope, wrappedWithBlobs, nil)
 	require.NoError(t, err)
 	assert.Equal(t, len(wrapperRlp), p)
