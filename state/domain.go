@@ -1897,13 +1897,13 @@ func (d *Domain) stepsRangeInDBAsStr(tx kv.Tx) string {
 	return fmt.Sprintf("%s: %.1f-%.1f, %.1f-%.1f,", d.filenameBase, ad1, ad2, a1, a2)
 }
 func (d *Domain) stepsRangeInDB(tx kv.Tx) (from, to float64) {
-	fst, _ := kv.FirstKey(tx, d.keysTable)
+	fst, _ := kv.FirstKey(tx, d.valsTable)
 	if len(fst) > 0 {
-		from = float64(binary.BigEndian.Uint64(fst)) / float64(d.aggregationStep)
+		from = float64(binary.BigEndian.Uint64(fst[len(fst)-8:])) / float64(d.aggregationStep)
 	}
-	lst, _ := kv.LastKey(tx, d.keysTable)
+	lst, _ := kv.LastKey(tx, d.valsTable)
 	if len(lst) > 0 {
-		to = float64(binary.BigEndian.Uint64(lst)) / float64(d.aggregationStep)
+		to = float64(binary.BigEndian.Uint64(lst[len(lst)-8:])) / float64(d.aggregationStep)
 	}
 	return from, to
 }
