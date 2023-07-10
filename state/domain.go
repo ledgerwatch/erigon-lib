@@ -1899,11 +1899,11 @@ func (d *Domain) stepsRangeInDBAsStr(tx kv.Tx) string {
 func (d *Domain) stepsRangeInDB(tx kv.Tx) (from, to float64) {
 	fst, _ := kv.FirstKey(tx, d.valsTable)
 	if len(fst) > 0 {
-		from = float64(binary.BigEndian.Uint64(fst[len(fst)-8:])) / float64(d.aggregationStep)
+		to = float64(^binary.BigEndian.Uint64(fst[len(fst)-8:]))
 	}
 	lst, _ := kv.LastKey(tx, d.valsTable)
 	if len(lst) > 0 {
-		to = float64(binary.BigEndian.Uint64(lst[len(lst)-8:])) / float64(d.aggregationStep)
+		from = float64(^binary.BigEndian.Uint64(lst[len(lst)-8:]))
 	}
 	return from, to
 }
