@@ -1435,8 +1435,11 @@ var hits = [128]int{}
 func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found bool, err error) {
 	dc.d.stats.FilesQueries.Add(1)
 
-	if hits[4]%100 == 0 {
+	if hits[4]%10_000 == 0 {
 		fmt.Printf("hits: %d\n", hits)
+		for i := len(dc.files) - 1; i >= 0; i-- {
+			fmt.Printf("file: %s\n", dc.files[i].src.decompressor.FileName())
+		}
 	}
 
 	var k []byte
