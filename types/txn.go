@@ -182,13 +182,13 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 		slot.Rlp = payload[p-1 : dataPos+dataLen]
 
 		if slot.Type == BlobTxType && wrappedWithBlobs {
+			p = dataPos
 			wrapperDataPos = dataPos
 			wrapperDataLen = dataLen
 			dataPos, dataLen, err = rlp.List(payload, dataPos)
 			if err != nil {
 				return 0, fmt.Errorf("%w: wrapped blob tx: %s", ErrParseTxn, err) //nolint
 			}
-			p = dataPos
 		}
 	} else {
 		slot.Type = LegacyTxType

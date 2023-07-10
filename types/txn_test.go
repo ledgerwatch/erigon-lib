@@ -18,13 +18,16 @@ package types
 
 import (
 	"bytes"
+	"crypto/rand"
 	"strconv"
 	"testing"
 
+	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 )
 
@@ -177,7 +180,7 @@ func toHashes(h ...byte) (out Hashes) {
 }
 
 func TestBlobTxParsing(t *testing.T) {
-	bodyRlpHex := "b9012b03f9012705078502540be4008506fc23ac008357b58494811a752c8cd697e3cb27" +
+	bodyRlpHex := "f9012705078502540be4008506fc23ac008357b58494811a752c8cd697e3cb27" +
 		"279c330ed1ada745a8d7808204f7f872f85994de0b295669a9fd93d5f28d9ec85e40f4cb697b" +
 		"aef842a00000000000000000000000000000000000000000000000000000000000000003a000" +
 		"00000000000000000000000000000000000000000000000000000000000007d694bb9bc244d7" +
@@ -187,15 +190,90 @@ func TestBlobTxParsing(t *testing.T) {
 		"90c16b02b0a05edcc541b4741c5cc6dd347c5ed9577ef293a62787b4510465fadbfe39ee4094"
 	bodyRlp := hexutility.MustDecodeHex(bodyRlpHex)
 
+	bodyEnvelope := hexutility.MustDecodeHex("b9012b03")
+	bodyEnvelope = append(bodyEnvelope, bodyRlp...)
+
 	ctx := NewTxParseContext(*uint256.NewInt(5))
 	ctx.withSender = false
 
-	var tx TxSlot
+	hasEnvelope := true
 	wrappedWithBlobs := false
-	p, err := ctx.ParseTransaction(bodyRlp, 0, &tx, nil, true /* hasEnvelope */, wrappedWithBlobs, nil)
+	var thinTx TxSlot
+	p, err := ctx.ParseTransaction(bodyEnvelope, 0, &thinTx, nil, hasEnvelope, wrappedWithBlobs, nil)
 	require.NoError(t, err)
-	assert.Equal(t, len(bodyRlp), p)
-	assert.Equal(t, 2, len(tx.BlobHashes))
+	assert.Equal(t, len(bodyEnvelope), p)
+	assert.Equal(t, len(bodyEnvelope), int(thinTx.Size))
+	assert.Equal(t, bodyEnvelope[3:], thinTx.Rlp)
+	assert.Equal(t, BlobTxType, thinTx.Type)
+	assert.Equal(t, 2, len(thinTx.BlobHashes))
+	assert.Equal(t, 0, len(thinTx.Blobs))
+	assert.Equal(t, 0, len(thinTx.Commitments))
+	assert.Equal(t, 0, len(thinTx.Proofs))
 
-	// TODO(eip-4844) test that IDHash is the same with & without wrappedWithBlobs
+	blobsRlpPrefix := hexutility.MustDecodeHex("fa040008")
+	blobRlpPrefix := hexutility.MustDecodeHex("ba020000")
+	blob0 := make([]byte, chain.BlobSize)
+	rand.Read(blob0)
+	blob1 := make([]byte, chain.BlobSize)
+	rand.Read(blob1)
+
+	proofsRlpPrefix := hexutility.MustDecodeHex("f862")
+	var commitment0, commitment1 gokzg4844.KZGCommitment
+	rand.Read(commitment0[:])
+	rand.Read(commitment1[:])
+	var proof0, proof1 gokzg4844.KZGProof
+	rand.Read(proof0[:])
+	rand.Read(proof1[:])
+
+	wrapperRlp := hexutility.MustDecodeHex("03fa0401fe")
+	wrapperRlp = append(wrapperRlp, bodyRlp...)
+	wrapperRlp = append(wrapperRlp, blobsRlpPrefix...)
+	wrapperRlp = append(wrapperRlp, blobRlpPrefix...)
+	wrapperRlp = append(wrapperRlp, blob0...)
+	wrapperRlp = append(wrapperRlp, blobRlpPrefix...)
+	wrapperRlp = append(wrapperRlp, blob1...)
+	wrapperRlp = append(wrapperRlp, proofsRlpPrefix...)
+	wrapperRlp = append(wrapperRlp, 0xb0)
+	wrapperRlp = append(wrapperRlp, commitment0[:]...)
+	wrapperRlp = append(wrapperRlp, 0xb0)
+	wrapperRlp = append(wrapperRlp, commitment1[:]...)
+	wrapperRlp = append(wrapperRlp, proofsRlpPrefix...)
+	wrapperRlp = append(wrapperRlp, 0xb0)
+	wrapperRlp = append(wrapperRlp, proof0[:]...)
+	wrapperRlp = append(wrapperRlp, 0xb0)
+	wrapperRlp = append(wrapperRlp, proof1[:]...)
+
+	hasEnvelope = false
+	wrappedWithBlobs = true
+	var fatTx TxSlot
+	p, err = ctx.ParseTransaction(wrapperRlp, 0, &fatTx, nil, hasEnvelope, wrappedWithBlobs, nil)
+	require.NoError(t, err)
+	assert.Equal(t, len(wrapperRlp), p)
+	assert.Equal(t, len(wrapperRlp), int(fatTx.Size))
+	assert.Equal(t, wrapperRlp, fatTx.Rlp)
+	assert.Equal(t, BlobTxType, fatTx.Type)
+
+	assert.Equal(t, thinTx.Value, fatTx.Value)
+	assert.Equal(t, thinTx.Tip, fatTx.Tip)
+	assert.Equal(t, thinTx.FeeCap, fatTx.FeeCap)
+	assert.Equal(t, thinTx.Nonce, fatTx.Nonce)
+	assert.Equal(t, thinTx.DataLen, fatTx.DataLen)
+	assert.Equal(t, thinTx.DataNonZeroLen, fatTx.DataNonZeroLen)
+	assert.Equal(t, thinTx.AlAddrCount, fatTx.AlAddrCount)
+	assert.Equal(t, thinTx.AlStorCount, fatTx.AlStorCount)
+	assert.Equal(t, thinTx.Gas, fatTx.Gas)
+	assert.Equal(t, thinTx.IDHash, fatTx.IDHash)
+	assert.Equal(t, thinTx.Creation, fatTx.Creation)
+	assert.Equal(t, thinTx.DataFeeCap, fatTx.DataFeeCap)
+	assert.Equal(t, thinTx.BlobHashes, fatTx.BlobHashes)
+
+	require.Equal(t, 2, len(fatTx.Blobs))
+	require.Equal(t, 2, len(fatTx.Commitments))
+	require.Equal(t, 2, len(fatTx.Proofs))
+	assert.Equal(t, blob0, fatTx.Blobs[0])
+	assert.Equal(t, blob1, fatTx.Blobs[1])
+	assert.Equal(t, commitment0, fatTx.Commitments[0])
+	assert.Equal(t, commitment1, fatTx.Commitments[1])
+	assert.Equal(t, proof0, fatTx.Proofs[0])
+	assert.Equal(t, proof1, fatTx.Proofs[1])
 }
