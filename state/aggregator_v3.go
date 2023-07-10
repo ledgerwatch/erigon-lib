@@ -879,7 +879,7 @@ func (a *AggregatorV3) StepsRangeInDBAsStr(tx kv.Tx) string {
 		a.logTopics.stepsRangeInDBAsStr(tx),
 		a.tracesFrom.stepsRangeInDBAsStr(tx),
 		a.tracesTo.stepsRangeInDBAsStr(tx),
-	}, ",")
+	}, ", ")
 }
 func (a *AggregatorV3) Prune(ctx context.Context, stepsLimit float64) error {
 	if dbg.NoPrune() {
