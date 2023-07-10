@@ -902,6 +902,10 @@ func (a *AggregatorV3) Prune(ctx context.Context, stepsLimit float64) error {
 	//	}()
 	//}
 
+	ac := a.MakeContext()
+	ac.accounts.maxTxNumInFiles(false)
+	log.Warn("[snapshots] tooooo", "a.minimax", a.minimaxTxNumInFiles.Load()/a.aggregationStep, "ac.minimax", ac.maxTxNumInFiles(false)/a.aggregationStep)
+	ac.Close()
 	return a.prune(ctx, 0, to, limit)
 }
 

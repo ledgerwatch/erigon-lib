@@ -1312,10 +1312,6 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	if err != nil {
 		return err
 	}
-	if ii.filenameBase == "tracesto" {
-		log.Warn(fmt.Sprintf("prune in: %x -> %x\n", txKey, k))
-	}
-
 	if k == nil {
 		return nil
 	}
