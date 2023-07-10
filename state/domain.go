@@ -1473,6 +1473,7 @@ func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found boo
 		break
 	}
 	if !found {
+		fmt.Printf("not found: %x\n", filekey)
 		notFound++
 	} else {
 		yesFound++
