@@ -1437,7 +1437,7 @@ func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found boo
 	dc.d.stats.FilesQueries.Add(1)
 
 	if hits[4]%100_000 == 0 {
-		fmt.Printf("found: %dk / %dk\n", notFound, yesFound)
+		fmt.Printf("found: %dk / %dk\n", notFound/1000, yesFound/1000)
 		for i := len(dc.files) - 1; i >= 0; i-- {
 			fmt.Printf("file: %s, %dk\n", dc.files[i].src.decompressor.FileName(), hits[i]/1_000)
 		}
