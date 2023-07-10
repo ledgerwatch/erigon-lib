@@ -1429,11 +1429,18 @@ func (dc *DomainContext) getBeforeTxNumFromFiles(filekey []byte, fromTxNum uint6
 	}
 	return v, found, nil
 }
+
+var hits = [128]int{}
+
 func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found bool, err error) {
 	dc.d.stats.FilesQueries.Add(1)
 
 	var k []byte
 	for i := len(dc.files) - 1; i >= 0; i-- {
+		hits[i]++
+		if hits[2]%1000 == 0 {
+			fmt.Printf("hits: %d\n", hits)
+		}
 		k, v, err = dc.statelessBtree(i).Get(filekey)
 		if err != nil {
 			return nil, false, err
