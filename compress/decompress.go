@@ -680,7 +680,7 @@ func (g *Getter) Match(buf []byte) int {
 			g.dataP++
 			g.dataBit = 0
 		}
-		if lenBuf != 0 {
+		if lenBuf != 0 || lenBuf != int(wordLen) {
 			g.dataP, g.dataBit = savePos, 0
 		}
 		if lenBuf == int(wordLen) {

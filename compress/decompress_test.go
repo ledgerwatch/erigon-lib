@@ -20,10 +20,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/require"
@@ -362,7 +364,7 @@ func prepareLoremDictUncompressed(t *testing.T) *Decompressor {
 	t.Helper()
 	logger := log.New()
 	tmpDir := t.TempDir()
-	file := filepath.Join(tmpDir, "compressed")
+	file := filepath.Join(tmpDir, "uncompressed")
 	t.Name()
 	c, err := NewCompressor(context.Background(), t.Name(), file, tmpDir, 1, 2, log.LvlDebug, logger)
 	if err != nil {
@@ -431,4 +433,132 @@ func TestDecompressTorrent(t *testing.T) {
 		// fmt.Printf("%x\n", buf)
 		require.NotZero(t, sz)
 	}
+}
+
+const N = 100
+
+var WORDS = [N][]byte{}
+var WORD_FLAGS = [N]bool{} // false - uncompressed word, true - compressed word
+var INPUT_FLAGS = []int{}  // []byte or nil input
+
+func randWord() []byte {
+	size := rand.Intn(256) // size of the word
+	word := make([]byte, size)
+	for i := 0; i < size; i++ {
+		word[i] = byte(rand.Intn(256))
+	}
+	return word
+}
+
+func generateRandWords() {
+	for i := 0; i < N-2; i++ {
+		WORDS[i] = randWord()
+	}
+	// make sure we have at least 2 emtpy []byte
+	WORDS[N-2] = []byte{}
+	WORDS[N-1] = []byte{}
+}
+
+func prepareRandomDict(t *testing.T) *Decompressor {
+	t.Helper()
+	logger := log.New()
+	tmpDir := t.TempDir()
+	file := filepath.Join(tmpDir, "complex")
+	t.Name()
+	c, err := NewCompressor(context.Background(), t.Name(), file, tmpDir, 1, 2, log.LvlDebug, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	rand.Seed(time.Now().UnixNano())
+	generateRandWords()
+
+	idx := 0
+	for idx < N {
+		n := rand.Intn(2)
+		switch n {
+		case 0: // input case
+			word := WORDS[idx]
+			m := rand.Intn(2)
+			if m == 1 {
+				if err = c.AddWord(word); err != nil {
+					t.Fatal(err)
+				}
+				WORD_FLAGS[idx] = true
+			} else {
+				if err = c.AddUncompressedWord(word); err != nil {
+					t.Fatal(err)
+				}
+			}
+			idx++
+			INPUT_FLAGS = append(INPUT_FLAGS, n)
+		case 1: // nil word
+			if err = c.AddWord(nil); err != nil {
+				t.Fatal(err)
+			}
+			INPUT_FLAGS = append(INPUT_FLAGS, n)
+		default:
+			t.Fatal(fmt.Errorf("case %d\n", n))
+		}
+	}
+
+	if err = c.Compress(); err != nil {
+		t.Fatal(err)
+	}
+	var d *Decompressor
+	if d, err = NewDecompressor(file); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func TestDecompressRandomDict(t *testing.T) {
+	d := prepareRandomDict(t)
+	defer d.Close()
+
+	if d.wordsCount != uint64(len(INPUT_FLAGS)) {
+		t.Fatalf("TestDecompressRandomDict: d.wordsCount != len(INPUT_FLAGS)")
+	}
+
+	g := d.MakeGetter()
+
+	word_idx := 0
+	input_idx := 0
+	total := 0
+
+	for g.HasNext() {
+		pos := g.dataP
+		if INPUT_FLAGS[input_idx] == 0 { // []byte input
+			notExpected := string(WORDS[word_idx]) + "z"
+			result := g.Match([]byte(notExpected))
+			if result == 0 { // it's still could match, since we generating randWord
+				t.Fatalf("not expected match: %s\n got: %s\n", notExpected, WORDS[word_idx])
+			}
+
+			expected := WORDS[word_idx]
+			result = g.Match(expected)
+			if result != 0 {
+				g.Reset(pos)
+				word, _ := g.Next(nil)
+				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
+			}
+			word_idx++
+		} else { // nil input
+			result := g.Match(nil)
+			expected := []byte{}
+			if result != 0 {
+				g.Reset(pos)
+				word, _ := g.Next(nil)
+				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
+			}
+		}
+		input_idx++
+		total++
+	}
+	if total != int(d.wordsCount) {
+		t.Fatalf("expected word count: %d, got %d\n", int(d.wordsCount), total)
+	}
+
+	// TODO: check for non existing keys, suffixes, prefixes
 }
