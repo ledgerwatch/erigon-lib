@@ -1312,6 +1312,10 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	if err != nil {
 		return err
 	}
+	if ii.filenameBase == "tracesto" {
+		log.Warn(fmt.Sprintf("prune in: %x -> %x\n", txKey, k))
+	}
+
 	if k == nil {
 		return nil
 	}
@@ -1319,7 +1323,11 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	if limit != math.MaxUint64 && limit != 0 {
 		txTo = cmp.Min(txTo, txFrom+limit)
 	}
+
 	if txFrom >= txTo {
+		if ii.filenameBase == "tracesto" {
+			log.Warn(fmt.Sprintf("prune exit 2: %d >= %d\n", txFrom, txTo))
+		}
 		return nil
 	}
 
@@ -1345,6 +1353,9 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		}
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
+			if ii.filenameBase == "tracesto" {
+				log.Warn(fmt.Sprintf("exit 3: %d >= %d\n", txNum, txTo))
+			}
 			break
 		}
 		for ; v != nil; _, v, err = keysCursor.NextDup() {
