@@ -182,7 +182,6 @@ func toHashes(h ...byte) (out Hashes) {
 func TestBlobTxParsing(t *testing.T) {
 	// First parse a blob transaction body (no blobs/commitments/proofs)
 	wrappedWithBlobs := false
-	hasEnvelope := true
 	// Some arbitrary hardcoded example
 	bodyRlpHex := "f9012705078502540be4008506fc23ac008357b58494811a752c8cd697e3cb27" +
 		"279c330ed1ada745a8d7808204f7f872f85994de0b295669a9fd93d5f28d9ec85e40f4cb697b" +
@@ -194,6 +193,7 @@ func TestBlobTxParsing(t *testing.T) {
 		"90c16b02b0a05edcc541b4741c5cc6dd347c5ed9577ef293a62787b4510465fadbfe39ee4094"
 	bodyRlp := hexutility.MustDecodeHex(bodyRlpHex)
 
+	hasEnvelope := true
 	bodyEnvelope := hexutility.MustDecodeHex("b9012b03")
 	bodyEnvelope = append(bodyEnvelope, bodyRlp...)
 
