@@ -1320,6 +1320,16 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 		return nil
 	}
 	txFrom = binary.BigEndian.Uint64(k)
+	if ii.filenameBase == "tracesto" {
+		log.Warn(fmt.Sprintf("prune3: txFrom=%d, %d\n", txFrom, txTo))
+		fst, _ := kv.FirstKey(ii.tx, kv.TblTracesToKeys)
+		lst, _ := kv.LastKey(ii.tx, kv.TblTracesToKeys)
+		if len(fst) > 0 && len(lst) > 0 {
+			fstTxNum := binary.BigEndian.Uint64(fst)
+			lstTxNum := binary.BigEndian.Uint64(lst)
+			log.Warn(fmt.Sprintf("prune3: fstTxNum=%d, %d\n", fstTxNum, lstTxNum))
+		}
+	}
 	if limit != math.MaxUint64 && limit != 0 {
 		txTo = cmp.Min(txTo, txFrom+limit)
 	}
