@@ -1436,8 +1436,8 @@ var notFound, yesFound int
 func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found bool, err error) {
 	dc.d.stats.FilesQueries.Add(1)
 
-	if hits[4]%100_000 == 0 {
-		fmt.Printf("found: %dk / %dk\n", notFound/1000, yesFound/1000)
+	if hits[4] > 0 && hits[4]%100_000 == 0 {
+		fmt.Printf("found: %dk / %dk\n", notFound/1_000, yesFound/1_000)
 		for i := len(dc.files) - 1; i >= 0; i-- {
 			fmt.Printf("file: %s, %dk\n", dc.files[i].src.decompressor.FileName(), hits[i]/1_000)
 		}
@@ -1473,7 +1473,6 @@ func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found boo
 		break
 	}
 	if !found {
-		fmt.Printf("not found: %x\n", filekey)
 		notFound++
 	} else {
 		yesFound++
