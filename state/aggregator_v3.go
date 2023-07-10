@@ -869,6 +869,18 @@ func (a *AggregatorV3Context) PruneWithTiemout(ctx context.Context, timeout time
 	return nil
 }
 
+func (a *AggregatorV3) StepsRangeInDBAsStr(tx kv.Tx) string {
+	return strings.Join([]string{
+		a.accounts.stepsRangeInDBAsStr(tx),
+		a.storage.stepsRangeInDBAsStr(tx),
+		a.code.stepsRangeInDBAsStr(tx),
+		a.commitment.stepsRangeInDBAsStr(tx),
+		a.logAddrs.stepsRangeInDBAsStr(tx),
+		a.logTopics.stepsRangeInDBAsStr(tx),
+		a.tracesFrom.stepsRangeInDBAsStr(tx),
+		a.tracesTo.stepsRangeInDBAsStr(tx),
+	}, ",")
+}
 func (a *AggregatorV3) Prune(ctx context.Context, stepsLimit float64) error {
 	if dbg.NoPrune() {
 		return nil
