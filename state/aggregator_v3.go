@@ -925,6 +925,7 @@ func (a *AggregatorV3) prune(ctx context.Context, txFrom, txTo, limit uint64) er
 	if err := a.tracesTo.prune(ctx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
+	log.Warn("prune done", "txFrom", txFrom, "txTo", txTo, "a.tracesTo.maxTxNumInFiles()", a.tracesTo.endTxNumMinimax()/a.aggregationStep, "a.minimaxTxNumInFiles()", a.minimaxTxNumInFiles.Load()/a.aggregationStep)
 	return nil
 }
 
@@ -1373,24 +1374,24 @@ func (a *AggregatorV3) BuildFilesInBackground(txNum uint64) chan struct{} {
 			}
 		}
 
-		if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
-			close(fin)
-			return
-		}
-		a.wg.Add(1)
-		go func() {
-			defer a.wg.Done()
-			defer a.mergeingFiles.Store(false)
-			defer func() { close(fin) }()
-			if err := a.MergeLoop(a.ctx, 1); err != nil {
-				if errors.Is(err, context.Canceled) {
-					return
-				}
-				log.Warn("[snapshots] merge", "err", err)
-			}
-
-			a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
-		}()
+		//if ok := a.mergeingFiles.CompareAndSwap(false, true); !ok {
+		//	close(fin)
+		//	return
+		//}
+		//a.wg.Add(1)
+		//go func() {
+		//	defer a.wg.Done()
+		//	defer a.mergeingFiles.Store(false)
+		//	defer func() { close(fin) }()
+		//	if err := a.MergeLoop(a.ctx, 1); err != nil {
+		//		if errors.Is(err, context.Canceled) {
+		//			return
+		//		}
+		//		log.Warn("[snapshots] merge", "err", err)
+		//	}
+		//
+		//	a.BuildOptionalMissedIndicesInBackground(a.ctx, 1)
+		//}()
 	}()
 	return fin
 }
