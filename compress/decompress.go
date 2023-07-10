@@ -670,7 +670,7 @@ func (g *Getter) SkipUncompressed() uint64 {
 
 // Match returns true and next offset if the word at current offset fully matches the buf
 // returns false and current offset otherwise.
-func (g *Getter) Match(buf []byte) (bool, uint64) {
+func (g *Getter) Match(buf []byte) int {
 	savePos := g.dataP
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
@@ -683,7 +683,16 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 		if lenBuf != 0 {
 			g.dataP, g.dataBit = savePos, 0
 		}
-		return lenBuf == int(wordLen), g.dataP
+		if lenBuf == int(wordLen) {
+			return 0
+		}
+		if lenBuf < int(wordLen) {
+			return -1
+		}
+		if lenBuf > int(wordLen) {
+			return 1
+		}
+		// return lenBuf == int(wordLen), g.dataP
 	}
 
 	var bufPos int
@@ -691,10 +700,20 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
 		pattern := g.nextPattern()
-		if lenBuf < bufPos+len(pattern) || !bytes.Equal(buf[bufPos:bufPos+len(pattern)], pattern) {
-			g.dataP, g.dataBit = savePos, 0
-			return false, savePos
+		compared := bytes.Compare(buf[bufPos:bufPos+len(pattern)], pattern)
+		if compared != 0 {
+			return compared
 		}
+		if lenBuf < bufPos+len(pattern) {
+			g.dataP, g.dataBit = savePos, 0
+			return -1
+			// return false, savePos
+		}
+		// if lenBuf < bufPos+len(pattern) || !bytes.Equal(buf[bufPos:bufPos+len(pattern)], pattern) {
+		// 	g.dataP, g.dataBit = savePos, 0
+		// 	return -1
+		// 	// return false, savePos
+		// }
 	}
 	if g.dataBit > 0 {
 		g.dataP++
@@ -710,28 +729,57 @@ func (g *Getter) Match(buf []byte) (bool, uint64) {
 		bufPos += int(pos) - 1
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
-			if lenBuf < bufPos || !bytes.Equal(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif]) {
-				g.dataP, g.dataBit = savePos, 0
-				return false, savePos
+			compared := bytes.Compare(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
+			if compared != 0 {
+				return compared
 			}
+
+			if lenBuf < bufPos {
+				g.dataP, g.dataBit = savePos, 0
+				return -1
+			}
+
+			// if lenBuf < bufPos || !bytes.Equal(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif]) {
+			// 	g.dataP, g.dataBit = savePos, 0
+			// 	return false, savePos
+			// }
 			postLoopPos += dif
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
 	}
 	if int(wordLen) > lastUncovered {
 		dif := wordLen - uint64(lastUncovered)
-		if lenBuf < int(wordLen) || !bytes.Equal(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif]) {
-			g.dataP, g.dataBit = savePos, 0
-			return false, savePos
+
+		compared := bytes.Compare(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
+		if compared != 0 {
+			return compared
 		}
+
+		if lenBuf < int(wordLen) {
+			g.dataP, g.dataBit = savePos, 0
+			return -1
+		}
+
+		// if lenBuf < int(wordLen) || !bytes.Equal(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif]) {
+		// 	g.dataP, g.dataBit = savePos, 0
+		// 	return false, savePos
+		// }
 		postLoopPos += dif
 	}
-	if lenBuf != int(wordLen) {
+	if lenBuf < int(wordLen) {
 		g.dataP, g.dataBit = savePos, 0
-		return false, savePos
+		return -1
 	}
+	if lenBuf > int(wordLen) {
+		g.dataP, g.dataBit = savePos, 0
+		return 1
+	}
+	// if lenBuf != int(wordLen) {
+	// 	g.dataP, g.dataBit = savePos, 0
+	// 	return false, savePos
+	// }
 	g.dataP, g.dataBit = postLoopPos, 0
-	return true, postLoopPos
+	return 0
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
