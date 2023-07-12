@@ -459,6 +459,10 @@ func generateRandWords() {
 	WORDS[N-1] = []byte{}
 }
 
+func randIntInRange(min, max int) int {
+	return (rand.Intn(max-min) + min)
+}
+
 func prepareRandomDict(t *testing.T) *Decompressor {
 	t.Helper()
 	logger := log.New()
@@ -527,12 +531,13 @@ func TestDecompressRandomDict(t *testing.T) {
 	input_idx := 0
 	total := 0
 
+	// check for existing and non existing keys
 	for g.HasNext() {
 		pos := g.dataP
 		if INPUT_FLAGS[input_idx] == 0 { // []byte input
 			notExpected := string(WORDS[word_idx]) + "z"
 			result := g.Match([]byte(notExpected))
-			if result == 0 { // it's still could match, since we generating randWord
+			if result == 0 {
 				t.Fatalf("not expected match: %s\n got: %s\n", notExpected, WORDS[word_idx])
 			}
 
@@ -545,8 +550,15 @@ func TestDecompressRandomDict(t *testing.T) {
 			}
 			word_idx++
 		} else { // nil input
-			result := g.Match(nil)
+
+			notExpected := []byte{0}
+			result := g.Match(notExpected)
+			if result == 0 {
+				t.Fatal("not expected match []byte{0} with nil\n")
+			}
+
 			expected := []byte{}
+			result = g.Match(nil)
 			if result != 0 {
 				g.Reset(pos)
 				word, _ := g.Next(nil)
@@ -561,4 +573,49 @@ func TestDecompressRandomDict(t *testing.T) {
 	}
 
 	// TODO: check for non existing keys, suffixes, prefixes
+	g.Reset(0)
+
+	word_idx = 0
+	input_idx = 0
+	// check for existing and non existing prefixes
+	var notExpected = []byte{2, 3, 4}
+	for g.HasNext() {
+
+		if INPUT_FLAGS[input_idx] == 0 { // []byte input
+			expected := WORDS[word_idx]
+			prefix_size := len(expected) / 2
+			if len(expected)/2 > 3 {
+				prefix_size = randIntInRange(3, len(expected)/2)
+			}
+			expected = expected[:prefix_size]
+			if len(expected) > 0 {
+				if !g.MatchPrefix(expected) {
+					t.Errorf("expected match with %s", expected)
+				}
+				expected[len(expected)-1]++
+				if g.MatchPrefix(expected) {
+					t.Errorf("not expected match with %s", expected)
+				}
+			} else {
+				if !g.MatchPrefix([]byte{}) {
+					t.Error("expected match with empty []byte")
+				}
+
+				if g.MatchPrefix(notExpected) {
+					t.Error("not expected empty []byte to match with []byte{2, 3, 4}")
+				}
+			}
+			word_idx++
+		} else { // nil input
+			if !g.MatchPrefix(nil) {
+				t.Error("expected match with nil")
+			}
+			if g.MatchPrefix(notExpected) {
+				t.Error("not expected nil to match with []byte{2, 3, 4}")
+			}
+		}
+
+		g.Skip()
+		input_idx++
+	}
 }
