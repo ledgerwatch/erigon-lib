@@ -48,6 +48,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
+	libkzg "github.com/ledgerwatch/erigon-lib/crypto/kzg"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/grpcutil"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
@@ -657,6 +658,29 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 		}
 		if blobCount > chain.MaxBlobsPerBlock {
 			return txpoolcfg.TooManyBlobs
+		}
+
+		// TODO(eip-4844)(racytech) see what we can do instead of logging
+
+		equalNumber := len(txn.BlobHashes) == len(txn.Blobs) &&
+			len(txn.Blobs) == len(txn.Commitments) &&
+			len(txn.Commitments) == len(txn.Proofs)
+
+		if !equalNumber {
+			p.logger.Error("validateTx: unequal number of blob hashes, blobs, commitments and proofs")
+		}
+
+		for i := 0; i < len(txn.Commitments); i++ {
+			if libkzg.KZGToVersionedHash(txn.Commitments[i]) != libkzg.VersionedHash(txn.BlobHashes[i]) {
+				p.logger.Error("validateTx: kzg_to_versioned_hash(commitments[i]) != blob_versioned_hashes[i]")
+			}
+		}
+
+		// https://github.com/ethereum/consensus-specs/blob/017a8495f7671f5fff2075a9bfc9238c1a0982f8/specs/deneb/polynomial-commitments.md#verify_blob_kzg_proof_batch
+		kzgCtx := libkzg.Ctx()
+		err := kzgCtx.VerifyBlobKZGProofBatch(txn.Blobs, txn.Commitments, txn.Proofs)
+		if err != nil {
+			p.logger.Error("validateTx: error during proof verification: %v")
 		}
 	}
 
