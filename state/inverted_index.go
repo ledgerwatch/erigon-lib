@@ -75,6 +75,8 @@ type InvertedIndex struct {
 	txNumBytes [8]byte
 	wal        *invertedIndexWAL
 	logger     log.Logger
+
+	noFsync bool // fsync is enabled by default, but tests can manually disable
 }
 
 func NewInvertedIndex(
@@ -273,7 +275,7 @@ func (ii *InvertedIndex) buildEfi(ctx context.Context, item *filesItem, p *backg
 	p.Name.Store(&fName)
 	p.Total.Store(uint64(item.decompressor.Count()))
 	//ii.logger.Info("[snapshots] build idx", "file", fName)
-	return buildIndex(ctx, item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false, p, ii.logger)
+	return buildIndex(ctx, item.decompressor, idxPath, ii.tmpdir, item.decompressor.Count()/2, false, p, ii.logger, ii.noFsync)
 }
 
 // BuildMissedIndices - produce .efi/.vi/.kvi from .ef/.v/.kv
@@ -373,6 +375,9 @@ func (ii *InvertedIndex) Close() {
 	ii.reCalcRoFiles()
 }
 
+// DisableFsync - just for tests
+func (ii *InvertedIndex) DisableFsync() { ii.noFsync = true }
+
 func (ii *InvertedIndex) Files() (res []string) {
 	ii.files.Walk(func(items []*filesItem) bool {
 		for _, item := range items {
@@ -406,7 +411,10 @@ func (ii *InvertedIndex) DiscardHistory(tmpdir string) {
 	ii.wal = ii.newWriter(tmpdir, false, true)
 }
 func (ii *InvertedIndex) StartWrites() {
-	ii.wal = ii.newWriter(ii.tmpdir, WALCollectorRAM > 0, false)
+	ii.wal = ii.newWriter(ii.tmpdir, true, false)
+}
+func (ii *InvertedIndex) StartUnbufferedWrites() {
+	ii.wal = ii.newWriter(ii.tmpdir, false, false)
 }
 func (ii *InvertedIndex) FinishWrites() {
 	ii.wal.close()
@@ -437,7 +445,7 @@ func loadFunc(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) 
 }
 
 func (ii *invertedIndexWAL) Flush(ctx context.Context, tx kv.RwTx) error {
-	if ii.discard {
+	if ii.discard || !ii.buffered {
 		return nil
 	}
 	if err := ii.index.Load(tx, ii.ii.indexTable, loadFunc, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
@@ -1231,7 +1239,7 @@ func (ii *InvertedIndex) buildFiles(ctx context.Context, step uint64, bitmaps ma
 	idxPath := filepath.Join(ii.dir, idxFileName)
 	p := ps.AddNew(idxFileName, uint64(decomp.Count()*2))
 	defer ps.Delete(p)
-	if index, err = buildIndexThenOpen(ctx, decomp, idxPath, ii.tmpdir, len(keys), false /* values */, p, ii.logger); err != nil {
+	if index, err = buildIndexThenOpen(ctx, decomp, idxPath, ii.tmpdir, len(keys), false /* values */, p, ii.logger, ii.noFsync); err != nil {
 		return InvertedFiles{}, fmt.Errorf("build %s efi: %w", ii.filenameBase, err)
 	}
 	closeComp = false
@@ -1273,7 +1281,10 @@ func (ii *InvertedIndex) warmup(ctx context.Context, txFrom, limit uint64, tx kv
 	if limit != math.MaxUint64 && limit != 0 {
 		txTo = txFrom + limit
 	}
-	for ; err == nil && k != nil; k, v, err = keysCursor.Next() {
+	for ; k != nil; k, v, err = keysCursor.Next() {
+		if err != nil {
+			return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
+		}
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
@@ -1285,9 +1296,6 @@ func (ii *InvertedIndex) warmup(ctx context.Context, txFrom, limit uint64, tx kv
 			return ctx.Err()
 		default:
 		}
-	}
-	if err != nil {
-		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
 	}
 	return nil
 }
@@ -1319,6 +1327,11 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 	collector := etl.NewCollector("snapshots", ii.tmpdir, etl.NewOldestEntryBuffer(etl.BufferOptimalSize), ii.logger)
 	defer collector.Close()
 
+	idxCForDeletes, err := ii.tx.RwCursorDupSort(ii.indexTable)
+	if err != nil {
+		return err
+	}
+	defer idxCForDeletes.Close()
 	idxC, err := ii.tx.RwCursorDupSort(ii.indexTable)
 	if err != nil {
 		return err
@@ -1327,19 +1340,25 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 
 	// Invariant: if some `txNum=N` pruned - it's pruned Fully
 	// Means: can use DeleteCurrentDuplicates all values of given `txNum`
-	for ; err == nil && k != nil; k, v, err = keysCursor.NextNoDup() {
+	for ; k != nil; k, v, err = keysCursor.NextNoDup() {
+		if err != nil {
+			return err
+		}
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
 			break
 		}
-		for ; err == nil && k != nil; k, v, err = keysCursor.NextDup() {
+		for ; v != nil; _, v, err = keysCursor.NextDup() {
+			if err != nil {
+				return err
+			}
 			if err := collector.Collect(v, nil); err != nil {
 				return err
 			}
 		}
 
 		// This DeleteCurrent needs to the last in the loop iteration, because it invalidates k and v
-		if err = keysCursor.DeleteCurrentDuplicates(); err != nil {
+		if err = ii.tx.Delete(ii.indexKeysTable, k); err != nil {
 			return err
 		}
 		select {
@@ -1361,7 +1380,11 @@ func (ii *InvertedIndex) prune(ctx context.Context, txFrom, txTo, limit uint64, 
 			if txNum >= txTo {
 				break
 			}
-			if err = idxC.DeleteCurrent(); err != nil {
+
+			if _, _, err = idxCForDeletes.SeekBothExact(key, v); err != nil {
+				return err
+			}
+			if err = idxCForDeletes.DeleteCurrent(); err != nil {
 				return err
 			}
 
@@ -1444,4 +1467,20 @@ func (ii *InvertedIndex) collectFilesStat() (filesCount, filesSize, idxSize uint
 		return true
 	})
 	return filesCount, filesSize, idxSize
+}
+
+func (ii *InvertedIndex) stepsRangeInDBAsStr(tx kv.Tx) string {
+	a1, a2 := ii.stepsRangeInDB(tx)
+	return fmt.Sprintf("%s: %.1f-%.1f", ii.filenameBase, a1, a2)
+}
+func (ii *InvertedIndex) stepsRangeInDB(tx kv.Tx) (from, to float64) {
+	fst, _ := kv.FirstKey(tx, ii.indexKeysTable)
+	if len(fst) > 0 {
+		from = float64(binary.BigEndian.Uint64(fst)) / float64(ii.aggregationStep)
+	}
+	lst, _ := kv.LastKey(tx, ii.indexKeysTable)
+	if len(lst) > 0 {
+		to = float64(binary.BigEndian.Uint64(lst)) / float64(ii.aggregationStep)
+	}
+	return from, to
 }

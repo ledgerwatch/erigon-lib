@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2021 The Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import (
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
 	"github.com/ledgerwatch/log/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -51,9 +52,9 @@ var TxPoolAPIVersion = &types2.VersionReply{Major: 1, Minor: 0, Patch: 0}
 type txPool interface {
 	ValidateSerializedTxn(serializedTxn []byte) error
 
-	PeekBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas uint64) (bool, error)
+	PeekBest(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableGas, availableDataGas uint64) (bool, error)
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
-	AddLocalTxs(ctx context.Context, newTxs types.TxSlots, tx kv.Tx) ([]DiscardReason, error)
+	AddLocalTxs(ctx context.Context, newTxs types.TxSlots, tx kv.Tx) ([]txpoolcfg.DiscardReason, error)
 	deprecatedForEach(_ context.Context, f func(rlp []byte, sender common.Address, t SubPoolType), tx kv.Tx)
 	CountContent() (int, int, int)
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
@@ -154,7 +155,7 @@ func (s *GrpcServer) Pending(ctx context.Context, _ *emptypb.Empty) (*txpool_pro
 	reply := &txpool_proto.PendingReply{}
 	reply.Txs = make([]*txpool_proto.PendingReply_Tx, 0, 32)
 	txSlots := types.TxsRlp{}
-	if _, err := s.txPool.PeekBest(math.MaxInt16, &txSlots, tx, 0 /* onTopOf */, math.MaxUint64 /* available gas */); err != nil {
+	if _, err := s.txPool.PeekBest(math.MaxInt16, &txSlots, tx, 0 /* onTopOf */, math.MaxUint64 /* availableGas */, math.MaxUint64 /* availableDataGas */); err != nil {
 		return nil, err
 	}
 	var senderArr [20]byte
@@ -187,21 +188,21 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	reply := &txpool_proto.AddReply{Imported: make([]txpool_proto.ImportResult, len(in.RlpTxs)), Errors: make([]string, len(in.RlpTxs))}
 
 	j := 0
-	for i := 0; i < len(in.RlpTxs); i++ { // some incoming txs may be rejected, so - need secnod index
+	for i := 0; i < len(in.RlpTxs); i++ { // some incoming txs may be rejected, so - need second index
 		slots.Resize(uint(j + 1))
 		slots.Txs[j] = &types.TxSlot{}
 		slots.IsLocal[j] = true
-		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.Txs[j], slots.Senders.At(j), false /* hasEnvelope */, func(hash []byte) error {
+		if _, err := parseCtx.ParseTransaction(in.RlpTxs[i], 0, slots.Txs[j], slots.Senders.At(j), false /* hasEnvelope */, true /* wrappedWithBlobs */, func(hash []byte) error {
 			if known, _ := s.txPool.IdHashKnown(tx, hash); known {
 				return types.ErrAlreadyKnown
 			}
 			return nil
 		}); err != nil {
 			if errors.Is(err, types.ErrAlreadyKnown) { // Noop, but need to handle to not count these
-				reply.Errors[i] = AlreadyKnown.String()
+				reply.Errors[i] = txpoolcfg.AlreadyKnown.String()
 				reply.Imported[i] = txpool_proto.ImportResult_ALREADY_EXISTS
 			} else if errors.Is(err, types.ErrRlpTooBig) { // Noop, but need to handle to not count these
-				reply.Errors[i] = RLPTooLong.String()
+				reply.Errors[i] = txpoolcfg.RLPTooLong.String()
 				reply.Imported[i] = txpool_proto.ImportResult_INVALID
 			} else {
 				reply.Errors[i] = err.Error()
@@ -231,15 +232,16 @@ func (s *GrpcServer) Add(ctx context.Context, in *txpool_proto.AddRequest) (*txp
 	return reply, nil
 }
 
-func mapDiscardReasonToProto(reason DiscardReason) txpool_proto.ImportResult {
+func mapDiscardReasonToProto(reason txpoolcfg.DiscardReason) txpool_proto.ImportResult {
 	switch reason {
-	case Success:
+	case txpoolcfg.Success:
 		return txpool_proto.ImportResult_SUCCESS
-	case AlreadyKnown:
+	case txpoolcfg.AlreadyKnown:
 		return txpool_proto.ImportResult_ALREADY_EXISTS
-	case UnderPriced, ReplaceUnderpriced, FeeTooLow:
+	case txpoolcfg.UnderPriced, txpoolcfg.ReplaceUnderpriced, txpoolcfg.FeeTooLow:
 		return txpool_proto.ImportResult_FEE_TOO_LOW
-	case InvalidSender, NegativeValue, OversizedData, InitCodeTooLarge, RLPTooLong:
+	case txpoolcfg.InvalidSender, txpoolcfg.NegativeValue, txpoolcfg.OversizedData, txpoolcfg.InitCodeTooLarge, txpoolcfg.RLPTooLong, txpoolcfg.CreateBlobTxn, txpoolcfg.NoBlobs, txpoolcfg.TooManyBlobs, txpoolcfg.TypeNotActivated:
+		// TODO(eip-4844) TypeNotActivated may be transient (e.g. a blob transaction is submitted 1 sec prior to Cancun activation)
 		return txpool_proto.ImportResult_INVALID
 	default:
 		return txpool_proto.ImportResult_INTERNAL_ERROR

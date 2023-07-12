@@ -1,5 +1,5 @@
 /*
-   Copyright 2022 Erigon contributors
+   Copyright 2022 The Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 	"golang.org/x/crypto/sha3"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/rlp"
 )
@@ -53,11 +54,11 @@ func hexToBin(hex []byte) bitstring {
 
 // encodes bitstring to its compact representation
 func binToCompact(bin []byte) []byte {
-	compact := make([]byte, 2+(len(bin)+7)/8)
+	compact := make([]byte, 2+common.BitLenToByteLen(len(bin)))
 	binary.BigEndian.PutUint16(compact, uint16(len(bin)))
 	for i := 0; i < len(bin); i++ {
 		if bin[i] != 0 {
-			compact[2+i/8] |= (byte(1) << (i % 8))
+			compact[2+i/8] |= byte(1) << (i % 8)
 		}
 	}
 	return compact
@@ -432,7 +433,7 @@ func (cell *BinaryCell) accountForHashing(buffer []byte, storageRootHash [length
 	if cell.Nonce < 128 && cell.Nonce != 0 {
 		nonceBytes = 0
 	} else {
-		nonceBytes = (bits.Len64(cell.Nonce) + 7) / 8
+		nonceBytes = common.BitLenToByteLen(bits.Len64(cell.Nonce))
 	}
 
 	var structLength = uint(balanceBytes + nonceBytes + 2)
@@ -443,7 +444,7 @@ func (cell *BinaryCell) accountForHashing(buffer []byte, storageRootHash [length
 		buffer[0] = byte(192 + structLength)
 		pos = 1
 	} else {
-		lengthBytes := (bits.Len(structLength) + 7) / 8
+		lengthBytes := common.BitLenToByteLen(bits.Len(structLength))
 		buffer[0] = byte(247 + lengthBytes)
 
 		for i := lengthBytes; i > 0; i-- {
@@ -803,10 +804,9 @@ func (bph *BinPatriciaHashed) needUnfolding(hashedKey []byte) int {
 		if cell.hl == 0 {
 			// cell is empty, no need to unfold further
 			return 0
-		} else {
-			// unfold branch node
-			return 1
 		}
+		// unfold branch node
+		return 1
 	}
 	cpl := commonPrefixLen(hashedKey[depth:], cell.downHashedKey[:cell.downHashedLen-1])
 	if bph.trace {
@@ -1027,11 +1027,11 @@ func (bph *BinPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 			} else if upDepth == halfKeySize {
 				// Special case - all storage items of an account have been deleted, but it does not automatically delete the account, just makes it empty storage
 				// Therefore we are not propagating deletion upwards, but turn it into a modification
-				bph.touchMap[row-1] |= (uint16(1) << col)
+				bph.touchMap[row-1] |= uint16(1) << col
 			} else {
 				// Deletion is propagated upwards
-				bph.touchMap[row-1] |= (uint16(1) << col)
-				bph.afterMap[row-1] &^= (uint16(1) << col)
+				bph.touchMap[row-1] |= uint16(1) << col
+				bph.afterMap[row-1] &^= uint16(1) << col
 			}
 		}
 		upBinaryCell.hl = 0
@@ -1059,7 +1059,7 @@ func (bph *BinPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 				bph.rootTouched = true
 			} else {
 				// Modifiction is propagated upwards
-				bph.touchMap[row-1] |= (uint16(1) << col)
+				bph.touchMap[row-1] |= uint16(1) << col
 			}
 		}
 		nibble := bits.TrailingZeros16(bph.afterMap[row])
@@ -1088,7 +1088,7 @@ func (bph *BinPatriciaHashed) fold() (branchData BranchData, updateKey []byte, e
 				bph.rootTouched = true
 			} else {
 				// Modifiction is propagated upwards
-				bph.touchMap[row-1] |= (uint16(1) << col)
+				bph.touchMap[row-1] |= uint16(1) << col
 			}
 		}
 		bitmap := bph.touchMap[row] & bph.afterMap[row]
@@ -1211,8 +1211,8 @@ func (bph *BinPatriciaHashed) deleteBinaryCell(hashedKey []byte) {
 		cell = &bph.grid[row][col]
 		if bph.afterMap[row]&(uint16(1)<<col) != 0 {
 			// Prevent "spurios deletions", i.e. deletion of absent items
-			bph.touchMap[row] |= (uint16(1) << col)
-			bph.afterMap[row] &^= (uint16(1) << col)
+			bph.touchMap[row] |= uint16(1) << col
+			bph.afterMap[row] &^= uint16(1) << col
 			if bph.trace {
 				fmt.Printf("deleteBinaryCell setting (%d, %x)\n", row, col)
 			}
@@ -1239,8 +1239,8 @@ func (bph *BinPatriciaHashed) updateBinaryCell(plainKey, hashedKey []byte) *Bina
 		depth = bph.depths[row]
 		col = int(hashedKey[bph.currentKeyLen])
 		cell = &bph.grid[row][col]
-		bph.touchMap[row] |= (uint16(1) << col)
-		bph.afterMap[row] |= (uint16(1) << col)
+		bph.touchMap[row] |= uint16(1) << col
+		bph.afterMap[row] |= uint16(1) << col
 		if bph.trace {
 			fmt.Printf("updateBinaryCell setting (%d, %x), depth=%d\n", row, col, depth)
 		}

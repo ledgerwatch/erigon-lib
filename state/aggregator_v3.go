@@ -33,7 +33,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common/background"
 	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
-	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/bitmapdb"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
@@ -105,25 +104,25 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 		logger:           logger,
 	}
 	var err error
-	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.AccountHistoryKeys, kv.AccountIdx, kv.AccountHistoryVals, false, nil, false, logger); err != nil {
+	if a.accounts, err = NewHistory(dir, a.tmpdir, aggregationStep, "accounts", kv.TblAccountHistoryKeys, kv.TblAccountIdx, kv.TblAccountHistoryVals, false, nil, false, logger); err != nil {
 		return nil, err
 	}
-	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.StorageHistoryKeys, kv.StorageIdx, kv.StorageHistoryVals, false, nil, false, logger); err != nil {
+	if a.storage, err = NewHistory(dir, a.tmpdir, aggregationStep, "storage", kv.TblStorageHistoryKeys, kv.TblStorageIdx, kv.TblStorageHistoryVals, false, nil, false, logger); err != nil {
 		return nil, err
 	}
-	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.CodeHistoryKeys, kv.CodeIdx, kv.CodeHistoryVals, true, nil, true, logger); err != nil {
+	if a.code, err = NewHistory(dir, a.tmpdir, aggregationStep, "code", kv.TblCodeHistoryKeys, kv.TblCodeIdx, kv.TblCodeHistoryVals, true, nil, true, logger); err != nil {
 		return nil, err
 	}
-	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.LogAddressKeys, kv.LogAddressIdx, false, nil, logger); err != nil {
+	if a.logAddrs, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logaddrs", kv.TblLogAddressKeys, kv.TblLogAddressIdx, false, nil, logger); err != nil {
 		return nil, err
 	}
-	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.LogTopicsKeys, kv.LogTopicsIdx, false, nil, logger); err != nil {
+	if a.logTopics, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "logtopics", kv.TblLogTopicsKeys, kv.TblLogTopicsIdx, false, nil, logger); err != nil {
 		return nil, err
 	}
-	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TracesFromKeys, kv.TracesFromIdx, false, nil, logger); err != nil {
+	if a.tracesFrom, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesfrom", kv.TblTracesFromKeys, kv.TblTracesFromIdx, false, nil, logger); err != nil {
 		return nil, err
 	}
-	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TracesToKeys, kv.TracesToIdx, false, nil, logger); err != nil {
+	if a.tracesTo, err = NewInvertedIndex(dir, a.tmpdir, aggregationStep, "tracesto", kv.TblTracesToKeys, kv.TblTracesToIdx, false, nil, logger); err != nil {
 		return nil, err
 	}
 	a.recalcMaxTxNum()
@@ -656,29 +655,22 @@ func (a *AggregatorV3) integrateFiles(sf AggV3StaticFiles, txNumFrom, txNumTo ui
 	a.tracesTo.integrateFiles(sf.tracesTo, txNumFrom, txNumTo)
 }
 
-func (a *AggregatorV3) NeedSaveFilesListInDB() bool {
+func (a *AggregatorV3) HasNewFrozenFiles() bool {
 	return a.needSaveFilesListInDB.CompareAndSwap(true, false)
 }
 
-func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64, stateLoad etl.LoadFunc) error {
-	stateChanges := etl.NewCollector(a.logPrefix, a.tmpdir, etl.NewOldestEntryBuffer(etl.BufferOptimalSize), a.logger)
-	defer stateChanges.Close()
-	if err := a.accounts.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
-		return stateChanges.Collect(k, v)
-	}); err != nil {
-		return err
-	}
-	if err := a.storage.pruneF(txUnwindTo, math2.MaxUint64, func(_ uint64, k, v []byte) error {
-		return stateChanges.Collect(k, v)
-	}); err != nil {
-		return err
-	}
-
-	if err := stateChanges.Load(a.rwTx, kv.PlainState, stateLoad, etl.TransformArgs{Quit: ctx.Done()}); err != nil {
-		return err
-	}
+func (a *AggregatorV3) Unwind(ctx context.Context, txUnwindTo uint64) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
+	if err := a.accounts.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
+		return err
+	}
+	if err := a.storage.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
+		return err
+	}
+	if err := a.code.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
+		return err
+	}
 	if err := a.logAddrs.prune(ctx, txUnwindTo, math2.MaxUint64, math2.MaxUint64, logEvery); err != nil {
 		return err
 	}
@@ -804,8 +796,8 @@ func (a *AggregatorV3) CanPrune(tx kv.Tx) bool {
 	return a.CanPruneFrom(tx) < a.minimaxTxNumInFiles.Load()
 }
 func (a *AggregatorV3) CanPruneFrom(tx kv.Tx) uint64 {
-	fst, _ := kv.FirstKey(tx, kv.TracesToKeys)
-	fst2, _ := kv.FirstKey(tx, kv.StorageHistoryKeys)
+	fst, _ := kv.FirstKey(tx, kv.TblTracesToKeys)
+	fst2, _ := kv.FirstKey(tx, kv.TblStorageHistoryKeys)
 	if len(fst) > 0 && len(fst2) > 0 {
 		fstInDb := binary.BigEndian.Uint64(fst)
 		fstInDb2 := binary.BigEndian.Uint64(fst2)
@@ -822,6 +814,18 @@ func (a *AggregatorV3) PruneWithTiemout(ctx context.Context, timeout time.Durati
 		}
 	}
 	return nil
+}
+
+func (a *AggregatorV3) StepsRangeInDBAsStr(tx kv.Tx) string {
+	return strings.Join([]string{
+		a.accounts.stepsRangeInDBAsStr(tx),
+		a.storage.stepsRangeInDBAsStr(tx),
+		a.code.stepsRangeInDBAsStr(tx),
+		a.logAddrs.stepsRangeInDBAsStr(tx),
+		a.logTopics.stepsRangeInDBAsStr(tx),
+		a.tracesFrom.stepsRangeInDBAsStr(tx),
+		a.tracesTo.stepsRangeInDBAsStr(tx),
+	}, ", ")
 }
 
 func (a *AggregatorV3) Prune(ctx context.Context, limit uint64) error {
@@ -1291,20 +1295,19 @@ func (a *AggregatorV3) AddCodePrev(addr []byte, prev []byte) error {
 	return a.code.AddPrevValue(addr, nil, prev)
 }
 
-func (a *AggregatorV3) AddTraceFrom(addr []byte) error {
-	return a.tracesFrom.Add(addr)
-}
-
-func (a *AggregatorV3) AddTraceTo(addr []byte) error {
-	return a.tracesTo.Add(addr)
-}
-
-func (a *AggregatorV3) AddLogAddr(addr []byte) error {
-	return a.logAddrs.Add(addr)
-}
-
-func (a *AggregatorV3) AddLogTopic(topic []byte) error {
-	return a.logTopics.Add(topic)
+func (a *AggregatorV3) PutIdx(idx kv.InvertedIdx, key []byte) error {
+	switch idx {
+	case kv.TblTracesFromIdx:
+		return a.tracesFrom.Add(key)
+	case kv.TblTracesToIdx:
+		return a.tracesTo.Add(key)
+	case kv.TblLogAddressIdx:
+		return a.logAddrs.Add(key)
+	case kv.LogTopicIndex:
+		return a.logTopics.Add(key)
+	default:
+		panic(idx)
+	}
 }
 
 // DisableReadAhead - usage: `defer d.EnableReadAhead().DisableReadAhead()`. Please don't use this funcs without `defer` to avoid leak.
@@ -1348,30 +1351,25 @@ func (a *AggregatorV3) EnableMadvNormal() *AggregatorV3 {
 	return a
 }
 
-// -- range
-func (ac *AggregatorV3Context) LogAddrRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.logAddrs.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-
-func (ac *AggregatorV3Context) LogTopicRange(topic []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.logTopics.IdxRange(topic, startTxNum, endTxNum, asc, limit, tx)
-}
-
-func (ac *AggregatorV3Context) TraceFromRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.tracesFrom.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-
-func (ac *AggregatorV3Context) TraceToRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.tracesTo.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-func (ac *AggregatorV3Context) AccountHistoyIdxRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.accounts.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-func (ac *AggregatorV3Context) StorageHistoyIdxRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.storage.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
-}
-func (ac *AggregatorV3Context) CodeHistoyIdxRange(addr []byte, startTxNum, endTxNum int, asc order.By, limit int, tx kv.Tx) (iter.U64, error) {
-	return ac.code.IdxRange(addr, startTxNum, endTxNum, asc, limit, tx)
+func (ac *AggregatorV3Context) IndexRange(name kv.InvertedIdx, k []byte, fromTs, toTs int, asc order.By, limit int, tx kv.Tx) (timestamps iter.U64, err error) {
+	switch name {
+	case kv.AccountsHistoryIdx:
+		return ac.accounts.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.StorageHistoryIdx:
+		return ac.storage.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.CodeHistoryIdx:
+		return ac.code.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.LogTopicIdx:
+		return ac.logTopics.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.LogAddrIdx:
+		return ac.logAddrs.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.TracesFromIdx:
+		return ac.tracesFrom.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	case kv.TracesToIdx:
+		return ac.tracesTo.IdxRange(k, fromTs, toTs, asc, limit, tx)
+	default:
+		return nil, fmt.Errorf("unexpected history name: %s", name)
+	}
 }
 
 // -- range end

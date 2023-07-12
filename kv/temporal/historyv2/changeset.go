@@ -187,7 +187,9 @@ func Truncate(tx kv.RwTx, from uint64) error {
 			if err != nil {
 				return err
 			}
-			err = c.DeleteCurrentDuplicates()
+			if err = tx.Delete(kv.AccountChangeSet, k); err != nil {
+				return err
+			}
 			if err != nil {
 				return err
 			}
@@ -203,8 +205,7 @@ func Truncate(tx kv.RwTx, from uint64) error {
 			if err != nil {
 				return err
 			}
-			err = c.DeleteCurrentDuplicates()
-			if err != nil {
+			if err = tx.Delete(kv.StorageChangeSet, k); err != nil {
 				return err
 			}
 		}
@@ -223,7 +224,7 @@ type CSMapper struct {
 
 var Mapper = map[string]CSMapper{
 	kv.AccountChangeSet: {
-		IndexBucket:   kv.AccountsHistory,
+		IndexBucket:   kv.E2AccountsHistory,
 		IndexChunkKey: AccountIndexChunkKey,
 		New:           NewAccountChangeSet,
 		Find:          FindAccount,
@@ -231,7 +232,7 @@ var Mapper = map[string]CSMapper{
 		Decode:        DecodeAccounts,
 	},
 	kv.StorageChangeSet: {
-		IndexBucket:   kv.StorageHistory,
+		IndexBucket:   kv.E2StorageHistory,
 		IndexChunkKey: StorageIndexChunkKey,
 		Find:          FindStorage,
 		New:           NewStorageChangeSet,

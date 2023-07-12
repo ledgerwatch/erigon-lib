@@ -108,9 +108,7 @@ func (i *filesItem) closeFilesAndRemove() {
 		i.index = nil
 	}
 	if i.bindex != nil {
-		if err := i.bindex.Close(); err != nil {
-			log.Trace("close", "err", err, "file", i.bindex.FileName())
-		}
+		i.bindex.Close()
 		if err := os.Remove(i.bindex.FilePath()); err != nil {
 			log.Trace("close", "err", err, "file", i.bindex.FileName())
 		}
@@ -147,6 +145,15 @@ func (ds *DomainStats) Accumulate(other DomainStats) {
 // Domain is a part of the state (examples are Accounts, Storage, Code)
 // Domain should not have any go routines or locks
 type Domain struct {
+	/*
+	   not large:
+	    	keys: key -> ^step
+	    	vals: key -> ^step+value (DupSort)
+	   large:
+	    	keys: key -> ^step
+	   	    vals: key + ^step -> value
+	*/
+
 	*History
 	files *btree2.BTreeG[*filesItem] // thread-safe, but maybe need 1 RWLock for all trees in AggregatorV3
 	// roFiles derivative from field `file`, but without garbage (canDelete=true, overlaps, etc...)
@@ -180,6 +187,15 @@ func NewDomain(dir, tmpdir string, aggregationStep uint64,
 	}
 
 	return d, nil
+}
+
+// LastStepInDB - return the latest available step in db (at-least 1 value in such step)
+func (d *Domain) LastStepInDB(tx kv.Tx) (lstInDb uint64) {
+	lst, _ := kv.FirstKey(tx, d.valsTable)
+	if len(lst) > 0 {
+		lstInDb = ^binary.BigEndian.Uint64(lst[len(lst)-8:])
+	}
+	return lstInDb
 }
 
 func (d *Domain) StartWrites() {
@@ -376,9 +392,7 @@ func (d *Domain) closeWhatNotInList(fNames []string) {
 			item.index = nil
 		}
 		if item.bindex != nil {
-			if err := item.bindex.Close(); err != nil {
-				d.logger.Trace("close", "err", err, "file", item.bindex.FileName())
-			}
+			item.bindex.Close()
 			item.bindex = nil
 		}
 		d.files.Delete(item)
@@ -413,8 +427,7 @@ func (dc *DomainContext) get(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, 
 	}
 	if len(foundInvStep) == 0 {
 		dc.d.stats.HistoryQueries.Add(1)
-		v, found := dc.readFromFiles(key, fromTxNum)
-		return v, found, nil
+		return dc.readFromFiles(key, fromTxNum)
 	}
 	//keySuffix := make([]byte, len(key)+8)
 	copy(dc.keyBuf[:], key)
@@ -660,114 +673,6 @@ func (d *Domain) MakeContext() *DomainContext {
 	}
 
 	return dc
-}
-
-func (dc *DomainContext) Close() {
-	for _, item := range dc.files {
-		if item.src.frozen {
-			continue
-		}
-		refCnt := item.src.refcount.Add(-1)
-		//GC: last reader responsible to remove useles files: close it and delete
-		if refCnt == 0 && item.src.canDelete.Load() {
-			item.src.closeFilesAndRemove()
-		}
-	}
-	dc.hc.Close()
-}
-
-// IteratePrefix iterates over key-value pairs of the domain that start with given prefix
-// Such iteration is not intended to be used in public API, therefore it uses read-write transaction
-// inside the domain. Another version of this for public API use needs to be created, that uses
-// roTx instead and supports ending the iterations before it reaches the end.
-func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
-	dc.d.stats.HistoryQueries.Add(1)
-
-	var cp CursorHeap
-	heap.Init(&cp)
-	var k, v []byte
-	var err error
-	keysCursor, err := dc.d.tx.CursorDupSort(dc.d.keysTable)
-	if err != nil {
-		return err
-	}
-	defer keysCursor.Close()
-	if k, v, err = keysCursor.Seek(prefix); err != nil {
-		return err
-	}
-	if bytes.HasPrefix(k, prefix) {
-		keySuffix := make([]byte, len(k)+8)
-		copy(keySuffix, k)
-		copy(keySuffix[len(k):], v)
-		step := ^binary.BigEndian.Uint64(v)
-		txNum := step * dc.d.aggregationStep
-		if v, err = dc.d.tx.GetOne(dc.d.valsTable, keySuffix); err != nil {
-			return err
-		}
-		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum, reverse: true})
-	}
-	for i, item := range dc.files {
-		bg := dc.statelessBtree(i)
-		if bg.Empty() {
-			continue
-		}
-
-		cursor, err := bg.Seek(prefix)
-		if err != nil {
-			continue
-		}
-
-		g := dc.statelessGetter(i)
-		key := cursor.Key()
-		if bytes.HasPrefix(key, prefix) {
-			val := cursor.Value()
-			heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum, reverse: true})
-		}
-	}
-	for cp.Len() > 0 {
-		lastKey := common.Copy(cp[0].key)
-		lastVal := common.Copy(cp[0].val)
-		// Advance all the items that have this key (including the top)
-		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
-			ci1 := cp[0]
-			switch ci1.t {
-			case FILE_CURSOR:
-				if ci1.dg.HasNext() {
-					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
-					if bytes.HasPrefix(ci1.key, prefix) {
-						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
-						heap.Fix(&cp, 0)
-					} else {
-						heap.Pop(&cp)
-					}
-				} else {
-					heap.Pop(&cp)
-				}
-			case DB_CURSOR:
-				k, v, err = ci1.c.NextNoDup()
-				if err != nil {
-					return err
-				}
-				if k != nil && bytes.HasPrefix(k, prefix) {
-					ci1.key = common.Copy(k)
-					keySuffix := make([]byte, len(k)+8)
-					copy(keySuffix, k)
-					copy(keySuffix[len(k):], v)
-					if v, err = dc.d.tx.GetOne(dc.d.valsTable, keySuffix); err != nil {
-						return err
-					}
-					ci1.val = common.Copy(v)
-					heap.Fix(&cp, 0)
-				} else {
-					heap.Pop(&cp)
-				}
-			}
-		}
-		if len(lastVal) > 0 {
-			it(lastKey, lastVal)
-		}
-	}
-	return nil
 }
 
 // Collation is the set of compressors created after aggregation
@@ -1106,6 +1011,9 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 			}
 		}
 	}()
+	if d.noFsync {
+		valuesComp.DisableFsync()
+	}
 	if err = valuesComp.Compress(); err != nil {
 		return StaticFiles{}, fmt.Errorf("compress %s values: %w", d.filenameBase, err)
 	}
@@ -1120,7 +1028,7 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 	{
 		p := ps.AddNew(valuesIdxFileName, uint64(valuesDecomp.Count()*2))
 		defer ps.Delete(p)
-		if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false, p, d.logger); err != nil {
+		if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, valuesIdxPath, d.tmpdir, collation.valuesCount, false, p, d.logger, d.noFsync); err != nil {
 			return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
 		}
 	}
@@ -1131,7 +1039,7 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 		btPath := filepath.Join(d.dir, btFileName)
 		p := ps.AddNew(btFileName, uint64(valuesDecomp.Count()*2))
 		defer ps.Delete(p)
-		bt, err = CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp, p, d.logger)
+		bt, err = CreateBtreeIndexWithDecompressor(btPath, DefaultBtreeM, valuesDecomp, p, d.tmpdir, d.logger)
 		if err != nil {
 			return StaticFiles{}, fmt.Errorf("build %s values bt idx: %w", d.filenameBase, err)
 		}
@@ -1175,7 +1083,7 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group, ps *
 
 			p := ps.AddNew("fixme", uint64(fitem.decompressor.Count()))
 			defer ps.Delete(p)
-			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor, p, d.logger); err != nil {
+			if err := BuildBtreeIndexWithDecompressor(idxPath, fitem.decompressor, p, d.tmpdir, d.logger); err != nil {
 				return fmt.Errorf("failed to build btree index for %s:  %w", fitem.decompressor.FileName(), err)
 			}
 			return nil
@@ -1184,14 +1092,14 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group, ps *
 	return nil
 }
 
-func buildIndexThenOpen(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool, p *background.Progress, logger log.Logger) (*recsplit.Index, error) {
-	if err := buildIndex(ctx, d, idxPath, tmpdir, count, values, p, logger); err != nil {
+func buildIndexThenOpen(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool, p *background.Progress, logger log.Logger, noFsync bool) (*recsplit.Index, error) {
+	if err := buildIndex(ctx, d, idxPath, tmpdir, count, values, p, logger, noFsync); err != nil {
 		return nil, err
 	}
 	return recsplit.OpenIndex(idxPath)
 }
 
-func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool, p *background.Progress, logger log.Logger) error {
+func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir string, count int, values bool, p *background.Progress, logger log.Logger, noFsync bool) error {
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -1206,6 +1114,9 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 	}
 	defer rs.Close()
 	rs.LogLvl(log.LvlTrace)
+	if noFsync {
+		rs.DisableFsync()
+	}
 	defer d.EnableMadvNormal().DisableReadAhead()
 
 	word := make([]byte, 0, 256)
@@ -1307,11 +1218,11 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 			}
 			s := ^binary.BigEndian.Uint64(vl)
 			if s > step {
-				kn, vn, err := keysCursor.NextDup()
+				_, vn, err := keysCursor.NextDup()
 				if err != nil {
 					break
 				}
-				if bytes.Equal(kn, k) && bytes.Equal(vn, stepBytes) {
+				if bytes.Equal(vn, stepBytes) {
 					if err := keysCursor.DeleteCurrent(); err != nil {
 						return fmt.Errorf("prune key %x: %w", k, err)
 					}
@@ -1342,7 +1253,6 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("iterate of %s keys: %w", d.filenameBase, err)
 	}
 
-	_state = "delete vals"
 	pos.Store(0)
 	// It is important to clean up tables in a specific order
 	// First keysTable, because it is the first one access in the `get` function, i.e. if the record is deleted from there, other tables will not be accessed
@@ -1351,11 +1261,6 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		return fmt.Errorf("%s vals cursor: %w", d.filenameBase, err)
 	}
 	defer valsCursor.Close()
-
-	totalKeys, err = valsCursor.Count()
-	if err != nil {
-		return fmt.Errorf("count of %s keys: %w", d.filenameBase, err)
-	}
 
 	for k, _, err := valsCursor.First(); err == nil && k != nil; k, _, err = valsCursor.Next() {
 		if bytes.HasSuffix(k, stepBytes) {
@@ -1374,10 +1279,8 @@ func (d *Domain) prune(ctx context.Context, step uint64, txFrom, txTo, limit uin
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-logEvery.C:
-			d.logger.Info("[snapshots] prune domain", "name", d.filenameBase,
-				"stage", _state,
-				"range", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)),
-				"progress", fmt.Sprintf("%.2f%%", (float64(pos.Load())/float64(totalKeys))*100))
+			d.logger.Info("[snapshots] prune domain", "name", d.filenameBase, "step", step)
+			//"steps", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		default:
 		}
 	}
@@ -1463,7 +1366,7 @@ func (d *Domain) warmup(ctx context.Context, txFrom, limit uint64, tx kv.Tx) err
 
 var COMPARE_INDEXES = false // if true, will compare values from Btree and INvertedIndex
 
-func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool) {
+func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte, bool, error) {
 	var val []byte
 	var found bool
 
@@ -1477,34 +1380,20 @@ func (dc *DomainContext) readFromFiles(filekey []byte, fromTxNum uint64) ([]byte
 		}
 		cur, err := reader.Seek(filekey)
 		if err != nil {
-			dc.d.logger.Warn("failed to read from file", "file", reader.FileName(), "err", err)
+			//return nil, false, nil //TODO: uncomment me
+			return nil, false, err
+		}
+		if cur == nil {
 			continue
 		}
 
 		if bytes.Equal(cur.Key(), filekey) {
 			val = cur.Value()
 			found = true
-
-			if COMPARE_INDEXES {
-				rd := recsplit.NewIndexReader(dc.files[i].src.index)
-				oft := rd.Lookup(filekey)
-				gt := dc.statelessGetter(i)
-				gt.Reset(oft)
-				var k, v []byte
-				if gt.HasNext() {
-					k, _ = gt.Next(nil)
-					v, _ = gt.Next(nil)
-				}
-				fmt.Printf("key: %x, val: %x\n", k, v)
-				if !bytes.Equal(v, val) {
-					panic("not equal")
-				}
-
-			}
 			break
 		}
 	}
-	return val, found
+	return val, found, nil
 }
 
 // historyBeforeTxNum searches history for a value of specified key before txNum
@@ -1544,9 +1433,11 @@ func (dc *DomainContext) historyBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx
 			cur, err := reader.Seek(key)
 			if err != nil {
 				dc.d.logger.Warn("failed to read history before from file", "key", key, "err", err)
+				return nil, false, err
+			}
+			if cur == nil {
 				continue
 			}
-
 			if bytes.Equal(cur.Key(), key) {
 				val = cur.Value()
 				break
@@ -1580,4 +1471,113 @@ func (dc *DomainContext) GetBeforeTxNum(key []byte, txNum uint64, roTx kv.Tx) ([
 		return nil, err
 	}
 	return v, nil
+}
+
+func (dc *DomainContext) Close() {
+	for _, item := range dc.files {
+		if item.src.frozen {
+			continue
+		}
+		refCnt := item.src.refcount.Add(-1)
+		//GC: last reader responsible to remove useles files: close it and delete
+		if refCnt == 0 && item.src.canDelete.Load() {
+			item.src.closeFilesAndRemove()
+		}
+	}
+	dc.hc.Close()
+}
+
+// IteratePrefix iterates over key-value pairs of the domain that start with given prefix
+// Such iteration is not intended to be used in public API, therefore it uses read-write transaction
+// inside the domain. Another version of this for public API use needs to be created, that uses
+// roTx instead and supports ending the iterations before it reaches the end.
+func (dc *DomainContext) IteratePrefix(prefix []byte, it func(k, v []byte)) error {
+	dc.d.stats.HistoryQueries.Add(1)
+
+	var cp CursorHeap
+	heap.Init(&cp)
+	var k, v []byte
+	var err error
+	keysCursor, err := dc.d.tx.CursorDupSort(dc.d.keysTable)
+	if err != nil {
+		return err
+	}
+	defer keysCursor.Close()
+	if k, v, err = keysCursor.Seek(prefix); err != nil {
+		return err
+	}
+	if bytes.HasPrefix(k, prefix) {
+		keySuffix := make([]byte, len(k)+8)
+		copy(keySuffix, k)
+		copy(keySuffix[len(k):], v)
+		step := ^binary.BigEndian.Uint64(v)
+		txNum := step * dc.d.aggregationStep
+		if v, err = dc.d.tx.GetOne(dc.d.valsTable, keySuffix); err != nil {
+			return err
+		}
+		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum, reverse: true})
+	}
+
+	for i, item := range dc.files {
+		bg := dc.statelessBtree(i)
+		if bg.Empty() {
+			continue
+		}
+
+		cursor, err := bg.Seek(prefix)
+		if err != nil {
+			continue
+		}
+
+		g := dc.statelessGetter(i)
+		key := cursor.Key()
+		if bytes.HasPrefix(key, prefix) {
+			val := cursor.Value()
+			heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, endTxNum: item.endTxNum, reverse: true})
+		}
+	}
+	for cp.Len() > 0 {
+		lastKey := common.Copy(cp[0].key)
+		lastVal := common.Copy(cp[0].val)
+		// Advance all the items that have this key (including the top)
+		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
+			ci1 := cp[0]
+			switch ci1.t {
+			case FILE_CURSOR:
+				if ci1.dg.HasNext() {
+					ci1.key, _ = ci1.dg.Next(ci1.key[:0])
+					if bytes.HasPrefix(ci1.key, prefix) {
+						ci1.val, _ = ci1.dg.Next(ci1.val[:0])
+						heap.Fix(&cp, 0)
+					} else {
+						heap.Pop(&cp)
+					}
+				} else {
+					heap.Pop(&cp)
+				}
+			case DB_CURSOR:
+				k, v, err = ci1.c.NextNoDup()
+				if err != nil {
+					return err
+				}
+				if k != nil && bytes.HasPrefix(k, prefix) {
+					ci1.key = common.Copy(k)
+					keySuffix := make([]byte, len(k)+8)
+					copy(keySuffix, k)
+					copy(keySuffix[len(k):], v)
+					if v, err = dc.d.tx.GetOne(dc.d.valsTable, keySuffix); err != nil {
+						return err
+					}
+					ci1.val = common.Copy(v)
+					heap.Fix(&cp, 0)
+				} else {
+					heap.Pop(&cp)
+				}
+			}
+		}
+		if len(lastVal) > 0 {
+			it(lastKey, lastVal)
+		}
+	}
+	return nil
 }
