@@ -642,12 +642,9 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 func toBlobs(_blobs [][]byte) []gokzg4844.Blob {
 	blobs := make([]gokzg4844.Blob, len(_blobs))
 	for i, _blob := range _blobs {
-		if len(_blob) != chain.BlobSize {
-			//
-		}
 		var b gokzg4844.Blob
 		copy(b[:], _blob)
-		blobs[i] = gokzg4844.Blob(b)
+		blobs[i] = b
 	}
 	return blobs
 }
