@@ -670,9 +670,19 @@ func (g *Getter) SkipUncompressed() uint64 {
 	return g.dataP
 }
 
-// Match returns true and next offset if the word at current offset fully matches the buf
-// returns false and current offset otherwise.
+// Match returns -2, -1, 0, 1
+//
+// -2 if reached end of file (no next key available)
+//
+// -1 if given buf is smaller then the key at the current offset or
+//
+// 0 if given buf matched to the key at the current offset
+//
+// 1 if given buf is larger then the key at the current offset
 func (g *Getter) Match(buf []byte) int {
+	if g.dataP >= uint64(len(g.data)) {
+		return -2
+	}
 	savePos := g.dataP
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator

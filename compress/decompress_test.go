@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -473,6 +474,7 @@ func prepareRandomDict(t *testing.T) *Decompressor {
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.DisableFsync()
 	defer c.Close()
 
 	rand.Seed(time.Now().UnixNano())
@@ -616,6 +618,60 @@ func TestDecompressRandomDict(t *testing.T) {
 		}
 
 		g.Skip()
+		input_idx++
+	}
+
+	g.Reset(0)
+
+	word_idx = 0
+	input_idx = 0
+	// check for existing and non existing suffixes
+	notExpected = []byte{2, 3, 4}
+	for g.HasNext() {
+
+		if INPUT_FLAGS[input_idx] == 0 { // []byte input
+			suffix := WORDS[word_idx]
+			if len(suffix) > 1 {
+				prefix := suffix[:len(suffix)/2]
+				suffix = suffix[len(suffix)/2:]
+				equal := reflect.DeepEqual(prefix, suffix)
+				// check existing suffixes
+				if g.MatchPrefix(suffix) { // suffix has to be equal to prefix
+					if !equal {
+						t.Fatalf("MatchPrefix(suffix) expected match: prefix is unequal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
+					}
+				} else { // suffix has not to be the same as prefix
+					if equal {
+						t.Fatalf("MatchPrefix(suffix) expected unmatch: prefix is equal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
+					}
+				}
+
+				if len(suffix) > 0 {
+					suffix[0]++
+					if g.MatchPrefix(suffix) {
+						t.Fatalf("MatchPrefix(suffix) not expected match: prefix is unequal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
+					}
+				}
+
+				g.Skip()
+			} else {
+				if g.Match(suffix) != 0 {
+					t.Fatal("Match(suffix): expected match suffix")
+				}
+			}
+			word_idx++
+		} else { // nil input
+			if !g.MatchPrefix(nil) {
+				t.Error("MatchPrefix(suffix): expected match with nil")
+			}
+			if g.MatchPrefix(notExpected) {
+				t.Error("MatchPrefix(suffix): not expected nil to match with []byte{2, 3, 4}")
+			}
+			if g.Match(nil) != 0 {
+				t.Errorf("Match(suffix): expected to match with nil")
+			}
+		}
+
 		input_idx++
 	}
 }
