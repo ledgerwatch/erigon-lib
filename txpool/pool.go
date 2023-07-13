@@ -678,12 +678,12 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 			len(txn.Commitments) == len(txn.Proofs)
 
 		if !equalNumber {
-			p.logger.Error("validateTx: unequal number of blob hashes, blobs, commitments and proofs")
+			return txpoolcfg.UnequalBlobTxExt
 		}
 
 		for i := 0; i < len(txn.Commitments); i++ {
 			if libkzg.KZGToVersionedHash(txn.Commitments[i]) != libkzg.VersionedHash(txn.BlobHashes[i]) {
-				p.logger.Error("validateTx: kzg_to_versioned_hash(commitments[i]) != blob_versioned_hashes[i]")
+				return txpoolcfg.BlobHashCheckFail
 			}
 		}
 
@@ -691,7 +691,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 		kzgCtx := libkzg.Ctx()
 		err := kzgCtx.VerifyBlobKZGProofBatch(toBlobs(txn.Blobs), txn.Commitments, txn.Proofs)
 		if err != nil {
-			p.logger.Error("validateTx: error during proof verification: %v")
+			return txpoolcfg.UnmatchedBlobTxExt
 		}
 	}
 
