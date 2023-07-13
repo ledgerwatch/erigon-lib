@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/VictoriaMetrics/metrics"
+	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/go-stack/stack"
 	"github.com/google/btree"
@@ -638,6 +639,19 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 	}
 }
 
+func toBlobs(_blobs [][]byte) []gokzg4844.Blob {
+	blobs := make([]gokzg4844.Blob, len(_blobs))
+	for i, _blob := range _blobs {
+		if len(_blob) != chain.BlobSize {
+			//
+		}
+		var b gokzg4844.Blob
+		copy(b[:], _blob)
+		blobs[i] = gokzg4844.Blob(b)
+	}
+	return blobs
+}
+
 func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.CacheView) txpoolcfg.DiscardReason {
 	isShanghai := p.isShanghai()
 	if isShanghai {
@@ -678,7 +692,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 
 		// https://github.com/ethereum/consensus-specs/blob/017a8495f7671f5fff2075a9bfc9238c1a0982f8/specs/deneb/polynomial-commitments.md#verify_blob_kzg_proof_batch
 		kzgCtx := libkzg.Ctx()
-		err := kzgCtx.VerifyBlobKZGProofBatch(txn.Blobs, txn.Commitments, txn.Proofs)
+		err := kzgCtx.VerifyBlobKZGProofBatch(toBlobs(txn.Blobs), txn.Commitments, txn.Proofs)
 		if err != nil {
 			p.logger.Error("validateTx: error during proof verification: %v")
 		}

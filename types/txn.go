@@ -105,7 +105,7 @@ type TxSlot struct {
 	// EIP-4844: Shard Blob Transactions
 	DataFeeCap  uint256.Int // max_fee_per_data_gas
 	BlobHashes  []common.Hash
-	Blobs       []gokzg4844.Blob
+	Blobs       [][]byte
 	Commitments []gokzg4844.KZGCommitment
 	Proofs      []gokzg4844.KZGProof
 }
@@ -210,15 +210,12 @@ func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlo
 			return 0, fmt.Errorf("%w: blobs len: %s", ErrParseTxn, err) //nolint
 		}
 		blobPos := dataPos
-		var _blob gokzg4844.Blob
 		for blobPos < dataPos+dataLen {
 			blobPos, err = rlp.StringOfLen(payload, blobPos, chain.BlobSize)
 			if err != nil {
 				return 0, fmt.Errorf("%w: blob: %s", ErrParseTxn, err) //nolint
 			}
-
-			copy(_blob[:], payload[blobPos:blobPos+chain.BlobSize])
-			slot.Blobs = append(slot.Blobs, _blob)
+			slot.Blobs = append(slot.Blobs, payload[blobPos:blobPos+chain.BlobSize])
 			blobPos += chain.BlobSize
 		}
 		if blobPos != dataPos+dataLen {
