@@ -29,7 +29,7 @@ const (
 	Execution_GetBody_FullMethodName             = "/execution.Execution/GetBody"
 	Execution_IsCanonicalHash_FullMethodName     = "/execution.Execution/IsCanonicalHash"
 	Execution_GetHeaderHashNumber_FullMethodName = "/execution.Execution/GetHeaderHashNumber"
-	Execution_GetLastForkChoice_FullMethodName   = "/execution.Execution/GetLastForkChoice"
+	Execution_GetForkChoice_FullMethodName       = "/execution.Execution/GetForkChoice"
 )
 
 // ExecutionClient is the client API for Execution service.
@@ -48,7 +48,7 @@ type ExecutionClient interface {
 	GetBody(ctx context.Context, in *GetSegmentRequest, opts ...grpc.CallOption) (*GetBodyResponse, error)
 	IsCanonicalHash(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*IsCanonicalResponse, error)
 	GetHeaderHashNumber(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*GetHeaderHashNumberResponse, error)
-	GetLastForkChoice(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ForkChoice, error)
+	GetForkChoice(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ForkChoice, error)
 }
 
 type executionClient struct {
@@ -140,9 +140,9 @@ func (c *executionClient) GetHeaderHashNumber(ctx context.Context, in *types.H25
 	return out, nil
 }
 
-func (c *executionClient) GetLastForkChoice(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ForkChoice, error) {
+func (c *executionClient) GetForkChoice(ctx context.Context, in *EmptyMessage, opts ...grpc.CallOption) (*ForkChoice, error) {
 	out := new(ForkChoice)
-	err := c.cc.Invoke(ctx, Execution_GetLastForkChoice_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, Execution_GetForkChoice_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ type ExecutionServer interface {
 	GetBody(context.Context, *GetSegmentRequest) (*GetBodyResponse, error)
 	IsCanonicalHash(context.Context, *types.H256) (*IsCanonicalResponse, error)
 	GetHeaderHashNumber(context.Context, *types.H256) (*GetHeaderHashNumberResponse, error)
-	GetLastForkChoice(context.Context, *EmptyMessage) (*ForkChoice, error)
+	GetForkChoice(context.Context, *EmptyMessage) (*ForkChoice, error)
 	mustEmbedUnimplementedExecutionServer()
 }
 
@@ -200,8 +200,8 @@ func (UnimplementedExecutionServer) IsCanonicalHash(context.Context, *types.H256
 func (UnimplementedExecutionServer) GetHeaderHashNumber(context.Context, *types.H256) (*GetHeaderHashNumberResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetHeaderHashNumber not implemented")
 }
-func (UnimplementedExecutionServer) GetLastForkChoice(context.Context, *EmptyMessage) (*ForkChoice, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetLastForkChoice not implemented")
+func (UnimplementedExecutionServer) GetForkChoice(context.Context, *EmptyMessage) (*ForkChoice, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetForkChoice not implemented")
 }
 func (UnimplementedExecutionServer) mustEmbedUnimplementedExecutionServer() {}
 
@@ -378,20 +378,20 @@ func _Execution_GetHeaderHashNumber_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Execution_GetLastForkChoice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Execution_GetForkChoice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EmptyMessage)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ExecutionServer).GetLastForkChoice(ctx, in)
+		return srv.(ExecutionServer).GetForkChoice(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Execution_GetLastForkChoice_FullMethodName,
+		FullMethod: Execution_GetForkChoice_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).GetLastForkChoice(ctx, req.(*EmptyMessage))
+		return srv.(ExecutionServer).GetForkChoice(ctx, req.(*EmptyMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -440,8 +440,8 @@ var Execution_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Execution_GetHeaderHashNumber_Handler,
 		},
 		{
-			MethodName: "GetLastForkChoice",
-			Handler:    _Execution_GetLastForkChoice_Handler,
+			MethodName: "GetForkChoice",
+			Handler:    _Execution_GetForkChoice_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
