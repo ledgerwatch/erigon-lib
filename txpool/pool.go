@@ -670,9 +670,6 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 		if blobCount > chain.MaxBlobsPerBlock {
 			return txpoolcfg.TooManyBlobs
 		}
-
-		// TODO(eip-4844)(racytech) see what we can do instead of logging
-
 		equalNumber := len(txn.BlobHashes) == len(txn.Blobs) &&
 			len(txn.Blobs) == len(txn.Commitments) &&
 			len(txn.Commitments) == len(txn.Proofs)
