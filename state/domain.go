@@ -1432,51 +1432,6 @@ func (dc *DomainContext) getBeforeTxNumFromFiles(filekey []byte, fromTxNum uint6
 	return v, found, nil
 }
 
-func (dc *DomainContext) getLatestFromFiles2(filekey []byte) (v []byte, found bool, err error) {
-	dc.d.stats.FilesQueries.Add(1)
-
-	// find what has LocalityIndex
-	lastIndexedTxNum := dc.hc.ic.coldLocality.indexedTo()
-	// grind non-indexed files
-	var ok bool
-	for i := len(dc.files) - 1; i >= 0; i-- {
-		if dc.files[i].src.endTxNum <= lastIndexedTxNum {
-			break
-		}
-
-		dc.kBuf, dc.vBuf, ok, err = dc.statelessBtree(i).Get(filekey, dc.kBuf[:0], dc.vBuf[:0])
-		if err != nil {
-			return nil, false, err
-		}
-		if !ok {
-			continue
-		}
-		found = true
-		if COMPARE_INDEXES {
-			rd := recsplit.NewIndexReader(dc.files[i].src.index)
-			oft := rd.Lookup(filekey)
-			gt := dc.statelessGetter(i)
-			gt.Reset(oft)
-			var kk, vv []byte
-			if gt.HasNext() {
-				kk, _ = gt.Next(nil)
-				vv, _ = gt.Next(nil)
-			}
-			fmt.Printf("key: %x, val: %x\n", kk, vv)
-			if !bytes.Equal(vv, v) {
-				panic("not equal")
-			}
-		}
-
-		if found {
-			return common.Copy(dc.vBuf), true, nil
-		}
-		return nil, false, nil
-	}
-
-	// still not found, search in indexed cold shards
-	return dc.getLatestFromColdFiles(filekey)
-}
 func (dc *DomainContext) getLatestFromFiles(filekey []byte) (v []byte, found bool, err error) {
 	dc.d.stats.FilesQueries.Add(1)
 
