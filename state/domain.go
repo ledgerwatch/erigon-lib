@@ -1064,7 +1064,7 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, idxPath, tmpdir s
 	if noFsync {
 		rs.DisableFsync()
 	}
-	defer d.EnableMadvNormal().DisableReadAhead()
+	defer d.EnableReadAhead().DisableReadAhead()
 
 	word := make([]byte, 0, 256)
 	var keyPos, valPos uint64
@@ -1494,6 +1494,9 @@ func (dc *DomainContext) getLatestFromColdFilesGrind(filekey []byte) (v []byte, 
 	}
 	if firstWarmIndexedTxNum > lastColdIndexedTxNum {
 		log.Warn("[dbg] gap between warm and cold locality", "cold", lastColdIndexedTxNum/dc.d.aggregationStep, "warm", firstWarmIndexedTxNum/dc.d.aggregationStep)
+		if dc.hc.ic.coldLocality != nil && dc.hc.ic.coldLocality.file != nil {
+			log.Warn("[dbg] gap", "cold_f", dc.hc.ic.coldLocality.file.src.bm.FileName())
+		}
 
 		for i := len(dc.files) - 1; i >= 0; i-- {
 			isUseful := dc.files[i].startTxNum >= lastColdIndexedTxNum && dc.files[i].endTxNum <= firstWarmIndexedTxNum
