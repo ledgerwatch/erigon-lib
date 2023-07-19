@@ -567,8 +567,8 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 	}
 
 	sctx := sd.aggCtx.storage
-	for i, item := range sctx.files {
-		cursor, err := sctx.statelessBtree(i).Seek(prefix)
+	for _, item := range sctx.files {
+		cursor, err := item.src.bindex.Seek(prefix)
 		if err != nil {
 			return err
 		}
@@ -576,11 +576,10 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 			continue
 		}
 
-		g := sctx.statelessGetter(i)
 		key := cursor.Key()
 		if key != nil && bytes.HasPrefix(key, prefix) {
 			val := cursor.Value()
-			heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, btCursor: cursor, endTxNum: item.endTxNum, reverse: true})
+			heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, btCursor: cursor, endTxNum: item.endTxNum, reverse: true})
 		}
 	}
 
