@@ -1493,7 +1493,7 @@ func (dc *DomainContext) getLatestFromColdFilesGrind(filekey []byte) (v []byte, 
 		firstWarmIndexedTxNum = dc.files[len(dc.files)-1].endTxNum
 	}
 	if firstWarmIndexedTxNum > lastColdIndexedTxNum {
-		log.Warn("[dbg] gap between warm and cold locality", "cold", lastColdIndexedTxNum/dc.d.aggregationStep, "warm", firstWarmIndexedTxNum/dc.d.aggregationStep)
+		log.Warn("[dbg] gap between warm and cold locality", "cold", lastColdIndexedTxNum/dc.d.aggregationStep, "warm", firstWarmIndexedTxNum/dc.d.aggregationStep, "nil", dc.hc.ic.coldLocality == nil, "name", dc.d.filenameBase)
 		if dc.hc.ic.coldLocality != nil && dc.hc.ic.coldLocality.file != nil {
 			log.Warn("[dbg] gap", "cold_f", dc.hc.ic.coldLocality.file.src.bm.FileName())
 		}
@@ -1964,8 +1964,11 @@ func (hi *DomainLatestIterFile) Next() ([]byte, []byte, error) {
 
 func (d *Domain) stepsRangeInDBAsStr(tx kv.Tx) string {
 	a1, a2 := d.History.InvertedIndex.stepsRangeInDB(tx)
-	ad1, ad2 := d.stepsRangeInDB(tx)
-	return fmt.Sprintf("%s:(%.1f,%.1f)", d.filenameBase, ad2-ad1, a2-a1)
+	//ad1, ad2 := d.stepsRangeInDB(tx)
+	//if ad2-ad1 < 0 {
+	//	fmt.Printf("aaa: %f, %f\n", ad1, ad2)
+	//}
+	return fmt.Sprintf("%s:%.1f", d.filenameBase, a2-a1)
 }
 func (d *Domain) stepsRangeInDB(tx kv.Tx) (from, to float64) {
 	fst, _ := kv.FirstKey(tx, d.valsTable)
