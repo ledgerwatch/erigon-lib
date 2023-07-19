@@ -540,7 +540,7 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 		k = []byte(kx)
 
 		if len(kx) > 0 && bytes.HasPrefix(k, prefix) {
-			heap.Push(&cp, &CursorItem{t: RAM_CURSOR, key: common.Copy(k), val: common.Copy(v), iter: iter, endTxNum: sd.txNum.Load(), reverse: true})
+			heap.Push(&cp, &CursorItem{t: RAM_CURSOR, key: k, val: v, iter: iter, endTxNum: sd.txNum.Load(), reverse: true})
 		}
 	}
 
@@ -561,12 +561,12 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 		if v, err = roTx.GetOne(sd.Storage.valsTable, keySuffix); err != nil {
 			return err
 		}
-		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: common.Copy(k), val: common.Copy(v), c: keysCursor, endTxNum: txNum, reverse: true})
+		heap.Push(&cp, &CursorItem{t: DB_CURSOR, key: k, val: v, c: keysCursor, endTxNum: txNum, reverse: true})
 	}
 
 	sctx := sd.aggCtx.storage
-	for i, item := range sctx.files {
-		cursor, err := sctx.statelessBtree(i).Seek(prefix)
+	for _, item := range sctx.files {
+		cursor, err := item.src.bindex.Seek(prefix)
 		if err != nil {
 			return err
 		}
@@ -574,27 +574,31 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 			continue
 		}
 
-		g := sctx.statelessGetter(i)
 		key := cursor.Key()
 		if key != nil && bytes.HasPrefix(key, prefix) {
 			val := cursor.Value()
-			heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, dg: g, btCursor: cursor, endTxNum: item.endTxNum, reverse: true})
+			heap.Push(&cp, &CursorItem{t: FILE_CURSOR, key: key, val: val, btCursor: cursor, endTxNum: item.endTxNum, reverse: true})
 		}
 	}
 
+	var i int
+	if cp.Len() > 0 {
+		defer func(t time.Time) { fmt.Printf("domain_shared.go:586: %s, %d\n", time.Since(t), i) }(time.Now())
+	}
 	for cp.Len() > 0 {
 		lastKey := common.Copy(cp[0].key)
 		lastVal := common.Copy(cp[0].val)
 		// Advance all the items that have this key (including the top)
 		for cp.Len() > 0 && bytes.Equal(cp[0].key, lastKey) {
+			i++
 			ci1 := cp[0]
 			switch ci1.t {
 			case RAM_CURSOR:
 				if ci1.iter.Next() {
 					k = []byte(ci1.iter.Key())
 					if k != nil && bytes.HasPrefix(k, prefix) {
-						ci1.key = common.Copy(k)
-						ci1.val = common.Copy(ci1.iter.Value())
+						ci1.key = k
+						ci1.val = ci1.iter.Value()
 					}
 					heap.Fix(&cp, 0)
 				} else {
@@ -630,14 +634,14 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 					return err
 				}
 				if k != nil && bytes.HasPrefix(k, prefix) {
-					ci1.key = common.Copy(k)
+					ci1.key = k
 					keySuffix := make([]byte, len(k)+8)
 					copy(keySuffix, k)
 					copy(keySuffix[len(k):], v)
 					if v, err = roTx.GetOne(sd.Storage.valsTable, keySuffix); err != nil {
 						return err
 					}
-					ci1.val = common.Copy(v)
+					ci1.val = v
 					heap.Fix(&cp, 0)
 				} else {
 					heap.Pop(&cp)
