@@ -603,8 +603,10 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 					if strings.HasPrefix(kx, prefixS) {
 						ci1.key = []byte(kx)
 						ci1.val = ci1.iter.Value()
+						heap.Fix(&cp, 0)
+					} else {
+						heap.Pop(&cp)
 					}
-					heap.Fix(&cp, 0)
 				} else {
 					heap.Pop(&cp)
 				}
