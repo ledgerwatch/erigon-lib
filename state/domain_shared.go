@@ -587,7 +587,7 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 	var i, j, jj int
 	if cp.Len() > 0 {
 		defer func(t time.Time) {
-			fmt.Printf("========== domain_shared.go:586: %s, %d,%d,%d\n", time.Since(t), i, j, jj)
+			fmt.Printf("========== domain_shared.go:586: %s, %d,%d,%d, %x\n", time.Since(t), i, j, jj, prefix)
 		}(time.Now())
 	}
 	for cp.Len() > 0 {
