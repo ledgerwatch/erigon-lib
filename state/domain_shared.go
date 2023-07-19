@@ -584,12 +584,6 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 		}
 	}
 
-	var i, j, jj int
-	if cp.Len() > 0 {
-		defer func(t time.Time) {
-			fmt.Printf("========== domain_shared.go:586: %s, %d,%d,%d, %x\n", time.Since(t), i, j, jj, prefix)
-		}(time.Now())
-	}
 	for cp.Len() > 0 {
 		lastKey := common.Copy(cp[0].key)
 		lastVal := common.Copy(cp[0].val)
@@ -598,7 +592,6 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 			ci1 := cp[0]
 			switch ci1.t {
 			case RAM_CURSOR:
-				i++
 				if ci1.iter.Next() {
 					kx := ci1.iter.Key()
 					if strings.HasPrefix(kx, prefixS) {
@@ -612,7 +605,6 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 					heap.Pop(&cp)
 				}
 			case FILE_CURSOR:
-				j++
 				if ci1.btCursor.Next() {
 					ci1.key = ci1.btCursor.Key()
 					if ci1.key != nil && bytes.HasPrefix(ci1.key, prefix) {
@@ -637,7 +629,6 @@ func (sd *SharedDomains) IterateStoragePrefix(roTx kv.Tx, prefix []byte, it func
 				//	heap.Pop(&cp)
 				//}
 			case DB_CURSOR:
-				jj++
 				k, v, err = ci1.c.NextNoDup()
 				if err != nil {
 					return err
