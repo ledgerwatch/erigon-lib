@@ -2007,6 +2007,9 @@ func (d *Domain) stepsRangeInDB(tx kv.Tx) (from, to float64) {
 	if len(lst) > 0 {
 		from = float64(^binary.BigEndian.Uint64(lst[len(lst)-8:]))
 	}
+	if to == 0 {
+		to = from
+	}
 	return from, to
 }
 
