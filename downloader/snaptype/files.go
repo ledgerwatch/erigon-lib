@@ -146,6 +146,8 @@ func ParseFileName(dir, fileName string) (res FileInfo, err error) {
 		snapshotType = Bodies
 	case Transactions:
 		snapshotType = Transactions
+	case BorEvents:
+		snapshotType = BorEvents
 	default:
 		return res, fmt.Errorf("unexpected snapshot suffix: %s,%w", parts[2], ErrInvalidFileName)
 	}
