@@ -613,7 +613,7 @@ func (g *Getter) NextUncompressed() ([]byte, uint64) {
 	return g.data[pos:g.dataP], g.dataP
 }
 
-// Skip moves offset to the next word and returns the new offset.
+// Skip moves offset to the next word and returns the new offset and the length of the word.
 func (g *Getter) Skip() (uint64, int) {
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
@@ -774,7 +774,15 @@ func (g *Getter) Match(buf []byte) int {
 	return 0
 }
 
-// MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
+// MatchPrefix only checks if the word at the current offset has a buf prefix and returns
+//
+// match - if the word at the current offset has a buf prefix
+//
+// cmp - -1 if buf prefix is smaller then the word, 0 if they have the same length and 1 if buf prefix is larger then the word
+//
+// fullMatch - if prefix matched and have the same length as the word at the current offset
+//
+// Does not move offset to the next word.
 func (g *Getter) MatchPrefix(prefix []byte) (match bool, cmp int, fullMatch bool) {
 	savePos := g.dataP
 	defer func() {
