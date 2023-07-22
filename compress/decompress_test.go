@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -282,95 +283,87 @@ func TestDecompressMatchNotOKUncompressed(t *testing.T) {
 	}
 }
 
-// func TestDecompressMatchPrefix(t *testing.T) {
-// 	d := prepareLoremDict(t)
-// 	defer d.Close()
-// 	g := d.MakeGetter()
-// 	i := 0
-// 	skipCount := 0
-// 	var nextOffset uint64
-// 	for g.HasNext() {
-// 		w := loremStrings[i]
-// 		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
-// 		expected = expected[:len(expected)/2]
-// 		cmp, _, nf := g.MatchPrefix(expected, nextOffset)
-// 		nextOffset = nf
-// 		if cmp != 0 {
-// 			t.Errorf("expexted match with %s", expected)
-// 		}
-// 		g.Skip()
-// 		skipCount++
-// 		i++
-// 	}
-// 	if skipCount != i {
-// 		t.Errorf("something wrong with match logic")
-// 	}
-// 	g.Reset(0)
-// 	skipCount = 0
-// 	i = 0
-// 	nextOffset = 0
-// 	for g.HasNext() {
-// 		w := loremStrings[i]
-// 		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
-// 		expected = expected[:len(expected)/2]
-// 		if len(expected) > 0 {
-// 			expected[len(expected)-1]++
-// 			cmp, _, nf := g.MatchPrefix(expected, nextOffset)
-// 			nextOffset = nf
-// 			if cmp == 0 {
-// 				t.Errorf("not expexted match with %s", expected)
-// 			}
-// 		}
-// 		g.Skip()
-// 		skipCount++
-// 		i++
-// 	}
-// }
+func TestDecompressMatchPrefix(t *testing.T) {
+	d := prepareLoremDict(t)
+	defer d.Close()
+	g := d.MakeGetter()
+	i := 0
+	skipCount := 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
+		expected = expected[:len(expected)/2]
+		match, _, _ := g.MatchPrefix(expected)
+		if !match {
+			t.Errorf("expexted match with %s", expected)
+		}
+		g.Skip()
+		skipCount++
+		i++
+	}
+	if skipCount != i {
+		t.Errorf("something wrong with match logic")
+	}
+	g.Reset(0)
+	skipCount = 0
+	i = 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
+		expected = expected[:len(expected)/2]
+		if len(expected) > 0 {
+			expected[len(expected)-1]++
+			match, _, _ := g.MatchPrefix(expected)
+			if match {
+				t.Errorf("not expexted match with %s", expected)
+			}
+		}
+		g.Skip()
+		skipCount++
+		i++
+	}
+}
 
-// func TestDecompressMatchPrefixUncompressed(t *testing.T) {
-// 	d := prepareLoremDictUncompressed(t)
-// 	defer d.Close()
-// 	g := d.MakeGetter()
-// 	i := 0
-// 	skipCount := 0
-// 	var nextOffset uint64
-// 	for g.HasNext() {
-// 		w := loremStrings[i]
-// 		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
-// 		expected = expected[:len(expected)/2]
-// 		cmp, _, nf := g.MatchPrefix(expected, nextOffset)
-// 		nextOffset = nf
-// 		if cmp != 0 {
-// 			t.Errorf("expexted match with %s", expected)
-// 		}
-// 		g.Skip()
-// 		skipCount++
-// 		i++
-// 	}
-// 	if skipCount != i {
-// 		t.Errorf("something wrong with match logic")
-// 	}
-// 	g.Reset(0)
-// 	skipCount = 0
-// 	i = 0
-// 	nextOffset = 0
-// 	for g.HasNext() {
-// 		w := loremStrings[i]
-// 		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
-// 		expected = expected[:len(expected)/2]
-// 		if len(expected) > 0 {
-// 			expected[len(expected)-1]++
-// 			cmp, _, nf := g.MatchPrefix(expected, nextOffset)
-// 			nextOffset = nf
-// 			if cmp == 0 {
-// 				t.Errorf("not expexted match with %s", expected)
-// 			}
-// 		}
-// 		g.Skip()
-// 		skipCount++
-// 		i++
-// 	}
-// }
+func TestDecompressMatchPrefixUncompressed(t *testing.T) {
+	d := prepareLoremDictUncompressed(t)
+	defer d.Close()
+	g := d.MakeGetter()
+	i := 0
+	skipCount := 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
+		expected = expected[:len(expected)/2]
+		match, _, _ := g.MatchPrefix(expected)
+		if !match {
+			t.Errorf("expexted match with %s", expected)
+		}
+		g.Skip()
+		skipCount++
+		i++
+	}
+	if skipCount != i {
+		t.Errorf("something wrong with match logic")
+	}
+	g.Reset(0)
+	skipCount = 0
+	i = 0
+	for g.HasNext() {
+		w := loremStrings[i]
+		expected := []byte(fmt.Sprintf("%s %d", w, i+1))
+		expected = expected[:len(expected)/2]
+		if len(expected) > 0 {
+			expected[len(expected)-1]++
+			match, _, _ := g.MatchPrefix(expected)
+			if match {
+				t.Errorf("not expexted match with %s", expected)
+			}
+		}
+		g.Skip()
+		skipCount++
+		i++
+	}
+}
 
 func prepareLoremDictUncompressed(t *testing.T) *Decompressor {
 	t.Helper()
@@ -530,159 +523,168 @@ func prepareRandomDict(t *testing.T) *Decompressor {
 	return d
 }
 
-// func TestDecompressRandomDict(t *testing.T) {
-// 	d := prepareRandomDict(t)
-// 	defer d.Close()
+func TestDecompressRandomDict(t *testing.T) {
+	d := prepareRandomDict(t)
+	defer d.Close()
 
-// 	if d.wordsCount != uint64(len(INPUT_FLAGS)) {
-// 		t.Fatalf("TestDecompressRandomDict: d.wordsCount != len(INPUT_FLAGS)")
-// 	}
+	if d.wordsCount != uint64(len(INPUT_FLAGS)) {
+		t.Fatalf("TestDecompressRandomDict: d.wordsCount != len(INPUT_FLAGS)")
+	}
 
-// 	g := d.MakeGetter()
+	g := d.MakeGetter()
 
-// 	word_idx := 0
-// 	input_idx := 0
-// 	total := 0
+	word_idx := 0
+	input_idx := 0
+	total := 0
+	var match bool
+	// check for existing and non existing keys
+	for g.HasNext() {
+		pos := g.dataP
+		if INPUT_FLAGS[input_idx] == 0 { // []byte input
+			notExpected := string(WORDS[word_idx]) + "z"
+			result := g.Match([]byte(notExpected))
+			if result == 0 {
+				t.Fatalf("not expected match: %s\n got: %s\n", notExpected, WORDS[word_idx])
+			}
 
-// 	// check for existing and non existing keys
-// 	for g.HasNext() {
-// 		pos := g.dataP
-// 		if INPUT_FLAGS[input_idx] == 0 { // []byte input
-// 			notExpected := string(WORDS[word_idx]) + "z"
-// 			result := g.Match([]byte(notExpected))
-// 			if result == 0 {
-// 				t.Fatalf("not expected match: %s\n got: %s\n", notExpected, WORDS[word_idx])
-// 			}
+			expected := WORDS[word_idx]
+			result = g.Match(expected)
+			if result != 0 {
+				g.Reset(pos)
+				word, _ := g.Next(nil)
+				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
+			}
+			word_idx++
+		} else { // nil input
 
-// 			expected := WORDS[word_idx]
-// 			result = g.Match(expected)
-// 			if result != 0 {
-// 				g.Reset(pos)
-// 				word, _ := g.Next(nil)
-// 				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
-// 			}
-// 			word_idx++
-// 		} else { // nil input
+			notExpected := []byte{0}
+			result := g.Match(notExpected)
+			if result == 0 {
+				t.Fatal("not expected match []byte{0} with nil\n")
+			}
 
-// 			notExpected := []byte{0}
-// 			result := g.Match(notExpected)
-// 			if result == 0 {
-// 				t.Fatal("not expected match []byte{0} with nil\n")
-// 			}
+			expected := []byte{}
+			result = g.Match(nil)
+			if result != 0 {
+				g.Reset(pos)
+				word, _ := g.Next(nil)
+				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
+			}
+		}
+		input_idx++
+		total++
+	}
+	if total != int(d.wordsCount) {
+		t.Fatalf("expected word count: %d, got %d\n", int(d.wordsCount), total)
+	}
 
-// 			expected := []byte{}
-// 			result = g.Match(nil)
-// 			if result != 0 {
-// 				g.Reset(pos)
-// 				word, _ := g.Next(nil)
-// 				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
-// 			}
-// 		}
-// 		input_idx++
-// 		total++
-// 	}
-// 	if total != int(d.wordsCount) {
-// 		t.Fatalf("expected word count: %d, got %d\n", int(d.wordsCount), total)
-// 	}
+	// TODO: check for non existing keys, suffixes, prefixes
+	g.Reset(0)
 
-// 	// TODO: check for non existing keys, suffixes, prefixes
-// 	g.Reset(0)
+	word_idx = 0
+	input_idx = 0
+	// check for existing and non existing prefixes
+	var notExpected = []byte{2, 3, 4}
+	for g.HasNext() {
 
-// 	word_idx = 0
-// 	input_idx = 0
-// 	// check for existing and non existing prefixes
-// 	var notExpected = []byte{2, 3, 4}
-// 	for g.HasNext() {
+		if INPUT_FLAGS[input_idx] == 0 { // []byte input
+			expected := WORDS[word_idx]
+			prefix_size := len(expected) / 2
+			if len(expected)/2 > 3 {
+				prefix_size = randIntInRange(3, len(expected)/2)
+			}
+			expected = expected[:prefix_size]
+			if len(expected) > 0 {
+				match, _, _ = g.MatchPrefix(expected)
+				if !match {
+					t.Errorf("expected match with %s", expected)
+				}
+				expected[len(expected)-1]++
+				match, _, _ = g.MatchPrefix(expected)
+				if match {
+					t.Errorf("not expected match with %s", expected)
+				}
+			} else {
+				match, _, _ := g.MatchPrefix([]byte{})
+				if !match {
+					t.Error("expected match with empty []byte")
+				}
+				match, _, _ = g.MatchPrefix(notExpected)
+				if match {
+					t.Error("not expected empty []byte to match with []byte{2, 3, 4}")
+				}
+			}
+			word_idx++
+		} else { // nil input
+			match, _, _ = g.MatchPrefix(nil)
+			if !match {
+				t.Error("expected match with nil")
+			}
+			match, _, _ = g.MatchPrefix(notExpected)
+			if match {
+				t.Error("not expected nil to match with []byte{2, 3, 4}")
+			}
+		}
 
-// 		if INPUT_FLAGS[input_idx] == 0 { // []byte input
-// 			expected := WORDS[word_idx]
-// 			prefix_size := len(expected) / 2
-// 			if len(expected)/2 > 3 {
-// 				prefix_size = randIntInRange(3, len(expected)/2)
-// 			}
-// 			expected = expected[:prefix_size]
-// 			if len(expected) > 0 {
-// 				if !g.MatchPrefix(expected) {
-// 					t.Errorf("expected match with %s", expected)
-// 				}
-// 				expected[len(expected)-1]++
-// 				if g.MatchPrefix(expected) {
-// 					t.Errorf("not expected match with %s", expected)
-// 				}
-// 			} else {
-// 				if !g.MatchPrefix([]byte{}) {
-// 					t.Error("expected match with empty []byte")
-// 				}
+		g.Skip()
+		input_idx++
+	}
 
-// 				if g.MatchPrefix(notExpected) {
-// 					t.Error("not expected empty []byte to match with []byte{2, 3, 4}")
-// 				}
-// 			}
-// 			word_idx++
-// 		} else { // nil input
-// 			if !g.MatchPrefix(nil) {
-// 				t.Error("expected match with nil")
-// 			}
-// 			if g.MatchPrefix(notExpected) {
-// 				t.Error("not expected nil to match with []byte{2, 3, 4}")
-// 			}
-// 		}
+	g.Reset(0)
 
-// 		g.Skip()
-// 		input_idx++
-// 	}
+	word_idx = 0
+	input_idx = 0
+	// check for existing and non existing suffixes
+	notExpected = []byte{2, 3, 4}
+	for g.HasNext() {
 
-// 	g.Reset(0)
+		if INPUT_FLAGS[input_idx] == 0 { // []byte input
+			suffix := WORDS[word_idx]
+			if len(suffix) > 1 {
+				prefix := suffix[:len(suffix)/2]
+				suffix = suffix[len(suffix)/2:]
+				equal := reflect.DeepEqual(prefix, suffix)
+				// check existing suffixes
+				match, _, _ = g.MatchPrefix(suffix)
+				if match { // suffix has to be equal to prefix
+					if !equal {
+						t.Fatalf("MatchPrefix(suffix) expected match: prefix is unequal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
+					}
+				} else { // suffix has not to be the same as prefix
+					if equal {
+						t.Fatalf("MatchPrefix(suffix) expected unmatch: prefix is equal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
+					}
+				}
 
-// 	word_idx = 0
-// 	input_idx = 0
-// 	// check for existing and non existing suffixes
-// 	notExpected = []byte{2, 3, 4}
-// 	for g.HasNext() {
+				if len(suffix) > 0 {
+					suffix[0]++
+					match, _, _ = g.MatchPrefix(suffix)
+					if match {
+						t.Fatalf("MatchPrefix(suffix) not expected match: prefix is unequal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
+					}
+				}
 
-// 		if INPUT_FLAGS[input_idx] == 0 { // []byte input
-// 			suffix := WORDS[word_idx]
-// 			if len(suffix) > 1 {
-// 				prefix := suffix[:len(suffix)/2]
-// 				suffix = suffix[len(suffix)/2:]
-// 				equal := reflect.DeepEqual(prefix, suffix)
-// 				// check existing suffixes
-// 				if g.MatchPrefix(suffix) { // suffix has to be equal to prefix
-// 					if !equal {
-// 						t.Fatalf("MatchPrefix(suffix) expected match: prefix is unequal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
-// 					}
-// 				} else { // suffix has not to be the same as prefix
-// 					if equal {
-// 						t.Fatalf("MatchPrefix(suffix) expected unmatch: prefix is equal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
-// 					}
-// 				}
+				g.Skip()
+			} else {
+				if g.Match(suffix) != 0 {
+					t.Fatal("Match(suffix): expected match suffix")
+				}
+			}
+			word_idx++
+		} else { // nil input
+			match, _, _ = g.MatchPrefix(nil)
+			if !match {
+				t.Error("MatchPrefix(suffix): expected match with nil")
+			}
+			match, _, _ = g.MatchPrefix(notExpected)
+			if match {
+				t.Error("MatchPrefix(suffix): not expected nil to match with []byte{2, 3, 4}")
+			}
+			if g.Match(nil) != 0 {
+				t.Errorf("Match(suffix): expected to match with nil")
+			}
+		}
 
-// 				if len(suffix) > 0 {
-// 					suffix[0]++
-// 					if g.MatchPrefix(suffix) {
-// 						t.Fatalf("MatchPrefix(suffix) not expected match: prefix is unequal to suffix %v != %v, full slice %v\n", prefix, suffix, WORDS[word_idx])
-// 					}
-// 				}
-
-// 				g.Skip()
-// 			} else {
-// 				if g.Match(suffix) != 0 {
-// 					t.Fatal("Match(suffix): expected match suffix")
-// 				}
-// 			}
-// 			word_idx++
-// 		} else { // nil input
-// 			if !g.MatchPrefix(nil) {
-// 				t.Error("MatchPrefix(suffix): expected match with nil")
-// 			}
-// 			if g.MatchPrefix(notExpected) {
-// 				t.Error("MatchPrefix(suffix): not expected nil to match with []byte{2, 3, 4}")
-// 			}
-// 			if g.Match(nil) != 0 {
-// 				t.Errorf("Match(suffix): expected to match with nil")
-// 			}
-// 		}
-
-// 		input_idx++
-// 	}
-// }
+		input_idx++
+	}
+}

@@ -42,9 +42,8 @@ func BenchmarkDecompressSkip(b *testing.B) {
 	d := prepareDict(t)
 	defer d.Close()
 	g := d.MakeGetter()
-
 	for i := 0; i < b.N; i++ {
-		_ = g.Skip()
+		_, _ = g.Skip()
 		if !g.HasNext() {
 			g.Reset(0)
 		}
@@ -66,10 +65,8 @@ func BenchmarkDecompressMatchPrefix(b *testing.B) {
 	d := prepareDict(t)
 	defer d.Close()
 	g := d.MakeGetter()
-	var nextOffset uint64
 	for i := 0; i < b.N; i++ {
-		_, _, nf := g.MatchPrefix([]byte("longlongword"), nextOffset)
-		nextOffset = nf
+		_, _, _ = g.MatchPrefix([]byte("longlongword"))
 	}
 }
 

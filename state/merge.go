@@ -979,7 +979,7 @@ func (h *History) mergeFiles(ctx context.Context, indexFiles, historyFiles []*fi
 						return nil, nil, err
 					}
 					if h.compressVals {
-						valOffset = g2.Skip()
+						valOffset, _ = g2.Skip()
 					} else {
 						valOffset = g2.SkipUncompressed()
 					}

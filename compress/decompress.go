@@ -614,7 +614,7 @@ func (g *Getter) NextUncompressed() ([]byte, uint64) {
 }
 
 // Skip moves offset to the next word and returns the new offset.
-func (g *Getter) Skip() uint64 {
+func (g *Getter) Skip() (uint64, int) {
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
 	if l == 0 {
@@ -622,7 +622,7 @@ func (g *Getter) Skip() uint64 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		return g.dataP
+		return g.dataP, 0
 	}
 	wordLen := int(l)
 
@@ -648,7 +648,7 @@ func (g *Getter) Skip() uint64 {
 	}
 	// Uncovered characters
 	g.dataP += add
-	return g.dataP
+	return g.dataP, wordLen
 }
 
 func (g *Getter) SkipUncompressed() uint64 {
@@ -775,7 +775,7 @@ func (g *Getter) Match(buf []byte) int {
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
-func (g *Getter) MatchPrefix(prefix []byte, nf uint64) (cmp int, fullMatchOfKey bool, nextOffset uint64) {
+func (g *Getter) MatchPrefix(prefix []byte) (match bool, cmp int, fullMatch bool) {
 	savePos := g.dataP
 	defer func() {
 		g.dataP, g.dataBit = savePos, 0
@@ -784,56 +784,30 @@ func (g *Getter) MatchPrefix(prefix []byte, nf uint64) (cmp int, fullMatchOfKey 
 	wordLen := g.nextPos(true /* clean */)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
 	prefixLen := len(prefix)
-
-	if wordLen == 0 {
+	if wordLen == 0 || int(wordLen) < prefixLen {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		nextOffset = g.dataP
-
+		if prefixLen != 0 {
+			g.dataP, g.dataBit = savePos, 0
+		}
 		if prefixLen < int(wordLen) {
-			fullMatchOfKey = false
+			fullMatch = false
 			cmp = -1
 		}
 		if prefixLen > int(wordLen) {
-			fullMatchOfKey = false
+			fullMatch = false
 			cmp = 1
 		}
 		if prefixLen == int(wordLen) {
-			fullMatchOfKey = true
+			fullMatch = true
 			cmp = 0
 		}
-		// fmt.Println("NEXT OFFSET 1: ", nextOffset)
-		return cmp, fullMatchOfKey, nextOffset
+		return prefixLen == int(wordLen), cmp, fullMatch
 	}
 
-	// for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
-	// 	bufPos += int(pos) - 1
-	// 	if int(wordLen) < bufPos {
-	// 		fmt.Println(wordLen, bufPos)
-	// 		panic(fmt.Sprintf("likely .idx is invalid: %s", g.fName))
-	// 	}
-	// 	if bufPos > lastUncovered {
-	// 		add += uint64(bufPos - lastUncovered)
-	// 	}
-	// 	lastUncovered = bufPos + len(g.nextPattern())
-	// }
-	// if g.dataBit > 0 {
-	// 	g.dataP++
-	// 	g.dataBit = 0
-	// }
-	// if int(wordLen) > lastUncovered {
-	// 	add += wordLen - uint64(lastUncovered)
-	// }
-	// if wordLen != 0 {
-	// 	nextOffset = g.dataP + add
-	// }
-
-	var add uint64
 	var bufPos int
-	var lastUncovered int
-	var isBreak bool
 	// In the first pass, we only check patterns
 	// Only run this loop as far as the prefix goes, there is no need to check further
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
@@ -846,41 +820,27 @@ func (g *Getter) MatchPrefix(prefix []byte, nf uint64) (cmp int, fullMatchOfKey 
 			comparisonLen = len(pattern)
 		}
 		if bufPos < prefixLen {
-			compared := bytes.Compare(prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen])
-			if compared != 0 && !isBreak {
-				cmp = compared
-				fullMatchOfKey = false
-				isBreak = true
+			if !bytes.Equal(prefix[bufPos:bufPos+comparisonLen], pattern[:comparisonLen]) {
+				if prefixLen > int(wordLen) {
+					return false, 1, false
+				} else if prefixLen < int(wordLen) {
+					return false, -1, false
+				} else {
+					return false, 0, false
+				}
 			}
 		}
-		if bufPos > lastUncovered {
-			add += uint64(bufPos - lastUncovered)
-		}
-		lastUncovered = bufPos + len(pattern)
 	}
 
 	if g.dataBit > 0 {
 		g.dataP++
 		g.dataBit = 0
 	}
-	if int(wordLen) > lastUncovered {
-		add += wordLen - uint64(lastUncovered)
-	}
-	if wordLen != 0 {
-		nextOffset = g.dataP + add
-	}
-	if int(wordLen) < prefixLen {
-		return -1, false, nextOffset
-	}
-	if isBreak {
-		return cmp, false, nextOffset
-	}
-
 	postLoopPos := g.dataP
 	g.dataP, g.dataBit = savePos, 0
 	g.nextPos(true /* clean */) // Reset the state of huffman decoder
 	// Second pass - we check spaces not covered by the patterns
-	lastUncovered = 0
+	var lastUncovered int
 	bufPos = 0
 	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
@@ -892,16 +852,15 @@ func (g *Getter) MatchPrefix(prefix []byte, nf uint64) (cmp int, fullMatchOfKey 
 			} else {
 				comparisonLen = int(dif)
 			}
-
-			compared := bytes.Compare(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
-			if compared != 0 {
-				cmp = compared
-				fullMatchOfKey = false
-				return cmp, fullMatchOfKey, nextOffset
+			if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
+				if prefixLen > int(wordLen) {
+					return false, 1, false
+				} else if prefixLen < int(wordLen) {
+					return false, -1, false
+				} else {
+					return false, 0, false
+				}
 			}
-			// if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
-			// 	return false
-			// }
 			postLoopPos += dif
 		}
 		lastUncovered = bufPos + len(g.nextPattern())
@@ -914,19 +873,21 @@ func (g *Getter) MatchPrefix(prefix []byte, nf uint64) (cmp int, fullMatchOfKey 
 		} else {
 			comparisonLen = int(dif)
 		}
-		// if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
-		// 	return false
-		// }
-		compared := bytes.Compare(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)])
-		postLoopPos += dif
-		if compared != 0 {
-			cmp = compared
-			fullMatchOfKey = false
-			return cmp, fullMatchOfKey, nextOffset
+		if !bytes.Equal(prefix[lastUncovered:lastUncovered+comparisonLen], g.data[postLoopPos:postLoopPos+uint64(comparisonLen)]) {
+			if prefixLen > int(wordLen) {
+				return false, 1, false
+			} else if prefixLen < int(wordLen) {
+				return false, -1, false
+			} else {
+				return false, 0, false
+			}
 		}
 	}
-	if prefixLen == int(wordLen) {
-		fullMatchOfKey = true
+	if prefixLen > int(wordLen) {
+		return true, 1, false
+	} else if prefixLen < int(wordLen) {
+		return true, -1, false
+	} else {
+		return true, 0, true
 	}
-	return 0, fullMatchOfKey, nextOffset
 }
