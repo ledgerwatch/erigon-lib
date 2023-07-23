@@ -551,7 +551,7 @@ func TestDecompressRandomDict(t *testing.T) {
 			word_idx++
 		} else { // nil input
 			notExpected := []byte{0}
-			ok, _ := g.Match([]byte(notExpected))
+			ok, _ := g.Match(notExpected)
 			if ok {
 				t.Fatal("not expected match []byte{0} with nil\n")
 			}

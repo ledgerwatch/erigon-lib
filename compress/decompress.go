@@ -944,7 +944,7 @@ func (g *Getter) MatchPrefixUncompressed(prefix []byte) (match bool, cmp int, fu
 		panic(msg)
 	}
 
-	if !bytes.Equal(prefix[:], g.data[g.dataP:g.dataP+uint64(prefixLen)]) {
+	if !bytes.Equal(prefix, g.data[g.dataP:g.dataP+uint64(prefixLen)]) {
 		if prefixLen < int(wordLen) {
 			return false, -1, false
 		} else {
