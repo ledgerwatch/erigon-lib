@@ -87,9 +87,8 @@ func TestDecompressMatchOK(t *testing.T) {
 		w := loremStrings[i]
 		if i%2 != 0 {
 			expected := fmt.Sprintf("%s %d", w, i)
-			// ok, _ := g.Match([]byte(expected))
-			result := g.Match([]byte(expected))
-			if result != 0 {
+			ok, _ := g.Match([]byte(expected))
+			if !ok {
 				t.Errorf("expexted match with %s", expected)
 			}
 		} else {
@@ -112,9 +111,8 @@ func TestDecompressMatchOKUncompressed(t *testing.T) {
 		w := loremStrings[i]
 		if i%2 != 0 {
 			expected := fmt.Sprintf("%s %d", w, i)
-			// ok, _ := g.Match([]byte(expected))
-			result := g.Match([]byte(expected))
-			if result != 0 {
+			ok, _ := g.Match([]byte(expected))
+			if !ok {
 				t.Errorf("expexted match with %s", expected)
 			}
 		} else {
@@ -191,9 +189,8 @@ func TestDecompressMatchOKCondensed(t *testing.T) {
 	for g.HasNext() {
 		if i%2 != 0 {
 			expected := fmt.Sprintf("word-%d", i)
-			// ok, _ := g.Match([]byte(expected))
-			result := g.Match([]byte(expected))
-			if result != 0 {
+			ok, _ := g.Match([]byte(expected))
+			if !ok {
 				t.Errorf("expexted match with %s", expected)
 			}
 		} else {
@@ -218,9 +215,8 @@ func TestDecompressMatchOKCondensedUncompressed(t *testing.T) {
 	for g.HasNext() {
 		if i%2 != 0 {
 			expected := fmt.Sprintf("word-%d", i)
-			// ok, _ := g.Match([]byte(expected))
-			result := g.Match([]byte(expected))
-			if result != 0 {
+			ok, _ := g.Match([]byte(expected))
+			if !ok {
 				t.Errorf("expexted match with %s", expected)
 			}
 		} else {
@@ -243,9 +239,8 @@ func TestDecompressMatchNotOK(t *testing.T) {
 	for g.HasNext() {
 		w := loremStrings[i]
 		expected := fmt.Sprintf("%s %d", w, i+1)
-		// ok, _ := g.Match([]byte(expected))
-		result := g.Match([]byte(expected))
-		if result == 0 {
+		ok, _ := g.Match([]byte(expected))
+		if ok {
 			t.Errorf("not expexted match with %s", expected)
 		} else {
 			g.Skip()
@@ -267,9 +262,8 @@ func TestDecompressMatchNotOKUncompressed(t *testing.T) {
 		w := loremStrings[i]
 		if i%2 != 0 {
 			expected := fmt.Sprintf("%s %d", w, i)
-			// ok, _ := g.Match([]byte(expected))
-			result := g.Match([]byte(expected))
-			if result != 0 {
+			ok, _ := g.Match([]byte(expected))
+			if !ok {
 				t.Errorf("expexted match with %s", expected)
 			}
 		} else {
@@ -542,30 +536,29 @@ func TestDecompressRandomDict(t *testing.T) {
 		pos := g.dataP
 		if INPUT_FLAGS[input_idx] == 0 { // []byte input
 			notExpected := string(WORDS[word_idx]) + "z"
-			result := g.Match([]byte(notExpected))
-			if result == 0 {
+			ok, _ := g.Match([]byte(notExpected))
+			if ok {
 				t.Fatalf("not expected match: %s\n got: %s\n", notExpected, WORDS[word_idx])
 			}
 
 			expected := WORDS[word_idx]
-			result = g.Match(expected)
-			if result != 0 {
+			ok, _ = g.Match(expected)
+			if !ok {
 				g.Reset(pos)
 				word, _ := g.Next(nil)
 				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
 			}
 			word_idx++
 		} else { // nil input
-
 			notExpected := []byte{0}
-			result := g.Match(notExpected)
-			if result == 0 {
+			ok, _ := g.Match([]byte(notExpected))
+			if ok {
 				t.Fatal("not expected match []byte{0} with nil\n")
 			}
 
 			expected := []byte{}
-			result = g.Match(nil)
-			if result != 0 {
+			ok, _ = g.Match(nil)
+			if !ok {
 				g.Reset(pos)
 				word, _ := g.Next(nil)
 				t.Fatalf("expected match: %s\n got: %s\n", expected, word)
@@ -666,7 +659,8 @@ func TestDecompressRandomDict(t *testing.T) {
 
 				g.Skip()
 			} else {
-				if g.Match(suffix) != 0 {
+				ok, _ := g.Match(suffix)
+				if !ok {
 					t.Fatal("Match(suffix): expected match suffix")
 				}
 			}
@@ -680,11 +674,20 @@ func TestDecompressRandomDict(t *testing.T) {
 			if match {
 				t.Error("MatchPrefix(suffix): not expected nil to match with []byte{2, 3, 4}")
 			}
-			if g.Match(nil) != 0 {
+			ok, _ := g.Match(nil)
+			if !ok {
 				t.Errorf("Match(suffix): expected to match with nil")
 			}
 		}
 
 		input_idx++
+	}
+
+	for i := 0; i < 10; i++ {
+		_, cmp := g.Match(randWord())
+		// fmt.Printf("MATCH: %v, CMP: %d\n", ok, cmp)
+		if cmp != -2 {
+			t.Fatal("expected EOF")
+		}
 	}
 }

@@ -112,6 +112,41 @@ func prepareDict(t *testing.T) *Decompressor {
 	return d
 }
 
+func prepareDictUncompressed(t *testing.T) *Decompressor {
+	t.Helper()
+	logger := log.New()
+	tmpDir := t.TempDir()
+	file := filepath.Join(tmpDir, "compressed")
+	t.Name()
+	c, err := NewCompressor(context.Background(), t.Name(), file, tmpDir, 1, 2, log.LvlDebug, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for i := 0; i < 100; i++ {
+		if err = c.AddUncompressedWord(nil); err != nil {
+			panic(err)
+		}
+		if err = c.AddUncompressedWord([]byte("long")); err != nil {
+			t.Fatal(err)
+		}
+		if err = c.AddUncompressedWord([]byte("word")); err != nil {
+			t.Fatal(err)
+		}
+		if err = c.AddUncompressedWord([]byte(fmt.Sprintf("%d longlongword %d", i, i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = c.Compress(); err != nil {
+		t.Fatal(err)
+	}
+	var d *Decompressor
+	if d, err = NewDecompressor(file); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func TestCompressDict1(t *testing.T) {
 	d := prepareDict(t)
 	defer d.Close()
@@ -229,6 +264,133 @@ func TestCompressDict1(t *testing.T) {
 	}
 
 	if cs := checksum(d.filePath); cs != 3153486123 {
+		// it's ok if hash changed, but need re-generate all existing snapshot hashes
+		// in https://github.com/ledgerwatch/erigon-snapshot
+		t.Errorf("result file hash changed, %d", cs)
+	}
+}
+
+func TestCompressDict1Uncompressed(t *testing.T) {
+	d := prepareDictUncompressed(t)
+	defer d.Close()
+	g := d.MakeGetter()
+	i := 0
+	g.Reset(0)
+	for g.HasNext() {
+		// next word is `nil`
+		match, cmp, fullMatch := g.MatchPrefixUncompressed([]byte("long"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte(""))
+		require.True(t, match)
+		require.Equal(t, 0, cmp)
+		require.True(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte{})
+		require.True(t, match)
+		require.Equal(t, 0, cmp)
+		require.True(t, fullMatch)
+		word, _ := g.Next(nil)
+		require.Nil(t, word)
+
+		// next word is `long`
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("long"))
+		require.True(t, match)
+		require.Equal(t, 0, cmp)
+		require.True(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("longlong"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("wordnotmatch"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("longnotmatch"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte{})
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		_, _ = g.Next(nil)
+
+		// next word is `word`
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("long"))
+		require.False(t, match)
+		require.Equal(t, 0, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("longlong"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("word"))
+		require.True(t, match)
+		require.Equal(t, 0, cmp)
+		require.True(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte(""))
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed(nil)
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("wordnotmatch"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("longnotmatch"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		_, _ = g.Next(nil)
+
+		// next word is `%d longlongword %d`
+		expectPrefix := fmt.Sprintf("%d long", i)
+
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte(fmt.Sprintf("%d", i)))
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte(expectPrefix))
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte(expectPrefix + "long"))
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte(expectPrefix + "longword "))
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("wordnotmatch"))
+		require.False(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("longnotmatch"))
+		require.False(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte{})
+		require.True(t, match)
+		require.Equal(t, -1, cmp)
+		require.False(t, fullMatch)
+		match, cmp, fullMatch = g.MatchPrefixUncompressed([]byte("longnotmatchlongnotmatchlongnotmatch"))
+		require.False(t, match)
+		require.Equal(t, 1, cmp)
+		require.False(t, fullMatch)
+		word, _ = g.Next(nil)
+		expected := fmt.Sprintf("%d longlongword %d", i, i)
+		if string(word) != expected {
+			t.Errorf("expected %s, got (hex) [%s]", expected, word)
+		}
+		i++
+	}
+
+	if cs := checksum(d.filePath); cs != 4109788003 {
 		// it's ok if hash changed, but need re-generate all existing snapshot hashes
 		// in https://github.com/ledgerwatch/erigon-snapshot
 		t.Errorf("result file hash changed, %d", cs)

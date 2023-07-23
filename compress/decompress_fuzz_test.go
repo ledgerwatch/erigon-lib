@@ -103,7 +103,7 @@ func FuzzDecompressMatch(f *testing.F) {
 			}
 
 			// check for existing suffix
-			match, _, _ = g.MatchPrefix(prefix)
+			match, _, _ = g.MatchPrefix(suffix)
 			if match { // suffix has to be equal to prefix
 				if !same {
 					t.Fatalf("MatchPrefix(suffix) expected match: prefix is unequal to suffix %v != %v, full slice %v\n", prefix, suffix, expected)
@@ -127,14 +127,15 @@ func FuzzDecompressMatch(f *testing.F) {
 			}
 
 			if len(suffix) < len(expected) {
-				if g.Match(suffix) == 0 {
+				ok, _ := g.Match(suffix)
+				if ok {
 					t.Fatalf("Match(suffix) expected unmatch: suffix %v != %v\n", suffix, expected)
 				}
 			}
 
 			// check key for full match
-			result := g.Match(expected)
-			if result != 0 {
+			ok, _ := g.Match(expected)
+			if !ok {
 				key, _ := g.Next(nil)
 				t.Fatalf("expected match: %v with key: %v\n", expected, key)
 			}
@@ -180,8 +181,8 @@ func FuzzDecompressMatch(f *testing.F) {
 					}
 				}
 			}
-
-			if g.Match(suffix) == 0 {
+			ok, _ = g.Match(suffix)
+			if ok {
 				// if suffix is the same as key in file
 				if len(suffix) != len(expected) {
 					t.Fatalf("suffix matched key in file, but lengths a different: len(suffix) %v != len(expected) %v\n", len(suffix), len(expected))
@@ -197,8 +198,8 @@ func FuzzDecompressMatch(f *testing.F) {
 			}
 
 			// check for non existing key
-			result = g.Match(notExpected)
-			if result == 0 {
+			ok, _ = g.Match(notExpected)
+			if ok {
 				key, _ := g.Next(nil)
 				t.Fatalf("notExpected full: %v\n not expected match: %v with key %v\n", notExpected, notExpected, key)
 			}
@@ -207,7 +208,8 @@ func FuzzDecompressMatch(f *testing.F) {
 		}
 
 		for i := 0; i < 10; i++ {
-			if g.Match(randWord()) != -2 {
+			_, cmp := g.Match(randWord())
+			if cmp != -2 {
 				t.Fatal("expected EOF")
 			}
 		}

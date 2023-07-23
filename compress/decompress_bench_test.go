@@ -56,7 +56,7 @@ func BenchmarkDecompressMatch(b *testing.B) {
 	defer d.Close()
 	g := d.MakeGetter()
 	for i := 0; i < b.N; i++ {
-		_ = g.Match([]byte("longlongword"))
+		_, _ = g.Match([]byte("longlongword"))
 	}
 }
 

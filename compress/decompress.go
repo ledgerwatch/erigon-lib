@@ -651,7 +651,7 @@ func (g *Getter) Skip() (uint64, int) {
 	return g.dataP, wordLen
 }
 
-func (g *Getter) SkipUncompressed() uint64 {
+func (g *Getter) SkipUncompressed() (uint64, int) {
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
 	if wordLen == 0 {
@@ -659,7 +659,7 @@ func (g *Getter) SkipUncompressed() uint64 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		return g.dataP
+		return g.dataP, int(wordLen)
 	}
 	g.nextPos(false)
 	if g.dataBit > 0 {
@@ -667,42 +667,47 @@ func (g *Getter) SkipUncompressed() uint64 {
 		g.dataBit = 0
 	}
 	g.dataP += wordLen
-	return g.dataP
+	return g.dataP, int(wordLen)
 }
 
-// Match returns -2, -1, 0, 1 and moves offset to the next word if the word at the urrent offset fully matches the buf
+// Match returns 2 values. 1st value (bool) indicates if a word at the current offset fully
+// matches the buf. Moves offset if matched. 2nd value (int) indicates the following:
 //
 // -2 if reached end of file (no next key available)
 //
-// -1 if given buf is smaller then the key at the current offset, does't move offset
+// -1 if given buf is smaller then the key at the current offset
 //
-// 0 if given buf matched to the key at the current offset, moves offset
+// 0 if given buf has the same length as the key at the current offset
 //
-// 1 if given buf is larger then the key at the current offset, does't move offset
-func (g *Getter) Match(buf []byte) int {
+// 1 if given buf is larger then the key at the current offset
+func (g *Getter) Match(buf []byte) (bool, int) {
 	if g.dataP >= uint64(len(g.data)) {
-		return -2
+		return false, -2
 	}
+
 	savePos := g.dataP
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
 	lenBuf := len(buf)
-	if wordLen == 0 || int(wordLen) != lenBuf {
+
+	if wordLen == 0 {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		if lenBuf != 0 || lenBuf != int(wordLen) {
+		if lenBuf != 0 {
 			g.dataP, g.dataBit = savePos, 0
+		} else {
+			return true, 0
 		}
-		if lenBuf == int(wordLen) {
-			return 0
-		}
+	}
+
+	if lenBuf != int(wordLen) {
+		g.dataP, g.dataBit = savePos, 0
 		if lenBuf < int(wordLen) {
-			return -1
-		}
-		if lenBuf > int(wordLen) {
-			return 1
+			return false, -1
+		} else if lenBuf > int(wordLen) {
+			return false, 1
 		}
 	}
 
@@ -711,14 +716,13 @@ func (g *Getter) Match(buf []byte) int {
 	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
 		bufPos += int(pos) - 1
 		pattern := g.nextPattern()
-		compared := bytes.Compare(buf[bufPos:bufPos+len(pattern)], pattern)
-		if compared != 0 {
+		if lenBuf < bufPos+len(pattern) || !bytes.Equal(buf[bufPos:bufPos+len(pattern)], pattern) {
 			g.dataP, g.dataBit = savePos, 0
-			return compared
-		}
-		if lenBuf < bufPos+len(pattern) {
-			g.dataP, g.dataBit = savePos, 0
-			return -1
+			if lenBuf < int(wordLen) {
+				return false, -1
+			} else {
+				return false, 0
+			}
 		}
 	}
 	if g.dataBit > 0 {
@@ -735,14 +739,13 @@ func (g *Getter) Match(buf []byte) int {
 		bufPos += int(pos) - 1
 		if bufPos > lastUncovered {
 			dif := uint64(bufPos - lastUncovered)
-			compared := bytes.Compare(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
-			if compared != 0 {
+			if lenBuf < bufPos || !bytes.Equal(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif]) {
 				g.dataP, g.dataBit = savePos, 0
-				return compared
-			}
-			if lenBuf < bufPos {
-				g.dataP, g.dataBit = savePos, 0
-				return -1
+				if lenBuf < int(wordLen) {
+					return false, -1
+				} else {
+					return false, 0
+				}
 			}
 			postLoopPos += dif
 		}
@@ -750,28 +753,18 @@ func (g *Getter) Match(buf []byte) int {
 	}
 	if int(wordLen) > lastUncovered {
 		dif := wordLen - uint64(lastUncovered)
-
-		compared := bytes.Compare(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
-		if compared != 0 {
+		if lenBuf < int(wordLen) || !bytes.Equal(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif]) {
 			g.dataP, g.dataBit = savePos, 0
-			return compared
-		}
-		if lenBuf < int(wordLen) {
-			g.dataP, g.dataBit = savePos, 0
-			return -1
+			if lenBuf < int(wordLen) {
+				return false, -1
+			} else {
+				return false, 0
+			}
 		}
 		postLoopPos += dif
 	}
-	if lenBuf < int(wordLen) {
-		g.dataP, g.dataBit = savePos, 0
-		return -1
-	}
-	if lenBuf > int(wordLen) {
-		g.dataP, g.dataBit = savePos, 0
-		return 1
-	}
 	g.dataP, g.dataBit = postLoopPos, 0
-	return 0
+	return true, 0
 }
 
 // MatchPrefix only checks if the word at the current offset has a buf prefix and returns
@@ -894,6 +887,72 @@ func (g *Getter) MatchPrefix(prefix []byte) (match bool, cmp int, fullMatch bool
 	if prefixLen > int(wordLen) {
 		return true, 1, false
 	} else if prefixLen < int(wordLen) {
+		return true, -1, false
+	} else {
+		return true, 0, true
+	}
+}
+
+// MatchPrefixUncompressed only checks if the word at the current offset has a buf prefix and returns
+//
+// match - if the word at the current offset has a buf prefix
+//
+// cmp - -1 if buf prefix is smaller then the word, 0 if they have the same length and 1 if buf prefix is larger then the word
+//
+// fullMatch - if prefix matched and have the same length as the word at the current offset
+//
+// Does not move offset to the next word.
+func (g *Getter) MatchPrefixUncompressed(prefix []byte) (match bool, cmp int, fullMatch bool) {
+	savePos := g.dataP
+	defer func() {
+		g.dataP, g.dataBit = savePos, 0
+	}()
+
+	wordLen := g.nextPos(true /* clean */)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	prefixLen := len(prefix)
+
+	if wordLen == 0 {
+		if g.dataBit > 0 {
+			g.dataP++
+			g.dataBit = 0
+		}
+		if prefixLen != 0 {
+			g.dataP, g.dataBit = savePos, 0
+		}
+		if prefixLen > int(wordLen) {
+			fullMatch = false
+			cmp = 1
+		}
+		if prefixLen == int(wordLen) {
+			fullMatch = true
+			cmp = 0
+		}
+		return prefixLen == int(wordLen), cmp, fullMatch
+	}
+
+	if prefixLen > int(wordLen) {
+		g.dataP, g.dataBit = savePos, 0
+		return false, 1, false
+	}
+
+	g.nextPos(true)
+
+	if g.dataP+uint64(prefixLen) > uint64(len(g.data)) {
+		// if current offset + prefix size is greater then the total data size
+		msg := fmt.Sprintf("Shouldn't have happened: dataP = %d, dataSize = %d, wordLen = %d, prefixLen = %d and g.dataP+uint64(prefixLen) > uint64(len(g.data))", g.dataP, len(g.data), wordLen, prefixLen)
+		panic(msg)
+	}
+
+	if !bytes.Equal(prefix[:], g.data[g.dataP:g.dataP+uint64(prefixLen)]) {
+		if prefixLen < int(wordLen) {
+			return false, -1, false
+		} else {
+			return false, 0, false
+		}
+	}
+
+	if prefixLen < int(wordLen) {
 		return true, -1, false
 	} else {
 		return true, 0, true

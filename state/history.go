@@ -458,7 +458,7 @@ func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath
 				if compressVals {
 					valOffset, _ = g2.Skip()
 				} else {
-					valOffset = g2.SkipUncompressed()
+					valOffset, _ = g2.SkipUncompressed()
 				}
 			}
 
