@@ -41,7 +41,7 @@ type ExecutionClient interface {
 	InsertHeaders(ctx context.Context, in *InsertHeadersRequest, opts ...grpc.CallOption) (*InsertionResult, error)
 	InsertBodies(ctx context.Context, in *InsertBodiesRequest, opts ...grpc.CallOption) (*InsertionResult, error)
 	// Chain Validation and ForkChoice.
-	ValidateChain(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*ValidationReceipt, error)
+	ValidateChain(ctx context.Context, in *ValidationRequest, opts ...grpc.CallOption) (*ValidationReceipt, error)
 	UpdateForkChoice(ctx context.Context, in *ForkChoice, opts ...grpc.CallOption) (*ForkChoiceReceipt, error)
 	AssembleBlock(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*types.ExecutionPayload, error)
 	// Chain Getters.
@@ -78,7 +78,7 @@ func (c *executionClient) InsertBodies(ctx context.Context, in *InsertBodiesRequ
 	return out, nil
 }
 
-func (c *executionClient) ValidateChain(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*ValidationReceipt, error) {
+func (c *executionClient) ValidateChain(ctx context.Context, in *ValidationRequest, opts ...grpc.CallOption) (*ValidationReceipt, error) {
 	out := new(ValidationReceipt)
 	err := c.cc.Invoke(ctx, Execution_ValidateChain_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -158,7 +158,7 @@ type ExecutionServer interface {
 	InsertHeaders(context.Context, *InsertHeadersRequest) (*InsertionResult, error)
 	InsertBodies(context.Context, *InsertBodiesRequest) (*InsertionResult, error)
 	// Chain Validation and ForkChoice.
-	ValidateChain(context.Context, *types.H256) (*ValidationReceipt, error)
+	ValidateChain(context.Context, *ValidationRequest) (*ValidationReceipt, error)
 	UpdateForkChoice(context.Context, *ForkChoice) (*ForkChoiceReceipt, error)
 	AssembleBlock(context.Context, *emptypb.Empty) (*types.ExecutionPayload, error)
 	// Chain Getters.
@@ -180,7 +180,7 @@ func (UnimplementedExecutionServer) InsertHeaders(context.Context, *InsertHeader
 func (UnimplementedExecutionServer) InsertBodies(context.Context, *InsertBodiesRequest) (*InsertionResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InsertBodies not implemented")
 }
-func (UnimplementedExecutionServer) ValidateChain(context.Context, *types.H256) (*ValidationReceipt, error) {
+func (UnimplementedExecutionServer) ValidateChain(context.Context, *ValidationRequest) (*ValidationReceipt, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ValidateChain not implemented")
 }
 func (UnimplementedExecutionServer) UpdateForkChoice(context.Context, *ForkChoice) (*ForkChoiceReceipt, error) {
@@ -254,7 +254,7 @@ func _Execution_InsertBodies_Handler(srv interface{}, ctx context.Context, dec f
 }
 
 func _Execution_ValidateChain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(types.H256)
+	in := new(ValidationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func _Execution_ValidateChain_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: Execution_ValidateChain_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).ValidateChain(ctx, req.(*types.H256))
+		return srv.(ExecutionServer).ValidateChain(ctx, req.(*ValidationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
