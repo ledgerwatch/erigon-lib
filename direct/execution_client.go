@@ -47,7 +47,7 @@ func (s *ExecutionClientDirect) InsertBodies(ctx context.Context, in *execution.
 }
 
 // Chain Validation and ForkChoice.
-func (s *ExecutionClientDirect) ValidateChain(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*execution.ValidationReceipt, error) {
+func (s *ExecutionClientDirect) ValidateChain(ctx context.Context, in *execution.ValidationRequest, opts ...grpc.CallOption) (*execution.ValidationReceipt, error) {
 	return s.server.ValidateChain(ctx, in)
 
 }
