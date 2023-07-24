@@ -818,8 +818,8 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 	return true
 }
 
-// Match returns true and next offset if the word at current offset fully matches the buf
-// returns false and current offset otherwise.
+// MatchCmp lexicographically compares given buf with the word at the current offset in the file.
+// returns 0 if buf == word, -1 if buf < word, 1 if buf > word
 func (g *Getter) MatchCmp(buf []byte) int {
 	savePos := g.dataP
 	wordLen := g.nextPos(true)
@@ -836,18 +836,6 @@ func (g *Getter) MatchCmp(buf []byte) int {
 		}
 		return 0
 	}
-	// if wordLen == 0 {
-	// 	if g.dataBit > 0 {
-	// 		g.dataP++
-	// 		g.dataBit = 0
-	// 	}
-	// 	if lenBuf != 0 {
-	// 		g.dataP, g.dataBit = savePos, 0
-	// 		return 1
-	// 	} else {
-	// 		return 0
-	// 	}
-	// }
 
 	decoded := make([]byte, wordLen)
 	var bufPos int
@@ -892,7 +880,8 @@ func (g *Getter) MatchCmp(buf []byte) int {
 	return cmp
 }
 
-// MatchPrefix only checks if the word at the current offset has a buf prefix. Does not move offset to the next word.
+// MatchPrefixCmp lexicographically compares given prefix with the word at the current offset in the file.
+// returns 0 if buf == word, -1 if buf < word, 1 if buf > word
 func (g *Getter) MatchPrefixCmp(prefix []byte) int {
 	savePos := g.dataP
 	defer func() {
@@ -948,12 +937,42 @@ func (g *Getter) MatchPrefixCmp(prefix []byte) int {
 	}
 	var cmp int
 	if prefixLen > int(wordLen) {
+		// TODO(racytech): handle this case
+		// e.g: prefix = 'aaacb'
+		// 		word = 'aaa'
 		cmp = bytes.Compare(prefix, decoded)
 	} else {
 		cmp = bytes.Compare(prefix, decoded[:prefixLen])
 	}
 
 	return cmp
+}
+
+func (g *Getter) MatchPrefixUncompressed(prefix []byte) int {
+	savePos := g.dataP
+	defer func() {
+		g.dataP, g.dataBit = savePos, 0
+	}()
+
+	wordLen := g.nextPos(true /* clean */)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	prefixLen := len(prefix)
+	if wordLen == 0 && prefixLen != 0 {
+		return 1
+	}
+	if prefixLen == 0 {
+		return 0
+	}
+
+	g.nextPos(true)
+
+	if prefixLen > int(wordLen) {
+		// TODO(racytech): handle this case
+		// e.g: prefix = 'aaacb'
+		// 		word = 'aaa'
+	}
+
+	return bytes.Compare(prefix, g.data[g.dataP:g.dataP+wordLen])
 }
 
 // FastNext extracts a compressed word from current offset in the file
