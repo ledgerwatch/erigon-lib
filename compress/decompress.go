@@ -933,7 +933,7 @@ func (g *Getter) MatchPrefixCmp(prefix []byte) int {
 	if prefixLen > lastUncovered && int(wordLen) > lastUncovered {
 		dif := wordLen - uint64(lastUncovered)
 		copy(decoded[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
-		postLoopPos += dif
+		// postLoopPos += dif
 	}
 	var cmp int
 	if prefixLen > int(wordLen) {
@@ -966,11 +966,11 @@ func (g *Getter) MatchPrefixUncompressed(prefix []byte) int {
 
 	g.nextPos(true)
 
-	if prefixLen > int(wordLen) {
-		// TODO(racytech): handle this case
-		// e.g: prefix = 'aaacb'
-		// 		word = 'aaa'
-	}
+	// if prefixLen > int(wordLen) {
+	// 	// TODO(racytech): handle this case
+	// 	// e.g: prefix = 'aaacb'
+	// 	// 		word = 'aaa'
+	// }
 
 	return bytes.Compare(prefix, g.data[g.dataP:g.dataP+wordLen])
 }
