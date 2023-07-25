@@ -43,7 +43,7 @@ type ExecutionClient interface {
 	// Chain Validation and ForkChoice.
 	ValidateChain(ctx context.Context, in *ValidationRequest, opts ...grpc.CallOption) (*ValidationReceipt, error)
 	UpdateForkChoice(ctx context.Context, in *ForkChoice, opts ...grpc.CallOption) (*ForkChoiceReceipt, error)
-	AssembleBlock(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*types.ExecutionPayload, error)
+	AssembleBlock(ctx context.Context, in *AssembleBlockRequest, opts ...grpc.CallOption) (*types.ExecutionPayload, error)
 	// Chain Getters.
 	GetHeader(ctx context.Context, in *GetSegmentRequest, opts ...grpc.CallOption) (*GetHeaderResponse, error)
 	GetBody(ctx context.Context, in *GetSegmentRequest, opts ...grpc.CallOption) (*GetBodyResponse, error)
@@ -96,7 +96,7 @@ func (c *executionClient) UpdateForkChoice(ctx context.Context, in *ForkChoice, 
 	return out, nil
 }
 
-func (c *executionClient) AssembleBlock(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*types.ExecutionPayload, error) {
+func (c *executionClient) AssembleBlock(ctx context.Context, in *AssembleBlockRequest, opts ...grpc.CallOption) (*types.ExecutionPayload, error) {
 	out := new(types.ExecutionPayload)
 	err := c.cc.Invoke(ctx, Execution_AssembleBlock_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -160,7 +160,7 @@ type ExecutionServer interface {
 	// Chain Validation and ForkChoice.
 	ValidateChain(context.Context, *ValidationRequest) (*ValidationReceipt, error)
 	UpdateForkChoice(context.Context, *ForkChoice) (*ForkChoiceReceipt, error)
-	AssembleBlock(context.Context, *emptypb.Empty) (*types.ExecutionPayload, error)
+	AssembleBlock(context.Context, *AssembleBlockRequest) (*types.ExecutionPayload, error)
 	// Chain Getters.
 	GetHeader(context.Context, *GetSegmentRequest) (*GetHeaderResponse, error)
 	GetBody(context.Context, *GetSegmentRequest) (*GetBodyResponse, error)
@@ -186,7 +186,7 @@ func (UnimplementedExecutionServer) ValidateChain(context.Context, *ValidationRe
 func (UnimplementedExecutionServer) UpdateForkChoice(context.Context, *ForkChoice) (*ForkChoiceReceipt, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateForkChoice not implemented")
 }
-func (UnimplementedExecutionServer) AssembleBlock(context.Context, *emptypb.Empty) (*types.ExecutionPayload, error) {
+func (UnimplementedExecutionServer) AssembleBlock(context.Context, *AssembleBlockRequest) (*types.ExecutionPayload, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssembleBlock not implemented")
 }
 func (UnimplementedExecutionServer) GetHeader(context.Context, *GetSegmentRequest) (*GetHeaderResponse, error) {
@@ -290,7 +290,7 @@ func _Execution_UpdateForkChoice_Handler(srv interface{}, ctx context.Context, d
 }
 
 func _Execution_AssembleBlock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
+	in := new(AssembleBlockRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func _Execution_AssembleBlock_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: Execution_AssembleBlock_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).AssembleBlock(ctx, req.(*emptypb.Empty))
+		return srv.(ExecutionServer).AssembleBlock(ctx, req.(*AssembleBlockRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
