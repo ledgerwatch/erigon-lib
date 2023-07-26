@@ -22,13 +22,14 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/execution"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type ExecutionClientDirect struct {
 	server execution.ExecutionServer
 }
 
-func NewExecutionClientDirect(server execution.ExecutionServer) *ExecutionClientDirect {
+func NewExecutionClientDirect(server execution.ExecutionServer) execution.ExecutionClient {
 	return &ExecutionClientDirect{server: server}
 }
 
@@ -74,4 +75,8 @@ func (s *ExecutionClientDirect) IsCanonicalHash(ctx context.Context, in *types.H
 
 func (s *ExecutionClientDirect) GetHeaderHashNumber(ctx context.Context, in *types.H256, opts ...grpc.CallOption) (*execution.GetHeaderHashNumberResponse, error) {
 	return s.server.GetHeaderHashNumber(ctx, in)
+}
+
+func (s *ExecutionClientDirect) GetForkChoice(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*execution.ForkChoice, error) {
+	return s.server.GetForkChoice(ctx, in)
 }
