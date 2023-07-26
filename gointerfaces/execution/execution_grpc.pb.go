@@ -45,9 +45,9 @@ type ExecutionClient interface {
 	ValidateChain(ctx context.Context, in *ValidationRequest, opts ...grpc.CallOption) (*ValidationReceipt, error)
 	UpdateForkChoice(ctx context.Context, in *ForkChoice, opts ...grpc.CallOption) (*ForkChoiceReceipt, error)
 	// Block Assembly
-	// EAGAIN design here, AssembleBlock initiates the asynchronous request, and GetAssembleBlock just return it if ready
-	AssembleBlock(ctx context.Context, in *AssembleBlockRequest, opts ...grpc.CallOption) (*PayloadId, error)
-	GetAssembledBlock(ctx context.Context, in *PayloadId, opts ...grpc.CallOption) (*GetAssembledBlockResponse, error)
+	// EAGAIN design here, AssembleBlock initiates the asynchronous request, and GetAssembleBlock just return it if ready.
+	AssembleBlock(ctx context.Context, in *AssembleBlockRequest, opts ...grpc.CallOption) (*AssembleBlockResponse, error)
+	GetAssembledBlock(ctx context.Context, in *GetAssembledBlockRequest, opts ...grpc.CallOption) (*GetAssembledBlockResponse, error)
 	// Chain Getters.
 	GetHeader(ctx context.Context, in *GetSegmentRequest, opts ...grpc.CallOption) (*GetHeaderResponse, error)
 	GetBody(ctx context.Context, in *GetSegmentRequest, opts ...grpc.CallOption) (*GetBodyResponse, error)
@@ -100,8 +100,8 @@ func (c *executionClient) UpdateForkChoice(ctx context.Context, in *ForkChoice, 
 	return out, nil
 }
 
-func (c *executionClient) AssembleBlock(ctx context.Context, in *AssembleBlockRequest, opts ...grpc.CallOption) (*PayloadId, error) {
-	out := new(PayloadId)
+func (c *executionClient) AssembleBlock(ctx context.Context, in *AssembleBlockRequest, opts ...grpc.CallOption) (*AssembleBlockResponse, error) {
+	out := new(AssembleBlockResponse)
 	err := c.cc.Invoke(ctx, Execution_AssembleBlock_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -109,7 +109,7 @@ func (c *executionClient) AssembleBlock(ctx context.Context, in *AssembleBlockRe
 	return out, nil
 }
 
-func (c *executionClient) GetAssembledBlock(ctx context.Context, in *PayloadId, opts ...grpc.CallOption) (*GetAssembledBlockResponse, error) {
+func (c *executionClient) GetAssembledBlock(ctx context.Context, in *GetAssembledBlockRequest, opts ...grpc.CallOption) (*GetAssembledBlockResponse, error) {
 	out := new(GetAssembledBlockResponse)
 	err := c.cc.Invoke(ctx, Execution_GetAssembledBlock_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -174,9 +174,9 @@ type ExecutionServer interface {
 	ValidateChain(context.Context, *ValidationRequest) (*ValidationReceipt, error)
 	UpdateForkChoice(context.Context, *ForkChoice) (*ForkChoiceReceipt, error)
 	// Block Assembly
-	// EAGAIN design here, AssembleBlock initiates the asynchronous request, and GetAssembleBlock just return it if ready
-	AssembleBlock(context.Context, *AssembleBlockRequest) (*PayloadId, error)
-	GetAssembledBlock(context.Context, *PayloadId) (*GetAssembledBlockResponse, error)
+	// EAGAIN design here, AssembleBlock initiates the asynchronous request, and GetAssembleBlock just return it if ready.
+	AssembleBlock(context.Context, *AssembleBlockRequest) (*AssembleBlockResponse, error)
+	GetAssembledBlock(context.Context, *GetAssembledBlockRequest) (*GetAssembledBlockResponse, error)
 	// Chain Getters.
 	GetHeader(context.Context, *GetSegmentRequest) (*GetHeaderResponse, error)
 	GetBody(context.Context, *GetSegmentRequest) (*GetBodyResponse, error)
@@ -202,10 +202,10 @@ func (UnimplementedExecutionServer) ValidateChain(context.Context, *ValidationRe
 func (UnimplementedExecutionServer) UpdateForkChoice(context.Context, *ForkChoice) (*ForkChoiceReceipt, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateForkChoice not implemented")
 }
-func (UnimplementedExecutionServer) AssembleBlock(context.Context, *AssembleBlockRequest) (*PayloadId, error) {
+func (UnimplementedExecutionServer) AssembleBlock(context.Context, *AssembleBlockRequest) (*AssembleBlockResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssembleBlock not implemented")
 }
-func (UnimplementedExecutionServer) GetAssembledBlock(context.Context, *PayloadId) (*GetAssembledBlockResponse, error) {
+func (UnimplementedExecutionServer) GetAssembledBlock(context.Context, *GetAssembledBlockRequest) (*GetAssembledBlockResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAssembledBlock not implemented")
 }
 func (UnimplementedExecutionServer) GetHeader(context.Context, *GetSegmentRequest) (*GetHeaderResponse, error) {
@@ -327,7 +327,7 @@ func _Execution_AssembleBlock_Handler(srv interface{}, ctx context.Context, dec 
 }
 
 func _Execution_GetAssembledBlock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PayloadId)
+	in := new(GetAssembledBlockRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -339,7 +339,7 @@ func _Execution_GetAssembledBlock_Handler(srv interface{}, ctx context.Context, 
 		FullMethod: Execution_GetAssembledBlock_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExecutionServer).GetAssembledBlock(ctx, req.(*PayloadId))
+		return srv.(ExecutionServer).GetAssembledBlock(ctx, req.(*GetAssembledBlockRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

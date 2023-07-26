@@ -32,11 +32,11 @@ func NewExecutionClientDirect(server execution.ExecutionServer) *ExecutionClient
 	return &ExecutionClientDirect{server: server}
 }
 
-func (s *ExecutionClientDirect) AssembleBlock(ctx context.Context, in *execution.AssembleBlockRequest, opts ...grpc.CallOption) (*execution.PayloadId, error) {
+func (s *ExecutionClientDirect) AssembleBlock(ctx context.Context, in *execution.AssembleBlockRequest, opts ...grpc.CallOption) (*execution.AssembleBlockResponse, error) {
 	return s.server.AssembleBlock(ctx, in)
 }
 
-func (s *ExecutionClientDirect) GetAssembledBlock(ctx context.Context, in *execution.PayloadId, opts ...grpc.CallOption) (*execution.GetAssembledBlockResponse, error) {
+func (s *ExecutionClientDirect) GetAssembledBlock(ctx context.Context, in *execution.GetAssembledBlockRequest, opts ...grpc.CallOption) (*execution.GetAssembledBlockResponse, error) {
 	return s.server.GetAssembledBlock(ctx, in)
 }
 
