@@ -72,7 +72,6 @@ type IdxType string
 
 const (
 	Transactions2Block IdxType = "transactions-to-block"
-	BorEvents2Block    IdxType = "borevents-to-block"
 )
 
 func (it IdxType) String() string { return string(it) }
