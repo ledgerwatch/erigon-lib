@@ -1,5 +1,5 @@
 /*
-   Copyright 2022 Erigon contributors
+   Copyright 2022 The Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -28,10 +28,12 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/ledgerwatch/log/v3"
+
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/mmap"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano16"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
-	"github.com/ledgerwatch/log/v3"
 )
 
 // Index implements index lookup from the file created by the RecSplit
@@ -50,7 +52,7 @@ type Index struct {
 	bucketSize         int
 	size               int64
 	modTime            time.Time
-	baseDataID         uint64
+	baseDataID         uint64 // Index internaly organized as [0,N) array. Use this field to map EntityID=[M;M+N) to [0,N)
 	bucketCount        uint64 // Number of buckets
 	keyCount           uint64
 	recMask            uint64
@@ -93,6 +95,8 @@ func OpenIndex(indexFilePath string) (*Index, error) {
 		return nil, err
 	}
 	idx.data = idx.mmapHandle1[:idx.size]
+	defer idx.EnableReadAhead().DisableReadAhead()
+
 	// Read number of keys and bytes per record
 	idx.baseDataID = binary.BigEndian.Uint64(idx.data[:8])
 	idx.keyCount = binary.BigEndian.Uint64(idx.data[8:16])
@@ -299,7 +303,7 @@ func (idx *Index) RewriteWithOffsets(w *bufio.Writer, m map[uint64]uint64) error
 			maxOffset = offset
 		}
 	}
-	bytesPerRec := (bits.Len64(maxOffset) + 7) / 8
+	bytesPerRec := common.BitLenToByteLen(bits.Len64(maxOffset))
 	var numBuf [8]byte
 	// Write baseDataID
 	binary.BigEndian.PutUint64(numBuf[:], idx.baseDataID)

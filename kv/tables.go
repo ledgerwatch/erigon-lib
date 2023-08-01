@@ -27,7 +27,8 @@ import (
 // DBSchemaVersion versions list
 // 5.0 - BlockTransaction table now has canonical ids (txs of non-canonical blocks moving to NonCanonicalTransaction table)
 // 6.0 - BlockTransaction table now has system-txs before and after block (records are absent if block has no system-tx, but sequence increasing)
-var DBSchemaVersion = types.VersionReply{Major: 6, Minor: 0, Patch: 0}
+// 6.1 - Canonical/NonCanonical/BadBlock transations now stored in same table: kv.EthTx. Add kv.BadBlockNumber table
+var DBSchemaVersion = types.VersionReply{Major: 6, Minor: 1, Patch: 0}
 
 // ChaindataTables
 
@@ -157,8 +158,8 @@ StorageHistory
 	key - address + storage_key + shard_id_u64
 	value - roaring bitmap - list of block where it changed
 */
-const AccountsHistory = "AccountHistory"
-const StorageHistory = "StorageHistory"
+const E2AccountsHistory = "AccountHistory"
+const E2StorageHistory = "StorageHistory"
 
 const (
 
@@ -241,27 +242,37 @@ const (
 	// DatabaseInfo is used to store information about data layout.
 	DatabaseInfo = "DbInfo"
 
-	// Data item prefixes (use single byte to avoid mixing data types, avoid `i`, used for indexes).
-	HeaderNumber = "HeaderNumber" // header_hash -> num_u64
-
+	// Naming:
+	//   NeaderNumber - Ethereum-specific block number. All nodes have same BlockNum.
+	//   NeaderID - auto-increment ID. Depends on order in which node see headers.
+	//      Invariant: for all headers in snapshots Number == ID. It means no reason to store Num/ID for this headers in DB.
+	//   Same about: TxNum/TxID, BlockNum/BlockID
+	HeaderNumber    = "HeaderNumber"           // header_hash -> header_num_u64
+	BadHeaderNumber = "BadHeaderNumber"        // header_hash -> header_num_u64
 	HeaderCanonical = "CanonicalHeader"        // block_num_u64 -> header hash
 	Headers         = "Header"                 // block_num_u64 + hash -> header (RLP)
 	HeaderTD        = "HeadersTotalDifficulty" // block_num_u64 + hash -> td (RLP)
 
 	BlockBody = "BlockBody" // block_num_u64 + hash -> block body
 
-	// EthTx - stores only txs of canonical blocks. As a result - id's used in this table are also
-	// canonical - same across all nodex in network - regardless reorgs. Transactions of
-	// non-canonical blocs are not removed, but moved to NonCanonicalTransaction - then during re-org don't
-	// need re-download block from network.
+	// Naming:
+	//  TxNum - Ethereum canonical transaction number - same across all nodes.
+	//  TxnID - auto-increment ID - can be differrent across all nodes
+	//  BlockNum/BlockID - same
+	//
+	// EthTx - stores all transactions of Canonical/NonCanonical/Bad blocks
+	// TxnID (auto-increment ID) - means nodes in network will have different ID of same transactions
+	// Snapshots (frozen data): using TxNum (not TxnID)
+	//
+	// During ReOrg - txs are not removed/updated
+	//
 	// Also this table has system-txs before and after block: if
-	// block has no system-tx - records are absent, but sequence increasing
-	EthTx           = "BlockTransaction"        // tbl_sequence_u64 -> rlp(tx)
+	// block has no system-tx - records are absent, but TxnID increasing
+	//
+	// In Erigon3: table MaxTxNum storing TxNum (not TxnID). History/Indices are using TxNum (not TxnID).
+	EthTx           = "BlockTransaction"        // tx_id_u64 -> rlp(tx)
 	NonCanonicalTxs = "NonCanonicalTransaction" // tbl_sequence_u64 -> rlp(tx)
 	MaxTxNum        = "MaxTxNum"                // block_number_u64 -> max_tx_num_in_block_u64
-
-	// EthTxV3 - stores only txs of canonical blocks. Here key is txID + block_hash.
-	EthTxV3 = "BlockTransactionV3" // tbl_sequence_u64 -> rlp(tx)
 
 	Receipts = "Receipt"        // block_num_u64 -> canonical block receipts (non-canonical are not stored)
 	Log      = "TransactionLog" // block_num_u64 + txId -> logs of transaction
@@ -354,43 +365,46 @@ const (
 	BittorrentCompletion = "BittorrentCompletion"
 	BittorrentInfo       = "BittorrentInfo"
 
-	// Domains and Inverted Indices
-	AccountKeys        = "AccountKeys"
-	AccountVals        = "AccountVals"
-	AccountHistoryKeys = "AccountHistoryKeys"
-	AccountHistoryVals = "AccountHistoryVals"
-	AccountIdx         = "AccountIdx"
+	// Domains/Histry/InvertedIndices
+	// Contants have "Tbl" prefix, to avoid collision with actual Domain names
+	// This constants is very rarely used in APP, but Domain/History/Idx names are widely used
+	TblAccountKeys        = "AccountKeys"
+	TblAccountVals        = "AccountVals"
+	TblAccountHistoryKeys = "AccountHistoryKeys"
+	TblAccountHistoryVals = "AccountHistoryVals"
+	TblAccountIdx         = "AccountIdx"
 
-	StorageKeys        = "StorageKeys"
-	StorageVals        = "StorageVals"
-	StorageHistoryKeys = "StorageHistoryKeys"
-	StorageHistoryVals = "StorageHistoryVals"
-	StorageIdx         = "StorageIdx"
+	TblStorageKeys        = "StorageKeys"
+	TblStorageVals        = "StorageVals"
+	TblStorageHistoryKeys = "StorageHistoryKeys"
+	TblStorageHistoryVals = "StorageHistoryVals"
+	TblStorageIdx         = "StorageIdx"
 
-	CodeKeys        = "CodeKeys"
-	CodeVals        = "CodeVals"
-	CodeHistoryKeys = "CodeHistoryKeys"
-	CodeHistoryVals = "CodeHistoryVals"
-	CodeIdx         = "CodeIdx"
+	TblCodeKeys        = "CodeKeys"
+	TblCodeVals        = "CodeVals"
+	TblCodeHistoryKeys = "CodeHistoryKeys"
+	TblCodeHistoryVals = "CodeHistoryVals"
+	TblCodeIdx         = "CodeIdx"
 
-	CommitmentKeys        = "CommitmentKeys"
-	CommitmentVals        = "CommitmentVals"
-	CommitmentHistoryKeys = "CommitmentHistoryKeys"
-	CommitmentHistoryVals = "CommitmentHistoryVals"
-	CommitmentIdx         = "CommitmentIdx"
+	TblCommitmentKeys        = "CommitmentKeys"
+	TblCommitmentVals        = "CommitmentVals"
+	TblCommitmentHistoryKeys = "CommitmentHistoryKeys"
+	TblCommitmentHistoryVals = "CommitmentHistoryVals"
+	TblCommitmentIdx         = "CommitmentIdx"
 
-	LogAddressKeys = "LogAddressKeys"
-	LogAddressIdx  = "LogAddressIdx"
-	LogTopicsKeys  = "LogTopicsKeys"
-	LogTopicsIdx   = "LogTopicsIdx"
+	TblLogAddressKeys = "LogAddressKeys"
+	TblLogAddressIdx  = "LogAddressIdx"
+	TblLogTopicsKeys  = "LogTopicsKeys"
+	TblLogTopicsIdx   = "LogTopicsIdx"
 
-	TracesFromKeys = "TracesFromKeys"
-	TracesFromIdx  = "TracesFromIdx"
-	TracesToKeys   = "TracesToKeys"
-	TracesToIdx    = "TracesToIdx"
+	TblTracesFromKeys = "TracesFromKeys"
+	TblTracesFromIdx  = "TracesFromIdx"
+	TblTracesToKeys   = "TracesToKeys"
+	TblTracesToIdx    = "TracesToIdx"
 
 	Snapshots = "Snapshots" // name -> hash
 
+	//State Reconstitution
 	RAccountKeys = "RAccountKeys"
 	RAccountIdx  = "RAccountIdx"
 	RStorageKeys = "RStorageKeys"
@@ -461,11 +475,12 @@ var (
 // This list will be sorted in `init` method.
 // ChaindataTablesCfg - can be used to find index in sorted version of ChaindataTables list by name
 var ChaindataTables = []string{
-	AccountsHistory,
-	StorageHistory,
+	E2AccountsHistory,
+	E2StorageHistory,
 	Code,
 	ContractCode,
 	HeaderNumber,
+	BadHeaderNumber,
 	BlockBody,
 	Receipts,
 	TxLookup,
@@ -497,7 +512,6 @@ var ChaindataTables = []string{
 	Log,
 	Sequence,
 	EthTx,
-	EthTxV3,
 	NonCanonicalTxs,
 	TrieOfAccounts,
 	TrieOfStorage,
@@ -516,39 +530,39 @@ var ChaindataTables = []string{
 	BorReceipts,
 	BorTxLookup,
 	BorSeparate,
-	AccountKeys,
-	AccountVals,
-	AccountHistoryKeys,
-	AccountHistoryVals,
-	AccountIdx,
+	TblAccountKeys,
+	TblAccountVals,
+	TblAccountHistoryKeys,
+	TblAccountHistoryVals,
+	TblAccountIdx,
 
-	StorageKeys,
-	StorageVals,
-	StorageHistoryKeys,
-	StorageHistoryVals,
-	StorageIdx,
+	TblStorageKeys,
+	TblStorageVals,
+	TblStorageHistoryKeys,
+	TblStorageHistoryVals,
+	TblStorageIdx,
 
-	CodeKeys,
-	CodeVals,
-	CodeHistoryKeys,
-	CodeHistoryVals,
-	CodeIdx,
+	TblCodeKeys,
+	TblCodeVals,
+	TblCodeHistoryKeys,
+	TblCodeHistoryVals,
+	TblCodeIdx,
 
-	CommitmentKeys,
-	CommitmentVals,
-	CommitmentHistoryKeys,
-	CommitmentHistoryVals,
-	CommitmentIdx,
+	TblCommitmentKeys,
+	TblCommitmentVals,
+	TblCommitmentHistoryKeys,
+	TblCommitmentHistoryVals,
+	TblCommitmentIdx,
 
-	LogAddressKeys,
-	LogAddressIdx,
-	LogTopicsKeys,
-	LogTopicsIdx,
+	TblLogAddressKeys,
+	TblLogAddressIdx,
+	TblLogTopicsKeys,
+	TblLogTopicsIdx,
 
-	TracesFromKeys,
-	TracesFromIdx,
-	TracesToKeys,
-	TracesToIdx,
+	TblTracesFromKeys,
+	TblTracesFromIdx,
+	TblTracesToKeys,
+	TblTracesToIdx,
 
 	Snapshots,
 	MaxTxNum,
@@ -654,34 +668,34 @@ var ChaindataTablesCfg = TableCfg{
 	},
 	CallTraceSet: {Flags: DupSort},
 
-	AccountKeys:           {Flags: DupSort},
-	AccountHistoryKeys:    {Flags: DupSort},
-	AccountHistoryVals:    {Flags: DupSort},
-	AccountIdx:            {Flags: DupSort},
-	StorageKeys:           {Flags: DupSort},
-	StorageHistoryKeys:    {Flags: DupSort},
-	StorageHistoryVals:    {Flags: DupSort},
-	StorageIdx:            {Flags: DupSort},
-	CodeKeys:              {Flags: DupSort},
-	CodeHistoryKeys:       {Flags: DupSort},
-	CodeIdx:               {Flags: DupSort},
-	CommitmentKeys:        {Flags: DupSort},
-	CommitmentHistoryKeys: {Flags: DupSort},
-	CommitmentIdx:         {Flags: DupSort},
-	LogAddressKeys:        {Flags: DupSort},
-	LogAddressIdx:         {Flags: DupSort},
-	LogTopicsKeys:         {Flags: DupSort},
-	LogTopicsIdx:          {Flags: DupSort},
-	TracesFromKeys:        {Flags: DupSort},
-	TracesFromIdx:         {Flags: DupSort},
-	TracesToKeys:          {Flags: DupSort},
-	TracesToIdx:           {Flags: DupSort},
-	RAccountKeys:          {Flags: DupSort},
-	RAccountIdx:           {Flags: DupSort},
-	RStorageKeys:          {Flags: DupSort},
-	RStorageIdx:           {Flags: DupSort},
-	RCodeKeys:             {Flags: DupSort},
-	RCodeIdx:              {Flags: DupSort},
+	TblAccountKeys:           {Flags: DupSort},
+	TblAccountHistoryKeys:    {Flags: DupSort},
+	TblAccountHistoryVals:    {Flags: DupSort},
+	TblAccountIdx:            {Flags: DupSort},
+	TblStorageKeys:           {Flags: DupSort},
+	TblStorageHistoryKeys:    {Flags: DupSort},
+	TblStorageHistoryVals:    {Flags: DupSort},
+	TblStorageIdx:            {Flags: DupSort},
+	TblCodeKeys:              {Flags: DupSort},
+	TblCodeHistoryKeys:       {Flags: DupSort},
+	TblCodeIdx:               {Flags: DupSort},
+	TblCommitmentKeys:        {Flags: DupSort},
+	TblCommitmentHistoryKeys: {Flags: DupSort},
+	TblCommitmentIdx:         {Flags: DupSort},
+	TblLogAddressKeys:        {Flags: DupSort},
+	TblLogAddressIdx:         {Flags: DupSort},
+	TblLogTopicsKeys:         {Flags: DupSort},
+	TblLogTopicsIdx:          {Flags: DupSort},
+	TblTracesFromKeys:        {Flags: DupSort},
+	TblTracesFromIdx:         {Flags: DupSort},
+	TblTracesToKeys:          {Flags: DupSort},
+	TblTracesToIdx:           {Flags: DupSort},
+	RAccountKeys:             {Flags: DupSort},
+	RAccountIdx:              {Flags: DupSort},
+	RStorageKeys:             {Flags: DupSort},
+	RStorageIdx:              {Flags: DupSort},
+	RCodeKeys:                {Flags: DupSort},
+	RCodeIdx:                 {Flags: DupSort},
 }
 
 var TxpoolTablesCfg = TableCfg{}
@@ -765,3 +779,28 @@ func reinit() {
 		}
 	}
 }
+
+// Temporal
+
+const (
+	AccountsDomain Domain = "AccountsDomain"
+	StorageDomain  Domain = "StorageDomain"
+	CodeDomain     Domain = "CodeDomain"
+)
+
+const (
+	AccountsHistory History = "AccountsHistory"
+	StorageHistory  History = "StorageHistory"
+	CodeHistory     History = "CodeHistory"
+)
+
+const (
+	AccountsHistoryIdx InvertedIdx = "AccountsHistoryIdx"
+	StorageHistoryIdx  InvertedIdx = "StorageHistoryIdx"
+	CodeHistoryIdx     InvertedIdx = "CodeHistoryIdx"
+
+	LogTopicIdx   InvertedIdx = "LogTopicIdx"
+	LogAddrIdx    InvertedIdx = "LogAddrIdx"
+	TracesFromIdx InvertedIdx = "TracesFromIdx"
+	TracesToIdx   InvertedIdx = "TracesToIdx"
+)

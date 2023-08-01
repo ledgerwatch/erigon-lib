@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2021 The Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import (
 	"testing"
 
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
+	"github.com/ledgerwatch/log/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -37,8 +37,8 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
+	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
 	"github.com/ledgerwatch/erigon-lib/types"
-	"github.com/ledgerwatch/log/v3"
 )
 
 func TestNonceFromAddress(t *testing.T) {
@@ -48,7 +48,7 @@ func TestNonceFromAddress(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, nil, log.New())
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -93,7 +93,7 @@ func TestNonceFromAddress(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 	}
 
@@ -118,13 +118,13 @@ func TestNonceFromAddress(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
 		assert.Equal(uint64(6), nonce)
 	}
-	// test too expencive tx
+	// test too expensive tx
 	{
 		var txSlots types.TxSlots
 		txSlot1 := &types.TxSlot{
@@ -138,7 +138,7 @@ func TestNonceFromAddress(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(InsufficientFunds, reason, reason.String())
+			assert.Equal(txpoolcfg.InsufficientFunds, reason, reason.String())
 		}
 	}
 
@@ -156,7 +156,7 @@ func TestNonceFromAddress(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(NonceTooLow, reason, reason.String())
+			assert.Equal(txpoolcfg.NonceTooLow, reason, reason.String())
 		}
 	}
 }
@@ -168,7 +168,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, nil, log.New())
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -213,7 +213,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 	}
 	// Bumped only feeCap, transaction not accepted
@@ -230,7 +230,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(NotReplaced, reason, reason.String())
+			assert.Equal(txpoolcfg.NotReplaced, reason, reason.String())
 		}
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
@@ -250,7 +250,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(NotReplaced, reason, reason.String())
+			assert.Equal(txpoolcfg.NotReplaced, reason, reason.String())
 		}
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
@@ -270,7 +270,7 @@ func TestReplaceWithHigherFee(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
@@ -285,7 +285,7 @@ func TestReverseNonces(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, nil, log.New())
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -330,7 +330,7 @@ func TestReverseNonces(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 	}
 	fmt.Printf("AFTER TX 1\n")
@@ -358,7 +358,7 @@ func TestReverseNonces(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 	}
 	fmt.Printf("AFTER TX 2\n")
@@ -386,7 +386,7 @@ func TestReverseNonces(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 	}
 	fmt.Printf("AFTER TX 3\n")
@@ -403,7 +403,7 @@ func TestReverseNonces(t *testing.T) {
 
 // When local transaction is send to the pool, but it cannot replace existing transaction,
 // the existing transaction gets "poked" and is getting re-broadcasted
-// this is a workaround for cases when transactions are getting stuck for strage reasons
+// this is a workaround for cases when transactions are getting stuck for strange reasons
 // even though logs show they are broadcast
 func TestTxPoke(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
@@ -412,7 +412,7 @@ func TestTxPoke(t *testing.T) {
 
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, nil, log.New())
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -459,7 +459,7 @@ func TestTxPoke(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(Success, reason, reason.String())
+			assert.Equal(txpoolcfg.Success, reason, reason.String())
 		}
 	}
 	var promoted types.Announcements
@@ -485,7 +485,7 @@ func TestTxPoke(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(DuplicateHash, reason, reason.String())
+			assert.Equal(txpoolcfg.DuplicateHash, reason, reason.String())
 		}
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
@@ -514,7 +514,7 @@ func TestTxPoke(t *testing.T) {
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
 		for _, reason := range reasons {
-			assert.Equal(NotReplaced, reason, reason.String())
+			assert.Equal(txpoolcfg.NotReplaced, reason, reason.String())
 		}
 		nonce, ok := pool.NonceFromAddress(addr)
 		assert.True(ok)
@@ -623,8 +623,8 @@ func TestShanghaiIntrinsicGas(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			gas, reason := CalcIntrinsicGas(c.dataLen, c.dataNonZeroLen, nil, c.creation, true, true, c.isShanghai)
-			if reason != Success {
+			gas, reason := txpoolcfg.CalcIntrinsicGas(c.dataLen, c.dataNonZeroLen, nil, c.creation, true, true, c.isShanghai)
+			if reason != txpoolcfg.Success {
 				t.Errorf("expected success but got reason %v", reason)
 			}
 			if gas != c.expected {
@@ -637,27 +637,27 @@ func TestShanghaiIntrinsicGas(t *testing.T) {
 func TestShanghaiValidateTx(t *testing.T) {
 	asrt := assert.New(t)
 	tests := map[string]struct {
-		expected   DiscardReason
+		expected   txpoolcfg.DiscardReason
 		dataLen    int
 		isShanghai bool
 	}{
 		"no shanghai": {
-			expected:   Success,
+			expected:   txpoolcfg.Success,
 			dataLen:    32,
 			isShanghai: false,
 		},
 		"shanghai within bounds": {
-			expected:   Success,
+			expected:   txpoolcfg.Success,
 			dataLen:    32,
 			isShanghai: true,
 		},
 		"shanghai exactly on bound": {
-			expected:   Success,
+			expected:   txpoolcfg.Success,
 			dataLen:    fixedgas.MaxInitCodeSize,
 			isShanghai: true,
 		},
 		"shanghai one over bound": {
-			expected:   InitCodeTooLarge,
+			expected:   txpoolcfg.InitCodeTooLarge,
 			dataLen:    fixedgas.MaxInitCodeSize + 1,
 			isShanghai: true,
 		},
@@ -677,7 +677,7 @@ func TestShanghaiValidateTx(t *testing.T) {
 			}
 
 			cache := &kvcache.DummyCache{}
-			pool, err := New(ch, coreDB, cfg, cache, *u256.N1, shanghaiTime, logger)
+			pool, err := New(ch, coreDB, cfg, cache, *u256.N1, shanghaiTime, nil /* cancunTime */, logger)
 			asrt.NoError(err)
 			ctx := context.Background()
 			tx, err := coreDB.BeginRw(ctx)
