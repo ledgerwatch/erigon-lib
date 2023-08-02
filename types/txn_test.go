@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ledgerwatch/erigon-lib/chain"
+	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 )
 
@@ -201,6 +201,10 @@ func TestBlobTxParsing(t *testing.T) {
 	ctx.withSender = false
 
 	var thinTx TxSlot // only tx body, no blobs
+	txType, err := PeekTransactionType(bodyEnvelope)
+	require.NoError(t, err)
+	assert.Equal(t, BlobTxType, txType)
+
 	p, err := ctx.ParseTransaction(bodyEnvelope, 0, &thinTx, nil, hasEnvelope, wrappedWithBlobs, nil)
 	require.NoError(t, err)
 	assert.Equal(t, len(bodyEnvelope), p)
@@ -218,9 +222,9 @@ func TestBlobTxParsing(t *testing.T) {
 
 	blobsRlpPrefix := hexutility.MustDecodeHex("fa040008")
 	blobRlpPrefix := hexutility.MustDecodeHex("ba020000")
-	blob0 := make([]byte, chain.BlobSize)
+	blob0 := make([]byte, fixedgas.BlobSize)
 	rand.Read(blob0)
-	blob1 := make([]byte, chain.BlobSize)
+	blob1 := make([]byte, fixedgas.BlobSize)
 	rand.Read(blob1)
 
 	proofsRlpPrefix := hexutility.MustDecodeHex("f862")
@@ -250,6 +254,10 @@ func TestBlobTxParsing(t *testing.T) {
 	wrapperRlp = append(wrapperRlp, proof1[:]...)
 
 	var fatTx TxSlot // with blobs/commitments/proofs
+	txType, err = PeekTransactionType(wrapperRlp)
+	require.NoError(t, err)
+	assert.Equal(t, BlobTxType, txType)
+
 	p, err = ctx.ParseTransaction(wrapperRlp, 0, &fatTx, nil, hasEnvelope, wrappedWithBlobs, nil)
 	require.NoError(t, err)
 	assert.Equal(t, len(wrapperRlp), p)
@@ -268,7 +276,7 @@ func TestBlobTxParsing(t *testing.T) {
 	assert.Equal(t, thinTx.Gas, fatTx.Gas)
 	assert.Equal(t, thinTx.IDHash, fatTx.IDHash)
 	assert.Equal(t, thinTx.Creation, fatTx.Creation)
-	assert.Equal(t, thinTx.DataFeeCap, fatTx.DataFeeCap)
+	assert.Equal(t, thinTx.BlobFeeCap, fatTx.BlobFeeCap)
 	assert.Equal(t, thinTx.BlobHashes, fatTx.BlobHashes)
 
 	require.Equal(t, 2, len(fatTx.Blobs))
