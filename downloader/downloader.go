@@ -254,9 +254,6 @@ func (d *Downloader) ReCalcStats(interval time.Duration) {
 			if !t.Complete.Bool() {
 				progress := float32(float64(100) * (float64(t.BytesCompleted()) / float64(t.Length())))
 				log.Info("[downloader] file not downloaded yet", "name", t.Name(), "progress", fmt.Sprintf("%.2f%%", progress))
-			} else {
-				progress := float32(float64(100) * (float64(t.BytesCompleted()) / float64(t.Length())))
-				log.Info("[downloader] file completed", "name", t.Name(), "progress", fmt.Sprintf("%.2f%%", progress))
 			}
 		default:
 			log.Info("[downloader] file has no metadata yet", "name", t.Name())
