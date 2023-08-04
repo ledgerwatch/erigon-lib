@@ -180,10 +180,12 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 
 			stats := d.Stats()
 
-			if stats.MetadataReady < stats.FilesTotal {
-				log.Info(fmt.Sprintf("[snapshots] Waiting for torrents metadata: %d/%d", stats.MetadataReady, stats.FilesTotal))
-				continue
-			}
+			/*
+				if stats.MetadataReady < stats.FilesTotal {
+					log.Info(fmt.Sprintf("[snapshots] Waiting for torrents metadata: %d/%d", stats.MetadataReady, stats.FilesTotal))
+					continue
+				}
+			*/
 
 			if stats.Completed {
 				if justCompleted {
