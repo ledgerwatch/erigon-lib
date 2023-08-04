@@ -149,8 +149,9 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 					//r := t.NewReader()
 					//r.SetReadahead(t.Length())
 					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
-
+					fmt.Printf("Downloading %s\n", t.Info().Name)
 					<-t.Complete.On()
+					fmt.Printf("Finished %s\n", t.Info().Name)
 				}(t)
 			}
 			time.Sleep(30 * time.Second)
@@ -250,7 +251,7 @@ func (d *Downloader) ReCalcStats(interval time.Duration) {
 			stats.BytesTotal += uint64(t.Length())
 			if !t.Complete.Bool() {
 				progress := float32(float64(100) * (float64(t.BytesCompleted()) / float64(t.Length())))
-				log.Debug("[downloader] file not downloaded yet", "name", t.Name(), "progress", fmt.Sprintf("%.2f%%", progress))
+				log.Info("[downloader] file not downloaded yet", "name", t.Name(), "progress", fmt.Sprintf("%.2f%%", progress))
 			}
 		default:
 			log.Debug("[downloader] file has no metadata yet", "name", t.Name())
