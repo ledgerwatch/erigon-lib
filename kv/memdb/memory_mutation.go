@@ -381,7 +381,7 @@ func (m *MemoryMutation) Flush(tx kv.RwTx) error {
 
 func (m *MemoryMutation) Diff() (*MemoryDiff, error) {
 	memDiff := &MemoryDiff{
-		diff:           make(map[table]map[string][]byte),
+		diff:           make(map[table][]entry),
 		deletedEntries: make(map[string][]string),
 	}
 	// Obtain buckets touched.
@@ -412,12 +412,14 @@ func (m *MemoryMutation) Diff() (*MemoryDiff, error) {
 				name:    bucket,
 				dupsort: true,
 			}
-			memDiff.diff[t] = make(map[string][]byte)
 			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
 				if err != nil {
 					return nil, err
 				}
-				memDiff.diff[t][string(k)] = common.Copy(v)
+				memDiff.diff[t] = append(memDiff.diff[t], entry{
+					k: common.Copy(k),
+					v: common.Copy(v),
+				})
 			}
 		} else {
 			cbucket, err := m.memTx.Cursor(bucket)
@@ -429,12 +431,14 @@ func (m *MemoryMutation) Diff() (*MemoryDiff, error) {
 				name:    bucket,
 				dupsort: false,
 			}
-			memDiff.diff[t] = make(map[string][]byte)
 			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
 				if err != nil {
 					return nil, err
 				}
-				memDiff.diff[t][string(k)] = common.Copy(v)
+				memDiff.diff[t] = append(memDiff.diff[t], entry{
+					k: common.Copy(k),
+					v: common.Copy(v),
+				})
 			}
 		}
 	}

@@ -2,8 +2,13 @@ package memdb
 
 import "github.com/ledgerwatch/erigon-lib/kv"
 
+type entry struct {
+	k []byte
+	v []byte
+}
+
 type MemoryDiff struct {
-	diff              map[table]map[string][]byte // god.
+	diff              map[table][]entry // god.
 	deletedEntries    map[string][]string
 	clearedTableNames []string
 }
@@ -36,14 +41,14 @@ func (m *MemoryDiff) Flush(tx kv.RwTx) error {
 				return err
 			}
 			defer dbCursor.Close()
-			for k, v := range bucketDiff {
-				if err := dbCursor.Put([]byte(k), v); err != nil {
+			for _, entry := range bucketDiff {
+				if err := dbCursor.Put(entry.k, entry.v); err != nil {
 					return err
 				}
 			}
 		} else {
-			for k, v := range bucketDiff {
-				if err := tx.Put(bucketInfo.name, []byte(k), v); err != nil {
+			for _, entry := range bucketDiff {
+				if err := tx.Put(bucketInfo.name, entry.k, entry.v); err != nil {
 					return err
 				}
 			}
