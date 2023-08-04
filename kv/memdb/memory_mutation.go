@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
@@ -376,6 +377,68 @@ func (m *MemoryMutation) Flush(tx kv.RwTx) error {
 		}
 	}
 	return nil
+}
+
+func (m *MemoryMutation) Diff() (*MemoryDiff, error) {
+	memDiff := &MemoryDiff{
+		diff:           make(map[table]map[string][]byte),
+		deletedEntries: make(map[string][]string),
+	}
+	// Obtain buckets touched.
+	buckets, err := m.memTx.ListBuckets()
+	if err != nil {
+		return nil, err
+	}
+	// Obliterate buckets who are to be deleted
+	for bucket := range m.clearedTables {
+		memDiff.clearedTableNames = append(memDiff.clearedTableNames, bucket)
+	}
+	// Obliterate entries who are to be deleted
+	for bucket, keys := range m.deletedEntries {
+		for key := range keys {
+			memDiff.deletedEntries[bucket] = append(memDiff.deletedEntries[bucket], key)
+		}
+	}
+	// Iterate over each bucket and apply changes accordingly.
+	for _, bucket := range buckets {
+		if isTablePurelyDupsort(bucket) {
+			cbucket, err := m.memTx.CursorDupSort(bucket)
+			if err != nil {
+				return nil, err
+			}
+			defer cbucket.Close()
+
+			t := table{
+				name:    bucket,
+				dupsort: true,
+			}
+			memDiff.diff[t] = make(map[string][]byte)
+			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+				if err != nil {
+					return nil, err
+				}
+				memDiff.diff[t][string(k)] = common.Copy(v)
+			}
+		} else {
+			cbucket, err := m.memTx.Cursor(bucket)
+			if err != nil {
+				return nil, err
+			}
+			defer cbucket.Close()
+			t := table{
+				name:    bucket,
+				dupsort: false,
+			}
+			memDiff.diff[t] = make(map[string][]byte)
+			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+				if err != nil {
+					return nil, err
+				}
+				memDiff.diff[t][string(k)] = common.Copy(v)
+			}
+		}
+	}
+	return memDiff, nil
 }
 
 // Check if a bucket is dupsorted and has dupsort conversion off
