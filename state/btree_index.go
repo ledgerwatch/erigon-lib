@@ -33,7 +33,7 @@ const BtreeLogPrefix = "btree"
 
 // DefaultBtreeM - amount of keys on leaf of BTree
 // It will do log2(M) co-located-reads from data file - for binary-search inside leaf
-var DefaultBtreeM = uint64(2048)
+var DefaultBtreeM = uint64(512)
 var ErrBtIndexLookupBounds = errors.New("BtIndex: lookup di bounds error")
 
 func logBase(n, base uint64) uint64 {
@@ -956,7 +956,12 @@ func (b *BtIndex) FileName() string { return path.Base(b.filePath) }
 
 func (b *BtIndex) Empty() bool { return b == nil || b.ef == nil || b.ef.Count() == 0 }
 
-func (b *BtIndex) KeyCount() uint64 { return b.ef.Count() }
+func (b *BtIndex) KeyCount() uint64 {
+	if b.Empty() {
+		return 0
+	}
+	return b.ef.Count()
+}
 
 func (b *BtIndex) Close() {
 	if b == nil {
