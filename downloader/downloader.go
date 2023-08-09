@@ -137,7 +137,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 			for _, t := range torrents {
 				<-t.GotInfo()
 				if t.Complete.Bool() {
-					t.Drop()
+					t.DisallowDataDownload()
 					continue
 				}
 				if err := sem.Acquire(ctx, 1); err != nil {
@@ -153,7 +153,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 					fmt.Printf("Downloading %s\n", t.Info().Name)
 					<-t.Complete.On()
 					fmt.Printf("Finished %s\n", t.Info().Name)
-					t.Drop()
+					t.DisallowDataDownload()
 				}(t)
 			}
 			time.Sleep(30 * time.Second)
