@@ -112,4 +112,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/anacrolix/torrent => github.com/AlexeyAkhunov/torrent v1.52.1-0.20230808213017-20d95d18df68
+replace github.com/anacrolix/torrent => github.com/AlexeyAkhunov/torrent v1.52.0
