@@ -878,6 +878,7 @@ func EncodeSenderLengthForStorage(nonce uint64, balance uint256.Int) uint {
 	return structLength
 }
 
+//Encode the details of txn sender into the given "buffer" byte-slice that should be big enough
 func EncodeSender(nonce uint64, balance uint256.Int, buffer []byte) {
 	var fieldSet = 0 // start with first bit set to 0
 	var pos = 1
@@ -905,6 +906,8 @@ func EncodeSender(nonce uint64, balance uint256.Int, buffer []byte) {
 
 	buffer[0] = byte(fieldSet)
 }
+
+//Decode the sender's balance and nonce from encoded byte-slice
 func DecodeSender(enc []byte) (nonce uint64, balance uint256.Int, err error) {
 	if len(enc) == 0 {
 		return

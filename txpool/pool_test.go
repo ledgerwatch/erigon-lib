@@ -715,3 +715,8 @@ func TestShanghaiValidateTx(t *testing.T) {
 		})
 	}
 }
+
+//1.1x blob gas price + other requirements to replace existing txns in the poon
+func TestBlobTxReplacement(t *testing.T) {
+	
+}
