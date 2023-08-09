@@ -221,13 +221,6 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 
 			stats := d.Stats()
 
-			/*
-				if stats.MetadataReady < stats.FilesTotal {
-					log.Info(fmt.Sprintf("[snapshots] Waiting for torrents metadata: %d/%d", stats.MetadataReady, stats.FilesTotal))
-					continue
-				}
-			*/
-
 			if stats.Completed {
 				if justCompleted {
 					justCompleted = false
@@ -294,10 +287,10 @@ func (d *Downloader) ReCalcStats(interval time.Duration) {
 			stats.BytesTotal += uint64(t.Length())
 			if !t.Complete.Bool() {
 				progress := float32(float64(100) * (float64(t.BytesCompleted()) / float64(t.Length())))
-				log.Info("[downloader] file not downloaded yet", "name", t.Name(), "progress", fmt.Sprintf("%.2f%%", progress))
+				log.Debug("[downloader] file not downloaded yet", "name", t.Name(), "progress", fmt.Sprintf("%.2f%%", progress))
 			}
 		default:
-			log.Info("[downloader] file has no metadata yet", "name", t.Name())
+			log.Debug("[downloader] file has no metadata yet", "name", t.Name())
 		}
 
 		stats.Completed = stats.Completed && t.Complete.Bool()
