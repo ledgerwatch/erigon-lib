@@ -134,7 +134,10 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
 
 	go func() {
+		// Torrents that are already taken care of
 		torrentMap := map[metainfo.Hash]struct{}{}
+		// First loop drops torrents that were downloaded or are already complete
+		// This improves efficiency of download by reducing number of active torrent (empirical observation)
 		for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
 			for _, t := range torrents {
 				if _, already := torrentMap[t.InfoHash()]; already {
@@ -156,12 +159,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				torrentMap[t.InfoHash()] = struct{}{}
 				go func(t *torrent.Torrent) {
 					defer sem.Release(1)
-					//r := t.NewReader()
-					//r.SetReadahead(t.Length())
-					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
-					fmt.Printf("Downloading %s\n", t.Info().Name)
 					<-t.Complete.On()
-					fmt.Printf("Finished %s\n", t.Info().Name)
 					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
 					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
 					t.Drop()
@@ -194,12 +192,10 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 					//r := t.NewReader()
 					//r.SetReadahead(t.Length())
 					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
-					fmt.Printf("Downloading1 %s\n", t.Info().Name)
 					<-t.Complete.On()
-					fmt.Printf("Finished1 %s\n", t.Info().Name)
 				}(t)
 			}
-			time.Sleep(1 * time.Second)
+			time.Sleep(30 * time.Second)
 		}
 	}()
 
