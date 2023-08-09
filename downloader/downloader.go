@@ -65,7 +65,8 @@ type AggStats struct {
 	Completed bool
 	Progress  float32
 
-	BytesCompleted, BytesTotal uint64
+	BytesCompleted, BytesTotal     uint64
+	DroppedCompleted, DroppedTotal uint64
 
 	BytesDownload, BytesUpload uint64
 	UploadRate, DownloadRate   uint64
@@ -132,12 +133,13 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
 
 	go func() {
-		for {
-			torrents := d.Torrent().Torrents()
+		for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
 			for _, t := range torrents {
 				<-t.GotInfo()
 				if t.Complete.Bool() {
-					t.DisallowDataDownload()
+					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
+					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
+					t.Drop()
 					continue
 				}
 				if err := sem.Acquire(ctx, 1); err != nil {
@@ -153,7 +155,35 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 					fmt.Printf("Downloading %s\n", t.Info().Name)
 					<-t.Complete.On()
 					fmt.Printf("Finished %s\n", t.Info().Name)
-					t.DisallowDataDownload()
+					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
+					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
+					t.Drop()
+				}(t)
+			}
+		}
+		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
+		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
+		d.addSegments()
+		for {
+			torrents := d.Torrent().Torrents()
+			for _, t := range torrents {
+				<-t.GotInfo()
+				if t.Complete.Bool() {
+					continue
+				}
+				if err := sem.Acquire(ctx, 1); err != nil {
+					return
+				}
+				t.AllowDataDownload()
+				t.DownloadAll()
+				go func(t *torrent.Torrent) {
+					defer sem.Release(1)
+					//r := t.NewReader()
+					//r.SetReadahead(t.Length())
+					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
+					fmt.Printf("Downloading1 %s\n", t.Info().Name)
+					<-t.Complete.On()
+					fmt.Printf("Finished1 %s\n", t.Info().Name)
 				}(t)
 			}
 			time.Sleep(30 * time.Second)
@@ -242,7 +272,7 @@ func (d *Downloader) ReCalcStats(interval time.Duration) {
 	stats.BytesDownload = uint64(connStats.BytesReadUsefulIntendedData.Int64())
 	stats.BytesUpload = uint64(connStats.BytesWrittenData.Int64())
 
-	stats.BytesTotal, stats.BytesCompleted, stats.ConnectionsTotal, stats.MetadataReady = 0, 0, 0, 0
+	stats.BytesTotal, stats.BytesCompleted, stats.ConnectionsTotal, stats.MetadataReady = atomic.LoadUint64(&stats.DroppedTotal), atomic.LoadUint64(&stats.DroppedCompleted), 0, 0
 	for _, t := range torrents {
 		select {
 		case <-t.GotInfo():
