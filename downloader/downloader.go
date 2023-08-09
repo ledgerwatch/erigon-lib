@@ -152,6 +152,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 					fmt.Printf("Downloading %s\n", t.Info().Name)
 					<-t.Complete.On()
 					fmt.Printf("Finished %s\n", t.Info().Name)
+					t.Drop()
 				}(t)
 			}
 			time.Sleep(30 * time.Second)
