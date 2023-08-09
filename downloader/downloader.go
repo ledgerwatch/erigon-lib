@@ -137,6 +137,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 			for _, t := range torrents {
 				<-t.GotInfo()
 				if t.Complete.Bool() {
+					t.Drop()
 					continue
 				}
 				if err := sem.Acquire(ctx, 1); err != nil {
