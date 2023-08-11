@@ -1360,7 +1360,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		// transactions will be able to pay for gas.
 		mt.subPool &^= EnoughBalance
 		mt.cumulativeBalanceDistance = math.MaxUint64
-		if mt.Tx.Nonce >= senderNonce { //TODO: Clarify, is senderNonce current expected lowest nonce of non-included or previous highest of included
+		if mt.Tx.Nonce >= senderNonce {
 			cumulativeRequiredBalance = cumulativeRequiredBalance.Add(cumulativeRequiredBalance, needBalance) // already deleted all transactions with nonce <= sender.nonce
 			if senderBalance.Gt(cumulativeRequiredBalance) || senderBalance.Eq(cumulativeRequiredBalance) {
 				mt.subPool |= EnoughBalance
