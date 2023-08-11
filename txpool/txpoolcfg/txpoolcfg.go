@@ -40,6 +40,7 @@ type Config struct {
 	MinFeeCap             uint64
 	AccountSlots          uint64 // Number of executable transaction slots guaranteed per account
 	PriceBump             uint64 // Price bump percentage to replace an already existing transaction
+	BlobPriceBump         uint64 //Price bump percentage to replace an existing 4844 blob tx (type-3)
 	OverrideCancunTime    *big.Int
 }
 
@@ -53,9 +54,10 @@ var DefaultConfig = Config{
 	BaseFeeSubPoolLimit: 10_000,
 	QueuedSubPoolLimit:  10_000,
 
-	MinFeeCap:    1,
-	AccountSlots: 16, //TODO: to choose right value (16 to be compatible with Geth)
-	PriceBump:    10, // Price bump percentage to replace an already existing transaction
+	MinFeeCap:     1,
+	AccountSlots:  16, //TODO: to choose right value (16 to be compatible with Geth)
+	PriceBump:     10, // Price bump percentage to replace an already existing transaction
+	BlobPriceBump: 100,
 }
 
 type DiscardReason uint8
@@ -91,6 +93,7 @@ const (
 	UnequalBlobTxExt    DiscardReason = 27 // blob_versioned_hashes, blobs, commitments and proofs must have equal number
 	BlobHashCheckFail   DiscardReason = 28 // KZGcommitment's versioned hash has to be equal to blob_versioned_hash at the same index
 	UnmatchedBlobTxExt  DiscardReason = 29 // KZGcommitments must match the corresponding blobs and proofs
+	BlobTxReplace       DiscardReason = 30 // Cannot replace type-3 blob txn with another type of txn
 )
 
 func (r DiscardReason) String() string {
@@ -149,6 +152,8 @@ func (r DiscardReason) String() string {
 		return "blob transactions must have at least one blob"
 	case TooManyBlobs:
 		return "max number of blobs exceeded"
+	case BlobTxReplace:
+		return "can't replace blob-txn with a non-blob-txn"
 	default:
 		panic(fmt.Sprintf("discard reason: %d", r))
 	}

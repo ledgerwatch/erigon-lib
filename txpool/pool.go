@@ -1142,11 +1142,33 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
 	found := p.all.get(mt.Tx.SenderID, mt.Tx.Nonce)
 	if found != nil {
+		if found.Tx.Type == types.BlobTxType && mt.Tx.Type != types.BlobTxType {
+			return txpoolcfg.BlobTxReplace
+		}
+		priceBump := p.cfg.PriceBump
+
+		//Blob txn threshold checks
+		if mt.Tx.Type == types.BlobTxType {
+			priceBump = p.cfg.BlobPriceBump
+			blobFeeThreshold, overflow := (&uint256.Int{}).MulDivOverflow(
+				&found.Tx.BlobFeeCap,
+				uint256.NewInt(100+priceBump),
+				uint256.NewInt(100),
+			)
+			if mt.Tx.BlobFeeCap.Lt(blobFeeThreshold) && !overflow {
+				if bytes.Equal(found.Tx.IDHash[:], mt.Tx.IDHash[:]) {
+					return txpoolcfg.NotSet
+				}
+				return txpoolcfg.ReplaceUnderpriced
+			}
+		}
+
+		//Regular txn threshold checks
 		tipThreshold := uint256.NewInt(0)
-		tipThreshold = tipThreshold.Mul(&found.Tx.Tip, uint256.NewInt(100+p.cfg.PriceBump))
+		tipThreshold = tipThreshold.Mul(&found.Tx.Tip, uint256.NewInt(100+priceBump))
 		tipThreshold.Div(tipThreshold, u256.N100)
 		feecapThreshold := uint256.NewInt(0)
-		feecapThreshold.Mul(&found.Tx.FeeCap, uint256.NewInt(100+p.cfg.PriceBump))
+		feecapThreshold.Mul(&found.Tx.FeeCap, uint256.NewInt(100+priceBump))
 		feecapThreshold.Div(feecapThreshold, u256.N100)
 		if mt.Tx.Tip.Cmp(tipThreshold) < 0 || mt.Tx.FeeCap.Cmp(feecapThreshold) < 0 {
 			// Both tip and feecap need to be larger than previously to replace the transaction
@@ -1338,7 +1360,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		// transactions will be able to pay for gas.
 		mt.subPool &^= EnoughBalance
 		mt.cumulativeBalanceDistance = math.MaxUint64
-		if mt.Tx.Nonce >= senderNonce {		//TODO: Clarify, is senderNonce current expected lowest nonce of non-included or previous highest of included
+		if mt.Tx.Nonce >= senderNonce { //TODO: Clarify, is senderNonce current expected lowest nonce of non-included or previous highest of included
 			cumulativeRequiredBalance = cumulativeRequiredBalance.Add(cumulativeRequiredBalance, needBalance) // already deleted all transactions with nonce <= sender.nonce
 			if senderBalance.Gt(cumulativeRequiredBalance) || senderBalance.Eq(cumulativeRequiredBalance) {
 				mt.subPool |= EnoughBalance
