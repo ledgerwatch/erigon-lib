@@ -144,9 +144,11 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 		for len(files1) > 0 {
 			if len(files1) <= 10 {
 				d.addSegments(files1)
+				log.Info("Added", "segments", files1)
 				files1 = nil
 			} else {
 				d.addSegments(files1[:10])
+				log.Info("Added", "segments", files1[:10])
 				files1 = files1[10:]
 			}
 			for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
