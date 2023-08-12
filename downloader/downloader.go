@@ -149,7 +149,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
 					t.Drop()
 					torrentMap[t.InfoHash()] = struct{}{}
-					log.Info("Completed", t.Info().Name)
+					log.Info("Completed", "name", t.Info().Name)
 					continue
 				}
 				if err := sem.Acquire(ctx, 1); err != nil {
@@ -160,12 +160,12 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				torrentMap[t.InfoHash()] = struct{}{}
 				go func(t *torrent.Torrent) {
 					defer sem.Release(1)
-					log.Info("Downloading", t.Info().Name)
+					log.Info("Downloading", "name", t.Info().Name)
 					<-t.Complete.On()
 					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
 					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
 					t.Drop()
-					log.Info("Downloading Completed", t.Info().Name)
+					log.Info("Downloading Completed", "name", t.Info().Name)
 				}(t)
 			}
 		}
@@ -183,7 +183,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				<-t.GotInfo()
 				if t.Complete.Bool() {
 					torrentMap[t.InfoHash()] = struct{}{}
-					log.Info("Completed1", t.Info().Name)
+					log.Info("Completed1", "name", t.Info().Name)
 					continue
 				}
 				if err := sem.Acquire(ctx, 1); err != nil {
@@ -194,12 +194,12 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				torrentMap[t.InfoHash()] = struct{}{}
 				go func(t *torrent.Torrent) {
 					defer sem.Release(1)
-					log.Info("Downloading1", t.Info().Name)
+					log.Info("Downloading1", "name", t.Info().Name)
 					//r := t.NewReader()
 					//r.SetReadahead(t.Length())
 					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
 					<-t.Complete.On()
-					log.Info("Downloading Completed1", t.Info().Name)
+					log.Info("Downloading Completed1", "name", t.Info().Name)
 				}(t)
 			}
 			time.Sleep(30 * time.Second)
