@@ -458,10 +458,6 @@ func (d *Downloader) segments() ([]string, error) {
 func (d *Downloader) addSegments(files []string) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
-	files, err := d.segments()
-	if err != nil {
-		return err
-	}
 	wg := &sync.WaitGroup{}
 	i := atomic.Int64{}
 	for _, f := range files {
