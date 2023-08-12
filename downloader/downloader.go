@@ -115,9 +115,6 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 
 		statsLock: &sync.RWMutex{},
 	}
-	if err := d.addSegments(); err != nil {
-		return nil, err
-	}
 	return d, nil
 }
 
@@ -131,49 +128,63 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 }
 
 func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
-	log.Info("Download", "slots", d.cfg.DownloadSlots)
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
+	files, err := d.segments()
+	if err != nil {
+		log.Error("Finding files to dowloading/seed", "err", err)
+		return
+	}
 
 	go func() {
 		// Torrents that are already taken care of
 		torrentMap := map[metainfo.Hash]struct{}{}
 		// First loop drops torrents that were downloaded or are already complete
 		// This improves efficiency of download by reducing number of active torrent (empirical observation)
-		for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
-			for _, t := range torrents {
-				if _, already := torrentMap[t.InfoHash()]; already {
-					continue
-				}
-				<-t.GotInfo()
-				if t.Complete.Bool() {
-					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
-					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-					t.Drop()
+		files1 := files
+		for len(files1) > 0 {
+			if len(files1) <= 10 {
+				d.addSegments(files1)
+				files1 = nil
+			} else {
+				d.addSegments(files1[:10])
+				files1 = files1[10:]
+			}
+			for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
+				for _, t := range torrents {
+					if _, already := torrentMap[t.InfoHash()]; already {
+						continue
+					}
+					<-t.GotInfo()
+					if t.Complete.Bool() {
+						atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
+						atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
+						t.Drop()
+						torrentMap[t.InfoHash()] = struct{}{}
+						log.Info("Completed", "name", t.Info().Name)
+						continue
+					}
+					if err := sem.Acquire(ctx, 1); err != nil {
+						return
+					}
+					t.AllowDataDownload()
+					t.DownloadAll()
 					torrentMap[t.InfoHash()] = struct{}{}
-					log.Info("Completed", "name", t.Info().Name)
-					continue
+					go func(t *torrent.Torrent) {
+						defer sem.Release(1)
+						log.Info("Downloading", "name", t.Info().Name)
+						<-t.Complete.On()
+						atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
+						atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
+						t.Drop()
+						log.Info("Downloading Completed", "name", t.Info().Name)
+					}(t)
 				}
-				if err := sem.Acquire(ctx, 1); err != nil {
-					return
-				}
-				t.AllowDataDownload()
-				t.DownloadAll()
-				torrentMap[t.InfoHash()] = struct{}{}
-				go func(t *torrent.Torrent) {
-					defer sem.Release(1)
-					log.Info("Downloading", "name", t.Info().Name)
-					<-t.Complete.On()
-					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
-					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-					t.Drop()
-					log.Info("Downloading Completed", "name", t.Info().Name)
-				}(t)
 			}
 		}
 		log.Info("First loop done")
+		d.addSegments(files)
 		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
 		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
-		d.addSegments()
 		maps.Clear(torrentMap)
 		for {
 			torrents := d.Torrent().Torrents()
@@ -425,22 +436,30 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
 
-func (d *Downloader) addSegments() error {
-	logEvery := time.NewTicker(20 * time.Second)
-	defer logEvery.Stop()
+func (d *Downloader) segments() ([]string, error) {
 	_, err := BuildTorrentFilesIfNeed(context.Background(), d.SnapDir())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	files, err := seedableSegmentFiles(d.SnapDir())
 	if err != nil {
-		return fmt.Errorf("seedableSegmentFiles: %w", err)
+		return nil, fmt.Errorf("seedableSegmentFiles: %w", err)
 	}
 	files2, err := seedableHistorySnapshots(d.SnapDir())
 	if err != nil {
-		return fmt.Errorf("seedableHistorySnapshots: %w", err)
+		return nil, fmt.Errorf("seedableHistorySnapshots: %w", err)
 	}
 	files = append(files, files2...)
+	return files, nil
+}
+
+func (d *Downloader) addSegments(files []string) error {
+	logEvery := time.NewTicker(20 * time.Second)
+	defer logEvery.Stop()
+	files, err := d.segments()
+	if err != nil {
+		return err
+	}
 	wg := &sync.WaitGroup{}
 	i := atomic.Int64{}
 	for _, f := range files {
