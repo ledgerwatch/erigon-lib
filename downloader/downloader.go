@@ -142,14 +142,14 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 		// This improves efficiency of download by reducing number of active torrent (empirical observation)
 		files1 := files
 		for len(files1) > 0 {
-			if len(files1) <= 10 {
+			if len(files1) <= 5 {
 				d.addSegments(files1)
 				log.Info("Added", "segments", files1)
 				files1 = nil
 			} else {
-				d.addSegments(files1[:10])
-				log.Info("Added", "segments", files1[:10])
-				files1 = files1[10:]
+				d.addSegments(files1[:5])
+				log.Info("Added", "segments", files1[:5])
+				files1 = files1[5:]
 			}
 			for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
 				for _, t := range torrents {
