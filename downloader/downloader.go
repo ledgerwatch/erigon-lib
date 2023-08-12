@@ -131,7 +131,6 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 }
 
 func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
-	log.Info("Download", "slots", d.cfg.DownloadSlots)
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
 
 	go func() {
