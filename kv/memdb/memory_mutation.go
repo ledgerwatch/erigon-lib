@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv/iter"
 	"github.com/ledgerwatch/erigon-lib/kv/order"
 	"github.com/ledgerwatch/log/v3"
@@ -56,6 +57,16 @@ func NewMemoryBatch(tx kv.Tx, tmpDir string) *MemoryMutation {
 		db:             tx,
 		memDb:          tmpDB,
 		memTx:          memTx,
+		deletedEntries: make(map[string]map[string]struct{}),
+		clearedTables:  make(map[string]struct{}),
+	}
+}
+
+func NewMemoryBatchWithCustomDB(tx kv.Tx, db kv.RwDB, uTx kv.RwTx, tmpDir string) *MemoryMutation {
+	return &MemoryMutation{
+		db:             tx,
+		memDb:          db,
+		memTx:          uTx,
 		deletedEntries: make(map[string]map[string]struct{}),
 		clearedTables:  make(map[string]struct{}),
 	}
@@ -368,6 +379,72 @@ func (m *MemoryMutation) Flush(tx kv.RwTx) error {
 	return nil
 }
 
+func (m *MemoryMutation) Diff() (*MemoryDiff, error) {
+	memDiff := &MemoryDiff{
+		diff:           make(map[table][]entry),
+		deletedEntries: make(map[string][]string),
+	}
+	// Obtain buckets touched.
+	buckets, err := m.memTx.ListBuckets()
+	if err != nil {
+		return nil, err
+	}
+	// Obliterate buckets who are to be deleted
+	for bucket := range m.clearedTables {
+		memDiff.clearedTableNames = append(memDiff.clearedTableNames, bucket)
+	}
+	// Obliterate entries who are to be deleted
+	for bucket, keys := range m.deletedEntries {
+		for key := range keys {
+			memDiff.deletedEntries[bucket] = append(memDiff.deletedEntries[bucket], key)
+		}
+	}
+	// Iterate over each bucket and apply changes accordingly.
+	for _, bucket := range buckets {
+		if isTablePurelyDupsort(bucket) {
+			cbucket, err := m.memTx.CursorDupSort(bucket)
+			if err != nil {
+				return nil, err
+			}
+			defer cbucket.Close()
+
+			t := table{
+				name:    bucket,
+				dupsort: true,
+			}
+			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+				if err != nil {
+					return nil, err
+				}
+				memDiff.diff[t] = append(memDiff.diff[t], entry{
+					k: common.Copy(k),
+					v: common.Copy(v),
+				})
+			}
+		} else {
+			cbucket, err := m.memTx.Cursor(bucket)
+			if err != nil {
+				return nil, err
+			}
+			defer cbucket.Close()
+			t := table{
+				name:    bucket,
+				dupsort: false,
+			}
+			for k, v, err := cbucket.First(); k != nil; k, v, err = cbucket.Next() {
+				if err != nil {
+					return nil, err
+				}
+				memDiff.diff[t] = append(memDiff.diff[t], entry{
+					k: common.Copy(k),
+					v: common.Copy(v),
+				})
+			}
+		}
+	}
+	return memDiff, nil
+}
+
 // Check if a bucket is dupsorted and has dupsort conversion off
 func isTablePurelyDupsort(bucket string) bool {
 	config, ok := kv.ChaindataTablesCfg[bucket]
@@ -376,6 +453,14 @@ func isTablePurelyDupsort(bucket string) bool {
 		return false
 	}
 	return !config.AutoDupSortKeysConversion && config.Flags == kv.DupSort
+}
+
+func (m *MemoryMutation) MemDB() kv.RwDB {
+	return m.memDb
+}
+
+func (m *MemoryMutation) MemTx() kv.RwTx {
+	return m.memTx
 }
 
 // Cursor creates a new cursor (the real fun begins here)

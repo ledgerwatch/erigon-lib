@@ -452,15 +452,15 @@ func buildVi(ctx context.Context, historyItem, iiItem *filesItem, historyIdxPath
 					return err
 				}
 				if compressVals {
-					valOffset = g2.Skip()
+					valOffset, _ = g2.Skip()
 				} else {
-					valOffset = g2.SkipUncompressed()
+					valOffset, _ = g2.SkipUncompressed()
 				}
 			}
 
 			p.Processed.Add(1)
 		}
-		if err = rs.Build(); err != nil {
+		if err = rs.Build(ctx); err != nil {
 			if rs.Collision() {
 				logger.Info("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
@@ -791,6 +791,9 @@ func (h *History) reCalcRoFiles() {
 // static files and their indices
 func (h *History) buildFiles(ctx context.Context, step uint64, collation HistoryCollation, ps *background.ProgressSet) (HistoryFiles, error) {
 	historyComp := collation.historyComp
+	if h.noFsync {
+		historyComp.DisableFsync()
+	}
 	var historyDecomp, efHistoryDecomp *compress.Decompressor
 	var historyIdx, efHistoryIdx *recsplit.Index
 	var efHistoryComp *compress.Compressor
@@ -859,6 +862,9 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 		if err != nil {
 			return HistoryFiles{}, fmt.Errorf("create %s ef history compressor: %w", h.filenameBase, err)
 		}
+		if h.noFsync {
+			efHistoryComp.DisableFsync()
+		}
 		var buf []byte
 		for _, key := range keys {
 			if err = efHistoryComp.AddUncompressedWord([]byte(key)); err != nil {
@@ -893,7 +899,7 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 	efHistoryIdxPath := filepath.Join(h.dir, efHistoryIdxFileName)
 	p := ps.AddNew(efHistoryIdxFileName, uint64(len(keys)*2))
 	defer ps.Delete(p)
-	if efHistoryIdx, err = buildIndexThenOpen(ctx, efHistoryDecomp, efHistoryIdxPath, h.tmpdir, len(keys), false /* values */, p, h.logger); err != nil {
+	if efHistoryIdx, err = buildIndexThenOpen(ctx, efHistoryDecomp, efHistoryIdxPath, h.tmpdir, len(keys), false /* values */, p, h.logger, h.noFsync); err != nil {
 		return HistoryFiles{}, fmt.Errorf("build %s ef history idx: %w", h.filenameBase, err)
 	}
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -907,6 +913,9 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 		return HistoryFiles{}, fmt.Errorf("create recsplit: %w", err)
 	}
 	rs.LogLvl(log.LvlTrace)
+	if h.noFsync {
+		rs.DisableFsync()
+	}
 	var historyKey []byte
 	var txKey [8]byte
 	var valOffset uint64
@@ -924,10 +933,10 @@ func (h *History) buildFiles(ctx context.Context, step uint64, collation History
 				if err = rs.AddKey(historyKey, valOffset); err != nil {
 					return HistoryFiles{}, fmt.Errorf("add %s history idx [%x]: %w", h.filenameBase, historyKey, err)
 				}
-				valOffset = g.Skip()
+				valOffset, _ = g.Skip()
 			}
 		}
-		if err = rs.Build(); err != nil {
+		if err = rs.Build(ctx); err != nil {
 			if rs.Collision() {
 				log.Info("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()
