@@ -60,7 +60,6 @@ type AggregatorV3 struct {
 	logTopics        *InvertedIndex
 	tracesFrom       *InvertedIndex
 	backgroundResult *BackgroundResult
-	logPrefix        string
 	dir              string
 	tmpdir           string
 	txNum            atomic.Uint64
@@ -134,7 +133,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	}
 	cfg = domainCfg{
 		domainLargeValues: true,
-		hist:              histCfg{withLocalityIndex: false, compressVals: true, historyLargeValues: true}}
+		hist:              histCfg{withLocalityIndex: false, compressVals: false, historyLargeValues: true}}
 	commitd, err := NewDomain(cfg, dir, tmpdir, aggregationStep, "commitment", kv.TblCommitmentKeys, kv.TblCommitmentVals, kv.TblCommitmentHistoryKeys, kv.TblCommitmentHistoryVals, kv.TblCommitmentIdx, logger)
 	if err != nil {
 		return nil, err
@@ -394,8 +393,6 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, workers int) erro
 	return nil
 }
 
-func (a *AggregatorV3) SetLogPrefix(v string) { a.logPrefix = v }
-
 func (a *AggregatorV3) SetTx(tx kv.RwTx) {
 	a.rwTx = tx
 	if a.domains != nil {
@@ -415,6 +412,9 @@ func (a *AggregatorV3) SetTx(tx kv.RwTx) {
 func (a *AggregatorV3) GetTxNum() uint64 {
 	return a.txNum.Load()
 }
+
+// SetTxNum sets aggregator's txNum and txNum for all domains
+// Requires for a.rwTx because of commitment evaluation in shared domains if aggregationStep is reached
 func (a *AggregatorV3) SetTxNum(txNum uint64) {
 	a.txNum.Store(txNum)
 	if a.domains != nil {
@@ -500,6 +500,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64) error {
 	//log.Warn("[dbg] collate", "step", step)
 
 	closeCollations := true
+	collListMu := sync.Mutex{}
 	collations := make([]Collation, 0)
 	defer func() {
 		if !closeCollations {
@@ -529,7 +530,10 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64) error {
 			if err != nil {
 				return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)
 			}
+			collListMu.Lock()
 			collations = append(collations, collation)
+			collListMu.Unlock()
+
 			mxCollationSize.Set(uint64(collation.valuesComp.Count()))
 			mxCollationSizeHist.Set(uint64(collation.historyComp.Count()))
 
@@ -679,6 +683,8 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 }
 
 func (a *AggregatorV3) MergeLoop(ctx context.Context, workers int) error {
+	log.Warn("[dbg] MergeLoop start")
+	defer log.Warn("[dbg] MergeLoop done")
 	for {
 		somethingMerged, err := a.mergeLoopStep(ctx, workers)
 		if err != nil {

@@ -295,7 +295,6 @@ type domainCfg struct {
 
 func NewDomain(cfg domainCfg, dir, tmpdir string, aggregationStep uint64, filenameBase, keysTable, valsTable, indexKeysTable, historyValsTable, indexTable string, logger log.Logger) (*Domain, error) {
 	baseDir := filepath.Dir(dir)
-	baseDir = filepath.Dir(baseDir)
 	d := &Domain{
 		dir:       filepath.Join(baseDir, "warm"),
 		keysTable: keysTable,
@@ -482,7 +481,7 @@ func (d *Domain) openFiles() (err error) {
 				return false
 			}
 
-			if item.index == nil {
+			if item.index == nil && !UseBpsTree {
 				idxPath := filepath.Join(d.dir, fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, fromStep, toStep))
 				if dir.FileExist(idxPath) {
 					if item.index, err = recsplit.OpenIndex(idxPath); err != nil {
@@ -1108,8 +1107,10 @@ func (d *Domain) buildFiles(ctx context.Context, step uint64, collation Collatio
 
 	valuesIdxFileName := fmt.Sprintf("%s.%d-%d.kvi", d.filenameBase, step, step+1)
 	valuesIdxPath := filepath.Join(d.dir, valuesIdxFileName)
-	if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, d.compressValues, valuesIdxPath, d.tmpdir, false, ps, d.logger, d.noFsync); err != nil {
-		return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
+	if !UseBpsTree {
+		if valuesIdx, err = buildIndexThenOpen(ctx, valuesDecomp, d.compressValues, valuesIdxPath, d.tmpdir, false, ps, d.logger, d.noFsync); err != nil {
+			return StaticFiles{}, fmt.Errorf("build %s values idx: %w", d.filenameBase, err)
+		}
 	}
 
 	var bt *BtIndex
@@ -1185,6 +1186,10 @@ func (d *Domain) BuildMissedIndices(ctx context.Context, g *errgroup.Group, ps *
 	for _, item := range d.missedKviIdxFiles() {
 		fitem := item
 		g.Go(func() error {
+			if UseBpsTree {
+				return nil
+			}
+
 			idxPath := fitem.decompressor.FilePath()
 			idxPath = strings.TrimSuffix(idxPath, "kv") + "kvi"
 			ix, err := buildIndexThenOpen(ctx, fitem.decompressor, d.compressValues, idxPath, d.tmpdir, false, ps, d.logger, d.noFsync)
@@ -1580,6 +1585,7 @@ func (dc *DomainContext) getLatestFromWarmFiles(filekey []byte) ([]byte, bool, e
 	if err != nil {
 		return nil, false, err
 	}
+	_ = ok
 	if !ok {
 		return nil, false, nil
 	}
@@ -1669,11 +1675,31 @@ func (dc *DomainContext) getLatestFromColdFilesGrind(filekey []byte) (v []byte, 
 		if !isUseful {
 			continue
 		}
+		var offset uint64
+		var ok bool
+		if UseBpsTree || UseBtree {
+			bt := dc.statelessBtree(i)
+			if bt.Empty() {
+				continue
+			}
+			//fmt.Printf("warm [%d] want %x keys in idx %v %v\n", i, filekey, bt.ef.Count(), bt.decompressor.FileName())
+			_, v, ok, err = bt.Get(filekey, dc.statelessGetter(i))
+			if err != nil {
+				return nil, false, err
+			}
+			if !ok {
+				LatestStateReadGrindNotFound.UpdateDuration(t)
+				continue
+			}
+			LatestStateReadGrind.UpdateDuration(t)
+			return v, true, nil
+		}
+
 		reader := dc.statelessIdxReader(i)
 		if reader.Empty() {
 			continue
 		}
-		offset := reader.Lookup(filekey)
+		offset = reader.Lookup(filekey)
 		g := dc.statelessGetter(i)
 		g.Reset(offset)
 		k, _ := g.Next(nil)
@@ -1885,13 +1911,23 @@ func (dc *DomainContext) statelessBtree(i int) *BtIndex {
 func (dc *DomainContext) getBeforeTxNum(key []byte, fromTxNum uint64, roTx kv.Tx) ([]byte, bool, error) {
 	//dc.d.stats.TotalQueries.Add(1)
 
+	if roTx == nil {
+		v, found, err := dc.getBeforeTxNumFromFiles(key, fromTxNum)
+		if err != nil {
+			return nil, false, err
+		}
+		return v, found, nil
+	}
+
 	invertedStep := dc.numBuf[:]
 	binary.BigEndian.PutUint64(invertedStep, ^(fromTxNum / dc.d.aggregationStep))
+
 	keyCursor, err := roTx.CursorDupSort(dc.d.keysTable)
 	if err != nil {
 		return nil, false, err
 	}
 	defer keyCursor.Close()
+
 	foundInvStep, err := keyCursor.SeekBothRange(key, invertedStep)
 	if err != nil {
 		return nil, false, err
@@ -1994,13 +2030,14 @@ func (dc *DomainContext) IteratePrefix(roTx kv.Tx, prefix []byte, it func(k, v [
 
 	for i, item := range dc.files {
 		if UseBtree || UseBpsTree {
-			cursor, err := dc.statelessBtree(i).Seek(prefix)
+			cursor, err := dc.statelessBtree(i).SeekWithGetter(prefix, dc.statelessGetter(i))
 			if err != nil {
 				return err
 			}
 			if cursor == nil {
 				continue
 			}
+			cursor.getter = dc.statelessGetter(i)
 			dc.d.stats.FilesQueries.Add(1)
 			key := cursor.Key()
 			if key != nil && bytes.HasPrefix(key, prefix) {
@@ -2169,14 +2206,7 @@ func (dc *DomainContext) Prune(ctx context.Context, rwTx kv.RwTx, step, txFrom, 
 		}
 		is := ^binary.BigEndian.Uint64(v)
 		if is > step {
-			k, v, err = keysCursor.PrevNoDup()
-			if len(v) != 8 {
-				continue
-			}
-			is = ^binary.BigEndian.Uint64(v)
-			if is > step {
-				continue
-			}
+			continue
 		}
 		if limit == 0 {
 			return nil
@@ -2287,7 +2317,7 @@ func (hi *DomainLatestIterFile) init(dc *DomainContext) error {
 	}
 
 	for i, item := range dc.files {
-		btCursor, err := dc.statelessBtree(i).Seek(hi.from)
+		btCursor, err := dc.statelessBtree(i).SeekWithGetter(hi.from, dc.statelessGetter(i))
 		if err != nil {
 			return err
 		}
