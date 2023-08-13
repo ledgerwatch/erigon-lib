@@ -96,7 +96,6 @@ func NewInvertedIndex(
 	logger log.Logger,
 ) (*InvertedIndex, error) {
 	baseDir := filepath.Dir(dir)
-	baseDir = filepath.Dir(baseDir)
 	ii := InvertedIndex{
 		dir:                     dir,
 		warmDir:                 filepath.Join(baseDir, "warm"),
@@ -770,6 +769,7 @@ func (ic *InvertedIndexContext) iterateRangeFrozen(key []byte, startTxNum, endTx
 // [txFrom; txTo)
 func (ic *InvertedIndexContext) Prune(ctx context.Context, rwTx kv.RwTx, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
 	ii := ic.ii
+	defer func(t time.Time) { mxPruneTookIndex.UpdateDuration(t) }(time.Now())
 
 	keysCursor, err := rwTx.RwCursorDupSort(ii.indexKeysTable)
 	if err != nil {
@@ -839,6 +839,7 @@ func (ic *InvertedIndexContext) Prune(ctx context.Context, rwTx kv.RwTx, txFrom,
 		return fmt.Errorf("iterate over %s keys: %w", ii.filenameBase, err)
 	}
 
+	var pruneCount uint64
 	if err := collector.Load(rwTx, "", func(key, _ []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
 		for v, err := idxC.SeekBothRange(key, txKey[:]); v != nil; _, v, err = idxC.NextDup() {
 			if err != nil {
@@ -855,10 +856,14 @@ func (ic *InvertedIndexContext) Prune(ctx context.Context, rwTx kv.RwTx, txFrom,
 			if err = idxCForDeletes.DeleteCurrent(); err != nil {
 				return err
 			}
+			pruneCount++
+			mxPruneSizeIndex.Inc()
 
 			select {
 			case <-logEvery.C:
-				ii.logger.Info("[snapshots] prune history", "name", ii.filenameBase, "to_step", fmt.Sprintf("%.2f", float64(txTo)/float64(ii.aggregationStep)), "prefix", fmt.Sprintf("%x", key[:8]))
+				ii.logger.Info("[snapshots] prune history", "name", ii.filenameBase,
+					"to_step", fmt.Sprintf("%.2f", float64(txTo)/float64(ii.aggregationStep)), "prefix", fmt.Sprintf("%x", key[:8]),
+					"pruned count", pruneCount)
 			case <-ctx.Done():
 				return ctx.Err()
 			default:

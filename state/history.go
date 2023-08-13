@@ -1196,6 +1196,8 @@ func (hc *HistoryContext) statelessIdxReader(i int) *recsplit.IndexReader {
 }
 
 func (hc *HistoryContext) Prune(ctx context.Context, rwTx kv.RwTx, txFrom, txTo, limit uint64, logEvery *time.Ticker) error {
+	defer func(t time.Time) { mxPruneTookHistory.UpdateDuration(t) }(time.Now())
+
 	historyKeysCursorForDeletes, err := rwTx.RwCursorDupSort(hc.h.indexKeysTable)
 	if err != nil {
 		return fmt.Errorf("create %s history cursor: %w", hc.h.filenameBase, err)
@@ -1230,6 +1232,7 @@ func (hc *HistoryContext) Prune(ctx context.Context, rwTx kv.RwTx, txFrom, txTo,
 	}
 
 	seek := make([]byte, 0, 256)
+	var pruneSize uint64
 	for k, v, err = historyKeysCursor.Seek(txKey[:]); err == nil && k != nil; k, v, err = historyKeysCursor.Next() {
 		txNum := binary.BigEndian.Uint64(k)
 		if txNum >= txTo {
@@ -1264,12 +1267,15 @@ func (hc *HistoryContext) Prune(ctx context.Context, rwTx kv.RwTx, txFrom, txTo,
 		if err = historyKeysCursorForDeletes.DeleteCurrent(); err != nil {
 			return err
 		}
+
+		pruneSize++
+		mxPruneSizeHistory.Inc()
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-logEvery.C:
-			hc.h.logger.Info("[snapshots] prune history", "name", hc.h.filenameBase, "from", txFrom, "to", txTo)
-
+			hc.h.logger.Info("[snapshots] prune history", "name", hc.h.filenameBase, "from", txFrom, "to", txTo,
+				"pruned records", pruneSize)
 			//"steps", fmt.Sprintf("%.2f-%.2f", float64(txFrom)/float64(d.aggregationStep), float64(txTo)/float64(d.aggregationStep)))
 		default:
 		}
@@ -1326,9 +1332,9 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			return true
 		}
 		offset := reader.Lookup(key)
-		g := hc.ic.statelessGetter(item.i)
+		g := NewArchiveGetter(hc.ic.statelessGetter(item.i), hc.h.compressHistoryVals)
 		g.Reset(offset)
-		k, _ := g.NextUncompressed()
+		k, _ := g.Next(nil)
 
 		if !bytes.Equal(k, key) {
 			//if bytes.Equal(key, hex.MustDecodeString("009ba32869045058a3f05d6f3dd2abb967e338f6")) {
@@ -1336,7 +1342,7 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 			//}
 			return true
 		}
-		eliasVal, _ := g.NextUncompressed()
+		eliasVal, _ := g.Next(nil)
 		ef, _ := eliasfano32.ReadEliasFano(eliasVal)
 		n, ok := ef.Search(txNum)
 		if hc.trace {
@@ -1410,14 +1416,10 @@ func (hc *HistoryContext) GetNoState(key []byte, txNum uint64) ([]byte, bool, er
 		reader := hc.statelessIdxReader(historyItem.i)
 		offset := reader.Lookup2(txKey[:], key)
 		//fmt.Printf("offset = %d, txKey=[%x], key=[%x]\n", offset, txKey[:], key)
-		g := hc.statelessGetter(historyItem.i)
+		g := NewArchiveGetter(hc.statelessGetter(historyItem.i), hc.h.compressHistoryVals)
 		g.Reset(offset)
 
-		if hc.h.compressHistoryVals {
-			v, _ := g.Next(nil)
-			return v, true, nil
-		}
-		v, _ := g.NextUncompressed()
+		v, _ := g.Next(nil)
 		return v, true, nil
 	}
 	return nil, false, nil
@@ -1739,13 +1741,10 @@ func (hi *StateAsOfIterF) advanceInFiles() error {
 		}
 		reader := hi.hc.statelessIdxReader(historyItem.i)
 		offset := reader.Lookup2(hi.txnKey[:], hi.nextKey)
-		g := hi.hc.statelessGetter(historyItem.i)
+
+		g := NewArchiveGetter(hi.hc.statelessGetter(historyItem.i), hi.compressVals)
 		g.Reset(offset)
-		if hi.compressVals {
-			hi.nextVal, _ = g.Next(nil)
-		} else {
-			hi.nextVal, _ = g.NextUncompressed()
-		}
+		hi.nextVal, _ = g.Next(nil)
 		return nil
 	}
 	hi.nextKey = nil
@@ -2049,13 +2048,9 @@ func (hi *HistoryChangesIterFiles) advance() error {
 		}
 		reader := hi.hc.statelessIdxReader(historyItem.i)
 		offset := reader.Lookup2(hi.txnKey[:], hi.nextKey)
-		g := hi.hc.statelessGetter(historyItem.i)
+		g := NewArchiveGetter(hi.hc.statelessGetter(historyItem.i), hi.compressVals)
 		g.Reset(offset)
-		if hi.compressVals {
-			hi.nextVal, _ = g.Next(nil)
-		} else {
-			hi.nextVal, _ = g.NextUncompressed()
-		}
+		hi.nextVal, _ = g.Next(nil)
 		return nil
 	}
 	hi.nextKey = nil

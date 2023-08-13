@@ -31,7 +31,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/ledgerwatch/erigon-lib/common/length"
-	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/etl"
 )
 
@@ -218,9 +217,7 @@ type DomainCommitted struct {
 	patriciaTrie commitment.Trie
 	branchMerger *commitment.BranchMerger
 	prevState    []byte
-
-	comTook time.Duration
-	discard bool
+	discard      bool
 }
 
 func NewCommittedDomain(d *Domain, mode CommitmentMode, trieVariant commitment.TrieVariant) *DomainCommitted {
@@ -351,10 +348,10 @@ func (d *DomainCommitted) replaceKeyWithReference(fullKey, shortKey []byte, type
 	numBuf := [2]byte{}
 	var found bool
 	for _, item := range list {
-		//g := item.decompressor.MakeGetter()
+		g := NewArchiveGetter(item.decompressor.MakeGetter(), d.compressValues)
 		//index := recsplit.NewIndexReader(item.index)
 
-		cur, err := item.bindex.Seek(fullKey)
+		cur, err := item.bindex.SeekWithGetter(fullKey, g)
 		if err != nil {
 			continue
 		}
@@ -453,36 +450,6 @@ func (d *DomainCommitted) commitmentValTransform(files *SelectedStaticFiles, mer
 	return transValBuf, nil
 }
 
-type ArchiveWriter interface {
-	AddWord(word []byte) error
-	Count() int
-	Compress() error
-	DisableFsync()
-	Close()
-}
-
-type compWriter struct {
-	*compress.Compressor
-	c bool
-}
-
-func NewArchiveWriter(kv *compress.Compressor, compress bool) ArchiveWriter {
-	return &compWriter{kv, compress}
-}
-
-func (c *compWriter) AddWord(word []byte) error {
-	if c.c {
-		return c.Compressor.AddWord(word)
-	}
-	return c.Compressor.AddUncompressedWord(word)
-}
-
-func (c *compWriter) Close() {
-	if c.Compressor != nil {
-		c.Compressor.Close()
-	}
-}
-
 func (d *DomainCommitted) Close() {
 	d.Domain.Close()
 	d.updates.keys.Reset()
@@ -505,9 +472,9 @@ func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branch
 		return rootHash, nil, err
 	}
 
-	if len(touchedKeys) > 1 {
-		d.patriciaTrie.Reset()
-	}
+	//if len(touchedKeys) > 1 {
+	//	d.patriciaTrie.Reset()
+	//}
 	// data accessing functions should be set once before
 	d.patriciaTrie.SetTrace(trace)
 

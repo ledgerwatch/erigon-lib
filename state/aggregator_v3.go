@@ -60,7 +60,6 @@ type AggregatorV3 struct {
 	logTopics        *InvertedIndex
 	tracesFrom       *InvertedIndex
 	backgroundResult *BackgroundResult
-	logPrefix        string
 	dir              string
 	tmpdir           string
 	txNum            atomic.Uint64
@@ -68,7 +67,6 @@ type AggregatorV3 struct {
 	keepInDB         uint64
 
 	minimaxTxNumInFiles atomic.Uint64
-	stepToPrune         atomic.Uint64
 	aggregatedStep      atomic.Uint64
 
 	filesMutationLock sync.Mutex
@@ -135,7 +133,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	}
 	cfg = domainCfg{
 		domainLargeValues: true,
-		hist:              histCfg{withLocalityIndex: false, compressVals: true, historyLargeValues: true}}
+		hist:              histCfg{withLocalityIndex: false, compressVals: false, historyLargeValues: true}}
 	commitd, err := NewDomain(cfg, dir, tmpdir, aggregationStep, "commitment", kv.TblCommitmentKeys, kv.TblCommitmentVals, kv.TblCommitmentHistoryKeys, kv.TblCommitmentHistoryVals, kv.TblCommitmentIdx, logger)
 	if err != nil {
 		return nil, err
@@ -198,6 +196,12 @@ func (a *AggregatorV3) OpenFolder() error {
 		return fmt.Errorf("OpenFolder: %w", err)
 	}
 	a.recalcMaxTxNum()
+	mx := a.minimaxTxNumInFiles.Load()
+	if mx > 0 {
+		mx--
+	}
+	a.aggregatedStep.Store(mx / a.aggregationStep)
+
 	return nil
 }
 func (a *AggregatorV3) OpenList(fNames, warmNames []string) error {
@@ -389,8 +393,6 @@ func (a *AggregatorV3) BuildMissedIndices(ctx context.Context, workers int) erro
 	return nil
 }
 
-func (a *AggregatorV3) SetLogPrefix(v string) { a.logPrefix = v }
-
 func (a *AggregatorV3) SetTx(tx kv.RwTx) {
 	a.rwTx = tx
 	if a.domains != nil {
@@ -410,6 +412,9 @@ func (a *AggregatorV3) SetTx(tx kv.RwTx) {
 func (a *AggregatorV3) GetTxNum() uint64 {
 	return a.txNum.Load()
 }
+
+// SetTxNum sets aggregator's txNum and txNum for all domains
+// Requires for a.rwTx because of commitment evaluation in shared domains if aggregationStep is reached
 func (a *AggregatorV3) SetTxNum(txNum uint64) {
 	a.txNum.Store(txNum)
 	if a.domains != nil {
@@ -495,6 +500,7 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64) error {
 	//log.Warn("[dbg] collate", "step", step)
 
 	closeCollations := true
+	collListMu := sync.Mutex{}
 	collations := make([]Collation, 0)
 	defer func() {
 		if !closeCollations {
@@ -524,7 +530,10 @@ func (a *AggregatorV3) buildFiles(ctx context.Context, step uint64) error {
 			if err != nil {
 				return fmt.Errorf("domain collation %q has failed: %w", d.filenameBase, err)
 			}
+			collListMu.Lock()
 			collations = append(collations, collation)
+			collListMu.Unlock()
+
 			mxCollationSize.Set(uint64(collation.valuesComp.Count()))
 			mxCollationSizeHist.Set(uint64(collation.historyComp.Count()))
 
@@ -674,6 +683,8 @@ func (a *AggregatorV3) mergeLoopStep(ctx context.Context, workers int) (somethin
 }
 
 func (a *AggregatorV3) MergeLoop(ctx context.Context, workers int) error {
+	log.Warn("[dbg] MergeLoop start")
+	defer log.Warn("[dbg] MergeLoop done")
 	for {
 		somethingMerged, err := a.mergeLoopStep(ctx, workers)
 		if err != nil {
@@ -859,17 +870,17 @@ func (ac *AggregatorV3Context) PruneWithTimeout(ctx context.Context, timeout tim
 	cc, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	for s := ac.a.stepToPrune.Load(); s < ac.a.aggregatedStep.Load(); s++ {
-		if err := ac.Prune(cc, s, math2.MaxUint64, tx); err != nil { // prune part of retired data, before commit
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil
-			}
-			return err
-		}
-		if cc.Err() != nil {
+	//for s := ac.a.stepToPrune.Load(); s < ac.a.aggregatedStep.Load(); s++ {
+	if err := ac.Prune(cc, ac.a.aggregatedStep.Load(), math2.MaxUint64, tx); err != nil { // prune part of retired data, before commit
+		if errors.Is(err, context.DeadlineExceeded) {
 			return nil
 		}
+		return err
 	}
+	if cc.Err() != nil {
+		return nil
+	}
+	//}
 	return nil
 }
 
@@ -898,7 +909,7 @@ func (ac *AggregatorV3Context) Prune(ctx context.Context, step, limit uint64, tx
 	defer logEvery.Stop()
 	ac.a.logger.Info("aggregator prune", "step", step,
 		"range", fmt.Sprintf("[%d,%d)", txFrom, txTo), /*"limit", limit,
-		"stepsLimit", limit/ac.a.aggregationStep,*/"stepsRangeInDB", ac.a.StepsRangeInDBAsStr(ac.a.rwTx))
+		"stepsLimit", limit/ac.a.aggregationStep,*/"stepsRangeInDB", ac.a.StepsRangeInDBAsStr(tx))
 
 	if err := ac.accounts.Prune(ctx, tx, step, txFrom, txTo, limit, logEvery); err != nil {
 		return err
@@ -924,7 +935,6 @@ func (ac *AggregatorV3Context) Prune(ctx context.Context, step, limit uint64, tx
 	if err := ac.tracesTo.Prune(ctx, tx, txFrom, txTo, limit, logEvery); err != nil {
 		return err
 	}
-	ac.a.stepToPrune.Store(step + 1)
 	return nil
 }
 

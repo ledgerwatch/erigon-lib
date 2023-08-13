@@ -3,11 +3,22 @@ package state
 import (
 	"bytes"
 	"fmt"
+	"math/bits"
 
 	"github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/compress"
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
+
+type indexSeeker interface {
+	WarmUp(g ArchiveGetter) error
+	SeekWithGetter(g ArchiveGetter, key []byte) (*BpsTreeIterator, error)
+}
+
+type indexSeekerIterator interface {
+	Next() bool
+	Offset() uint64
+	KV(g ArchiveGetter) ([]byte, []byte)
+}
 
 func NewBpsTree(kv ArchiveGetter, offt *eliasfano32.EliasFano, M uint64) *BpsTree {
 	return &BpsTree{M: M, offt: offt, kv: kv}
@@ -20,39 +31,6 @@ type BpsTree struct {
 	M       uint64
 	trace   bool
 	naccess uint64
-}
-
-type getter struct {
-	*compress.Getter
-	c bool // compressed
-}
-
-func NewArchiveGetter(g *compress.Getter, c bool) ArchiveGetter {
-	return &getter{Getter: g, c: c}
-}
-
-func (g *getter) MatchPrefix(prefix []byte) bool {
-	if g.c {
-		return g.Getter.MatchPrefix(prefix)
-	}
-	return g.Getter.MatchPrefixUncompressed(prefix) == 0
-}
-
-func (g *getter) Next(buf []byte) ([]byte, uint64) {
-	if g.c {
-		return g.Getter.Next(buf)
-	}
-	return g.Getter.NextUncompressed()
-}
-
-// ArchiveGetter hides if the underlying compress.Getter is compressed or not
-type ArchiveGetter interface {
-	HasNext() bool
-	FileName() string
-	MatchPrefix(prefix []byte) bool
-	Skip() (uint64, int)
-	Next(buf []byte) ([]byte, uint64)
-	Reset(offset uint64)
 }
 
 type BpsTreeIterator struct {
@@ -195,12 +173,16 @@ func (a *BpsTree) bs(x []byte) (n Node, dl, dr uint64) {
 		for l < r {
 			m = (l + r) >> 1
 			n = a.mx[d][m]
+			if n.i > dr {
+				r = m
+				continue
+			}
 
 			a.naccess++
 			if a.trace {
 				fmt.Printf("smx[%d][%d] i=%d %x\n", d, m, n.i, n.prefix)
 			}
-			switch bytes.Compare(a.mx[d][m].prefix, x) {
+			switch bytes.Compare(n.prefix, x) {
 			case 0:
 				return n, n.i, n.i
 			case 1:
@@ -211,6 +193,7 @@ func (a *BpsTree) bs(x []byte) (n Node, dl, dr uint64) {
 				dl = n.i
 			}
 		}
+
 	}
 	return n, dl, dr
 }
@@ -343,9 +326,7 @@ type trieNode struct {
 
 // trie represents the prefix tree
 type trie struct {
-	root     *trieNode // Root of the trie
-	branches []uint16
-	row      uint64
+	root *trieNode // Root of the trie
 }
 
 // newTrieNode creates a new trie node
@@ -364,78 +345,130 @@ func newTrie() *trie {
 func (t *trie) insert(n Node) {
 	node := t.root
 	key := keybytesToHexNibbles(n.prefix)
+	key = key[:len(key)-1]
+	n.prefix = common.Copy(key)
+
 	fmt.Printf("node insert %x %d\n", key, n.off)
 
 	//pext := 0
-	for pi, b := range key {
-		fmt.Printf("currentKey %x c {%x} common [%x] branch {", key[:pi+1], b, node.common)
+	var b byte
+	for pi := 0; pi < len(key); pi++ {
+		b = key[pi]
+		fmt.Printf("currentKey %x c {%x} common [%x] %b branch\n{", key[:pi+1], b, node.common, node.prefix)
 		for n, t := range node.children {
 			if t != nil {
-				fmt.Printf("\n %x) [%x] size %d", n, t.common, len(t.children))
+				fmt.Printf("\n %x) [%x] childs %d", n, t.common, bits.OnesCount16(t.prefix))
 			}
 		}
-		fmt.Printf("}\n")
+		fmt.Printf("\n}\n")
 
-		if node.prefix&uint16(b) != 0 {
-			// node exists
-			child := node.children[b]
-			if child.common == nil {
-				continue
-			}
-			lc := commonPrefixLen(child.common, key[pi+1:])
-			fmt.Printf("key %x & %x branches at %d %x %x\n", key[:pi+1], child.common, pi+1, key[pi+1:], key[pi+1+lc:])
-
-			if lc > 0 {
-				fmt.Printf("extension %x->%x\n", child.common, key[pi+1:pi+1+lc])
-				child.common = common.Copy(key[pi+1 : pi+1+lc])
-
-				nn := newTrieNode()
-				nn.children[key[pi+1+lc]] = child
-				//pext = pi + 1
-				node.children[b] = nn
-			}
-		} else {
+		if node.prefix == 0 && len(node.common) == 0 {
+			node.common = common.Copy(key[pi:])
+			node.offset = n.off
+			break
+		}
+		if len(node.common) != 0 {
+			// has extension
+			lc := commonPrefixLen(node.common, key[pi+1:])
+			p := node.common[lc]
 			nn := newTrieNode()
-			nn.common = common.Copy(key[pi+1:])
-			nn.offset = n.off
-			fmt.Printf("n %x\n", b)
-			node.children[b] = nn
+			for i := 0; i < len(node.children); i++ {
+				if node.children[i] != nil {
+					nn.children[i] = node.children[i]
+					node.children[i] = nil
+					nn.prefix |= 1 << i
+				}
+			}
+			nn.common = common.Copy(node.common[1:])
+			nn.offset = node.offset
+			node.common = nil
+			node.prefix, node.offset = 0, 0
+
+			node.prefix |= 1 << p
+			node.children[p] = nn
+
+			n1 := newTrieNode()
+			n1.common = common.Copy(key[pi+1 : pi+1+lc])
+			n1.offset = n.off
+			node.children[b] = n1
+			node.prefix |= 1 << uint16(b)
 		}
 
-		//child, found := node.children[b]
-		//if found {
-		//	node = child
-		//	continue
-		//}
-		//
-		//if len(node.common) > 0 {
-		//	lc := commonPrefixLen(node.common, key[pi:])
-		//	fmt.Printf("key %x & %x branches at %d %x %x\n", key[:pi], node.common, pi, key[pi:], key[pi+lc:])
-		//	if lc > 0 {
-		//		fmt.Printf("branches at %d %x %x %x\n", pi, node.common, key[pi:], key[pi+lc:])
-		//		node.common = key[pi : pi+lc]
-		//
-		//		child = newTrieNode()
-		//		child.common = key[pext+lc:]
-		//		pext = pi
-		//		node.children[node.common[0]] = node
-		//	}
-		//}
-		//
-		////child = newTrieNode()
-		////node.children[b] = child
-		//if len(node.children) == 1 {
-		//	node.common = key[pi:]
-		//	child.offset = n.i
-		//	fmt.Printf("insert leaf [%x|%x] %d\n", key[:pi], key[pi:], child.offset)
-		//	break
-		//} else {
-		//	node.common = nil
-		//}
+		if node.prefix&(1<<uint16(b)) != 0 {
+			// node exists
+			node = node.children[b]
+			continue
+		} else {
+			// no branch
 
+		}
+
+		//	if node.prefix&(1<<uint16(b)) != 0 {
+		//		// node exists
+		//		existed := node.children[b]
+		//		if existed.common == nil {
+		//			continue
+		//		}
+		//		lc := commonPrefixLen(existed.common, key[pi+1:])
+		//		fmt.Printf("key ..%x & %x branches at %d: common %x rest %x\n", key[pi+1:], existed.common, lc, key[pi+1:pi+1+lc], key[pi+1+lc:])
+		//
+		//		if lc > 0 {
+		//			fmt.Printf("extension %x->%x\n", existed.common, key[pi+1:pi+1+lc])
+		//			existed.common = common.Copy(key[pi+1 : pi+1+lc])
+		//
+		//			nn := newTrieNode()
+		//			b := key[pi+1+lc]
+		//
+		//			nn.children[b] = existed
+		//			//pext = pi + 1
+		//			node.children[b] = nn
+		//			node.prefix |= 1 << uint16(b)
+		//			pi = pi + lc
+		//		} else {
+		//			nn := newTrieNode()
+		//			nn.common = common.Copy(key[pi+1:])
+		//			nn.offset = n.off
+		//			fmt.Printf("new char %x common %x\n", key[pi+1], nn.common)
+		//			node.children[key[pi+1]] = nn
+		//			node.prefix |= 1 << uint16(key[pi+1])
+		//			break
+		//		}
+		//	} else {
+		//		if len(node.common) != 0 {
+		//			lc := commonPrefixLen(node.common, key[pi:])
+		//			if lc > 0 {
+		//				fmt.Printf("extension %x->%x\n", node.common, key[pi:pi+lc])
+		//				nn := newTrieNode()
+		//				nn.common = common.Copy(key[pi : pi+lc])
+		//				nn.offset = node.offset
+		//				node.common = common.Copy(key[pi+lc:])
+		//				node.offset = 0
+		//				node.prefix = 0
+		//				node.children[key[pi+lc]] = nn
+		//				node.prefix |= 1 << uint16(key[pi+lc])
+		//				pi = pi + lc
+		//			} else {
+		//				nn := newTrieNode()
+		//				nn.common = common.Copy(key[pi:])
+		//				nn.offset = n.off
+		//				fmt.Printf("new char %x common %x\n", b, nn.common)
+		//				node.children[b] = nn
+		//				node.prefix |= 1 << uint16(b)
+		//				break
+		//			}
+		//			continue
+		//		}
+		//		nn := newTrieNode()
+		//		nn.common = common.Copy(key[pi+1:])
+		//		nn.offset = n.off
+		//		fmt.Printf("new char %x common %x\n", b, nn.common)
+		//		node.children[b] = nn
+		//		node.prefix |= 1 << uint16(b)
+		//		break
+		//	}
 	}
 
-	node.offset = n.off
+	//node.offset = n.off
 }
 
 // search finds if a key exists in the prefix tree
@@ -520,6 +553,7 @@ func hasTerm(s []byte) bool {
 
 func commonPrefixLen(a1, b []byte) int {
 	var i int
+	fmt.Printf("matching %x %x\n", a1, b)
 	for i = 0; i < len(a1) && i < len(b); i++ {
 		if a1[i] != b[i] {
 			break
