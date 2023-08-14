@@ -190,6 +190,9 @@ func buildTorrentIfNeed(fName, root string) (err error) {
 	if dir2.FileExist(fPath + ".torrent") {
 		return
 	}
+	if !dir2.FileExist(fPath) {
+		return
+	}
 	info := &metainfo.Info{PieceLength: downloadercfg.DefaultPieceSize, Name: fName}
 	if err := info.BuildFromFilePath(fPath); err != nil {
 		return fmt.Errorf("createTorrentFileFromSegment: %w", err)
