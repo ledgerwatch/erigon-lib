@@ -38,7 +38,8 @@ func BenchmarkName(b *testing.B) {
 		panic(err)
 	}
 
-	enc, bb, err := huff0.ReadTable(bb[8:], nil)
+	s := &huff0.Scratch{OutData: make([]byte, 128), OutTable: make([]byte, 128), Out: make([]byte, 128), MaxDecodedSize: 128}
+	enc, bb, err := huff0.ReadTable(bb[8:], s)
 	if err != nil {
 		panic(err)
 	}
@@ -66,7 +67,6 @@ func BenchmarkName(b *testing.B) {
 	}
 
 	//fmt.Printf("a: %d\n", len(offsets))
-	s := &huff0.Scratch{OutData: make([]byte, 1024), OutTable: make([]byte, 1024), Out: make([]byte, 1024)}
 	s.Reuse = huff0.ReusePolicyMust
 	var remain []byte
 
@@ -75,7 +75,9 @@ func BenchmarkName(b *testing.B) {
 			var prev uint64
 			for _, o := range offsets {
 				s, remain, err = huff0.ReadTable(res[prev:o], s)
-				_, err := s.Decompress1X(remain)
+				s.Out = s.Out[:0:s.MaxDecodedSize]
+				dec := s.Decoder()
+				_, err := dec.Decompress1X(s.Out, remain)
 				if err != nil {
 					panic(err)
 				}
@@ -86,9 +88,11 @@ func BenchmarkName(b *testing.B) {
 	b.Run("12", func(b *testing.B) {
 		//prevJ := 0
 		s, remain, err = huff0.ReadTable(res[offsets[0]:offsets[1]], s)
+		dec := s.Decoder()
 		for i := 0; i < b.N; i++ {
 			//s, remain, err = huff0.ReadTable(res[offsets[prevJ]:offsets[prevJ+1]], s)
-			_, err := s.Decompress1X(remain)
+			s.Out = s.Out[:0:s.MaxDecodedSize]
+			_, err := dec.Decompress1X(s.Out, remain)
 			if err != nil {
 				panic(err)
 			}
