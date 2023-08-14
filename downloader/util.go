@@ -229,7 +229,6 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 		return nil, err
 	}
 	files = append(files, files2...)
-	fmt.Printf("files = %s\n", files)
 
 	errs := make(chan error, len(files)*2)
 	wg := &sync.WaitGroup{}
@@ -242,7 +241,6 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 			return nil, err
 		}
 		go func(f string) {
-			log.Info("File", "name", f)
 			defer i.Add(1)
 			defer sem.Release(1)
 			defer wg.Done()
