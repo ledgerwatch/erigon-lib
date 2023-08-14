@@ -14,7 +14,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
-func BenchmarkDec2(b *testing.B) {
+func BenchmarkZst2(b *testing.B) {
 	dir := filepath.Join(os.TempDir(), "dict")
 	_ = os.RemoveAll(dir)
 	_ = os.Remove(dir + "/1.dict")
@@ -98,7 +98,7 @@ func BenchmarkDec2(b *testing.B) {
 	})
 }
 
-func BenchmarkDec1(b *testing.B) {
+func BenchmarkZst1(b *testing.B) {
 	logger := log.New()
 	tmpDir := b.TempDir()
 	file := filepath.Join(tmpDir, "compressed")
