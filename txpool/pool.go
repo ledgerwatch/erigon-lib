@@ -285,7 +285,7 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs types.TxSlots, tx kv.Tx) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
-	//t := time.Now()
+	t := time.Now()
 
 	cache := p.cache()
 	cache.OnNewBlock(stateChanges)
@@ -357,7 +357,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
-	//p.logger.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
+	p.logger.Info("[txpool] new block", "unwound", len(unwindTxs.Txs), "mined", len(minedTxs.Txs), "baseFee", baseFee, "stateChanges", stateChanges.String())
 
 	announcements, err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
 		pendingBaseFee, stateChanges.BlockGasLimit,
@@ -377,6 +377,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		p.logger.Info("[txpool] Started")
 	}
 
+	p.logger.Info("[txpool] new block", "promoted", p.promoted.Len())
+
 	if p.promoted.Len() > 0 {
 		select {
 		case p.newPendingTxs <- p.promoted.Copy():
@@ -384,7 +386,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	//p.logger.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendngBaseFee", pendingBaseFee, "in", time.Since(t))
+	p.logger.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendingBaseFee", pendingBaseFee, "in", time.Since(t))
 	return nil
 }
 
