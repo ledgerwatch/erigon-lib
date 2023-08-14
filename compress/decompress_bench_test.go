@@ -28,11 +28,12 @@ func BenchmarkDecompressNext(b *testing.B) {
 	t := new(testing.T)
 	d := prepareDict(t)
 	defer d.Close()
-	g := d.MakeGetter()
+	var bb []byte
+	fmt.Printf("cnt: %d\n", d.Count())
 	for i := 0; i < b.N; i++ {
-		_, _ = g.Next(nil)
-		if !g.HasNext() {
-			g.Reset(0)
+		g := d.MakeGetter()
+		for g.HasNext() {
+			bb, _ = g.Next(bb[:0])
 		}
 	}
 }
