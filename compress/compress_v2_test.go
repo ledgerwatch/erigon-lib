@@ -14,7 +14,7 @@ import (
 	"github.com/ledgerwatch/log/v3"
 )
 
-func BenchmarkName(b *testing.B) {
+func BenchmarkDec2(b *testing.B) {
 	dir := filepath.Join(os.TempDir(), "dict")
 	_ = os.RemoveAll(dir)
 	_ = os.Remove(dir + "/1.dict")
@@ -99,72 +99,7 @@ func BenchmarkName(b *testing.B) {
 	})
 }
 
-//func BenchmarkNameBlock(b *testing.B) {
-//	dir := filepath.Join(os.TempDir(), "dict")
-//	_ = os.RemoveAll(dir)
-//	_ = os.Remove(dir + "/1.dict")
-//	_ = os.Mkdir(dir, 0777)
-//	for i := 0; i < 100; i++ {
-//		for k, w := range loremStrings {
-//			x := []byte(fmt.Sprintf("%s_%d", w, i))
-//			if err := os.WriteFile(fmt.Sprintf(dir+"/%d_%d.txt", i, k), x, os.ModePerm); err != nil {
-//				panic(err)
-//			}
-//		}
-//	}
-//	cmd := exec.Command("zstd", "--train", "-o", "1.dict", "--maxdict=10240", "-r", dir)
-//	out, err := cmd.CombinedOutput()
-//	if err != nil {
-//		fmt.Printf("%s\n", out)
-//		panic(err)
-//	}
-//	bb, err := os.ReadFile("1.dict")
-//	if err != nil {
-//		panic(err)
-//	}
-//
-//	enc, bb, err := huff0.ReadTable(bb[8:], nil)
-//	if err != nil {
-//		panic(err)
-//	}
-//	enc.Reuse = huff0.ReusePolicyAllow
-//
-//	//todo: Support ErrUseRLE
-//	//todo: Support ErrIncompressible
-//
-//	var block []byte
-//	for i := 0; i < 1000; i++ {
-//		for _, w := range loremStrings {
-//			block = append(block, []byte(fmt.Sprintf("%s_%d_%s_%d_%s_%d", w, i, w, i, w, i))...)
-//		}
-//	}
-//	out, _, err = huff0.Compress1X(block, enc)
-//	if err != nil {
-//		if errors.Is(err, huff0.ErrIncompressible) {
-//			panic(err)
-//			out = block
-//		} else {
-//			panic(err)
-//		}
-//	}
-//
-//	//fmt.Printf("a: %d\n", len(offsets))
-//	s := &huff0.Scratch{OutData: make([]byte, 1024), OutTable: make([]byte, 1024), Out: make([]byte, 1024)}
-//	s.Reuse = huff0.ReusePolicyMust
-//	var remain []byte
-//
-//	b.Run("31", func(b *testing.B) {
-//		for i := 0; i < b.N; i++ {
-//			s, remain, err = huff0.ReadTable(out, s)
-//			_, err := s.Decompress1X(remain)
-//			if err != nil {
-//				panic(err)
-//			}
-//		}
-//	})
-//}
-
-func BenchmarkName1(b *testing.B) {
+func BenchmarkDec1(b *testing.B) {
 	logger := log.New()
 	tmpDir := b.TempDir()
 	file := filepath.Join(tmpDir, "compressed")
