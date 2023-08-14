@@ -90,17 +90,11 @@ func BenchmarkName(b *testing.B) {
 		s, remain, err = huff0.ReadTable(res[offsets[0]:offsets[1]], s)
 		dec := s.Decoder()
 		for i := 0; i < b.N; i++ {
-			//s, remain, err = huff0.ReadTable(res[offsets[prevJ]:offsets[prevJ+1]], s)
 			s.Out = s.Out[:0:s.MaxDecodedSize]
 			_, err := dec.Decompress1X(s.Out, remain)
 			if err != nil {
 				panic(err)
 			}
-
-			//prevJ++
-			//if prevJ >= len(offsets)-1 {
-			//	prevJ = 0
-			//}
 		}
 	})
 }
