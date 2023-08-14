@@ -395,7 +395,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id uint64) ([]byte, error) {
 	}
 
 	if it != nil {
-		//fmt.Printf("from cache:  %#x,%x\n", k, it.(*Element).V)
+		fmt.Printf("Coherent from cache:  %#x,%x\n", k, it.V)
 		c.hits.Inc()
 		return it.V, nil
 	}
@@ -405,7 +405,7 @@ func (c *Coherent) Get(k []byte, tx kv.Tx, id uint64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	//fmt.Printf("from db: %#x,%x\n", k, v)
+	fmt.Printf("Coherent from db: %#x,%x\n", k, v)
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -455,7 +455,7 @@ func (c *Coherent) add(k, v []byte, r *CoherentRoot, id uint64) *Element {
 	it := &Element{K: k, V: v}
 	replaced, _ := r.cache.Set(it)
 	if c.latestStateVersionID != id {
-		//fmt.Printf("add to non-last viewID: %d<%d\n", c.latestViewID, id)
+		fmt.Printf("Coherent add to non-last viewID: %d<%d\n", c.latestStateVersionID, id)
 		return it
 	}
 	if replaced != nil {
