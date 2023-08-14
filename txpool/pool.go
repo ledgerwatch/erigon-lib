@@ -531,10 +531,12 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	p.logger.Info(fmt.Sprintf("TX TRACING: best begin"))
+	p.logger.Info(fmt.Sprintf("TX TRACING: best begin n=%d", n))
 
 	// First wait for the corresponding block to arrive
-	if p.lastSeenBlock.Load() < onTopOf {
+	lsb := p.lastSeenBlock.Load()
+	if lsb < onTopOf {
+		p.logger.Info(fmt.Sprintf("TX TRACING: best too early lsb=%d, onTopOf=%d", lsb, onTopOf))
 		return false, 0, nil // Too early
 	}
 
