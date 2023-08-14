@@ -70,7 +70,7 @@ func BenchmarkDec2(b *testing.B) {
 	s.Reuse = huff0.ReusePolicyMust
 	var remain []byte
 
-	b.Run("11", func(b *testing.B) {
+	b.Run("all", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			var prev uint64
 			for _, o := range offsets {
@@ -85,8 +85,7 @@ func BenchmarkDec2(b *testing.B) {
 			}
 		}
 	})
-	b.Run("12", func(b *testing.B) {
-		//prevJ := 0
+	b.Run("one", func(b *testing.B) {
 		s, remain, err = huff0.ReadTable(res[offsets[0]:offsets[1]], s)
 		dec := s.Decoder()
 		for i := 0; i < b.N; i++ {
@@ -130,15 +129,16 @@ func BenchmarkDec1(b *testing.B) {
 
 	var bb []byte
 
-	b.Run("21", func(b *testing.B) {
+	b.Run("all", func(b *testing.B) {
+		g := d.MakeGetter()
 		for i := 0; i < b.N; i++ {
-			g := d.MakeGetter()
+			g.Reset(0)
 			for g.HasNext() {
 				bb, _ = g.Next(bb[:0])
 			}
 		}
 	})
-	b.Run("22", func(b *testing.B) {
+	b.Run("one", func(b *testing.B) {
 		g := d.MakeGetter()
 		for i := 0; i < b.N; i++ {
 			bb, _ = g.Next(bb[:0])
