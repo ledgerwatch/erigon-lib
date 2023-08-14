@@ -1113,10 +1113,11 @@ func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges
 		for _, change := range changesList.Changes {
 			switch change.Action {
 			case remote.Action_UPSERT, remote.Action_UPSERT_CODE:
+				addr := gointerfaces.ConvertH160toAddress(change.Address)
 				if change.Incarnation > 0 {
+					fmt.Printf("TX TRACING: addTxsOnNewBlock skipping %x\n", addr)
 					continue
 				}
-				addr := gointerfaces.ConvertH160toAddress(change.Address)
 				id, ok := senders.getID(addr)
 				if !ok {
 					continue
@@ -1984,6 +1985,7 @@ func (sc *sendersBatch) info(cacheView kvcache.CacheView, id uint64) (nonce uint
 		panic("must not happen")
 	}
 	encoded, err := cacheView.Get(addr.Bytes())
+	fmt.Printf("sendersBatch info: %x,%x\n", addr, encoded)
 	if err != nil {
 		return 0, emptySender.balance, err
 	}

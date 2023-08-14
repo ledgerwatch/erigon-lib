@@ -82,7 +82,7 @@ type CacheView interface {
 // mechanism is broken and cache is likely invalidated).
 //
 
-// Pair.Value == nil - is a marker of absense key in db
+// Pair.Value == nil - is a marker of absence key in db
 
 // Coherent
 // High-level guaranties:
@@ -279,7 +279,7 @@ func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 			case remote.Action_UPSERT:
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
 				v := sc.Changes[i].Data
-				//fmt.Printf("set: %x,%x\n", addr, v)
+				fmt.Printf("Coherent OnNewBlock set: %x,%x\n", addr, v)
 				c.add(addr[:], v, r, id)
 			case remote.Action_UPSERT_CODE:
 				addr := gointerfaces.ConvertH160toAddress(sc.Changes[i].Address)
