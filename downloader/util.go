@@ -226,6 +226,7 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 		return nil, err
 	}
 	files = append(files, files2...)
+	fmt.Printf("files = %s\n", files)
 
 	errs := make(chan error, len(files)*2)
 	wg := &sync.WaitGroup{}
