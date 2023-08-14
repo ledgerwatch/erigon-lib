@@ -17,6 +17,7 @@ package kvcache
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -32,9 +33,11 @@ func NewDummy() *DummyCache { return &DummyCache{} }
 func (c *DummyCache) View(_ context.Context, tx kv.Tx) (CacheView, error) {
 	return &DummyView{cache: c, tx: tx}, nil
 }
-func (c *DummyCache) OnNewBlock(sc *remote.StateChangeBatch) {}
-func (c *DummyCache) Evict() int                             { return 0 }
-func (c *DummyCache) Len() int                               { return 0 }
+func (c *DummyCache) OnNewBlock(sc *remote.StateChangeBatch) {
+	fmt.Printf("DummyCache OnNewBlock\n")
+}
+func (c *DummyCache) Evict() int { return 0 }
+func (c *DummyCache) Len() int   { return 0 }
 func (c *DummyCache) Get(k []byte, tx kv.Tx, id uint64) ([]byte, error) {
 	return tx.GetOne(kv.PlainState, k)
 }

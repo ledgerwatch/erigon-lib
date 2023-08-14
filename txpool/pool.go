@@ -287,6 +287,8 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	defer newBlockTimer.UpdateDuration(time.Now())
 	t := time.Now()
 
+	p.logger.Info("[txpool] new block", "unwound", len(unwindTxs.Txs), "mined", len(minedTxs.Txs), "stateChanges", stateChanges.String())
+
 	cache := p.cache()
 	cache.OnNewBlock(stateChanges)
 	coreTx, err := p.coreDB().BeginRo(ctx)
@@ -356,8 +358,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	if err := removeMined(p.all, minedTxs.Txs, p.pending, p.baseFee, p.queued, p.discardLocked, p.logger); err != nil {
 		return err
 	}
-
-	p.logger.Info("[txpool] new block", "unwound", len(unwindTxs.Txs), "mined", len(minedTxs.Txs), "baseFee", baseFee, "stateChanges", stateChanges.String())
 
 	announcements, err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
 		pendingBaseFee, stateChanges.BlockGasLimit,

@@ -270,6 +270,9 @@ func (c *Coherent) advanceRoot(stateVersionID uint64) (r *CoherentRoot) {
 func (c *Coherent) OnNewBlock(stateChanges *remote.StateChangeBatch) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	fmt.Printf("Coherent OnNewBlock\n")
+
 	c.waitExceededCount.Store(0) // reset the circuit breaker
 	id := stateChanges.StateVersionId
 	r := c.advanceRoot(id)
