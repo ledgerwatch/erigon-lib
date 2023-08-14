@@ -1390,15 +1390,20 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 // being promoted to the pending or basefee pool, for re-broadcasting
 func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint64, discard func(*metaTx, txpoolcfg.DiscardReason), announcements *types.Announcements,
 	logger log.Logger) {
+	logger.Info("TX TRACING: promote", "pending", pending.Len(), "queued", queued.Len(), "baseFee", baseFee.Len())
+
 	// Demote worst transactions that do not qualify for pending sub pool anymore, to other sub pools, or discard
 	for worst := pending.Worst(); pending.Len() > 0 && (worst.subPool < BaseFeePoolBits || worst.minFeeCap.Cmp(uint256.NewInt(pendingBaseFee)) < 0); worst = pending.Worst() {
 		if worst.subPool >= BaseFeePoolBits {
+			logger.Info("TX TRACING: worst A")
 			tx := pending.PopWorst()
 			announcements.Append(tx.Tx.Type, tx.Tx.Size, tx.Tx.IDHash[:])
 			baseFee.Add(tx, logger)
 		} else if worst.subPool >= QueuedPoolBits {
+			logger.Info("TX TRACING: worst B")
 			queued.Add(pending.PopWorst(), logger)
 		} else {
+			logger.Info("TX TRACING: worst C")
 			discard(pending.PopWorst(), txpoolcfg.FeeTooLow)
 		}
 	}
@@ -1414,8 +1419,10 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 	// Demote worst transactions that do not qualify for base fee pool anymore, to queued sub pool, or discard
 	for worst := baseFee.Worst(); baseFee.Len() > 0 && worst.subPool < BaseFeePoolBits; worst = baseFee.Worst() {
 		if worst.subPool >= QueuedPoolBits {
+			logger.Info("TX TRACING: worst D")
 			queued.Add(baseFee.PopWorst(), logger)
 		} else {
+			logger.Info("TX TRACING: worst E")
 			discard(baseFee.PopWorst(), txpoolcfg.FeeTooLow)
 		}
 	}
@@ -1435,21 +1442,25 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 
 	// Discard worst transactions from the queued sub pool if they do not qualify
 	for worst := queued.Worst(); queued.Len() > 0 && worst.subPool < QueuedPoolBits; worst = queued.Worst() {
+		logger.Info("TX TRACING: worst F")
 		discard(queued.PopWorst(), txpoolcfg.FeeTooLow)
 	}
 
 	// Discard worst transactions from pending pool until it is within capacity limit
 	for pending.Len() > pending.limit {
+		logger.Info("TX TRACING: worst G")
 		discard(pending.PopWorst(), txpoolcfg.PendingPoolOverflow)
 	}
 
 	// Discard worst transactions from pending sub pool until it is within capacity limits
 	for baseFee.Len() > baseFee.limit {
+		logger.Info("TX TRACING: worst H")
 		discard(baseFee.PopWorst(), txpoolcfg.BaseFeePoolOverflow)
 	}
 
 	// Discard worst transactions from the queued sub pool until it is within its capacity limits
 	for _ = queued.Worst(); queued.Len() > queued.limit; _ = queued.Worst() {
+		logger.Info("TX TRACING: worst I")
 		discard(queued.PopWorst(), txpoolcfg.QueuedPoolOverflow)
 	}
 }
