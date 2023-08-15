@@ -381,8 +381,11 @@ func (c *Coherent) getFromCache(k []byte, id uint64, code bool) (*Element, *Cohe
 		it, _ = r.codeCache.Get(&Element{K: k})
 	} else {
 		it, _ = r.cache.Get(&Element{K: k})
-		fmt.Printf("Coherent cache get:  %#x,%x\n", it.K, it.V)
-
+		if it != nil {
+			fmt.Printf("Coherent cache get:  %#x,%x\n", it.K, it.V)
+		} else {
+			fmt.Printf("Coherent cache get: nil\n")
+		}
 	}
 	if it != nil && isLatest {
 		c.stateEvict.MoveToFront(it)
