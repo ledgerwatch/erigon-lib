@@ -460,14 +460,18 @@ func (c *Coherent) removeOldestCode(r *CoherentRoot) {
 func (c *Coherent) add(k, v []byte, r *CoherentRoot, id uint64) *Element {
 	it := &Element{K: k, V: v}
 	replaced, _ := r.cache.Set(it)
-	fmt.Printf("Coherent cache set %x %x\n", k, v)
+	fmt.Printf("Coherent cache set %#x %x\n", k, v)
 	if c.latestStateVersionID != id {
 		fmt.Printf("Coherent add to non-last viewID: %d<%d\n", c.latestStateVersionID, id)
 		return it
 	}
 	if replaced != nil {
+		fmt.Printf("Coherent cache replaced:  %#x,%x\n", replaced.K, replaced.V)
 		c.stateEvict.Remove(replaced)
 	}
+	it2, _ := r.cache.Get(&Element{K: k})
+	fmt.Printf("Coherent cache sanity:  %#x,%x\n", it2.K, it2.V)
+
 	c.stateEvict.PushFront(it)
 
 	// clear down cache until size below the configured limit
