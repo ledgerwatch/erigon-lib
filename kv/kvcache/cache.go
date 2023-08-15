@@ -229,7 +229,7 @@ func (c *Coherent) advanceRoot(stateVersionID uint64) (r *CoherentRoot) {
 	}
 
 	if prevView, ok := c.roots[stateVersionID-1]; ok && prevView.isCanonical {
-		//log.Info("advance: clone", "from", viewID-1, "to", viewID)
+		fmt.Printf("Coherent advance: clone from, %d, to %d\n", stateVersionID-1, stateVersionID)
 		r.cache = prevView.cache.Copy()
 		r.codeCache = prevView.codeCache.Copy()
 	} else {
@@ -381,6 +381,8 @@ func (c *Coherent) getFromCache(k []byte, id uint64, code bool) (*Element, *Cohe
 		it, _ = r.codeCache.Get(&Element{K: k})
 	} else {
 		it, _ = r.cache.Get(&Element{K: k})
+		fmt.Printf("Coherent cache get:  %#x,%x\n", it.K, it.V)
+
 	}
 	if it != nil && isLatest {
 		c.stateEvict.MoveToFront(it)
@@ -441,6 +443,7 @@ func (c *Coherent) removeOldest(r *CoherentRoot) {
 	e := c.stateEvict.Oldest()
 	if e != nil {
 		c.stateEvict.Remove(e)
+		fmt.Printf("Coherent cache delete %x\n", e.K)
 		r.cache.Delete(e)
 	}
 }
@@ -454,6 +457,7 @@ func (c *Coherent) removeOldestCode(r *CoherentRoot) {
 func (c *Coherent) add(k, v []byte, r *CoherentRoot, id uint64) *Element {
 	it := &Element{K: k, V: v}
 	replaced, _ := r.cache.Set(it)
+	fmt.Printf("Coherent cache set %x %x\n", k, v)
 	if c.latestStateVersionID != id {
 		fmt.Printf("Coherent add to non-last viewID: %d<%d\n", c.latestStateVersionID, id)
 		return it
