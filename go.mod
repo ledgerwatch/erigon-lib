@@ -112,4 +112,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/tidwall/btree => github.com/yperbasis/btree v0.0.0-20230816123312-6f3231a61cb5
+replace github.com/tidwall/btree => github.com/yperbasis/btree v0.0.0-20230816124228-83041360fbab
