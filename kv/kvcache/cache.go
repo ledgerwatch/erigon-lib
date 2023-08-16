@@ -236,7 +236,7 @@ func (c *Coherent) advanceRoot(stateVersionID uint64) (r *CoherentRoot) {
 		c.stateEvict.Init()
 		c.codeEvict.Init()
 		if r.cache == nil {
-			//log.Info("advance: new", "to", viewID)
+			fmt.Printf("Coherent advance: new to, %d\n", stateVersionID)
 			r.cache = btree2.NewBTreeG[*Element](Less)
 			r.codeCache = btree2.NewBTreeG[*Element](Less)
 		} else {
@@ -609,6 +609,7 @@ func (c *Coherent) ValidateCurrentRoot(ctx context.Context, tx kv.Tx) (*CacheVal
 func (c *Coherent) cloneCaches(r *CoherentRoot) (cache *btree2.BTreeG[*Element], codeCache *btree2.BTreeG[*Element]) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	fmt.Printf("cloneCaches\n")
 	cache = r.cache.Copy()
 	codeCache = r.codeCache.Copy()
 	return cache, codeCache
@@ -617,6 +618,7 @@ func (c *Coherent) cloneCaches(r *CoherentRoot) (cache *btree2.BTreeG[*Element],
 func (c *Coherent) clearCaches(r *CoherentRoot) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	fmt.Printf("clearCaches\n")
 	r.cache.Clear()
 	r.codeCache.Clear()
 }
