@@ -33,6 +33,7 @@ import (
 
 	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
 	dir2 "github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/etl"
 	"github.com/ledgerwatch/log/v3"
@@ -306,11 +307,17 @@ func dictionaryBuilderLess(i, j *Pattern) bool {
 	}
 	return i.score < j.score
 }
+func dictionaryBuilderCmp(i, j *Pattern) int {
+	if i.score == j.score {
+		return bytes.Compare(i.word, j.word)
+	}
+	return cmp.Compare(i.score, j.score)
+}
 
 func (db *DictionaryBuilder) Swap(i, j int) {
 	db.items[i], db.items[j] = db.items[j], db.items[i]
 }
-func (db *DictionaryBuilder) Sort() { slices.SortFunc(db.items, dictionaryBuilderLess) }
+func (db *DictionaryBuilder) Sort() { slices.SortFunc(db.items, dictionaryBuilderCmp) }
 
 func (db *DictionaryBuilder) Push(x interface{}) {
 	db.items = append(db.items, x.(*Pattern))
@@ -388,6 +395,12 @@ func patternListLess(i, j *Pattern) bool {
 		return bits.Reverse64(i.code) < bits.Reverse64(j.code)
 	}
 	return i.uses < j.uses
+}
+func patternListCmp(i, j *Pattern) int {
+	if i.uses == j.uses {
+		return cmp.Compare(bits.Reverse64(i.code), bits.Reverse64(j.code))
+	}
+	return cmp.Compare(i.uses, j.uses)
 }
 
 // PatternHuff is an intermediate node in a huffman tree of patterns
@@ -560,6 +573,12 @@ func positionListLess(i, j *Position) bool {
 		return bits.Reverse64(i.code) < bits.Reverse64(j.code)
 	}
 	return i.uses < j.uses
+}
+func positionListCmp(i, j *Position) int {
+	if i.uses == j.uses {
+		return cmp.Compare(bits.Reverse64(i.code), bits.Reverse64(j.code))
+	}
+	return cmp.Compare(i.uses, j.uses)
 }
 
 type PositionHeap []*PositionHuff

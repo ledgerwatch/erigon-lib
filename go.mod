@@ -14,9 +14,9 @@ require (
 	github.com/RoaringBitmap/roaring v1.2.3
 	github.com/VictoriaMetrics/metrics v1.23.1
 	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444
-	github.com/anacrolix/go-libutp v1.3.0
-	github.com/anacrolix/log v0.14.0
-	github.com/anacrolix/torrent v1.52.0
+	github.com/anacrolix/go-libutp v1.3.1
+	github.com/anacrolix/log v0.14.1
+	github.com/anacrolix/torrent v1.52.5
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/crate-crypto/go-kzg-4844 v0.3.0
 	github.com/deckarep/golang-set/v2 v2.3.0
@@ -33,7 +33,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/tidwall/btree v1.6.0
 	golang.org/x/crypto v0.12.0
-	golang.org/x/exp v0.0.0-20230711023510-fffb14384f22
+	golang.org/x/exp v0.0.0-20230811145659-89c5cff77bcb
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.11.0
 	golang.org/x/time v0.3.0

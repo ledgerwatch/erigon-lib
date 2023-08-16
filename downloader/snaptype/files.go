@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	cmp2 "github.com/ledgerwatch/erigon-lib/common/cmp"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"golang.org/x/exp/slices"
 )
@@ -212,20 +213,24 @@ func ParseDir(dir string) (res []FileInfo, err error) {
 		}
 		res = append(res, meta)
 	}
-	slices.SortFunc(res, func(i, j FileInfo) bool {
-		if i.Version != j.Version {
-			return i.Version < j.Version
+	slices.SortFunc(res, func(i, j FileInfo) int {
+		cmp := cmp2.Compare(i.Version, j.Version)
+		if cmp != 0 {
+			return cmp
 		}
-		if i.From != j.From {
-			return i.From < j.From
+		cmp = cmp2.Compare(i.From, j.From)
+		if cmp != 0 {
+			return cmp
 		}
-		if i.To != j.To {
-			return i.To < j.To
+		cmp = cmp2.Compare(i.To, j.To)
+		if cmp != 0 {
+			return cmp
 		}
-		if i.T != j.T {
-			return i.T < j.T
+		cmp = cmp2.Compare(i.T, j.T)
+		if cmp != 0 {
+			return cmp
 		}
-		return i.Ext < j.Ext
+		return cmp2.Compare(i.Ext, j.Ext)
 	})
 
 	return res, nil
