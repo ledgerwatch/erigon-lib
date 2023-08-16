@@ -111,3 +111,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/tidwall/btree v1.6.0 => github.com/yperbasis/btree v0.0.0-20230816120319-938fc32dd083
