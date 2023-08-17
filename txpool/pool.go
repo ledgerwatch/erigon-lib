@@ -28,6 +28,7 @@ import (
 	"math"
 	"math/big"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -288,6 +289,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	t := time.Now()
 
 	p.logger.Info("[txpool] new block", "unwound", len(unwindTxs.Txs), "mined", len(minedTxs.Txs), "stateChanges", stateChanges.String())
+	debug.PrintStack()
 
 	cache := p.cache()
 	cache.OnNewBlock(stateChanges)
