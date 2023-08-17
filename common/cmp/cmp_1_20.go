@@ -14,6 +14,8 @@
    limitations under the License.
 */
 
+//nolint
+
 package cmp
 
 // Copy-Paste of golang's 1.21.0 `cmp` package
