@@ -301,12 +301,6 @@ func (db *DictionaryBuilder) Less(i, j int) bool {
 	return db.items[i].score < db.items[j].score
 }
 
-func dictionaryBuilderLess(i, j *Pattern) bool {
-	if i.score == j.score {
-		return bytes.Compare(i.word, j.word) < 0
-	}
-	return i.score < j.score
-}
 func dictionaryBuilderCmp(i, j *Pattern) int {
 	if i.score == j.score {
 		return bytes.Compare(i.word, j.word)
@@ -390,12 +384,6 @@ type Pattern struct {
 type PatternList []*Pattern
 
 func (pl PatternList) Len() int { return len(pl) }
-func patternListLess(i, j *Pattern) bool {
-	if i.uses == j.uses {
-		return bits.Reverse64(i.code) < bits.Reverse64(j.code)
-	}
-	return i.uses < j.uses
-}
 func patternListCmp(i, j *Pattern) int {
 	if i.uses == j.uses {
 		return cmp.Compare(bits.Reverse64(i.code), bits.Reverse64(j.code))
@@ -568,12 +556,6 @@ type PositionList []*Position
 
 func (pl PositionList) Len() int { return len(pl) }
 
-func positionListLess(i, j *Position) bool {
-	if i.uses == j.uses {
-		return bits.Reverse64(i.code) < bits.Reverse64(j.code)
-	}
-	return i.uses < j.uses
-}
 func positionListCmp(i, j *Position) int {
 	if i.uses == j.uses {
 		return cmp.Compare(bits.Reverse64(i.code), bits.Reverse64(j.code))
