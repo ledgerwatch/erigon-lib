@@ -95,12 +95,13 @@ type Pool interface {
 
 var _ Pool = (*TxPool)(nil) // compile-time interface check
 
-// SubPoolMarker ordered bitset responsible to sort transactions by sub-pools. Bits meaning:
+// SubPoolMarker is an ordered bitset of six bits that's used to sort transactions into sub-pools. Bits meaning:
 // 1. Minimum fee requirement. Set to 1 if feeCap of the transaction is no less than in-protocol parameter of minimal base fee. Set to 0 if feeCap is less than minimum base fee, which means this transaction will never be included into this particular chain.
 // 2. Absence of nonce gaps. Set to 1 for transactions whose nonce is N, state nonce for the sender is M, and there are transactions for all nonces between M and N from the same sender. Set to 0 is the transaction's nonce is divided from the state nonce by one or more nonce gaps.
 // 3. Sufficient balance for gas. Set to 1 if the balance of sender's account in the state is B, nonce of the sender in the state is M, nonce of the transaction is N, and the sum of feeCap x gasLimit + transferred_value of all transactions from this sender with nonces N+1 ... M is no more than B. Set to 0 otherwise. In other words, this bit is set if there is currently a guarantee that the transaction and all its required prior transactions will be able to pay for gas.
-// 4. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than baseFee of the currently pending block. Set to 0 otherwise.
-// 5. Local transaction. Set to 1 if transaction is local.
+// 4. Not too much gas: Set to 1 if the transaction doesn't use too much gas
+// 5. Dynamic fee requirement. Set to 1 if feeCap of the transaction is no less than baseFee of the currently pending block. Set to 0 otherwise.
+// 6. Local transaction. Set to 1 if transaction is local.
 type SubPoolMarker uint8
 
 const (
@@ -183,7 +184,7 @@ func calcProtocolBaseFee(baseFee uint64) uint64 {
 // most of logic implemented by pure tests-friendly functions
 //
 // txpool doesn't start any goroutines - "leave concurrency to user" design
-// txpool has no DB or TX fields - "leave db transactions management to user" design
+// txpool has no DB-TX fields - "leave db transactions management to user" design
 // txpool has _chainDB field - but it must maximize local state cache hit-rate - and perform minimum _chainDB transactions
 //
 // It preserve TxSlot objects immutable
@@ -194,13 +195,13 @@ type TxPool struct {
 	recentlyConnectedPeers *recentlyConnectedPeers // all txs will be propagated to this peers eventually, and clear list
 	senders                *sendersBatch
 	// batch processing of remote transactions
-	// handling works fast without batching, but batching allow:
-	//   - reduce amount of _chainDB transactions
-	//   - batch notifications about new txs (reduce P2P spam to other nodes about txs propagation)
+	// handling is fast enough without batching, but batching allows:
+	//   - fewer _chainDB transactions
+	//   - batch notifications about new txs (reduced P2P spam to other nodes about txs propagation)
 	//   - and as a result reducing lock contention
 	unprocessedRemoteTxs    *types.TxSlots
 	unprocessedRemoteByHash map[string]int                                  // to reject duplicates
-	byHash                  map[string]*metaTx                              // tx_hash => tx : only not committed to db yet records
+	byHash                  map[string]*metaTx                              // tx_hash => tx : only those records not committed to db yet
 	discardReasonsLRU       *simplelru.LRU[string, txpoolcfg.DiscardReason] // tx_hash => discard_reason : non-persisted
 	pending                 *PendingPool
 	baseFee                 *SubPool
@@ -531,7 +532,7 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	// First wait for the corresponding block to arrive
+	// First wait for the corresponding block to arrive	
 	if p.lastSeenBlock.Load() < onTopOf {
 		return false, 0, nil // Too early
 	}
@@ -554,11 +555,13 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		if toSkip.Contains(mt.Tx.IDHash) {
 			continue
 		}
-
+		
 		if mt.Tx.Gas >= p.blockGasLimit.Load() {
 			// Skip transactions with very large gas limit
 			continue
 		}
+
+		// TODO: is this unnecessary?
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
 		if err != nil {
 			return false, count, err
@@ -588,7 +591,7 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		txs.Txs[count] = rlpTx
 		copy(txs.Senders.At(count), sender.Bytes())
 		txs.IsLocal[count] = isLocal
-		toSkip.Add(mt.Tx.IDHash)
+		toSkip.Add(mt.Tx.IDHash)		// TODO: Is this unnecessary
 		count++
 	}
 
@@ -724,7 +727,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 
 	// check nonce and balance
 	senderNonce, senderBalance, _ := p.senders.info(stateCache, txn.SenderID)
-	if senderNonce > txn.Nonce {
+	if senderNonce > txn.Nonce {  // TODO: But this way replacement transactions would be hung out to dry
 		if txn.Traced {
 			p.logger.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IDHash, senderNonce, txn.Nonce))
 		}
@@ -824,6 +827,7 @@ func (p *TxPool) isCancun() bool {
 	return activated
 }
 
+// Check that that the serialized txn should not exceed a certain max size
 func (p *TxPool) ValidateSerializedTxn(serializedTxn []byte) error {
 	const (
 		// txSlotSize is used to calculate how many data slots a single transaction
@@ -1040,7 +1044,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			discardReasons[i] = reason
 			continue
 		}
-		discardReasons[i] = txpoolcfg.NotSet
+		discardReasons[i] = txpoolcfg.NotSet	// unnecessary
 		if txn.Traced {
 			logger.Info(fmt.Sprintf("TX TRACING: schedule sendersWithChangedState idHash=%x senderId=%d", txn.IDHash, mt.Tx.SenderID))
 		}
@@ -1061,6 +1065,8 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 
 	return announcements, discardReasons, nil
 }
+
+// TODO: What does this do? Looks like a copy of the above
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges *remote.StateChangeBatch,
 	senders *sendersBatch, newTxs types.TxSlots, pendingBaseFee uint64, blockGasLimit uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
@@ -2136,7 +2142,7 @@ func NewPendingSubPool(t SubPoolType, limit int) *PendingPool {
 	return &PendingPool{limit: limit, t: t, best: &bestSlice{ms: []*metaTx{}}, worst: &WorstQueue{ms: []*metaTx{}}}
 }
 
-// bestSlice - is similar to best queue, but with O(n log n) complexity and
+// bestSlice - is similar to best queue, but uses a linear structure with O(n log n) sort complexity and
 // it maintains element.bestIndex field
 type bestSlice struct {
 	ms             []*metaTx
