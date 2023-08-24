@@ -3,11 +3,11 @@ module github.com/ledgerwatch/erigon-lib
 go 1.19
 
 require (
+	github.com/erigontech/mdbx-go v0.27.13
 	github.com/ledgerwatch/interfaces v0.0.0-20230818152001-a8f70b6e9ac6
 	github.com/ledgerwatch/log/v3 v3.9.0
 	github.com/ledgerwatch/secp256k1 v1.0.0
 	github.com/ledgerwatch/trackerslist v1.1.0
-	github.com/torquem-ch/mdbx-go v0.27.10
 )
 
 require (
@@ -15,7 +15,7 @@ require (
 	github.com/VictoriaMetrics/metrics v1.23.1
 	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444
 	github.com/anacrolix/go-libutp v1.3.1
-	github.com/anacrolix/log v0.14.1
+	github.com/anacrolix/log v0.14.2
 	github.com/anacrolix/torrent v1.52.6-0.20230816110201-613470861e67
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/crate-crypto/go-kzg-4844 v0.3.0
