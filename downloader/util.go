@@ -44,7 +44,8 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-var bestUdpOrHttpTrackers = []string{
+// Our torrent library spawning several goroutines and producing many requests for each tracker. So we limit amout of trackers by 7
+var udpOrHttpTrackers = []string{
 	"udp://tracker.opentrackr.org:1337/announce",
 	"udp://9.rarbg.com:2810/announce",
 	"udp://tracker.openbittorrent.com:6969/announce",
@@ -56,14 +57,14 @@ var bestUdpOrHttpTrackers = []string{
 }
 
 // nolint
-var bestWSTrackers = []string{
+var websockerTrackers = []string{
 	"wss://tracker.btorrent.xyz",
 }
 
 // Trackers - break down by priority tier
 var Trackers = [][]string{
-	bestUdpOrHttpTrackers,
-	//bestWSTrackers // TODO: Ws protocol producing too many errors and flooding logs. But it's also very fast and reactive.
+	udpOrHttpTrackers,
+	//websockerTrackers // TODO: Ws protocol producing too many errors and flooding logs. But it's also very fast and reactive.
 }
 
 func AllTorrentPaths(dir string) ([]string, error) {
