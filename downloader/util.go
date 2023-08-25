@@ -57,14 +57,14 @@ var udpOrHttpTrackers = []string{
 }
 
 // nolint
-var websockerTrackers = []string{
+var websocketTrackers = []string{
 	"wss://tracker.btorrent.xyz",
 }
 
 // Trackers - break down by priority tier
 var Trackers = [][]string{
 	udpOrHttpTrackers,
-	//websockerTrackers // TODO: Ws protocol producing too many errors and flooding logs. But it's also very fast and reactive.
+	//websocketTrackers // TODO: Ws protocol producing too many errors and flooding logs. But it's also very fast and reactive.
 }
 
 func AllTorrentPaths(dir string) ([]string, error) {
