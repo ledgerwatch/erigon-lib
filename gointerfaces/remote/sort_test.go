@@ -3,10 +3,11 @@ package remote_test
 import (
 	"testing"
 
-	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
-	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/exp/slices"
+
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 )
 
 func TestSort(t *testing.T) {
@@ -49,7 +50,7 @@ func TestSort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			slices.SortFunc(tt.got.NodesInfo, remote.NodeInfoReplyLess)
+			slices.SortFunc(tt.got.NodesInfo, remote.NodeInfoReplyCmp)
 			assert.Equal(t, tt.want, tt.got)
 		})
 	}

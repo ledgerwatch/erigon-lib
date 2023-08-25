@@ -36,6 +36,9 @@ var (
 // Address represents the 20 byte address of an Ethereum account.
 type Address [length.Addr]byte
 
+// Cmp compares two addresses.
+func (a Address) Cmp(other Address) int { return bytes.Compare(a[:], other[:]) }
+
 // BytesToAddress returns Address with value b.
 // If b is larger than len(h), b will be cropped from the left.
 func BytesToAddress(b []byte) Address {

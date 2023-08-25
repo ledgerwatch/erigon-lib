@@ -322,6 +322,7 @@ func (m *IntersectIter[T]) advanceX() {
 	}
 }
 func (m *IntersectIter[T]) advanceY() {
+
 	if m.err != nil {
 		return
 	}

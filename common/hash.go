@@ -39,6 +39,9 @@ const (
 // Hash represents the 32 byte Keccak256 hash of arbitrary data.
 type Hash [length.Hash]byte
 
+// Cmp compares two hashes.
+func (h Hash) Cmp(other Hash) int { return bytes.Compare(h[:], other[:]) }
+
 // BytesToHash sets b to hash.
 // If b is larger than len(h), b will be cropped from the left.
 func BytesToHash(b []byte) Hash {

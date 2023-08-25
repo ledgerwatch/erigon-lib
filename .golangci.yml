@@ -40,6 +40,7 @@ linters-settings:
 
     # Which checks should be disabled; can't be combined with 'enabled-checks'; default is empty
     disabled-checks:
+      - dupSubExpr
       - regexpMust
       #      - hugeParam
       - rangeValCopy
