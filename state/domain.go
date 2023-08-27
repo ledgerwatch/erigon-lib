@@ -180,9 +180,7 @@ func (b *bloomFilter) FileName() string { return b.fileName }
 
 func (b *bloomFilter) Build() error {
 	//TODO: fsync and tmp-file rename
-	var mm runtime.MemStats
-	dbg.ReadMemStats(&mm)
-	log.Info("[bloom] before ", "alloc", common.ByteCount(mm.Alloc), "sys", common.ByteCount(mm.Sys))
+	log.Info("[bloom] size", "size", b.Filter.M()/8/1024/1024)
 	if _, err := b.Filter.WriteFile(b.filePath); err != nil {
 		return err
 	}
