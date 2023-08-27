@@ -27,7 +27,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -37,7 +36,6 @@ import (
 	"github.com/VictoriaMetrics/metrics"
 	bloomfilter "github.com/holiman/bloomfilter/v2"
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/pkg/errors"
 	btree2 "github.com/tidwall/btree"
 	"golang.org/x/sync/errgroup"
@@ -137,24 +135,24 @@ func (b *xorFilter) Add(v uint64)     { b.l = append(b.l, v) }
 func (b *xorFilter) FileName() string { return b.fileName }
 
 func (b *xorFilter) Build() (err error) {
-	var m runtime.MemStats
-	dbg.ReadMemStats(&m)
-	log.Info("[xorFilter] before", "elements", len(b.l), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	//var m runtime.MemStats
+	//dbg.ReadMemStats(&m)
+	//log.Info("[xorFilter] before", "elements", len(b.l), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	b.binfuse, err = xorfilter.PopulateBinaryFuse8(b.l)
 	if err != nil {
 		return err
 	}
-	log.Info("[xorFilter] after bin fuse", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	//log.Info("[xorFilter] after bin fuse", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	b.fuse, err = xorfilter.PopulateFuse8(b.l)
 	if err != nil {
 		return err
 	}
-	log.Info("[xorFilter] after  fuse", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	//log.Info("[xorFilter] after  fuse", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	b.x, err = xorfilter.Populate(b.l)
 	if err != nil {
 		return err
 	}
-	log.Info("[xorFilter] after xor", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	//log.Info("[xorFilter] after xor", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
 	log.Info("[xorFilter] stats", "fname", b.FileName(), "bf", len(b.binfuse.Fingerprints)*8/1024/1024, "f", len(b.fuse.Fingerprints)*8/1024/1024, "xor", len(b.x.Fingerprints)*8/1024/1024)
 	//b.binfuse.Fingerprints
 	//TODO: fsync and tmp-file rename

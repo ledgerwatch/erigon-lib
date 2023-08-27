@@ -459,9 +459,9 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, fromStep, toStep uint64
 			if err := dense.AddArray(i, inSteps); err != nil {
 				return nil, err
 			}
-			if err = rs.AddKey(k, i); err != nil {
-				return nil, err
-			}
+			//if err = rs.AddKey(k, i); err != nil {
+			//	return nil, err
+			//}
 			i++
 			p.Processed.Add(1)
 		}
