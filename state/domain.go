@@ -27,14 +27,17 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/FastFilter/xorfilter"
 	"github.com/VictoriaMetrics/metrics"
 	bloomfilter "github.com/holiman/bloomfilter/v2"
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"github.com/pkg/errors"
 	btree2 "github.com/tidwall/btree"
 	"golang.org/x/sync/errgroup"
@@ -98,6 +101,7 @@ type filesItem struct {
 	bindex       *BtIndex
 	bm           *bitmapdb.FixedSizeBitmaps
 	bloom        *bloomFilter
+	xorf         *xorfilter.BinaryFuse8
 	startTxNum   uint64
 	endTxNum     uint64
 
@@ -116,6 +120,49 @@ type bloomFilter struct {
 	fileName, filePath string
 	f                  *os.File
 }
+type xorFilter struct {
+	fuse               *xorfilter.Fuse8
+	binfuse            *xorfilter.BinaryFuse8
+	x                  *xorfilter.Xor8
+	l                  []uint64
+	fileName, filePath string
+	f                  *os.File
+}
+
+func NewXorFilter(filePath string) (*xorFilter, error) {
+	_, fileName := filepath.Split(filePath)
+	return &xorFilter{filePath: filePath, fileName: fileName}, nil
+}
+func (b *xorFilter) Add(v uint64)     { b.l = append(b.l, v) }
+func (b *xorFilter) FileName() string { return b.fileName }
+
+func (b *xorFilter) Build() (err error) {
+	var m runtime.MemStats
+	dbg.ReadMemStats(&m)
+	log.Info("[xorFilter] before", "elements", len(b.l), "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	b.binfuse, err = xorfilter.PopulateBinaryFuse8(b.l)
+	if err != nil {
+		return err
+	}
+	log.Info("[xorFilter] after bin fuse", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	b.fuse, err = xorfilter.PopulateFuse8(b.l)
+	if err != nil {
+		return err
+	}
+	log.Info("[xorFilter] after  fuse", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	b.x, err = xorfilter.Populate(b.l)
+	if err != nil {
+		return err
+	}
+	log.Info("[xorFilter] after xor", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
+	log.Info("[xorFilter] stats", "fname", b.fileName, "bf", len(b.binfuse.Fingerprints)*8/1024/1024, "f", len(b.fuse.Fingerprints)*8/1024/1024, "xor", len(b.x.Fingerprints)*8/1024/1024)
+	//b.binfuse.Fingerprints
+	//TODO: fsync and tmp-file rename
+	//if _, err := b.Filter.WriteFile(b.filePath); err != nil {
+	//	return err
+	//}
+	return nil
+}
 
 func NewBloom(keysCount uint64, filePath string) (*bloomFilter, error) {
 	m := bloomfilter.OptimalM(keysCount, 0.01)
@@ -133,6 +180,9 @@ func (b *bloomFilter) FileName() string { return b.fileName }
 
 func (b *bloomFilter) Build() error {
 	//TODO: fsync and tmp-file rename
+	var mm runtime.MemStats
+	dbg.ReadMemStats(&mm)
+	log.Info("[bloom] before ", "alloc", common.ByteCount(mm.Alloc), "sys", common.ByteCount(mm.Sys))
 	if _, err := b.Filter.WriteFile(b.filePath); err != nil {
 		return err
 	}

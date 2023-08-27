@@ -402,6 +402,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, fromStep, toStep uint64
 
 	hasher := murmur3.New128WithSeed(rs.Salt())
 	var bloom *bloomFilter
+	var xf *xorFilter
 	for {
 		p.Processed.Store(0)
 		i := uint64(0)
@@ -421,6 +422,10 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, fromStep, toStep uint64
 		}
 
 		if count > 0 {
+			xf, err = NewXorFilter(idxPath + ".xf")
+			if err != nil {
+				return nil, err
+			}
 			bloom, err = NewBloom(uint64(count), idxPath+".lb")
 			if err != nil {
 				return nil, err
@@ -448,6 +453,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, fromStep, toStep uint64
 			hasher.Write(k) //nolint:errcheck
 			hi, _ := hasher.Sum128()
 			bloom.AddHash(hi)
+			xf.Add(hi)
 
 			//wrintf("buld: %x, %d, %d\n", k, i, inFiles)
 			if err := dense.AddArray(i, inSteps); err != nil {
