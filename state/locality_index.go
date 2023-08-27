@@ -471,16 +471,17 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, fromStep, toStep uint64
 			return nil, err
 		}
 
-		if err = rs.Build(ctx); err != nil {
-			if rs.Collision() {
-				li.logger.Warn("Building recsplit. Collision happened. It's ok. Restarting...")
-				rs.ResetNextSalt()
-			} else {
-				return nil, fmt.Errorf("build idx: %w", err)
-			}
-		} else {
-			break
-		}
+		break
+		//if err = rs.Build(ctx); err != nil {
+		//	if rs.Collision() {
+		//		li.logger.Warn("Building recsplit. Collision happened. It's ok. Restarting...")
+		//		rs.ResetNextSalt()
+		//	} else {
+		//		return nil, fmt.Errorf("build idx: %w", err)
+		//	}
+		//} else {
+		//	break
+		//}
 	}
 
 	if bloom != nil {
