@@ -188,6 +188,12 @@ func (b *bloomFilter) Build() error {
 	}
 	return nil
 }
+func (b *xorFilter) Close() {
+	if b.f != nil {
+		//b.f.Close()
+		b.f = nil
+	}
+}
 
 func OpenBloom(filePath string) (*bloomFilter, error) {
 	_, fileName := filepath.Split(filePath)

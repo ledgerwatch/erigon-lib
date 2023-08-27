@@ -489,6 +489,12 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, fromStep, toStep uint64
 		}
 		bloom.Close() //TODO: move to defer, and move building and opennig to different funcs
 	}
+	if xf != nil {
+		if err := xf.Build(); err != nil {
+			return nil, err
+		}
+		xf.Close() //TODO: move to defer, and move building and opennig to different funcs
+	}
 
 	idx, err := recsplit.OpenIndex(idxPath)
 	if err != nil {
