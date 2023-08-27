@@ -155,7 +155,7 @@ func (b *xorFilter) Build() (err error) {
 		return err
 	}
 	log.Info("[xorFilter] after xor", "alloc", common.ByteCount(m.Alloc), "sys", common.ByteCount(m.Sys))
-	log.Info("[xorFilter] stats", "fname", b.fileName, "bf", len(b.binfuse.Fingerprints)*8/1024/1024, "f", len(b.fuse.Fingerprints)*8/1024/1024, "xor", len(b.x.Fingerprints)*8/1024/1024)
+	log.Info("[xorFilter] stats", "fname", b.FileName(), "bf", len(b.binfuse.Fingerprints)*8/1024/1024, "f", len(b.fuse.Fingerprints)*8/1024/1024, "xor", len(b.x.Fingerprints)*8/1024/1024)
 	//b.binfuse.Fingerprints
 	//TODO: fsync and tmp-file rename
 	//if _, err := b.Filter.WriteFile(b.filePath); err != nil {
@@ -180,7 +180,7 @@ func (b *bloomFilter) FileName() string { return b.fileName }
 
 func (b *bloomFilter) Build() error {
 	//TODO: fsync and tmp-file rename
-	log.Info("[bloom] size", "size", b.Filter.M()/8/1024/1024)
+	log.Info("[bloom] size", "size", b.Filter.M()/8/1024/1024, "f", b.FileName())
 	if _, err := b.Filter.WriteFile(b.filePath); err != nil {
 		return err
 	}
