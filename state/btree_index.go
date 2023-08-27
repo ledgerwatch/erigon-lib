@@ -26,7 +26,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/recsplit/eliasfano32"
 )
 
-var UseBpsTree bool = false
+var UseBpsTree bool = true
 
 const BtreeLogPrefix = "btree"
 
