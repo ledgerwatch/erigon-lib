@@ -48,6 +48,14 @@ func (s *SentinelClientDirect) BanPeer(ctx context.Context, p *sentinel.Peer, op
 	return s.server.BanPeer(ctx, p)
 }
 
+func (s *SentinelClientDirect) UnbanPeer(ctx context.Context, p *sentinel.Peer, opts ...grpc.CallOption) (*sentinel.EmptyMessage, error) {
+	return s.server.UnbanPeer(ctx, p)
+}
+
+func (s *SentinelClientDirect) PenalizePeer(ctx context.Context, p *sentinel.Peer, opts ...grpc.CallOption) (*sentinel.EmptyMessage, error) {
+	return s.server.PenalizePeer(ctx, p)
+}
+
 func (s *SentinelClientDirect) PublishGossip(ctx context.Context, in *sentinel.GossipData, opts ...grpc.CallOption) (*sentinel.EmptyMessage, error) {
 	return s.server.PublishGossip(ctx, in)
 }
