@@ -84,7 +84,6 @@ type Pool interface {
 	AddRemoteTxs(ctx context.Context, newTxs types.TxSlots)
 	AddLocalTxs(ctx context.Context, newTxs types.TxSlots, tx kv.Tx) ([]txpoolcfg.DiscardReason, error)
 	OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs types.TxSlots, tx kv.Tx) error
-
 	// IdHashKnown check whether transaction with given Id hash is known to the pool
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	Started() bool
@@ -561,7 +560,6 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 			continue
 		}
 
-		// TODO: is this unnecessary?
 		rlpTx, sender, isLocal, err := p.getRlpLocked(tx, mt.Tx.IDHash[:])
 		if err != nil {
 			return false, count, err
@@ -1066,7 +1064,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 	return announcements, discardReasons, nil
 }
 
-// TODO: What does this do? Looks like a copy of the above
+// TODO: Looks like a copy of the above
 func addTxsOnNewBlock(blockNum uint64, cacheView kvcache.CacheView, stateChanges *remote.StateChangeBatch,
 	senders *sendersBatch, newTxs types.TxSlots, pendingBaseFee uint64, blockGasLimit uint64,
 	pending *PendingPool, baseFee, queued *SubPool,
@@ -1141,9 +1139,6 @@ func (p *TxPool) setBaseFee(baseFee uint64) (uint64, bool) {
 	return p.pendingBaseFee.Load(), changed
 }
 
-// TODO(eip-4844) logic similar to base fee for blob gasprice
-// BlobFeeCap must be >= blob gasprice
-
 func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoolcfg.DiscardReason {
 	// Insert to pending pool, if pool doesn't have txn with same Nonce and bigger Tip
 	found := p.all.get(mt.Tx.SenderID, mt.Tx.Nonce)
@@ -1165,7 +1160,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 				if bytes.Equal(found.Tx.IDHash[:], mt.Tx.IDHash[:]) {
 					return txpoolcfg.NotSet
 				}
-				return txpoolcfg.ReplaceUnderpriced
+				return txpoolcfg.ReplaceUnderpriced		// TODO: This is the same as NotReplaced
 			}
 		}
 
@@ -1261,7 +1256,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*types.TxSlot, pending *P
 		// delete mined transactions from everywhere
 		byNonce.ascend(senderID, func(mt *metaTx) bool {
 			//logger.Debug("[txpool] removing mined, cmp nonces", "tx.nonce", it.metaTx.Tx.nonce, "sender.nonce", sender.nonce)
-			if mt.Tx.Nonce > nonce {
+			if mt.Tx.Nonce > nonce || mt.Tx.Type == types.BlobTxType {	// Don't remove blobTxs yet, for reoorg
 				return false
 			}
 			if mt.Tx.Traced {
@@ -1768,12 +1763,12 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		txn.Rlp = nil // means that we don't need store it in db anymore
 
 		txn.SenderID, txn.Traced = p.senders.getOrCreateID(addr, p.logger)
-		binary.BigEndian.Uint64(v)
+		binary.BigEndian.Uint64(v)	// TODO - unnecessary line, remove
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
 
 		if reason := p.validateTx(txn, isLocalTx, cacheView); reason != txpoolcfg.NotSet && reason != txpoolcfg.Success {
-			return nil
+			return nil	// TODO: Clarify - if one of the txs has the wrong reason, no pooled txs!
 		}
 		txs.Resize(uint(i + 1))
 		txs.Txs[i] = txn
@@ -2298,6 +2293,10 @@ type BestQueue struct {
 	pendingBastFee uint64
 }
 
+// Returns true if the txn is better than the parameter txn
+// it first compares the subpool markers of the two meta txns, then it compares
+// depending on the pool (p, b, q) it compares the effective tip (p), nonceDistance (p,q) 
+// minFeeCap (b), and cumulative balance distance (p, q) for pending pool
 func (mt *metaTx) better(than *metaTx, pendingBaseFee uint256.Int) bool {
 	subPool := mt.subPool
 	thanSubPool := than.subPool
