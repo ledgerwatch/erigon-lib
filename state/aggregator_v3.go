@@ -36,8 +36,6 @@ import (
 	rand2 "golang.org/x/exp/rand"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/ledgerwatch/erigon-lib/common/dir"
-
 	"github.com/ledgerwatch/erigon-lib/commitment"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/background"
