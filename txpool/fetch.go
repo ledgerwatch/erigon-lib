@@ -289,30 +289,24 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		//TODO: handleInboundMessage is single-threaded - means it can accept as argument couple buffers (or analog of txParseContext). Protobuf encoding will copy data anyway, but DirectClient doesn't
 		var encodedRequest []byte
 		var messageID sentry.MessageId
-		switch req.Id {
-		case sentry.MessageId_GET_POOLED_TRANSACTIONS_66:
-			messageID = sentry.MessageId_POOLED_TRANSACTIONS_66
-			requestID, hashes, _, err := types2.ParseGetPooledTransactions66(req.Data, 0, nil)
+		messageID = sentry.MessageId_POOLED_TRANSACTIONS_66
+		requestID, hashes, _, err := types2.ParseGetPooledTransactions66(req.Data, 0, nil)
+		if err != nil {
+			return err
+		}
+		_ = requestID
+		var txs [][]byte
+		for i := 0; i < len(hashes); i += 32 {
+			txn, err := f.pool.GetRlp(tx, hashes[i:i+32])
 			if err != nil {
 				return err
 			}
-			_ = requestID
-			var txs [][]byte
-			for i := 0; i < len(hashes); i += 32 {
-				txn, err := f.pool.GetRlp(tx, hashes[i:i+32])
-				if err != nil {
-					return err
-				}
-				if txn == nil {
-					continue
-				}
-				txs = append(txs, txn)
+			if txn == nil {
+				continue
 			}
-
-			encodedRequest = types2.EncodePooledTransactions66(txs, requestID, nil)
-		default:
-			return fmt.Errorf("unexpected message: %s", req.Id.String())
+			txs = append(txs, txn)
 		}
+		encodedRequest = types2.EncodePooledTransactions66(txs, requestID, nil)
 
 		if _, err := sentryClient.SendMessageById(f.ctx, &sentry.SendMessageByIdRequest{
 			Data:   &sentry.OutboundMessageData{Id: messageID, Data: encodedRequest},
