@@ -55,17 +55,14 @@ func (e *Encoder) LongString(str []byte) *Encoder {
 	return e
 }
 
+// List will attempt to write the list of encoder funcs to the buf
 func (e *Encoder) List(items ...EncoderFunc) *Encoder {
 	return e.writeList(true, items...)
 }
 
-// ShortList will assume that your list payload is less than 56 bytes long, and do no validation as such
+// ShortList actually calls List
 func (e *Encoder) ShortList(items ...EncoderFunc) *Encoder {
-	e.buf = append(e.buf, TokenShortList.Plus(byte(len(items))))
-	for _, v := range items {
-		e = v(e)
-	}
-	return e
+	return e.writeList(true, items...)
 }
 
 // LongList will assume that your list payload is more than 55 bytes long, and do no validation as such
@@ -91,7 +88,7 @@ func (e *Encoder) writeList(validate bool, items ...EncoderFunc) *Encoder {
 	dataSize := len(e.buf) - startLength
 	if dataSize <= 55 && validate {
 		// oh it's actually a short string! awkward. let's set that then.
-		e.buf[startLength-8-1] = TokenShortList.Plus(byte(len(items)))
+		e.buf[startLength-8-1] = TokenShortList.Plus(byte(dataSize))
 		// and then copy the data over
 		copy(e.buf[startLength-8:], e.buf[startLength:startLength+dataSize])
 		// and now set the new size
