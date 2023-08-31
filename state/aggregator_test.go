@@ -658,6 +658,7 @@ func testDbAndAggregatorv3(t *testing.T, aggStep uint64) (kv.RwDB, *AggregatorV3
 
 	agg, err := NewAggregatorV3(context.Background(), dir, filepath.Join(path, "e4", "tmp"), aggStep, db, logger)
 	require.NoError(t, err)
+	t.Cleanup(agg.Close)
 	err = agg.OpenFolder()
 	agg.DisableFsync()
 	require.NoError(t, err)
