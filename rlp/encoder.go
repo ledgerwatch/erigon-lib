@@ -2,6 +2,8 @@ package rlp
 
 import "golang.org/x/exp/constraints"
 
+type EncoderFunc = func(i *Encoder) *Encoder
+
 type Encoder struct {
 	buf []byte
 }
@@ -12,79 +14,86 @@ func NewEncoder(buf []byte) *Encoder {
 	}
 }
 
-func (e *Encoder) Bytes() []byte {
+func (e *Encoder) Buffer() []byte {
 	return e.buf
 }
+
 func (e *Encoder) Reset(b []byte) {
 	e.buf = b
 }
 
-func (e *Encoder) WriteByte(p byte) (err error) {
-	e.buf = append(e.buf, p)
-	return nil
-}
-
 func (e *Encoder) Write(p []byte) (n int, err error) {
-	e.buf = append(e.buf, p...)
+	e.Bytes(p)
 	return len(p), nil
 }
 
-func (e *Encoder) WriteString(str []byte) {
+func (e *Encoder) Byte(p byte) *Encoder {
+	e.buf = append(e.buf, p)
+	return e
+}
+
+func (e *Encoder) Bytes(p []byte) *Encoder {
+	e.buf = append(e.buf, p...)
+	return e
+}
+
+// Str will write a string correctly
+func (e *Encoder) Str(str []byte) *Encoder {
 	if len(str) > 55 {
-		e.WriteLongString(str)
+		return e.LongString(str)
 	}
-	e.WriteShortString(str)
+	return e.ShortString(str)
 }
 
-func (e *Encoder) WriteShortString(str []byte) {
-	e.WriteByte(TokenShortString.Plus(byte(len(str))))
-	e.Write(str)
-	return
+// String will assume your string is less than 56 bytes long, and do no validation as such
+func (e *Encoder) ShortString(str []byte) *Encoder {
+	return e.Byte(TokenShortString.Plus(byte(len(str)))).Bytes(str)
 }
 
-func (e *Encoder) WriteLongString(str []byte) {
+// String will assume your string is greater than 55 bytes long, and do no validation as such
+func (e *Encoder) LongString(str []byte) *Encoder {
 	// write the indicator token
-	e.WriteByte(byte(TokenLongString))
+	e.Byte(byte(TokenLongString))
 	// write the integer, knowing that we appended n bytes
 	n := putUint(e, len(str))
 	// so we knw the indicator token was n+1 bytes ago.
 	e.buf[len(e.buf)-(int(n)+1)] += n
 	// and now add the actual length
 	e.buf = append(e.buf, str...)
-	return
+	return e
 }
 
-func (e *Encoder) WriteList(items ...func(i *Encoder)) {
-	e.writeList(true, items...)
+func (e *Encoder) List(items ...EncoderFunc) *Encoder {
+	return e.writeList(true, items...)
 }
 
-// WriteShortList will assume that your list payload is more than 55 bytes long
-func (e *Encoder) WriteShortList(items ...func(i *Encoder)) {
+// ShortList will assume that your list payload is less than 56 bytes long, and do no validation as such
+func (e *Encoder) ShortList(items ...EncoderFunc) *Encoder {
 	e.buf = append(e.buf, TokenShortList.Plus(byte(len(items))))
 	for _, v := range items {
-		v(e)
+		e = v(e)
 	}
-	return
+	return e
 }
 
-// WriteLongList will assume that your list payload is more than 55 bytes long, and do no validation as such
-func (e *Encoder) WriteLongList(items ...func(i *Encoder)) {
-	e.writeList(false, items...)
+// LongList will assume that your list payload is more than 55 bytes long, and do no validation as such
+func (e *Encoder) LongList(items ...EncoderFunc) *Encoder {
+	return e.writeList(false, items...)
 }
 
 // writeList will first attempt to write a long list with the dat
 // if validate is false, it will just format it like the length is above 55
 // if validate is true, it will format it like it is a shrot list
-func (e *Encoder) writeList(validate bool, items ...func(i *Encoder)) {
+func (e *Encoder) writeList(validate bool, items ...EncoderFunc) *Encoder {
 	// write the indicator token
-	e.buf = append(e.buf, byte(TokenLongList))
+	e = e.Byte(byte(TokenLongList))
 	// now pad 8 bytes
-	e.buf = append(e.buf, make([]byte, 8)...)
+	e = e.Bytes(make([]byte, 8))
 	// record the length before encoding items
 	startLength := len(e.buf)
 	// now write all the items
 	for _, v := range items {
-		v(e)
+		e = v(e)
 	}
 	// the size is the difference in the lengths now
 	dataSize := len(e.buf) - startLength
@@ -96,7 +105,7 @@ func (e *Encoder) writeList(validate bool, items ...func(i *Encoder)) {
 		// and now set the new size
 		e.buf = e.buf[:startLength+dataSize-8]
 		// we are done, return
-		return
+		return e
 	}
 	// ok, so it's a long string.
 	// create a new encoder centered at startLength - 8
@@ -114,7 +123,7 @@ func (e *Encoder) writeList(validate bool, items ...func(i *Encoder)) {
 		// set the new length
 		e.buf = e.buf[:startLength-shift+dataSize]
 	}
-	return
+	return e
 }
 
 func putUint[T constraints.Integer](e *Encoder, t T) (size byte) {
