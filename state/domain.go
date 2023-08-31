@@ -680,6 +680,24 @@ func (d *domainWAL) close() {
 	}
 }
 
+func loadSkipFunc() etl.LoadFunc {
+	var preKey, preVal []byte
+	return func(k, v []byte, table etl.CurrentTableReader, next etl.LoadNextFunc) error {
+		if bytes.Equal(k, preKey) {
+			preVal = v
+			return nil
+		}
+		if err := next(nil, preKey, preVal); err != nil {
+			return err
+		}
+		if err := next(k, k, v); err != nil {
+			return err
+		}
+		preKey, preVal = k, v
+		return nil
+	}
+}
+
 func (d *domainWAL) flush(ctx context.Context, tx kv.RwTx) error {
 	if d.discard || !d.buffered {
 		return nil
@@ -1300,17 +1318,17 @@ func buildIndexThenOpen(ctx context.Context, d *compress.Decompressor, compresse
 }
 
 func buildIndex(ctx context.Context, d *compress.Decompressor, compressed FileCompression, idxPath, tmpdir string, values bool, salt *uint32, ps *background.ProgressSet, logger log.Logger, noFsync bool) error {
-	g := NewArchiveGetter(d.MakeGetter(), compressed)
 	_, fileName := filepath.Split(idxPath)
 	count := d.Count()
 	if !values {
 		count = d.Count() / 2
 	}
-
-	p := ps.AddNew(fileName, uint64(count/2))
+	p := ps.AddNew(fileName, uint64(count))
 	defer ps.Delete(p)
+
 	defer d.EnableReadAhead().DisableReadAhead()
 
+	g := NewArchiveGetter(d.MakeGetter(), compressed)
 	var rs *recsplit.RecSplit
 	var err error
 	if rs, err = recsplit.NewRecSplit(recsplit.RecSplitArgs{
@@ -1320,8 +1338,8 @@ func buildIndex(ctx context.Context, d *compress.Decompressor, compressed FileCo
 		LeafSize:    8,
 		TmpDir:      tmpdir,
 		IndexFile:   idxPath,
-		EtlBufLimit: etl.BufferOptimalSize / 2,
 		Salt:        salt,
+		EtlBufLimit: etl.BufferOptimalSize / 2,
 	}, logger); err != nil {
 		return fmt.Errorf("create recsplit: %w", err)
 	}
@@ -2042,7 +2060,7 @@ func (dc *DomainContext) IteratePrefix(roTx kv.Tx, prefix []byte, it func(k, v [
 
 	for i, item := range dc.files {
 		if UseBtree || UseBpsTree {
-			cursor, err := dc.statelessBtree(i).SeekWithGetter(prefix, dc.statelessGetter(i))
+			cursor, err := dc.statelessBtree(i).Seek(dc.statelessGetter(i), prefix)
 			if err != nil {
 				return err
 			}
@@ -2357,7 +2375,7 @@ func (hi *DomainLatestIterFile) init(dc *DomainContext) error {
 	}
 
 	for i, item := range dc.files {
-		btCursor, err := dc.statelessBtree(i).SeekWithGetter(hi.from, dc.statelessGetter(i))
+		btCursor, err := dc.statelessBtree(i).Seek(dc.statelessGetter(i), hi.from)
 		if err != nil {
 			return err
 		}
