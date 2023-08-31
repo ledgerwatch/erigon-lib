@@ -6,7 +6,10 @@ func (T Token) Plus(n byte) byte {
 	return byte(T) + n
 }
 
-// This token table can also be used for offsets. how cool!
+func (T Token) Diff(n byte) byte {
+	return n - byte(T)
+}
+
 const (
 	TokenDecimal     Token = 0x00
 	TokenShortString Token = 0x80

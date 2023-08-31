@@ -14,17 +14,9 @@ func NewEncoder(buf []byte) *Encoder {
 	}
 }
 
+// Buffer returns the underlying buffer
 func (e *Encoder) Buffer() []byte {
 	return e.buf
-}
-
-func (e *Encoder) Reset(b []byte) {
-	e.buf = b
-}
-
-func (e *Encoder) Write(p []byte) (n int, err error) {
-	e.Bytes(p)
-	return len(p), nil
 }
 
 func (e *Encoder) Byte(p byte) *Encoder {
@@ -99,7 +91,7 @@ func (e *Encoder) writeList(validate bool, items ...EncoderFunc) *Encoder {
 	dataSize := len(e.buf) - startLength
 	if dataSize <= 55 && validate {
 		// oh it's actually a short string! awkward. let's set that then.
-		e.buf[startLength-9] = TokenShortList.Plus(byte(len(items)))
+		e.buf[startLength-8-1] = TokenShortList.Plus(byte(len(items)))
 		// and then copy the data over
 		copy(e.buf[startLength-8:], e.buf[startLength:startLength+dataSize])
 		// and now set the new size
@@ -112,8 +104,8 @@ func (e *Encoder) writeList(validate bool, items ...EncoderFunc) *Encoder {
 	enc := NewEncoder(e.buf[startLength-8:])
 	// now write using that encoder the size
 	n := putUint(enc, dataSize)
-	// and update the token, which we know is at startLength-9
-	e.buf[startLength-9] += n
+	// and update the token, which we know is at startLength-8-1
+	e.buf[startLength-8-1] += n
 	// the shift to perform now is 8 - n.
 	shift := int(8 - n)
 	// if there is a positive shift, then we must perform the shift

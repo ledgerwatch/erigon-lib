@@ -26,9 +26,10 @@ import (
 )
 
 var (
-	ErrBase   = fmt.Errorf("rlp")
-	ErrParse  = fmt.Errorf("%w parse", ErrBase)
-	ErrDecode = fmt.Errorf("%w decode", ErrBase)
+	ErrBase          = fmt.Errorf("rlp")
+	ErrParse         = fmt.Errorf("%w parse", ErrBase)
+	ErrDecode        = fmt.Errorf("%w decode", ErrBase)
+	ErrUnexpectedEOF = fmt.Errorf("%w EOF", ErrBase)
 )
 
 func IsRLPError(err error) bool { return errors.Is(err, ErrBase) }
@@ -37,7 +38,7 @@ func IsRLPError(err error) bool { return errors.Is(err, ErrBase) }
 func BeInt(payload []byte, pos, length int) (int, error) {
 	var r int
 	if pos+length >= len(payload) {
-		return 0, fmt.Errorf("%w: unexpected end of payload", ErrParse)
+		return 0, ErrUnexpectedEOF
 	}
 	if length > 0 && payload[pos] == 0 {
 		return 0, fmt.Errorf("%w: integer encoding for RLP must not have leading zeros: %x", ErrParse, payload[pos:pos+length])
