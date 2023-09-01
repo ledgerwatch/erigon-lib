@@ -17,8 +17,8 @@ type Marshaler interface {
 func Unmarshal(data []byte, val any) error {
 	buf := bytes.NewBuffer(data)
 	return unmarshal(buf, val)
-
 }
+
 func unmarshal(buf *bytes.Buffer, val any) error {
 	rv := reflect.ValueOf(val)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
