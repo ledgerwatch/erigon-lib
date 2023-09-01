@@ -175,8 +175,9 @@ func reflectList(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		for idx := 0; idx < v.NumField(); idx++ {
 			// Decode into element.
 			rv1 := v.Field(idx).Addr()
+			rt1 := v.Type().Field(idx)
 			v1 := rv1.Elem()
-			shouldSet := v1.CanSet()
+			shouldSet := rt1.IsExported()
 			if shouldSet {
 				err := reflectAny(w, v1, rv1)
 				if err != nil {
