@@ -171,6 +171,19 @@ func reflectList(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 			return err
 		}
 		v.SetMapIndex(rv1, rv2)
+	case reflect.Struct:
+		for idx := 0; idx < v.NumField(); idx++ {
+			// Decode into element.
+			rv1 := v.Field(idx).Addr()
+			v1 := rv1.Elem()
+			shouldSet := v1.CanSet()
+			if shouldSet {
+				err := reflectAny(w, v1, rv1)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	case reflect.Array, reflect.Slice:
 		idx := 0
 		for {
