@@ -7,6 +7,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type plusOne int
+
+func (p *plusOne) UnmarshalRLP(data []byte) error {
+	var s int
+	err := rlp.Unmarshal(data, &s)
+	if err != nil {
+		return err
+	}
+	(*p) = plusOne(s + 1)
+	return nil
+}
+
 func TestDecoder(t *testing.T) {
 
 	type simple struct {
@@ -35,6 +47,13 @@ func TestDecoder(t *testing.T) {
 			err := rlp.Unmarshal(bts, &s)
 			require.NoError(t, err)
 			require.EqualValues(t, 1024, s)
+		})
+		t.Run("ToIntUnmarshaler", func(t *testing.T) {
+			bts := []byte{0x82, 0x04, 0x00}
+			var s plusOne
+			err := rlp.Unmarshal(bts, &s)
+			require.NoError(t, err)
+			require.EqualValues(t, plusOne(1025), s)
 		})
 		t.Run("ToSimpleStruct", func(t *testing.T) {
 			bts := []byte{0xc8, 0x83, 'c', 'a', 't', 0x83, 'd', 'o', 'g'}
