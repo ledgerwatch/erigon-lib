@@ -56,6 +56,11 @@ func (s *SentinelClientDirect) PenalizePeer(ctx context.Context, p *sentinel.Pee
 	return s.server.PenalizePeer(ctx, p)
 }
 
+
+func (s *SentinelClientDirect) RewardPeer(ctx context.Context, p *sentinel.Peer, opts ...grpc.CallOption) (*sentinel.EmptyMessage, error) {
+	return s.server.RewardPeer(ctx, p)
+}
+
 func (s *SentinelClientDirect) PublishGossip(ctx context.Context, in *sentinel.GossipData, opts ...grpc.CallOption) (*sentinel.EmptyMessage, error) {
 	return s.server.PublishGossip(ctx, in)
 }
