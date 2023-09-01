@@ -10,10 +10,6 @@ type Unmarshaler interface {
 	UnmarshalRLP(data []byte) error
 }
 
-type Marshaler interface {
-	MarshalRLP() ([]byte, error)
-}
-
 func Unmarshal(data []byte, val any) error {
 	buf := bytes.NewBuffer(data)
 	return unmarshal(buf, val)
@@ -66,6 +62,9 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 	// switch
 	switch token {
 	case TokenDecimal:
+		if um, ok := rv.Interface().(Unmarshaler); ok {
+			return um.UnmarshalRLP([]byte{prefix})
+		}
 		// in this case, the value is just the byte itself
 		switch v.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -83,6 +82,9 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		if err != nil {
 			return err
 		}
+		if um, ok := rv.Interface().(Unmarshaler); ok {
+			return um.UnmarshalRLP(str)
+		}
 		return putString(str, v, rv)
 	case TokenLongString:
 		lenSz := int(token.Diff(prefix))
@@ -94,12 +96,18 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		if err != nil {
 			return err
 		}
+		if um, ok := rv.Interface().(Unmarshaler); ok {
+			return um.UnmarshalRLP(str)
+		}
 		return putString(str, v, rv)
 	case TokenShortList:
 		sz := int(token.Diff(prefix))
 		buf, err := nextFull(w, sz)
 		if err != nil {
 			return err
+		}
+		if um, ok := rv.Interface().(Unmarshaler); ok {
+			return um.UnmarshalRLP(buf)
 		}
 		return reflectList(bytes.NewBuffer(buf), v, rv)
 	case TokenLongList:
@@ -112,6 +120,9 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		if err != nil {
 			return err
 		}
+		if um, ok := rv.Interface().(Unmarshaler); ok {
+			return um.UnmarshalRLP(buf)
+		}
 		return reflectList(bytes.NewBuffer(buf), v, rv)
 	case TokenUnknown:
 		return fmt.Errorf("%w: unknown token", ErrDecode)
@@ -120,6 +131,9 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 }
 
 func putString(w []byte, v reflect.Value, rv reflect.Value) error {
+	if um, ok := rv.Interface().(Unmarshaler); ok {
+		return um.UnmarshalRLP(w)
+	}
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(string(w))
@@ -153,6 +167,9 @@ func putString(w []byte, v reflect.Value, rv reflect.Value) error {
 }
 
 func reflectList(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
+	if um, ok := rv.Interface().(Unmarshaler); ok {
+		return um.UnmarshalRLP(w.Bytes())
+	}
 	switch v.Kind() {
 	case reflect.Invalid:
 		// do nothing
