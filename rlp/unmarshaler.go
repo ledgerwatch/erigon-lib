@@ -6,6 +6,14 @@ import (
 	"reflect"
 )
 
+type Unmarshaler interface {
+	UnmarshalRLP(data []byte) error
+}
+
+type Marshaler interface {
+	MarshalRLP() ([]byte, error)
+}
+
 func Unmarshal(data []byte, val any) error {
 	buf := bytes.NewBuffer(data)
 	return unmarshal(buf, val)
