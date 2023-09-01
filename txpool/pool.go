@@ -531,7 +531,7 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	// First wait for the corresponding block to arrive	
+	// First wait for the corresponding block to arrive
 	if p.lastSeenBlock.Load() < onTopOf {
 		return false, 0, nil // Too early
 	}
@@ -554,7 +554,7 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		if toSkip.Contains(mt.Tx.IDHash) {
 			continue
 		}
-		
+
 		if mt.Tx.Gas >= p.blockGasLimit.Load() {
 			// Skip transactions with very large gas limit
 			continue
@@ -589,7 +589,7 @@ func (p *TxPool) best(n uint16, txs *types.TxsRlp, tx kv.Tx, onTopOf, availableG
 		txs.Txs[count] = rlpTx
 		copy(txs.Senders.At(count), sender.Bytes())
 		txs.IsLocal[count] = isLocal
-		toSkip.Add(mt.Tx.IDHash)		// TODO: Is this unnecessary
+		toSkip.Add(mt.Tx.IDHash) // TODO: Is this unnecessary
 		count++
 	}
 
@@ -725,7 +725,7 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 
 	// check nonce and balance
 	senderNonce, senderBalance, _ := p.senders.info(stateCache, txn.SenderID)
-	if senderNonce > txn.Nonce {  // TODO: But this way replacement transactions would be hung out to dry
+	if senderNonce > txn.Nonce {
 		if txn.Traced {
 			p.logger.Info(fmt.Sprintf("TX TRACING: validateTx nonce too low idHash=%x nonce in state=%d, txn.nonce=%d", txn.IDHash, senderNonce, txn.Nonce))
 		}
@@ -1042,7 +1042,7 @@ func addTxs(blockNum uint64, cacheView kvcache.CacheView, senders *sendersBatch,
 			discardReasons[i] = reason
 			continue
 		}
-		discardReasons[i] = txpoolcfg.NotSet	// unnecessary
+		discardReasons[i] = txpoolcfg.NotSet // unnecessary
 		if txn.Traced {
 			logger.Info(fmt.Sprintf("TX TRACING: schedule sendersWithChangedState idHash=%x senderId=%d", txn.IDHash, mt.Tx.SenderID))
 		}
@@ -1160,7 +1160,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 				if bytes.Equal(found.Tx.IDHash[:], mt.Tx.IDHash[:]) {
 					return txpoolcfg.NotSet
 				}
-				return txpoolcfg.ReplaceUnderpriced		// TODO: This is the same as NotReplaced
+				return txpoolcfg.ReplaceUnderpriced // TODO: This is the same as NotReplaced
 			}
 		}
 
@@ -1256,7 +1256,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*types.TxSlot, pending *P
 		// delete mined transactions from everywhere
 		byNonce.ascend(senderID, func(mt *metaTx) bool {
 			//logger.Debug("[txpool] removing mined, cmp nonces", "tx.nonce", it.metaTx.Tx.nonce, "sender.nonce", sender.nonce)
-			if mt.Tx.Nonce > nonce || mt.Tx.Type == types.BlobTxType {	// Don't remove blobTxs yet, for reoorg
+			if mt.Tx.Nonce > nonce || mt.Tx.Type == types.BlobTxType { // Don't remove blobTxs yet, for reoorg
 				return false
 			}
 			if mt.Tx.Traced {
@@ -1286,7 +1286,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*types.TxSlot, pending *P
 }
 
 // onSenderStateChange is the function that recalculates ephemeral fields of transactions and determines
-// which sub pool they will need to go to. Sice this depends on other transactions from the same sender by with lower
+// which sub pool they will need to go to. Since this depends on other transactions from the same sender by with lower
 // nonces, and also affect other transactions from the same sender with higher nonce, it loops through all transactions
 // for a given senderID
 func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint256.Int, byNonce *BySenderAndNonce,
@@ -1300,9 +1300,15 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		if mt.Tx.Traced {
 			logger.Info(fmt.Sprintf("TX TRACING: onSenderStateChange loop iteration idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IDHash, senderID, senderNonce, mt.Tx.Nonce, mt.currentSubPool))
 		}
+		deleteAndContinueReasonLog := ""
 		if senderNonce > mt.Tx.Nonce {
+			deleteAndContinueReasonLog = "low nonce"
+		} else if mt.Tx.Nonce != noGapsNonce && mt.Tx.Type == types.BlobTxType {	// Discard nonce-gapped blob txns
+			deleteAndContinueReasonLog = "nonce-gapped blob txn"
+		}
+		if deleteAndContinueReasonLog != "" {
 			if mt.Tx.Traced {
-				logger.Info(fmt.Sprintf("TX TRACING: removing due to low nonce for idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", mt.Tx.IDHash, senderID, senderNonce, mt.Tx.Nonce, mt.currentSubPool))
+				logger.Info(fmt.Sprintf("TX TRACING: removing due to %s for idHash=%x senderID=%d, senderNonce=%d, txn.nonce=%d, currentSubPool=%s", deleteAndContinueReasonLog, mt.Tx.IDHash, senderID, senderNonce, mt.Tx.Nonce, mt.currentSubPool))
 			}
 			// del from sub-pool
 			switch mt.currentSubPool {
@@ -1318,6 +1324,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 			toDel = append(toDel, mt)
 			return true
 		}
+
 		if minFeeCap.Gt(&mt.Tx.FeeCap) {
 			*minFeeCap = mt.Tx.FeeCap
 		}
@@ -1763,12 +1770,12 @@ func (p *TxPool) fromDB(ctx context.Context, tx kv.Tx, coreTx kv.Tx) error {
 		txn.Rlp = nil // means that we don't need store it in db anymore
 
 		txn.SenderID, txn.Traced = p.senders.getOrCreateID(addr, p.logger)
-		binary.BigEndian.Uint64(v)	// TODO - unnecessary line, remove
+		binary.BigEndian.Uint64(v) // TODO - unnecessary line, remove
 
 		isLocalTx := p.isLocalLRU.Contains(string(k))
 
 		if reason := p.validateTx(txn, isLocalTx, cacheView); reason != txpoolcfg.NotSet && reason != txpoolcfg.Success {
-			return nil	// TODO: Clarify - if one of the txs has the wrong reason, no pooled txs!
+			return nil // TODO: Clarify - if one of the txs has the wrong reason, no pooled txs!
 		}
 		txs.Resize(uint(i + 1))
 		txs.Txs[i] = txn
@@ -2295,7 +2302,7 @@ type BestQueue struct {
 
 // Returns true if the txn is better than the parameter txn
 // it first compares the subpool markers of the two meta txns, then it compares
-// depending on the pool (p, b, q) it compares the effective tip (p), nonceDistance (p,q) 
+// depending on the pool (p, b, q) it compares the effective tip (p), nonceDistance (p,q)
 // minFeeCap (b), and cumulative balance distance (p, q) for pending pool
 func (mt *metaTx) better(than *metaTx, pendingBaseFee uint256.Int) bool {
 	subPool := mt.subPool
