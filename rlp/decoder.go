@@ -125,6 +125,18 @@ func putString(w []byte, v reflect.Value, rv reflect.Value) error {
 			return fmt.Errorf("%w: need to use uint8 as underlying if want array output from longstring", ErrDecode)
 		}
 		reflect.Copy(v, reflect.ValueOf(w))
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		val, err := BeInt(w, 0, len(w))
+		if err != nil {
+			return err
+		}
+		v.SetInt(int64(val))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		val, err := BeInt(w, 0, len(w))
+		if err != nil {
+			return err
+		}
+		v.SetUint(uint64(val))
 	case reflect.Invalid:
 		// do nothing
 		return nil

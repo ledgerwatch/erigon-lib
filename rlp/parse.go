@@ -37,7 +37,7 @@ func IsRLPError(err error) bool { return errors.Is(err, ErrBase) }
 // BeInt parses Big Endian representation of an integer from given payload at given position
 func BeInt(payload []byte, pos, length int) (int, error) {
 	var r int
-	if pos+length >= len(payload) {
+	if pos+length > len(payload) {
 		return 0, ErrUnexpectedEOF
 	}
 	if length > 0 && payload[pos] == 0 {
