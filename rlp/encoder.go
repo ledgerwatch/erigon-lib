@@ -39,13 +39,13 @@ func (e *Encoder) Str(str []byte) *Encoder {
 
 // String will assume your string is less than 56 bytes long, and do no validation as such
 func (e *Encoder) ShortString(str []byte) *Encoder {
-	return e.Byte(TokenShortString.Plus(byte(len(str)))).Bytes(str)
+	return e.Byte(TokenShortBlob.Plus(byte(len(str)))).Bytes(str)
 }
 
 // String will assume your string is greater than 55 bytes long, and do no validation as such
 func (e *Encoder) LongString(str []byte) *Encoder {
 	// write the indicator token
-	e.Byte(byte(TokenLongString))
+	e.Byte(byte(TokenLongBlob))
 	// write the integer, knowing that we appended n bytes
 	n := putUint(e, len(str))
 	// so we knw the indicator token was n+1 bytes ago.

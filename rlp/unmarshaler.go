@@ -28,30 +28,6 @@ func unmarshal(buf *bytes.Buffer, val any) error {
 	return nil
 }
 
-func nextFull(dat *bytes.Buffer, size int) ([]byte, error) {
-	d := dat.Next(size)
-	if len(d) != size {
-		return nil, ErrUnexpectedEOF
-	}
-	return d, nil
-}
-
-// BeInt parses Big Endian representation of an integer from given payload at given position
-func decodeBeInt(w *bytes.Buffer, length int) (int, error) {
-	var r int
-	dat, err := nextFull(w, length)
-	if err != nil {
-		return 0, ErrUnexpectedEOF
-	}
-	if length > 0 && dat[0] == 0 {
-		return 0, fmt.Errorf("%w: integer encoding for RLP must not have leading zeros: %x", ErrParse, dat)
-	}
-	for _, b := range dat[0:length] {
-		r = (r << 8) | int(b)
-	}
-	return r, nil
-}
-
 func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 	if um, ok := rv.Interface().(Unmarshaler); ok {
 		return um.UnmarshalRLP(w.Bytes())
@@ -76,16 +52,16 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		default:
 			return fmt.Errorf("%w: decimal must be unmarshal into integer type", ErrDecode)
 		}
-	case TokenShortString:
+	case TokenShortBlob:
 		sz := int(token.Diff(prefix))
 		str, err := nextFull(w, sz)
 		if err != nil {
 			return err
 		}
-		return putString(str, v, rv)
-	case TokenLongString:
+		return putBlob(str, v, rv)
+	case TokenLongBlob:
 		lenSz := int(token.Diff(prefix))
-		sz, err := decodeBeInt(w, lenSz)
+		sz, err := nextBeInt(w, lenSz)
 		if err != nil {
 			return err
 		}
@@ -93,7 +69,7 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		if err != nil {
 			return err
 		}
-		return putString(str, v, rv)
+		return putBlob(str, v, rv)
 	case TokenShortList:
 		sz := int(token.Diff(prefix))
 		buf, err := nextFull(w, sz)
@@ -103,7 +79,7 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		return reflectList(bytes.NewBuffer(buf), v, rv)
 	case TokenLongList:
 		lenSz := int(token.Diff(prefix))
-		sz, err := decodeBeInt(w, lenSz)
+		sz, err := nextBeInt(w, lenSz)
 		if err != nil {
 			return err
 		}
@@ -118,7 +94,7 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 	return nil
 }
 
-func putString(w []byte, v reflect.Value, rv reflect.Value) error {
+func putBlob(w []byte, v reflect.Value, rv reflect.Value) error {
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(string(w))
