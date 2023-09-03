@@ -22,6 +22,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	emath "github.com/ledgerwatch/erigon-lib/common/math"
 	"github.com/ledgerwatch/erigon-lib/types"
@@ -42,6 +43,9 @@ type Config struct {
 	PriceBump             uint64 // Price bump percentage to replace an already existing transaction
 	BlobPriceBump         uint64 //Price bump percentage to replace an existing 4844 blob tx (type-3)
 	OverrideCancunTime    *big.Int
+	MdbxPageSize          datasize.ByteSize
+	MdbxDBSizeLimit       datasize.ByteSize
+	MdbxGrowthStep        datasize.ByteSize
 }
 
 var DefaultConfig = Config{
