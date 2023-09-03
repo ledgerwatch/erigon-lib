@@ -271,6 +271,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 				unknownHashes = append(unknownHashes, hashes[i:i+32]...)
 			}
 		}
+
 		if len(unknownHashes) > 0 {
 			var encodedRequest []byte
 			var messageID sentry.MessageId
@@ -451,6 +452,11 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 	if err != nil {
 		return err
 	}
+	tx, err := f.db.BeginRo(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	for req, err := stream.Recv(); ; req, err = stream.Recv() {
 		if err != nil {
 			return err
@@ -480,6 +486,15 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 					unwindTxs.Txs[i] = &types2.TxSlot{}
 					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
 						_, err = parseContext.ParseTransaction(change.Txs[i], 0, unwindTxs.Txs[i], unwindTxs.Senders.At(i), false /* hasEnvelope */, false /* wrappedWithBlobs */, nil)
+						if(unwindTxs.Txs[i].Type == types2.BlobTxType){
+							blobMt := f.pool.GetKnownBlobTxn(tx, unwindTxs.Txs[i].IDHash[:])
+							if blobMt == nil {
+								// TODO (@somnathb1 eip-4844): fetch from peer - if applicable
+							} else {
+								// Replace unwrapped blobTx with wrapped version from pool/db
+								unwindTxs.Txs[i] = blobMt.Tx
+							}
+						}
 						return err
 					}); err != nil && !errors.Is(err, context.Canceled) {
 						f.logger.Warn("stream.Recv", "err", err)
@@ -500,3 +515,21 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 		}
 	}
 }
+
+// func (f *Fetch) requestUnknownTxs(unknownHashes types2.Hashes, sentryClient sentry.SentryClient, PeerId *types.H512) error{
+// 	if len(unknownHashes) > 0 {
+// 		var encodedRequest []byte
+// 		var err error
+// 		var messageID sentry.MessageId
+// 		if encodedRequest, err = types2.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
+// 			return err
+// 		}
+// 		messageID = sentry.MessageId_GET_POOLED_TRANSACTIONS_66
+// 		if _, err := sentryClient.SendMessageById(f.ctx, &sentry.SendMessageByIdRequest{
+// 			Data:   &sentry.OutboundMessageData{Id: messageID, Data: encodedRequest},
+// 			PeerId: PeerId,
+// 		}, &grpc.EmptyCallOption{}); err != nil {
+// 			return err
+// 		}
+// 	}
+// }

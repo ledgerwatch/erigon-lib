@@ -88,6 +88,7 @@ type Pool interface {
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
+	GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx)
 
 	AddNewGoodPeer(peerID types.PeerID)
 }
@@ -128,6 +129,7 @@ type metaTx struct {
 	subPool                   SubPoolMarker
 	currentSubPool            SubPoolType
 	alreadyYielded            bool
+	minedBlockNum			  uint64
 }
 
 func newMetaTx(slot *types.TxSlot, isLocal bool, timestmap uint64) *metaTx {
@@ -205,6 +207,8 @@ type TxPool struct {
 	pending                 *PendingPool
 	baseFee                 *SubPool
 	queued                  *SubPool
+	minedBlobTxsByBlock		map[uint64][]*metaTx			// (blockNum => slice): cache of recently mined blobs
+	minedBlobTxsByHash		map[string]*metaTx				// (hash => mt): map of recently mined blobs
 	isLocalLRU              *simplelru.LRU[string, struct{}] // tx_hash => is_local : to restore isLocal flag of unwinded transactions
 	newPendingTxs           chan types.Announcements         // notifications about new txs in Pending sub-pool
 	all                     *BySenderAndNonce                // senderID => (sorted map of tx nonce => *metaTx)
@@ -213,6 +217,7 @@ type TxPool struct {
 	cfg                     txpoolcfg.Config
 	chainID                 uint256.Int
 	lastSeenBlock           atomic.Uint64
+	lastFinalizedBlock		atomic.Uint64
 	started                 atomic.Bool
 	pendingBaseFee          atomic.Uint64
 	blockGasLimit           atomic.Uint64
@@ -282,6 +287,18 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 
 	return res, nil
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs types.TxSlots, tx kv.Tx) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
@@ -357,9 +374,13 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
+	if err := p.processMinedFinalizedBlobs(coreTx, minedTxs.Txs); err != nil {
+		return err
+	}
+
 	//p.logger.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
-	announcements, err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs,
+	announcements, err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs /* newTxs */,
 		pendingBaseFee, stateChanges.BlockGasLimit,
 		p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked, p.logger)
 	if err != nil {
@@ -387,6 +408,23 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	//p.logger.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendngBaseFee", pendingBaseFee, "in", time.Since(t))
 	return nil
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if !p.started.Load() {
@@ -517,8 +555,35 @@ func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 	if _, ok := p.byHash[string(hash)]; ok {
 		return true, nil
 	}
+	if _, ok := p.minedBlobTxsByHash[string(hash)]; ok {
+		return true, nil
+	}
 	return tx.Has(kv.PoolTransaction, hash)
 }
+
+func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx){
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	if mt, ok := p.minedBlobTxsByHash[string(hash)]; ok {
+		return mt
+	}
+	if i, ok := p.unprocessedRemoteByHash[string(hash)]; ok {
+		return newMetaTx(p.unprocessedRemoteTxs.Txs[i], false, 0)
+	}
+	if mt, ok := p.byHash[string(hash)]; ok {
+		return mt
+	}
+	if has, _ := tx.Has(kv.PoolTransaction, hash); has {
+		txn, _ := tx.GetOne(kv.PoolTransaction, hash)
+		parseCtx := types.NewTxParseContext(p.chainID)
+		parseCtx.WithSender(false)
+		txSlot := &types.TxSlot{}
+		parseCtx.ParseTransaction(txn, 0, txSlot, nil, false, true, nil)
+		return newMetaTx(txSlot, false, 0)
+	}
+	return nil
+}
+
 func (p *TxPool) IsLocal(idHash []byte) bool {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -1197,6 +1262,12 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 		p.discardLocked(found, txpoolcfg.ReplacedByHigherTip)
 	}
 
+	// Remove from mined cache in case this is coming from unwind txs
+	// and to ensure not double adding into the memory
+	if _, ok := p.minedBlobTxsByHash[string(mt.Tx.IDHash[:])]; ok {
+		p.deleteMinedBlobTxn(string(mt.Tx.IDHash[:]))
+	}
+
 	p.byHash[string(mt.Tx.IDHash[:])] = mt
 
 	if replaced := p.all.replaceOrInsert(mt); replaced != nil {
@@ -1221,6 +1292,64 @@ func (p *TxPool) discardLocked(mt *metaTx, reason txpoolcfg.DiscardReason) {
 	p.all.delete(mt)
 	p.discardReasonsLRU.Add(string(mt.Tx.IDHash[:]), reason)
 }
+
+// Cache recently mined blobs in anticipation of reorg, delete finalized ones
+func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSlot) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	hash, err := coreTx.GetOne(kv.LastForkchoice, []byte("finalizedBlockHash"))
+	if err != nil {
+		return err
+	}
+	hNum, err := coreTx.GetOne(kv.HeaderNumber, hash)
+	if err != nil {
+		return err
+	}
+	finalizedBlock := binary.BigEndian.Uint64(hNum)
+	p.lastFinalizedBlock.Store(finalizedBlock)
+
+	// Remove blobs in the finalized block and older, loop through all entries
+	for l := len(p.minedBlobTxsByBlock); l >0; l-- {
+		// delete individual hashes
+		for _, mt := range p.minedBlobTxsByBlock[finalizedBlock] {
+			delete(p.minedBlobTxsByHash, string(mt.Tx.IDHash[:]))
+		}
+		// delete the map entry for this block num
+		delete(p.minedBlobTxsByBlock, finalizedBlock)
+		// move on to older blocks, if present
+		finalizedBlock--
+	}
+	
+	// Add mined blobs
+	minedBlock := p.lastSeenBlock.Load()
+	p.minedBlobTxsByBlock[minedBlock] = make([]*metaTx, 0)
+	for _, txn := range minedTxs {
+		if(txn.Type == types.BlobTxType){
+			mt := &metaTx{Tx: txn, minedBlockNum: minedBlock, }
+			p.minedBlobTxsByBlock[minedBlock] = append(p.minedBlobTxsByBlock[minedBlock], mt)
+			mt.bestIndex = len(p.minedBlobTxsByBlock[minedBlock]) - 1
+			p.minedBlobTxsByHash[string(txn.IDHash[:])] = mt
+		}
+	}
+	return nil
+}
+
+// Delete individual hash entries from minedBlobTxs cache
+func (p *TxPool) deleteMinedBlobTxn(hash string){
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	mt, exists := p.minedBlobTxsByHash[hash]
+	if(!exists){
+		return
+	}
+	l := len(p.minedBlobTxsByBlock[mt.minedBlockNum])
+	if l > 1 {
+		p.minedBlobTxsByBlock[mt.minedBlockNum][mt.bestIndex] = p.minedBlobTxsByBlock[mt.minedBlockNum][l - 1]
+	}
+	p.minedBlobTxsByBlock[mt.minedBlockNum] = p.minedBlobTxsByBlock[mt.minedBlockNum][:l-1]
+	delete(p.minedBlobTxsByHash, hash)
+}
+
 
 func (p *TxPool) NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool) {
 	p.lock.Lock()
@@ -1256,7 +1385,7 @@ func removeMined(byNonce *BySenderAndNonce, minedTxs []*types.TxSlot, pending *P
 		// delete mined transactions from everywhere
 		byNonce.ascend(senderID, func(mt *metaTx) bool {
 			//logger.Debug("[txpool] removing mined, cmp nonces", "tx.nonce", it.metaTx.Tx.nonce, "sender.nonce", sender.nonce)
-			if mt.Tx.Nonce > nonce || mt.Tx.Type == types.BlobTxType { // Don't remove blobTxs yet, for reoorg
+			if mt.Tx.Nonce > nonce {
 				return false
 			}
 			if mt.Tx.Traced {

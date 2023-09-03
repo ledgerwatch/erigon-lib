@@ -721,7 +721,7 @@ func TestShanghaiValidateTx(t *testing.T) {
 	}
 }
 
-// Blob gas price bump + other requirements to replace existing txns in the poon
+// Blob gas price bump + other requirements to replace existing txns in the pool
 func TestBlobTxReplacement(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	ch := make(chan types.Announcements, 5)
@@ -906,4 +906,20 @@ func makeBlobTx() types.TxSlot {
 	blobTx.BlobHashes[0] = common.Hash(kzg.KZGToVersionedHash(commitment0))
 	blobTx.BlobHashes[1] = common.Hash(kzg.KZGToVersionedHash(commitment1))
 	return blobTx
+}
+
+func TestBlaBla(t *testing.T) {
+	var abc = ""
+	abc = "no no"
+	if abc != "" {
+		t.Log("Hola ", abc)
+	}
+	if abc == "no no"{
+		t.Log("Hola ", abc)
+	}
+	// var abcd *string = nil
+	// abcd = &string("no no")
+	// if abcd != nil {
+	// 	t.Logf("Hola %s", *abcd)
+	// }
 }
