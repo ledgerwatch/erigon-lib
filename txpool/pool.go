@@ -267,6 +267,8 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 		chainID:                 chainID,
 		unprocessedRemoteTxs:    &types.TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
+		minedBlobTxsByBlock: map[uint64][]*metaTx{},
+		minedBlobTxsByHash: map[string]*metaTx{},
 		logger:                  logger,
 	}
 
@@ -374,7 +376,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		return err
 	}
 
-	if err := p.processMinedFinalizedBlobs(coreTx, minedTxs.Txs); err != nil {
+	if err := p.processMinedFinalizedBlobs(coreTx, minedTxs.Txs, stateChanges.FinalizedBlock); err != nil {
 		return err
 	}
 
@@ -1294,22 +1296,27 @@ func (p *TxPool) discardLocked(mt *metaTx, reason txpoolcfg.DiscardReason) {
 }
 
 // Cache recently mined blobs in anticipation of reorg, delete finalized ones
-func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSlot) error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	hash, err := coreTx.GetOne(kv.LastForkchoice, []byte("finalizedBlockHash"))
-	if err != nil {
-		return err
+func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSlot, finalizedBlock uint64) error {
+	// p.lock.Lock()
+	// defer p.lock.Unlock()
+
+	// Get the last finalized blob
+	if has, _ := coreTx.Has(kv.LastForkchoice, []byte("finalizedBlockHash")); has {
+		hash, err := coreTx.GetOne(kv.LastForkchoice, []byte("finalizedBlockHash"))
+		if err != nil {
+			return err
+		}
+		hNum, err := coreTx.GetOne(kv.HeaderNumber, hash)
+		if err != nil {
+			return err
+		}
+		finalizedBlock = binary.BigEndian.Uint64(hNum)
+		p.lastFinalizedBlock.Store(finalizedBlock)
 	}
-	hNum, err := coreTx.GetOne(kv.HeaderNumber, hash)
-	if err != nil {
-		return err
-	}
-	finalizedBlock := binary.BigEndian.Uint64(hNum)
-	p.lastFinalizedBlock.Store(finalizedBlock)
+	
 
 	// Remove blobs in the finalized block and older, loop through all entries
-	for l := len(p.minedBlobTxsByBlock); l >0; l-- {
+	for l := len(p.minedBlobTxsByBlock); l >0 && finalizedBlock > 0; l-- {
 		// delete individual hashes
 		for _, mt := range p.minedBlobTxsByBlock[finalizedBlock] {
 			delete(p.minedBlobTxsByHash, string(mt.Tx.IDHash[:]))
@@ -1336,8 +1343,8 @@ func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSl
 
 // Delete individual hash entries from minedBlobTxs cache
 func (p *TxPool) deleteMinedBlobTxn(hash string){
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	// p.lock.Lock()
+	// defer p.lock.Unlock()
 	mt, exists := p.minedBlobTxsByHash[hash]
 	if(!exists){
 		return
