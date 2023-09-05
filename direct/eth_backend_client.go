@@ -182,11 +182,15 @@ func (c *SubscribeLogsStreamC) Send(m *remote.LogsFilterRequest) error {
 }
 
 func (c *SubscribeLogsStreamC) Recv() (*remote.SubscribeLogsReply, error) {
-	m, ok := <-c.chRecv
-	if !ok || m == nil {
-		return nil, io.EOF
+	select {
+	case <-c.ctx.Done():
+		return nil, c.ctx.Err()
+	case m, ok := <-c.chRecv:
+		if !ok || m == nil {
+			return nil, io.EOF
+		}
+		return m.r, m.err
 	}
-	return m.r, m.err
 }
 
 // -- end SubscribeLogs

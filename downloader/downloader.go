@@ -18,7 +18,9 @@ package downloader
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	prototypes "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -115,7 +117,7 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 
 		statsLock: &sync.RWMutex{},
 	}
-	if err := d.addSegments(); err != nil {
+	if err := d.addSegments(ctx); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -126,14 +128,26 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		d.mainLoop(ctx, silent)
+		defer fmt.Printf("loop3 done\n")
+
+		if err := d.mainLoop(ctx, silent); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				log.Warn("[snapshots]", "err", err)
+			}
+		}
 	}()
 }
 
-func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
+func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
+	defer fmt.Printf("loop2 done\n")
 
+	d.wg.Add(1)
 	go func() {
+		defer d.wg.Done()
+
+		defer fmt.Printf("loop1 done\n")
+
 		// Torrents that are already taken care of
 		torrentMap := map[metainfo.Hash]struct{}{}
 		// First loop drops torrents that were downloaded or are already complete
@@ -143,7 +157,14 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				if _, already := torrentMap[t.InfoHash()]; already {
 					continue
 				}
-				<-t.GotInfo()
+				select {
+				case <-ctx.Done():
+					t.DisallowDataDownload()
+					t.DisallowDataUpload()
+					t.Drop()
+					return
+				case <-t.GotInfo():
+				}
 				if t.Complete.Bool() {
 					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
 					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
@@ -157,9 +178,15 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				t.AllowDataDownload()
 				t.DownloadAll()
 				torrentMap[t.InfoHash()] = struct{}{}
+				d.wg.Add(1)
 				go func(t *torrent.Torrent) {
+					defer d.wg.Done()
 					defer sem.Release(1)
-					<-t.Complete.On()
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.Complete.On():
+					}
 					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
 					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
 					t.Drop()
@@ -168,7 +195,9 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 		}
 		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
 		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
-		d.addSegments()
+		if err := d.addSegments(ctx); err != nil {
+			return
+		}
 		maps.Clear(torrentMap)
 		for {
 			torrents := d.Torrent().Torrents()
@@ -176,7 +205,13 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				if _, already := torrentMap[t.InfoHash()]; already {
 					continue
 				}
-				<-t.GotInfo()
+				select {
+				case <-ctx.Done():
+					t.DisallowDataDownload()
+					t.DisallowDataUpload()
+					return
+				case <-t.GotInfo():
+				}
 				if t.Complete.Bool() {
 					torrentMap[t.InfoHash()] = struct{}{}
 					continue
@@ -187,12 +222,19 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 				t.AllowDataDownload()
 				t.DownloadAll()
 				torrentMap[t.InfoHash()] = struct{}{}
+				d.wg.Add(1)
 				go func(t *torrent.Torrent) {
+					defer d.wg.Done()
 					defer sem.Release(1)
 					//r := t.NewReader()
 					//r.SetReadahead(t.Length())
 					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
-					<-t.Complete.On()
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.Complete.On():
+						return
+					}
 				}(t)
 			}
 			time.Sleep(30 * time.Second)
@@ -210,7 +252,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) {
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		case <-statEvery.C:
 			d.ReCalcStats(statInterval)
 
@@ -388,7 +430,9 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		logInterval := 20 * time.Second
 		logEvery := time.NewTicker(logInterval)
 		defer logEvery.Stop()
+		d.wg.Add(1)
 		go func() {
+			defer d.wg.Done()
 			for {
 				select {
 				case <-ctx.Done():
@@ -417,7 +461,49 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
 
-func (d *Downloader) addSegments() error {
+func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *prototypes.H160, snapDir string) (bool, error) {
+	mi := &metainfo.MetaInfo{AnnounceList: Trackers}
+	if hash == nil {
+		return false, nil
+	}
+	infoHash := Proto2InfoHash(hash)
+	//log.Debug("[downloader] downloading torrent and seg file", "hash", infoHash)
+
+	if _, ok := d.torrentClient.Torrent(infoHash); ok {
+		//log.Debug("[downloader] torrent client related to hash found", "hash", infoHash)
+		return true, nil
+	}
+
+	magnet := mi.Magnet(&infoHash, nil)
+	t, err := d.torrentClient.AddMagnet(magnet.String())
+	if err != nil {
+		//log.Warn("[downloader] add magnet link", "err", err)
+		return false, err
+	}
+	t.DisallowDataDownload()
+	t.AllowDataUpload()
+	d.wg.Add(1)
+	go func(t *torrent.Torrent) {
+		defer d.wg.Done()
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.GotInfo():
+		}
+
+		mi := t.Metainfo()
+		if err := CreateTorrentFileIfNotExists(snapDir, t.Info(), &mi); err != nil {
+			log.Warn("[downloader] create torrent file", "err", err)
+			return
+		}
+	}(t)
+	//log.Debug("[downloader] downloaded both seg and torrent files", "hash", infoHash)
+	return false, nil
+}
+
+func (d *Downloader) addSegments(ctx context.Context) error {
+	fmt.Printf("addSegments\n")
+	defer fmt.Printf("addSegments done\n")
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 	_, err := BuildTorrentFilesIfNeed(context.Background(), d.SnapDir())
@@ -433,27 +519,38 @@ func (d *Downloader) addSegments() error {
 		return fmt.Errorf("seedableHistorySnapshots: %w", err)
 	}
 	files = append(files, files2...)
-	wg := &sync.WaitGroup{}
+
+	g, ctx := errgroup.WithContext(ctx)
 	i := atomic.Int64{}
 	for _, f := range files {
-		wg.Add(1)
-		go func(f string) {
-			defer wg.Done()
+		f := f
+		d.wg.Add(1)
+		g.Go(func() error {
+			defer d.wg.Done()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
 			_, err := AddSegment(f, d.cfg.DataDir, d.torrentClient)
 			if err != nil {
-				log.Warn("[snapshots] AddSegment", "err", err)
-				return
+				return err
 			}
 
 			i.Add(1)
 			select {
+			case <-ctx.Done():
+				return ctx.Err()
 			case <-logEvery.C:
 				log.Info("[snpshots] initializing", "files", fmt.Sprintf("%d/%d", i.Load(), len(files)))
 			default:
 			}
-		}(f)
+			return nil
+		})
 	}
-	wg.Wait()
+	if err := g.Wait(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -464,9 +561,14 @@ func (d *Downloader) Stats() AggStats {
 }
 
 func (d *Downloader) Close() {
+	defer fmt.Printf("Downloader.Close done\n")
 	d.stopMainLoop()
 	d.wg.Wait()
-	d.torrentClient.Close()
+	fmt.Printf("close client\n")
+	errs := d.torrentClient.Close()
+	for _, err := range errs {
+		fmt.Printf("errrr: %s\n", err)
+	}
 	if err := d.folder.Close(); err != nil {
 		log.Warn("[snapshots] folder.close", "err", err)
 	}
