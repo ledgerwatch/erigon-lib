@@ -99,3 +99,9 @@ func (b BLSSignature) Generate(rand *rand.Rand, size int) reflect.Value {
 func (b BLSSignature) Value() (driver.Value, error) {
 	return b[:], nil
 }
+
+// TerminalString implements log.TerminalStringer, formatting a string for console
+// output during logging.
+func (b BLSSignature) TerminalString() string {
+	return fmt.Sprintf("%x…%x", b[:3], b[len(b)-3:])
+}

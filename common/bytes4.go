@@ -99,3 +99,9 @@ func (b Bytes4) Generate(rand *rand.Rand, size int) reflect.Value {
 func (b Bytes4) Value() (driver.Value, error) {
 	return b[:], nil
 }
+
+// TerminalString implements log.TerminalStringer, formatting a string for console
+// output during logging.
+func (b Bytes4) TerminalString() string {
+	return fmt.Sprintf("%x", b)
+}
