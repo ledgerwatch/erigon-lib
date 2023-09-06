@@ -88,7 +88,7 @@ type Pool interface {
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
-	GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx)
+	GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx
 
 	AddNewGoodPeer(peerID types.PeerID)
 }
@@ -129,7 +129,7 @@ type metaTx struct {
 	subPool                   SubPoolMarker
 	currentSubPool            SubPoolType
 	alreadyYielded            bool
-	minedBlockNum			  uint64
+	minedBlockNum             uint64
 }
 
 func newMetaTx(slot *types.TxSlot, isLocal bool, timestmap uint64) *metaTx {
@@ -207,8 +207,8 @@ type TxPool struct {
 	pending                 *PendingPool
 	baseFee                 *SubPool
 	queued                  *SubPool
-	minedBlobTxsByBlock		map[uint64][]*metaTx			// (blockNum => slice): cache of recently mined blobs
-	minedBlobTxsByHash		map[string]*metaTx				// (hash => mt): map of recently mined blobs
+	minedBlobTxsByBlock     map[uint64][]*metaTx             // (blockNum => slice): cache of recently mined blobs
+	minedBlobTxsByHash      map[string]*metaTx               // (hash => mt): map of recently mined blobs
 	isLocalLRU              *simplelru.LRU[string, struct{}] // tx_hash => is_local : to restore isLocal flag of unwinded transactions
 	newPendingTxs           chan types.Announcements         // notifications about new txs in Pending sub-pool
 	all                     *BySenderAndNonce                // senderID => (sorted map of tx nonce => *metaTx)
@@ -217,7 +217,7 @@ type TxPool struct {
 	cfg                     txpoolcfg.Config
 	chainID                 uint256.Int
 	lastSeenBlock           atomic.Uint64
-	lastFinalizedBlock		atomic.Uint64
+	lastFinalizedBlock      atomic.Uint64
 	started                 atomic.Bool
 	pendingBaseFee          atomic.Uint64
 	blockGasLimit           atomic.Uint64
@@ -243,6 +243,7 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 		tree:             btree.NewG[*metaTx](32, SortByNonceLess),
 		search:           &metaTx{Tx: &types.TxSlot{}},
 		senderIDTxnCount: map[uint64]int{},
+		senderIDBlobCount: map[uint64]uint64{},
 	}
 	tracedSenders := make(map[common.Address]struct{})
 	for _, sender := range cfg.TracedSenders {
@@ -267,8 +268,8 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 		chainID:                 chainID,
 		unprocessedRemoteTxs:    &types.TxSlots{},
 		unprocessedRemoteByHash: map[string]int{},
-		minedBlobTxsByBlock: map[uint64][]*metaTx{},
-		minedBlobTxsByHash: map[string]*metaTx{},
+		minedBlobTxsByBlock:     map[uint64][]*metaTx{},
+		minedBlobTxsByHash:      map[string]*metaTx{},
 		logger:                  logger,
 	}
 
@@ -289,18 +290,6 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 
 	return res, nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs types.TxSlots, tx kv.Tx) error {
 	defer newBlockTimer.UpdateDuration(time.Now())
@@ -382,7 +371,7 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 
 	//p.logger.Debug("[txpool] new block", "unwinded", len(unwindTxs.txs), "mined", len(minedTxs.txs), "baseFee", baseFee, "blockHeight", blockHeight)
 
-	announcements, err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs /* newTxs */,
+	announcements, err := addTxsOnNewBlock(p.lastSeenBlock.Load(), cacheView, stateChanges, p.senders, unwindTxs, /* newTxs */
 		pendingBaseFee, stateChanges.BlockGasLimit,
 		p.pending, p.baseFee, p.queued, p.all, p.byHash, p.addLocked, p.discardLocked, p.logger)
 	if err != nil {
@@ -410,23 +399,6 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 	//p.logger.Info("[txpool] new block", "number", p.lastSeenBlock.Load(), "pendngBaseFee", pendingBaseFee, "in", time.Since(t))
 	return nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func (p *TxPool) processRemoteTxs(ctx context.Context) error {
 	if !p.started.Load() {
@@ -563,7 +535,7 @@ func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
 	return tx.Has(kv.PoolTransaction, hash)
 }
 
-func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx){
+func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	if mt, ok := p.minedBlobTxsByHash[string(hash)]; ok {
@@ -786,6 +758,12 @@ func (p *TxPool) validateTx(txn *types.TxSlot, isLocal bool, stateCache kvcache.
 	if !isLocal && uint64(p.all.count(txn.SenderID)) > p.cfg.AccountSlots {
 		if txn.Traced {
 			log.Info(fmt.Sprintf("TX TRACING: validateTx marked as spamming idHash=%x slots=%d, limit=%d", txn.IDHash, p.all.count(txn.SenderID), p.cfg.AccountSlots))
+		}
+		return txpoolcfg.Spammer
+	}
+	if p.all.blobCount(txn.SenderID) > p.cfg.BlobSlots {
+		if txn.Traced {
+			log.Info(fmt.Sprintf("TX TRACING: validateTx marked as spamming (too many blobs) idHash=%x slots=%d, limit=%d", txn.IDHash, p.all.count(txn.SenderID), p.cfg.AccountSlots))
 		}
 		return txpoolcfg.Spammer
 	}
@@ -1297,26 +1275,8 @@ func (p *TxPool) discardLocked(mt *metaTx, reason txpoolcfg.DiscardReason) {
 
 // Cache recently mined blobs in anticipation of reorg, delete finalized ones
 func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSlot, finalizedBlock uint64) error {
-	// p.lock.Lock()
-	// defer p.lock.Unlock()
-
-	// Get the last finalized blob
-	if has, _ := coreTx.Has(kv.LastForkchoice, []byte("finalizedBlockHash")); has {
-		hash, err := coreTx.GetOne(kv.LastForkchoice, []byte("finalizedBlockHash"))
-		if err != nil {
-			return err
-		}
-		hNum, err := coreTx.GetOne(kv.HeaderNumber, hash)
-		if err != nil {
-			return err
-		}
-		finalizedBlock = binary.BigEndian.Uint64(hNum)
-		p.lastFinalizedBlock.Store(finalizedBlock)
-	}
-	
-
 	// Remove blobs in the finalized block and older, loop through all entries
-	for l := len(p.minedBlobTxsByBlock); l >0 && finalizedBlock > 0; l-- {
+	for l := len(p.minedBlobTxsByBlock); l > 0 && finalizedBlock > 0; l-- {
 		// delete individual hashes
 		for _, mt := range p.minedBlobTxsByBlock[finalizedBlock] {
 			delete(p.minedBlobTxsByHash, string(mt.Tx.IDHash[:]))
@@ -1326,37 +1286,36 @@ func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSl
 		// move on to older blocks, if present
 		finalizedBlock--
 	}
-	
+
 	// Add mined blobs
 	minedBlock := p.lastSeenBlock.Load()
 	p.minedBlobTxsByBlock[minedBlock] = make([]*metaTx, 0)
 	for _, txn := range minedTxs {
-		if(txn.Type == types.BlobTxType){
-			mt := &metaTx{Tx: txn, minedBlockNum: minedBlock, }
+		if txn.Type == types.BlobTxType {
+			mt := &metaTx{Tx: txn, minedBlockNum: minedBlock}
 			p.minedBlobTxsByBlock[minedBlock] = append(p.minedBlobTxsByBlock[minedBlock], mt)
 			mt.bestIndex = len(p.minedBlobTxsByBlock[minedBlock]) - 1
 			p.minedBlobTxsByHash[string(txn.IDHash[:])] = mt
 		}
 	}
+
+	p.lastFinalizedBlock.Store(finalizedBlock)
 	return nil
 }
 
 // Delete individual hash entries from minedBlobTxs cache
-func (p *TxPool) deleteMinedBlobTxn(hash string){
-	// p.lock.Lock()
-	// defer p.lock.Unlock()
+func (p *TxPool) deleteMinedBlobTxn(hash string) {
 	mt, exists := p.minedBlobTxsByHash[hash]
-	if(!exists){
+	if !exists {
 		return
 	}
 	l := len(p.minedBlobTxsByBlock[mt.minedBlockNum])
 	if l > 1 {
-		p.minedBlobTxsByBlock[mt.minedBlockNum][mt.bestIndex] = p.minedBlobTxsByBlock[mt.minedBlockNum][l - 1]
+		p.minedBlobTxsByBlock[mt.minedBlockNum][mt.bestIndex] = p.minedBlobTxsByBlock[mt.minedBlockNum][l-1]
 	}
 	p.minedBlobTxsByBlock[mt.minedBlockNum] = p.minedBlobTxsByBlock[mt.minedBlockNum][:l-1]
 	delete(p.minedBlobTxsByHash, hash)
 }
-
 
 func (p *TxPool) NonceFromAddress(addr [20]byte) (nonce uint64, inPool bool) {
 	p.lock.Lock()
@@ -1439,7 +1398,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 		deleteAndContinueReasonLog := ""
 		if senderNonce > mt.Tx.Nonce {
 			deleteAndContinueReasonLog = "low nonce"
-		} else if mt.Tx.Nonce != noGapsNonce && mt.Tx.Type == types.BlobTxType {	// Discard nonce-gapped blob txns
+		} else if mt.Tx.Nonce != noGapsNonce && mt.Tx.Type == types.BlobTxType { // Discard nonce-gapped blob txns
 			deleteAndContinueReasonLog = "nonce-gapped blob txn"
 		}
 		if deleteAndContinueReasonLog != "" {
@@ -2190,9 +2149,10 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 //   - All senders stored inside 1 large BTree - because iterate over 1 BTree is faster than over map[senderId]BTree
 //   - sortByNonce used as non-pointer wrapper - because iterate over BTree of pointers is 2x slower
 type BySenderAndNonce struct {
-	tree             *btree.BTreeG[*metaTx]
-	search           *metaTx
-	senderIDTxnCount map[uint64]int // count of sender's txns in the pool - may differ from nonce
+	tree              *btree.BTreeG[*metaTx]
+	search            *metaTx
+	senderIDTxnCount  map[uint64]int // count of sender's txns in the pool - may differ from nonce
+	senderIDBlobCount map[uint64]uint64 // count of sender's total number of blobs in the pool
 }
 
 func (b *BySenderAndNonce) nonce(senderID uint64) (nonce uint64, ok bool) {
@@ -2239,6 +2199,9 @@ func (b *BySenderAndNonce) descend(senderID uint64, f func(*metaTx) bool) {
 func (b *BySenderAndNonce) count(senderID uint64) int {
 	return b.senderIDTxnCount[senderID]
 }
+func (b *BySenderAndNonce) blobCount(senderID uint64) uint64 {
+	return b.senderIDBlobCount[senderID]
+}
 func (b *BySenderAndNonce) hasTxs(senderID uint64) bool {
 	has := false
 	b.ascend(senderID, func(*metaTx) bool {
@@ -2270,6 +2233,16 @@ func (b *BySenderAndNonce) delete(mt *metaTx) {
 		} else {
 			delete(b.senderIDTxnCount, senderID)
 		}
+
+		if mt.Tx.Type == types.BlobTxType && mt.Tx.Blobs != nil{
+			accBlobCount := b.senderIDBlobCount[senderID]
+			txnBlobCount := len(mt.Tx.Blobs)
+			if txnBlobCount > 1 {
+				b.senderIDBlobCount[senderID] = accBlobCount - uint64(txnBlobCount)
+			} else {
+				delete(b.senderIDBlobCount, senderID)
+			}
+		}
 	}
 }
 func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
@@ -2278,6 +2251,9 @@ func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 		return it
 	}
 	b.senderIDTxnCount[mt.Tx.SenderID]++
+	if mt.Tx.Type == types.BlobTxType && mt.Tx.Blobs != nil{
+		b.senderIDBlobCount[mt.Tx.SenderID]+= uint64(len(mt.Tx.Blobs))
+	}
 	return nil
 }
 

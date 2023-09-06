@@ -482,12 +482,9 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
 						_, err = parseContext.ParseTransaction(change.Txs[i], 0, unwindTxs.Txs[i], unwindTxs.Senders.At(i), false /* hasEnvelope */, false /* wrappedWithBlobs */, nil)
 						if(unwindTxs.Txs[i].Type == types2.BlobTxType){
-							blobMt := f.pool.GetKnownBlobTxn(tx, unwindTxs.Txs[i].IDHash[:])
-							if blobMt == nil {
-								// TODO (@somnathb1 eip-4844): fetch from peer - if applicable
-							} else {
-								// Replace unwrapped blobTx with wrapped version from pool/db
-								unwindTxs.Txs[i] = blobMt.Tx
+							knownBlobTxn := f.pool.GetKnownBlobTxn(tx, unwindTxs.Txs[i].IDHash[:])
+							if knownBlobTxn != nil {
+								unwindTxs.Txs[i] = knownBlobTxn.Tx
 							}
 						}
 						return err
