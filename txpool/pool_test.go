@@ -907,19 +907,3 @@ func makeBlobTx() types.TxSlot {
 	blobTx.BlobHashes[1] = common.Hash(kzg.KZGToVersionedHash(commitment1))
 	return blobTx
 }
-
-func TestBlaBla(t *testing.T) {
-	var abc = ""
-	abc = "no no"
-	if abc != "" {
-		t.Log("Hola ", abc)
-	}
-	if abc == "no no"{
-		t.Log("Hola ", abc)
-	}
-	// var abcd *string = nil
-	// abcd = &string("no no")
-	// if abcd != nil {
-	// 	t.Logf("Hola %s", *abcd)
-	// }
-}

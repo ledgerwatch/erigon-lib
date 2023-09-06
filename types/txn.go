@@ -127,10 +127,10 @@ var ErrRlpTooBig = errors.New("txn rlp too big")
 func (ctx *TxParseContext) ValidateRLP(f func(txnRlp []byte) error) { ctx.validateRlp = f }
 
 // Set the with sender flag
-func (ctx *TxParseContext) WithSender(v bool)                       { ctx.withSender = v }
+func (ctx *TxParseContext) WithSender(v bool) { ctx.withSender = v }
 
 // Set the AllowPreEIP2s flag
-func (ctx *TxParseContext) WithAllowPreEip2s(v bool)                { ctx.allowPreEip2s = v }
+func (ctx *TxParseContext) WithAllowPreEip2s(v bool) { ctx.allowPreEip2s = v }
 
 // Set ChainID-Required flag in the Parse context and return it
 func (ctx *TxParseContext) ChainIDRequired() *TxParseContext {

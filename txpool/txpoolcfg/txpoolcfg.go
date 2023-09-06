@@ -61,7 +61,7 @@ var DefaultConfig = Config{
 
 	MinFeeCap:     1,
 	AccountSlots:  16, //TODO: to choose right value (16 to be compatible with Geth)
-	BlobSlots:     48,	// Allows 8 txs of 6 blobs each - for hive tests
+	BlobSlots:     48, // Allows 8 txs of 6 blobs each - for hive tests
 	PriceBump:     10, // Price bump percentage to replace an already existing transaction
 	BlobPriceBump: 100,
 }

@@ -240,9 +240,9 @@ func New(newTxs chan types.Announcements, coreDB kv.RoDB, cfg txpoolcfg.Config, 
 	}
 
 	byNonce := &BySenderAndNonce{
-		tree:             btree.NewG[*metaTx](32, SortByNonceLess),
-		search:           &metaTx{Tx: &types.TxSlot{}},
-		senderIDTxnCount: map[uint64]int{},
+		tree:              btree.NewG[*metaTx](32, SortByNonceLess),
+		search:            &metaTx{Tx: &types.TxSlot{}},
+		senderIDTxnCount:  map[uint64]int{},
 		senderIDBlobCount: map[uint64]uint64{},
 	}
 	tracedSenders := make(map[common.Address]struct{})
@@ -2151,7 +2151,7 @@ func (sc *sendersBatch) onNewBlock(stateChanges *remote.StateChangeBatch, unwind
 type BySenderAndNonce struct {
 	tree              *btree.BTreeG[*metaTx]
 	search            *metaTx
-	senderIDTxnCount  map[uint64]int // count of sender's txns in the pool - may differ from nonce
+	senderIDTxnCount  map[uint64]int    // count of sender's txns in the pool - may differ from nonce
 	senderIDBlobCount map[uint64]uint64 // count of sender's total number of blobs in the pool
 }
 
@@ -2234,7 +2234,7 @@ func (b *BySenderAndNonce) delete(mt *metaTx) {
 			delete(b.senderIDTxnCount, senderID)
 		}
 
-		if mt.Tx.Type == types.BlobTxType && mt.Tx.Blobs != nil{
+		if mt.Tx.Type == types.BlobTxType && mt.Tx.Blobs != nil {
 			accBlobCount := b.senderIDBlobCount[senderID]
 			txnBlobCount := len(mt.Tx.Blobs)
 			if txnBlobCount > 1 {
@@ -2251,8 +2251,8 @@ func (b *BySenderAndNonce) replaceOrInsert(mt *metaTx) *metaTx {
 		return it
 	}
 	b.senderIDTxnCount[mt.Tx.SenderID]++
-	if mt.Tx.Type == types.BlobTxType && mt.Tx.Blobs != nil{
-		b.senderIDBlobCount[mt.Tx.SenderID]+= uint64(len(mt.Tx.Blobs))
+	if mt.Tx.Type == types.BlobTxType && mt.Tx.Blobs != nil {
+		b.senderIDBlobCount[mt.Tx.SenderID] += uint64(len(mt.Tx.Blobs))
 	}
 	return nil
 }
