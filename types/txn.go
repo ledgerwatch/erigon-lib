@@ -146,7 +146,20 @@ func PeekTransactionType(serialized []byte) (byte, error) {
 // It also performs syntactic validation of the transactions.
 // wrappedWithBlobs means that for blob (type 3) transactions the full version with blobs/commitments/proofs is expected
 // (see https://eips.ethereum.org/EIPS/eip-4844#networking).
+//
+// [  ] || [          nonce,      price, limit, to, value, data,                                     y,r,s]
+// 0x01 || [chain_id, nonce,      price, limit, to, value, data, access_list,                        y,r,s]
+// 0x02 || [chain_id, nonce, tip, price, limit, to, value, data, access_list,                        y,r,s]
+// 0x03 || [chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s]
+// 0x03 ||[[chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s], blobs, commitments, proofs]
 func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (p int, err error) {
+	err = ctx.parseTransaction2(payload, pos, slot, sender, hasEnvelope, wrappedWithBlobs, validateHash)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrParseTxn, err)
+	}
+	return len(payload), nil
+}
+func (ctx *TxParseContext) parseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (p int, err error) {
 	if len(payload) == 0 {
 		return 0, fmt.Errorf("%w: empty rlp", ErrParseTxn)
 	}

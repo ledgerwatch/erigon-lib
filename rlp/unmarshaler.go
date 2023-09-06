@@ -1,7 +1,6 @@
 package rlp
 
 import (
-	"bytes"
 	"fmt"
 	"reflect"
 )
@@ -11,11 +10,11 @@ type Unmarshaler interface {
 }
 
 func Unmarshal(data []byte, val any) error {
-	buf := bytes.NewBuffer(data)
+	buf := newBuf(data, 0)
 	return unmarshal(buf, val)
 }
 
-func unmarshal(buf *bytes.Buffer, val any) error {
+func unmarshal(buf *buf, val any) error {
 	rv := reflect.ValueOf(val)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("%w: v must be ptr", ErrDecode)
@@ -28,7 +27,7 @@ func unmarshal(buf *bytes.Buffer, val any) error {
 	return nil
 }
 
-func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
+func reflectAny(w *buf, v reflect.Value, rv reflect.Value) error {
 	if um, ok := rv.Interface().(Unmarshaler); ok {
 		return um.UnmarshalRLP(w.Bytes())
 	}
@@ -76,7 +75,7 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		if err != nil {
 			return err
 		}
-		return reflectList(bytes.NewBuffer(buf), v, rv)
+		return reflectList(newBuf(buf, 0), v, rv)
 	case TokenLongList:
 		lenSz := int(token.Diff(prefix))
 		sz, err := nextBeInt(w, lenSz)
@@ -87,7 +86,7 @@ func reflectAny(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
 		if err != nil {
 			return err
 		}
-		return reflectList(bytes.NewBuffer(buf), v, rv)
+		return reflectList(newBuf(buf, 0), v, rv)
 	case TokenUnknown:
 		return fmt.Errorf("%w: unknown token", ErrDecode)
 	}
@@ -127,7 +126,7 @@ func putBlob(w []byte, v reflect.Value, rv reflect.Value) error {
 	return nil
 }
 
-func reflectList(w *bytes.Buffer, v reflect.Value, rv reflect.Value) error {
+func reflectList(w *buf, v reflect.Value, rv reflect.Value) error {
 	switch v.Kind() {
 	case reflect.Invalid:
 		// do nothing

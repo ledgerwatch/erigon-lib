@@ -1,9 +1,5 @@
 package rlp
 
-import (
-	"bytes"
-)
-
 type Token int32
 
 func (T Token) Plus(n byte) byte {
@@ -14,6 +10,14 @@ func (T Token) Diff(n byte) byte {
 	return n - byte(T)
 }
 
+func (T Token) IsListType() bool {
+	return T == TokenLongList || T == TokenShortList
+}
+
+func (T Token) IsBlobType() bool {
+	return T == TokenLongBlob || T == TokenShortBlob
+}
+
 const (
 	TokenDecimal   Token = 0x00
 	TokenShortBlob Token = 0x80
@@ -21,7 +25,8 @@ const (
 	TokenShortList Token = 0xc0
 	TokenLongList  Token = 0xf7
 
-	TokenUnknown Token = -1
+	TokenUnknown Token = 0xff01
+	TokenEOF     Token = 0xdead
 )
 
 func identifyToken(b byte) Token {
@@ -41,7 +46,7 @@ func identifyToken(b byte) Token {
 }
 
 // BeInt parses Big Endian representation of an integer from given payload at given position
-func nextBeInt(w *bytes.Buffer, length int) (int, error) {
+func nextBeInt(w *buf, length int) (int, error) {
 	dat, err := nextFull(w, length)
 	if err != nil {
 		return 0, ErrUnexpectedEOF
@@ -49,7 +54,7 @@ func nextBeInt(w *bytes.Buffer, length int) (int, error) {
 	return BeInt(dat, 0, length)
 }
 
-func nextFull(dat *bytes.Buffer, size int) ([]byte, error) {
+func nextFull(dat *buf, size int) ([]byte, error) {
 	d := dat.Next(size)
 	if len(d) != size {
 		return nil, ErrUnexpectedEOF
