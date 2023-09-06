@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	prototypes "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -35,10 +34,10 @@ import (
 	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/downloader/downloadercfg"
+	prototypes "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -69,7 +68,7 @@ type AggStats struct {
 	Progress  float32
 
 	BytesCompleted, BytesTotal     uint64
-	DroppedCompleted, DroppedTotal uint64
+	DroppedCompleted, DroppedTotal atomic.Uint64
 
 	BytesDownload, BytesUpload uint64
 	UploadRate, DownloadRate   uint64
@@ -128,8 +127,6 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		defer fmt.Printf("loop3 done\n")
-
 		if err := d.mainLoop(ctx, silent); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Warn("[snapshots]", "err", err)
@@ -140,104 +137,100 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 
 func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
-	defer fmt.Printf("loop2 done\n")
 
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
 
-		defer fmt.Printf("loop1 done\n")
-
 		// Torrents that are already taken care of
 		torrentMap := map[metainfo.Hash]struct{}{}
 		// First loop drops torrents that were downloaded or are already complete
 		// This improves efficiency of download by reducing number of active torrent (empirical observation)
-		for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
-			for _, t := range torrents {
-				if _, already := torrentMap[t.InfoHash()]; already {
-					continue
-				}
+	DownloadLoop:
+		torrents := d.Torrent().Torrents()
+		for _, t := range torrents {
+			if _, already := torrentMap[t.InfoHash()]; already {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.GotInfo():
+			}
+			if t.Complete.Bool() {
+				d.stats.DroppedCompleted.Add(uint64(t.BytesCompleted()))
+				d.stats.DroppedTotal.Add(uint64(t.Length()))
+				//t.Drop()
+				torrentMap[t.InfoHash()] = struct{}{}
+				continue
+			}
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return
+			}
+			t.AllowDataDownload()
+			t.DownloadAll()
+			torrentMap[t.InfoHash()] = struct{}{}
+			d.wg.Add(1)
+			go func(t *torrent.Torrent) {
+				defer d.wg.Done()
+				defer sem.Release(1)
 				select {
 				case <-ctx.Done():
-					t.DisallowDataDownload()
-					t.DisallowDataUpload()
-					t.Drop()
 					return
-				case <-t.GotInfo():
+				case <-t.Complete.On():
 				}
-				if t.Complete.Bool() {
-					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
-					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-					t.Drop()
-					torrentMap[t.InfoHash()] = struct{}{}
-					continue
-				}
-				if err := sem.Acquire(ctx, 1); err != nil {
-					return
-				}
-				t.AllowDataDownload()
-				t.DownloadAll()
-				torrentMap[t.InfoHash()] = struct{}{}
-				d.wg.Add(1)
-				go func(t *torrent.Torrent) {
-					defer d.wg.Done()
-					defer sem.Release(1)
-					select {
-					case <-ctx.Done():
-						return
-					case <-t.Complete.On():
-					}
-					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
-					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-					t.Drop()
-				}(t)
-			}
+				d.stats.DroppedCompleted.Add(uint64(t.BytesCompleted()))
+				d.stats.DroppedTotal.Add(uint64(t.Length()))
+				//t.Drop()
+			}(t)
 		}
-		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
-		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
+		if len(torrents) != len(d.Torrent().Torrents()) { //if amount of torrents changed - keep downloading
+			goto DownloadLoop
+		}
+
 		if err := d.addSegments(ctx); err != nil {
 			return
 		}
-		maps.Clear(torrentMap)
-		for {
-			torrents := d.Torrent().Torrents()
-			for _, t := range torrents {
-				if _, already := torrentMap[t.InfoHash()]; already {
-					continue
-				}
+	DownloadLoop2:
+		torrents = d.Torrent().Torrents()
+		for _, t := range torrents {
+			if _, already := torrentMap[t.InfoHash()]; already {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.GotInfo():
+			}
+			if t.Complete.Bool() {
+				d.stats.DroppedCompleted.Add(uint64(t.BytesCompleted()))
+				d.stats.DroppedTotal.Add(uint64(t.Length()))
+				//t.Drop()
+				torrentMap[t.InfoHash()] = struct{}{}
+				continue
+			}
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return
+			}
+			t.AllowDataDownload()
+			t.DownloadAll()
+			torrentMap[t.InfoHash()] = struct{}{}
+			d.wg.Add(1)
+			go func(t *torrent.Torrent) {
+				defer d.wg.Done()
+				defer sem.Release(1)
 				select {
 				case <-ctx.Done():
-					t.DisallowDataDownload()
-					t.DisallowDataUpload()
 					return
-				case <-t.GotInfo():
+				case <-t.Complete.On():
 				}
-				if t.Complete.Bool() {
-					torrentMap[t.InfoHash()] = struct{}{}
-					continue
-				}
-				if err := sem.Acquire(ctx, 1); err != nil {
-					return
-				}
-				t.AllowDataDownload()
-				t.DownloadAll()
-				torrentMap[t.InfoHash()] = struct{}{}
-				d.wg.Add(1)
-				go func(t *torrent.Torrent) {
-					defer d.wg.Done()
-					defer sem.Release(1)
-					//r := t.NewReader()
-					//r.SetReadahead(t.Length())
-					//_, _ = io.Copy(io.Discard, r) // enable streaming - it will prioritize sequential download
-					select {
-					case <-ctx.Done():
-						return
-					case <-t.Complete.On():
-						return
-					}
-				}(t)
-			}
-			time.Sleep(30 * time.Second)
+				d.stats.DroppedCompleted.Add(uint64(t.BytesCompleted()))
+				d.stats.DroppedTotal.Add(uint64(t.Length()))
+				//t.Drop()
+			}(t)
+		}
+		if len(torrents) != len(d.Torrent().Torrents()) { //if amount of torrents changed - keep downloading
+			goto DownloadLoop2
 		}
 	}()
 
@@ -316,7 +309,7 @@ func (d *Downloader) ReCalcStats(interval time.Duration) {
 	stats.BytesDownload = uint64(connStats.BytesReadUsefulIntendedData.Int64())
 	stats.BytesUpload = uint64(connStats.BytesWrittenData.Int64())
 
-	stats.BytesTotal, stats.BytesCompleted, stats.ConnectionsTotal, stats.MetadataReady = atomic.LoadUint64(&stats.DroppedTotal), atomic.LoadUint64(&stats.DroppedCompleted), 0, 0
+	stats.BytesTotal, stats.BytesCompleted, stats.ConnectionsTotal, stats.MetadataReady = stats.DroppedTotal.Load(), stats.DroppedCompleted.Load(), 0, 0
 	for _, t := range torrents {
 		select {
 		case <-t.GotInfo():
@@ -433,6 +426,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 		d.wg.Add(1)
 		go func() {
 			defer d.wg.Done()
+			defer fmt.Printf("loop2 done\n")
 			for {
 				select {
 				case <-ctx.Done():
@@ -485,6 +479,7 @@ func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *pro
 	d.wg.Add(1)
 	go func(t *torrent.Torrent) {
 		defer d.wg.Done()
+		defer fmt.Printf("loop4 done\n")
 		select {
 		case <-ctx.Done():
 			return
@@ -502,8 +497,6 @@ func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *pro
 }
 
 func (d *Downloader) addSegments(ctx context.Context) error {
-	fmt.Printf("addSegments\n")
-	defer fmt.Printf("addSegments done\n")
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 	_, err := BuildTorrentFilesIfNeed(context.Background(), d.SnapDir())
@@ -524,9 +517,7 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 	i := atomic.Int64{}
 	for _, f := range files {
 		f := f
-		d.wg.Add(1)
 		g.Go(func() error {
-			defer d.wg.Done()
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -564,11 +555,7 @@ func (d *Downloader) Close() {
 	defer fmt.Printf("Downloader.Close done\n")
 	d.stopMainLoop()
 	d.wg.Wait()
-	fmt.Printf("close client\n")
-	errs := d.torrentClient.Close()
-	for _, err := range errs {
-		fmt.Printf("errrr: %s\n", err)
-	}
+	d.torrentClient.Close()
 	if err := d.folder.Close(); err != nil {
 		log.Warn("[snapshots] folder.close", "err", err)
 	}
