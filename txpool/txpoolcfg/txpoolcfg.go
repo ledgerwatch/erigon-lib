@@ -1,3 +1,19 @@
+/*
+   Copyright 2022 The Erigon contributors
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 package txpoolcfg
 
 import (
@@ -6,6 +22,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/c2h5oh/datasize"
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	emath "github.com/ledgerwatch/erigon-lib/common/math"
 	"github.com/ledgerwatch/erigon-lib/types"
@@ -24,7 +41,10 @@ type Config struct {
 	MinFeeCap             uint64
 	AccountSlots          uint64 // Number of executable transaction slots guaranteed per account
 	PriceBump             uint64 // Price bump percentage to replace an already existing transaction
-	OverrideShanghaiTime  *big.Int
+	OverrideCancunTime    *big.Int
+	MdbxPageSize          datasize.ByteSize
+	MdbxDBSizeLimit       datasize.ByteSize
+	MdbxGrowthStep        datasize.ByteSize
 }
 
 var DefaultConfig = Config{
@@ -37,10 +57,9 @@ var DefaultConfig = Config{
 	BaseFeeSubPoolLimit: 10_000,
 	QueuedSubPoolLimit:  10_000,
 
-	MinFeeCap:            1,
-	AccountSlots:         16, //TODO: to choose right value (16 to be compatible with Geth)
-	PriceBump:            10, // Price bump percentage to replace an already existing transaction
-	OverrideShanghaiTime: nil,
+	MinFeeCap:    1,
+	AccountSlots: 16, //TODO: to choose right value (16 to be compatible with Geth)
+	PriceBump:    10, // Price bump percentage to replace an already existing transaction
 }
 
 type DiscardReason uint8
@@ -69,6 +88,13 @@ const (
 	NotReplaced         DiscardReason = 20 // There was an existing transaction with the same sender and nonce, not enough price bump to replace
 	DuplicateHash       DiscardReason = 21 // There was an existing transaction with the same hash
 	InitCodeTooLarge    DiscardReason = 22 // EIP-3860 - transaction init code is too large
+	TypeNotActivated    DiscardReason = 23 // For example, an EIP-4844 transaction is submitted before Cancun activation
+	CreateBlobTxn       DiscardReason = 24 // Blob transactions cannot have the form of a create transaction
+	NoBlobs             DiscardReason = 25 // Blob transactions must have at least one blob
+	TooManyBlobs        DiscardReason = 26 // There's a limit on how many blobs a block (and thus any transaction) may have
+	UnequalBlobTxExt    DiscardReason = 27 // blob_versioned_hashes, blobs, commitments and proofs must have equal number
+	BlobHashCheckFail   DiscardReason = 28 // KZGcommitment's versioned hash has to be equal to blob_versioned_hash at the same index
+	UnmatchedBlobTxExt  DiscardReason = 29 // KZGcommitments must match the corresponding blobs and proofs
 )
 
 func (r DiscardReason) String() string {
@@ -119,6 +145,14 @@ func (r DiscardReason) String() string {
 		return "existing tx with same hash"
 	case InitCodeTooLarge:
 		return "initcode too large"
+	case TypeNotActivated:
+		return "fork supporting this transaction type is not activated yet"
+	case CreateBlobTxn:
+		return "blob transactions cannot have the form of a create transaction"
+	case NoBlobs:
+		return "blob transactions must have at least one blob"
+	case TooManyBlobs:
+		return "max number of blobs exceeded"
 	default:
 		panic(fmt.Sprintf("discard reason: %d", r))
 	}

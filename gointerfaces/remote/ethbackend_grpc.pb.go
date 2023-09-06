@@ -21,25 +21,21 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ETHBACKEND_Etherbase_FullMethodName                       = "/remote.ETHBACKEND/Etherbase"
-	ETHBACKEND_NetVersion_FullMethodName                      = "/remote.ETHBACKEND/NetVersion"
-	ETHBACKEND_NetPeerCount_FullMethodName                    = "/remote.ETHBACKEND/NetPeerCount"
-	ETHBACKEND_EngineNewPayload_FullMethodName                = "/remote.ETHBACKEND/EngineNewPayload"
-	ETHBACKEND_EngineForkChoiceUpdated_FullMethodName         = "/remote.ETHBACKEND/EngineForkChoiceUpdated"
-	ETHBACKEND_EngineGetPayload_FullMethodName                = "/remote.ETHBACKEND/EngineGetPayload"
-	ETHBACKEND_EngineGetPayloadBodiesByHashV1_FullMethodName  = "/remote.ETHBACKEND/EngineGetPayloadBodiesByHashV1"
-	ETHBACKEND_EngineGetPayloadBodiesByRangeV1_FullMethodName = "/remote.ETHBACKEND/EngineGetPayloadBodiesByRangeV1"
-	ETHBACKEND_Version_FullMethodName                         = "/remote.ETHBACKEND/Version"
-	ETHBACKEND_ProtocolVersion_FullMethodName                 = "/remote.ETHBACKEND/ProtocolVersion"
-	ETHBACKEND_ClientVersion_FullMethodName                   = "/remote.ETHBACKEND/ClientVersion"
-	ETHBACKEND_Subscribe_FullMethodName                       = "/remote.ETHBACKEND/Subscribe"
-	ETHBACKEND_SubscribeLogs_FullMethodName                   = "/remote.ETHBACKEND/SubscribeLogs"
-	ETHBACKEND_Block_FullMethodName                           = "/remote.ETHBACKEND/Block"
-	ETHBACKEND_TxnLookup_FullMethodName                       = "/remote.ETHBACKEND/TxnLookup"
-	ETHBACKEND_NodeInfo_FullMethodName                        = "/remote.ETHBACKEND/NodeInfo"
-	ETHBACKEND_Peers_FullMethodName                           = "/remote.ETHBACKEND/Peers"
-	ETHBACKEND_AddPeer_FullMethodName                         = "/remote.ETHBACKEND/AddPeer"
-	ETHBACKEND_PendingBlock_FullMethodName                    = "/remote.ETHBACKEND/PendingBlock"
+	ETHBACKEND_Etherbase_FullMethodName       = "/remote.ETHBACKEND/Etherbase"
+	ETHBACKEND_NetVersion_FullMethodName      = "/remote.ETHBACKEND/NetVersion"
+	ETHBACKEND_NetPeerCount_FullMethodName    = "/remote.ETHBACKEND/NetPeerCount"
+	ETHBACKEND_Version_FullMethodName         = "/remote.ETHBACKEND/Version"
+	ETHBACKEND_ProtocolVersion_FullMethodName = "/remote.ETHBACKEND/ProtocolVersion"
+	ETHBACKEND_ClientVersion_FullMethodName   = "/remote.ETHBACKEND/ClientVersion"
+	ETHBACKEND_Subscribe_FullMethodName       = "/remote.ETHBACKEND/Subscribe"
+	ETHBACKEND_SubscribeLogs_FullMethodName   = "/remote.ETHBACKEND/SubscribeLogs"
+	ETHBACKEND_Block_FullMethodName           = "/remote.ETHBACKEND/Block"
+	ETHBACKEND_TxnLookup_FullMethodName       = "/remote.ETHBACKEND/TxnLookup"
+	ETHBACKEND_NodeInfo_FullMethodName        = "/remote.ETHBACKEND/NodeInfo"
+	ETHBACKEND_Peers_FullMethodName           = "/remote.ETHBACKEND/Peers"
+	ETHBACKEND_AddPeer_FullMethodName         = "/remote.ETHBACKEND/AddPeer"
+	ETHBACKEND_PendingBlock_FullMethodName    = "/remote.ETHBACKEND/PendingBlock"
+	ETHBACKEND_BorEvent_FullMethodName        = "/remote.ETHBACKEND/BorEvent"
 )
 
 // ETHBACKENDClient is the client API for ETHBACKEND service.
@@ -49,14 +45,6 @@ type ETHBACKENDClient interface {
 	Etherbase(ctx context.Context, in *EtherbaseRequest, opts ...grpc.CallOption) (*EtherbaseReply, error)
 	NetVersion(ctx context.Context, in *NetVersionRequest, opts ...grpc.CallOption) (*NetVersionReply, error)
 	NetPeerCount(ctx context.Context, in *NetPeerCountRequest, opts ...grpc.CallOption) (*NetPeerCountReply, error)
-	// Validate and possibly execute the payload.
-	EngineNewPayload(ctx context.Context, in *types.ExecutionPayload, opts ...grpc.CallOption) (*EnginePayloadStatus, error)
-	// Update fork choice
-	EngineForkChoiceUpdated(ctx context.Context, in *EngineForkChoiceUpdatedRequest, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedResponse, error)
-	// Fetch the payload along with its blobs by ID.
-	EngineGetPayload(ctx context.Context, in *EngineGetPayloadRequest, opts ...grpc.CallOption) (*EngineGetPayloadResponse, error)
-	EngineGetPayloadBodiesByHashV1(ctx context.Context, in *EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error)
-	EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error)
 	// Version returns the service version number
 	Version(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*types.VersionReply, error)
 	// ProtocolVersion returns the Ethereum protocol version number (e.g. 66 for ETH66).
@@ -78,7 +66,9 @@ type ETHBACKENDClient interface {
 	// Peers collects and returns peers information from all running sentry instances.
 	Peers(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PeersReply, error)
 	AddPeer(ctx context.Context, in *AddPeerRequest, opts ...grpc.CallOption) (*AddPeerReply, error)
+	// PendingBlock returns latest built block.
 	PendingBlock(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PendingBlockReply, error)
+	BorEvent(ctx context.Context, in *BorEventRequest, opts ...grpc.CallOption) (*BorEventReply, error)
 }
 
 type eTHBACKENDClient struct {
@@ -110,51 +100,6 @@ func (c *eTHBACKENDClient) NetVersion(ctx context.Context, in *NetVersionRequest
 func (c *eTHBACKENDClient) NetPeerCount(ctx context.Context, in *NetPeerCountRequest, opts ...grpc.CallOption) (*NetPeerCountReply, error) {
 	out := new(NetPeerCountReply)
 	err := c.cc.Invoke(ctx, ETHBACKEND_NetPeerCount_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *eTHBACKENDClient) EngineNewPayload(ctx context.Context, in *types.ExecutionPayload, opts ...grpc.CallOption) (*EnginePayloadStatus, error) {
-	out := new(EnginePayloadStatus)
-	err := c.cc.Invoke(ctx, ETHBACKEND_EngineNewPayload_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *eTHBACKENDClient) EngineForkChoiceUpdated(ctx context.Context, in *EngineForkChoiceUpdatedRequest, opts ...grpc.CallOption) (*EngineForkChoiceUpdatedResponse, error) {
-	out := new(EngineForkChoiceUpdatedResponse)
-	err := c.cc.Invoke(ctx, ETHBACKEND_EngineForkChoiceUpdated_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *eTHBACKENDClient) EngineGetPayload(ctx context.Context, in *EngineGetPayloadRequest, opts ...grpc.CallOption) (*EngineGetPayloadResponse, error) {
-	out := new(EngineGetPayloadResponse)
-	err := c.cc.Invoke(ctx, ETHBACKEND_EngineGetPayload_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *eTHBACKENDClient) EngineGetPayloadBodiesByHashV1(ctx context.Context, in *EngineGetPayloadBodiesByHashV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error) {
-	out := new(EngineGetPayloadBodiesV1Response)
-	err := c.cc.Invoke(ctx, ETHBACKEND_EngineGetPayloadBodiesByHashV1_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *eTHBACKENDClient) EngineGetPayloadBodiesByRangeV1(ctx context.Context, in *EngineGetPayloadBodiesByRangeV1Request, opts ...grpc.CallOption) (*EngineGetPayloadBodiesV1Response, error) {
-	out := new(EngineGetPayloadBodiesV1Response)
-	err := c.cc.Invoke(ctx, ETHBACKEND_EngineGetPayloadBodiesByRangeV1_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -305,6 +250,15 @@ func (c *eTHBACKENDClient) PendingBlock(ctx context.Context, in *emptypb.Empty, 
 	return out, nil
 }
 
+func (c *eTHBACKENDClient) BorEvent(ctx context.Context, in *BorEventRequest, opts ...grpc.CallOption) (*BorEventReply, error) {
+	out := new(BorEventReply)
+	err := c.cc.Invoke(ctx, ETHBACKEND_BorEvent_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ETHBACKENDServer is the server API for ETHBACKEND service.
 // All implementations must embed UnimplementedETHBACKENDServer
 // for forward compatibility
@@ -312,14 +266,6 @@ type ETHBACKENDServer interface {
 	Etherbase(context.Context, *EtherbaseRequest) (*EtherbaseReply, error)
 	NetVersion(context.Context, *NetVersionRequest) (*NetVersionReply, error)
 	NetPeerCount(context.Context, *NetPeerCountRequest) (*NetPeerCountReply, error)
-	// Validate and possibly execute the payload.
-	EngineNewPayload(context.Context, *types.ExecutionPayload) (*EnginePayloadStatus, error)
-	// Update fork choice
-	EngineForkChoiceUpdated(context.Context, *EngineForkChoiceUpdatedRequest) (*EngineForkChoiceUpdatedResponse, error)
-	// Fetch the payload along with its blobs by ID.
-	EngineGetPayload(context.Context, *EngineGetPayloadRequest) (*EngineGetPayloadResponse, error)
-	EngineGetPayloadBodiesByHashV1(context.Context, *EngineGetPayloadBodiesByHashV1Request) (*EngineGetPayloadBodiesV1Response, error)
-	EngineGetPayloadBodiesByRangeV1(context.Context, *EngineGetPayloadBodiesByRangeV1Request) (*EngineGetPayloadBodiesV1Response, error)
 	// Version returns the service version number
 	Version(context.Context, *emptypb.Empty) (*types.VersionReply, error)
 	// ProtocolVersion returns the Ethereum protocol version number (e.g. 66 for ETH66).
@@ -341,7 +287,9 @@ type ETHBACKENDServer interface {
 	// Peers collects and returns peers information from all running sentry instances.
 	Peers(context.Context, *emptypb.Empty) (*PeersReply, error)
 	AddPeer(context.Context, *AddPeerRequest) (*AddPeerReply, error)
+	// PendingBlock returns latest built block.
 	PendingBlock(context.Context, *emptypb.Empty) (*PendingBlockReply, error)
+	BorEvent(context.Context, *BorEventRequest) (*BorEventReply, error)
 	mustEmbedUnimplementedETHBACKENDServer()
 }
 
@@ -357,21 +305,6 @@ func (UnimplementedETHBACKENDServer) NetVersion(context.Context, *NetVersionRequ
 }
 func (UnimplementedETHBACKENDServer) NetPeerCount(context.Context, *NetPeerCountRequest) (*NetPeerCountReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NetPeerCount not implemented")
-}
-func (UnimplementedETHBACKENDServer) EngineNewPayload(context.Context, *types.ExecutionPayload) (*EnginePayloadStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineNewPayload not implemented")
-}
-func (UnimplementedETHBACKENDServer) EngineForkChoiceUpdated(context.Context, *EngineForkChoiceUpdatedRequest) (*EngineForkChoiceUpdatedResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineForkChoiceUpdated not implemented")
-}
-func (UnimplementedETHBACKENDServer) EngineGetPayload(context.Context, *EngineGetPayloadRequest) (*EngineGetPayloadResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayload not implemented")
-}
-func (UnimplementedETHBACKENDServer) EngineGetPayloadBodiesByHashV1(context.Context, *EngineGetPayloadBodiesByHashV1Request) (*EngineGetPayloadBodiesV1Response, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayloadBodiesByHashV1 not implemented")
-}
-func (UnimplementedETHBACKENDServer) EngineGetPayloadBodiesByRangeV1(context.Context, *EngineGetPayloadBodiesByRangeV1Request) (*EngineGetPayloadBodiesV1Response, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method EngineGetPayloadBodiesByRangeV1 not implemented")
 }
 func (UnimplementedETHBACKENDServer) Version(context.Context, *emptypb.Empty) (*types.VersionReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Version not implemented")
@@ -405,6 +338,9 @@ func (UnimplementedETHBACKENDServer) AddPeer(context.Context, *AddPeerRequest) (
 }
 func (UnimplementedETHBACKENDServer) PendingBlock(context.Context, *emptypb.Empty) (*PendingBlockReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PendingBlock not implemented")
+}
+func (UnimplementedETHBACKENDServer) BorEvent(context.Context, *BorEventRequest) (*BorEventReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BorEvent not implemented")
 }
 func (UnimplementedETHBACKENDServer) mustEmbedUnimplementedETHBACKENDServer() {}
 
@@ -469,96 +405,6 @@ func _ETHBACKEND_NetPeerCount_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ETHBACKENDServer).NetPeerCount(ctx, req.(*NetPeerCountRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ETHBACKEND_EngineNewPayload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(types.ExecutionPayload)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ETHBACKENDServer).EngineNewPayload(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ETHBACKEND_EngineNewPayload_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ETHBACKENDServer).EngineNewPayload(ctx, req.(*types.ExecutionPayload))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ETHBACKEND_EngineForkChoiceUpdated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineForkChoiceUpdatedRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ETHBACKENDServer).EngineForkChoiceUpdated(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ETHBACKEND_EngineForkChoiceUpdated_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ETHBACKENDServer).EngineForkChoiceUpdated(ctx, req.(*EngineForkChoiceUpdatedRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ETHBACKEND_EngineGetPayload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineGetPayloadRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ETHBACKENDServer).EngineGetPayload(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ETHBACKEND_EngineGetPayload_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ETHBACKENDServer).EngineGetPayload(ctx, req.(*EngineGetPayloadRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ETHBACKEND_EngineGetPayloadBodiesByHashV1_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineGetPayloadBodiesByHashV1Request)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByHashV1(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ETHBACKEND_EngineGetPayloadBodiesByHashV1_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByHashV1(ctx, req.(*EngineGetPayloadBodiesByHashV1Request))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _ETHBACKEND_EngineGetPayloadBodiesByRangeV1_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EngineGetPayloadBodiesByRangeV1Request)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByRangeV1(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ETHBACKEND_EngineGetPayloadBodiesByRangeV1_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ETHBACKENDServer).EngineGetPayloadBodiesByRangeV1(ctx, req.(*EngineGetPayloadBodiesByRangeV1Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -772,6 +618,24 @@ func _ETHBACKEND_PendingBlock_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ETHBACKEND_BorEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BorEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ETHBACKENDServer).BorEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ETHBACKEND_BorEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ETHBACKENDServer).BorEvent(ctx, req.(*BorEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ETHBACKEND_ServiceDesc is the grpc.ServiceDesc for ETHBACKEND service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -790,26 +654,6 @@ var ETHBACKEND_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NetPeerCount",
 			Handler:    _ETHBACKEND_NetPeerCount_Handler,
-		},
-		{
-			MethodName: "EngineNewPayload",
-			Handler:    _ETHBACKEND_EngineNewPayload_Handler,
-		},
-		{
-			MethodName: "EngineForkChoiceUpdated",
-			Handler:    _ETHBACKEND_EngineForkChoiceUpdated_Handler,
-		},
-		{
-			MethodName: "EngineGetPayload",
-			Handler:    _ETHBACKEND_EngineGetPayload_Handler,
-		},
-		{
-			MethodName: "EngineGetPayloadBodiesByHashV1",
-			Handler:    _ETHBACKEND_EngineGetPayloadBodiesByHashV1_Handler,
-		},
-		{
-			MethodName: "EngineGetPayloadBodiesByRangeV1",
-			Handler:    _ETHBACKEND_EngineGetPayloadBodiesByRangeV1_Handler,
 		},
 		{
 			MethodName: "Version",
@@ -846,6 +690,10 @@ var ETHBACKEND_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PendingBlock",
 			Handler:    _ETHBACKEND_PendingBlock_Handler,
+		},
+		{
+			MethodName: "BorEvent",
+			Handler:    _ETHBACKEND_BorEvent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

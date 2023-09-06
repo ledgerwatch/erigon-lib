@@ -1,5 +1,5 @@
 /*
-   Copyright 2021 Erigon contributors
+   Copyright 2021 The Erigon contributors
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -22,10 +22,9 @@ import (
 	"time"
 
 	"github.com/c2h5oh/datasize"
+	mdbx2 "github.com/erigontech/mdbx-go/mdbx"
 	"github.com/holiman/uint256"
-	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
 	"github.com/ledgerwatch/log/v3"
-	mdbx2 "github.com/torquem-ch/mdbx-go/mdbx"
 
 	"github.com/ledgerwatch/erigon-lib/chain"
 	"github.com/ledgerwatch/erigon-lib/direct"
@@ -33,6 +32,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/txpool"
+	"github.com/ledgerwatch/erigon-lib/txpool/txpoolcfg"
 	"github.com/ledgerwatch/erigon-lib/types"
 )
 
@@ -102,12 +102,26 @@ func SaveChainConfigIfNeed(ctx context.Context, coreDB kv.RoDB, txPoolDB kv.RwDB
 
 func AllComponents(ctx context.Context, cfg txpoolcfg.Config, cache kvcache.Cache, newTxs chan types.Announcements, chainDB kv.RoDB,
 	sentryClients []direct.SentryClient, stateChangesClient txpool.StateChangesClient, logger log.Logger) (kv.RwDB, *txpool.TxPool, *txpool.Fetch, *txpool.Send, *txpool.GrpcServer, error) {
-	txPoolDB, err := mdbx.NewMDBX(log.New()).Label(kv.TxPoolDB).Path(cfg.DBDir).
+	opts := mdbx.NewMDBX(log.New()).Label(kv.TxPoolDB).Path(cfg.DBDir).
 		WithTableCfg(func(defaultBuckets kv.TableCfg) kv.TableCfg { return kv.TxpoolTablesCfg }).
-		Flags(func(f uint) uint { return f ^ mdbx2.Durable | mdbx2.SafeNoSync }).
+		Flags(func(f uint) uint { return f ^ mdbx2.Durable }).
+		WriteMergeThreshold(3 * 8192).
+		PageSize(uint64(16 * datasize.KB)).
 		GrowthStep(16 * datasize.MB).
-		SyncPeriod(30 * time.Second).
-		Open()
+		MapSize(1 * datasize.TB)
+
+	if cfg.MdbxPageSize.Bytes() > 0 {
+		opts = opts.PageSize(cfg.MdbxPageSize.Bytes())
+	}
+	if cfg.MdbxDBSizeLimit > 0 {
+		opts = opts.MapSize(cfg.MdbxDBSizeLimit)
+	}
+	if cfg.MdbxGrowthStep > 0 {
+		opts = opts.GrowthStep(cfg.MdbxGrowthStep)
+	}
+
+	txPoolDB, err := opts.Open()
+
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -120,11 +134,12 @@ func AllComponents(ctx context.Context, cfg txpoolcfg.Config, cache kvcache.Cach
 	chainID, _ := uint256.FromBig(chainConfig.ChainID)
 
 	shanghaiTime := chainConfig.ShanghaiTime
-	if cfg.OverrideShanghaiTime != nil {
-		shanghaiTime = cfg.OverrideShanghaiTime
+	cancunTime := chainConfig.CancunTime
+	if cfg.OverrideCancunTime != nil {
+		cancunTime = cfg.OverrideCancunTime
 	}
 
-	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID, shanghaiTime, logger)
+	txPool, err := txpool.New(newTxs, chainDB, cfg, cache, *chainID, shanghaiTime, cancunTime, logger)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}

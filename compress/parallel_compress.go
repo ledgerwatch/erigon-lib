@@ -238,7 +238,7 @@ func (cq *CompressionQueue) Pop() interface{} {
 }
 
 // reduceDict reduces the dictionary by trying the substitutions and counting frequency for each word
-func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath string, datFile *DecompressedFile, workers int, dictBuilder *DictionaryBuilder, lvl log.Lvl, logger log.Logger) error {
+func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath string, cf *os.File, datFile *DecompressedFile, workers int, dictBuilder *DictionaryBuilder, lvl log.Lvl, logger log.Logger) error {
 	logEvery := time.NewTicker(60 * time.Second)
 	defer logEvery.Stop()
 
@@ -534,10 +534,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	if lvl < log.LvlTrace {
 		logger.Log(lvl, fmt.Sprintf("[%s] Effective dictionary", logPrefix), logCtx...)
 	}
-	var cf *os.File
-	if cf, err = os.Create(segmentFilePath); err != nil {
-		return err
-	}
 	cw := bufio.NewWriterSize(cf, 2*etl.BufIOSize)
 	// 1-st, output amount of words - just a useful metadata
 	binary.BigEndian.PutUint64(numBuf[:], inCount) // Dictionary size
@@ -741,10 +737,6 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 	if err = cw.Flush(); err != nil {
 		return err
 	}
-	if err = cf.Close(); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -752,12 +744,18 @@ func reducedict(ctx context.Context, trace bool, logPrefix, segmentFilePath stri
 // into the collector, using lock to mutual exclusion. At the end (when the input channel is closed),
 // it notifies the waitgroup before exiting, so that the caller known when all work is done
 // No error channels for now
-func processSuperstring(superstringCh chan []byte, dictCollector *etl.Collector, minPatternScore uint64, completion *sync.WaitGroup, logger log.Logger) {
+func processSuperstring(ctx context.Context, superstringCh chan []byte, dictCollector *etl.Collector, minPatternScore uint64, completion *sync.WaitGroup, logger log.Logger) {
 	defer completion.Done()
 	dictVal := make([]byte, 8)
 	dictKey := make([]byte, maxPatternLen)
 	var lcp, sa, inv []int32
 	for superstring := range superstringCh {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		if cap(sa) < len(superstring) {
 			sa = make([]int32, len(superstring))
 		} else {

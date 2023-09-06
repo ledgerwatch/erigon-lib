@@ -341,14 +341,16 @@ func (d *Decompressor) ModTime() time.Time {
 	return d.modTime
 }
 
-func (d *Decompressor) Close() error {
-	if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
-		log.Trace("unmap", "err", err, "file", d.FileName())
+func (d *Decompressor) Close() {
+	if d.f != nil {
+		if err := mmap.Munmap(d.mmapHandle1, d.mmapHandle2); err != nil {
+			log.Log(dbg.FileCloseLogLevel, "unmap", "err", err, "file", d.FileName(), "stack", dbg.Stack())
+		}
+		if err := d.f.Close(); err != nil {
+			log.Log(dbg.FileCloseLogLevel, "close", "err", err, "file", d.FileName(), "stack", dbg.Stack())
+		}
+		d.f = nil
 	}
-	if err := d.f.Close(); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (d *Decompressor) FilePath() string { return d.filePath }
@@ -409,20 +411,16 @@ type Getter struct {
 func (g *Getter) Trace(t bool)     { g.trace = t }
 func (g *Getter) FileName() string { return g.fName }
 
-func (g *Getter) nextPos(clean bool) uint64 {
-	if clean {
-		if g.dataBit > 0 {
-			g.dataP++
-			g.dataBit = 0
-		}
+func (g *Getter) nextPos(clean bool) (pos uint64) {
+	if clean && g.dataBit > 0 {
+		g.dataP++
+		g.dataBit = 0
 	}
 	table := g.posDict
 	if table.bitLen == 0 {
 		return table.pos[0]
 	}
-	var l byte
-	var pos uint64
-	for l == 0 {
+	for l := byte(0); l == 0; {
 		code := uint16(g.data[g.dataP]) >> g.dataBit
 		if 8-g.dataBit < table.bitLen && int(g.dataP)+1 < len(g.data) {
 			code |= uint16(g.data[g.dataP+1]) << (8 - g.dataBit)
@@ -437,7 +435,7 @@ func (g *Getter) nextPos(clean bool) uint64 {
 			pos = table.pos[code]
 		}
 		g.dataP += uint64(g.dataBit / 8)
-		g.dataBit = g.dataBit % 8
+		g.dataBit %= 8
 	}
 	return pos
 }
@@ -468,7 +466,7 @@ func (g *Getter) nextPattern() []byte {
 			pattern = *cw.pattern
 		}
 		g.dataP += uint64(g.dataBit / 8)
-		g.dataBit = g.dataBit % 8
+		g.dataBit %= 8
 	}
 	return pattern
 }
@@ -528,11 +526,6 @@ func (g *Getter) HasNext() bool {
 // and appends it to the given buf, returning the result of appending
 // After extracting next word, it moves to the beginning of the next one
 func (g *Getter) Next(buf []byte) ([]byte, uint64) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			panic(fmt.Sprintf("file: %s, %s, %s", g.fName, rec, dbg.Stack()))
-		}
-	}()
 	savePos := g.dataP
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
@@ -540,6 +533,9 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 		if g.dataBit > 0 {
 			g.dataP++
 			g.dataBit = 0
+		}
+		if buf == nil { // wordLen == 0, means we have valid record of 0 size. nil - is the marker of "something not found"
+			buf = []byte{}
 		}
 		return buf, g.dataP
 	}
@@ -589,11 +585,6 @@ func (g *Getter) Next(buf []byte) ([]byte, uint64) {
 }
 
 func (g *Getter) NextUncompressed() ([]byte, uint64) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			panic(fmt.Sprintf("file: %s, %s, %s", g.fName, rec, dbg.Stack()))
-		}
-	}()
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
 	if wordLen == 0 {
@@ -613,8 +604,8 @@ func (g *Getter) NextUncompressed() ([]byte, uint64) {
 	return g.data[pos:g.dataP], g.dataP
 }
 
-// Skip moves offset to the next word and returns the new offset.
-func (g *Getter) Skip() uint64 {
+// Skip moves offset to the next word and returns the new offset and the length of the word.
+func (g *Getter) Skip() (uint64, int) {
 	l := g.nextPos(true)
 	l-- // because when create huffman tree we do ++ , because 0 is terminator
 	if l == 0 {
@@ -622,7 +613,7 @@ func (g *Getter) Skip() uint64 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		return g.dataP
+		return g.dataP, 0
 	}
 	wordLen := int(l)
 
@@ -648,10 +639,10 @@ func (g *Getter) Skip() uint64 {
 	}
 	// Uncovered characters
 	g.dataP += add
-	return g.dataP
+	return g.dataP, wordLen
 }
 
-func (g *Getter) SkipUncompressed() uint64 {
+func (g *Getter) SkipUncompressed() (uint64, int) {
 	wordLen := g.nextPos(true)
 	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
 	if wordLen == 0 {
@@ -659,7 +650,7 @@ func (g *Getter) SkipUncompressed() uint64 {
 			g.dataP++
 			g.dataBit = 0
 		}
-		return g.dataP
+		return g.dataP, 0
 	}
 	g.nextPos(false)
 	if g.dataBit > 0 {
@@ -667,7 +658,7 @@ func (g *Getter) SkipUncompressed() uint64 {
 		g.dataBit = 0
 	}
 	g.dataP += wordLen
-	return g.dataP
+	return g.dataP, int(wordLen)
 }
 
 // Match returns true and next offset if the word at current offset fully matches the buf
@@ -816,4 +807,225 @@ func (g *Getter) MatchPrefix(prefix []byte) bool {
 		}
 	}
 	return true
+}
+
+// MatchCmp lexicographically compares given buf with the word at the current offset in the file.
+// returns 0 if buf == word, -1 if buf < word, 1 if buf > word
+func (g *Getter) MatchCmp(buf []byte) int {
+	savePos := g.dataP
+	wordLen := g.nextPos(true)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	lenBuf := len(buf)
+	if wordLen == 0 && lenBuf != 0 {
+		g.dataP, g.dataBit = savePos, 0
+		return 1
+	}
+	if wordLen == 0 && lenBuf == 0 {
+		if g.dataBit > 0 {
+			g.dataP++
+			g.dataBit = 0
+		}
+		return 0
+	}
+
+	decoded := make([]byte, wordLen)
+	var bufPos int
+	// In the first pass, we only check patterns
+	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
+		bufPos += int(pos) - 1
+		pattern := g.nextPattern()
+		copy(decoded[bufPos:], pattern)
+	}
+	if g.dataBit > 0 {
+		g.dataP++
+		g.dataBit = 0
+	}
+	postLoopPos := g.dataP
+	g.dataP, g.dataBit = savePos, 0
+	g.nextPos(true /* clean */) // Reset the state of huffman decoder
+	// Second pass - we check spaces not covered by the patterns
+	var lastUncovered int
+	bufPos = 0
+	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
+		bufPos += int(pos) - 1
+		// fmt.Printf("BUF POS: %d, POS: %d, lastUncovered: %d\n", bufPos, pos, lastUncovered)
+		if bufPos > lastUncovered {
+			dif := uint64(bufPos - lastUncovered)
+			copy(decoded[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
+			postLoopPos += dif
+		}
+		lastUncovered = bufPos + len(g.nextPattern())
+	}
+
+	if int(wordLen) > lastUncovered {
+		dif := wordLen - uint64(lastUncovered)
+		copy(decoded[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
+		postLoopPos += dif
+	}
+	cmp := bytes.Compare(buf, decoded)
+	if cmp == 0 {
+		g.dataP, g.dataBit = postLoopPos, 0
+	} else {
+		g.dataP, g.dataBit = savePos, 0
+	}
+	return cmp
+}
+
+// MatchPrefixCmp lexicographically compares given prefix with the word at the current offset in the file.
+// returns 0 if buf == word, -1 if buf < word, 1 if buf > word
+func (g *Getter) MatchPrefixCmp(prefix []byte) int {
+	savePos := g.dataP
+	defer func() {
+		g.dataP, g.dataBit = savePos, 0
+	}()
+
+	wordLen := g.nextPos(true /* clean */)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	prefixLen := len(prefix)
+	if wordLen == 0 && prefixLen != 0 {
+		return 1
+	}
+	if prefixLen == 0 {
+		return 0
+	}
+
+	decoded := make([]byte, wordLen)
+	var bufPos int
+	// In the first pass, we only check patterns
+	// Only run this loop as far as the prefix goes, there is no need to check further
+	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
+		bufPos += int(pos) - 1
+		if bufPos > prefixLen {
+			break
+		}
+		pattern := g.nextPattern()
+		copy(decoded[bufPos:], pattern)
+	}
+
+	if g.dataBit > 0 {
+		g.dataP++
+		g.dataBit = 0
+	}
+	postLoopPos := g.dataP
+	g.dataP, g.dataBit = savePos, 0
+	g.nextPos(true /* clean */) // Reset the state of huffman decoder
+	// Second pass - we check spaces not covered by the patterns
+	var lastUncovered int
+	bufPos = 0
+	for pos := g.nextPos(false /* clean */); pos != 0 && lastUncovered < prefixLen; pos = g.nextPos(false) {
+		bufPos += int(pos) - 1
+		if bufPos > lastUncovered {
+			dif := uint64(bufPos - lastUncovered)
+			copy(decoded[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
+			postLoopPos += dif
+		}
+		lastUncovered = bufPos + len(g.nextPattern())
+	}
+	if prefixLen > lastUncovered && int(wordLen) > lastUncovered {
+		dif := wordLen - uint64(lastUncovered)
+		copy(decoded[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
+		// postLoopPos += dif
+	}
+	var cmp int
+	if prefixLen > int(wordLen) {
+		// TODO(racytech): handle this case
+		// e.g: prefix = 'aaacb'
+		// 		word = 'aaa'
+		cmp = bytes.Compare(prefix, decoded)
+	} else {
+		cmp = bytes.Compare(prefix, decoded[:prefixLen])
+	}
+
+	return cmp
+}
+
+func (g *Getter) MatchPrefixUncompressed(prefix []byte) int {
+	savePos := g.dataP
+	defer func() {
+		g.dataP, g.dataBit = savePos, 0
+	}()
+
+	wordLen := g.nextPos(true /* clean */)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	prefixLen := len(prefix)
+	if wordLen == 0 && prefixLen != 0 {
+		return 1
+	}
+	if prefixLen == 0 {
+		return 0
+	}
+
+	g.nextPos(true)
+
+	// if prefixLen > int(wordLen) {
+	// 	// TODO(racytech): handle this case
+	// 	// e.g: prefix = 'aaacb'
+	// 	// 		word = 'aaa'
+	// }
+
+	return bytes.Compare(prefix, g.data[g.dataP:g.dataP+wordLen])
+}
+
+// FastNext extracts a compressed word from current offset in the file
+// into the given buf, returning a new byte slice which contains extracted word.
+// It is important to allocate enough buf size. Could throw an error if word in file is larger then the buf size.
+// After extracting next word, it moves to the beginning of the next one
+func (g *Getter) FastNext(buf []byte) ([]byte, uint64) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			panic(fmt.Sprintf("file: %s, %s, %s", g.fName, rec, dbg.Stack()))
+		}
+	}()
+
+	savePos := g.dataP
+	wordLen := g.nextPos(true)
+	wordLen-- // because when create huffman tree we do ++ , because 0 is terminator
+	// decoded := make([]byte, wordLen)
+	if wordLen == 0 {
+		if g.dataBit > 0 {
+			g.dataP++
+			g.dataBit = 0
+		}
+		return buf[:wordLen], g.dataP
+	}
+	bufPos := 0 // Tracking position in buf where to insert part of the word
+	lastUncovered := 0
+
+	// if int(wordLen) > cap(buf) {
+	// 	newBuf := make([]byte, int(wordLen))
+	// 	buf = newBuf
+	// }
+	// Loop below fills in the patterns
+	for pos := g.nextPos(false /* clean */); pos != 0; pos = g.nextPos(false) {
+		bufPos += int(pos) - 1 // Positions where to insert patterns are encoded relative to one another
+		pt := g.nextPattern()
+		copy(buf[bufPos:], pt)
+	}
+	if g.dataBit > 0 {
+		g.dataP++
+		g.dataBit = 0
+	}
+	postLoopPos := g.dataP
+	g.dataP = savePos
+	g.dataBit = 0
+	g.nextPos(true /* clean */) // Reset the state of huffman reader
+	bufPos = lastUncovered      // Restore to the beginning of buf
+	// Loop below fills the data which is not in the patterns
+	for pos := g.nextPos(false); pos != 0; pos = g.nextPos(false) {
+		bufPos += int(pos) - 1 // Positions where to insert patterns are encoded relative to one another
+		if bufPos > lastUncovered {
+			dif := uint64(bufPos - lastUncovered)
+			copy(buf[lastUncovered:bufPos], g.data[postLoopPos:postLoopPos+dif])
+			postLoopPos += dif
+		}
+		lastUncovered = bufPos + len(g.nextPattern())
+	}
+	if int(wordLen) > lastUncovered {
+		dif := wordLen - uint64(lastUncovered)
+		copy(buf[lastUncovered:wordLen], g.data[postLoopPos:postLoopPos+dif])
+		postLoopPos += dif
+	}
+	g.dataP = postLoopPos
+	g.dataBit = 0
+	return buf[:wordLen], postLoopPos
 }

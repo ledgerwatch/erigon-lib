@@ -38,19 +38,33 @@ import (
 	dir2 "github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/downloader/downloadercfg"
 	"github.com/ledgerwatch/erigon-lib/downloader/snaptype"
-	"github.com/ledgerwatch/erigon-lib/downloader/trackers"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
 
 	"golang.org/x/sync/semaphore"
 )
 
+// `github.com/anacrolix/torrent` library spawning several goroutines and producing many requests for each tracker. So we limit amout of trackers by 7
+var udpOrHttpTrackers = []string{
+	"udp://tracker.opentrackr.org:1337/announce",
+	"udp://9.rarbg.com:2810/announce",
+	"udp://tracker.openbittorrent.com:6969/announce",
+	"http://tracker.openbittorrent.com:80/announce",
+	"udp://opentracker.i2p.rocks:6969/announce",
+	"https://opentracker.i2p.rocks:443/announce",
+	"udp://tracker.torrent.eu.org:451/announce",
+	"udp://tracker.moeking.me:6969/announce",
+}
+
+// nolint
+var websocketTrackers = []string{
+	"wss://tracker.btorrent.xyz",
+}
+
 // Trackers - break down by priority tier
 var Trackers = [][]string{
-	trackers.First(7, trackers.Best),
-	//trackers.First(3, trackers.Udp),
-	//trackers.First(3, trackers.Https),
-	//trackers.First(10, trackers.Ws),
+	udpOrHttpTrackers,
+	//websocketTrackers // TODO: Ws protocol producing too many errors and flooding logs. But it's also very fast and reactive.
 }
 
 func AllTorrentPaths(dir string) ([]string, error) {
@@ -190,6 +204,9 @@ func buildTorrentIfNeed(fName, root string) (err error) {
 	if dir2.FileExist(fPath + ".torrent") {
 		return
 	}
+	if !dir2.FileExist(fPath) {
+		return
+	}
 	info := &metainfo.Info{PieceLength: downloadercfg.DefaultPieceSize, Name: fName}
 	if err := info.BuildFromFilePath(fPath); err != nil {
 		return fmt.Errorf("createTorrentFileFromSegment: %w", err)
@@ -232,7 +249,7 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 	workers := cmp.Max(1, runtime.GOMAXPROCS(-1)-1) * 2
 	var sem = semaphore.NewWeighted(int64(workers))
 	i := atomic.Int32{}
-	for _, f := range files {
+	for _, file := range files {
 		wg.Add(1)
 		if err := sem.Acquire(ctx, 1); err != nil {
 			return nil, err
@@ -252,7 +269,7 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 			case <-logEvery.C:
 				log.Info("[snapshots] Creating .torrent files", "Progress", fmt.Sprintf("%d/%d", i.Load(), len(files)))
 			}
-		}(f)
+		}(file)
 	}
 	go func() {
 		wg.Wait()
@@ -298,11 +315,11 @@ func createTorrentFileFromInfo(root string, info *metainfo.Info, mi *metainfo.Me
 	if err != nil {
 		return err
 	}
-	defer file.Sync()
 	defer file.Close()
 	if err := mi.Write(file); err != nil {
 		return err
 	}
+	file.Sync()
 	return nil
 }
 

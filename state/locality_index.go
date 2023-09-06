@@ -228,9 +228,7 @@ func closeLocalityIndexFilesAndRemove(i *ctxLocalityIdx, logger log.Logger) {
 		i.file.src = nil
 	}
 	if i.bm != nil {
-		if err := i.bm.Close(); err != nil {
-			logger.Trace("close", "err", err, "file", i.bm.FileName())
-		}
+		i.bm.Close()
 		if err := os.Remove(i.bm.FilePath()); err != nil {
 			logger.Trace("os.Remove", "err", err, "file", i.bm.FileName())
 		}
@@ -323,7 +321,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ic *InvertedIndexContex
 
 	i := uint64(0)
 	for {
-		dense, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(count))
+		dense, err := bitmapdb.NewFixedSizeBitmapsWriter(filePath, int(it.FilesAmount()), uint64(count), li.logger)
 		if err != nil {
 			return nil, err
 		}
@@ -353,7 +351,7 @@ func (li *LocalityIndex) buildFiles(ctx context.Context, ic *InvertedIndexContex
 			return nil, err
 		}
 
-		if err = rs.Build(); err != nil {
+		if err = rs.Build(ctx); err != nil {
 			if rs.Collision() {
 				li.logger.Debug("Building recsplit. Collision happened. It's ok. Restarting...")
 				rs.ResetNextSalt()

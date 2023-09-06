@@ -80,18 +80,19 @@ func OpenFixedSizeBitmaps(filePath string, bitsPerBitmap int) (*FixedSizeBitmaps
 
 func (bm *FixedSizeBitmaps) FileName() string { return bm.fileName }
 func (bm *FixedSizeBitmaps) FilePath() string { return bm.filePath }
-func (bm *FixedSizeBitmaps) Close() error {
+func (bm *FixedSizeBitmaps) Close() {
 	if bm.m != nil {
 		if err := bm.m.Unmap(); err != nil {
 			log.Trace("unmap", "err", err, "file", bm.FileName())
 		}
+		bm.m = nil
 	}
 	if bm.f != nil {
 		if err := bm.f.Close(); err != nil {
-			return err
+			log.Trace("close", "err", err, "file", bm.FileName())
 		}
+		bm.f = nil
 	}
-	return nil
 }
 
 func (bm *FixedSizeBitmaps) At(item uint64) (res []uint64, err error) {
@@ -168,11 +169,14 @@ type FixedSizeBitmapsWriter struct {
 	amount        uint64
 	size          int
 	bitsPerBitmap uint64
+
+	logger  log.Logger
+	noFsync bool // fsync is enabled by default, but tests can manually disable
 }
 
 const MetaHeaderSize = 64
 
-func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint64) (*FixedSizeBitmapsWriter, error) {
+func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint64, logger log.Logger) (*FixedSizeBitmapsWriter, error) {
 	pageSize := os.Getpagesize()
 	//TODO: use math.SafeMul()
 	bytesAmount := MetaHeaderSize + (bitsPerBitmap*int(amount))/8
@@ -184,6 +188,7 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 		size:           size,
 		amount:         amount,
 		version:        1,
+		logger:         logger,
 	}
 
 	_ = os.Remove(idx.tmpIdxFilePath)
@@ -215,8 +220,18 @@ func NewFixedSizeBitmapsWriter(indexFile string, bitsPerBitmap int, amount uint6
 	return idx, nil
 }
 func (w *FixedSizeBitmapsWriter) Close() {
-	_ = w.m.Unmap()
-	_ = w.f.Close()
+	if w.m != nil {
+		if err := w.m.Unmap(); err != nil {
+			log.Trace("unmap", "err", err, "file", w.f.Name())
+		}
+		w.m = nil
+	}
+	if w.f != nil {
+		if err := w.f.Close(); err != nil {
+			log.Trace("close", "err", err, "file", w.f.Name())
+		}
+		w.f = nil
+	}
 }
 func growFileToSize(f *os.File, size int) error {
 	pageSize := os.Getpagesize()
@@ -267,7 +282,7 @@ func (w *FixedSizeBitmapsWriter) Build() error {
 	if err := w.m.Flush(); err != nil {
 		return err
 	}
-	if err := w.f.Sync(); err != nil {
+	if err := w.fsync(); err != nil {
 		return err
 	}
 
@@ -283,6 +298,22 @@ func (w *FixedSizeBitmapsWriter) Build() error {
 
 	_ = os.Remove(w.indexFile)
 	if err := os.Rename(w.tmpIdxFilePath, w.indexFile); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *FixedSizeBitmapsWriter) DisableFsync() { w.noFsync = true }
+
+// fsync - other processes/goroutines must see only "fully-complete" (valid) files. No partial-writes.
+// To achieve it: write to .tmp file then `rename` when file is ready.
+// Machine may power-off right after `rename` - it means `fsync` must be before `rename`
+func (w *FixedSizeBitmapsWriter) fsync() error {
+	if w.noFsync {
+		return nil
+	}
+	if err := w.f.Sync(); err != nil {
+		w.logger.Warn("couldn't fsync", "err", err, "file", w.tmpIdxFilePath)
 		return err
 	}
 	return nil
