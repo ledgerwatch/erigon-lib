@@ -109,7 +109,6 @@ func ReadElem[T any](d *Decoder, fn func(*T, []byte) error, receiver *T) error {
 		TokenLongBlob,
 		TokenShortList,
 		TokenLongList:
-		// in this case, the value is just the byte itself
 		return fn(receiver, buf)
 	default:
 		return fmt.Errorf("%w: ReadElem found unexpected token", ErrDecode)
@@ -149,17 +148,17 @@ func newBuf(u []byte, off int) *buf {
 func (b *buf) empty() bool { return len(b.u) <= b.off }
 
 func (b *buf) PeekByte() (n byte, err error) {
-	if len(b.u) <= b.off+1 {
+	if len(b.u) <= b.off {
 		return 0, io.EOF
 	}
-	return b.u[b.off+1], nil
+	return b.u[b.off], nil
 }
 func (b *buf) ReadByte() (n byte, err error) {
-	if len(b.u) <= b.off+1 {
+	if len(b.u) <= b.off {
 		return 0, io.EOF
 	}
 	b.off++
-	return b.u[b.off], nil
+	return b.u[b.off-1], nil
 }
 
 func (b *buf) Next(n int) (xs []byte) {

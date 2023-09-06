@@ -33,7 +33,7 @@ func (ctx *TxParseContext) parseTransaction2(payload []byte, pos int, slot *TxSl
 	}
 	if dec.Len() == 1 && !tok.IsListType() {
 		if hasEnvelope {
-			return fmt.Errorf("expected envelope in the payload, got %x", dec.Bytes()[0])
+			return fmt.Errorf("expected envelope in the payload, got %x", dec.Bytes())
 		}
 	}
 
