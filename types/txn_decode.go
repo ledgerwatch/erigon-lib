@@ -89,8 +89,7 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 
 	}
 
-	bodyDecoder := rlp.NewDecoder(dec.Bytes())
-
+	bodyDecoder := dec
 	// if its a blob transaction, we actually need to enter a nested list, since its [tx_payload_body, blobs, commitments, proofs]
 	if slot.Type == BlobTxType && wrappedWithBlobs {
 		bodyDecoder, _, err = dec.ElemDec()
@@ -133,7 +132,7 @@ func (ctx *TxParseContext) decodeCommitments(dec *rlp.Decoder, slot *TxSlot) (er
 	err = dec.ForList(func(d *rlp.Decoder) error {
 		var blob gokzg4844.KZGCommitment
 		blobSlice := blob[:]
-		err := rlp.ReadElem(dec, rlp.BytesExact, &blobSlice)
+		err := rlp.ReadElem(d, rlp.BytesExact, &blobSlice)
 		if err != nil {
 			return err
 		}
@@ -151,7 +150,7 @@ func (ctx *TxParseContext) decodeProofs(dec *rlp.Decoder, slot *TxSlot) (err err
 	err = dec.ForList(func(d *rlp.Decoder) error {
 		var blob gokzg4844.KZGProof
 		blobSlice := blob[:]
-		err := rlp.ReadElem(dec, rlp.BytesExact, &blobSlice)
+		err := rlp.ReadElem(d, rlp.BytesExact, &blobSlice)
 		if err != nil {
 			return err
 		}
@@ -167,7 +166,7 @@ func (ctx *TxParseContext) decodeProofs(dec *rlp.Decoder, slot *TxSlot) (err err
 func (ctx *TxParseContext) decodeBlobs(dec *rlp.Decoder, slot *TxSlot) (err error) {
 	err = dec.ForList(func(d *rlp.Decoder) error {
 		var blob []byte
-		err := rlp.ReadElem(dec, rlp.Bytes, &blob)
+		err := rlp.ReadElem(d, rlp.Bytes, &blob)
 		if err != nil {
 			return err
 		}
