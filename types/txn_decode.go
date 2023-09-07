@@ -167,10 +167,10 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 	if !legacy {
 		typeByte := []byte{slot.Type}
 		if _, err := k1.Write(typeByte); err != nil {
-			return err
+			return fmt.Errorf("compute idHash: %w", err)
 		}
 		if _, err := k2.Write(typeByte); err != nil {
-			return err
+			return fmt.Errorf("compute Hash: %w", err)
 		}
 		if _, err := k1.Write(parent.Underlying()); err != nil {
 			return fmt.Errorf("compute idHash: %w", err)
