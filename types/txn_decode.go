@@ -56,7 +56,6 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 	var (
 		dec *rlp.Decoder
 	)
-
 	var (
 		parent      *rlp.Decoder // the parent should contain in its underlying buffer the rlp used for txn hash creation sans txn type
 		bodyDecoder *rlp.Decoder // the bodyDecoder should be an rlp decoder primed at the top of the list body for txn
@@ -381,14 +380,14 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 	if sigHashLen < 56 {
 		ctx.buf[0] = byte(sigHashLen) + 192
 		if _, err := k2.Write(ctx.buf[:1]); err != nil {
-			return fmt.Errorf("computing signHash (hashing len Prefix): %s", err) //nolint
+			return fmt.Errorf("computing signHash (hashing len Prefix1): %s", err) //nolint
 		}
 	} else {
 		beLen := common.BitLenToByteLen(bits.Len(sigHashLen))
 		binary.BigEndian.PutUint64(ctx.buf[1:], uint64(sigHashLen))
 		ctx.buf[8-beLen] = byte(beLen) + 247
 		if _, err := k2.Write(ctx.buf[8-beLen : 9]); err != nil {
-			return fmt.Errorf("computing signHash (hashing len Prefix): %s", err) //nolint
+			return fmt.Errorf("computing signHash (hashing len Prefix2): %s", err) //nolint
 		}
 	}
 	if _, err = k2.Write(dec.Underlying()[sigHashPos:sigHashEnd]); err != nil {
