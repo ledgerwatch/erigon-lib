@@ -24,7 +24,7 @@ func (ctx *TxParseContext) DecodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 }
 
 func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
-	if decoder.Len() == 0 {
+	if decoder.Empty() {
 		return fmt.Errorf("empty rlp")
 	}
 	if ctx.withSender && len(sender) != 20 {
@@ -43,7 +43,7 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 		}
 	}
 
-	if dec.Len() == 0 {
+	if dec.Empty() {
 		return fmt.Errorf("transaction must be either 1 list or 1 string")
 	}
 	switch {
