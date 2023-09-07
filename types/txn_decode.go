@@ -96,7 +96,7 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 		// from here to the end of the element, if this is not a blob tx type with blobs, is the parent
 		parent, _, err = decoder.RawElemDec()
 		if err != nil {
-			return fmt.Errorf("extract txn body: %w", err) //nolint
+			return fmt.Errorf("extract txn body parent: %w", err) //nolint
 		}
 		// now enter the list, since that is what we are in front of now.
 		bodyDecoder, _, err = parent.ElemDec()
@@ -112,7 +112,7 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 				// we can extract the raw elem out of this in order to get the parent decoder
 				parent, _, err = bodyDecoder.RawElemDec()
 				if err != nil {
-					return fmt.Errorf("wrapped blob tx body: %w", err) //nolint
+					return fmt.Errorf("wrapped blob tx body parent: %w", err) //nolint
 				}
 				// and then the body is actually just the parent decoder read once, since we are sitting at the top of the [txbody...] header
 				bodyDecoder, _, err = parent.ElemDec()
@@ -179,7 +179,7 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 
 	if ctx.validateRlp != nil {
 		if err := ctx.validateRlp(slot.Rlp); err != nil {
-			return err
+			return fmt.Errorf("validate rlp: %w", err)
 		}
 	}
 
@@ -257,20 +257,23 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 			slot.AlAddrCount++
 			err := rlp.ReadElem(ld, rlp.Skip, nil)
 			if err != nil {
-				return err
+				return fmt.Errorf("elem: %w", err)
 			}
 			err = ld.ForList(func(sk *rlp.Decoder) error {
 				slot.AlStorCount++
 				err := rlp.ReadElem(sk, rlp.Skip, nil)
 				if err != nil {
-					return err
+					return fmt.Errorf("elem: %w", err)
 				}
 				return nil
 			})
-			return err
+			if err != nil {
+				return fmt.Errorf("iterate: %w", err)
+			}
+			return nil
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("iterate: %w", err)
 		}
 	}
 

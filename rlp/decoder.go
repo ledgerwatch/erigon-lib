@@ -1,6 +1,7 @@
 package rlp
 
 import (
+	"errors"
 	"fmt"
 	"io"
 )
@@ -108,14 +109,11 @@ func (d *Decoder) RawElem() ([]byte, Token, error) {
 		_, err = nextFull(w, sz)
 	case TokenLongBlob:
 		lenSz := int(token.Diff(prefix))
-		sz, err := nextBeInt(w, lenSz)
+		sz, err = nextBeInt(w, lenSz)
 		if err != nil {
 			return nil, token, err
 		}
 		_, err = nextFull(w, sz)
-		if err != nil {
-			return nil, token, err
-		}
 	default:
 		return nil, token, fmt.Errorf("%w: unknown token", ErrDecode)
 	}
@@ -161,20 +159,17 @@ func (d *Decoder) Elem() ([]byte, Token, error) {
 		buf, err = nextFull(w, sz)
 	case TokenLongBlob:
 		lenSz := int(token.Diff(prefix))
-		sz, err := nextBeInt(w, lenSz)
+		sz, err = nextBeInt(w, lenSz)
 		if err != nil {
 			return nil, token, err
 		}
 		buf, err = nextFull(w, sz)
-		if err != nil {
-			return nil, token, err
-		}
 	default:
 		return nil, token, fmt.Errorf("%w: unknown token", ErrDecode)
 	}
 	//log.Printf("%x %s\n", buf, token)
 	if err != nil {
-		return nil, token, err
+		return nil, token, fmt.Errorf("read data: %w", err)
 	}
 	return buf, token, nil
 }
@@ -210,6 +205,9 @@ func (d *Decoder) ForList(fn func(*Decoder) error) error {
 				return nil
 			}
 			err := fn(dec)
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
