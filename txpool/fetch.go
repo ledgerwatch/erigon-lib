@@ -326,7 +326,7 @@ func (f *Fetch) handleInboundMessage(ctx context.Context, req *sentry.InboundMes
 		switch req.Id {
 		case sentry.MessageId_TRANSACTIONS_66:
 			if err := f.threadSafeParsePooledTxn(func(parseContext *types2.TxParseContext) error {
-				if _, err := types2.ParseTransactions(req.Data, 0, parseContext, &txs, func(hash []byte) error {
+				if err := types2.DecodeTransactions(rlp.NewDecoder(req.Data), parseContext, &txs, func(hash []byte) error {
 					known, err := f.pool.IdHashKnown(tx, hash)
 					if err != nil {
 						return err

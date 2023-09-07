@@ -15,12 +15,16 @@ func NewDecoder(buf []byte) *Decoder {
 	}
 }
 
+func (d *Decoder) String() string {
+	return fmt.Sprintf(`left=%x pos=%d`, d.buf.Bytes(), d.buf.off)
+}
+
 func (d *Decoder) Consumed() []byte {
 	return d.buf.u[:d.buf.off]
 }
 
 func (d *Decoder) Underlying() []byte {
-	return d.buf.u
+	return d.buf.Underlying()
 }
 
 func (d *Decoder) Len() int {
@@ -37,6 +41,18 @@ func (d *Decoder) Bytes() []byte {
 
 func (d *Decoder) ReadByte() (n byte, err error) {
 	return d.buf.ReadByte()
+}
+
+func (d *Decoder) PeekByte() (n byte, err error) {
+	return d.buf.PeekByte()
+}
+
+func (d *Decoder) PeekToken() (Token, error) {
+	prefix, err := d.PeekByte()
+	if err != nil {
+		return TokenUnknown, err
+	}
+	return identifyToken(prefix), nil
 }
 
 func (d *Decoder) ElemDec() (*Decoder, Token, error) {
@@ -86,6 +102,7 @@ func (d *Decoder) Elem() ([]byte, Token, error) {
 	default:
 		return nil, token, fmt.Errorf("%w: unknown token", ErrDecode)
 	}
+	//log.Printf("%x %s\n", buf, token)
 	if err != nil {
 		return nil, token, err
 	}
@@ -118,13 +135,17 @@ func (d *Decoder) ForList(fn func(*Decoder) error) error {
 	switch token {
 	case TokenShortList, TokenLongList:
 		dec := NewDecoder(buf)
-		for dec.buf.Len() > 0 {
+		for {
+			if dec.buf.Len() == 0 {
+				return nil
+			}
 			err := fn(dec)
 			if err != nil {
 				return err
 			}
+			// reset the byte
+			dec = NewDecoder(dec.Bytes())
 		}
-		return nil
 	default:
 		return fmt.Errorf("%w: ForList on non-list", ErrDecode)
 	}
@@ -169,7 +190,9 @@ func (b *buf) Offset() int {
 	return b.off
 }
 
-func (b *buf) Bytes() []byte { return b.u[b.off:] }
+func (b *buf) Bytes() []byte {
+	return b.u[b.off:]
+}
 
 func (b *buf) String() string {
 	if b == nil {
@@ -180,3 +203,7 @@ func (b *buf) String() string {
 }
 
 func (b *buf) Len() int { return len(b.u) - b.off }
+
+func (b *buf) Underlying() []byte {
+	return b.u
+}

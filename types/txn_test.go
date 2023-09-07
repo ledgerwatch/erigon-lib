@@ -17,7 +17,6 @@
 package types
 
 import (
-	"bytes"
 	"crypto/rand"
 	"strconv"
 	"testing"
@@ -29,6 +28,7 @@ import (
 
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
+	"github.com/ledgerwatch/erigon-lib/rlp"
 )
 
 func TestParseTransactionRLP(t *testing.T) {
@@ -42,26 +42,21 @@ func TestParseTransactionRLP(t *testing.T) {
 				tt := tt
 				t.Run(strconv.Itoa(i), func(t *testing.T) {
 					payload := hexutility.MustDecodeHex(tt.PayloadStr)
-					parseEnd, err := ctx.ParseTransaction(payload, 0, tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
-					require.NoError(err)
-					require.Equal(len(payload), parseEnd)
+					dec := rlp.NewDecoder(payload)
+					err := ctx.DecodeTransaction(dec, tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+					require.NoError(err, tt.PayloadStr)
+					require.Equal(len(payload), dec.Offset())
 					if tt.SignHashStr != "" {
 						signHash := hexutility.MustDecodeHex(tt.SignHashStr)
-						if !bytes.Equal(signHash, ctx.Sighash[:]) {
-							t.Errorf("signHash expected %x, got %x", signHash, ctx.Sighash)
-						}
+						assert.EqualValues(t, signHash, ctx.Sighash[:], "sighash")
 					}
 					if tt.IdHashStr != "" {
 						idHash := hexutility.MustDecodeHex(tt.IdHashStr)
-						if !bytes.Equal(idHash, tx.IDHash[:]) {
-							t.Errorf("IdHash expected %x, got %x", idHash, tx.IDHash)
-						}
+						assert.EqualValues(t, idHash, tx.IDHash[:], "idhash")
 					}
 					if tt.SenderStr != "" {
 						expectSender := hexutility.MustDecodeHex(tt.SenderStr)
-						if !bytes.Equal(expectSender, txSender[:]) {
-							t.Errorf("expectSender expected %x, got %x", expectSender, txSender)
-						}
+						assert.EqualValues(t, expectSender, txSender[:], "sender")
 					}
 					require.Equal(tt.Nonce, tx.Nonce)
 				})
@@ -77,19 +72,19 @@ func TestTransactionSignatureValidity1(t *testing.T) {
 
 	tx, txSender := &TxSlot{}, [20]byte{}
 	validTxn := hexutility.MustDecodeHex("f83f800182520894095e7baea6a6c7c4c2dfeb977efac326af552d870b801ba048b55bfa915ac795c431978d8a6a992b628d557da5ff759b307d495a3664935301")
-	_, err := ctx.ParseTransaction(validTxn, 0, tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+	err := ctx.DecodeTransaction(rlp.NewDecoder(validTxn), tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
 	assert.NoError(t, err)
 
 	preEip2Txn := hexutility.MustDecodeHex("f85f800182520894095e7baea6a6c7c4c2dfeb977efac326af552d870b801ba048b55bfa915ac795c431978d8a6a992b628d557da5ff759b307d495a36649353a07fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a1")
-	_, err = ctx.ParseTransaction(preEip2Txn, 0, tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+	err = ctx.DecodeTransaction(rlp.NewDecoder(validTxn), tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
 	assert.NoError(t, err)
 
 	// Now enforce EIP-2
 	ctx.WithAllowPreEip2s(false)
-	_, err = ctx.ParseTransaction(validTxn, 0, tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+	err = ctx.DecodeTransaction(rlp.NewDecoder(validTxn), tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
 	assert.NoError(t, err)
 
-	_, err = ctx.ParseTransaction(preEip2Txn, 0, tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+	err = ctx.DecodeTransaction(rlp.NewDecoder(preEip2Txn), tx, txSender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
 	assert.Error(t, err)
 }
 
@@ -98,13 +93,13 @@ func TestTransactionSignatureValidity2(t *testing.T) {
 	chainId := new(uint256.Int).SetUint64(5)
 	ctx := NewTxParseContext(*chainId)
 	slot, sender := &TxSlot{}, [20]byte{}
-	rlp := hexutility.MustDecodeHex("02f8720513844190ab00848321560082520894cab441d2f45a3fee83d15c6b6b6c36a139f55b6288054607fc96a6000080c001a0dffe4cb5651e663d0eac8c4d002de734dd24db0f1109b062d17da290a133cc02a0913fb9f53f7a792bcd9e4d7cced1b8545d1ab82c77432b0bc2e9384ba6c250c5")
-	_, err := ctx.ParseTransaction(rlp, 0, slot, sender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+	xs := hexutility.MustDecodeHex("02f8720513844190ab00848321560082520894cab441d2f45a3fee83d15c6b6b6c36a139f55b6288054607fc96a6000080c001a0dffe4cb5651e663d0eac8c4d002de734dd24db0f1109b062d17da290a133cc02a0913fb9f53f7a792bcd9e4d7cced1b8545d1ab82c77432b0bc2e9384ba6c250c5")
+	err := ctx.DecodeTransaction(rlp.NewDecoder(xs), slot, sender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
 	assert.Error(t, err)
 
 	// Only legacy transactions can happen before EIP-2
 	ctx.WithAllowPreEip2s(true)
-	_, err = ctx.ParseTransaction(rlp, 0, slot, sender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+	err = ctx.DecodeTransaction(rlp.NewDecoder(xs), slot, sender[:], false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
 	assert.Error(t, err)
 }
 

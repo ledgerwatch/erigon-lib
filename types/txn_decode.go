@@ -15,35 +15,47 @@ import (
 	"github.com/ledgerwatch/secp256k1"
 )
 
-func (ctx *TxParseContext) parseTransaction2(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
+func (ctx *TxParseContext) DecodeTransaction(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
+	err = ctx.decodeTransaction(decoder, slot, sender, hasEnvelope, wrappedWithBlobs, validateHash)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrParseTxn, err)
+	}
+	return nil
+}
+
+func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
 	if decoder.Len() == 0 {
 		return fmt.Errorf("empty rlp")
 	}
 	if ctx.withSender && len(sender) != 20 {
 		return fmt.Errorf("expect sender buffer of len 20")
 	}
-	dec, tok, err := decoder.ElemDec()
-	if err != nil {
-		return fmt.Errorf("size prefix: %w", err) //nolint
+	tok, err := decoder.PeekToken()
+	dec := decoder
+	if tok == rlp.TokenDecimal {
+		if hasEnvelope {
+			return fmt.Errorf("expected envelope in the payload, got %s", tok)
+		}
+	} else if hasEnvelope && tok.IsBlobType() || tok.IsListType() {
+		dec, tok, err = decoder.ElemDec()
+		if err != nil {
+			return fmt.Errorf("size prefix: %w", err) //nolint
+		}
 	}
 
 	if dec.Len() == 0 {
 		return fmt.Errorf("transaction must be either 1 list or 1 string")
 	}
-	if dec.Len() == 1 && !tok.IsListType() {
-		if hasEnvelope {
-			return fmt.Errorf("expected envelope in the payload, got %x", dec.Bytes())
-		}
-	}
-
-	// Legacy transactions have list Prefix, whereas EIP-2718 transactions have string Prefix
-	// therefore we assign the first returned value of Prefix function (list) to legacy variable
 	switch {
-	case tok.IsListType():
-		slot.Rlp = append(make([]byte, 0, dec.Len()), dec.Bytes()...)
+	default:
+		return fmt.Errorf("expected list or blob token, got %s", tok)
+	case tok.IsListType(): // Legacy transactions have list Prefix,
+		slot.Rlp = append([]byte{}, decoder.Consumed()...)
 		slot.Size = uint32(len(slot.Rlp))
 		slot.Type = LegacyTxType
-	case tok == rlp.TokenDecimal:
+	case tok == rlp.TokenDecimal: // EIP-2718 transactions have string Prefix
+		slot.Rlp = append([]byte{}, dec.Bytes()...)
+		slot.Size = uint32(len(slot.Rlp))
 		slot.Type, err = dec.ReadByte()
 		if err != nil {
 			return fmt.Errorf("couldnt read txn type: %w", err)
@@ -51,20 +63,9 @@ func (ctx *TxParseContext) parseTransaction2(decoder *rlp.Decoder, slot *TxSlot,
 		if slot.Type > BlobTxType {
 			return fmt.Errorf("unknown transaction type: %d", slot.Type)
 		}
-		dec, tok, err = dec.ElemDec()
-		if err != nil {
-			return err
-		}
-		if !tok.IsListType() {
-			return fmt.Errorf("expected list token")
-		}
-		slot.Rlp = append(make([]byte, 0, dec.Len()), dec.Bytes()...)
-		slot.Size = uint32(len(slot.Rlp))
-	default:
-		return fmt.Errorf("expected list or decimal token")
 	}
 
-	bodyDecoder := dec
+	bodyDecoder := rlp.NewDecoder(dec.Bytes())
 	// if its a blob transaction, we actually need to enter a nested list, since its [tx_payload_body, blobs, commitments, proofs]
 	if slot.Type == BlobTxType && wrappedWithBlobs {
 		bodyDecoder, _, err = dec.ElemDec()
@@ -73,21 +74,21 @@ func (ctx *TxParseContext) parseTransaction2(decoder *rlp.Decoder, slot *TxSlot,
 		}
 	}
 
-	err = ctx.parseTransactionBody2(bodyDecoder, slot, sender, validateHash)
+	err = ctx.decodeTransactionBody(bodyDecoder, decoder, slot, sender, validateHash)
 	if err != nil {
-		return err
+		return fmt.Errorf("txn body: %w", err)
 	}
 
-	// so its a blob transaction and we need to do the extra stuff...
+	// so its a blob transaction and we need to do the extra stuff, otherwise we are done
 	if slot.Type == BlobTxType && wrappedWithBlobs {
-		if err := ctx.parseBlobs(dec, slot); err != nil {
-			return err
+		if err := ctx.decodeBlobs(dec, slot); err != nil {
+			return fmt.Errorf("decode blobs: %w", err)
 		}
-		if err := ctx.parseCommitments(dec, slot); err != nil {
-			return err
+		if err := ctx.decodeCommitments(dec, slot); err != nil {
+			return fmt.Errorf("decode commitments: %w", err)
 		}
-		if err := ctx.parseProofs(dec, slot); err != nil {
-			return err
+		if err := ctx.decodeProofs(dec, slot); err != nil {
+			return fmt.Errorf("decode proofs: %w", err)
 		}
 		if len(slot.Blobs) != len(slot.Commitments) {
 			return fmt.Errorf("blob count != commitment count")
@@ -102,7 +103,7 @@ func (ctx *TxParseContext) parseTransaction2(decoder *rlp.Decoder, slot *TxSlot,
 	return err
 }
 
-func (ctx *TxParseContext) parseCommitments(dec *rlp.Decoder, slot *TxSlot) (err error) {
+func (ctx *TxParseContext) decodeCommitments(dec *rlp.Decoder, slot *TxSlot) (err error) {
 	err = dec.ForList(func(d *rlp.Decoder) error {
 		var blob gokzg4844.KZGCommitment
 		blobSlice := blob[:]
@@ -120,7 +121,7 @@ func (ctx *TxParseContext) parseCommitments(dec *rlp.Decoder, slot *TxSlot) (err
 	return nil
 }
 
-func (ctx *TxParseContext) parseProofs(dec *rlp.Decoder, slot *TxSlot) (err error) {
+func (ctx *TxParseContext) decodeProofs(dec *rlp.Decoder, slot *TxSlot) (err error) {
 	err = dec.ForList(func(d *rlp.Decoder) error {
 		var blob gokzg4844.KZGProof
 		blobSlice := blob[:]
@@ -137,7 +138,7 @@ func (ctx *TxParseContext) parseProofs(dec *rlp.Decoder, slot *TxSlot) (err erro
 	return nil
 }
 
-func (ctx *TxParseContext) parseBlobs(dec *rlp.Decoder, slot *TxSlot) (err error) {
+func (ctx *TxParseContext) decodeBlobs(dec *rlp.Decoder, slot *TxSlot) (err error) {
 	err = dec.ForList(func(d *rlp.Decoder) error {
 		var blob []byte
 		err := rlp.ReadElem(dec, rlp.Bytes, &blob)
@@ -154,7 +155,7 @@ func (ctx *TxParseContext) parseBlobs(dec *rlp.Decoder, slot *TxSlot) (err error
 	return nil
 }
 
-func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot, sender []byte, validateHash func([]byte) error) (err error) {
+func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.Decoder, slot *TxSlot, sender []byte, validateHash func([]byte) error) (err error) {
 	legacy := slot.Type == LegacyTxType
 
 	k1 := cryptopool.GetLegacyKeccak256()
@@ -162,23 +163,19 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 	defer cryptopool.ReturnLegacyKeccak256(k1)
 	defer cryptopool.ReturnLegacyKeccak256(k2)
 
+	k1.Reset()
+	k2.Reset()
+
+	// for computing tx hash
 	if !legacy {
 		typeByte := []byte{slot.Type}
-		var tok rlp.Token
 		if _, err := k1.Write(typeByte); err != nil {
 			return err
 		}
 		if _, err := k2.Write(typeByte); err != nil {
 			return err
 		}
-		dec, tok, err = dec.ElemDec()
-		if err != nil {
-			return err
-		}
-		if !tok.IsListType() {
-			return fmt.Errorf("expected list")
-		}
-		if _, err := k1.Write(dec.Bytes()); err != nil {
+		if _, err := k1.Write(parent.Consumed()); err != nil {
 			return fmt.Errorf("compute idHash: %w", err)
 		}
 	}
@@ -189,6 +186,8 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 		}
 	}
 
+	// signing hash data starts here
+	sigHashPos := dec.Offset()
 	if !legacy {
 		err = rlp.ReadElem(dec, rlp.Uint256, &ctx.ChainID)
 		if err != nil {
@@ -292,6 +291,8 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 		})
 	}
 	// This is where the data for Sighash ends
+	sigHashEnd := dec.Offset()
+	sigHashLen := uint(sigHashEnd - sigHashPos)
 
 	// Next follows V of the signature
 	var vByte byte
@@ -319,7 +320,10 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 				chainIDLen = 1
 			} else {
 				chainIDLen = common.BitLenToByteLen(chainIDBits) // It is always < 56 bytes
+				sigHashLen++                                     // For chainId len Prefix
 			}
+			sigHashLen += uint(chainIDLen) // For chainId
+			sigHashLen += 2                // For two extra zeros
 			ctx.DeriveChainID.Sub(&ctx.V, &ctx.ChainIDMul)
 			vByte = byte(ctx.DeriveChainID.Sub(&ctx.DeriveChainID, u256.N8).Uint64() - 27)
 		}
@@ -347,9 +351,10 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 		return fmt.Errorf("S: %s", err) //nolint
 	}
 
-	// For legacy transactions, hash the full payload
+	// For legacy transactions, just hash the full payload
 	if legacy {
-		if _, err = k1.Write(dec.Consumed()); err != nil {
+		u := parent.Consumed()
+		if _, err = k1.Write(u); err != nil {
 			return fmt.Errorf("computing IdHash: %s", err) //nolint
 		}
 	}
@@ -374,20 +379,20 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 
 	// Computing sigHash (hash used to recover sender from the signature)
 	// Write len Prefix to the Sighash
-	if dec.Offset() < 56 {
-		ctx.buf[0] = byte(dec.Offset()) + 192
+	if sigHashLen < 56 {
+		ctx.buf[0] = byte(sigHashLen) + 192
 		if _, err := k2.Write(ctx.buf[:1]); err != nil {
 			return fmt.Errorf("computing signHash (hashing len Prefix): %s", err) //nolint
 		}
 	} else {
-		beLen := common.BitLenToByteLen(bits.Len(uint(dec.Offset())))
-		binary.BigEndian.PutUint64(ctx.buf[1:], uint64(dec.Offset()))
+		beLen := common.BitLenToByteLen(bits.Len(uint(sigHashLen)))
+		binary.BigEndian.PutUint64(ctx.buf[1:], uint64(sigHashLen))
 		ctx.buf[8-beLen] = byte(beLen) + 247
 		if _, err := k2.Write(ctx.buf[8-beLen : 9]); err != nil {
 			return fmt.Errorf("computing signHash (hashing len Prefix): %s", err) //nolint
 		}
 	}
-	if _, err = k2.Write(dec.Consumed()); err != nil {
+	if _, err = k2.Write(dec.Underlying()[sigHashPos:sigHashEnd]); err != nil {
 		return fmt.Errorf("computing signHash: %s", err) //nolint
 	}
 	if legacy {
