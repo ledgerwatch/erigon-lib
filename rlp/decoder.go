@@ -27,8 +27,8 @@ func (d *Decoder) Underlying() []byte {
 	return d.buf.Underlying()
 }
 
-func (d *Decoder) Len() int {
-	return d.buf.Len()
+func (d *Decoder) Empty() bool {
+	return d.buf.empty()
 }
 
 func (d *Decoder) Offset() int {
