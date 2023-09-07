@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"math/bits"
 
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
@@ -56,10 +55,9 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 	)
 
 	var (
-		parent      *rlp.Decoder
-		bodyDecoder *rlp.Decoder
+		parent      *rlp.Decoder // the parent should contain in its underlying buffer the rlp used for txn hash creation sans txn type
+		bodyDecoder *rlp.Decoder // the bodyDecoder should be an rlp decoder primed at the top of the list body for txn
 	)
-	var tok rlp.Token
 
 	switch {
 	default:
@@ -94,27 +92,28 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 			return fmt.Errorf("unknown transaction type: %d", slot.Type)
 		}
 		// from here to the end of the element, if this is not a blob tx type with blobs, is the parent
-		parent = decoder.Fork()
-		parent.Rebase()
-		// now enter the list, since that is what we are in front of now.
-		dec, _, err = decoder.ElemDec()
+		parent, _, err = decoder.RawElemDec()
 		if err != nil {
 			return fmt.Errorf("extract txn body: %w", err) //nolint
 		}
-		bodyDecoder = dec
+		// now enter the list, since that is what we are in front of now.
+		bodyDecoder, _, err = parent.ElemDec()
+		if err != nil {
+			return fmt.Errorf("extract txn body: %w", err) //nolint
+		}
 		if slot.Type == BlobTxType {
 			if wrappedWithBlobs {
+				dec = bodyDecoder
 				// if its a blob transaction and wrapped with blobs, we actually need to enter a nested list
 				// in this case, "decoder" was an iterator for the array of [ [txbody...], blobs, commitments, proofs]
-				// so dec is now pointing at the head of the first element [txbody...]
-				tmp := dec.Fork()
-				tmp.Rebase()
-				parentBytes, _, err := tmp.RawElem()
+				// so our bodyDecoder is actually a pointer to the header of [txbody...].
+				// we can extract the raw elem out of this in order to get the parent decoder
+				parent, _, err = bodyDecoder.RawElemDec()
 				if err != nil {
 					return fmt.Errorf("wrapped blob tx body: %w", err) //nolint
 				}
-				parent = rlp.NewDecoder(parentBytes)
-				bodyDecoder, _, err = dec.ElemDec()
+				// and then the body is actually just the parent decoder read once, since we are sitting at the top of the [txbody...] header
+				bodyDecoder, _, err = parent.ElemDec()
 				if err != nil {
 					return fmt.Errorf("wrapped blob tx body: %w", err) //nolint
 				}
@@ -123,9 +122,6 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 			}
 		}
 	}
-	log.Println("praent", parent)
-	log.Println("bodydec", bodyDecoder, tok)
-	log.Println("also", wrappedWithBlobs)
 	err = ctx.decodeTransactionBody(bodyDecoder, parent, slot, sender, validateHash)
 	if err != nil {
 		return fmt.Errorf("txn body: %w", err)

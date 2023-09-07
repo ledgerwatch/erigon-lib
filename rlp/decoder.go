@@ -70,6 +70,11 @@ func (d *Decoder) ElemDec() (*Decoder, Token, error) {
 	return NewDecoder(a), t, err
 }
 
+func (d *Decoder) RawElemDec() (*Decoder, Token, error) {
+	a, t, err := d.RawElem()
+	return NewDecoder(a), t, err
+}
+
 func (d *Decoder) RawElem() ([]byte, Token, error) {
 	w := d.buf
 	start := w.Offset()
