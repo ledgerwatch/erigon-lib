@@ -42,11 +42,11 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 		return fmt.Errorf("expect sender buffer of len 20")
 	}
 	// start classification
-	peektok, err := decoder.PeekToken()
+	token, err := decoder.PeekToken()
 	// means that this is non-enveloped non-legacy transaction
-	if peektok == rlp.TokenDecimal {
+	if token == rlp.TokenDecimal {
 		if hasEnvelope {
-			return fmt.Errorf("expected envelope in the payload, got %s", peektok)
+			return fmt.Errorf("expected envelope in the payload, got %s", token)
 		}
 	}
 
@@ -61,8 +61,8 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 
 	switch {
 	default:
-		return fmt.Errorf("expected list or blob token, got %s", peektok)
-	case peektok.IsListType(): // Legacy transactions have list Prefix,
+		return fmt.Errorf("expected list or blob token, got %s", token)
+	case token.IsListType(): // Legacy transactions have list Prefix,
 		// enter the list
 		parent = decoder
 		bodyDecoder, _, err = decoder.ElemDec()
@@ -71,9 +71,9 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 		}
 		slot.Rlp = append([]byte{}, decoder.Consumed()...)
 		slot.Type = LegacyTxType
-	case peektok.IsBlobType() || peektok == rlp.TokenDecimal: // EIP-2718 transactions have string Prefix
+	case token.IsBlobType() || token == rlp.TokenDecimal: // EIP-2718 transactions have string Prefix
 		// if is blob type, it means that its an envelope, so we need to get out of that
-		if peektok.IsBlobType() {
+		if token.IsBlobType() {
 			decoder, _, err = decoder.ElemDec()
 			if err != nil {
 				return fmt.Errorf("size prefix: %w", err) //nolint
