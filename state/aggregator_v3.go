@@ -125,7 +125,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	cfg := domainCfg{
 		hist: histCfg{
 			iiCfg:             iiCfg{salt: salt, dir: dir, tmpdir: tmpdir},
-			withLocalityIndex: false, withExistenceIndex: true, compression: CompressNone, historyLargeValues: false,
+			withLocalityIndex: true, withExistenceIndex: false, compression: CompressNone, historyLargeValues: false,
 		},
 		domainLargeValues: AccDomainLargeValues,
 	}
@@ -135,7 +135,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	cfg = domainCfg{
 		hist: histCfg{
 			iiCfg:             iiCfg{salt: salt, dir: dir, tmpdir: tmpdir},
-			withLocalityIndex: false, withExistenceIndex: true, compression: CompressNone, historyLargeValues: false,
+			withLocalityIndex: true, withExistenceIndex: false, compression: CompressNone, historyLargeValues: false,
 		},
 		domainLargeValues: StorageDomainLargeValues,
 	}
@@ -145,7 +145,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	cfg = domainCfg{
 		hist: histCfg{
 			iiCfg:             iiCfg{salt: salt, dir: dir, tmpdir: tmpdir},
-			withLocalityIndex: false, withExistenceIndex: true, compression: CompressKeys | CompressVals, historyLargeValues: true,
+			withLocalityIndex: true, withExistenceIndex: false, compression: CompressKeys | CompressVals, historyLargeValues: true,
 		},
 		domainLargeValues: CodeDomainLargeValues,
 	}
@@ -155,7 +155,7 @@ func NewAggregatorV3(ctx context.Context, dir, tmpdir string, aggregationStep ui
 	cfg = domainCfg{
 		hist: histCfg{
 			iiCfg:             iiCfg{salt: salt, dir: dir, tmpdir: tmpdir},
-			withLocalityIndex: false, withExistenceIndex: true, compression: CompressNone, historyLargeValues: true,
+			withLocalityIndex: false, withExistenceIndex: false, compression: CompressNone, historyLargeValues: true,
 		},
 		domainLargeValues: CommitmentDomainLargeValues,
 		compress:          CompressNone,
