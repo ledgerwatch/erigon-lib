@@ -113,6 +113,9 @@ func (d *Decoder) RawElem() ([]byte, Token, error) {
 			return nil, token, err
 		}
 		_, err = nextFull(w, sz)
+		if err != nil {
+			return nil, token, err
+		}
 	default:
 		return nil, token, fmt.Errorf("%w: unknown token", ErrDecode)
 	}
@@ -163,6 +166,9 @@ func (d *Decoder) Elem() ([]byte, Token, error) {
 			return nil, token, err
 		}
 		buf, err = nextFull(w, sz)
+		if err != nil {
+			return nil, token, err
+		}
 	default:
 		return nil, token, fmt.Errorf("%w: unknown token", ErrDecode)
 	}

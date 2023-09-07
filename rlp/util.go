@@ -52,7 +52,7 @@ const (
 
 func identifyToken(b byte) Token {
 	switch {
-	case b >= 0 && b <= 127:
+	case b <= 127:
 		return TokenDecimal
 	case b >= 128 && b <= 183:
 		return TokenShortBlob

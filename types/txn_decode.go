@@ -43,6 +43,9 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 	}
 	// start classification
 	token, err := decoder.PeekToken()
+	if err != nil {
+		return err
+	}
 	// means that this is non-enveloped non-legacy transaction
 	if token == rlp.TokenDecimal {
 		if hasEnvelope {
@@ -117,8 +120,6 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 				if err != nil {
 					return fmt.Errorf("wrapped blob tx body: %w", err) //nolint
 				}
-			} else {
-				// otherwise its not wrapped with blobs, so we do nothing special
 			}
 		}
 	}
@@ -269,6 +270,9 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 			})
 			return err
 		})
+		if err != nil {
+			return err
+		}
 	}
 
 	if slot.Type == BlobTxType {
@@ -380,7 +384,7 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 			return fmt.Errorf("computing signHash (hashing len Prefix): %s", err) //nolint
 		}
 	} else {
-		beLen := common.BitLenToByteLen(bits.Len(uint(sigHashLen)))
+		beLen := common.BitLenToByteLen(bits.Len(sigHashLen))
 		binary.BigEndian.PutUint64(ctx.buf[1:], uint64(sigHashLen))
 		ctx.buf[8-beLen] = byte(beLen) + 247
 		if _, err := k2.Write(ctx.buf[8-beLen : 9]); err != nil {
