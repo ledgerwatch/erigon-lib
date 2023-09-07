@@ -192,6 +192,28 @@ func ParseTransactions(payload []byte, pos int, ctx *TxParseContext, txSlots *Tx
 	return pos, nil
 }
 
+func DecodeTransactions(dec *rlp.Decoder, ctx *TxParseContext, txSlots *TxSlots, validateHash func([]byte) error) (err error) {
+	i := 0
+	err = dec.ForList(func(d *rlp.Decoder) error {
+		txSlots.Resize(uint(i + 1))
+		txSlots.Txs[i] = &TxSlot{}
+		err = ctx.parseTransaction2(d, txSlots.Txs[i], txSlots.Senders.At(i), true /* hasEnvelope */, true /* wrappedWithBlobs */, validateHash)
+		if err != nil {
+			if errors.Is(err, ErrRejected) {
+				txSlots.Resize(uint(i))
+				return nil
+			}
+			return err
+		}
+		i = i + 1
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrParseTxn, err)
+	}
+	return nil
+}
+
 func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots, validateHash func([]byte) error) (requestID uint64, newPos int, err error) {
 	p, _, err := rlp.List(payload, pos)
 	if err != nil {

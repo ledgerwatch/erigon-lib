@@ -2,6 +2,27 @@ package rlp
 
 type Token int32
 
+func (T Token) String() string {
+	switch T {
+	case TokenDecimal:
+		return "decimal"
+	case TokenShortBlob:
+		return "short_blob"
+	case TokenLongBlob:
+		return "long_blob"
+	case TokenShortList:
+		return "short_list"
+	case TokenLongList:
+		return "long_list"
+	case TokenEOF:
+		return "eof"
+	case TokenUnknown:
+		return "unknown"
+	default:
+		return "nan"
+	}
+}
+
 func (T Token) Plus(n byte) byte {
 	return byte(T) + n
 }

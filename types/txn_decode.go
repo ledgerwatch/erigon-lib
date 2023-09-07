@@ -10,19 +10,18 @@ import (
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/crypto"
+	"github.com/ledgerwatch/erigon-lib/crypto/cryptopool"
 	"github.com/ledgerwatch/erigon-lib/rlp"
 	"github.com/ledgerwatch/secp256k1"
 )
 
-func (ctx *TxParseContext) parseTransaction2(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
-	if len(payload) == 0 {
+func (ctx *TxParseContext) parseTransaction2(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
+	if decoder.Len() == 0 {
 		return fmt.Errorf("empty rlp")
 	}
 	if ctx.withSender && len(sender) != 20 {
 		return fmt.Errorf("expect sender buffer of len 20")
 	}
-	decoder := rlp.NewDecoder(payload[pos:])
-
 	dec, tok, err := decoder.ElemDec()
 	if err != nil {
 		return fmt.Errorf("size prefix: %w", err) //nolint
@@ -158,9 +157,32 @@ func (ctx *TxParseContext) parseBlobs(dec *rlp.Decoder, slot *TxSlot) (err error
 func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot, sender []byte, validateHash func([]byte) error) (err error) {
 	legacy := slot.Type == LegacyTxType
 
-	// Compute transaction hash
-	ctx.Keccak1.Reset()
-	ctx.Keccak2.Reset()
+	k1 := cryptopool.GetLegacyKeccak256()
+	k2 := cryptopool.GetLegacyKeccak256()
+	defer cryptopool.ReturnLegacyKeccak256(k1)
+	defer cryptopool.ReturnLegacyKeccak256(k2)
+
+	if !legacy {
+		typeByte := []byte{slot.Type}
+		var tok rlp.Token
+		if _, err := k1.Write(typeByte); err != nil {
+			return err
+		}
+		if _, err := k2.Write(typeByte); err != nil {
+			return err
+		}
+		dec, tok, err = dec.ElemDec()
+		if err != nil {
+			return err
+		}
+		if !tok.IsListType() {
+			return fmt.Errorf("expected list")
+		}
+		if _, err := k1.Write(dec.Bytes()); err != nil {
+			return fmt.Errorf("compute idHash: %w", err)
+		}
+	}
+
 	if ctx.validateRlp != nil {
 		if err := ctx.validateRlp(slot.Rlp); err != nil {
 			return err
@@ -182,6 +204,7 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 			return fmt.Errorf("%s, %d (expected %d)", "invalid chainID", ctx.ChainID.Uint64(), ctx.cfg.ChainID.Uint64())
 		}
 	}
+
 	// Next follows the nonce, which we need to parse
 	err = rlp.ReadElem(dec, rlp.Uint64, &slot.Nonce)
 	if err != nil {
@@ -324,17 +347,17 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 		return fmt.Errorf("S: %s", err) //nolint
 	}
 
-	if _, err = ctx.Keccak1.Write([]byte{slot.Type}); err != nil {
-		return fmt.Errorf("computing IdHash: %s", err) //nolint
-	}
-
 	// For legacy transactions, hash the full payload
 	if legacy {
-		if _, err = ctx.Keccak1.Write(dec.Consumed()); err != nil {
+		if _, err = k1.Write(dec.Consumed()); err != nil {
 			return fmt.Errorf("computing IdHash: %s", err) //nolint
 		}
 	}
-	_, _ = ctx.Keccak1.(io.Reader).Read(slot.IDHash[:32])
+
+	// write the hash to IdHash buffer
+	//k1.Sum(slot.IDHash[:0])
+	_, _ = k1.(io.Reader).Read(slot.IDHash[:32])
+
 	if validateHash != nil {
 		if err := validateHash(slot.IDHash[:32]); err != nil {
 			return err
@@ -353,25 +376,25 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 	// Write len Prefix to the Sighash
 	if dec.Offset() < 56 {
 		ctx.buf[0] = byte(dec.Offset()) + 192
-		if _, err := ctx.Keccak2.Write(ctx.buf[:1]); err != nil {
+		if _, err := k2.Write(ctx.buf[:1]); err != nil {
 			return fmt.Errorf("computing signHash (hashing len Prefix): %s", err) //nolint
 		}
 	} else {
 		beLen := common.BitLenToByteLen(bits.Len(uint(dec.Offset())))
 		binary.BigEndian.PutUint64(ctx.buf[1:], uint64(dec.Offset()))
 		ctx.buf[8-beLen] = byte(beLen) + 247
-		if _, err := ctx.Keccak2.Write(ctx.buf[8-beLen : 9]); err != nil {
+		if _, err := k2.Write(ctx.buf[8-beLen : 9]); err != nil {
 			return fmt.Errorf("computing signHash (hashing len Prefix): %s", err) //nolint
 		}
 	}
-	if _, err = ctx.Keccak2.Write(dec.Consumed()); err != nil {
+	if _, err = k2.Write(dec.Consumed()); err != nil {
 		return fmt.Errorf("computing signHash: %s", err) //nolint
 	}
 	if legacy {
 		if chainIDLen > 0 {
 			if chainIDBits <= 7 {
 				ctx.buf[0] = byte(ctx.ChainID.Uint64())
-				if _, err := ctx.Keccak2.Write(ctx.buf[:1]); err != nil {
+				if _, err := k2.Write(ctx.buf[:1]); err != nil {
 					return fmt.Errorf("computing signHash (hashing legacy chainId): %s", err) //nolint
 				}
 			} else {
@@ -380,21 +403,21 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 				binary.BigEndian.PutUint64(ctx.buf[17:25], ctx.ChainID[1])
 				binary.BigEndian.PutUint64(ctx.buf[25:33], ctx.ChainID[0])
 				ctx.buf[32-chainIDLen] = 128 + byte(chainIDLen)
-				if _, err = ctx.Keccak2.Write(ctx.buf[32-chainIDLen : 33]); err != nil {
+				if _, err = k2.Write(ctx.buf[32-chainIDLen : 33]); err != nil {
 					return fmt.Errorf("computing signHash (hashing legacy chainId): %s", err) //nolint
 				}
 			}
 			// Encode two zeros
 			ctx.buf[0] = 128
 			ctx.buf[1] = 128
-			if _, err := ctx.Keccak2.Write(ctx.buf[:2]); err != nil {
+			if _, err := k2.Write(ctx.buf[:2]); err != nil {
 				return fmt.Errorf("computing signHash (hashing zeros after legacy chainId): %s", err) //nolint
 			}
 		}
 	}
 	// Squeeze Sighash
-	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.Sighash[:32])
-	//ctx.keccak2.Sum(ctx.Sighash[:0])
+	_, _ = k2.(io.Reader).Read(ctx.Sighash[:32])
+	//k2.Sum(ctx.Sighash[:0])
 	binary.BigEndian.PutUint64(ctx.Sig[0:8], ctx.R[3])
 	binary.BigEndian.PutUint64(ctx.Sig[8:16], ctx.R[2])
 	binary.BigEndian.PutUint64(ctx.Sig[16:24], ctx.R[1])
@@ -409,13 +432,13 @@ func (ctx *TxParseContext) parseTransactionBody2(dec *rlp.Decoder, slot *TxSlot,
 		return fmt.Errorf("recovering sender from signature: %s", err) //nolint
 	}
 	//apply keccak to the public key
-	ctx.Keccak2.Reset()
-	if _, err = ctx.Keccak2.Write(ctx.buf[1:65]); err != nil {
+	k2.Reset()
+	if _, err = k2.Write(ctx.buf[1:65]); err != nil {
 		return fmt.Errorf("computing sender from public key: %s", err) //nolint
 	}
 	// squeeze the hash of the public key
-	//ctx.keccak2.Sum(ctx.buf[:0])
-	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
+	//k2.Sum(ctx.buf[:0])
+	_, _ = k2.(io.Reader).Read(ctx.buf[:32])
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
 

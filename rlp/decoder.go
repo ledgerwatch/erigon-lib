@@ -52,50 +52,44 @@ func (d *Decoder) Elem() ([]byte, Token, error) {
 		return nil, TokenUnknown, err
 	}
 	token := identifyToken(prefix)
-	// switch
+
+	var (
+		buf   []byte
+		sz    int
+		lenSz int
+	)
+	// switch on the token
 	switch token {
 	case TokenDecimal:
 		// in this case, the value is just the byte itself
-		return []byte{prefix}, token, nil
+		buf = []byte{prefix}
 	case TokenShortList:
-		sz := int(token.Diff(prefix))
-		buf, err := nextFull(w, sz)
-		if err != nil {
-			return nil, token, err
-		}
-		return buf, token, nil
+		sz = int(token.Diff(prefix))
+		buf, err = nextFull(w, sz)
 	case TokenLongList:
-		lenSz := int(token.Diff(prefix))
-		sz, err := nextBeInt(w, lenSz)
+		lenSz = int(token.Diff(prefix))
+		sz, err = nextBeInt(w, lenSz)
 		if err != nil {
 			return nil, token, err
 		}
-		buf, err := nextFull(w, sz)
-		if err != nil {
-			return nil, token, err
-		}
-		return buf, token, nil
+		buf, err = nextFull(w, sz)
 	case TokenShortBlob:
 		sz := int(token.Diff(prefix))
-		str, err := nextFull(w, sz)
-		if err != nil {
-			return nil, token, err
-		}
-		return str, token, nil
+		buf, err = nextFull(w, sz)
 	case TokenLongBlob:
 		lenSz := int(token.Diff(prefix))
 		sz, err := nextBeInt(w, lenSz)
 		if err != nil {
 			return nil, token, err
 		}
-		str, err := nextFull(w, sz)
-		if err != nil {
-			return nil, token, err
-		}
-		return str, token, nil
+		buf, err = nextFull(w, sz)
 	default:
 		return nil, token, fmt.Errorf("%w: unknown token", ErrDecode)
 	}
+	if err != nil {
+		return nil, token, err
+	}
+	return buf, token, nil
 }
 
 func ReadElem[T any](d *Decoder, fn func(*T, []byte) error, receiver *T) error {
@@ -116,7 +110,7 @@ func ReadElem[T any](d *Decoder, fn func(*T, []byte) error, receiver *T) error {
 }
 
 func (d *Decoder) ForList(fn func(*Decoder) error) error {
-	// figure out what we are reading
+	// grab the list bytes
 	buf, token, err := d.Elem()
 	if err != nil {
 		return err
@@ -125,7 +119,7 @@ func (d *Decoder) ForList(fn func(*Decoder) error) error {
 	case TokenShortList, TokenLongList:
 		dec := NewDecoder(buf)
 		for dec.buf.Len() > 0 {
-			err := fn(d)
+			err := fn(dec)
 			if err != nil {
 				return err
 			}
