@@ -33,6 +33,7 @@ func (ctx *TxParseContext) DecodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 }
 
 func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
+	od := decoder
 	if decoder.Empty() {
 		return fmt.Errorf("empty rlp")
 	}
@@ -124,7 +125,7 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 			return fmt.Errorf("blob count != blob hash count")
 		}
 	}
-	slot.Size = uint32(decoder.Offset())
+	slot.Size = uint32(od.Offset())
 	return err
 }
 
