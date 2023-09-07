@@ -148,12 +148,10 @@ func PeekTransactionType(serialized []byte) (byte, error) {
 // 0x03 || [chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s]
 // 0x03 ||[[chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s], blobs, commitments, proofs]
 func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (p int, err error) {
-	//dec := rlp.NewDecoder(payload)
 	p, err = ctx.parseTransaction(payload, pos, slot, sender, hasEnvelope, wrappedWithBlobs, validateHash)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %w", ErrParseTxn, err)
+		return p, fmt.Errorf("%w: %w", ErrParseTxn, err)
 	}
-	//return dec.Offset() + pos, nil
 	return p, nil
 }
 func (ctx *TxParseContext) parseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (p int, err error) {
