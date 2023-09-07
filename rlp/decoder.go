@@ -47,6 +47,12 @@ func (d *Decoder) PeekByte() (n byte, err error) {
 	return d.buf.PeekByte()
 }
 
+func (d *Decoder) Fork() *Decoder {
+	return &Decoder{
+		buf: newBuf(d.Bytes(), 0),
+	}
+}
+
 func (d *Decoder) PeekToken() (Token, error) {
 	prefix, err := d.PeekByte()
 	if err != nil {

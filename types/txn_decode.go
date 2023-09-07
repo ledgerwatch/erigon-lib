@@ -15,6 +15,15 @@ import (
 	"github.com/ledgerwatch/secp256k1"
 )
 
+// DecodeTransaction extracts all the information from the transactions's payload (RLP) necessary to build TxSlot.
+// It also performs syntactic validation of the transactions.
+// wrappedWithBlobs means that for blob (type 3) transactions the full version with blobs/commitments/proofs is expected
+// (see https://eips.ethereum.org/EIPS/eip-4844#networking).
+// [  ] || [          nonce,      price, limit, to, value, data,                                     y,r,s]
+// 0x01 || [chain_id, nonce,      price, limit, to, value, data, access_list,                        y,r,s]
+// 0x02 || [chain_id, nonce, tip, price, limit, to, value, data, access_list,                        y,r,s]
+// 0x03 || [chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s]
+// 0x03 ||[[chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s], blobs, commitments, proofs]
 func (ctx *TxParseContext) DecodeTransaction(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
 	err = ctx.decodeTransaction(decoder, slot, sender, hasEnvelope, wrappedWithBlobs, validateHash)
 	if err != nil {
@@ -30,32 +39,40 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 	if ctx.withSender && len(sender) != 20 {
 		return fmt.Errorf("expect sender buffer of len 20")
 	}
-	tok, err := decoder.PeekToken()
-	dec := decoder
-	if tok == rlp.TokenDecimal {
+	peektok, err := decoder.PeekToken()
+	// means that this is non-enveloped non-legacy transaction
+	if peektok == rlp.TokenDecimal {
 		if hasEnvelope {
-			return fmt.Errorf("expected envelope in the payload, got %s", tok)
+			return fmt.Errorf("expected envelope in the payload, got %s", peektok)
 		}
-	} else if hasEnvelope && tok.IsBlobType() || tok.IsListType() {
-		dec, tok, err = decoder.ElemDec()
+	}
+
+	if decoder.Empty() {
+		return fmt.Errorf("transaction must be either 1 list or 1 string")
+	}
+
+	// if is blob type, it means that its an envelope, so we need to get out of that
+	if peektok.IsBlobType() {
+		decoder, _, err = decoder.ElemDec()
 		if err != nil {
 			return fmt.Errorf("size prefix: %w", err) //nolint
 		}
 	}
+	dec := decoder
 
-	if dec.Empty() {
-		return fmt.Errorf("transaction must be either 1 list or 1 string")
-	}
 	switch {
 	default:
-		return fmt.Errorf("expected list or blob token, got %s", tok)
-	case tok.IsListType(): // Legacy transactions have list Prefix,
+		return fmt.Errorf("expected list or blob token, got %s", peektok)
+	case peektok.IsListType(): // Legacy transactions have list Prefix,
+		dec, peektok, err = decoder.ElemDec()
+		if err != nil {
+			return fmt.Errorf("size prefix: %w", err) //nolint
+		}
 		slot.Rlp = append([]byte{}, decoder.Consumed()...)
-		slot.Size = uint32(len(slot.Rlp))
 		slot.Type = LegacyTxType
-	case tok == rlp.TokenDecimal: // EIP-2718 transactions have string Prefix
-		slot.Rlp = append([]byte{}, dec.Bytes()...)
-		slot.Size = uint32(len(slot.Rlp))
+	case peektok.IsBlobType() || peektok == rlp.TokenDecimal: // EIP-2718 transactions have string Prefix
+		slot.Rlp = append([]byte{}, decoder.Bytes()...)
+		// at this point, the next byte is the type
 		slot.Type, err = dec.ReadByte()
 		if err != nil {
 			return fmt.Errorf("couldnt read txn type: %w", err)
@@ -63,9 +80,16 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 		if slot.Type > BlobTxType {
 			return fmt.Errorf("unknown transaction type: %d", slot.Type)
 		}
+		// now enter the list, since that is what we are in front of now
+		dec, _, err = dec.ElemDec()
+		if err != nil {
+			return fmt.Errorf("extract txn body: %w", err) //nolint
+		}
+
 	}
 
 	bodyDecoder := rlp.NewDecoder(dec.Bytes())
+
 	// if its a blob transaction, we actually need to enter a nested list, since its [tx_payload_body, blobs, commitments, proofs]
 	if slot.Type == BlobTxType && wrappedWithBlobs {
 		bodyDecoder, _, err = dec.ElemDec()
@@ -100,6 +124,7 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 			return fmt.Errorf("blob count != blob hash count")
 		}
 	}
+	slot.Size = uint32(decoder.Offset())
 	return err
 }
 
@@ -169,9 +194,6 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 	// for computing tx hash
 	if !legacy {
 		typeByte := []byte{slot.Type}
-		if _, err := k1.Write(typeByte); err != nil {
-			return err
-		}
 		if _, err := k2.Write(typeByte); err != nil {
 			return err
 		}
