@@ -271,7 +271,7 @@ func TestBlobTxParsing(t *testing.T) {
 	assert.Equal(t, thinTx.AlAddrCount, fatTx.AlAddrCount)
 	assert.Equal(t, thinTx.AlStorCount, fatTx.AlStorCount)
 	assert.Equal(t, thinTx.Gas, fatTx.Gas)
-	assert.Equal(t, thinTx.IDHash, fatTx.IDHash)
+	assert.Equal(t, thinTx.IDHash, fatTx.IDHash, "idhash")
 	assert.Equal(t, thinTx.Creation, fatTx.Creation)
 	assert.Equal(t, thinTx.BlobFeeCap, fatTx.BlobFeeCap)
 	assert.Equal(t, thinTx.BlobHashes, fatTx.BlobHashes)

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"math/bits"
 
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
@@ -19,11 +20,12 @@ import (
 // It also performs syntactic validation of the transactions.
 // wrappedWithBlobs means that for blob (type 3) transactions the full version with blobs/commitments/proofs is expected
 // (see https://eips.ethereum.org/EIPS/eip-4844#networking).
-// [  ] || [          nonce,      price, limit, to, value, data,                                     y,r,s]
-// 0x01 || [chain_id, nonce,      price, limit, to, value, data, access_list,                        y,r,s]
-// 0x02 || [chain_id, nonce, tip, price, limit, to, value, data, access_list,                        y,r,s]
-// 0x03 || [chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s]
-// 0x03 ||[[chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s], blobs, commitments, proofs]
+//
+//	// [  ] || [          nonce,      price, limit, to, value, data,                                     y,r,s]
+//	// 0x01 || [chain_id, nonce,      price, limit, to, value, data, access_list,                        y,r,s]
+//	// 0x02 || [chain_id, nonce, tip, price, limit, to, value, data, access_list,                        y,r,s]
+//	// 0x03 || [chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s]
+//	// 0x03 ||[[chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s], blobs, commitments, proofs]
 func (ctx *TxParseContext) DecodeTransaction(decoder *rlp.Decoder, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (err error) {
 	err = ctx.decodeTransaction(decoder, slot, sender, hasEnvelope, wrappedWithBlobs, validateHash)
 	if err != nil {
@@ -40,6 +42,7 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 	if ctx.withSender && len(sender) != 20 {
 		return fmt.Errorf("expect sender buffer of len 20")
 	}
+	// start classification
 	peektok, err := decoder.PeekToken()
 	// means that this is non-enveloped non-legacy transaction
 	if peektok == rlp.TokenDecimal {
@@ -48,57 +51,82 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 		}
 	}
 
-	if decoder.Empty() {
-		return fmt.Errorf("transaction must be either 1 list or 1 string")
-	}
+	var (
+		dec *rlp.Decoder
+	)
 
-	// if is blob type, it means that its an envelope, so we need to get out of that
-	if peektok.IsBlobType() {
-		decoder, _, err = decoder.ElemDec()
-		if err != nil {
-			return fmt.Errorf("size prefix: %w", err) //nolint
-		}
-	}
-	dec := decoder
+	var (
+		parent      *rlp.Decoder
+		bodyDecoder *rlp.Decoder
+	)
+	var tok rlp.Token
 
 	switch {
 	default:
 		return fmt.Errorf("expected list or blob token, got %s", peektok)
 	case peektok.IsListType(): // Legacy transactions have list Prefix,
-		dec, peektok, err = decoder.ElemDec()
+		// enter the list
+		parent = decoder
+		bodyDecoder, _, err = decoder.ElemDec()
 		if err != nil {
 			return fmt.Errorf("size prefix: %w", err) //nolint
 		}
 		slot.Rlp = append([]byte{}, decoder.Consumed()...)
 		slot.Type = LegacyTxType
 	case peektok.IsBlobType() || peektok == rlp.TokenDecimal: // EIP-2718 transactions have string Prefix
+		// if is blob type, it means that its an envelope, so we need to get out of that
+		if peektok.IsBlobType() {
+			decoder, _, err = decoder.ElemDec()
+			if err != nil {
+				return fmt.Errorf("size prefix: %w", err) //nolint
+			}
+			if decoder.Empty() {
+				return fmt.Errorf("transaction must be either 1 list or 1 string")
+			}
+		}
 		slot.Rlp = append([]byte{}, decoder.Bytes()...)
 		// at this point, the next byte is the type
-		slot.Type, err = dec.ReadByte()
+		slot.Type, err = decoder.ReadByte()
 		if err != nil {
 			return fmt.Errorf("couldnt read txn type: %w", err)
 		}
 		if slot.Type > BlobTxType {
 			return fmt.Errorf("unknown transaction type: %d", slot.Type)
 		}
-		// now enter the list, since that is what we are in front of now
-		dec, _, err = dec.ElemDec()
+		// from here to the end of the element, if this is not a blob tx type with blobs, is the parent
+		parent = decoder.Fork()
+		parent.Rebase()
+		// now enter the list, since that is what we are in front of now.
+		dec, _, err = decoder.ElemDec()
 		if err != nil {
 			return fmt.Errorf("extract txn body: %w", err) //nolint
 		}
-
-	}
-
-	bodyDecoder := dec
-	// if its a blob transaction, we actually need to enter a nested list, since its [tx_payload_body, blobs, commitments, proofs]
-	if slot.Type == BlobTxType && wrappedWithBlobs {
-		bodyDecoder, _, err = dec.ElemDec()
-		if err != nil {
-			return fmt.Errorf("wrapped blob tx: %w", err) //nolint
+		bodyDecoder = dec
+		if slot.Type == BlobTxType {
+			if wrappedWithBlobs {
+				// if its a blob transaction and wrapped with blobs, we actually need to enter a nested list
+				// in this case, "decoder" was an iterator for the array of [ [txbody...], blobs, commitments, proofs]
+				// so dec is now pointing at the head of the first element [txbody...]
+				tmp := dec.Fork()
+				tmp.Rebase()
+				parentBytes, _, err := tmp.RawElem()
+				if err != nil {
+					return fmt.Errorf("wrapped blob tx body: %w", err) //nolint
+				}
+				parent = rlp.NewDecoder(parentBytes)
+				bodyDecoder, _, err = dec.ElemDec()
+				if err != nil {
+					return fmt.Errorf("wrapped blob tx body: %w", err) //nolint
+				}
+			} else {
+				// otherwise its not wrapped with blobs, so we do nothing special
+			}
 		}
 	}
-
-	err = ctx.decodeTransactionBody(bodyDecoder, decoder, slot, sender, validateHash)
+	log.Println("praent", parent)
+	log.Println("bodydec", bodyDecoder, tok)
+	log.Println("also", wrappedWithBlobs)
+	err = ctx.decodeTransactionBody(bodyDecoder, parent, slot, sender, validateHash)
 	if err != nil {
 		return fmt.Errorf("txn body: %w", err)
 	}
@@ -128,58 +156,6 @@ func (ctx *TxParseContext) decodeTransaction(decoder *rlp.Decoder, slot *TxSlot,
 	return err
 }
 
-func (ctx *TxParseContext) decodeCommitments(dec *rlp.Decoder, slot *TxSlot) (err error) {
-	err = dec.ForList(func(d *rlp.Decoder) error {
-		var blob gokzg4844.KZGCommitment
-		blobSlice := blob[:]
-		err := rlp.ReadElem(d, rlp.BytesExact, &blobSlice)
-		if err != nil {
-			return err
-		}
-		slot.Commitments = append(slot.Commitments, blob)
-		return nil
-	})
-
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ctx *TxParseContext) decodeProofs(dec *rlp.Decoder, slot *TxSlot) (err error) {
-	err = dec.ForList(func(d *rlp.Decoder) error {
-		var blob gokzg4844.KZGProof
-		blobSlice := blob[:]
-		err := rlp.ReadElem(d, rlp.BytesExact, &blobSlice)
-		if err != nil {
-			return err
-		}
-		slot.Proofs = append(slot.Proofs, blob)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ctx *TxParseContext) decodeBlobs(dec *rlp.Decoder, slot *TxSlot) (err error) {
-	err = dec.ForList(func(d *rlp.Decoder) error {
-		var blob []byte
-		err := rlp.ReadElem(d, rlp.Bytes, &blob)
-		if err != nil {
-			return err
-		}
-		slot.Blobs = append(slot.Blobs, blob)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.Decoder, slot *TxSlot, sender []byte, validateHash func([]byte) error) (err error) {
 	legacy := slot.Type == LegacyTxType
 
@@ -194,10 +170,13 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 	// for computing tx hash
 	if !legacy {
 		typeByte := []byte{slot.Type}
+		if _, err := k1.Write(typeByte); err != nil {
+			return err
+		}
 		if _, err := k2.Write(typeByte); err != nil {
 			return err
 		}
-		if _, err := k1.Write(parent.Consumed()); err != nil {
+		if _, err := k1.Write(parent.Underlying()); err != nil {
 			return fmt.Errorf("compute idHash: %w", err)
 		}
 	}
@@ -301,10 +280,10 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 		if err != nil {
 			return fmt.Errorf("blob fee cap: %s", err) //nolint
 		}
-		dec.ForList(func(dec *rlp.Decoder) error {
+		dec.ForList(func(d *rlp.Decoder) error {
 			var blob common.Hash
 			blobSlice := blob[:]
-			err := rlp.ReadElem(dec, rlp.BytesExact, &blobSlice)
+			err := rlp.ReadElem(d, rlp.BytesExact, &blobSlice)
 			if err != nil {
 				return err
 			}
@@ -372,11 +351,9 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 	if err != nil {
 		return fmt.Errorf("S: %s", err) //nolint
 	}
-
 	// For legacy transactions, just hash the full payload
 	if legacy {
-		u := parent.Consumed()
-		if _, err = k1.Write(u); err != nil {
+		if _, err = k1.Write(parent.Consumed()); err != nil {
 			return fmt.Errorf("computing IdHash: %s", err) //nolint
 		}
 	}
@@ -468,6 +445,58 @@ func (ctx *TxParseContext) decodeTransactionBody(dec *rlp.Decoder, parent *rlp.D
 	_, _ = k2.(io.Reader).Read(ctx.buf[:32])
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
+
+	return nil
+}
+
+func (ctx *TxParseContext) decodeCommitments(dec *rlp.Decoder, slot *TxSlot) (err error) {
+	err = dec.ForList(func(d *rlp.Decoder) error {
+		var blob gokzg4844.KZGCommitment
+		blobSlice := blob[:]
+		err := rlp.ReadElem(d, rlp.BytesExact, &blobSlice)
+		if err != nil {
+			return err
+		}
+		slot.Commitments = append(slot.Commitments, blob)
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ctx *TxParseContext) decodeProofs(dec *rlp.Decoder, slot *TxSlot) (err error) {
+	err = dec.ForList(func(d *rlp.Decoder) error {
+		var blob gokzg4844.KZGProof
+		blobSlice := blob[:]
+		err := rlp.ReadElem(d, rlp.BytesExact, &blobSlice)
+		if err != nil {
+			return err
+		}
+		slot.Proofs = append(slot.Proofs, blob)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ctx *TxParseContext) decodeBlobs(dec *rlp.Decoder, slot *TxSlot) (err error) {
+	err = dec.ForList(func(d *rlp.Decoder) error {
+		var blob []byte
+		err := rlp.ReadElem(d, rlp.Bytes, &blob)
+		if err != nil {
+			return err
+		}
+		slot.Blobs = append(slot.Blobs, blob)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

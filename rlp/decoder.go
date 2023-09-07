@@ -47,9 +47,13 @@ func (d *Decoder) PeekByte() (n byte, err error) {
 	return d.buf.PeekByte()
 }
 
+func (d *Decoder) Rebase() {
+	d.buf.u = d.Bytes()
+	d.buf.off = 0
+}
 func (d *Decoder) Fork() *Decoder {
 	return &Decoder{
-		buf: newBuf(d.Bytes(), 0),
+		buf: newBuf(d.buf.u, d.buf.off),
 	}
 }
 
@@ -64,6 +68,55 @@ func (d *Decoder) PeekToken() (Token, error) {
 func (d *Decoder) ElemDec() (*Decoder, Token, error) {
 	a, t, err := d.Elem()
 	return NewDecoder(a), t, err
+}
+
+func (d *Decoder) RawElem() ([]byte, Token, error) {
+	w := d.buf
+	start := w.Offset()
+	// figure out what we are reading
+	prefix, err := w.ReadByte()
+	if err != nil {
+		return nil, TokenUnknown, err
+	}
+	token := identifyToken(prefix)
+
+	var (
+		sz    int
+		lenSz int
+	)
+	// switch on the token
+	switch token {
+	case TokenDecimal:
+		// in this case, the value is just the byte itself
+	case TokenShortList:
+		sz = int(token.Diff(prefix))
+		_, err = nextFull(w, sz)
+	case TokenLongList:
+		lenSz = int(token.Diff(prefix))
+		sz, err = nextBeInt(w, lenSz)
+		if err != nil {
+			return nil, token, err
+		}
+		_, err = nextFull(w, sz)
+	case TokenShortBlob:
+		sz := int(token.Diff(prefix))
+		_, err = nextFull(w, sz)
+	case TokenLongBlob:
+		lenSz := int(token.Diff(prefix))
+		sz, err := nextBeInt(w, lenSz)
+		if err != nil {
+			return nil, token, err
+		}
+		_, err = nextFull(w, sz)
+	default:
+		return nil, token, fmt.Errorf("%w: unknown token", ErrDecode)
+	}
+	stop := w.Offset()
+	//log.Printf("%x %s\n", buf, token)
+	if err != nil {
+		return nil, token, err
+	}
+	return w.Underlying()[start:stop], token, nil
 }
 
 func (d *Decoder) Elem() ([]byte, Token, error) {
