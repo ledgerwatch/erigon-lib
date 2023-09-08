@@ -790,7 +790,6 @@ func TestBlobTxReplacement(t *testing.T) {
 		//increase blobFeeCap by 10% - no good
 		blobTxn.BlobFeeCap.Add(blobFeeCap, uint256.NewInt(1).Div(blobFeeCap, uint256.NewInt(10)))
 		blobTxn.IDHash[0] = 0x01
-		txSlots = types.TxSlots{}
 		txSlots.Append(&blobTxn, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -866,16 +865,14 @@ func makeBlobTx() types.TxSlot {
 
 	var err error
 	proofsRlpPrefix := hexutility.MustDecodeHex("f862")
-	var commitment0, commitment1 gokzg4844.KZGCommitment
-	commitment0, _ = kzg.Ctx().BlobToKZGCommitment(gokzg4844.Blob(blob0), 0)
-	commitment1, _ = kzg.Ctx().BlobToKZGCommitment(gokzg4844.Blob(blob1), 0)
+	commitment0, _ := kzg.Ctx().BlobToKZGCommitment(gokzg4844.Blob(blob0), 0)
+	commitment1, _ := kzg.Ctx().BlobToKZGCommitment(gokzg4844.Blob(blob1), 0)
 
-	var proof0, proof1 gokzg4844.KZGProof
-	proof0, err = kzg.Ctx().ComputeBlobKZGProof(gokzg4844.Blob(blob0), commitment0, 0)
+	proof0, err := kzg.Ctx().ComputeBlobKZGProof(gokzg4844.Blob(blob0), commitment0, 0)
 	if err != nil {
 		fmt.Println("error", err)
 	}
-	proof1, err = kzg.Ctx().ComputeBlobKZGProof(gokzg4844.Blob(blob1), commitment1, 0)
+	proof1, err := kzg.Ctx().ComputeBlobKZGProof(gokzg4844.Blob(blob1), commitment1, 0)
 	if err != nil {
 		fmt.Println("error", err)
 	}
