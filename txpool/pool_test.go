@@ -865,14 +865,14 @@ func makeBlobTx() types.TxSlot {
 
 	var err error
 	proofsRlpPrefix := hexutility.MustDecodeHex("f862")
-	commitment0, _ := kzg.Ctx().BlobToKZGCommitment(gokzg4844.Blob(blob0), 0)
-	commitment1, _ := kzg.Ctx().BlobToKZGCommitment(gokzg4844.Blob(blob1), 0)
+	commitment0, _ := kzg.Ctx().BlobToKZGCommitment(blob0, 0)
+	commitment1, _ := kzg.Ctx().BlobToKZGCommitment(blob1, 0)
 
-	proof0, err := kzg.Ctx().ComputeBlobKZGProof(gokzg4844.Blob(blob0), commitment0, 0)
+	proof0, err := kzg.Ctx().ComputeBlobKZGProof(blob0, commitment0, 0)
 	if err != nil {
 		fmt.Println("error", err)
 	}
-	proof1, err := kzg.Ctx().ComputeBlobKZGProof(gokzg4844.Blob(blob1), commitment1, 0)
+	proof1, err := kzg.Ctx().ComputeBlobKZGProof(blob1, commitment1, 0)
 	if err != nil {
 		fmt.Println("error", err)
 	}
