@@ -771,6 +771,7 @@ func TestBlobTxReplacement(t *testing.T) {
 		blobTxn.FeeCap = *feeCap
 		blobTxn.BlobFeeCap = *blobFeeCap
 		blobTxn.IDHash[0] = 0x00
+		blobTxn.Nonce = 0x2
 		txSlots.Append(&blobTxn, addr[:], true)
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
@@ -784,9 +785,9 @@ func TestBlobTxReplacement(t *testing.T) {
 		// try to replace it with 5% extra blob gas, 2x higher tx fee - should fail
 		txSlots := types.TxSlots{}
 		blobTxn := makeBlobTx()
-		blobTxn.Tip.Mul(uint256.NewInt(2), tip)
+		blobTxn.Nonce = 0x2
 		blobTxn.FeeCap.Mul(uint256.NewInt(2), feeCap)
-
+		blobTxn.Tip.Mul(uint256.NewInt(2), tip)
 		//increase blobFeeCap by 10% - no good
 		blobTxn.BlobFeeCap.Add(blobFeeCap, uint256.NewInt(1).Div(blobFeeCap, uint256.NewInt(10)))
 		blobTxn.IDHash[0] = 0x01
@@ -810,7 +811,7 @@ func TestBlobTxReplacement(t *testing.T) {
 			Gas:        500000,
 			SenderID:   0,
 			Creation:   true,
-			Nonce:      0x7,
+			Nonce:      0x2,
 		}
 		regularTx.IDHash[0] = 0x02
 		txSlots.Append(&regularTx, addr[:], true)
@@ -825,6 +826,7 @@ func TestBlobTxReplacement(t *testing.T) {
 	//try to replace it with required extra gas - should pass\
 	{
 		blobTxn := makeBlobTx()
+		blobTxn.Nonce = 0x2
 		txSlots := types.TxSlots{}
 
 		//Get the config of the pool for BlobPriceBump and bump all prices
