@@ -137,9 +137,9 @@ func seedableSegmentFiles(dir string) ([]string, error) {
 		if filepath.Ext(f.Name()) != ".seg" { // filter out only compressed files
 			continue
 		}
-		ff, err := snaptype.ParseFileName(dir, f.Name())
-		if err != nil {
-			return nil, fmt.Errorf("ParseFileName: %w", err)
+		ff, ok := snaptype.ParseFileName(dir, f.Name())
+		if !ok {
+			continue
 		}
 		if !ff.Seedable() {
 			continue
@@ -213,7 +213,7 @@ func buildTorrentIfNeed(fName, root string) (err error) {
 	}
 	info.Name = fName
 
-	return createTorrentFileFromInfo(root, info, nil)
+	return CreateTorrentFileFromInfo(root, info, nil)
 }
 
 // AddSegment - add existing .seg file, create corresponding .torrent if need
@@ -288,17 +288,17 @@ func CreateTorrentFileIfNotExists(root string, info *metainfo.Info, mi *metainfo
 	if dir2.FileExist(fPath + ".torrent") {
 		return nil
 	}
-	if err := createTorrentFileFromInfo(root, info, mi); err != nil {
+	if err := CreateTorrentFileFromInfo(root, info, mi); err != nil {
 		return err
 	}
 	return nil
 }
 
-func createTorrentFileFromInfo(root string, info *metainfo.Info, mi *metainfo.MetaInfo) error {
+func CreateMetaInfo(info *metainfo.Info, mi *metainfo.MetaInfo) (*metainfo.MetaInfo, error) {
 	if mi == nil {
 		infoBytes, err := bencode.Marshal(info)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		mi = &metainfo.MetaInfo{
 			CreationDate: time.Now().Unix(),
@@ -309,8 +309,10 @@ func createTorrentFileFromInfo(root string, info *metainfo.Info, mi *metainfo.Me
 	} else {
 		mi.AnnounceList = Trackers
 	}
+	return mi, nil
+}
+func CreateTorrentFromMetaInfo(root string, info *metainfo.Info, mi *metainfo.MetaInfo) error {
 	torrentFileName := filepath.Join(root, info.Name+".torrent")
-
 	file, err := os.Create(torrentFileName)
 	if err != nil {
 		return err
@@ -322,11 +324,33 @@ func createTorrentFileFromInfo(root string, info *metainfo.Info, mi *metainfo.Me
 	file.Sync()
 	return nil
 }
+func CreateTorrentFileFromInfo(root string, info *metainfo.Info, mi *metainfo.MetaInfo) (err error) {
+	mi, err = CreateMetaInfo(info, mi)
+	if err != nil {
+		return err
+	}
+	return CreateTorrentFromMetaInfo(root, info, mi)
+}
 
-// nolint
-func segmentFileNameFromTorrentFileName(in string) string {
-	ext := filepath.Ext(in)
-	return in[0 : len(in)-len(ext)]
+func AddTorrentFiles(snapDir string, torrentClient *torrent.Client) error {
+	files, err := os.ReadDir(snapDir)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if f.IsDir() || !f.Type().IsRegular() {
+			continue
+		}
+		if filepath.Ext(f.Name()) != ".torrent" { // filter out only compressed files
+			continue
+		}
+		_, err := AddTorrentFile(filepath.Join(snapDir, f.Name()), torrentClient)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // AddTorrentFile - adding .torrent file to torrentClient (and checking their hashes), if .torrent file
@@ -336,12 +360,12 @@ func segmentFileNameFromTorrentFileName(in string) string {
 func AddTorrentFile(torrentFilePath string, torrentClient *torrent.Client) (*torrent.Torrent, error) {
 	mi, err := metainfo.LoadFromFile(torrentFilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("LoadFromFile: %w, file=%s", err, torrentFilePath)
 	}
 	mi.AnnounceList = Trackers
 	ts, err := torrent.TorrentSpecFromMetaInfoErr(mi)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("TorrentSpecFromMetaInfoErr: %w, file=%s", err, torrentFilePath)
 	}
 
 	if _, ok := torrentClient.Torrent(ts.InfoHash); !ok { // can set ChunkSize only for new torrents

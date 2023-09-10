@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ledgerwatch/erigon-lib/downloader/snaptype"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -234,6 +235,20 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 		}
 	}()
 
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		for _, t := range d.Torrent().Torrents() {
+			t.AddWebSeeds([]string{
+				"https://storage.googleapis.com/mdbx_chk/sepolia/v1-003000-003500-headers.seg?x-goog-signature=182cbe745f4e24d651ccabbfaa69d21a2c47b9ebc3d8c98fd32a7344e6eaff8a17c09801be17bf3ecf32086cd58866a249881f94ce37474272e74afc138fa8c0e93076562a7292158d33baf53f3272ad9341b80364ab047d347d7f2f22c7cce02d6bd260158cddd54e8d9e93a8d761fc71aea38d2041903fa83564884c4bd1aff9ee427fe9a50878f5ba5ae6a00eb09a8ce6c39afad2428b1735c1405058179caf7f6fe03f844b2673a811c40b7ab415bb4c17aea1788cf376feb65179d7c06b9e96393d158cc457d5ab34dbb0163feac406a4787d8c9f3783b344ec2ae76c2a2573d96223992d0d27db8ddeb03a2dfe8d516347b03623840c60dff27a2a3db0&x-goog-algorithm=GOOG4-RSA-SHA256&x-goog-credential=473845414789-compute%40developer.gserviceaccount.com%2F20230910%2Feurope-west1%2Fstorage%2Fgoog4_request&x-goog-date=20230910T073839Z&x-goog-expires=86400&x-goog-signedheaders=host",
+			})
+			select {
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
@@ -293,6 +308,27 @@ func (d *Downloader) SnapDir() string {
 	d.clientLock.RLock()
 	defer d.clientLock.RUnlock()
 	return d.cfg.DataDir
+}
+
+func (d *Downloader) AddWebseeds(ctx context.Context) {
+	webseeds := snaptype.WebSeeds{
+		Version: 1,
+		Files:   map[string]metainfo.UrlList{},
+	}
+
+	//TODO: read .toml file of web-seeds, match them by hash or by file_name
+	select {
+	case <-ctx.Done():
+		return
+	}
+
+	for _, t := range d.Torrent().Torrents() {
+		urls, ok := webseeds.Files[t.Name()]
+		if !ok {
+			continue
+		}
+		t.AddWebSeeds(urls)
+	}
 }
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
@@ -501,6 +537,10 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	err = AddTorrentFiles(d.SnapDir(), d.torrentClient)
+	if err != nil {
+		return fmt.Errorf("AddTorrentFiles: %w", err)
+	}
 	files, err := seedableSegmentFiles(d.SnapDir())
 	if err != nil {
 		return fmt.Errorf("seedableSegmentFiles: %w", err)
@@ -510,7 +550,6 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 		return fmt.Errorf("seedableHistorySnapshots: %w", err)
 	}
 	files = append(files, files2...)
-
 	g, ctx := errgroup.WithContext(ctx)
 	i := atomic.Int64{}
 	for _, f := range files {
