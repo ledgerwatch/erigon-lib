@@ -1242,11 +1242,8 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 		p.discardLocked(found, txpoolcfg.ReplacedByHigherTip)
 	}
 
-	// Remove from mined cache in case this is coming from unwind txs
-	// and to ensure not double adding into the memory
-	if _, ok := p.minedBlobTxsByHash[string(mt.Tx.IDHash[:])]; ok {
-		p.deleteMinedBlobTxn(string(mt.Tx.IDHash[:]))
-	}
+	// Remove from mined cache as we are now "resurrecting" it to a sub-pool
+	p.deleteMinedBlobTxn(string(mt.Tx.IDHash[:]))
 
 	p.byHash[string(mt.Tx.IDHash[:])] = mt
 
