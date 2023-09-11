@@ -62,7 +62,7 @@ type Downloader struct {
 	stopMainLoop context.CancelFunc
 	wg           sync.WaitGroup
 
-	webSeedsByFilName map[string]metainfo.UrlList
+	webSeedsByFilName snaptype.WebSeeds
 }
 
 type AggStats struct {
@@ -308,7 +308,7 @@ func (d *Downloader) SnapDir() string {
 	return d.cfg.SnapDir
 }
 
-func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl *url.URL) (snaptype.WebSeeds, error) {
+func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl *url.URL) (snaptype.WebSeedsFromProvider, error) {
 	request, err := http.NewRequest(http.MethodGet, webSeedProviderUrl.String(), nil)
 	if err != nil {
 		return nil, err
@@ -318,39 +318,30 @@ func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUr
 	if err != nil {
 		return nil, err
 	}
-	response := snaptype.WebSeeds{}
+	response := snaptype.WebSeedsFromProvider{}
 	if err := toml.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
 	}
 	return response, nil
 }
-func (d *Downloader) readWebSeedsFile(webSeedProviderPath string) (snaptype.WebSeeds, error) {
+func (d *Downloader) readWebSeedsFile(webSeedProviderPath string) (snaptype.WebSeedsFromProvider, error) {
 	data, err := os.ReadFile(webSeedProviderPath)
 	if err != nil {
 		return nil, err
 	}
-	response := snaptype.WebSeeds{}
+	response := snaptype.WebSeedsFromProvider{}
 	if err := toml.Unmarshal(data, &response); err != nil {
 		return nil, err
 	}
 	return response, nil
 }
-func (d *Downloader) mergeWebSeeds(list []snaptype.WebSeeds) snaptype.WebSeeds {
-	merged := map[string]metainfo.UrlList{}
-	for _, m := range list {
-		for name, urls := range m {
-			merged[name] = append(merged[name], urls...)
-		}
-	}
-	return merged
-}
 
-func (d *Downloader) discoverWebSeeds(ctx context.Context) (webSeedsByFilName map[string]metainfo.UrlList) {
-	list := make([]snaptype.WebSeeds, len(d.cfg.WebSeedUrls)+len(d.cfg.WebSeedFiles))
+func (d *Downloader) discoverWebSeeds(ctx context.Context) snaptype.WebSeeds {
+	list := make([]snaptype.WebSeedsFromProvider, len(d.cfg.WebSeedUrls)+len(d.cfg.WebSeedFiles))
 	for _, webSeedProviderURL := range d.cfg.WebSeedUrls {
 		select {
 		case <-ctx.Done():
-			return
+			break
 		default:
 		}
 		response, err := d.callWebSeedsProvider(ctx, webSeedProviderURL)
@@ -369,7 +360,7 @@ func (d *Downloader) discoverWebSeeds(ctx context.Context) (webSeedsByFilName ma
 		}
 		list = append(list, response)
 	}
-	return d.mergeWebSeeds(list)
+	return snaptype.NewWebSeeds(list)
 }
 func (d *Downloader) applyWebseeds() {
 	for _, t := range d.Torrent().Torrents() {
