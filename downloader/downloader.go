@@ -373,7 +373,7 @@ func (d *Downloader) applyWebseeds() {
 		if !ok {
 			continue
 		}
-		log.Warn("[downloader] addd webseeds", "file", t.Name())
+		log.Debug("[downloader] addd webseeds", "file", t.Name())
 		t.AddWebSeeds(urls)
 	}
 }

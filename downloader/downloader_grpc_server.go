@@ -52,7 +52,6 @@ func (s *GrpcServer) Download(ctx context.Context, request *proto_downloader.Dow
 	torrentClient := s.d.Torrent()
 	snapDir := s.d.SnapDir()
 	for i, it := range request.Items {
-		log.Warn("[dbg]grpc:", "f", it.Path)
 		if it.Path == "" {
 			return nil, fmt.Errorf("field 'path' is required")
 		}
