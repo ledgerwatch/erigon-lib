@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/url"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -101,7 +102,7 @@ func New(dataDir datadir.Dirs, version string, verbosity lg.Level, downloadRate,
 
 	// debug
 	//	torrentConfig.Debug = false
-	torrentConfig.Logger = lg.Default.FilterLevel(verbosity)
+	torrentConfig.Logger.WithFilterLevel(verbosity)
 	torrentConfig.Logger.Handlers = []lg.Handler{adapterHandler{}}
 
 	if len(staticPeers) > 0 {
@@ -153,9 +154,15 @@ func New(dataDir datadir.Dirs, version string, verbosity lg.Level, downloadRate,
 		}
 		webseedUrls = append(webseedUrls, uri)
 	}
-	//TODO: scan datadir and add webseed.toml file to webseedFiles
+	localCfgFile := filepath.Join(dataDir.DataDir, "webseeds.toml") // datadir/webseeds.toml allowed
+	if dir.FileExist(localCfgFile) {
+		webseedFiles = append(webseedFiles, localCfgFile)
+	}
 
-	return &Cfg{SnapDir: torrentConfig.DataDir, ClientConfig: torrentConfig, DownloadSlots: downloadSlots, WebSeedUrls: webseedUrls, WebSeedFiles: webseedFiles}, nil
+	return &Cfg{SnapDir: torrentConfig.DataDir,
+		ClientConfig: torrentConfig, DownloadSlots: downloadSlots,
+		WebSeedUrls: webseedUrls, WebSeedFiles: webseedFiles,
+	}, nil
 }
 
 func getIpv6Enabled() bool {
