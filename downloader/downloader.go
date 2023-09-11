@@ -374,6 +374,7 @@ func (d *Downloader) AddWebseeds(ctx context.Context) error {
 		if !ok {
 			continue
 		}
+		log.Warn("addd webseeds", "name", t.Name(), "urls", urls)
 		t.AddWebSeeds(urls)
 	}
 	return nil
