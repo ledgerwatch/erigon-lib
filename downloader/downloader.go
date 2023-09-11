@@ -117,9 +117,9 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 
 		statsLock: &sync.RWMutex{},
 	}
-	if err := d.addSegments(ctx); err != nil {
-		return nil, err
-	}
+	//if err := d.addSegments(ctx); err != nil {
+	//	return nil, err
+	//}
 	return d, nil
 }
 
@@ -138,10 +138,22 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 
 func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
+	if err := d.addSegments(ctx); err != nil {
+		return err
+	}
+	// CornerCase: no peers -> no anoncments to trackers -> no magnetlink resolution (but magnetlink has filename)
+	// means we can start adding weebseeds without waiting for `<-t.GotInfo()`
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		d.AddWebseeds(ctx)
+	}()
 
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
+
+		// 2 loops: 1-st waiting for "torrents resolution" (receiving metadata from trackers)
 
 		// Torrents that are already taken care of
 		torrentMap := map[metainfo.Hash]struct{}{}
@@ -189,9 +201,6 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 			goto DownloadLoop
 		}
 
-		if err := d.addSegments(ctx); err != nil {
-			return
-		}
 	DownloadLoop2:
 		torrents = d.Torrent().Torrents()
 		for _, t := range torrents {
@@ -233,12 +242,6 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 		if len(torrents) != len(d.Torrent().Torrents()) { //if amount of torrents changed - keep downloading
 			goto DownloadLoop2
 		}
-	}()
-
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-		d.AddWebseeds(ctx)
 	}()
 
 	logEvery := time.NewTicker(20 * time.Second)
@@ -482,7 +485,7 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
 
-func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *prototypes.H160, snapDir string) (bool, error) {
+func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *prototypes.H160, name string, snapDir string) (bool, error) {
 	mi := &metainfo.MetaInfo{AnnounceList: Trackers}
 	if hash == nil {
 		return false, nil
@@ -495,7 +498,7 @@ func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *pro
 		return true, nil
 	}
 
-	magnet := mi.Magnet(&infoHash, nil)
+	magnet := mi.Magnet(&infoHash, &metainfo.Info{Name: name})
 	t, err := d.torrentClient.AddMagnet(magnet.String())
 	if err != nil {
 		//log.Warn("[downloader] add magnet link", "err", err)

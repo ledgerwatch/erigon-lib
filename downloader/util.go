@@ -199,7 +199,7 @@ func seedableHistorySnapshots(dir string) ([]string, error) {
 	return res, nil
 }
 
-func buildTorrentIfNeed(fName, root string) (err error) {
+func buildTorrentIfNeed(ctx context.Context, fName, root string) (err error) {
 	fPath := filepath.Join(root, fName)
 	if dir2.FileExist(fPath + ".torrent") {
 		return
@@ -258,7 +258,7 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 			defer i.Add(1)
 			defer sem.Release(1)
 			defer wg.Done()
-			if err := buildTorrentIfNeed(f, snapDir); err != nil {
+			if err := buildTorrentIfNeed(ctx, f, snapDir); err != nil {
 				errs <- err
 			}
 
