@@ -319,7 +319,7 @@ func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUr
 		return nil, err
 	}
 	response := snaptype.WebSeeds{}
-	if err := toml.NewDecoder(resp.Body).Decode(response); err != nil {
+	if err := toml.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
 	}
 	return response, nil
@@ -330,7 +330,7 @@ func (d *Downloader) readWebSeedsFile(webSeedProviderPath string) (snaptype.WebS
 		return nil, err
 	}
 	response := snaptype.WebSeeds{}
-	if err := toml.Unmarshal(data, response); err != nil {
+	if err := toml.Unmarshal(data, &response); err != nil {
 		return nil, err
 	}
 	return response, nil
