@@ -308,7 +308,7 @@ func (d *Downloader) SnapDir() string {
 	return d.cfg.SnapDir
 }
 
-func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl *url.URL) (*snaptype.WebSeeds, error) {
+func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl *url.URL) (snaptype.WebSeeds, error) {
 	request, err := http.NewRequest(http.MethodGet, webSeedProviderUrl.String(), nil)
 	if err != nil {
 		return nil, err
@@ -318,25 +318,35 @@ func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUr
 	if err != nil {
 		return nil, err
 	}
-	response := &snaptype.WebSeeds{}
+	response := snaptype.WebSeeds{}
 	if err := toml.NewDecoder(resp.Body).Decode(response); err != nil {
 		return nil, err
 	}
 	return response, nil
 }
-func (d *Downloader) readWebSeedsFile(webSeedProviderPath string) (*snaptype.WebSeeds, error) {
+func (d *Downloader) readWebSeedsFile(webSeedProviderPath string) (snaptype.WebSeeds, error) {
 	data, err := os.ReadFile(webSeedProviderPath)
 	if err != nil {
 		return nil, err
 	}
-	response := &snaptype.WebSeeds{}
+	response := snaptype.WebSeeds{}
 	if err := toml.Unmarshal(data, response); err != nil {
 		return nil, err
 	}
 	return response, nil
 }
+func (d *Downloader) mergeWebSeeds(list []snaptype.WebSeeds) snaptype.WebSeeds {
+	merged := map[string]metainfo.UrlList{}
+	for _, m := range list {
+		for name, urls := range m {
+			merged[name] = append(merged[name], urls...)
+		}
+	}
+	return merged
+}
+
 func (d *Downloader) discoverWebSeeds(ctx context.Context) (webSeedsByFilName map[string]metainfo.UrlList) {
-	webSeedsByFilName = map[string]metainfo.UrlList{}
+	list := make([]snaptype.WebSeeds, len(d.cfg.WebSeedUrls)+len(d.cfg.WebSeedFiles))
 	for _, webSeedProviderURL := range d.cfg.WebSeedUrls {
 		select {
 		case <-ctx.Done():
@@ -348,10 +358,7 @@ func (d *Downloader) discoverWebSeeds(ctx context.Context) (webSeedsByFilName ma
 			log.Warn("[downloader] callWebSeedsProvider", "err", err, "url", webSeedProviderURL.EscapedPath())
 			continue
 		}
-
-		for name, urls := range response.WebSeeds {
-			webSeedsByFilName[name] = append(webSeedsByFilName[name], urls...)
-		}
+		list = append(list, response)
 	}
 	for _, webSeedFile := range d.cfg.WebSeedFiles {
 		response, err := d.readWebSeedsFile(webSeedFile)
@@ -360,12 +367,9 @@ func (d *Downloader) discoverWebSeeds(ctx context.Context) (webSeedsByFilName ma
 			log.Warn("[downloader] readWebSeedsFile", "err", err, "file", fileName)
 			continue
 		}
-
-		for name, urls := range response.WebSeeds {
-			webSeedsByFilName[name] = append(webSeedsByFilName[name], urls...)
-		}
+		list = append(list, response)
 	}
-	return webSeedsByFilName
+	return d.mergeWebSeeds(list)
 }
 func (d *Downloader) applyWebseeds() {
 	for _, t := range d.Torrent().Torrents() {
