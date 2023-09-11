@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ledgerwatch/erigon-lib/downloader/snaptype"
+	"github.com/pelletier/go-toml/v2"
 	"io/fs"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,6 +37,7 @@ import (
 	common2 "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/downloader/downloadercfg"
+	"github.com/ledgerwatch/erigon-lib/downloader/snaptype"
 	prototypes "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
@@ -305,25 +308,75 @@ func (d *Downloader) SnapDir() string {
 	return d.cfg.SnapDir
 }
 
-func (d *Downloader) AddWebseeds(ctx context.Context) {
-	webseeds := snaptype.WebSeeds{
-		Version: 1,
-		Files:   map[string]metainfo.UrlList{},
+func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl *url.URL) (*snaptype.WebSeeds, error) {
+	request, err := http.NewRequest(http.MethodGet, webSeedProviderUrl.String(), nil)
+	if err != nil {
+		return nil, err
 	}
-
-	//TODO: read .toml file of web-seeds, match them by hash or by file_name
-	select {
-	case <-ctx.Done():
-		return
+	request.WithContext(ctx)
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
 	}
+	response := &snaptype.WebSeeds{}
+	if err := toml.NewDecoder(resp.Body).Decode(response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+func (d *Downloader) readWebSeedsFile(webSeedProviderPath string) (*snaptype.WebSeeds, error) {
+	data, err := os.ReadFile(webSeedProviderPath)
+	if err != nil {
+		return nil, err
+	}
+	response := &snaptype.WebSeeds{}
+	if err := toml.Unmarshal(data, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+func (d *Downloader) discoverWebSeeds(ctx context.Context) (webSeedsByFilName map[string]metainfo.UrlList) {
+	webSeedsByFilName = map[string]metainfo.UrlList{}
+	for _, webSeedProviderURL := range d.cfg.WebSeedUrls {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		response, err := d.callWebSeedsProvider(ctx, webSeedProviderURL)
+		if err != nil { // don't fail on error
+			log.Warn("[downloader] callWebSeedsProvider", "err", err, "url", webSeedProviderURL.EscapedPath())
+			continue
+		}
 
+		for name, urls := range response.WebSeeds {
+			webSeedsByFilName[name] = append(webSeedsByFilName[name], urls...)
+		}
+	}
+	for _, webSeedFile := range d.cfg.WebSeedFiles {
+		response, err := d.readWebSeedsFile(webSeedFile)
+		if err != nil { // don't fail on error
+			_, fileName := filepath.Split(webSeedFile)
+			log.Warn("[downloader] readWebSeedsFile", "err", err, "file", fileName)
+			continue
+		}
+
+		for name, urls := range response.WebSeeds {
+			webSeedsByFilName[name] = append(webSeedsByFilName[name], urls...)
+		}
+	}
+	return webSeedsByFilName
+}
+func (d *Downloader) AddWebseeds(ctx context.Context) error {
+	webSeedsByFilName := d.discoverWebSeeds(ctx)
 	for _, t := range d.Torrent().Torrents() {
-		urls, ok := webseeds.Files[t.Name()]
+		urls, ok := webSeedsByFilName[t.Name()]
 		if !ok {
 			continue
 		}
 		t.AddWebSeeds(urls)
 	}
+	return nil
 }
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
