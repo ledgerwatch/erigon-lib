@@ -61,6 +61,8 @@ type Downloader struct {
 	folder       storage.ClientImplCloser
 	stopMainLoop context.CancelFunc
 	wg           sync.WaitGroup
+
+	webSeedsByFilName map[string]metainfo.UrlList
 }
 
 type AggStats struct {
@@ -120,9 +122,17 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 
 		statsLock: &sync.RWMutex{},
 	}
-	//if err := d.addSegments(ctx); err != nil {
-	//	return nil, err
-	//}
+	if err := d.addSegments(ctx); err != nil {
+		return nil, err
+	}
+	// CornerCase: no peers -> no anoncments to trackers -> no magnetlink resolution (but magnetlink has filename)
+	// means we can start adding weebseeds without waiting for `<-t.GotInfo()`
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		d.webSeedsByFilName = d.discoverWebSeeds(ctx)
+		d.applyWebseeds()
+	}()
 	return d, nil
 }
 
@@ -141,16 +151,6 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 
 func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
-	if err := d.addSegments(ctx); err != nil {
-		return err
-	}
-	// CornerCase: no peers -> no anoncments to trackers -> no magnetlink resolution (but magnetlink has filename)
-	// means we can start adding weebseeds without waiting for `<-t.GotInfo()`
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
-		d.AddWebseeds(ctx)
-	}()
 
 	d.wg.Add(1)
 	go func() {
@@ -367,17 +367,15 @@ func (d *Downloader) discoverWebSeeds(ctx context.Context) (webSeedsByFilName ma
 	}
 	return webSeedsByFilName
 }
-func (d *Downloader) AddWebseeds(ctx context.Context) error {
-	webSeedsByFilName := d.discoverWebSeeds(ctx)
+func (d *Downloader) applyWebseeds() {
 	for _, t := range d.Torrent().Torrents() {
-		urls, ok := webSeedsByFilName[t.Name()]
+		urls, ok := d.webSeedsByFilName[t.Name()]
 		if !ok {
 			continue
 		}
-		log.Warn("addd webseeds", "name", t.Name(), "urls", urls)
+		log.Warn("[downloader] addd webseeds", "file", t.Name())
 		t.AddWebSeeds(urls)
 	}
-	return nil
 }
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
