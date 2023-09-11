@@ -17,8 +17,12 @@
 package downloadercfg
 
 import (
+	"github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/datadir"
+	"github.com/ledgerwatch/erigon-lib/common/dir"
 	"io/ioutil"
 	"net"
+	"net/url"
 	"runtime"
 	"strings"
 
@@ -40,8 +44,11 @@ const DefaultPieceSize = 2 * 1024 * 1024
 const DefaultNetworkChunkSize = 512 * 1024
 
 type Cfg struct {
-	*torrent.ClientConfig
+	ClientConfig  *torrent.ClientConfig
+	SnapDir       string
 	DownloadSlots int
+	WebSeedUrls   []*url.URL
+	WebSeedFiles  []string
 }
 
 func Default() *torrent.ClientConfig {
@@ -51,7 +58,6 @@ func Default() *torrent.ClientConfig {
 	torrentConfig.NoDHT = true
 	//torrentConfig.DisableTrackers = true
 	//torrentConfig.DisableWebtorrent = true
-	//torrentConfig.DisableWebseeds = true
 
 	// Reduce defaults - to avoid peers with very bad geography
 	//torrentConfig.MinDialTimeout = 1 * time.Second      // default: 3sec
@@ -70,13 +76,14 @@ func Default() *torrent.ClientConfig {
 	return torrentConfig
 }
 
-func New(snapDir string, version string, verbosity lg.Level, downloadRate, uploadRate datasize.ByteSize, port, connsPerFile, downloadSlots int, staticPeers []string) (*Cfg, error) {
+func New(dataDir datadir.Dirs, version string, verbosity lg.Level, downloadRate, uploadRate datasize.ByteSize, port, connsPerFile, downloadSlots int, staticPeers []string, webseeds string) (*Cfg, error) {
 	torrentConfig := Default()
+	torrentConfig.DataDir = dataDir.Snap // `DataDir` of torrent-client-lib is different from Erigon's `DataDir`. Just same naming.
+
 	torrentConfig.ExtendedHandshakeClientVersion = version
 
 	// We would-like to reduce amount of goroutines in Erigon, so reducing next params
 	torrentConfig.EstablishedConnsPerTorrent = connsPerFile // default: 50
-	torrentConfig.DataDir = snapDir
 
 	torrentConfig.ListenPort = port
 	// check if ipv6 is enabled
@@ -133,7 +140,22 @@ func New(snapDir string, version string, verbosity lg.Level, downloadRate, uploa
 		//staticPeers
 	}
 
-	return &Cfg{ClientConfig: torrentConfig, DownloadSlots: downloadSlots}, nil
+	webseedUrlsOrFiles := common.CliString2Array(webseeds)
+	webseedUrls := make([]*url.URL, 0, len(webseedUrlsOrFiles))
+	webseedFiles := make([]string, 0, len(webseedUrlsOrFiles))
+	for _, webseed := range webseedUrlsOrFiles {
+		uri, err := url.ParseRequestURI(webseed)
+		if err != nil {
+			if strings.HasSuffix(webseed, ".toml") && dir.FileExist(webseed) {
+				webseedFiles = append(webseedFiles, webseed)
+			}
+			continue
+		}
+		webseedUrls = append(webseedUrls, uri)
+	}
+	//TODO: scan datadir and add webseed.toml file to webseedFiles
+
+	return &Cfg{SnapDir: torrentConfig.DataDir, ClientConfig: torrentConfig, DownloadSlots: downloadSlots, WebSeedUrls: webseedUrls, WebSeedFiles: webseedFiles}, nil
 }
 
 func getIpv6Enabled() bool {

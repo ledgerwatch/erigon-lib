@@ -76,7 +76,7 @@ type AggStats struct {
 }
 
 func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
-	if err := portMustBeTCPAndUDPOpen(cfg.ListenPort); err != nil {
+	if err := portMustBeTCPAndUDPOpen(cfg.ClientConfig.ListenPort); err != nil {
 		return nil, err
 	}
 
@@ -84,10 +84,10 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 	// To provide such consistent view - downloader does:
 	// add <datadir>/snapshots/tmp - then method .onComplete will remove this suffix
 	// and App only work with <datadir>/snapshot s folder
-	if dir.FileExist(cfg.DataDir + "_tmp") { // migration from prev versions
-		_ = os.Rename(cfg.DataDir+"_tmp", filepath.Join(cfg.DataDir, "tmp")) // ignore error, because maybe they are on different drive, or target folder already created manually, all is fine
+	if dir.FileExist(cfg.SnapDir + "_tmp") { // migration from prev versions
+		_ = os.Rename(cfg.SnapDir+"_tmp", filepath.Join(cfg.SnapDir, "tmp")) // ignore error, because maybe they are on different drive, or target folder already created manually, all is fine
 	}
-	if err := moveFromTmp(cfg.DataDir); err != nil {
+	if err := moveFromTmp(cfg.SnapDir); err != nil {
 		return nil, err
 	}
 
@@ -100,7 +100,7 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get peer id: %w", err)
 	}
-	cfg.PeerID = string(peerID)
+	cfg.ClientConfig.PeerID = string(peerID)
 	if len(peerID) == 0 {
 		if err = savePeerID(db, torrentClient.PeerID()); err != nil {
 			return nil, fmt.Errorf("save peer id: %w", err)
@@ -238,15 +238,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		for _, t := range d.Torrent().Torrents() {
-			t.AddWebSeeds([]string{
-				"https://storage.googleapis.com/mdbx_chk/sepolia/v1-003000-003500-headers.seg?x-goog-signature=182cbe745f4e24d651ccabbfaa69d21a2c47b9ebc3d8c98fd32a7344e6eaff8a17c09801be17bf3ecf32086cd58866a249881f94ce37474272e74afc138fa8c0e93076562a7292158d33baf53f3272ad9341b80364ab047d347d7f2f22c7cce02d6bd260158cddd54e8d9e93a8d761fc71aea38d2041903fa83564884c4bd1aff9ee427fe9a50878f5ba5ae6a00eb09a8ce6c39afad2428b1735c1405058179caf7f6fe03f844b2673a811c40b7ab415bb4c17aea1788cf376feb65179d7c06b9e96393d158cc457d5ab34dbb0163feac406a4787d8c9f3783b344ec2ae76c2a2573d96223992d0d27db8ddeb03a2dfe8d516347b03623840c60dff27a2a3db0&x-goog-algorithm=GOOG4-RSA-SHA256&x-goog-credential=473845414789-compute%40developer.gserviceaccount.com%2F20230910%2Feurope-west1%2Fstorage%2Fgoog4_request&x-goog-date=20230910T073839Z&x-goog-expires=86400&x-goog-signedheaders=host",
-			})
-			select {
-			case <-ctx.Done():
-				return
-			}
-		}
+		d.AddWebseeds(ctx)
 	}()
 
 	logEvery := time.NewTicker(20 * time.Second)
@@ -307,7 +299,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 func (d *Downloader) SnapDir() string {
 	d.clientLock.RLock()
 	defer d.clientLock.RUnlock()
-	return d.cfg.DataDir
+	return d.cfg.SnapDir
 }
 
 func (d *Downloader) AddWebseeds(ctx context.Context) {
@@ -560,7 +552,7 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 				return ctx.Err()
 			default:
 			}
-			_, err := AddSegment(f, d.cfg.DataDir, d.torrentClient)
+			_, err := AddSegment(f, d.cfg.SnapDir, d.torrentClient)
 			if err != nil {
 				return err
 			}
