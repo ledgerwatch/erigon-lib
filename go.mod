@@ -14,8 +14,8 @@ require (
 	github.com/VictoriaMetrics/metrics v1.23.1
 	github.com/anacrolix/dht/v2 v2.19.2-0.20221121215055-066ad8494444
 	github.com/anacrolix/go-libutp v1.3.1
-	github.com/anacrolix/log v0.14.2
-	github.com/anacrolix/torrent v1.52.6-0.20230816110201-613470861e67
+	github.com/anacrolix/log v0.14.3-0.20230823030427-4b296d71a6b4
+	github.com/anacrolix/torrent v1.52.6-0.20230911001013-87f6cdc1e96f
 	github.com/c2h5oh/datasize v0.0.0-20220606134207-859f65c6625b
 	github.com/crate-crypto/go-kzg-4844 v0.3.0
 	github.com/deckarep/golang-set/v2 v2.3.0
@@ -46,8 +46,8 @@ require (
 	github.com/ajwerner/btree v0.0.0-20211221152037-f427b3e689c0 // indirect
 	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
 	github.com/anacrolix/chansync v0.3.0 // indirect
-	github.com/anacrolix/envpprof v1.2.1 // indirect
-	github.com/anacrolix/generics v0.0.0-20230816103846-fe11fdc0e0e3 // indirect
+	github.com/anacrolix/envpprof v1.3.0 // indirect
+	github.com/anacrolix/generics v0.0.0-20230816105729-c755655aee45 // indirect
 	github.com/anacrolix/missinggo v1.3.0 // indirect
 	github.com/anacrolix/missinggo/perf v1.0.0 // indirect
 	github.com/anacrolix/missinggo/v2 v2.7.2-0.20230527121029-a582b4f397b9 // indirect
