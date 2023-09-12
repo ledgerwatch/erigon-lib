@@ -548,7 +548,10 @@ func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx {
 		return mt
 	}
 	if has, _ := tx.Has(kv.PoolTransaction, hash); has {
-		txn, _ := tx.GetOne(kv.PoolTransaction, hash)
+		txn, err := tx.GetOne(kv.PoolTransaction, hash)
+		if err != nil {
+			return nil 
+		}
 		parseCtx := types.NewTxParseContext(p.chainID)
 		parseCtx.WithSender(false)
 		txSlot := &types.TxSlot{}
