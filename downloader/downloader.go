@@ -506,6 +506,23 @@ func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *pro
 	return false, nil
 }
 
+func seedableFiles(snapDir string) ([]string, error) {
+	files, err := seedableSegmentFiles(snapDir)
+	if err != nil {
+		return nil, fmt.Errorf("seedableSegmentFiles: %w", err)
+	}
+	files2, err := seedableHistorySnapshots(snapDir, "history")
+	if err != nil {
+		return nil, fmt.Errorf("seedableHistorySnapshots: %w", err)
+	}
+	files = append(files, files2...)
+	files2, err = seedableHistorySnapshots(snapDir, "warm")
+	if err != nil {
+		return nil, fmt.Errorf("seedableHistorySnapshots: %w", err)
+	}
+	files = append(files, files2...)
+	return files, nil
+}
 func (d *Downloader) addSegments(ctx context.Context) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
@@ -517,17 +534,12 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("AddTorrentFiles: %w", err)
 	}
-	files, err := seedableSegmentFiles(d.SnapDir())
-	if err != nil {
-		return fmt.Errorf("seedableSegmentFiles: %w", err)
-	}
-	files2, err := seedableHistorySnapshots(d.SnapDir())
-	if err != nil {
-		return fmt.Errorf("seedableHistorySnapshots: %w", err)
-	}
-	files = append(files, files2...)
 	g, ctx := errgroup.WithContext(ctx)
 	i := atomic.Int64{}
+	files, err := seedableFiles(d.SnapDir())
+	if err != nil {
+		return err
+	}
 	for _, f := range files {
 		f := f
 		g.Go(func() error {

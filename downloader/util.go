@@ -151,8 +151,8 @@ func seedableSegmentFiles(dir string) ([]string, error) {
 
 var historyFileRegex = regexp.MustCompile("^([[:lower:]]+).([0-9]+)-([0-9]+).(v|ef)$")
 
-func seedableHistorySnapshots(dir string) ([]string, error) {
-	historyDir := filepath.Join(dir, "history")
+func seedableHistorySnapshots(dir, subDir string) ([]string, error) {
+	historyDir := filepath.Join(dir, subDir)
 	dir2.MustExist(historyDir)
 	files, err := os.ReadDir(historyDir)
 	if err != nil {
@@ -234,15 +234,10 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
-	files, err := seedableSegmentFiles(snapDir)
+	files, err := seedableFiles(snapDir)
 	if err != nil {
 		return nil, err
 	}
-	files2, err := seedableHistorySnapshots(snapDir)
-	if err != nil {
-		return nil, err
-	}
-	files = append(files, files2...)
 
 	errs := make(chan error, len(files)*2)
 	wg := &sync.WaitGroup{}
