@@ -127,13 +127,6 @@ func seedableSegmentFiles(dir string) ([]string, error) {
 		if !snaptype.IsCorrectFileName(f.Name()) {
 			continue
 		}
-		fileInfo, err := f.Info()
-		if err != nil {
-			return nil, err
-		}
-		if fileInfo.Size() == 0 {
-			continue
-		}
 		if filepath.Ext(f.Name()) != ".seg" { // filter out only compressed files
 			continue
 		}
@@ -149,7 +142,7 @@ func seedableSegmentFiles(dir string) ([]string, error) {
 	return res, nil
 }
 
-var historyFileRegex = regexp.MustCompile("^([[:lower:]]+).([0-9]+)-([0-9]+).(v|ef)$")
+var historyFileRegex = regexp.MustCompile("^([[:lower:]]+).([0-9]+)-([0-9]+).(.*)$")
 
 func seedableHistorySnapshots(dir, subDir string) ([]string, error) {
 	historyDir := filepath.Join(dir, subDir)
@@ -166,13 +159,6 @@ func seedableHistorySnapshots(dir, subDir string) ([]string, error) {
 		if !f.Type().IsRegular() {
 			continue
 		}
-		fileInfo, err := f.Info()
-		if err != nil {
-			return nil, err
-		}
-		if fileInfo.Size() == 0 {
-			continue
-		}
 		ext := filepath.Ext(f.Name())
 		if ext != ".v" && ext != ".ef" && ext != ".kv" { // filter out only compressed files
 			continue
@@ -182,7 +168,7 @@ func seedableHistorySnapshots(dir, subDir string) ([]string, error) {
 		if len(subs) != 5 {
 			continue
 		}
-
+		// Check that it's seedable
 		from, err := strconv.ParseUint(subs[2], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("ParseFileName: %w", err)
@@ -191,10 +177,10 @@ func seedableHistorySnapshots(dir, subDir string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ParseFileName: %w", err)
 		}
-		if to-from != snaptype.Erigon3SeedableSteps {
+		if (to-from)%snaptype.Erigon3SeedableSteps != 0 {
 			continue
 		}
-		res = append(res, filepath.Join("history", f.Name()))
+		res = append(res, filepath.Join(subDir, f.Name()))
 	}
 	return res, nil
 }
@@ -222,7 +208,11 @@ func AddSegment(originalFileName, snapDir string, client *torrent.Client) (bool,
 	if !dir2.FileExist(fPath + ".torrent") {
 		return false, nil
 	}
-	_, err := AddTorrentFile(fPath+".torrent", client)
+	ts, err := loadTorrent(fPath + ".torrent")
+	if err != nil {
+		return false, err
+	}
+	_, err = AddTorrentFile(ts, client)
 	if err != nil {
 		return false, fmt.Errorf("AddTorrentFile: %w", err)
 	}
@@ -328,18 +318,12 @@ func CreateTorrentFileFromInfo(root string, info *metainfo.Info, mi *metainfo.Me
 }
 
 func AddTorrentFiles(snapDir string, torrentClient *torrent.Client) error {
-	files, err := os.ReadDir(snapDir)
+	files, err := allTorrentFiles(snapDir)
 	if err != nil {
 		return err
 	}
-	for _, f := range files {
-		if f.IsDir() || !f.Type().IsRegular() {
-			continue
-		}
-		if filepath.Ext(f.Name()) != ".torrent" { // filter out only compressed files
-			continue
-		}
-		_, err := AddTorrentFile(filepath.Join(snapDir, f.Name()), torrentClient)
+	for _, ts := range files {
+		_, err := AddTorrentFile(ts, torrentClient)
 		if err != nil {
 			return err
 		}
@@ -348,21 +332,59 @@ func AddTorrentFiles(snapDir string, torrentClient *torrent.Client) error {
 	return nil
 }
 
-// AddTorrentFile - adding .torrent file to torrentClient (and checking their hashes), if .torrent file
-// added first time - pieces verification process will start (disk IO heavy) - Progress
-// kept in `piece completion storage` (surviving reboot). Once it done - no disk IO needed again.
-// Don't need call torrent.VerifyData manually
-func AddTorrentFile(torrentFilePath string, torrentClient *torrent.Client) (*torrent.Torrent, error) {
+func allTorrentFiles(snapDir string) (res []*torrent.TorrentSpec, err error) {
+	res, err = torrentInDir(snapDir)
+	if err != nil {
+		return nil, err
+	}
+	res2, err := torrentInDir(filepath.Join(snapDir, "history"))
+	if err != nil {
+		return nil, err
+	}
+	res = append(res, res2...)
+	res2, err = torrentInDir(filepath.Join(snapDir, "warm"))
+	if err != nil {
+		return nil, err
+	}
+	res = append(res, res2...)
+	return res, nil
+}
+func torrentInDir(snapDir string) (res []*torrent.TorrentSpec, err error) {
+	files, err := os.ReadDir(snapDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		if f.IsDir() || !f.Type().IsRegular() {
+			continue
+		}
+		if filepath.Ext(f.Name()) != ".torrent" { // filter out only compressed files
+			continue
+		}
+
+		a, err := loadTorrent(filepath.Join(snapDir, f.Name()))
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, a)
+	}
+	return res, nil
+}
+
+func loadTorrent(torrentFilePath string) (*torrent.TorrentSpec, error) {
 	mi, err := metainfo.LoadFromFile(torrentFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("LoadFromFile: %w, file=%s", err, torrentFilePath)
 	}
 	mi.AnnounceList = Trackers
-	ts, err := torrent.TorrentSpecFromMetaInfoErr(mi)
-	if err != nil {
-		return nil, fmt.Errorf("TorrentSpecFromMetaInfoErr: %w, file=%s", err, torrentFilePath)
-	}
+	return torrent.TorrentSpecFromMetaInfoErr(mi)
+}
 
+// AddTorrentFile - adding .torrent file to torrentClient (and checking their hashes), if .torrent file
+// added first time - pieces verification process will start (disk IO heavy) - Progress
+// kept in `piece completion storage` (surviving reboot). Once it done - no disk IO needed again.
+// Don't need call torrent.VerifyData manually
+func AddTorrentFile(ts *torrent.TorrentSpec, torrentClient *torrent.Client) (*torrent.Torrent, error) {
 	if _, ok := torrentClient.Torrent(ts.InfoHash); !ok { // can set ChunkSize only for new torrents
 		ts.ChunkSize = downloadercfg.DefaultNetworkChunkSize
 	} else {
