@@ -126,7 +126,7 @@ func ParseFileName(dir, fileName string) (res FileInfo, ok bool) {
 	onlyName := fileName[:len(fileName)-len(ext)]
 	parts := strings.Split(onlyName, "-")
 	if len(parts) < 4 {
-		return res, false
+		return res, ok
 	}
 	version := parts[0]
 	_ = version
@@ -140,9 +140,9 @@ func ParseFileName(dir, fileName string) (res FileInfo, ok bool) {
 	}
 	ft, ok := ParseFileType(parts[3])
 	if !ok {
-		return res, false
+		return res, ok
 	}
-	return FileInfo{From: from * 1_000, To: to * 1_000, Path: filepath.Join(dir, fileName), T: ft, Ext: ext}, true
+	return FileInfo{From: from * 1_000, To: to * 1_000, Path: filepath.Join(dir, fileName), T: ft, Ext: ext}, ok
 }
 
 const Erigon3SeedableSteps = 32
@@ -202,11 +202,8 @@ func ParseDir(dir string) (res []FileInfo, err error) {
 		}
 
 		meta, ok := ParseFileName(dir, f.Name())
-		if err != nil {
-			if errors.Is(err, ErrInvalidFileName) {
-				continue
-			}
-			return nil, err
+		if !ok {
+			continue
 		}
 		if !ok {
 			continue

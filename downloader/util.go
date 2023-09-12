@@ -174,7 +174,7 @@ func seedableHistorySnapshots(dir string) ([]string, error) {
 			continue
 		}
 		ext := filepath.Ext(f.Name())
-		if ext != ".v" && ext != ".ef" { // filter out only compressed files
+		if ext != ".v" && ext != ".ef" && ext != ".kv" { // filter out only compressed files
 			continue
 		}
 
