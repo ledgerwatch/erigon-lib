@@ -62,6 +62,7 @@ type Downloader struct {
 	stopMainLoop context.CancelFunc
 	wg           sync.WaitGroup
 
+	webseeds          *WebSeeds
 	webSeedsByFilName snaptype.WebSeeds
 }
 
@@ -121,6 +122,8 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 		clientLock:        &sync.RWMutex{},
 
 		statsLock: &sync.RWMutex{},
+
+		webseeds: &WebSeeds{},
 	}
 	if err := d.addSegments(ctx); err != nil {
 		return nil, err
@@ -130,7 +133,7 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		d.webSeedsByFilName = d.discoverWebSeeds(ctx)
+		d.webseeds.Discover(ctx, d.cfg.WebSeedUrls, d.cfg.WebSeedFiles)
 		d.applyWebseeds()
 	}()
 	return d, nil
@@ -303,71 +306,6 @@ func (d *Downloader) SnapDir() string {
 	d.clientLock.RLock()
 	defer d.clientLock.RUnlock()
 	return d.cfg.SnapDir
-}
-
-func (d *Downloader) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl *url.URL) (snaptype.WebSeedsFromProvider, error) {
-	request, err := http.NewRequest(http.MethodGet, webSeedProviderUrl.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	request.WithContext(ctx)
-	resp, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	response := snaptype.WebSeedsFromProvider{}
-	if err := toml.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, err
-	}
-	return response, nil
-}
-func (d *Downloader) readWebSeedsFile(webSeedProviderPath string) (snaptype.WebSeedsFromProvider, error) {
-	data, err := os.ReadFile(webSeedProviderPath)
-	if err != nil {
-		return nil, err
-	}
-	response := snaptype.WebSeedsFromProvider{}
-	if err := toml.Unmarshal(data, &response); err != nil {
-		return nil, err
-	}
-	return response, nil
-}
-
-func (d *Downloader) discoverWebSeeds(ctx context.Context) snaptype.WebSeeds {
-	list := make([]snaptype.WebSeedsFromProvider, len(d.cfg.WebSeedUrls)+len(d.cfg.WebSeedFiles))
-	for _, webSeedProviderURL := range d.cfg.WebSeedUrls {
-		select {
-		case <-ctx.Done():
-			break
-		default:
-		}
-		response, err := d.callWebSeedsProvider(ctx, webSeedProviderURL)
-		if err != nil { // don't fail on error
-			log.Warn("[downloader] callWebSeedsProvider", "err", err, "url", webSeedProviderURL.EscapedPath())
-			continue
-		}
-		list = append(list, response)
-	}
-	for _, webSeedFile := range d.cfg.WebSeedFiles {
-		response, err := d.readWebSeedsFile(webSeedFile)
-		if err != nil { // don't fail on error
-			_, fileName := filepath.Split(webSeedFile)
-			log.Warn("[downloader] readWebSeedsFile", "err", err, "file", fileName)
-			continue
-		}
-		list = append(list, response)
-	}
-	return snaptype.NewWebSeeds(list)
-}
-func (d *Downloader) applyWebseeds() {
-	for _, t := range d.Torrent().Torrents() {
-		urls, ok := d.webSeedsByFilName[t.Name()]
-		if !ok {
-			continue
-		}
-		log.Debug("[downloader] addd webseeds", "file", t.Name())
-		t.AddWebSeeds(urls)
-	}
 }
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
@@ -692,4 +630,86 @@ func openClient(cfg *torrent.ClientConfig) (db kv.RwDB, c storage.PieceCompletio
 	}
 
 	return db, c, m, torrentClient, nil
+}
+
+func (d *Downloader) applyWebseeds() {
+	for _, t := range d.Torrent().Torrents() {
+		urls, ok := d.webseeds.GetByFileNames()[t.Name()]
+		if !ok {
+			continue
+		}
+		log.Debug("[downloader] addd webseeds", "file", t.Name())
+		t.AddWebSeeds(urls)
+	}
+}
+
+type WebSeeds struct {
+	lock              sync.Mutex
+	webSeedsByFilName snaptype.WebSeeds
+}
+
+func (d *WebSeeds) GetByFileNames() snaptype.WebSeeds {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	return d.webSeedsByFilName
+}
+func (d *WebSeeds) SetByFileNames(l snaptype.WebSeeds) {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	d.webSeedsByFilName = l
+}
+
+func (d *WebSeeds) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl *url.URL) (snaptype.WebSeedsFromProvider, error) {
+	request, err := http.NewRequest(http.MethodGet, webSeedProviderUrl.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.WithContext(ctx)
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	response := snaptype.WebSeedsFromProvider{}
+	if err := toml.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+func (d *WebSeeds) readWebSeedsFile(webSeedProviderPath string) (snaptype.WebSeedsFromProvider, error) {
+	data, err := os.ReadFile(webSeedProviderPath)
+	if err != nil {
+		return nil, err
+	}
+	response := snaptype.WebSeedsFromProvider{}
+	if err := toml.Unmarshal(data, &response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (d *WebSeeds) Discover(ctx context.Context, urls []*url.URL, files []string) {
+	list := make([]snaptype.WebSeedsFromProvider, len(urls)+len(files))
+	for _, webSeedProviderURL := range urls {
+		select {
+		case <-ctx.Done():
+			break
+		default:
+		}
+		response, err := d.callWebSeedsProvider(ctx, webSeedProviderURL)
+		if err != nil { // don't fail on error
+			log.Warn("[downloader] callWebSeedsProvider", "err", err, "url", webSeedProviderURL.EscapedPath())
+			continue
+		}
+		list = append(list, response)
+	}
+	for _, webSeedFile := range files {
+		response, err := d.readWebSeedsFile(webSeedFile)
+		if err != nil { // don't fail on error
+			_, fileName := filepath.Split(webSeedFile)
+			log.Warn("[downloader] readWebSeedsFile", "err", err, "file", fileName)
+			continue
+		}
+		list = append(list, response)
+	}
+	d.SetByFileNames(snaptype.NewWebSeeds(list))
 }
