@@ -740,12 +740,15 @@ func TestBlobTxReplacement(t *testing.T) {
 		StateVersionId:      stateVersionID,
 		PendingBlockBaseFee: pendingBaseFee,
 		BlockGasLimit:       1000000,
+		PendingBlobFeePerGas: 100_000,
 		ChangeBatch: []*remote.StateChange{
 			{BlockHeight: 0, BlockHash: h1},
 		},
 	}
 	var addr [20]byte
 	addr[0] = 1
+
+	// Add 1 eth to the user account, as a part of change
 	v := make([]byte, types.EncodeSenderLengthForStorage(2, *uint256.NewInt(1 * common.Ether)))
 	types.EncodeSender(2, *uint256.NewInt(1 * common.Ether), v)
 
@@ -823,7 +826,7 @@ func TestBlobTxReplacement(t *testing.T) {
 		}
 	}
 
-	//try to replace it with required extra gas - should pass\
+	//try to replace it with required price bump to all transaction fields - should be successful
 	{
 		blobTxn := makeBlobTx()
 		blobTxn.Nonce = 0x2
