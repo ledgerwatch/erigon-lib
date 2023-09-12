@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/pelletier/go-toml/v2"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -42,6 +41,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
+	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -62,8 +62,7 @@ type Downloader struct {
 	stopMainLoop context.CancelFunc
 	wg           sync.WaitGroup
 
-	webseeds          *WebSeeds
-	webSeedsByFilName snaptype.WebSeeds
+	webseeds *WebSeeds
 }
 
 type AggStats struct {

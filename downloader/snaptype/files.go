@@ -205,9 +205,6 @@ func ParseDir(dir string) (res []FileInfo, err error) {
 		if !ok {
 			continue
 		}
-		if !ok {
-			continue
-		}
 		res = append(res, meta)
 	}
 	slices.SortFunc(res, func(i, j FileInfo) bool {
