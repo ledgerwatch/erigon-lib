@@ -663,11 +663,12 @@ func (d *WebSeeds) callWebSeedsProvider(ctx context.Context, webSeedProviderUrl 
 	if err != nil {
 		return nil, err
 	}
-	request.WithContext(ctx)
+	request = request.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	response := snaptype.WebSeedsFromProvider{}
 	if err := toml.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
