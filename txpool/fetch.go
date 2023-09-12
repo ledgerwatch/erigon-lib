@@ -496,7 +496,8 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 			}
 		}
 		// TODO(eip-4844): If there are blob txs that need to be unwound, these will not replay properly since we only have the
-		// unwrapped version here (we would need to re-wrap the tx with its blobs & kzg commitments).
+		// unwrapped version here, if not obtained from minedBlobs cache 
+		// (we would need to re-wrap the tx with its blobs & kzg commitments).
 		if err := f.db.View(ctx, func(tx kv.Tx) error {
 			return f.pool.OnNewBlock(ctx, req, unwindTxs, minedTxs, tx)
 		}); err != nil && !errors.Is(err, context.Canceled) {
@@ -507,21 +508,3 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 		}
 	}
 }
-
-// func (f *Fetch) requestUnknownTxs(unknownHashes types2.Hashes, sentryClient sentry.SentryClient, PeerId *types.H512) error{
-// 	if len(unknownHashes) > 0 {
-// 		var encodedRequest []byte
-// 		var err error
-// 		var messageID sentry.MessageId
-// 		if encodedRequest, err = types2.EncodeGetPooledTransactions66(unknownHashes, uint64(1), nil); err != nil {
-// 			return err
-// 		}
-// 		messageID = sentry.MessageId_GET_POOLED_TRANSACTIONS_66
-// 		if _, err := sentryClient.SendMessageById(f.ctx, &sentry.SendMessageByIdRequest{
-// 			Data:   &sentry.OutboundMessageData{Id: messageID, Data: encodedRequest},
-// 			PeerId: PeerId,
-// 		}, &grpc.EmptyCallOption{}); err != nil {
-// 			return err
-// 		}
-// 	}
-// }
