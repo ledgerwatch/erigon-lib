@@ -18,15 +18,12 @@ package downloader
 
 import (
 	"context"
-	"github.com/ledgerwatch/erigon-lib/common/cmp"
-	"runtime"
-
-	//nolint:gosec
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -35,6 +32,8 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 	common2 "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/cmp"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	dir2 "github.com/ledgerwatch/erigon-lib/common/dir"
 	"github.com/ledgerwatch/erigon-lib/downloader/downloadercfg"
 	"github.com/ledgerwatch/erigon-lib/downloader/snaptype"
@@ -144,6 +143,18 @@ func seedableSegmentFiles(dir string) ([]string, error) {
 var historyFileRegex = regexp.MustCompile("^([[:lower:]]+).([0-9]+)-([0-9]+).(.*)$")
 
 func seedableHistorySnapshots(dir, subDir string) ([]string, error) {
+	l, err := seedableSnapshotsBySubDir(dir, "history")
+	if err != nil {
+		return nil, err
+	}
+	l2, err := seedableSnapshotsBySubDir(dir, "warm")
+	if err != nil {
+		return nil, err
+	}
+	return append(l, l2...), nil
+}
+
+func seedableSnapshotsBySubDir(dir, subDir string) ([]string, error) {
 	historyDir := filepath.Join(dir, subDir)
 	dir2.MustExist(historyDir)
 	files, err := os.ReadDir(historyDir)
@@ -229,18 +240,9 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(cmp.Max(1, runtime.GOMAXPROCS(-1)-1) * 4)
+	g.SetLimit(cmp.Max(1, runtime.GOMAXPROCS(-1)-1) * 8)
 	var i atomic.Int32
-	go func() { // will exit when `errgroup` exit, but will not block it
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-logEvery.C:
-				log.Info("[snapshots] Creating .torrent files", "Progress", fmt.Sprintf("%d/%d", i.Load(), len(files)))
-			}
-		}
-	}()
+
 	for _, file := range files {
 		file := file
 		g.Go(func() error {
@@ -250,6 +252,18 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 			}
 			return nil
 		})
+	}
+
+	var m runtime.MemStats
+Loop:
+	for int(i.Load()) < len(files) {
+		select {
+		case <-ctx.Done():
+			break Loop // g.Wait() will return right error
+		case <-logEvery.C:
+			dbg.ReadMemStats(&m)
+			log.Info("[snapshots] Creating .torrent files", "progress", fmt.Sprintf("%d/%d", i.Load(), len(files)), "alloc", common2.ByteCount(m.Alloc), "sys", common2.ByteCount(m.Sys))
+		}
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err
