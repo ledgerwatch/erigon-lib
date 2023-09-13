@@ -196,6 +196,12 @@ func seedableSnapshotsBySubDir(dir, subDir string) ([]string, error) {
 }
 
 func buildTorrentIfNeed(ctx context.Context, fName, root string) (err error) {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	fPath := filepath.Join(root, fName)
 	if dir2.FileExist(fPath + ".torrent") {
 		return
