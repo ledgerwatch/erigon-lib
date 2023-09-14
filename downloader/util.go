@@ -232,7 +232,7 @@ func BuildTorrentIfNeed(ctx context.Context, fName, root string) (torrentFilePat
 	}
 
 	info := &metainfo.Info{PieceLength: downloadercfg.DefaultPieceSize, Name: fName}
-	if err := info.BuildFromFilePath(root); err != nil {
+	if err := info.BuildFromFilePath(fPath); err != nil {
 		return "", fmt.Errorf("createTorrentFileFromSegment: %w", err)
 	}
 	info.Name = fName
@@ -406,10 +406,12 @@ func addTorrentFile(ts *torrent.TorrentSpec, torrentClient *torrent.Client) (*to
 	}
 
 	ts.DisallowDataDownload = true
+	fmt.Printf("AddTorrentSpec: %s\n", ts.DisplayName)
 	t, _, err := torrentClient.AddTorrentSpec(ts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("addTorrentFile %s: %w", ts.DisplayName, err)
 	}
+	fmt.Printf("AddTorrentSpec2: %s\n", ts.DisplayName)
 
 	t.DisallowDataDownload()
 	t.AllowDataUpload()

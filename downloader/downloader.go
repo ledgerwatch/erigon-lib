@@ -618,7 +618,7 @@ func openClient(cfg *torrent.ClientConfig) (db kv.RwDB, c storage.PieceCompletio
 		Path(filepath.Join(snapDir, "db")).
 		Open()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, fmt.Errorf("torrentcfg.openClient: %w", err)
 	}
 	c, err = NewMdbxPieceCompletion(db)
 	if err != nil {
