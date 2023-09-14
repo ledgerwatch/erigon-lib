@@ -442,6 +442,31 @@ const (
 	LightClient = "LightClient"
 	// Period (one every 27 hours) => LightClientUpdate
 	LightClientUpdates = "LightClientUpdates"
+
+	OtsAllContracts = "OtsAllContracts"
+	OtsERC20        = "OtsERC20"
+	OtsERC165       = "OtsERC165"
+	OtsERC721       = "OtsERC721"
+	OtsERC1155      = "OtsERC1155"
+	OtsERC1167      = "OtsERC1167"
+	OtsERC4626      = "OtsERC4626"
+
+	OtsAllContractsCounter = "OtsAllContractsCounter"
+	OtsERC20Counter        = "OtsERC20Counter"
+	OtsERC165Counter       = "OtsERC165Counter"
+	OtsERC721Counter       = "OtsERC721Counter"
+	OtsERC1155Counter      = "OtsERC1155Counter"
+	OtsERC1167Counter      = "OtsERC1167Counter"
+	OtsERC4626Counter      = "OtsERC4626Counter"
+
+	OtsAddrAttributes = "OtsAddrAttributes"
+
+	OtsERC20TransferIndex    = "OtsERC20TransferIndex"
+	OtsERC20TransferCounter  = "OtsERC20TransferCounter"
+	OtsERC721TransferIndex   = "OtsERC721TransferIndex"
+	OtsERC721TransferCounter = "OtsERC721TransferCounter"
+	OtsERC20Holdings         = "OtsERC20Holdings"
+	OtsERC721Holdings        = "OtsERC721Holdings"
 )
 
 // Keys
@@ -592,7 +617,42 @@ var ChaindataTables = []string{
 	Attestetations,
 	LightClient,
 	LightClientUpdates,
+
+	OtsAllContracts,
+	OtsERC20,
+	OtsERC165,
+	OtsERC721,
+	OtsERC1155,
+	OtsERC1167,
+	OtsERC4626,
+
+	OtsAllContractsCounter,
+	OtsERC20Counter,
+	OtsERC165Counter,
+	OtsERC721Counter,
+	OtsERC1155Counter,
+	OtsERC1167Counter,
+	OtsERC4626Counter,
+
+	OtsAddrAttributes,
+
+	OtsERC20TransferIndex,
+	OtsERC20TransferCounter,
+	OtsERC721TransferIndex,
+	OtsERC721TransferCounter,
+	OtsERC20Holdings,
+	OtsERC721Holdings,
 }
+
+const (
+	ADDR_ATTR_ERC20     = 0 // is ERC20 token
+	ADDR_ATTR_ERC165    = 1 // implements ERC165
+	ADDR_ATTR_ERC721    = 2 // implements ERC721
+	ADDR_ATTR_ERC721_MD = 3 // implements ERC721 metadata
+	ADDR_ATTR_ERC1155   = 4 // implements ERC1155
+	ADDR_ATTR_ERC1167   = 5 // is ERC1167 minimal proxy
+	ADDR_ATTR_ERC4626   = 6 // implements ERC4626
+)
 
 const (
 	RecentLocalTransaction = "RecentLocalTransaction" // sequence_u64 -> tx_hash
@@ -704,6 +764,19 @@ var ChaindataTablesCfg = TableCfg{
 	RStorageIdx:              {Flags: DupSort},
 	RCodeKeys:                {Flags: DupSort},
 	RCodeIdx:                 {Flags: DupSort},
+
+	OtsAllContracts: {Flags: DupSort},
+	OtsERC20:        {Flags: DupSort},
+	OtsERC165:       {Flags: DupSort},
+	OtsERC721:       {Flags: DupSort},
+	OtsERC1155:      {Flags: DupSort},
+	OtsERC1167:      {Flags: DupSort},
+	OtsERC4626:      {Flags: DupSort},
+
+	OtsERC20TransferCounter:  {Flags: DupSort},
+	OtsERC721TransferCounter: {Flags: DupSort},
+	OtsERC20Holdings:         {Flags: DupSort},
+	OtsERC721Holdings:        {Flags: DupSort},
 }
 
 var TxpoolTablesCfg = TableCfg{}
