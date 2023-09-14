@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	proto_downloader "github.com/ledgerwatch/erigon-lib/gointerfaces/downloader"
@@ -105,33 +104,4 @@ func (s *GrpcServer) Stats(ctx context.Context, request *proto_downloader.StatsR
 
 func Proto2InfoHash(in *prototypes.H160) metainfo.Hash {
 	return gointerfaces.ConvertH160toAddress(in)
-}
-
-// decides what we do depending on wether we have the .seg file or the .torrent file
-// have .torrent no .seg => get .seg file from .torrent
-// have .seg no .torrent => get .torrent from .seg
-func seedNewSnapshot(ctx context.Context, name string, torrentClient *torrent.Client, snapDir string) (bool, error) {
-	select {
-	case <-ctx.Done():
-		return false, ctx.Err()
-	default:
-	}
-	// if we dont have the torrent file we build it if we have the .seg file
-	if err := BuildTorrentIfNeed(ctx, name, snapDir); err != nil {
-		return false, err
-	}
-
-	// we add the .seg file we have and create the .torrent file if we dont have it
-	ok, err := AddSegment(name, snapDir, torrentClient)
-	if err != nil {
-		return false, fmt.Errorf("AddSegment: %w", err)
-	}
-
-	// torrent file does exist and seg
-	if !ok {
-		return false, nil
-	}
-
-	// we skip the item in for loop since we build the seg and torrent file here
-	return true, nil
 }
