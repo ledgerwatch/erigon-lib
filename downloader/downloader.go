@@ -488,17 +488,23 @@ func (d *Downloader) AddNewSeedableFile(ctx context.Context, name string) error 
 	return nil
 }
 
-func (d *Downloader) AddInfoHashAsMagnetLink(ctx context.Context, infoHash metainfo.Hash, name string) error {
-	if _, ok := d.torrentClient.Torrent(infoHash); ok {
-		return nil
-	}
-	// Paranoic Mode on: don't allow user pass file with same name, but another infoHash
+func (d *Downloader) exists(name string) bool {
+	// Paranoic Mode on: if same file changed infoHash - skip it
+	// use-cases:
+	//	- release of re-compressed version of same file,
+	//	- ErigonV1.24 produced file X, then ErigonV1.25 released with new compression algorithm and produced X with anouther infoHash.
+	//		ErigonV1.24 node must keep using existing file instead of downloading new one.
 	for _, t := range d.torrentClient.Torrents() {
 		if t.Name() == name {
-			return nil
+			return true
 		}
 	}
-
+	return false
+}
+func (d *Downloader) AddInfoHashAsMagnetLink(ctx context.Context, infoHash metainfo.Hash, name string) error {
+	if d.exists(name) {
+		return nil
+	}
 	mi := &metainfo.MetaInfo{AnnounceList: Trackers}
 
 	magnet := mi.Magnet(&infoHash, &metainfo.Info{Name: name})
@@ -570,7 +576,7 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 				return ctx.Err()
 			default:
 			}
-			_, err := AddSegment(f, d.cfg.SnapDir, d.torrentClient)
+			_, err := AddSegment(f, d.SnapDir(), d.torrentClient)
 			if err != nil {
 				return err
 			}
