@@ -40,12 +40,18 @@ func TestChangeInfoHashOfSameFile(t *testing.T) {
 	require.Equal("a.seg", tt.Name())
 
 	// allow adding files only if they are insidesnapshots dir
-	require.NoError(BuildTorrentIfNeed(ctx, "a.seg", dirs.Snap))
-	require.NoError(BuildTorrentIfNeed(ctx, "b/a.seg", dirs.Snap))
-	require.NoError(BuildTorrentIfNeed(ctx, filepath.Join(dirs.Snap, "a.seg"), dirs.Snap))
-	require.NoError(BuildTorrentIfNeed(ctx, filepath.Join(dirs.Snap, "b", "a.seg"), dirs.Snap))
+	_, err = BuildTorrentIfNeed(ctx, "a.seg", dirs.Snap)
+	require.NoError(err)
+	_, err = BuildTorrentIfNeed(ctx, "b/a.seg", dirs.Snap)
+	require.NoError(err)
+	_, err = BuildTorrentIfNeed(ctx, filepath.Join(dirs.Snap, "a.seg"), dirs.Snap)
+	require.NoError(err)
+	_, err = BuildTorrentIfNeed(ctx, filepath.Join(dirs.Snap, "b", "a.seg"), dirs.Snap)
+	require.NoError(err)
 
 	// reject escaping snapshots dir
-	require.Error(BuildTorrentIfNeed(ctx, filepath.Join(dirs.Chaindata, "b", "a.seg"), dirs.Snap))
-	require.Error(BuildTorrentIfNeed(ctx, "./../a.seg", dirs.Snap))
+	_, err = BuildTorrentIfNeed(ctx, filepath.Join(dirs.Chaindata, "b", "a.seg"), dirs.Snap)
+	require.Error(err)
+	_, err = BuildTorrentIfNeed(ctx, "./../a.seg", dirs.Snap)
+	require.Error(err)
 }
