@@ -365,7 +365,10 @@ func moveFromTmp(snapDir string) error {
 		return err
 	}
 	for _, p := range paths {
-		if p.Name() == "." || p.Name() == ".." || p.Name() == "tmp" {
+		if !filepath.IsLocal(p.Name()) {
+			continue
+		}
+		if p.Name() == "tmp" {
 			continue
 		}
 		src := filepath.Join(tmpDir, p.Name())
