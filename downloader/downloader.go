@@ -465,14 +465,55 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
 
-func (d *Downloader) AddInfoHashAsMagnetLink(ctx context.Context, infoHash metainfo.Hash, name string) error {
-	mi := &metainfo.MetaInfo{AnnounceList: Trackers}
-	//log.Debug("[downloader] downloading torrent and seg file", "hash", infoHash)
+// AddNewSeedableFile decides what we do depending on wether we have the .seg file or the .torrent file
+// have .torrent no .seg => get .seg file from .torrent
+// have .seg no .torrent => get .torrent from .seg
+func (d *Downloader) AddNewSeedableFile(ctx context.Context, name string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	// if we don't have the torrent file we build it if we have the .seg file
+	if err := BuildTorrentIfNeed(ctx, name, d.SnapDir()); err != nil {
+		return err
+	}
 
-	if _, ok := d.torrentClient.Torrent(infoHash); ok {
-		//log.Debug("[downloader] torrent client related to hash found", "hash", infoHash)
+	// we add the .seg file we have and create the .torrent file if we don't have it
+	ok, err := AddSegment(name, d.SnapDir(), d.torrentClient)
+	if err != nil {
+		return fmt.Errorf("AddSegment: %w", err)
+	}
+
+	// torrent file does exist and seg
+	if !ok {
+		log.Warn("[snapshots] by some reason can't start seeding new file", "file", name)
 		return nil
 	}
+	log.Info("[snapshots] start seeding a new snapshot", "file", name)
+
+	// we skip the item in for loop since we build the seg and torrent file here
+	return nil
+}
+
+func (d *Downloader) exists(name string) bool {
+	// Paranoic Mode on: if same file changed infoHash - skip it
+	// use-cases:
+	//	- release of re-compressed version of same file,
+	//	- ErigonV1.24 produced file X, then ErigonV1.25 released with new compression algorithm and produced X with anouther infoHash.
+	//		ErigonV1.24 node must keep using existing file instead of downloading new one.
+	for _, t := range d.torrentClient.Torrents() {
+		if t.Name() == name {
+			return true
+		}
+	}
+	return false
+}
+func (d *Downloader) AddInfoHashAsMagnetLink(ctx context.Context, infoHash metainfo.Hash, name string) error {
+	if d.exists(name) {
+		return nil
+	}
+	mi := &metainfo.MetaInfo{AnnounceList: Trackers}
 
 	magnet := mi.Magnet(&infoHash, &metainfo.Info{Name: name})
 	t, err := d.torrentClient.AddMagnet(magnet.String())
@@ -543,7 +584,7 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 				return ctx.Err()
 			default:
 			}
-			_, err := AddSegment(f, d.cfg.SnapDir, d.torrentClient)
+			_, err := AddSegment(f, d.SnapDir(), d.torrentClient)
 			if err != nil {
 				return err
 			}

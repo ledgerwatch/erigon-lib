@@ -170,7 +170,7 @@ func seedableSnapshotsBySubDir(dir, subDir string) ([]string, error) {
 			continue
 		}
 		ext := filepath.Ext(f.Name())
-		if ext != ".v" && ext != ".ef" && ext != ".kv" { // filter out only compressed files
+		if ext != ".v" && ext != ".ef" { // filter out only compressed files
 			continue
 		}
 
@@ -195,11 +195,24 @@ func seedableSnapshotsBySubDir(dir, subDir string) ([]string, error) {
 	return res, nil
 }
 
-func buildTorrentIfNeed(ctx context.Context, fName, root string) (err error) {
+func BuildTorrentIfNeed(ctx context.Context, fName, root string) (err error) {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
+	}
+	if filepath.IsAbs(fName) {
+		newFName, err := filepath.Rel(root, fName)
+		if err != nil {
+			return err
+		}
+		if !filepath.IsLocal(newFName) {
+			return fmt.Errorf("file=%s, is outside of snapshots dir", fName)
+		}
+		fName = newFName
+	}
+	if !filepath.IsLocal(fName) {
+		return fmt.Errorf("relative paths are not allowed: %s", fName)
 	}
 
 	fPath := filepath.Join(root, fName)
@@ -209,8 +222,9 @@ func buildTorrentIfNeed(ctx context.Context, fName, root string) (err error) {
 	if !dir2.FileExist(fPath) {
 		return
 	}
+
 	info := &metainfo.Info{PieceLength: downloadercfg.DefaultPieceSize, Name: fName}
-	if err := info.BuildFromFilePath(fPath); err != nil {
+	if err := info.BuildFromFilePath(root); err != nil {
 		return fmt.Errorf("createTorrentFileFromSegment: %w", err)
 	}
 	info.Name = fName
@@ -253,7 +267,7 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 		file := file
 		g.Go(func() error {
 			defer i.Add(1)
-			if err := buildTorrentIfNeed(ctx, file, snapDir); err != nil {
+			if err := BuildTorrentIfNeed(ctx, file, snapDir); err != nil {
 				return err
 			}
 			return nil
