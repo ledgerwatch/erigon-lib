@@ -23,25 +23,6 @@ func volumeNameLen(path string) int {
 	return 0
 }
 
-// HasPrefix exists for historical compatibility and should not be used.
-//
-// Deprecated: HasPrefix does not respect path boundaries and
-// does not ignore case when required.
-func HasPrefix(p, prefix string) bool {
-	return strings.HasPrefix(p, prefix)
-}
-
-func splitList(path string) []string {
-	if path == "" {
-		return []string{}
-	}
-	return strings.Split(path, string(ListSeparator))
-}
-
-func abs(path string) (string, error) {
-	return unixAbs(path)
-}
-
 func join(elem []string) string {
 	// If there's a bug here, fix the logic in ./path_plan9.go too.
 	for i, e := range elem {
@@ -50,8 +31,4 @@ func join(elem []string) string {
 		}
 	}
 	return ""
-}
-
-func sameWord(a, b string) bool {
-	return a == b
 }

@@ -15,7 +15,6 @@ import (
 	"io/fs"
 	"os"
 	"runtime"
-	"sort"
 	"strings"
 )
 
@@ -215,6 +214,7 @@ func Join(elem ...string) string {
 	return join(elem)
 }
 
+// nolint
 func unixAbs(path string) (string, error) {
 	if IsAbs(path) {
 		return Clean(path), nil
@@ -270,29 +270,3 @@ var SkipDir error = fs.SkipDir
 // fs.FileInfo describing the directory, and err set to the error from
 // Readdirnames.
 type WalkFunc func(path string, info fs.FileInfo, err error) error
-
-var lstat = os.Lstat // for testing
-
-// readDirNames reads the directory named by dirname and returns
-// a sorted list of directory entry names.
-func readDirNames(dirname string) ([]string, error) {
-	f, err := os.Open(dirname)
-	if err != nil {
-		return nil, err
-	}
-	names, err := f.Readdirnames(-1)
-	f.Close()
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(names)
-	return names, nil
-}
-
-// VolumeName returns leading volume name.
-// Given "C:\foo\bar" it returns "C:" on Windows.
-// Given "\\host\share\foo" it returns "\\host\share".
-// On other platforms it returns "".
-func VolumeName(path string) string {
-	return FromSlash(path[:volumeNameLen(path)])
-}
