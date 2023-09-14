@@ -299,6 +299,20 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 }
 
 func (d *Downloader) SnapDir() string { return d.cfg.SnapDir }
+func (d *Downloader) addFile(name string) (err error) {
+	name, err = ensureCantLeaveDir(name, d.SnapDir())
+	if err != nil {
+		return err
+	}
+	fPath := filepath.Join(d.SnapDir(), name)
+	if !dir.FileExist(fPath + ".torrent") {
+		log.Warn("[snapshots] can't start seeding file, because .torrent doesn't exists", "file", name)
+		return nil
+	}
+
+	log.Info("[snapshots] start seeding a new snapshot", "file", name)
+	return nil
+}
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
 	//Call this methods outside of `statsLock` critical section, because they have own locks with contention
@@ -472,24 +486,18 @@ func (d *Downloader) AddNewSeedableFile(ctx context.Context, name string) error 
 	default:
 	}
 	// if we don't have the torrent file we build it if we have the .seg file
-	if err := BuildTorrentIfNeed(ctx, name, d.SnapDir()); err != nil {
+	torrentFilePath, err := BuildTorrentIfNeed(ctx, name, d.SnapDir())
+	if err != nil {
 		return err
 	}
-
-	// we add the .seg file we have and create the .torrent file if we don't have it
-	ok, err := AddSegment(name, d.SnapDir(), d.torrentClient)
+	ts, err := loadTorrent(torrentFilePath)
 	if err != nil {
-		return fmt.Errorf("AddSegment: %w", err)
+		return err
 	}
-
-	// torrent file does exist and seg
-	if !ok {
-		log.Warn("[snapshots] by some reason can't start seeding new file", "file", name)
-		return nil
+	_, err = addTorrentFile(ts, d.torrentClient)
+	if err != nil {
+		return fmt.Errorf("addTorrentFile: %w", err)
 	}
-	log.Info("[snapshots] start seeding a new snapshot", "file", name)
-
-	// we skip the item in for loop since we build the seg and torrent file here
 	return nil
 }
 
@@ -557,50 +565,11 @@ func seedableFiles(snapDir string) ([]string, error) {
 	return files, nil
 }
 func (d *Downloader) addSegments(ctx context.Context) error {
-	logEvery := time.NewTicker(20 * time.Second)
-	defer logEvery.Stop()
-	_, err := BuildTorrentFilesIfNeed(context.Background(), d.SnapDir())
+	_, err := BuildTorrentFilesIfNeed(ctx, d.SnapDir())
 	if err != nil {
 		return err
 	}
-	err = AddTorrentFiles(d.SnapDir(), d.torrentClient)
-	if err != nil {
-		return fmt.Errorf("AddTorrentFiles: %w", err)
-	}
-	g, ctx := errgroup.WithContext(ctx)
-	i := atomic.Int64{}
-	files, err := seedableFiles(d.SnapDir())
-	if err != nil {
-		return err
-	}
-	for _, f := range files {
-		f := f
-		g.Go(func() error {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-			_, err := AddSegment(f, d.SnapDir(), d.torrentClient)
-			if err != nil {
-				return err
-			}
-
-			i.Add(1)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-logEvery.C:
-				log.Info("[snpshots] initializing", "files", fmt.Sprintf("%d/%d", i.Load(), len(files)))
-			default:
-			}
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
+	return AddTorrentFiles(d.SnapDir(), d.torrentClient)
 }
 
 func (d *Downloader) Stats() AggStats {
