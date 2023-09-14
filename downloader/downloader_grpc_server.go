@@ -61,18 +61,13 @@ func (s *GrpcServer) Download(ctx context.Context, request *proto_downloader.Dow
 
 		if it.TorrentHash == nil {
 			// if we don't have the torrent hash then we seed a new snapshot
-			err := s.d.AddNewSeedableFile(ctx, it.Path)
-			if err != nil {
+			if err := s.d.AddNewSeedableFile(ctx, it.Path); err != nil {
 				return nil, err
-			}
-			if ok {
-				log.Warn("[snapshots] didn't get the seg or the torrent file")
 			}
 			continue
 		}
 
-		err := s.d.AddInfoHashAsMagnetLink(ctx, Proto2InfoHash(it.TorrentHash), it.Path)
-		if err != nil {
+		if err := s.d.AddInfoHashAsMagnetLink(ctx, Proto2InfoHash(it.TorrentHash), it.Path); err != nil {
 			return nil, err
 		}
 	}
