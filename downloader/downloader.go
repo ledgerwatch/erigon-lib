@@ -299,20 +299,6 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 }
 
 func (d *Downloader) SnapDir() string { return d.cfg.SnapDir }
-func (d *Downloader) addFile(name string) (err error) {
-	name, err = ensureCantLeaveDir(name, d.SnapDir())
-	if err != nil {
-		return err
-	}
-	fPath := filepath.Join(d.SnapDir(), name)
-	if !dir.FileExist(fPath + ".torrent") {
-		log.Warn("[snapshots] can't start seeding file, because .torrent doesn't exists", "file", name)
-		return nil
-	}
-
-	log.Info("[snapshots] start seeding a new snapshot", "file", name)
-	return nil
-}
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
 	//Call this methods outside of `statsLock` critical section, because they have own locks with contention
