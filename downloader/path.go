@@ -12,7 +12,6 @@
 package downloader
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"runtime"
@@ -248,37 +247,6 @@ func Join(elem ...string) string {
 	return join(elem)
 }
 
-// Ext returns the file name extension used by path.
-// The extension is the suffix beginning at the final dot
-// in the final element of path; it is empty if there is
-// no dot.
-func Ext(path string) string {
-	for i := len(path) - 1; i >= 0 && !os.IsPathSeparator(path[i]); i-- {
-		if path[i] == '.' {
-			return path[i:]
-		}
-	}
-	return ""
-}
-
-// EvalSymlinks returns the path name after the evaluation of any symbolic
-// links.
-// If path is relative the result will be relative to the current directory,
-// unless one of the components is an absolute symbolic link.
-// EvalSymlinks calls Clean on the result.
-func EvalSymlinks(path string) (string, error) {
-	return evalSymlinks(path)
-}
-
-// Abs returns an absolute representation of path.
-// If the path is not absolute it will be joined with the current
-// working directory to turn it into an absolute path. The absolute
-// path name for a given file is not guaranteed to be unique.
-// Abs calls Clean on the result.
-func Abs(path string) (string, error) {
-	return abs(path)
-}
-
 func unixAbs(path string) (string, error) {
 	if IsAbs(path) {
 		return Clean(path), nil
@@ -288,86 +256,6 @@ func unixAbs(path string) (string, error) {
 		return "", err
 	}
 	return Join(wd, path), nil
-}
-
-// Rel returns a relative path that is lexically equivalent to targpath when
-// joined to basepath with an intervening separator. That is,
-// Join(basepath, Rel(basepath, targpath)) is equivalent to targpath itself.
-// On success, the returned path will always be relative to basepath,
-// even if basepath and targpath share no elements.
-// An error is returned if targpath can't be made relative to basepath or if
-// knowing the current working directory would be necessary to compute it.
-// Rel calls Clean on the result.
-func Rel(basepath, targpath string) (string, error) {
-	baseVol := VolumeName(basepath)
-	targVol := VolumeName(targpath)
-	base := Clean(basepath)
-	targ := Clean(targpath)
-	if sameWord(targ, base) {
-		return ".", nil
-	}
-	base = base[len(baseVol):]
-	targ = targ[len(targVol):]
-	if base == "." {
-		base = ""
-	} else if base == "" && volumeNameLen(baseVol) > 2 /* isUNC */ {
-		// Treat any targetpath matching `\\host\share` basepath as absolute path.
-		base = string(Separator)
-	}
-
-	// Can't use IsAbs - `\a` and `a` are both relative in Windows.
-	baseSlashed := len(base) > 0 && base[0] == Separator
-	targSlashed := len(targ) > 0 && targ[0] == Separator
-	if baseSlashed != targSlashed || !sameWord(baseVol, targVol) {
-		return "", errors.New("Rel: can't make " + targpath + " relative to " + basepath)
-	}
-	// Position base[b0:bi] and targ[t0:ti] at the first differing elements.
-	bl := len(base)
-	tl := len(targ)
-	var b0, bi, t0, ti int
-	for {
-		for bi < bl && base[bi] != Separator {
-			bi++
-		}
-		for ti < tl && targ[ti] != Separator {
-			ti++
-		}
-		if !sameWord(targ[t0:ti], base[b0:bi]) {
-			break
-		}
-		if bi < bl {
-			bi++
-		}
-		if ti < tl {
-			ti++
-		}
-		b0 = bi
-		t0 = ti
-	}
-	if base[b0:bi] == ".." {
-		return "", errors.New("Rel: can't make " + targpath + " relative to " + basepath)
-	}
-	if b0 != bl {
-		// Base elements left. Must go up before going down.
-		seps := strings.Count(base[b0:bl], string(Separator))
-		size := 2 + seps*3
-		if tl != t0 {
-			size += 1 + tl - t0
-		}
-		buf := make([]byte, size)
-		n := copy(buf, "..")
-		for i := 0; i < seps; i++ {
-			buf[n] = Separator
-			copy(buf[n+1:], "..")
-			n += 3
-		}
-		if t0 != tl {
-			buf[n] = Separator
-			copy(buf[n+1:], targ[t0:])
-		}
-		return string(buf), nil
-	}
-	return targ[t0:], nil
 }
 
 // SkipDir is used as a return value from WalkFuncs to indicate that
@@ -617,26 +505,6 @@ func Base(path string) string {
 		return string(Separator)
 	}
 	return path
-}
-
-// Dir returns all but the last element of path, typically the path's directory.
-// After dropping the final element, Dir calls Clean on the path and trailing
-// slashes are removed.
-// If the path is empty, Dir returns ".".
-// If the path consists entirely of separators, Dir returns a single separator.
-// The returned path does not end in a separator unless it is the root directory.
-func Dir(path string) string {
-	vol := VolumeName(path)
-	i := len(path) - 1
-	for i >= len(vol) && !os.IsPathSeparator(path[i]) {
-		i--
-	}
-	dir := Clean(path[len(vol) : i+1])
-	if dir == "." && len(vol) > 2 {
-		// must be UNC
-		return vol
-	}
-	return vol + dir
 }
 
 // VolumeName returns leading volume name.
