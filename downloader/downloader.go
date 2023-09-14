@@ -565,7 +565,9 @@ func (d *Downloader) Stats() AggStats {
 }
 
 func (d *Downloader) Close() {
-	d.stopMainLoop()
+	if d.stopMainLoop != nil {
+		d.stopMainLoop()
+	}
 	d.wg.Wait()
 	d.torrentClient.Close()
 	if err := d.folder.Close(); err != nil {
