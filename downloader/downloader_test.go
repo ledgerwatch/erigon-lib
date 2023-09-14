@@ -18,6 +18,7 @@ func TestChangeInfoHashOfSameFile(t *testing.T) {
 	require.NoError(err)
 	d, err := New(ctx, cfg)
 	require.NoError(err)
+	defer d.Close()
 	err = d.AddInfoHashAsMagnetLink(ctx, snaptype.Hex2InfoHash("aa"), "a.seg")
 	require.NoError(err)
 	tt, ok := d.torrentClient.Torrent(snaptype.Hex2InfoHash("aa"))
