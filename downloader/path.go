@@ -194,16 +194,6 @@ func unixIsLocal(path string) bool {
 	return true
 }
 
-// ToSlash returns the result of replacing each separator character
-// in path with a slash ('/') character. Multiple separators are
-// replaced by multiple slashes.
-func ToSlash(path string) string {
-	if Separator == '/' {
-		return path
-	}
-	return strings.ReplaceAll(path, string(Separator), "/")
-}
-
 // FromSlash returns the result of replacing each slash ('/') character
 // in path with a separator character. Multiple slashes are replaced
 // by multiple separators.
@@ -212,28 +202,6 @@ func FromSlash(path string) string {
 		return path
 	}
 	return strings.ReplaceAll(path, "/", string(Separator))
-}
-
-// SplitList splits a list of paths joined by the OS-specific ListSeparator,
-// usually found in PATH or GOPATH environment variables.
-// Unlike strings.Split, SplitList returns an empty slice when passed an empty
-// string.
-func SplitList(path string) []string {
-	return splitList(path)
-}
-
-// Split splits path immediately following the final Separator,
-// separating it into a directory and file name component.
-// If there is no Separator in path, Split returns an empty dir
-// and file set to path.
-// The returned values have the property that path = dir+file.
-func Split(path string) (dir, file string) {
-	vol := VolumeName(path)
-	i := len(path) - 1
-	for i >= len(vol) && !os.IsPathSeparator(path[i]) {
-		i--
-	}
-	return path[:i+1], path[i+1:]
 }
 
 // Join joins any number of path elements into a single path,
@@ -262,11 +230,6 @@ func unixAbs(path string) (string, error) {
 // the directory named in the call is to be skipped. It is not returned
 // as an error by any function.
 var SkipDir error = fs.SkipDir
-
-// SkipAll is used as a return value from WalkFuncs to indicate that
-// all remaining files and directories are to be skipped. It is not returned
-// as an error by any function.
-var SkipAll error = fs.SkipAll
 
 // WalkFunc is the type of the function called by Walk to visit each
 // file or directory.
@@ -310,158 +273,6 @@ type WalkFunc func(path string, info fs.FileInfo, err error) error
 
 var lstat = os.Lstat // for testing
 
-// walkDir recursively descends path, calling walkDirFn.
-func walkDir(path string, d fs.DirEntry, walkDirFn fs.WalkDirFunc) error {
-	if err := walkDirFn(path, d, nil); err != nil || !d.IsDir() {
-		if err == SkipDir && d.IsDir() {
-			// Successfully skipped directory.
-			err = nil
-		}
-		return err
-	}
-
-	dirs, err := readDir(path)
-	if err != nil {
-		// Second call, to report ReadDir error.
-		err = walkDirFn(path, d, err)
-		if err != nil {
-			if err == SkipDir && d.IsDir() {
-				err = nil
-			}
-			return err
-		}
-	}
-
-	for _, d1 := range dirs {
-		path1 := Join(path, d1.Name())
-		if err := walkDir(path1, d1, walkDirFn); err != nil {
-			if err == SkipDir {
-				break
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-// walk recursively descends path, calling walkFn.
-func walk(path string, info fs.FileInfo, walkFn WalkFunc) error {
-	if !info.IsDir() {
-		return walkFn(path, info, nil)
-	}
-
-	names, err := readDirNames(path)
-	err1 := walkFn(path, info, err)
-	// If err != nil, walk can't walk into this directory.
-	// err1 != nil means walkFn want walk to skip this directory or stop walking.
-	// Therefore, if one of err and err1 isn't nil, walk will return.
-	if err != nil || err1 != nil {
-		// The caller's behavior is controlled by the return value, which is decided
-		// by walkFn. walkFn may ignore err and return nil.
-		// If walkFn returns SkipDir or SkipAll, it will be handled by the caller.
-		// So walk should return whatever walkFn returns.
-		return err1
-	}
-
-	for _, name := range names {
-		filename := Join(path, name)
-		fileInfo, err := lstat(filename)
-		if err != nil {
-			if err := walkFn(filename, fileInfo, err); err != nil && err != SkipDir {
-				return err
-			}
-		} else {
-			err = walk(filename, fileInfo, walkFn)
-			if err != nil {
-				if !fileInfo.IsDir() || err != SkipDir {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// WalkDir walks the file tree rooted at root, calling fn for each file or
-// directory in the tree, including root.
-//
-// All errors that arise visiting files and directories are filtered by fn:
-// see the fs.WalkDirFunc documentation for details.
-//
-// The files are walked in lexical order, which makes the output deterministic
-// but requires WalkDir to read an entire directory into memory before proceeding
-// to walk that directory.
-//
-// WalkDir does not follow symbolic links.
-//
-// WalkDir calls fn with paths that use the separator character appropriate
-// for the operating system. This is unlike [io/fs.WalkDir], which always
-// uses slash separated paths.
-func WalkDir(root string, fn fs.WalkDirFunc) error {
-	info, err := os.Lstat(root)
-	if err != nil {
-		err = fn(root, nil, err)
-	} else {
-		err = walkDir(root, &statDirEntry{info}, fn)
-	}
-	if err == SkipDir || err == SkipAll {
-		return nil
-	}
-	return err
-}
-
-type statDirEntry struct {
-	info fs.FileInfo
-}
-
-func (d *statDirEntry) Name() string               { return d.info.Name() }
-func (d *statDirEntry) IsDir() bool                { return d.info.IsDir() }
-func (d *statDirEntry) Type() fs.FileMode          { return d.info.Mode().Type() }
-func (d *statDirEntry) Info() (fs.FileInfo, error) { return d.info, nil }
-
-// Walk walks the file tree rooted at root, calling fn for each file or
-// directory in the tree, including root.
-//
-// All errors that arise visiting files and directories are filtered by fn:
-// see the WalkFunc documentation for details.
-//
-// The files are walked in lexical order, which makes the output deterministic
-// but requires Walk to read an entire directory into memory before proceeding
-// to walk that directory.
-//
-// Walk does not follow symbolic links.
-//
-// Walk is less efficient than WalkDir, introduced in Go 1.16,
-// which avoids calling os.Lstat on every visited file or directory.
-func Walk(root string, fn WalkFunc) error {
-	info, err := os.Lstat(root)
-	if err != nil {
-		err = fn(root, nil, err)
-	} else {
-		err = walk(root, info, fn)
-	}
-	if err == SkipDir || err == SkipAll {
-		return nil
-	}
-	return err
-}
-
-// readDir reads the directory named by dirname and returns
-// a sorted list of directory entries.
-func readDir(dirname string) ([]fs.DirEntry, error) {
-	f, err := os.Open(dirname)
-	if err != nil {
-		return nil, err
-	}
-	dirs, err := f.ReadDir(-1)
-	f.Close()
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name() < dirs[j].Name() })
-	return dirs, nil
-}
-
 // readDirNames reads the directory named by dirname and returns
 // a sorted list of directory entry names.
 func readDirNames(dirname string) ([]string, error) {
@@ -476,35 +287,6 @@ func readDirNames(dirname string) ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
-}
-
-// Base returns the last element of path.
-// Trailing path separators are removed before extracting the last element.
-// If the path is empty, Base returns ".".
-// If the path consists entirely of separators, Base returns a single separator.
-func Base(path string) string {
-	if path == "" {
-		return "."
-	}
-	// Strip trailing slashes.
-	for len(path) > 0 && os.IsPathSeparator(path[len(path)-1]) {
-		path = path[0 : len(path)-1]
-	}
-	// Throw away volume name
-	path = path[len(VolumeName(path)):]
-	// Find the last element
-	i := len(path) - 1
-	for i >= 0 && !os.IsPathSeparator(path[i]) {
-		i--
-	}
-	if i >= 0 {
-		path = path[i+1:]
-	}
-	// If empty now, it had only slashes.
-	if path == "" {
-		return string(Separator)
-	}
-	return path
 }
 
 // VolumeName returns leading volume name.
