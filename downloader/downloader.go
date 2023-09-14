@@ -379,7 +379,7 @@ func moveFromTmp(snapDir string) error {
 		return err
 	}
 	for _, p := range paths {
-		if !filepath.IsLocal(p.Name()) {
+		if !IsLocal(p.Name()) {
 			continue
 		}
 		if p.Name() == "tmp" {
