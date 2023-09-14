@@ -50,7 +50,6 @@ type Downloader struct {
 	db                kv.RwDB
 	pieceCompletionDB storage.PieceCompletion
 	torrentClient     *torrent.Client
-	clientLock        *sync.RWMutex
 
 	cfg *downloadercfg.Cfg
 
@@ -117,11 +116,8 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 		pieceCompletionDB: c,
 		folder:            m,
 		torrentClient:     torrentClient,
-		clientLock:        &sync.RWMutex{},
-
-		statsLock: &sync.RWMutex{},
-
-		webseeds: &WebSeeds{},
+		webseeds:          &WebSeeds{},
+		statsLock:         &sync.RWMutex{},
 	}
 	if err := d.addSegments(ctx); err != nil {
 		return nil, err
@@ -300,11 +296,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	}
 }
 
-func (d *Downloader) SnapDir() string {
-	d.clientLock.RLock()
-	defer d.clientLock.RUnlock()
-	return d.cfg.SnapDir
-}
+func (d *Downloader) SnapDir() string { return d.cfg.SnapDir }
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
 	//Call this methods outside of `statsLock` critical section, because they have own locks with contention
@@ -465,14 +457,47 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 	return d.db.Update(context.Background(), func(tx kv.RwTx) error { return nil })
 }
 
-func (d *Downloader) AddInfoHashAsMagnetLink(ctx context.Context, infoHash metainfo.Hash, name string) error {
-	mi := &metainfo.MetaInfo{AnnounceList: Trackers}
-	//log.Debug("[downloader] downloading torrent and seg file", "hash", infoHash)
+// AddNewSeedableFile decides what we do depending on wether we have the .seg file or the .torrent file
+// have .torrent no .seg => get .seg file from .torrent
+// have .seg no .torrent => get .torrent from .seg
+func (d *Downloader) AddNewSeedableFile(ctx context.Context, name string) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+	}
+	// if we don't have the torrent file we build it if we have the .seg file
+	if err := buildTorrentIfNeed(ctx, name, d.SnapDir()); err != nil {
+		return false, err
+	}
 
+	// we add the .seg file we have and create the .torrent file if we don't have it
+	ok, err := AddSegment(name, d.SnapDir(), d.torrentClient)
+	if err != nil {
+		return false, fmt.Errorf("AddSegment: %w", err)
+	}
+
+	// torrent file does exist and seg
+	if !ok {
+		return false, nil
+	}
+
+	// we skip the item in for loop since we build the seg and torrent file here
+	return true, nil
+}
+
+func (d *Downloader) AddInfoHashAsMagnetLink(ctx context.Context, infoHash metainfo.Hash, name string) error {
 	if _, ok := d.torrentClient.Torrent(infoHash); ok {
-		//log.Debug("[downloader] torrent client related to hash found", "hash", infoHash)
 		return nil
 	}
+	// Paranoic Mode on: don't allow user pass file with same name, but another infoHash
+	for _, t := range d.torrentClient.Torrents() {
+		if t.Name() == name {
+			return nil
+		}
+	}
+
+	mi := &metainfo.MetaInfo{AnnounceList: Trackers}
 
 	magnet := mi.Magnet(&infoHash, &metainfo.Info{Name: name})
 	t, err := d.torrentClient.AddMagnet(magnet.String())
@@ -600,11 +625,7 @@ func (d *Downloader) StopSeeding(hash metainfo.Hash) error {
 	return nil
 }
 
-func (d *Downloader) Torrent() *torrent.Client {
-	d.clientLock.RLock()
-	defer d.clientLock.RUnlock()
-	return d.torrentClient
-}
+func (d *Downloader) Torrent() *torrent.Client { return d.torrentClient }
 
 func openClient(cfg *torrent.ClientConfig) (db kv.RwDB, c storage.PieceCompletion, m storage.ClientImplCloser, torrentClient *torrent.Client, err error) {
 	snapDir := cfg.DataDir
