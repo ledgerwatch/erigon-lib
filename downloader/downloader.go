@@ -460,30 +460,32 @@ func (d *Downloader) VerifyData(ctx context.Context) error {
 // AddNewSeedableFile decides what we do depending on wether we have the .seg file or the .torrent file
 // have .torrent no .seg => get .seg file from .torrent
 // have .seg no .torrent => get .torrent from .seg
-func (d *Downloader) AddNewSeedableFile(ctx context.Context, name string) (bool, error) {
+func (d *Downloader) AddNewSeedableFile(ctx context.Context, name string) error {
 	select {
 	case <-ctx.Done():
-		return false, ctx.Err()
+		return ctx.Err()
 	default:
 	}
 	// if we don't have the torrent file we build it if we have the .seg file
 	if err := buildTorrentIfNeed(ctx, name, d.SnapDir()); err != nil {
-		return false, err
+		return err
 	}
 
 	// we add the .seg file we have and create the .torrent file if we don't have it
 	ok, err := AddSegment(name, d.SnapDir(), d.torrentClient)
 	if err != nil {
-		return false, fmt.Errorf("AddSegment: %w", err)
+		return fmt.Errorf("AddSegment: %w", err)
 	}
 
 	// torrent file does exist and seg
 	if !ok {
-		return false, nil
+		log.Warn("[snapshots] by some reason can't start seeding new file", "file", name)
+		return nil
 	}
+	log.Info("[snapshots] start seeding a new snapshot", "file", name)
 
 	// we skip the item in for loop since we build the seg and torrent file here
-	return true, nil
+	return nil
 }
 
 func (d *Downloader) AddInfoHashAsMagnetLink(ctx context.Context, infoHash metainfo.Hash, name string) error {
