@@ -50,7 +50,6 @@ type Downloader struct {
 	db                kv.RwDB
 	pieceCompletionDB storage.PieceCompletion
 	torrentClient     *torrent.Client
-	clientLock        *sync.RWMutex
 
 	cfg *downloadercfg.Cfg
 
@@ -117,7 +116,6 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 		pieceCompletionDB: c,
 		folder:            m,
 		torrentClient:     torrentClient,
-		clientLock:        &sync.RWMutex{},
 
 		statsLock: &sync.RWMutex{},
 
@@ -164,7 +162,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 		// First loop drops torrents that were downloaded or are already complete
 		// This improves efficiency of download by reducing number of active torrent (empirical observation)
 	DownloadLoop:
-		torrents := d.Torrent().Torrents()
+		torrents := d.TorrentClient().Torrents()
 		for _, t := range torrents {
 			if _, already := torrentMap[t.InfoHash()]; already {
 				continue
@@ -201,14 +199,14 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				//t.Drop()
 			}(t)
 		}
-		if len(torrents) != len(d.Torrent().Torrents()) { //if amount of torrents changed - keep downloading
+		if len(torrents) != len(d.TorrentClient().Torrents()) { //if amount of torrents changed - keep downloading
 			goto DownloadLoop
 		}
 
 		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
 		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
 	DownloadLoop2:
-		torrents = d.Torrent().Torrents()
+		torrents = d.TorrentClient().Torrents()
 		for _, t := range torrents {
 			if _, already := torrentMap[t.InfoHash()]; already {
 				continue
@@ -240,7 +238,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				}
 			}(t)
 		}
-		if len(torrents) != len(d.Torrent().Torrents()) { //if amount of torrents changed - keep downloading
+		if len(torrents) != len(d.TorrentClient().Torrents()) { //if amount of torrents changed - keep downloading
 			goto DownloadLoop2
 		}
 	}()
@@ -291,7 +289,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				"files", stats.FilesTotal)
 
 			if stats.PeersUnique == 0 {
-				ips := d.Torrent().BadPeerIPs()
+				ips := d.TorrentClient().BadPeerIPs()
 				if len(ips) > 0 {
 					log.Info("[snapshots] Stats", "banned", ips)
 				}
@@ -300,11 +298,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	}
 }
 
-func (d *Downloader) SnapDir() string {
-	d.clientLock.RLock()
-	defer d.clientLock.RUnlock()
-	return d.cfg.SnapDir
-}
+func (d *Downloader) SnapDir() string { return d.cfg.SnapDir }
 
 func (d *Downloader) ReCalcStats(interval time.Duration) {
 	//Call this methods outside of `statsLock` critical section, because they have own locks with contention
@@ -641,11 +635,7 @@ func (d *Downloader) StopSeeding(hash metainfo.Hash) error {
 	return nil
 }
 
-func (d *Downloader) Torrent() *torrent.Client {
-	d.clientLock.RLock()
-	defer d.clientLock.RUnlock()
-	return d.torrentClient
-}
+func (d *Downloader) TorrentClient() *torrent.Client { return d.torrentClient }
 
 func openClient(cfg *torrent.ClientConfig) (db kv.RwDB, c storage.PieceCompletion, m storage.ClientImplCloser, torrentClient *torrent.Client, err error) {
 	snapDir := cfg.DataDir
@@ -680,7 +670,7 @@ func openClient(cfg *torrent.ClientConfig) (db kv.RwDB, c storage.PieceCompletio
 }
 
 func (d *Downloader) applyWebseeds() {
-	for _, t := range d.Torrent().Torrents() {
+	for _, t := range d.TorrentClient().Torrents() {
 		urls, ok := d.webseeds.GetByFileNames()[t.Name()]
 		if !ok {
 			continue
