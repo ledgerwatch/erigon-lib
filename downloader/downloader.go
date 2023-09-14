@@ -56,7 +56,9 @@ type Downloader struct {
 	statsLock *sync.RWMutex
 	stats     AggStats
 
-	folder       storage.ClientImplCloser
+	folder storage.ClientImplCloser
+
+	ctx          context.Context
 	stopMainLoop context.CancelFunc
 	wg           sync.WaitGroup
 
@@ -116,12 +118,12 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 		pieceCompletionDB: c,
 		folder:            m,
 		torrentClient:     torrentClient,
-
-		statsLock: &sync.RWMutex{},
-
-		webseeds: &WebSeeds{},
+		statsLock:         &sync.RWMutex{},
+		webseeds:          &WebSeeds{},
 	}
-	if err := d.addSegments(ctx); err != nil {
+	d.ctx, d.stopMainLoop = context.WithCancel(ctx)
+
+	if err := d.addSegments(d.ctx); err != nil {
 		return nil, err
 	}
 	// CornerCase: no peers -> no anoncments to trackers -> no magnetlink resolution (but magnetlink has filename)
@@ -129,18 +131,17 @@ func New(ctx context.Context, cfg *downloadercfg.Cfg) (*Downloader, error) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		d.webseeds.Discover(ctx, d.cfg.WebSeedUrls, d.cfg.WebSeedFiles)
+		d.webseeds.Discover(d.ctx, d.cfg.WebSeedUrls, d.cfg.WebSeedFiles)
 		d.applyWebseeds()
 	}()
 	return d, nil
 }
 
-func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
-	ctx, d.stopMainLoop = context.WithCancel(ctx)
+func (d *Downloader) MainLoopInBackground(silent bool) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		if err := d.mainLoop(ctx, silent); err != nil {
+		if err := d.mainLoop(silent); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Warn("[snapshots]", "err", err)
 			}
@@ -148,7 +149,7 @@ func (d *Downloader) MainLoopInBackground(ctx context.Context, silent bool) {
 	}()
 }
 
-func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
+func (d *Downloader) mainLoop(silent bool) error {
 	var sem = semaphore.NewWeighted(int64(d.cfg.DownloadSlots))
 
 	d.wg.Add(1)
@@ -168,7 +169,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				continue
 			}
 			select {
-			case <-ctx.Done():
+			case <-d.ctx.Done():
 				return
 			case <-t.GotInfo():
 			}
@@ -179,7 +180,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				torrentMap[t.InfoHash()] = struct{}{}
 				continue
 			}
-			if err := sem.Acquire(ctx, 1); err != nil {
+			if err := sem.Acquire(d.ctx, 1); err != nil {
 				return
 			}
 			t.AllowDataDownload()
@@ -190,7 +191,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				defer d.wg.Done()
 				defer sem.Release(1)
 				select {
-				case <-ctx.Done():
+				case <-d.ctx.Done():
 					return
 				case <-t.Complete.On():
 				}
@@ -212,7 +213,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				continue
 			}
 			select {
-			case <-ctx.Done():
+			case <-d.ctx.Done():
 				return
 			case <-t.GotInfo():
 			}
@@ -221,7 +222,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				torrentMap[t.InfoHash()] = struct{}{}
 				continue
 			}
-			if err := sem.Acquire(ctx, 1); err != nil {
+			if err := sem.Acquire(d.ctx, 1); err != nil {
 				return
 			}
 			t.AllowDataDownload()
@@ -232,7 +233,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				defer d.wg.Done()
 				defer sem.Release(1)
 				select {
-				case <-ctx.Done():
+				case <-d.ctx.Done():
 					return
 				case <-t.Complete.On():
 				}
@@ -253,8 +254,8 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 	justCompleted := true
 	for {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-d.ctx.Done():
+			return d.ctx.Err()
 		case <-statEvery.C:
 			d.ReCalcStats(statInterval)
 
@@ -269,7 +270,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				if justCompleted {
 					justCompleted = false
 					// force fsync of db. to not loose results of downloading on power-off
-					_ = d.db.Update(ctx, func(tx kv.RwTx) error { return nil })
+					_ = d.db.Update(d.ctx, func(tx kv.RwTx) error { return nil })
 				}
 
 				log.Info("[snapshots] Seeding",
@@ -565,9 +566,7 @@ func (d *Downloader) Stats() AggStats {
 }
 
 func (d *Downloader) Close() {
-	if d.stopMainLoop != nil {
-		d.stopMainLoop()
-	}
+	d.stopMainLoop()
 	d.wg.Wait()
 	d.torrentClient.Close()
 	if err := d.folder.Close(); err != nil {
