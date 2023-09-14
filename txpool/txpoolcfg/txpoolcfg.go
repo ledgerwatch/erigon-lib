@@ -53,7 +53,7 @@ var DefaultConfig = Config{
 	SyncToNewPeersEvery:   5 * time.Second,
 	ProcessRemoteTxsEvery: 100 * time.Millisecond,
 	CommitEvery:           15 * time.Second,
-	LogEvery:              30 * time.Second,
+	LogEvery:              1 * time.Minute,
 
 	PendingSubPoolLimit: 10_000,
 	BaseFeeSubPoolLimit: 10_000,
