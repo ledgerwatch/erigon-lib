@@ -41,6 +41,7 @@ import (
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/pelletier/go-toml/v2"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
@@ -156,91 +157,85 @@ func (d *Downloader) mainLoop(silent bool) error {
 	go func() {
 		defer d.wg.Done()
 
-		// 2 loops: 1-st waiting for "torrents resolution" (receiving metadata from trackers)
-
 		// Torrents that are already taken care of
 		torrentMap := map[metainfo.Hash]struct{}{}
 		// First loop drops torrents that were downloaded or are already complete
 		// This improves efficiency of download by reducing number of active torrent (empirical observation)
-	DownloadLoop:
-		torrents := d.TorrentClient().Torrents()
-		for _, t := range torrents {
-			if _, already := torrentMap[t.InfoHash()]; already {
-				continue
-			}
-			select {
-			case <-d.ctx.Done():
-				return
-			case <-t.GotInfo():
-			}
-			if t.Complete.Bool() {
-				atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
-				atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-				//t.Drop()
-				torrentMap[t.InfoHash()] = struct{}{}
-				continue
-			}
-			if err := sem.Acquire(d.ctx, 1); err != nil {
-				return
-			}
-			t.AllowDataDownload()
-			t.DownloadAll()
-			torrentMap[t.InfoHash()] = struct{}{}
-			d.wg.Add(1)
-			go func(t *torrent.Torrent) {
-				defer d.wg.Done()
-				defer sem.Release(1)
-				select {
-				case <-d.ctx.Done():
-					return
-				case <-t.Complete.On():
+		for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
+			for _, t := range torrents {
+				if _, already := torrentMap[t.InfoHash()]; already {
+					continue
 				}
-				atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
-				atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-				//t.Drop()
-			}(t)
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.GotInfo():
+				}
+				if t.Complete.Bool() {
+					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
+					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
+					t.Drop()
+					torrentMap[t.InfoHash()] = struct{}{}
+					continue
+				}
+				if err := sem.Acquire(ctx, 1); err != nil {
+					return
+				}
+				t.AllowDataDownload()
+				t.DownloadAll()
+				torrentMap[t.InfoHash()] = struct{}{}
+				d.wg.Add(1)
+				go func(t *torrent.Torrent) {
+					defer d.wg.Done()
+					defer sem.Release(1)
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.Complete.On():
+					}
+					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
+					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
+					t.Drop()
+				}(t)
+			}
 		}
-		if len(torrents) != len(d.TorrentClient().Torrents()) { //if amount of torrents changed - keep downloading
-			goto DownloadLoop
-		}
-
 		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
 		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
-	DownloadLoop2:
-		torrents = d.TorrentClient().Torrents()
-		for _, t := range torrents {
-			if _, already := torrentMap[t.InfoHash()]; already {
-				continue
-			}
-			select {
-			case <-d.ctx.Done():
-				return
-			case <-t.GotInfo():
-			}
-			if t.Complete.Bool() {
-				//t.Drop()
-				torrentMap[t.InfoHash()] = struct{}{}
-				continue
-			}
-			if err := sem.Acquire(d.ctx, 1); err != nil {
-				return
-			}
-			t.AllowDataDownload()
-			t.DownloadAll()
-			torrentMap[t.InfoHash()] = struct{}{}
-			d.wg.Add(1)
-			go func(t *torrent.Torrent) {
-				defer d.wg.Done()
-				defer sem.Release(1)
-				select {
-				case <-d.ctx.Done():
-					return
-				case <-t.Complete.On():
+		d.addSegments(ctx)
+		maps.Clear(torrentMap)
+		for {
+			torrents := d.Torrent().Torrents()
+			for _, t := range torrents {
+				if _, already := torrentMap[t.InfoHash()]; already {
+					continue
 				}
-			}(t)
-		}
-		if len(torrents) != len(d.TorrentClient().Torrents()) { //if amount of torrents changed - keep downloading
-			goto DownloadLoop2
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.GotInfo():
+				}
+				if t.Complete.Bool() {
+					torrentMap[t.InfoHash()] = struct{}{}
+					continue
+				}
+				if err := sem.Acquire(ctx, 1); err != nil {
+					return
+				}
+				t.AllowDataDownload()
+				t.DownloadAll()
+				torrentMap[t.InfoHash()] = struct{}{}
+				d.wg.Add(1)
+				go func(t *torrent.Torrent) {
+					defer d.wg.Done()
+					defer sem.Release(1)
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.Complete.On():
+					}
+				}(t)
+			}
+			time.Sleep(10 * time.Second)
 		}
 	}()
 
