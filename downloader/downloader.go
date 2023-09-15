@@ -256,6 +256,7 @@ func (d *Downloader) mainLoop(silent bool) error {
 
 		case <-logEvery.C:
 			if silent {
+				time.Sleep(time.Minute)
 				continue
 			}
 
