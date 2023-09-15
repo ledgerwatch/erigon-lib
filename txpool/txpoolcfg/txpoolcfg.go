@@ -61,7 +61,7 @@ var DefaultConfig = Config{
 
 	MinFeeCap:     1,
 	AccountSlots:  16, //TODO: to choose right value (16 to be compatible with Geth)
-	BlobSlots:     12, // Number of blobs (not txs) allowed per account
+	BlobSlots:     24, // Number of blobs (not txs) allowed per account
 	PriceBump:     10, // Price bump percentage to replace an already existing transaction
 	BlobPriceBump: 100,
 }
