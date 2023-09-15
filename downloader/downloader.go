@@ -161,13 +161,13 @@ func (d *Downloader) mainLoop(silent bool) error {
 		torrentMap := map[metainfo.Hash]struct{}{}
 		// First loop drops torrents that were downloaded or are already complete
 		// This improves efficiency of download by reducing number of active torrent (empirical observation)
-		for torrents := d.Torrent().Torrents(); len(torrents) > 0; torrents = d.Torrent().Torrents() {
+		for torrents := d.torrentClient.Torrents(); len(torrents) > 0; torrents = d.torrentClient.Torrents() {
 			for _, t := range torrents {
 				if _, already := torrentMap[t.InfoHash()]; already {
 					continue
 				}
 				select {
-				case <-ctx.Done():
+				case <-d.ctx.Done():
 					return
 				case <-t.GotInfo():
 				}
@@ -178,7 +178,7 @@ func (d *Downloader) mainLoop(silent bool) error {
 					torrentMap[t.InfoHash()] = struct{}{}
 					continue
 				}
-				if err := sem.Acquire(ctx, 1); err != nil {
+				if err := sem.Acquire(d.ctx, 1); err != nil {
 					return
 				}
 				t.AllowDataDownload()
@@ -189,7 +189,7 @@ func (d *Downloader) mainLoop(silent bool) error {
 					defer d.wg.Done()
 					defer sem.Release(1)
 					select {
-					case <-ctx.Done():
+					case <-d.ctx.Done():
 						return
 					case <-t.Complete.On():
 					}
@@ -201,16 +201,16 @@ func (d *Downloader) mainLoop(silent bool) error {
 		}
 		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
 		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
-		d.addSegments(ctx)
+		d.addSegments(d.ctx)
 		maps.Clear(torrentMap)
 		for {
-			torrents := d.Torrent().Torrents()
+			torrents := d.torrentClient.Torrents()
 			for _, t := range torrents {
 				if _, already := torrentMap[t.InfoHash()]; already {
 					continue
 				}
 				select {
-				case <-ctx.Done():
+				case <-d.ctx.Done():
 					return
 				case <-t.GotInfo():
 				}
@@ -218,7 +218,7 @@ func (d *Downloader) mainLoop(silent bool) error {
 					torrentMap[t.InfoHash()] = struct{}{}
 					continue
 				}
-				if err := sem.Acquire(ctx, 1); err != nil {
+				if err := sem.Acquire(d.ctx, 1); err != nil {
 					return
 				}
 				t.AllowDataDownload()
@@ -229,7 +229,7 @@ func (d *Downloader) mainLoop(silent bool) error {
 					defer d.wg.Done()
 					defer sem.Release(1)
 					select {
-					case <-ctx.Done():
+					case <-d.ctx.Done():
 						return
 					case <-t.Complete.On():
 					}
