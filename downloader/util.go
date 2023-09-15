@@ -127,13 +127,6 @@ func seedableSegmentFiles(dir string) ([]string, error) {
 		if !snaptype.IsCorrectFileName(f.Name()) {
 			continue
 		}
-		fileInfo, err := f.Info()
-		if err != nil {
-			return nil, err
-		}
-		if fileInfo.Size() == 0 {
-			continue
-		}
 		if filepath.Ext(f.Name()) != ".seg" { // filter out only compressed files
 			continue
 		}
@@ -149,10 +142,22 @@ func seedableSegmentFiles(dir string) ([]string, error) {
 	return res, nil
 }
 
-var historyFileRegex = regexp.MustCompile("^([[:lower:]]+).([0-9]+)-([0-9]+).(v|ef)$")
+var historyFileRegex = regexp.MustCompile("^([[:lower:]]+).([0-9]+)-([0-9]+).(.*)$")
 
-func seedableHistorySnapshots(dir string) ([]string, error) {
-	historyDir := filepath.Join(dir, "history")
+func seedableHistorySnapshots(dir, subDir string) ([]string, error) {
+	l, err := seedableSnapshotsBySubDir(dir, "history")
+	if err != nil {
+		return nil, err
+	}
+	l2, err := seedableSnapshotsBySubDir(dir, "warm")
+	if err != nil {
+		return nil, err
+	}
+	return append(l, l2...), nil
+}
+
+func seedableSnapshotsBySubDir(dir, subDir string) ([]string, error) {
+	historyDir := filepath.Join(dir, subDir)
 	dir2.MustExist(historyDir)
 	files, err := os.ReadDir(historyDir)
 	if err != nil {
@@ -166,13 +171,6 @@ func seedableHistorySnapshots(dir string) ([]string, error) {
 		if !f.Type().IsRegular() {
 			continue
 		}
-		fileInfo, err := f.Info()
-		if err != nil {
-			return nil, err
-		}
-		if fileInfo.Size() == 0 {
-			continue
-		}
 		ext := filepath.Ext(f.Name())
 		if ext != ".v" && ext != ".ef" && ext != ".kv" { // filter out only compressed files
 			continue
@@ -182,7 +180,7 @@ func seedableHistorySnapshots(dir string) ([]string, error) {
 		if len(subs) != 5 {
 			continue
 		}
-
+		// Check that it's seedable
 		from, err := strconv.ParseUint(subs[2], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("ParseFileName: %w", err)
@@ -191,10 +189,10 @@ func seedableHistorySnapshots(dir string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ParseFileName: %w", err)
 		}
-		if to-from != snaptype.Erigon3SeedableSteps {
+		if (to-from)%snaptype.Erigon3SeedableSteps != 0 {
 			continue
 		}
-		res = append(res, filepath.Join("history", f.Name()))
+		res = append(res, filepath.Join(subDir, f.Name()))
 	}
 	return res, nil
 }
@@ -234,15 +232,10 @@ func BuildTorrentFilesIfNeed(ctx context.Context, snapDir string) ([]string, err
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
 
-	files, err := seedableSegmentFiles(snapDir)
+	files, err := seedableFiles(snapDir)
 	if err != nil {
 		return nil, err
 	}
-	files2, err := seedableHistorySnapshots(snapDir)
-	if err != nil {
-		return nil, err
-	}
-	files = append(files, files2...)
 
 	errs := make(chan error, len(files)*2)
 	wg := &sync.WaitGroup{}

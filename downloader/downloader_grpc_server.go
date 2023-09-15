@@ -51,6 +51,9 @@ func (s *GrpcServer) Download(ctx context.Context, request *proto_downloader.Dow
 	torrentClient := s.d.Torrent()
 	snapDir := s.d.SnapDir()
 	for i, it := range request.Items {
+		if it.Path == "" {
+			return nil, fmt.Errorf("field 'path' is required")
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -137,5 +140,3 @@ func seedNewSnapshot(it *proto_downloader.DownloadItem, torrentClient *torrent.C
 	// we skip the item in for loop since we build the seg and torrent file here
 	return true, nil
 }
-
-// we dont have .seg or .torrent so we get them through the torrent hash
