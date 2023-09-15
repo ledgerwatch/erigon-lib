@@ -365,11 +365,10 @@ func (p *TxPool) OnNewBlock(ctx context.Context, stateChanges *remote.StateChang
 		}
 	}
 
-	if err := removeMined(p.all, minedTxs.Txs, p.pending, p.baseFee, p.queued, p.discardLocked, p.logger); err != nil {
+	if err := p.processMinedFinalizedBlobs(coreTx, minedTxs.Txs, stateChanges.FinalizedBlock); err != nil {
 		return err
 	}
-
-	if err := p.processMinedFinalizedBlobs(coreTx, minedTxs.Txs, stateChanges.FinalizedBlock); err != nil {
+	if err := removeMined(p.all, minedTxs.Txs, p.pending, p.baseFee, p.queued, p.discardLocked, p.logger); err != nil {
 		return err
 	}
 
@@ -1006,6 +1005,7 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 	}
 
 	reasons, newTxs, err := p.validateTxs(&newTransactions, cacheView)
+	log.Info("[SPIDERMAN] AddLocalTxs : ", "reasons ", reasons)
 	if err != nil {
 		return nil, err
 	}
@@ -1263,9 +1263,6 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 		return txpoolcfg.FeeTooLow
 	}
 
-	// Remove from mined cache as we are now "resurrecting" it to a sub-pool
-	p.deleteMinedBlobTxn(string(mt.Tx.IDHash[:]))
-
 	p.byHash[string(mt.Tx.IDHash[:])] = mt
 
 	if replaced := p.all.replaceOrInsert(mt); replaced != nil {
@@ -1279,6 +1276,8 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 	}
 	// All transactions are first added to the queued pool and then immediately promoted from there if required
 	p.queued.Add(mt, p.logger)
+	// Remove from mined cache as we are now "resurrecting" it to a sub-pool
+	p.deleteMinedBlobTxn(string(mt.Tx.IDHash[:]))
 	return txpoolcfg.NotSet
 }
 
@@ -1293,6 +1292,7 @@ func (p *TxPool) discardLocked(mt *metaTx, reason txpoolcfg.DiscardReason) {
 
 // Cache recently mined blobs in anticipation of reorg, delete finalized ones
 func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSlot, finalizedBlock uint64) error {
+	p.lastFinalizedBlock.Store(finalizedBlock)
 	// Remove blobs in the finalized block and older, loop through all entries
 	for l := len(p.minedBlobTxsByBlock); l > 0 && finalizedBlock > 0; l-- {
 		// delete individual hashes
@@ -1316,8 +1316,6 @@ func (p *TxPool) processMinedFinalizedBlobs(coreTx kv.Tx, minedTxs []*types.TxSl
 			p.minedBlobTxsByHash[string(txn.IDHash[:])] = mt
 		}
 	}
-
-	p.lastFinalizedBlock.Store(finalizedBlock)
 	return nil
 }
 
