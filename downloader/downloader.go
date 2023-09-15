@@ -190,9 +190,6 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 
 		atomic.StoreUint64(&d.stats.DroppedCompleted, 0)
 		atomic.StoreUint64(&d.stats.DroppedTotal, 0)
-		if err := d.addSegments(ctx); err != nil {
-			return
-		}
 	DownloadLoop2:
 		torrents = d.Torrent().Torrents()
 		for _, t := range torrents {
@@ -482,7 +479,7 @@ func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *pro
 		}
 
 		mi := t.Metainfo()
-		if err := CreateTorrentFileIfNotExists(snapDir, t.Info(), &mi); err != nil {
+		if err := CreateTorrentFileIfNotExists(d.SnapDir(), t.Info(), &mi); err != nil {
 			log.Warn("[downloader] create torrent file", "err", err)
 			return
 		}
@@ -491,6 +488,23 @@ func (d *Downloader) createMagnetLinkWithInfoHash(ctx context.Context, hash *pro
 	return false, nil
 }
 
+func seedableFiles(snapDir string) ([]string, error) {
+	files, err := seedableSegmentFiles(snapDir)
+	if err != nil {
+		return nil, fmt.Errorf("seedableSegmentFiles: %w", err)
+	}
+	files2, err := seedableHistorySnapshots(snapDir, "history")
+	if err != nil {
+		return nil, fmt.Errorf("seedableHistorySnapshots: %w", err)
+	}
+	files = append(files, files2...)
+	files2, err = seedableHistorySnapshots(snapDir, "warm")
+	if err != nil {
+		return nil, fmt.Errorf("seedableHistorySnapshots: %w", err)
+	}
+	files = append(files, files2...)
+	return files, nil
+}
 func (d *Downloader) addSegments(ctx context.Context) error {
 	logEvery := time.NewTicker(20 * time.Second)
 	defer logEvery.Stop()
@@ -498,15 +512,10 @@ func (d *Downloader) addSegments(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	files, err := seedableSegmentFiles(d.SnapDir())
+	files, err := seedableFiles(d.SnapDir())
 	if err != nil {
 		return fmt.Errorf("seedableSegmentFiles: %w", err)
 	}
-	files2, err := seedableHistorySnapshots(d.SnapDir())
-	if err != nil {
-		return fmt.Errorf("seedableHistorySnapshots: %w", err)
-	}
-	files = append(files, files2...)
 
 	g, ctx := errgroup.WithContext(ctx)
 	i := atomic.Int64{}
