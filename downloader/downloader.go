@@ -160,7 +160,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 				if t.Complete.Bool() {
 					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
 					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-					//t.Drop()
+					t.Drop()
 					torrentMap[t.InfoHash()] = struct{}{}
 					continue
 				}
@@ -181,7 +181,7 @@ func (d *Downloader) mainLoop(ctx context.Context, silent bool) error {
 					}
 					atomic.AddUint64(&d.stats.DroppedCompleted, uint64(t.BytesCompleted()))
 					atomic.AddUint64(&d.stats.DroppedTotal, uint64(t.Length()))
-					//t.Drop()
+					t.Drop()
 				}(t)
 			}
 		}
