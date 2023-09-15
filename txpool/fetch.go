@@ -476,15 +476,16 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				}
 			}
 			if change.Direction == remote.Direction_UNWIND {
-				unwindTxs.Resize(uint(len(change.Txs)))
 				for i := range change.Txs {
-					unwindTxs.Txs[i] = &types2.TxSlot{}
 					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
-						_, err = parseContext.ParseTransaction(change.Txs[i], 0, unwindTxs.Txs[i], unwindTxs.Senders.At(i), false /* hasEnvelope */, false /* wrappedWithBlobs */, nil)
-						if unwindTxs.Txs[i].Type == types2.BlobTxType {
-							knownBlobTxn := f.pool.GetKnownBlobTxn(tx, unwindTxs.Txs[i].IDHash[:])
+						utx := &types2.TxSlot{}
+						sender := make([]byte, 20)
+						_, err = parseContext.ParseTransaction(change.Txs[i], 0, utx, sender, false /* hasEnvelope */, false /* wrappedWithBlobs */, nil)
+						if utx.Type == types2.BlobTxType {
+							knownBlobTxn := f.pool.GetKnownBlobTxn(tx, utx.IDHash[:])
+							// Get the blob tx from cache; ignore altogether if it isn't there
 							if knownBlobTxn != nil {
-								unwindTxs.Txs[i] = knownBlobTxn.Tx
+								unwindTxs.Append(knownBlobTxn.Tx, sender, false)
 							}
 						}
 						return err
@@ -495,9 +496,7 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 				}
 			}
 		}
-		// TODO(eip-4844): If there are blob txs that need to be unwound, these will not replay properly since we only have the
-		// unwrapped version here, if not obtained from minedBlobs cache 
-		// (we would need to re-wrap the tx with its blobs & kzg commitments).
+
 		if err := f.db.View(ctx, func(tx kv.Tx) error {
 			return f.pool.OnNewBlock(ctx, req, unwindTxs, minedTxs, tx)
 		}); err != nil && !errors.Is(err, context.Canceled) {
