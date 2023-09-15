@@ -220,7 +220,7 @@ type TxPool struct {
 	lastFinalizedBlock      atomic.Uint64
 	started                 atomic.Bool
 	pendingBaseFee          atomic.Uint64
-	pendingBlobFee			atomic.Uint64					// For gas accounting for blobs, which has its own dimension
+	pendingBlobFee          atomic.Uint64 // For gas accounting for blobs, which has its own dimension
 	blockGasLimit           atomic.Uint64
 	shanghaiTime            *uint64
 	isPostShanghai          atomic.Bool
@@ -553,7 +553,7 @@ func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx {
 	if has, _ := tx.Has(kv.PoolTransaction, hash); has {
 		txn, err := tx.GetOne(kv.PoolTransaction, hash)
 		if err != nil {
-			return nil 
+			return nil
 		}
 		parseCtx := types.NewTxParseContext(p.chainID)
 		parseCtx.WithSender(false)
@@ -1259,7 +1259,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 	}
 
 	// Don't add blob tx to queued if it's less than current pending blob base fee
-	if mt.Tx.Type == types.BlobTxType && mt.Tx.BlobFeeCap.Cmp( uint256.NewInt(p.pendingBlobFee.Load())) < 0{
+	if mt.Tx.Type == types.BlobTxType && mt.Tx.BlobFeeCap.Cmp(uint256.NewInt(p.pendingBlobFee.Load())) < 0 {
 		return txpoolcfg.FeeTooLow
 	}
 
@@ -2462,7 +2462,7 @@ type BestQueue struct {
 // Returns true if the txn "mt" is better than the parameter txn "than"
 // it first compares the subpool markers of the two meta txns, then,
 // (since they have the same subpool marker, and thus same pool)
-// depending on the pool - pending (P), basefee (B), queued (Q) - 
+// depending on the pool - pending (P), basefee (B), queued (Q) -
 // it compares the effective tip (for P), nonceDistance (for both P,Q)
 // minFeeCap (for B), and cumulative balance distance (for P, Q)
 func (mt *metaTx) better(than *metaTx, pendingBaseFee uint256.Int) bool {

@@ -737,9 +737,9 @@ func TestBlobTxReplacement(t *testing.T) {
 
 	h1 := gointerfaces.ConvertHashToH256([32]byte{})
 	change := &remote.StateChangeBatch{
-		StateVersionId:      stateVersionID,
-		PendingBlockBaseFee: pendingBaseFee,
-		BlockGasLimit:       1000000,
+		StateVersionId:       stateVersionID,
+		PendingBlockBaseFee:  pendingBaseFee,
+		BlockGasLimit:        1000000,
 		PendingBlobFeePerGas: 100_000,
 		ChangeBatch: []*remote.StateChange{
 			{BlockHeight: 0, BlockHash: h1},
