@@ -727,18 +727,16 @@ func TestBlobTxReplacement(t *testing.T) {
 	ch := make(chan types.Announcements, 5)
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 	cfg := txpoolcfg.DefaultConfig
-	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, common.Big0, log.New())
+	pool, err := New(ch, coreDB, cfg, &kvcache.DummyCache{}, *u256.N1, nil, common.Big0, log.New())
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
 	var stateVersionID uint64 = 0
-	pendingBaseFee := uint64(200_000)
 
 	h1 := gointerfaces.ConvertHashToH256([32]byte{})
 	change := &remote.StateChangeBatch{
 		StateVersionId:       stateVersionID,
-		PendingBlockBaseFee:  pendingBaseFee,
+		PendingBlockBaseFee:  200_000,
 		BlockGasLimit:        1000000,
 		PendingBlobFeePerGas: 100_000,
 		ChangeBatch: []*remote.StateChange{
@@ -832,7 +830,7 @@ func TestBlobTxReplacement(t *testing.T) {
 		blobTxn.Nonce = 0x2
 		txSlots := types.TxSlots{}
 
-		//Get the config of the pool for BlobPriceBump and bump all prices
+		//Get the config of the pool for BlobPriceBump and bump ALL prices
 		requiredPriceBump := pool.cfg.BlobPriceBump
 		blobTxn.Tip.MulDivOverflow(tip, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
 		blobTxn.FeeCap.MulDivOverflow(feeCap, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
@@ -865,8 +863,8 @@ func makeBlobTx() types.TxSlot {
 	blobRlpPrefix := hexutility.MustDecodeHex("ba020000")
 
 	var blob0, blob1 = gokzg4844.Blob{}, gokzg4844.Blob{}
-	copy(blob0[:], hexutility.MustDecodeHex(ValidBlob1))
-	copy(blob1[:], hexutility.MustDecodeHex(ValidBlob2))
+	copy(blob0[:], hexutility.MustDecodeHex(validBlob1))
+	copy(blob1[:], hexutility.MustDecodeHex(validBlob2))
 
 	var err error
 	proofsRlpPrefix := hexutility.MustDecodeHex("f862")
