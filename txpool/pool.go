@@ -1005,7 +1005,6 @@ func (p *TxPool) AddLocalTxs(ctx context.Context, newTransactions types.TxSlots,
 	}
 
 	reasons, newTxs, err := p.validateTxs(&newTransactions, cacheView)
-	log.Info("[SPIDERMAN] AddLocalTxs : ", "reasons ", reasons)
 	if err != nil {
 		return nil, err
 	}
@@ -1209,7 +1208,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 		}
 		priceBump := p.cfg.PriceBump
 
-		//Blob txn threshold checks
+		//Blob txn threshold checks for replace txn
 		if mt.Tx.Type == types.BlobTxType {
 			priceBump = p.cfg.BlobPriceBump
 			blobFeeThreshold, overflow := (&uint256.Int{}).MulDivOverflow(
