@@ -727,7 +727,10 @@ func TestBlobTxReplacement(t *testing.T) {
 	ch := make(chan types.Announcements, 5)
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 	cfg := txpoolcfg.DefaultConfig
-	pool, err := New(ch, coreDB, cfg, &kvcache.DummyCache{}, *u256.N1, nil, common.Big0, log.New())
+	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
+	// pool, err := New(ch, coreDB, cfg, &kvcache.DummyCache{}, *u256.N1, nil, common.Big0, log.New())
+	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, common.Big0, log.New())
+	// pool, err := New(ch, coreDB, cfg, &kvcache.DummyCache{}, *u256.N1, nil, common.Big0, log.New())
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
