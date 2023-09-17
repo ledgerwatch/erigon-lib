@@ -1516,9 +1516,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint64, pendingBlobFee uint64, discard func(*metaTx, txpoolcfg.DiscardReason), announcements *types.Announcements,
 	logger log.Logger) {
 	// Demote worst transactions that do not qualify for pending sub pool anymore, to other sub pools, or discard
-	for worst := pending.Worst(); pending.Len() > 0 &&
-		(worst.subPool < BaseFeePoolBits || worst.minFeeCap.Uint64() < pendingBaseFee) ||
-		(worst.Tx.Type == types.BlobTxType && worst.Tx.BlobFeeCap.Uint64() < pendingBlobFee); worst = pending.Worst() {
+	for worst := pending.Worst(); pending.Len() > 0 && (worst.subPool < BaseFeePoolBits || worst.minFeeCap.Uint64() < pendingBaseFee || (worst.Tx.Type == types.BlobTxType && worst.Tx.BlobFeeCap.Uint64() < pendingBlobFee)); worst = pending.Worst() {
 		if worst.subPool >= BaseFeePoolBits {
 			tx := pending.PopWorst()
 			announcements.Append(tx.Tx.Type, tx.Tx.Size, tx.Tx.IDHash[:])
@@ -1531,10 +1529,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 	}
 
 	// Promote best transactions from base fee pool to pending pool while they qualify
-	for best := baseFee.Best(); baseFee.Len() > 0 &&
-		best.subPool >= BaseFeePoolBits && best.minFeeCap.Uint64() >= pendingBaseFee &&
-		(best.Tx.Type == types.BlobTxType && best.Tx.BlobFeeCap.Uint64() >= pendingBlobFee ||
-			best.Tx.Type != types.BlobTxType); best = baseFee.Best() {
+	for best := baseFee.Best(); baseFee.Len() > 0 && best.subPool >= BaseFeePoolBits && best.minFeeCap.Uint64() >= pendingBaseFee && (best.Tx.Type != types.BlobTxType || best.Tx.BlobFeeCap.Uint64() >= pendingBlobFee); best = baseFee.Best() {
 		tx := baseFee.PopBest()
 		announcements.Append(tx.Tx.Type, tx.Tx.Size, tx.Tx.IDHash[:])
 		pending.Add(tx, logger)
