@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -524,6 +525,9 @@ func (sd *SharedDomains) Commit(saveStateAfter, trace bool) (rootHash []byte, er
 	rootHash, branchNodeUpdates, err := sd.Commitment.ComputeCommitment(trace)
 	if err != nil {
 		return nil, err
+	}
+	if dbg.DiscardCommitment() {
+		return nil, nil
 	}
 
 	defer func(t time.Time) { mxCommitmentWriteTook.UpdateDuration(t) }(time.Now())

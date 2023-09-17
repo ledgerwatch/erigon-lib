@@ -227,7 +227,7 @@ func NewCommittedDomain(d *Domain, mode CommitmentMode, trieVariant commitment.T
 		mode:         mode,
 		trace:        false,
 		updates:      NewUpdateTree(mode),
-		discard:      dbg.DiscardCommitment(),
+		discard:      false, // dbg.DiscardCommitment(),
 		patriciaTrie: commitment.InitializeTrie(trieVariant),
 		branchMerger: commitment.NewHexBranchMerger(8192),
 	}
@@ -464,13 +464,13 @@ func (d *DomainCommitted) Close() {
 
 // Evaluates commitment for processed state.
 func (d *DomainCommitted) ComputeCommitment(trace bool) (rootHash []byte, branchNodeUpdates map[string]commitment.BranchData, err error) {
-	if dbg.DiscardCommitment() {
-		d.updates.List(true)
-		return nil, nil, nil
-	}
 	defer func(s time.Time) { mxCommitmentTook.UpdateDuration(s) }(time.Now())
 
 	touchedKeys, updates := d.updates.List(true)
+	if dbg.DiscardCommitment() {
+		return nil, nil, nil
+	}
+
 	mxCommitmentKeys.Add(len(touchedKeys))
 
 	if len(touchedKeys) == 0 {
