@@ -1531,10 +1531,10 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 	}
 
 	// Promote best transactions from base fee pool to pending pool while they qualify
-	for best := baseFee.Best(); baseFee.Len() > 0 && 
-	best.subPool >= BaseFeePoolBits && best.minFeeCap.Uint64() >= pendingBaseFee && 
-	(best.Tx.Type == types.BlobTxType && best.Tx.BlobFeeCap.Uint64() >= pendingBlobFee || 
-	best.Tx.Type != types.BlobTxType); best = baseFee.Best() {
+	for best := baseFee.Best(); baseFee.Len() > 0 &&
+		best.subPool >= BaseFeePoolBits && best.minFeeCap.Uint64() >= pendingBaseFee &&
+		(best.Tx.Type == types.BlobTxType && best.Tx.BlobFeeCap.Uint64() >= pendingBlobFee ||
+			best.Tx.Type != types.BlobTxType); best = baseFee.Best() {
 		tx := baseFee.PopBest()
 		announcements.Append(tx.Tx.Type, tx.Tx.Size, tx.Tx.IDHash[:])
 		pending.Add(tx, logger)
