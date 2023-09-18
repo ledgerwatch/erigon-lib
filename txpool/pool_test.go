@@ -822,7 +822,7 @@ func TestBlobTxReplacement(t *testing.T) {
 		}
 	}
 
-	//try to replace it with required price bump to all transaction fields - should be successful only if all are bumped
+	// Try to replace it with required price bump (configured in pool.cfg.BlobPriceBump for blob txns) to all transaction fields - should be successful only if all are bumped
 	{
 		blobTxn := makeBlobTx()
 		origTip := blobTxn.Tip
@@ -832,7 +832,7 @@ func TestBlobTxReplacement(t *testing.T) {
 		txSlots := types.TxSlots{}
 		txSlots.Append(&blobTxn, addr[:], true)
 
-		//Get the config of the pool for BlobPriceBump and bump prices
+		// Get the config of the pool for BlobPriceBump and bump prices
 		requiredPriceBump := pool.cfg.BlobPriceBump
 
 		// Bump the tip only
