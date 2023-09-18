@@ -471,7 +471,10 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
 						_, err = parseContext.ParseTransaction(change.Txs[i], 0, unwindTxs.Txs[i], unwindTxs.Senders.At(i), false /* hasEnvelope */, false /* wrappedWithBlobs */, nil)
 						if unwindTxs.Txs[i].Type == types2.BlobTxType {
-							knownBlobTxn := f.pool.GetKnownBlobTxn(tx, unwindTxs.Txs[i].IDHash[:])
+							knownBlobTxn, err := f.pool.GetKnownBlobTxn(tx, unwindTxs.Txs[i].IDHash[:])
+							if err != nil {
+								return err
+							}
 							if knownBlobTxn != nil {
 								unwindTxs.Txs[i] = knownBlobTxn.Tx
 							}

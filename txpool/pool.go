@@ -89,7 +89,7 @@ type Pool interface {
 	FilterKnownIdHashes(tx kv.Tx, hashes types.Hashes) (unknownHashes types.Hashes, err error)
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
-	GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx
+	GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx, error)
 
 	AddNewGoodPeer(peerID types.PeerID)
 }
@@ -561,28 +561,32 @@ func (p *TxPool) getUnprocessedTxn(hashS string) (*types.TxSlot, bool) {
 	return nil, false
 }
 
-func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx {
+func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx, error) {
 	hashS := string(hash)
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	if mt, ok := p.minedBlobTxsByHash[hashS]; ok {
-		return mt
+		return mt, nil
 	}
 	if txn, ok := p.getUnprocessedTxn(hashS); ok {
-		return newMetaTx(txn, false, 0)
+		return newMetaTx(txn, false, 0), nil
 	}
 	if mt, ok := p.byHash[hashS]; ok {
-		return mt
+		return mt, nil
 	}
-	if has, _ := tx.Has(kv.PoolTransaction, hash); has {
-		txn, _ := tx.GetOne(kv.PoolTransaction, hash)
-		parseCtx := types.NewTxParseContext(p.chainID)
-		parseCtx.WithSender(false)
-		txSlot := &types.TxSlot{}
-		parseCtx.ParseTransaction(txn, 0, txSlot, nil, false, true, nil)
-		return newMetaTx(txSlot, false, 0)
+	has, err := tx.Has(kv.PoolTransaction, hash)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if !has {
+		return nil, nil
+	}
+	txn, _ := tx.GetOne(kv.PoolTransaction, hash)
+	parseCtx := types.NewTxParseContext(p.chainID)
+	parseCtx.WithSender(false)
+	txSlot := &types.TxSlot{}
+	parseCtx.ParseTransaction(txn, 0, txSlot, nil, false, true, nil)
+	return newMetaTx(txSlot, false, 0), nil
 }
 
 func (p *TxPool) IsLocal(idHash []byte) bool {
