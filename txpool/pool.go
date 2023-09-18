@@ -577,18 +577,23 @@ func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx, error) {
 	if mt, ok := p.byHash[hashS]; ok {
 		return mt, nil
 	}
-	if has, _ := tx.Has(kv.PoolTransaction, hash); has {
-		txn, err := tx.GetOne(kv.PoolTransaction, hash)
-		if err != nil {
-			return nil
-		}
-		parseCtx := types.NewTxParseContext(p.chainID)
-		parseCtx.WithSender(false)
-		txSlot := &types.TxSlot{}
-		parseCtx.ParseTransaction(txn, 0, txSlot, nil, false, true, nil)
-		return newMetaTx(txSlot, false, 0)
+	has, err := tx.Has(kv.PoolTransaction, hash)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if !has {
+		return nil, nil
+	}
+
+	txn, err := tx.GetOne(kv.PoolTransaction, hash)
+	if err != nil {
+		return nil, err
+	}
+	parseCtx := types.NewTxParseContext(p.chainID)
+	parseCtx.WithSender(false)
+	txSlot := &types.TxSlot{}
+	parseCtx.ParseTransaction(txn, 0, txSlot, nil, false, true, nil)
+	return newMetaTx(txSlot, false, 0), nil
 }
 
 func (p *TxPool) IsLocal(idHash []byte) bool {
@@ -1282,6 +1287,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 		return txpoolcfg.FeeTooLow
 	}
 
+	hashStr := string(mt.Tx.IDHash[:])
 	p.byHash[hashStr] = mt
 
 	if replaced := p.all.replaceOrInsert(mt); replaced != nil {
@@ -1296,7 +1302,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 	// All transactions are first added to the queued pool and then immediately promoted from there if required
 	p.queued.Add(mt, p.logger)
 	// Remove from mined cache as we are now "resurrecting" it to a sub-pool
-	p.deleteMinedBlobTxn(string(mt.Tx.IDHash[:]))
+	p.deleteMinedBlobTxn(hashStr)
 	return txpoolcfg.NotSet
 }
 
@@ -1540,7 +1546,7 @@ func onSenderStateChange(senderID uint64, senderNonce uint64, senderBalance uint
 func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint64, pendingBlobFee uint64, discard func(*metaTx, txpoolcfg.DiscardReason), announcements *types.Announcements,
 	logger log.Logger) {
 	// Demote worst transactions that do not qualify for pending sub pool anymore, to other sub pools, or discard
-	for worst := pending.Worst(); pending.Len() > 0 && (worst.subPool < BaseFeePoolBits || worst.minFeeCap.Uint64() < pendingBaseFee || (worst.Tx.Type == types.BlobTxType && worst.Tx.BlobFeeCap.Uint64() < pendingBlobFee)); worst = pending.Worst() {
+	for worst := pending.Worst(); pending.Len() > 0 && (worst.subPool < BaseFeePoolBits || worst.minFeeCap.LtUint64(pendingBaseFee) || (worst.Tx.Type == types.BlobTxType && worst.Tx.BlobFeeCap.LtUint64(pendingBlobFee))); worst = pending.Worst() {
 		if worst.subPool >= BaseFeePoolBits {
 			tx := pending.PopWorst()
 			announcements.Append(tx.Tx.Type, tx.Tx.Size, tx.Tx.IDHash[:])
@@ -1553,7 +1559,7 @@ func promote(pending *PendingPool, baseFee, queued *SubPool, pendingBaseFee uint
 	}
 
 	// Promote best transactions from base fee pool to pending pool while they qualify
-	for best := baseFee.Best(); baseFee.Len() > 0 && best.subPool >= BaseFeePoolBits && best.minFeeCap.Uint64() >= pendingBaseFee && (best.Tx.Type != types.BlobTxType || best.Tx.BlobFeeCap.Uint64() >= pendingBlobFee); best = baseFee.Best() {
+	for best := baseFee.Best(); baseFee.Len() > 0 && best.subPool >= BaseFeePoolBits && best.minFeeCap.CmpUint64(pendingBaseFee) >= 0 && (best.Tx.Type != types.BlobTxType || best.Tx.BlobFeeCap.CmpUint64(pendingBlobFee) >= 0); best = baseFee.Best() {
 		tx := baseFee.PopBest()
 		announcements.Append(tx.Tx.Type, tx.Tx.Size, tx.Tx.IDHash[:])
 		pending.Add(tx, logger)
