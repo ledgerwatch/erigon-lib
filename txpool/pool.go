@@ -86,6 +86,7 @@ type Pool interface {
 	OnNewBlock(ctx context.Context, stateChanges *remote.StateChangeBatch, unwindTxs, minedTxs types.TxSlots, tx kv.Tx) error
 	// IdHashKnown check whether transaction with given Id hash is known to the pool
 	IdHashKnown(tx kv.Tx, hash []byte) (bool, error)
+	FilterKnownIdHashes(tx kv.Tx, hashes types.Hashes) (unknownHashes types.Hashes, err error)
 	Started() bool
 	GetRlp(tx kv.Tx, hash []byte) ([]byte, error)
 	GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx
@@ -517,34 +518,60 @@ func (p *TxPool) AppendAllAnnouncements(types []byte, sizes []uint32, hashes []b
 	types, sizes, hashes = p.AppendRemoteAnnouncements(types, sizes, hashes)
 	return types, sizes, hashes
 }
-func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	if _, ok := p.discardReasonsLRU.Get(string(hash)); ok {
+func (p *TxPool) idHashKnown(tx kv.Tx, hash []byte, hashS string) (bool, error) {
+	if _, ok := p.unprocessedRemoteByHash[hashS]; ok {
 		return true, nil
 	}
-	if _, ok := p.unprocessedRemoteByHash[string(hash)]; ok {
+	if _, ok := p.discardReasonsLRU.Get(hashS); ok {
 		return true, nil
 	}
-	if _, ok := p.byHash[string(hash)]; ok {
+	if _, ok := p.byHash[hashS]; ok {
 		return true, nil
 	}
-	if _, ok := p.minedBlobTxsByHash[string(hash)]; ok {
+	if _, ok := p.minedBlobTxsByHash[hashS]; ok {
 		return true, nil
 	}
 	return tx.Has(kv.PoolTransaction, hash)
 }
-
-func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx {
+func (p *TxPool) IdHashKnown(tx kv.Tx, hash []byte) (bool, error) {
+	hashS := string(hash)
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if mt, ok := p.minedBlobTxsByHash[string(hash)]; ok {
+	return p.idHashKnown(tx, hash, hashS)
+}
+func (p *TxPool) FilterKnownIdHashes(tx kv.Tx, hashes types.Hashes) (unknownHashes types.Hashes, err error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	for i := 0; i < len(hashes); i += 32 {
+		known, err := p.idHashKnown(tx, hashes[i:i+32], string(hashes[i:i+32]))
+		if err != nil {
+			return unknownHashes, err
+		}
+		if !known {
+			unknownHashes = append(unknownHashes, hashes[i:i+32]...)
+		}
+	}
+	return unknownHashes, err
+}
+
+func (p *TxPool) getUnprocessedTxn(hashS string) (*types.TxSlot, bool) {
+	if i, ok := p.unprocessedRemoteByHash[hashS]; ok {
+		return p.unprocessedRemoteTxs.Txs[i], true
+	}
+	return nil, false
+}
+
+func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) *metaTx {
+	hashS := string(hash)
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	if mt, ok := p.minedBlobTxsByHash[hashS]; ok {
 		return mt
 	}
-	if i, ok := p.unprocessedRemoteByHash[string(hash)]; ok {
-		return newMetaTx(p.unprocessedRemoteTxs.Txs[i], false, 0)
+	if txn, ok := p.getUnprocessedTxn(hashS); ok {
+		return newMetaTx(txn, false, 0)
 	}
-	if mt, ok := p.byHash[string(hash)]; ok {
+	if mt, ok := p.byHash[hashS]; ok {
 		return mt
 	}
 	if has, _ := tx.Has(kv.PoolTransaction, hash); has {
