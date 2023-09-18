@@ -590,9 +590,10 @@ func (p *TxPool) GetKnownBlobTxn(tx kv.Tx, hash []byte) (*metaTx, error) {
 }
 
 func (p *TxPool) IsLocal(idHash []byte) bool {
+	hashS := string(idHash)
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	return p.isLocalLRU.Contains(string(idHash))
+	return p.isLocalLRU.Contains(hashS)
 }
 func (p *TxPool) AddNewGoodPeer(peerID types.PeerID) { p.recentlyConnectedPeers.AddPeer(peerID) }
 func (p *TxPool) Started() bool                      { return p.started.Load() }
@@ -701,11 +702,12 @@ func (p *TxPool) AddRemoteTxs(_ context.Context, newTxs types.TxSlots) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for i, txn := range newTxs.Txs {
-		_, ok := p.unprocessedRemoteByHash[string(txn.IDHash[:])]
+		hashS := string(txn.IDHash[:])
+		_, ok := p.unprocessedRemoteByHash[hashS]
 		if ok {
 			continue
 		}
-		p.unprocessedRemoteByHash[string(txn.IDHash[:])] = len(p.unprocessedRemoteTxs.Txs)
+		p.unprocessedRemoteByHash[hashS] = len(p.unprocessedRemoteTxs.Txs)
 		p.unprocessedRemoteTxs.Append(txn, newTxs.Senders.At(i), false)
 	}
 }
@@ -1275,11 +1277,12 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 
 	// Remove from mined cache in case this is coming from unwind txs
 	// and to ensure not double adding into the memory
-	if _, ok := p.minedBlobTxsByHash[string(mt.Tx.IDHash[:])]; ok {
-		p.deleteMinedBlobTxn(string(mt.Tx.IDHash[:]))
+	hashStr := string(mt.Tx.IDHash[:])
+	if _, ok := p.minedBlobTxsByHash[hashStr]; ok {
+		p.deleteMinedBlobTxn(hashStr)
 	}
 
-	p.byHash[string(mt.Tx.IDHash[:])] = mt
+	p.byHash[hashStr] = mt
 
 	if replaced := p.all.replaceOrInsert(mt); replaced != nil {
 		if assert.Enable {
@@ -1288,7 +1291,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 	}
 
 	if mt.subPool&IsLocal != 0 {
-		p.isLocalLRU.Add(string(mt.Tx.IDHash[:]), struct{}{})
+		p.isLocalLRU.Add(hashStr, struct{}{})
 	}
 	// All transactions are first added to the queued pool and then immediately promoted from there if required
 	p.queued.Add(mt, p.logger)
@@ -1298,10 +1301,11 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 // dropping transaction from all sub-structures and from db
 // Important: don't call it while iterating by all
 func (p *TxPool) discardLocked(mt *metaTx, reason txpoolcfg.DiscardReason) {
-	delete(p.byHash, string(mt.Tx.IDHash[:]))
+	hashStr := string(mt.Tx.IDHash[:])
+	delete(p.byHash, hashStr)
 	p.deletedTxs = append(p.deletedTxs, mt)
 	p.all.delete(mt)
-	p.discardReasonsLRU.Add(string(mt.Tx.IDHash[:]), reason)
+	p.discardReasonsLRU.Add(hashStr, reason)
 }
 
 // Cache recently mined blobs in anticipation of reorg, delete finalized ones
