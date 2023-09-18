@@ -1283,7 +1283,7 @@ func (p *TxPool) addLocked(mt *metaTx, announcements *types.Announcements) txpoo
 	}
 
 	// Don't add blob tx to queued if it's less than current pending blob base fee
-	if mt.Tx.Type == types.BlobTxType && mt.Tx.BlobFeeCap.Uint64() < p.pendingBlobFee.Load() {
+	if mt.Tx.Type == types.BlobTxType && mt.Tx.BlobFeeCap.LtUint64(p.pendingBlobFee.Load()) {
 		return txpoolcfg.FeeTooLow
 	}
 
