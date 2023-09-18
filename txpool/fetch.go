@@ -469,9 +469,15 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 					if err = f.threadSafeParseStateChangeTxn(func(parseContext *types2.TxParseContext) error {
 						utx := &types2.TxSlot{}
 						sender := make([]byte, 20)
-						_, err = parseContext.ParseTransaction(change.Txs[i], 0, utx, sender, false /* hasEnvelope */, false /* wrappedWithBlobs */, nil)
+						_, err2 := parseContext.ParseTransaction(change.Txs[i], 0, utx, sender, false /* hasEnvelope */, false /* wrappedWithBlobs */, nil)
+						if err2 != nil {
+							return err2
+						}
 						if utx.Type == types2.BlobTxType {
-							knownBlobTxn := f.pool.GetKnownBlobTxn(tx, utx.IDHash[:])
+							knownBlobTxn, err2 := f.pool.GetKnownBlobTxn(tx, utx.IDHash[:])
+							if err2 != nil {
+								return err2
+							}
 							// Get the blob tx from cache; ignore altogether if it isn't there
 							if knownBlobTxn != nil {
 								unwindTxs.Append(knownBlobTxn.Tx, sender, false)
