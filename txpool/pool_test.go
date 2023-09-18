@@ -728,9 +728,7 @@ func TestBlobTxReplacement(t *testing.T) {
 	db, coreDB := memdb.NewTestPoolDB(t), memdb.NewTestDB(t)
 	cfg := txpoolcfg.DefaultConfig
 	sendersCache := kvcache.New(kvcache.DefaultCoherentConfig)
-	// pool, err := New(ch, coreDB, cfg, &kvcache.DummyCache{}, *u256.N1, nil, common.Big0, log.New())
 	pool, err := New(ch, coreDB, cfg, sendersCache, *u256.N1, nil, common.Big0, log.New())
-	// pool, err := New(ch, coreDB, cfg, &kvcache.DummyCache{}, *u256.N1, nil, common.Big0, log.New())
 	assert.NoError(err)
 	require.True(pool != nil)
 	ctx := context.Background()
@@ -771,9 +769,6 @@ func TestBlobTxReplacement(t *testing.T) {
 		txSlots := types.TxSlots{}
 		blobTxn := makeBlobTx()
 
-		blobTxn.Tip = *tip
-		blobTxn.FeeCap = *feeCap
-		blobTxn.BlobFeeCap = *blobFeeCap
 		blobTxn.IDHash[0] = 0x00
 		blobTxn.Nonce = 0x2
 		txSlots.Append(&blobTxn, addr[:], true)
@@ -827,25 +822,55 @@ func TestBlobTxReplacement(t *testing.T) {
 		}
 	}
 
-	//try to replace it with required price bump to all transaction fields - should be successful
+	//try to replace it with required price bump to all transaction fields - should be successful only if all are bumped
 	{
 		blobTxn := makeBlobTx()
+		origTip := blobTxn.Tip
+		origFee := blobTxn.FeeCap
 		blobTxn.Nonce = 0x2
-		txSlots := types.TxSlots{}
-
-		//Get the config of the pool for BlobPriceBump and bump ALL prices
-		requiredPriceBump := pool.cfg.BlobPriceBump
-		blobTxn.Tip.MulDivOverflow(tip, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
-		blobTxn.FeeCap.MulDivOverflow(feeCap, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
-		blobTxn.BlobFeeCap.MulDivOverflow(blobFeeCap, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
 		blobTxn.IDHash[0] = 0x03
+		txSlots := types.TxSlots{}
 		txSlots.Append(&blobTxn, addr[:], true)
+
+		//Get the config of the pool for BlobPriceBump and bump prices
+		requiredPriceBump := pool.cfg.BlobPriceBump
+
+		// Bump the tip only
+		blobTxn.Tip.MulDivOverflow(tip, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
 		reasons, err := pool.AddLocalTxs(ctx, txSlots, tx)
 		assert.NoError(err)
-		t.Logf("Reasons %v", reasons)
-		for _, reason := range reasons {
-			assert.Equal(txpoolcfg.Success, reason, reason.String())
-		}
+		assert.Equal(txpoolcfg.ReplaceUnderpriced, reasons[0], reasons[0].String())
+
+		// Bump the fee + tip
+		blobTxn.FeeCap.MulDivOverflow(feeCap, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
+		reasons, err = pool.AddLocalTxs(ctx, txSlots, tx)
+		assert.NoError(err)
+		assert.Equal(txpoolcfg.ReplaceUnderpriced, reasons[0], reasons[0].String())
+
+		// Bump only Feecap
+		blobTxn.Tip = origTip
+		reasons, err = pool.AddLocalTxs(ctx, txSlots, tx)
+		assert.NoError(err)
+		assert.Equal(txpoolcfg.ReplaceUnderpriced, reasons[0], reasons[0].String())
+
+		// Bump fee cap + blobFee cap
+		blobTxn.BlobFeeCap.MulDivOverflow(blobFeeCap, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
+		reasons, err = pool.AddLocalTxs(ctx, txSlots, tx)
+		assert.NoError(err)
+		assert.Equal(txpoolcfg.NotReplaced, reasons[0], reasons[0].String())
+
+		// Bump only blobFee cap
+		blobTxn.FeeCap = origFee
+		reasons, err = pool.AddLocalTxs(ctx, txSlots, tx)
+		assert.NoError(err)
+		assert.Equal(txpoolcfg.NotReplaced, reasons[0], reasons[0].String())
+
+		// Bump all prices
+		blobTxn.Tip.MulDivOverflow(tip, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
+		blobTxn.FeeCap.MulDivOverflow(feeCap, uint256.NewInt(requiredPriceBump+100), uint256.NewInt(100))
+		reasons, err = pool.AddLocalTxs(ctx, txSlots, tx)
+		assert.NoError(err)
+		assert.Equal(txpoolcfg.Success, reasons[0], reasons[0].String())
 	}
 }
 
@@ -901,6 +926,8 @@ func makeBlobTx() types.TxSlot {
 	wrapperRlp = append(wrapperRlp, 0xb0)
 	wrapperRlp = append(wrapperRlp, proof1[:]...)
 
+	tip, feeCap, blobFeeCap := uint256.NewInt(100_000), uint256.NewInt(200_000), uint256.NewInt(200_000)
+
 	blobTx := types.TxSlot{}
 	tctx := types.NewTxParseContext(*uint256.NewInt(5))
 	tctx.WithSender(false)
@@ -908,5 +935,9 @@ func makeBlobTx() types.TxSlot {
 	blobTx.BlobHashes = make([]common.Hash, 2)
 	blobTx.BlobHashes[0] = common.Hash(kzg.KZGToVersionedHash(commitment0))
 	blobTx.BlobHashes[1] = common.Hash(kzg.KZGToVersionedHash(commitment1))
+
+	blobTx.Tip = *tip
+	blobTx.FeeCap = *feeCap
+	blobTx.BlobFeeCap = *blobFeeCap
 	return blobTx
 }
