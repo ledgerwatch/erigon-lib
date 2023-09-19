@@ -482,6 +482,8 @@ func (f *Fetch) handleStateChanges(ctx context.Context, client StateChangesClien
 							if knownBlobTxn != nil {
 								unwindTxs.Append(knownBlobTxn.Tx, sender, false)
 							}
+						} else {
+							unwindTxs.Append(utx, sender, false)
 						}
 						return err
 					}); err != nil && !errors.Is(err, context.Canceled) {
