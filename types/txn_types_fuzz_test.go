@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ledgerwatch/erigon-lib/common/u256"
+	"github.com/ledgerwatch/erigon-lib/rlp"
 )
 
 // golang.org/s/draft-fuzzing-design
@@ -27,6 +28,6 @@ func FuzzParseTx(f *testing.F) {
 		ctx := NewTxParseContext(*u256.N1)
 		txn := &TxSlot{}
 		sender := make([]byte, 20)
-		_, _ = ctx.ParseTransaction(in, pos, txn, sender, false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
+		ctx.DecodeTransaction(rlp.NewDecoder(in), txn, sender, false /* hasEnvelope */, true /* wrappedWithBlobs */, nil)
 	})
 }

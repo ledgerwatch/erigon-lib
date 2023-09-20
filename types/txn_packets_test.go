@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
+	"github.com/ledgerwatch/erigon-lib/rlp"
 )
 
 var hashParseTests = []struct {
@@ -205,7 +206,7 @@ func TestTransactionsPacket(t *testing.T) {
 
 			ctx := NewTxParseContext(*uint256.NewInt(tt.chainID))
 			slots := &TxSlots{}
-			_, err := ParseTransactions(encodeBuf, 0, ctx, slots, nil)
+			err := DecodeTransactions(rlp.NewDecoder(encodeBuf), ctx, slots, nil)
 			require.NoError(err)
 			require.Equal(len(tt.txs), len(slots.Txs))
 			for i, txn := range tt.txs {
@@ -223,7 +224,7 @@ func TestTransactionsPacket(t *testing.T) {
 			chainID := uint256.NewInt(tt.chainID)
 			ctx := NewTxParseContext(*chainID)
 			slots := &TxSlots{}
-			_, err := ParseTransactions(encodeBuf, 0, ctx, slots, func(bytes []byte) error { return ErrRejected })
+			err := DecodeTransactions(rlp.NewDecoder(encodeBuf), ctx, slots, func(bytes []byte) error { return ErrRejected })
 			require.NoError(err)
 			require.Equal(0, len(slots.Txs))
 			require.Equal(0, slots.Senders.Len())
