@@ -191,7 +191,6 @@ func ParseTransactions(payload []byte, pos int, ctx *TxParseContext, txSlots *Tx
 	}
 	return pos, nil
 }
-
 func ParsePooledTransactions66(payload []byte, pos int, ctx *TxParseContext, txSlots *TxSlots, validateHash func([]byte) error) (requestID uint64, newPos int, err error) {
 	p, _, err := rlp.List(payload, pos)
 	if err != nil {

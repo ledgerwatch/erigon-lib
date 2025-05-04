@@ -21,7 +21,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"math/bits"
 	"sort"
@@ -29,13 +28,13 @@ import (
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
 	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/secp256k1"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/fixedgas"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/common/u256"
 	"github.com/ledgerwatch/erigon-lib/crypto"
+	"github.com/ledgerwatch/erigon-lib/crypto/cryptopool"
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon-lib/rlp"
 )
@@ -47,8 +46,6 @@ type TxParseConfig struct {
 // TxParseContext is object that is required to parse transactions and turn transaction payload into TxSlot objects
 // usage of TxContext helps avoid extra memory allocations
 type TxParseContext struct {
-	Keccak2         hash.Hash
-	Keccak1         hash.Hash
 	validateRlp     func([]byte) error
 	ChainID         uint256.Int // Signature values
 	R               uint256.Int // Signature values
@@ -72,8 +69,6 @@ func NewTxParseContext(chainID uint256.Int) *TxParseContext {
 	}
 	ctx := &TxParseContext{
 		withSender: true,
-		Keccak1:    sha3.NewLegacyKeccak256(),
-		Keccak2:    sha3.NewLegacyKeccak256(),
 	}
 
 	// behave as of London enabled
@@ -153,7 +148,20 @@ func PeekTransactionType(serialized []byte) (byte, error) {
 // It also performs syntactic validation of the transactions.
 // wrappedWithBlobs means that for blob (type 3) transactions the full version with blobs/commitments/proofs is expected
 // (see https://eips.ethereum.org/EIPS/eip-4844#networking).
+//
+// [  ] || [          nonce,      price, limit, to, value, data,                                     y,r,s]
+// 0x01 || [chain_id, nonce,      price, limit, to, value, data, access_list,                        y,r,s]
+// 0x02 || [chain_id, nonce, tip, price, limit, to, value, data, access_list,                        y,r,s]
+// 0x03 || [chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s]
+// 0x03 ||[[chain_id, nonce, tip, price, limit, to, value, data, access_list, blob_price, blob_hash, y,r,s], blobs, commitments, proofs]
 func (ctx *TxParseContext) ParseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (p int, err error) {
+	p, err = ctx.parseTransaction(payload, pos, slot, sender, hasEnvelope, wrappedWithBlobs, validateHash)
+	if err != nil {
+		return p, fmt.Errorf("%w: %w", ErrParseTxn, err)
+	}
+	return p, nil
+}
+func (ctx *TxParseContext) parseTransaction(payload []byte, pos int, slot *TxSlot, sender []byte, hasEnvelope, wrappedWithBlobs bool, validateHash func([]byte) error) (p int, err error) {
 	if len(payload) == 0 {
 		return 0, fmt.Errorf("%w: empty rlp", ErrParseTxn)
 	}
@@ -294,15 +302,21 @@ func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slo
 	p = p0
 	legacy := slot.Type == LegacyTxType
 
+	k1 := cryptopool.GetLegacyKeccak256()
+	k2 := cryptopool.GetLegacyKeccak256()
+	defer cryptopool.ReturnLegacyKeccak256(k1)
+	defer cryptopool.ReturnLegacyKeccak256(k2)
+
+	k1.Reset()
+	k2.Reset()
+
 	// Compute transaction hash
-	ctx.Keccak1.Reset()
-	ctx.Keccak2.Reset()
 	if !legacy {
 		typeByte := []byte{slot.Type}
-		if _, err = ctx.Keccak1.Write(typeByte); err != nil {
+		if _, err = k1.Write(typeByte); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing type Prefix): %s", ErrParseTxn, err) //nolint
 		}
-		if _, err = ctx.Keccak2.Write(typeByte); err != nil {
+		if _, err = k2.Write(typeByte); err != nil {
 			return 0, fmt.Errorf("%w: computing signHash (hashing type Prefix): %s", ErrParseTxn, err) //nolint
 		}
 		dataPos, dataLen, err := rlp.List(payload, p)
@@ -310,7 +324,7 @@ func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slo
 			return 0, fmt.Errorf("%w: envelope Prefix: %s", ErrParseTxn, err) //nolint
 		}
 		// Hash the content of envelope, not the full payload
-		if _, err = ctx.Keccak1.Write(payload[p : dataPos+dataLen]); err != nil {
+		if _, err = k1.Write(payload[p : dataPos+dataLen]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash (hashing the envelope): %s", ErrParseTxn, err) //nolint
 		}
 		p = dataPos
@@ -527,12 +541,12 @@ func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slo
 
 	// For legacy transactions, hash the full payload
 	if legacy {
-		if _, err = ctx.Keccak1.Write(payload[pos:p]); err != nil {
+		if _, err = k1.Write(payload[pos:p]); err != nil {
 			return 0, fmt.Errorf("%w: computing IdHash: %s", ErrParseTxn, err) //nolint
 		}
 	}
 	//ctx.keccak1.Sum(slot.IdHash[:0])
-	_, _ = ctx.Keccak1.(io.Reader).Read(slot.IDHash[:32])
+	_, _ = k1.(io.Reader).Read(slot.IDHash[:32])
 	if validateHash != nil {
 		if err := validateHash(slot.IDHash[:32]); err != nil {
 			return p, err
@@ -551,25 +565,25 @@ func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slo
 	// Write len Prefix to the Sighash
 	if sigHashLen < 56 {
 		ctx.buf[0] = byte(sigHashLen) + 192
-		if _, err := ctx.Keccak2.Write(ctx.buf[:1]); err != nil {
+		if _, err := k2.Write(ctx.buf[:1]); err != nil {
 			return 0, fmt.Errorf("%w: computing signHash (hashing len Prefix): %s", ErrParseTxn, err) //nolint
 		}
 	} else {
 		beLen := common.BitLenToByteLen(bits.Len(sigHashLen))
 		binary.BigEndian.PutUint64(ctx.buf[1:], uint64(sigHashLen))
 		ctx.buf[8-beLen] = byte(beLen) + 247
-		if _, err := ctx.Keccak2.Write(ctx.buf[8-beLen : 9]); err != nil {
+		if _, err := k2.Write(ctx.buf[8-beLen : 9]); err != nil {
 			return 0, fmt.Errorf("%w: computing signHash (hashing len Prefix): %s", ErrParseTxn, err) //nolint
 		}
 	}
-	if _, err = ctx.Keccak2.Write(payload[sigHashPos:sigHashEnd]); err != nil {
+	if _, err = k2.Write(payload[sigHashPos:sigHashEnd]); err != nil {
 		return 0, fmt.Errorf("%w: computing signHash: %s", ErrParseTxn, err) //nolint
 	}
 	if legacy {
 		if chainIDLen > 0 {
 			if chainIDBits <= 7 {
 				ctx.buf[0] = byte(ctx.ChainID.Uint64())
-				if _, err := ctx.Keccak2.Write(ctx.buf[:1]); err != nil {
+				if _, err := k2.Write(ctx.buf[:1]); err != nil {
 					return 0, fmt.Errorf("%w: computing signHash (hashing legacy chainId): %s", ErrParseTxn, err) //nolint
 				}
 			} else {
@@ -578,20 +592,20 @@ func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slo
 				binary.BigEndian.PutUint64(ctx.buf[17:25], ctx.ChainID[1])
 				binary.BigEndian.PutUint64(ctx.buf[25:33], ctx.ChainID[0])
 				ctx.buf[32-chainIDLen] = 128 + byte(chainIDLen)
-				if _, err = ctx.Keccak2.Write(ctx.buf[32-chainIDLen : 33]); err != nil {
+				if _, err = k2.Write(ctx.buf[32-chainIDLen : 33]); err != nil {
 					return 0, fmt.Errorf("%w: computing signHash (hashing legacy chainId): %s", ErrParseTxn, err) //nolint
 				}
 			}
 			// Encode two zeros
 			ctx.buf[0] = 128
 			ctx.buf[1] = 128
-			if _, err := ctx.Keccak2.Write(ctx.buf[:2]); err != nil {
+			if _, err := k2.Write(ctx.buf[:2]); err != nil {
 				return 0, fmt.Errorf("%w: computing signHash (hashing zeros after legacy chainId): %s", ErrParseTxn, err) //nolint
 			}
 		}
 	}
 	// Squeeze Sighash
-	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.Sighash[:32])
+	_, _ = k2.(io.Reader).Read(ctx.Sighash[:32])
 	//ctx.keccak2.Sum(ctx.Sighash[:0])
 	binary.BigEndian.PutUint64(ctx.Sig[0:8], ctx.R[3])
 	binary.BigEndian.PutUint64(ctx.Sig[8:16], ctx.R[2])
@@ -607,13 +621,13 @@ func (ctx *TxParseContext) parseTransactionBody(payload []byte, pos, p0 int, slo
 		return 0, fmt.Errorf("%w: recovering sender from signature: %s", ErrParseTxn, err) //nolint
 	}
 	//apply keccak to the public key
-	ctx.Keccak2.Reset()
-	if _, err = ctx.Keccak2.Write(ctx.buf[1:65]); err != nil {
+	k2.Reset()
+	if _, err = k2.Write(ctx.buf[1:65]); err != nil {
 		return 0, fmt.Errorf("%w: computing sender from public key: %s", ErrParseTxn, err) //nolint
 	}
 	// squeeze the hash of the public key
 	//ctx.keccak2.Sum(ctx.buf[:0])
-	_, _ = ctx.Keccak2.(io.Reader).Read(ctx.buf[:32])
+	_, _ = k2.(io.Reader).Read(ctx.buf[:32])
 	//take last 20 bytes as address
 	copy(sender, ctx.buf[12:32])
 
